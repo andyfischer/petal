@@ -39,6 +39,7 @@ mod fn_introspection;
 mod frozen_heap;
 mod get_keyword;
 mod handles;
+mod hash_comments;
 mod host_embedding;
 mod host_interfaces;
 mod hot_reload;

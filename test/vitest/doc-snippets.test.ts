@@ -3,8 +3,10 @@
 //
 //   • every block must pass `petal lint` (lex + parse + compile), which catches
 //     renamed builtins, removed syntax, and typos;
-//   • blocks whose lines are all `print(...) // expected` (plus plain bindings)
+//   • blocks whose lines are all `print(...) # expected` (plus plain bindings)
 //     are executed and their stdout asserted against the trailing-comment values.
+//     The comment may use either marker: `#`, or the deprecated `//` that the
+//     docs not yet migrated still have.
 //
 // A block that is intentionally illustrative (pseudo-code, elided with `...`,
 // or importing a host module not available to the bare CLI) opts out with an
@@ -23,16 +25,20 @@ const repoRoot = resolve(import.meta.dirname, "..", "..");
 const EXCLUDED = [/(^|\/)dev\//, /(^|\/)examples\//];
 const SKIP_TAGS = new Set(["ignore", "no-check"]);
 const FENCE = /^```petal([^\n]*)\n([\s\S]*?)^```/gm;
-const PRINT_WITH_EXPECTED = /^\s*print\(.*\)\s*\/\/\s*(.+?)\s*$/;
+// `print(...) # expected` or `print(...) // expected`. The `.*\)` is greedy, so
+// the marker is the one after the call's last `)`: a `#` inside the arguments
+// (`print("#fff")`) or in the expected text (`// #ff8800`) is not taken for it.
+const PRINT_WITH_EXPECTED = /^\s*print\(.*\)\s*(?:\/\/|#)\s*(.+?)\s*$/;
+const COMMENT_LINE = /^\s*(?:\/\/|#)/;
 const BARE_PRINT = /^\s*print\(/;
 const CONTROL_FLOW = /^\s*(for|while|if|elsif|else|match|end|fn)\b/;
 // A trailing print-comment is only asserted when it's *literal* output. These
 // signal the comment carries prose instead (a note, a type hint, an aside), so
 // the block falls back to check-only rather than a spurious mismatch:
-//   non-deterministic:  // 0.73... (varies)
-//   parenthetical note: // 1 (zero-indexed)
-//   type-hint quotes:   // "Alice"   (print writes Alice, unquoted)
-//   dash aside:         // 6  — only double ran back into b
+//   non-deterministic:  # 0.73... (varies)
+//   parenthetical note: # 1 (zero-indexed)
+//   type-hint quotes:   # "Alice"   (print writes Alice, unquoted)
+//   dash aside:         # 6  — only double ran back into b
 const NON_ASSERTABLE = /\bvaries\b|\brandom\b|warning:|\.\.\.|[("]|—|--/;
 
 interface Snippet {
@@ -94,7 +100,7 @@ function expectedOutput(code: string): string[] | null {
   const expected: string[] = [];
   for (const raw of code.split("\n")) {
     const line = raw.replace(/\r$/, "");
-    if (line.trim() === "" || line.trim().startsWith("//")) continue;
+    if (line.trim() === "" || COMMENT_LINE.test(line)) continue;
     const m = PRINT_WITH_EXPECTED.exec(line);
     if (m) {
       if (NON_ASSERTABLE.test(m[1])) return null;

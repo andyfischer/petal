@@ -499,19 +499,19 @@ impl<'a> Member<'a> {
                         .map(|v| format!("{enum_name}.{}", v.name))
                         .collect();
                     Some(format!(
-                        "(enum member) {enum_name}.all\n// the payload-free variants, in declaration order\n[{}]",
+                        "(enum member) {enum_name}.all\n# the payload-free variants, in declaration order\n[{}]",
                         plain.join(", ")
                     ))
                 }
                 None if name == "from" => Some(format!(
-                    "(enum member) {enum_name}.from(name)\n// the payload-free variant with that name, or nil"
+                    "(enum member) {enum_name}.from(name)\n# the payload-free variant with that name, or nil"
                 )),
                 None => None,
             },
             Member::Variant(_, v) => {
                 let of = format!("{enum_name}.{}", v.name);
                 if v.fields.iter().any(|f| f == name) {
-                    Some(format!("(payload field) {name}\n// of {enum_name}.{}", v.signature()))
+                    Some(format!("(payload field) {name}\n# of {enum_name}.{}", v.signature()))
                 } else if let Some(text) = v.datum(name) {
                     Some(format!("(constant data) {of}.{name} = {text}"))
                 } else if name == NAME_FIELD {
@@ -540,9 +540,9 @@ impl<'a> Member<'a> {
                         with_datum.join("\n")
                     ))
                 } else if !with_field.is_empty() {
-                    Some(format!("(payload field) {name}\n// of {}", with_field.join(", ")))
+                    Some(format!("(payload field) {name}\n# of {}", with_field.join(", ")))
                 } else if name == NAME_FIELD {
-                    Some(format!("(field) name\n// the name of the {enum_name} variant, as a string"))
+                    Some(format!("(field) name\n# the name of the {enum_name} variant, as a string"))
                 } else {
                     method_hover(e, enum_name, name)
                 }

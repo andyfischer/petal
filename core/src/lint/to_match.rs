@@ -360,13 +360,13 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
 /// Every region this rule rewrites is glue, so a comment inside one has
 /// nowhere to go in the `match` and the caller skips the chain instead. Glue
 /// never spans a string literal — it is keywords, an operator and at most the
-/// repeated subject — so scanning for `//` cannot trip over one in quotes.
+/// repeated subject — so scanning for `#` or `//` cannot trip over one in quotes.
 fn glue(chars: &[char], start: usize, end: usize) -> Option<String> {
     if start > end || end > chars.len() {
         return None;
     }
     let text: String = chars[start..end].iter().collect();
-    if text.contains("//") {
+    if text.contains("//") || text.contains('#') {
         return None;
     }
     Some(text)

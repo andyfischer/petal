@@ -499,7 +499,7 @@ fn comment_block_start(chars: &[char], offset: usize) -> usize {
     while start > 0 {
         let prev_start = line_start_at(chars, start - 1);
         let line: String = chars[prev_start..start - 1].iter().collect();
-        if !line.trim_start().starts_with("//") {
+        if !crate::trivia::starts_comment(line.trim_start()) {
             break;
         }
         start = prev_start;

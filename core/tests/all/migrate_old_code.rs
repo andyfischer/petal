@@ -6,7 +6,8 @@
 
 use petal::env::Env;
 use petal::migrate::{
-    AT_REBIND, COLOUR_LITERALS, CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED, EXPORT_TO_PUB, MIGRATIONS, MigrateOptions,
+    AT_REBIND, COLOUR_LITERALS, CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED, EXPORT_TO_PUB, HASH_COMMENTS, MIGRATIONS,
+    MigrateOptions,
     MigrateOutcome, STATE_KEY_DEPRECATED, migrate_source,
 };
 
@@ -18,44 +19,58 @@ const FIXTURES: &[(&str, &str, &str)] = &[
     (
         AT_REBIND,
         "fn double(x)\n  x * 2\nend\nfn inc(x)\n  x + 1\nend\n\
-         let a = 5\ndouble(@a)\nprint(a) // 10\n\
-         let b = 3\nlet r = inc(double(@b))\nprint(b, r) // 6 7\n\
-         let c = 4\ndouble(@c)\ndouble(@ c)\nprint(c) // 16\n",
+         let a = 5\ndouble(@a)\nprint(a) # 10\n\
+         let b = 3\nlet r = inc(double(@b))\nprint(b, r) # 6 7\n\
+         let c = 4\ndouble(@c)\ndouble(@ c)\nprint(c) # 16\n",
         "fn double(x)\n  x * 2\nend\nfn inc(x)\n  x + 1\nend\n\
-         let a = 5\na = double(a)\nprint(a) // 10\n\
-         let b = 3\nb = double(b)\nlet r = inc(b)\nprint(b, r) // 6 7\n\
-         let c = 4\nc = double(c)\nc = double(c)\nprint(c) // 16\n",
+         let a = 5\na = double(a)\nprint(a) # 10\n\
+         let b = 3\nb = double(b)\nlet r = inc(b)\nprint(b, r) # 6 7\n\
+         let c = 4\nc = double(c)\nc = double(c)\nprint(c) # 16\n",
     ),
-    // Color tokens only: the string, the raw GLSL and the comment keep their
+    // Color tokens only: the string, the raw GLSL and the comments keep their
     // `#`; B16's four color positions (a field value, an argument, after
     // `=`, a string hole) all respell.
     (
         COLOUR_LITERALS,
-        "let tint = #f80 // was #fff\nlet theme = {bg: #10203040, ink: #FFFFFF}\n\
+        "let tint = #f80 /* was #fff */ # was #f80, once\nlet theme = {bg: #10203040, ink: #FFFFFF}\n\
          let css = \"#ff8800\"\nlet glsl = \"\"\"\n#define K 1\nvec3 c = #abc;\n\"\"\"\n\
          fn name(c)\n  if c == #f80 then \"orange\" else \"{#fff.r}\" end\nend\n\
          print(name(#f80), tint.r, theme.bg.a, css, [#000, #abcd][1].a)\n",
-        "let tint = :f80 // was #fff\nlet theme = {bg: :10203040, ink: :FFFFFF}\n\
+        "let tint = :f80 /* was #fff */ # was #f80, once\nlet theme = {bg: :10203040, ink: :FFFFFF}\n\
          let css = \"#ff8800\"\nlet glsl = \"\"\"\n#define K 1\nvec3 c = #abc;\n\"\"\"\n\
          fn name(c)\n  if c == :f80 then \"orange\" else \"{:fff.r}\" end\nend\n\
          print(name(:f80), tint.r, theme.bg.a, css, [:000, :abcd][1].a)\n",
     ),
+    // Trivia only: the `//` in the string and the `/* */` comment stay, a
+    // directive keeps its meaning, and the comment line in element children
+    // becomes a hole (a `#` line there would be text).
+    (
+        HASH_COMMENTS,
+        "// header\n/// doc\nlet a = 1 //one\nlet n = 2 // two\n\
+         let url = \"http://x\" /* kept // as is */\n\
+         let v = <col>\n  // the rows\n  <row n={a} /> // text\n</col>\n\
+         print(a + n, url, v.children.length) //3\n",
+        "# header\n## doc\nlet a = 1 # one\nlet n = 2 # two\n\
+         let url = \"http://x\" /* kept // as is */\n\
+         let v = <col>\n  {/* the rows */}\n  <row n={a} /> // text\n</col>\n\
+         print(a + n, url, v.children.length) # 3\n",
+    ),
     (
         EXPORT_TO_PUB,
-        "export fn double(x)\n  x * 2\nend\nexport let limit = 10 // max\nprint(double(limit))\n",
-        "pub fn double(x)\n  x * 2\nend\npub let limit = 10 // max\nprint(double(limit))\n",
+        "export fn double(x)\n  x * 2\nend\nexport let limit = 10 # max\nprint(double(limit))\n",
+        "pub fn double(x)\n  x * 2\nend\npub let limit = 10 # max\nprint(double(limit))\n",
     ),
     (
         CONST_DECL_DEPRECATED,
-        "const BASE = 10\npub const TABLE = map([1, 2], fn(x) -> x * BASE) // computed\n\
+        "const BASE = 10\npub const TABLE = map([1, 2], fn(x) -> x * BASE) # computed\n\
          const P = {\n  x: 1,\n  y: [2, 3],\n}\nprint(TABLE, P)\n",
-        "let BASE = const(10)\npub let TABLE = const(map([1, 2], fn(x) -> x * BASE)) // computed\n\
+        "let BASE = const(10)\npub let TABLE = const(map([1, 2], fn(x) -> x * BASE)) # computed\n\
          let P = const({\n  x: 1,\n  y: [2, 3],\n})\nprint(TABLE, P)\n",
     ),
     (
         CONFIG_LET_DEPRECATED,
-        "config let SPEED = 4.0   // px\nconfig let G = tunable(9.8, 0, 20)\nprint(SPEED, G)\n",
-        "let SPEED = tunable(4.0) // px\nlet G = tunable(9.8, 0, 20)\nprint(SPEED, G)\n",
+        "config let SPEED = 4.0   # px\nconfig let G = tunable(9.8, 0, 20)\nprint(SPEED, G)\n",
+        "let SPEED = tunable(4.0) # px\nlet G = tunable(9.8, 0, 20)\nprint(SPEED, G)\n",
     ),
     (
         STATE_KEY_DEPRECATED,
@@ -78,6 +93,9 @@ fn migrate_with(src: &str, only: Option<&[&str]>) -> MigrateOutcome {
 fn compiled_before(rule: &str, src: &str) -> bool {
     if rule == AT_REBIND {
         !compiles(src) && compiles(&src.replace('@', " "))
+    } else if rule == COLOUR_LITERALS {
+        // `#f80` no longer lexes; it was the color `:f80` lexes to.
+        !compiles(src) && compiles(&petal::migrate::respell_colour_literals(src).unwrap())
     } else {
         compiles(src)
     }
@@ -153,8 +171,9 @@ fn migrating_twice_changes_nothing() {
 fn another_migration_leaves_a_fixture_alone() {
     for (rule, before, _) in FIXTURES {
         for (other, _, _) in FIXTURES.iter().filter(|(o, _, _)| o != rule) {
-            if *rule == AT_REBIND {
-                // Without its own migration, an `@` file does not parse.
+            if *rule == AT_REBIND || *rule == COLOUR_LITERALS {
+                // Without its own migration, an `@` file does not parse and
+                // a `#f80` file does not lex.
                 let opts = MigrateOptions {
                     only: Some(vec![other.to_string()]),
                     ..Default::default()
@@ -209,12 +228,12 @@ fn a_site_that_needs_a_hand_edit_is_reported_and_left() {
 
 #[test]
 fn an_ignore_comment_keeps_the_old_form_and_silences_the_warning() {
-    let src = "// petal-lint-ignore const-decl-deprecated -- a fixture of the old form\n\
+    let src = "# petal-lint-ignore const-decl-deprecated -- a fixture of the old form\n\
                const A = 1\nconst B = 2\nprint(A + B)\n";
     let out = migrate_with(src, None);
     assert_eq!(
         out.output,
-        "// petal-lint-ignore const-decl-deprecated -- a fixture of the old form\n\
+        "# petal-lint-ignore const-decl-deprecated -- a fixture of the old form\n\
          const A = 1\nlet B = const(2)\nprint(A + B)\n"
     );
     assert_eq!(deprecation_warnings(&out.output), Vec::<String>::new());
@@ -274,7 +293,7 @@ fn an_at_rebind_migrates_to_the_program_it_desugared_to() {
 fn an_at_rebind_lifts_within_each_block_and_keeps_its_indentation() {
     let src = "fn double(x)\n  x * 2\nend\nfn add(x, y)\n  x + y\nend\n\
                fn go(a, b)\n  if a > 0 then double(@a) end\n  if b > 0 then\n    \
-               let r = add(double(@a), @b) // note\n    print(r)\n  end\n  \
+               let r = add(double(@a), @b) # note\n    print(r)\n  end\n  \
                for i in [1, 2] do\n    a = add(double(@a), 1)\n  end\n  \
                print(\"@a stays {a}\")\n  [a, b]\nend\nprint(go(1, 2))\n";
     let out = migrate_with(src, None);
@@ -282,7 +301,7 @@ fn an_at_rebind_lifts_within_each_block_and_keeps_its_indentation() {
         out.output,
         "fn double(x)\n  x * 2\nend\nfn add(x, y)\n  x + y\nend\n\
          fn go(a, b)\n  if a > 0 then a = double(a) end\n  if b > 0 then\n    \
-         a = double(a)\n    b = add(a, b)\n    let r = b // note\n    print(r)\n  end\n  \
+         a = double(a)\n    b = add(a, b)\n    let r = b # note\n    print(r)\n  end\n  \
          for i in [1, 2] do\n    a = double(a)\n    a = add(a, 1)\n  end\n  \
          print(\"@a stays {a}\")\n  [a, b]\nend\nprint(go(1, 2))\n"
     );
@@ -331,7 +350,7 @@ fn an_at_rebind_and_a_deprecated_form_migrate_together() {
 
 #[test]
 fn an_at_in_a_string_or_a_comment_is_not_a_rebind() {
-    let src = "let a = \"@a\" // f(@a)\nprint(a)\n";
+    let src = "let a = \"@a\" # f(@a)\nprint(a)\n";
     let out = migrate_with(src, None);
     assert_eq!(out.output, src);
     assert!(out.findings.is_empty());
@@ -365,16 +384,21 @@ fn a_declaration_annotation_is_not_a_rebind() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn a_hash_colour_warns_and_names_the_tool_and_the_new_spelling() {
-    let w = deprecation_warnings("let a = #f80\nlet b = :fff\nprint(a.r + b.r)\n");
-    assert_eq!(w.len(), 1, "{w:?}");
-    assert!(w[0].contains("`:f80`") && w[0].ends_with("[colour-literals]"), "{w:?}");
+fn a_hash_colour_is_an_error_that_names_the_tool_and_the_new_spelling() {
+    let mut env = Env::new();
+    env.set_echo(false);
+    let err = format!("{}", env.load_program("let a = #f80\nlet b = :fff\nprint(a.r + b.r)\n").unwrap_err());
+    assert!(err.contains("`#f80` is no longer a color literal; write `:f80`"), "{err}");
+    assert!(err.contains("petal migrate-old-code") && err.contains("[colour-literals]"), "{err}");
+    // Never a comment: the stale literal after `??` would otherwise leave
+    // `a ??` to continue onto the next line, a different program.
+    assert!(env.load_program("let a = nil\nlet c = a ?? #fff\nprint(c)\n").is_err());
 }
 
 #[test]
 fn a_migrated_colour_is_the_same_program() {
     let (_, before, after) = FIXTURES.iter().find(|(r, _, _)| *r == COLOUR_LITERALS).unwrap();
-    assert_eq!(run_out(before), run_out(after));
+    assert_eq!(migrate_with(before, None).output, *after);
     assert_eq!(run_out(after), ["orange 255 64 #ff8800 221"]);
 }
 
@@ -388,7 +412,7 @@ fn colour_separators_are_kept_and_only_colour_tokens_respell() {
         out.output,
         "let r = {x:100, tint::000, edge: :abc}\nfn f(a:int, c = :fff) a + c.r end\nprint(r.x, f(1, c::f80))\n"
     );
-    assert_eq!(run_out(src), run_out(&out.output));
+    assert_eq!(run_out(&out.output), ["100 256"]);
     assert_eq!(out.count(COLOUR_LITERALS), 4);
 }
 
@@ -405,24 +429,98 @@ fn a_colour_directly_after_a_value_is_reported_and_left() {
 }
 
 #[test]
-fn a_colour_ignore_comment_keeps_the_hash_and_silences_the_warning() {
-    let src = "let a = #f80 // petal-lint-ignore colour-literals\nlet b = #fff\nprint(a.r + b.r)\n";
+fn a_colour_ignore_comment_keeps_the_hash() {
+    // The site stays as written (it no longer compiles: the form is
+    // removed), and the rest of the file is still migrated up to the first
+    // step that needs the file to lex.
+    let src = "let a = #f80 // petal-lint-ignore colour-literals\nexport let b = #fff\nprint(a.r + b.r)\n";
     let out = migrate_with(src, None);
     assert_eq!(
         out.output,
-        "let a = #f80 // petal-lint-ignore colour-literals\nlet b = :fff\nprint(a.r + b.r)\n"
+        "let a = #f80 # petal-lint-ignore colour-literals\nexport let b = :fff\nprint(a.r + b.r)\n"
     );
-    assert_eq!(deprecation_warnings(&out.output), Vec::<String>::new());
+    // What is left is the lexer's error, which names the migration.
+    let err = migrate_source(&out.output, &MigrateOptions::default()).err().unwrap();
+    assert!(err.contains("[colour-literals]"), "{err}");
 }
 
 #[test]
 fn colours_and_other_old_forms_migrate_together() {
-    let src = "export const INK = #102030\nconfig let TINT = #f80 // warm\nprint(INK.r + TINT.g)\n";
+    let src = "export const INK = #102030\nconfig let TINT = #f80 // warm\ndraw(@INK)\nprint(INK.r + TINT.g)\n";
     let out = migrate_with(src, None);
     assert_eq!(
         out.output,
-        "pub let INK = const(:102030)\nlet TINT = tunable(:f80) // warm\nprint(INK.r + TINT.g)\n"
+        "pub let INK = const(:102030)\nlet TINT = tunable(:f80) # warm\nINK = draw(INK)\nprint(INK.r + TINT.g)\n"
+    );
+    assert_eq!(deprecation_warnings(&out.output), Vec::<String>::new());
+}
+
+// ---------------------------------------------------------------------------
+// `hash-comments`: `// note` is written `# note`
+// ---------------------------------------------------------------------------
+
+/// The whole legacy surface in one unmigrated file, as a downstream project
+/// has it: `#f80` colors, `//` comments (one of them naming a color), an
+/// `@` rebind and deprecated declarations. One run migrates all of it.
+#[test]
+fn a_fully_unmigrated_file_migrates_in_one_run() {
+    let src = "// theme\nexport const INK = #102030 //ink\nfn dim(c)\n  // was #fff\n  {...c, r: 0}\nend\n\
+               let tint = #f80\ndim(@tint)\nprint(INK.r + tint.r + tint.g) // 152\n";
+    assert!(!compiles(src));
+    let out = migrate_with(src, None);
+    assert_eq!(
+        out.output,
+        "# theme\npub let INK = const(:102030) # ink\nfn dim(c)\n  # was #fff\n  {...c, r: 0}\nend\n\
+         let tint = :f80\ntint = dim(tint)\nprint(INK.r + tint.r + tint.g) # 152\n"
     );
     assert_eq!(run_out(&out.output), ["152"]);
     assert_eq!(deprecation_warnings(&out.output), Vec::<String>::new());
+    let again = migrate_with(&out.output, None);
+    assert_eq!(again.output, out.output);
+    assert!(again.findings.is_empty(), "{:?}", again.findings);
+}
+
+#[test]
+fn a_migrated_comment_file_is_the_same_program() {
+    let (_, before, after) = FIXTURES.iter().find(|(r, _, _)| *r == HASH_COMMENTS).unwrap();
+    assert_eq!(run_out(before), run_out(after));
+    assert_eq!(run_out(after), ["3 http://x 2"]);
+}
+
+#[test]
+fn slash_comments_are_reported_once_per_file_and_children_lines_each() {
+    let src = "// a\n// b\nlet v = <p>\n  // c\n  <q />\n  // d\n</p> // e\n";
+    let out = migrate_with(src, Some(&[HASH_COMMENTS]));
+    let found: Vec<(usize, bool)> = out.findings.iter().map(|f| (f.line, f.fixable)).collect();
+    assert_eq!(found, [(1, true), (4, true), (6, true)]);
+    assert!(out.findings[0].message.contains("3 in this file"), "{}", out.findings[0].message);
+    assert_eq!(out.output, "# a\n# b\nlet v = <p>\n  {/* c */}\n  <q />\n  {/* d */}\n</p> # e\n");
+}
+
+#[test]
+fn a_children_comment_between_two_text_lines_is_reported_and_left() {
+    let src = "let v = <p>\n  one\n  // note\n  two\n</p>\nprint(v.children) // x\n";
+    let out = migrate_with(src, None);
+    assert_eq!(out.output, "let v = <p>\n  one\n  // note\n  two\n</p>\nprint(v.children) # x\n");
+    assert_eq!((out.rewritten(), out.left()), (1, 1));
+    assert_eq!(run_out(src), run_out(&out.output));
+}
+
+#[test]
+fn a_comment_ignore_keeps_the_slashes() {
+    let src = "// petal-lint-ignore-file hash-comments\nlet a = 1 // one\nprint(a)\n";
+    let out = migrate_with(src, None);
+    assert_eq!(out.output, src);
+    assert_eq!(out.rewritten(), 0);
+}
+
+#[test]
+fn glsl_in_a_raw_string_keeps_its_comments_and_directives() {
+    let src = "let frag = \"\"\"\n#version 300 es\n// glsl\n#define K 1 // k\nif (a) {} else if (b) {}\n\"\"\" // shader\nprint(frag.length)\n";
+    let out = migrate_with(src, None);
+    assert_eq!(
+        out.output,
+        "let frag = \"\"\"\n#version 300 es\n// glsl\n#define K 1 // k\nif (a) {} else if (b) {}\n\"\"\" # shader\nprint(frag.length)\n"
+    );
+    assert_eq!(run_out(src), run_out(&out.output));
 }

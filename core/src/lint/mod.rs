@@ -451,6 +451,16 @@ impl<'a> Pipeline<'a> {
     }
 
     pub(crate) fn new(source: &'a str, rules: &'a RuleFilter) -> Result<Self, String> {
+        Self::with_ignores(source, rules, Ignores::scan(source)?)
+    }
+
+    /// For `petal migrate-old-code`: the source may still hold `#f80` colors,
+    /// which only the lexer's legacy mode reads.
+    pub(crate) fn new_legacy(source: &'a str, rules: &'a RuleFilter) -> Result<Self, String> {
+        Self::with_ignores(source, rules, Ignores::scan_legacy(source)?)
+    }
+
+    fn with_ignores(source: &'a str, rules: &'a RuleFilter, ignores: Ignores) -> Result<Self, String> {
         let mut line_starts = vec![0usize];
         for (i, c) in source.chars().enumerate() {
             if c == '\n' {
@@ -459,7 +469,7 @@ impl<'a> Pipeline<'a> {
         }
         Ok(Pipeline {
             line_starts,
-            ignores: Ignores::scan(source)?,
+            ignores,
             rules,
             text: source.to_string(),
             stages: Vec::new(),
@@ -537,7 +547,7 @@ fn map_back(pos: usize, splices: &[Splice]) -> usize {
     (pos as isize - delta) as usize
 }
 
-/// `// petal-lint-ignore` comments: per 0-based line, the rules silenced there
+/// `# petal-lint-ignore` comments (`//` works too): per 0-based line, the rules silenced there
 /// (an empty list silences every rule). The compiler reads them too, for the
 /// compile warnings that carry a rule id ([`crate::compiler::keyed_state`],
 /// [`crate::compiler::moved_widgets`],
@@ -551,13 +561,23 @@ pub(crate) struct Ignores {
 
 impl Ignores {
     pub(crate) fn scan(source: &str) -> Result<Self, String> {
+        Self::scan_with(source, false)
+    }
+
+    /// [`Ignores::scan`] over source that may still hold `#f80` colors
+    /// (`crate::lexer::Lexer::legacy`), for `petal migrate-old-code`.
+    pub(crate) fn scan_legacy(source: &str) -> Result<Self, String> {
+        Self::scan_with(source, true)
+    }
+
+    fn scan_with(source: &str, legacy: bool) -> Result<Self, String> {
         let mut file = None;
         let mut lines = std::collections::HashMap::new();
-        for (line, text, whole_line) in crate::fmt::line_comments(source)? {
+        for (line, text, whole_line) in crate::fmt::line_comments_with(source, legacy)? {
             let Some(word) = crate::fmt::directive_word(&text) else {
                 continue;
             };
-            let rest = text.trim_start_matches('/').trim_start()[word.len()..]
+            let rest = crate::trivia::comment_body(&text).unwrap_or(&text).trim_start()[word.len()..]
                 .split("--")
                 .next()
                 .unwrap_or("");
@@ -1197,12 +1217,12 @@ mod tests {
 
     #[test]
     fn ignore_comments_suppress_findings_and_their_fixes() {
-        let src = "fn f()\n  // petal-lint-ignore prefer-let -- shared later\n  var n = 0\n  set n = get n + 1\n  get n\nend\n";
+        let src = "fn f()\n  # petal-lint-ignore prefer-let -- shared later\n  var n = 0\n  set n = get n + 1\n  get n\nend\n";
         let out = lint_source(src, &LintOptions::default()).unwrap();
         assert!(out.findings.iter().all(|f| f.rule != PREFER_LET));
         assert!(out.output.contains("var n = 0"));
 
-        let trailing = "let x = 1\nx = x + 1 // petal-lint-ignore\n";
+        let trailing = "let x = 1\nx = x + 1 # petal-lint-ignore\n";
         assert!(
             lint_source(trailing, &LintOptions::default())
                 .unwrap()
@@ -1210,13 +1230,25 @@ mod tests {
                 .is_empty()
         );
 
-        let file = "// petal-lint-ignore-file prefer-compound-assign\nlet x = 1\nx = x + 1\n";
+        let file = "# petal-lint-ignore-file prefer-compound-assign\nlet x = 1\nx = x + 1\n";
         assert!(
             lint_source(file, &LintOptions::default())
                 .unwrap()
                 .findings
                 .is_empty()
         );
+    }
+
+    /// The deprecated `//` spelling of an ignore comment still works, and is
+    /// itself what `old-syntax` reports.
+    #[test]
+    fn slash_ignore_comments_still_work_and_are_reported_as_old_syntax() {
+        let src = "// petal-lint-ignore-file prefer-compound-assign\nvar n = 0 // petal-lint-ignore prefer-let\nlet x = 1\nx = x + 1\n";
+        let out = lint_source(src, &LintOptions::default()).unwrap();
+        let rules: Vec<&str> = out.findings.iter().map(|f| f.rule).collect();
+        assert_eq!(rules, vec![OLD_SYNTAX], "{:?}", out.findings.iter().map(|f| &f.message).collect::<Vec<_>>());
+        assert!(out.findings[0].message.contains("[hash-comments]"), "{}", out.findings[0].message);
+        assert_eq!(out.output, src);
     }
 
     #[test]

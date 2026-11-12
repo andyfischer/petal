@@ -62,7 +62,7 @@ const OLD: &str = "\
 export fn double(x)
   x * 2
 end
-const N = 4            // four
+const N = 4            # four
 config let SPEED = 2.5
 fn width(t)
   state(t) w = t * 8
@@ -75,7 +75,7 @@ const NEW: &str = "\
 pub fn double(x)
   x * 2
 end
-let N = const(4)       // four
+let N = const(4)       # four
 let SPEED = tunable(2.5)
 fn width(t)
   memo(t) w = t * 8
@@ -91,8 +91,8 @@ fn check_prints_a_diff_exits_one_and_writes_nothing() {
     t.write("current.ptl", NEW);
     let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--check", "."]);
     assert_eq!(code, 1, "{out}\n{err}");
-    assert!(out.contains("-const N = 4            // four"), "{out}");
-    assert!(out.contains("+let N = const(4)       // four"), "{out}");
+    assert!(out.contains("-const N = 4            # four"), "{out}");
+    assert!(out.contains("+let N = const(4)       # four"), "{out}");
     assert!(out.contains("-export fn double(x)"), "{out}");
     assert!(out.contains("+pub fn double(x)"), "{out}");
     assert!(!out.contains("current.ptl"), "{out}");
@@ -247,17 +247,17 @@ fn every_old_form_over_a_module_and_its_importer_in_one_run() {
 export const TABLE = {
   slow: 1,
   fast: 3,
-}                         // speeds
+}                         # speeds
 export config let GRAVITY = 9.5
-pub config let JUMP = tunable(4.0, 0, 10)   // already a tunable
+pub config let JUMP = tunable(4.0, 0, 10)   # already a tunable
 export fn scale(x)
   x * 2
 end
 ";
     let main = "\
 import tune: *
-const N = 4               // four
-config let SPEED = 2.5    // px/frame
+const N = 4               # four
+config let SPEED = 2.5    # px/frame
 fn width(t)
   state(t) w = t * 8
   w
@@ -293,9 +293,9 @@ print(TABLE.fast + GRAVITY + JUMP + scale(1))
 pub let TABLE = const({
   slow: 1,
   fast: 3,
-})                        // speeds
+})                        # speeds
 pub let GRAVITY = tunable(9.5)
-pub let JUMP = tunable(4.0, 0, 10)          // already a tunable
+pub let JUMP = tunable(4.0, 0, 10)          # already a tunable
 pub fn scale(x)
   x * 2
 end
@@ -305,8 +305,8 @@ end
         t.read("main.ptl"),
         "\
 import ./tune
-let N = const(4)          // four
-let SPEED = tunable(2.5)  // px/frame
+let N = const(4)          # four
+let SPEED = tunable(2.5)  # px/frame
 fn width(t)
   memo(t) w = t * 8
   w

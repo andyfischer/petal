@@ -501,7 +501,7 @@ fn the_rule_table_says_which_rules_fix_and_which_are_opt_in() {
 #[test]
 fn an_ignore_comment_silences_a_report_only_finding() {
     let src = "\
-// petal-lint-ignore shadows-builtin -- this module's own sum, by design
+# petal-lint-ignore shadows-builtin -- this module's own sum, by design
 fn sum(xs) 0 end
 print(sum([1]))
 ";

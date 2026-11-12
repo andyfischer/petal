@@ -188,9 +188,10 @@ like a record field:
 A child element is a path step too: `/tag[n]`, `/*[n]` or `/tag`
 ([edit-paths.md](edit-paths.md)). It is set, inserted, removed and moved like a
 list element. A new child goes on its own line at its siblings' indentation
-when they each have one, and otherwise next to them on their line. The `//`
-and `{/* */}` comments and the blank lines between the tags stay where they
-are.
+when they each have one, and otherwise next to them on their line. The
+`{/* */}` (and `//`) comments and the blank lines between the tags stay where
+they are. A comment that moves into an element's children with its element
+is written as a `{/* */}` hole, since a `#` line there would be text.
 
 Setting a whole element with the same tag lines the attributes up by name and
 plans them as above. When the children are all elements, before and after,

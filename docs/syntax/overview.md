@@ -14,21 +14,33 @@ the last expression of a block or function body is its implicit result
 
 ### Comments
 
-A line comment starts with `//` and runs to the end of the line. A block
+A line comment starts with `#` and runs to the end of the line. A block
 comment is `/* … */`; it can sit inside a line or span several, and does not
 nest. Comments are ignored by the compiler and kept by `petal fmt`, which
-leaves the inside of a block comment as written.
+leaves the inside of a block comment as written. A first line that starts
+with `#!` (a shebang) is a comment like any other.
 
 ```petal
-let x = 1   // trailing comment
-// whole-line comment
+let x = 1   # trailing comment
+# whole-line comment
 let y = x /* inline */ + 2
 /* a comment
    over two lines */
 ```
 
-Inside element children, a line whose first non-blank characters are `//` or
-`/*` is a comment too; elsewhere in the children, write `{/* … */}`. See
+`//` is the deprecated line-comment marker. It still works, `petal lint`
+reports it (`old-syntax`), and `petal migrate-old-code` rewrites it to `#`
+([`hash-comments`](../CLI.md#migrate-old-code--rewrite-old-syntax)).
+
+`#` used to start a color literal (`#f80`, now `:f80`). So that
+a color nobody migrated never turns into a comment, a `#` followed directly
+by a color-shaped word (3, 4, 6 or 8 hex digits, then the end of the word) is
+an error, not a comment: put a space after the `#` (`# fff is white`). The
+error goes away once the old spelling has had time to disappear.
+
+Inside element children a line that starts with `#` is text, not a comment
+(`# of items`): write a comment there as `{/* … */}`, or as a line whose
+first non-blank characters are `/*`. See
 [JSX-like elements](#jsx-like-elements).
 
 ### Identifiers and keywords
@@ -72,7 +84,7 @@ patterns.
 | nil | `nil` | |
 | string | `"hello"`, `"line\n"`, `"2 + 2 = {2 + 2}"` (interpolation) | [String Operations](../language-guide.md#string-operations) |
 | raw string | `"""...multi-line, no escapes or interpolation..."""` | [Raw strings](../language-guide.md#raw-triple-quoted-strings) |
-| color | `:f80`, `:ff8800`, `:f80a`, `:ff8800aa` (desugar to `{r,g,b[,a]}` records). A `:` starts a color when 3, 4, 6 or 8 hex digits follow it and the token before it is not a name or a value, so `{x:100}` and `f(a:fff)` keep their separator. `#f80` is the deprecated spelling | [Color Literals](../language-guide.md#color-literals) |
+| color | `:f80`, `:ff8800`, `:f80a`, `:ff8800aa` (desugar to `{r,g,b[,a]}` records). A `:` starts a color when 3, 4, 6 or 8 hex digits follow it and the token before it is not a name or a value, so `{x:100}` and `f(a:fff)` keep their separator. `#f80` is the removed spelling (an error: `#` starts a [comment](#comments)) | [Color Literals](../language-guide.md#color-literals) |
 | list | `[1, 2, 3]` | [Lists](../language-guide.md#lists) |
 | record | `{name: "Alice", age: 30}` | [Records](../language-guide.md#records) |
 | enum variant | `Color.red`, `Color.custom(255, 0, 0)` | [Enums](../language-guide.md#enums) |
@@ -514,8 +526,9 @@ Builds a tree-shaped `element` value for a host to render. Attributes are
 `name={expr}` or `name="literal"`, a bare `name` is `name={true}`, and an open
 tag may put them on separate lines; `{expr}` embeds a child expression; text
 between tags is a string child (whitespace at line breaks collapses, as in
-React); a line starting with `//` or `/*` is a comment, and `{/* … */}` is
-one anywhere in the children; `<Tag />` self-closes. See
+React); `{/* … */}` is a comment anywhere in the children, and so is a line
+starting with `/*` (a line starting with `#` is text; one starting with `//`
+is a comment in the deprecated spelling); `<Tag />` self-closes. See
 [JSX-like Elements](../language-guide.md#jsx-like-elements).
 
 ## Types (optional annotations)

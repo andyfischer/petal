@@ -37,13 +37,62 @@
 
 use crate::source_map::SourceSpan;
 
+/// The line-comment marker.
+pub const LINE_COMMENT: &str = "#";
+/// The deprecated line-comment marker: still lexed, reported by `petal lint`
+/// (`old-syntax`) and rewritten by `petal migrate-old-code` (`hash-comments`).
+pub const OLD_LINE_COMMENT: &str = "//";
+
+/// `text` without its line-comment marker, when it starts with one (`#`, or
+/// the deprecated `//`): the comment's body, leading space included. For
+/// text that is known to be a comment (a [`TriviaKind::LineComment`]) or a
+/// whole trimmed line.
+pub fn comment_body(text: &str) -> Option<&str> {
+    text.strip_prefix(LINE_COMMENT).or_else(|| text.strip_prefix(OLD_LINE_COMMENT))
+}
+
+/// Whether `text` starts with a line-comment marker (`#` or `//`).
+pub fn starts_comment(text: &str) -> bool {
+    comment_body(text).is_some()
+}
+
+/// The part of one source `line` before its line comment, by text alone: a
+/// marker inside a string cuts the line too, so this is only for lines whose
+/// code holds no string (an `import`).
+pub fn before_comment(line: &str) -> &str {
+    let at = [line.find(LINE_COMMENT), line.find(OLD_LINE_COMMENT)]
+        .into_iter()
+        .flatten()
+        .min();
+    &line[..at.unwrap_or(line.len())]
+}
+
+/// Whether the Petal source `text` holds a comment, or might: true when it
+/// does not lex on its own. For a rewrite that re-renders `text` and would
+/// drop a comment inside it.
+pub fn may_hold_comment(text: &str) -> bool {
+    if !(text.contains(LINE_COMMENT) || text.contains(OLD_LINE_COMMENT) || text.contains("/*")) {
+        return false;
+    }
+    let mut lexer = crate::lexer::Lexer::new(text);
+    if lexer.tokenize().is_err() {
+        return true;
+    }
+    lexer
+        .token_leading_trivia
+        .iter()
+        .flatten()
+        .any(|t| t.kind != TriviaKind::Whitespace)
+}
+
 /// The classification of one run of trivia characters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TriviaKind {
     /// Spaces, tabs, and non-significant newlines (those consumed inside
     /// interpolation / JSX holes without emitting a `Newline` token).
     Whitespace,
-    /// A `//` line comment. `text` excludes the terminating newline, which is
+    /// A `#` line comment (or one in the deprecated `//` spelling). `text`
+    /// starts at the marker and excludes the terminating newline, which is
     /// lexed as a significant `Newline` token, not trivia.
     LineComment,
     /// A `/* … */` block comment, delimiters included. It may span lines; the
@@ -134,7 +183,7 @@ fn classify(gap: &[char], start_offset: u32) -> Vec<Trivia> {
                 i += 1;
             }
             TriviaKind::Whitespace
-        } else if ch == '/' && gap.get(i + 1) == Some(&'/') {
+        } else if ch == '#' || (ch == '/' && gap.get(i + 1) == Some(&'/')) {
             while i < gap.len() && gap[i] != '\n' {
                 i += 1;
             }
@@ -149,6 +198,7 @@ fn classify(gap: &[char], start_offset: u32) -> Vec<Trivia> {
         } else {
             while i < gap.len()
                 && !is_ws(gap[i])
+                && gap[i] != '#'
                 && !(gap[i] == '/' && matches!(gap.get(i + 1), Some(&'/') | Some(&'*')))
             {
                 i += 1;

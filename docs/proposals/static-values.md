@@ -407,10 +407,10 @@ and has not been run.
 
 ```petal
 let LANES = [
-  {name: "BACKLOG",     color: #6c7a90, limit: 0},
-  {name: "IN PROGRESS", color: #5b9dff, limit: 3},
-  {name: "REVIEW",      color: #d9a441, limit: 2},
-  {name: "SHIPPED",     color: #3fae7a, limit: 0},
+  {name: "BACKLOG",     color: :6c7a90, limit: 0},
+  {name: "IN PROGRESS", color: :5b9dff, limit: 3},
+  {name: "REVIEW",      color: :d9a441, limit: 2},
+  {name: "SHIPPED",     color: :3fae7a, limit: 0},
 ]
 ```
 

@@ -1051,7 +1051,7 @@ fn leading_comment(chars: &[char], offset: usize) -> Option<String> {
         let prev_start = line_start_at(chars, prev_end);
         let line: String = chars[prev_start..prev_end].iter().collect();
         let trimmed = line.trim();
-        let Some(body) = trimmed.strip_prefix("//") else {
+        let Some(body) = crate::trivia::comment_body(trimmed) else {
             break;
         };
         lines.push(body.strip_prefix(' ').unwrap_or(body).to_string());
@@ -1677,6 +1677,16 @@ let drag = 0.02
             binding(src, "drag").comment.as_deref(),
             Some("How much the hull drags.\n0.0 to 1.0")
         );
+    }
+
+    #[test]
+    fn static_bindings_reads_a_hash_comment_above_a_binding() {
+        let src = "# How much the hull drags.\n#\n# 0.0 to 1.0\nlet drag = 0.02 # per frame\n# gap\n\nlet lift = 1\n";
+        assert_eq!(
+            binding(src, "drag").comment.as_deref(),
+            Some("How much the hull drags.\n\n0.0 to 1.0")
+        );
+        assert_eq!(binding(src, "lift").comment, None);
     }
 
     #[test]

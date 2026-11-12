@@ -322,11 +322,11 @@ pub fn skip_annotations(chars: &[char], at: usize) -> usize {
     i.min(chars.len())
 }
 
-/// Past the `//` or `/* … */` comment at `i`, when one starts there (a `//`
+/// Past the `#` (or `//`) or `/* … */` comment at `i`, when one starts there (a `//`
 /// comment stops before its line break).
 fn skip_comment(chars: &[char], mut i: usize) -> Option<usize> {
     match (chars.get(i), chars.get(i + 1)) {
-        (Some('/'), Some('/')) => {
+        (Some('/'), Some('/')) | (Some('#'), _) => {
             while chars.get(i).is_some_and(|c| *c != '\n') {
                 i += 1;
             }

@@ -338,7 +338,7 @@ impl Server {
             .and_then(|q| doc.analysis.qualifier(&q));
         if let Some(module) = qualified {
             let value = match module.export(&ident) {
-                Some(found) => format!("{}\n// from module {}", describe(&found.def), module.module),
+                Some(found) => format!("{}\n# from module {}", describe(&found.def), module.module),
                 None => return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))],
             };
             let hover = Hover {
@@ -358,7 +358,7 @@ impl Server {
             // A top-level declaration also says what the static-value
             // classifier makes of it.
             let value = match self.documents.static_note(&p.text_document.uri, def) {
-                Some(note) => format!("{}\n// {note}", describe(def)),
+                Some(note) => format!("{}\n# {note}", describe(def)),
                 None => describe(def),
             };
             let hover = Hover {
@@ -390,7 +390,7 @@ impl Server {
             let hover = Hover {
                 contents: MarkupContent {
                     kind: "markdown".to_string(),
-                    value: format!("```petal\n{}\n// from module {from}\n```", describe(&found.def)),
+                    value: format!("```petal\n{}\n# from module {from}\n```", describe(&found.def)),
                 },
                 range: None,
             };

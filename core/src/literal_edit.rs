@@ -747,19 +747,34 @@ impl What {
     /// The comments that go with a moved text, as whole lines at `indent`:
     /// its leading comment lines, then the comment that trailed it (which
     /// cannot trail an element's tag: there it would be text).
+    ///
+    /// `with_tail` is the element-children case, where a line that starts
+    /// with `#` is text: the trailing note gets its own line there as a
+    /// `{/* … */}` hole.
     fn comment_lines(&self, indent: &str, with_tail: bool) -> String {
         let What::Text { tail, lead, .. } = self else {
             return String::new();
         };
         let mut out = String::new();
         for line in lead.lines() {
+            let line = line.trim();
+            let hole = line.starts_with("{/*") && line.ends_with("*/}");
             out.push_str(indent);
-            out.push_str(line.trim());
+            if with_tail && line.starts_with('#') {
+                // A comment that led a list element: a hole among children.
+                out.push_str(&format!("{{/* {} */}}", comment_text(line)));
+            } else if !with_tail && hole {
+                // A comment that led a child element: outside children the
+                // hole would be an empty record.
+                out.push_str(&format!("# {}", comment_text(line)));
+            } else {
+                out.push_str(line);
+            }
             out.push('\n');
         }
         if with_tail && !tail.trim().is_empty() {
             out.push_str(indent);
-            out.push_str(tail.trim());
+            out.push_str(&format!("{{/* {} */}}", comment_text(tail)));
             out.push('\n');
         }
         out
@@ -777,7 +792,7 @@ impl What {
             .map(str::trim)
             .filter(|line| !line.is_empty())
             .map(|line| {
-                let body = line.strip_prefix("//").unwrap_or(line).trim().replace("*/", "* /");
+                let body = comment_text(line);
                 if hole {
                     format!("{{/* {body} */}} ")
                 } else {
@@ -786,6 +801,26 @@ impl What {
             })
             .collect()
     }
+}
+
+/// The text of a comment line, for writing it as a `/* … */` comment: `line`
+/// without its marker (`#`, the deprecated `//`, or the `{/* … */}` hole a
+/// comment line of element children is written as).
+fn comment_text(line: &str) -> String {
+    let line = line.trim();
+    let body = line
+        .strip_prefix("{/*")
+        .and_then(|rest| rest.strip_suffix("*/}"))
+        .or_else(|| crate::trivia::comment_body(line))
+        .unwrap_or(line);
+    body.trim().replace("*/", "* /")
+}
+
+/// Whether `line` of element children is a comment line: the `{/* … */}`
+/// hole, or the deprecated `//` line. (A `#` line there is text.)
+fn is_child_comment_line(line: &str) -> bool {
+    let line = line.trim();
+    line.starts_with("//") || (line.starts_with("{/*") && line.ends_with("*/}"))
 }
 
 /// `text`, which started on a line indented by `from`, re-indented for a line
@@ -1164,7 +1199,7 @@ impl Doc {
         }
         let rest = &self.chars[after..];
         before.iter().all(|&c| is_blank(c))
-            && (rest.is_empty() || rest[0] == '\n' || rest.starts_with(&['/', '/']))
+            && (rest.is_empty() || rest[0] == '\n' || rest[0] == '#' || rest.starts_with(&['/', '/']))
     }
 
     /// What trails `item` on its line when it has the line to itself: the
@@ -1723,7 +1758,7 @@ impl Doc {
                             let item = &items[i];
                             let line = self.line_start(item.start);
                             let lead = if self.child_own_line(item) {
-                                self.text(self.lead_start(item.start), line)
+                                self.text(self.lead_start(item.start, true), line)
                             } else {
                                 String::new()
                             };
@@ -1798,18 +1833,18 @@ impl Doc {
     }
 
     /// Whether a child element has its line(s) to itself: nothing before it
-    /// on its line, and after it nothing, or a `//` note. (Such a note is
-    /// text, not a comment, but it is written as one about this element: it
-    /// goes where the element goes.)
+    /// on its line, and after it nothing, or a `#` (or `//`) note. (Such a
+    /// note is text, not a comment, but it is written as one about this
+    /// element: it goes where the element goes.)
     fn child_own_line(&self, item: &Item) -> bool {
         self.starts_line(item.start) && {
             let rest = self.text(item.end, self.line_end_after(item.end));
             let rest = rest.trim();
-            rest.is_empty() || rest.starts_with("//")
+            rest.is_empty() || crate::trivia::starts_comment(rest)
         }
     }
 
-    /// The `//` note after a child element on its line, if it has the line
+    /// The `#` (or `//`) note after a child element on its line, if it has the line
     /// otherwise to itself.
     fn child_tail(&self, item: &Item) -> String {
         if !self.child_own_line(item) {
@@ -1820,14 +1855,22 @@ impl Doc {
             .to_string()
     }
 
-    /// Where the `//` comment lines directly above the line `at` is on
-    /// start (no blank line between): the start of that line when there are
-    /// none.
-    fn lead_start(&self, at: usize) -> usize {
+    /// Where the comment lines directly above the line `at` is on start (no
+    /// blank line between): the start of that line when there are none.
+    /// `children` when the line is one of element children, where a comment
+    /// line is a `{/* … */}` hole (or the deprecated `//`) and a `#` line is
+    /// text.
+    fn lead_start(&self, at: usize, children: bool) -> usize {
         let mut start = self.line_start(at);
         while start > 0 {
             let above = self.line_start(start - 1);
-            if !self.text(above, start).trim_start().starts_with("//") {
+            let line = self.text(above, start);
+            let comment = if children {
+                is_child_comment_line(&line)
+            } else {
+                crate::trivia::starts_comment(line.trim_start())
+            };
+            if !comment {
                 break;
             }
             start = above;
@@ -1949,10 +1992,7 @@ impl Doc {
                 in_block = !line.contains("*/");
             } else if line.starts_with("/*") {
                 in_block = !line.contains("*/");
-            } else if !line.is_empty()
-                && !line.starts_with("//")
-                && !(line.starts_with("{/*") && line.ends_with("*/}"))
-            {
+            } else if !line.is_empty() && !is_child_comment_line(line) {
                 at = end;
             }
             pos = end;
@@ -1983,7 +2023,7 @@ impl Doc {
         };
         if self.child_own_line(item) {
             let start = if lead {
-                self.lead_start(item.start)
+                self.lead_start(item.start, true)
             } else {
                 self.line_start(item.start)
             };
@@ -2333,7 +2373,7 @@ impl Doc {
                     tail: self.tail(item),
                     indent: self.line_indent(item.start),
                     lead: if self.own_line(item) {
-                        self.text(self.lead_start(item.start), self.line_start(item.start))
+                        self.text(self.lead_start(item.start, false), self.line_start(item.start))
                     } else {
                         String::new()
                     },
@@ -2594,7 +2634,7 @@ impl Doc {
 
         if self.own_line(item) {
             let start = if lead {
-                self.lead_start(item.start)
+                self.lead_start(item.start, false)
             } else {
                 self.line_start(item.start)
             };

@@ -1092,7 +1092,7 @@ One rule is off unless you name it: `petal lint
 --rules-include=state-as-constant` reports a top-level `state` that nothing
 assigns and whose initializer is constant, and with `--fix` rewrites it to
 `let NAME = const(…)`. That is right for a table and wrong for a cell your host writes by
-name; put `// petal-lint-ignore state-as-constant` on such a line. See
+name; put `# petal-lint-ignore state-as-constant` on such a line. See
 [`fmt`](CLI.md#fmt--canonical-layout) and [`lint`](CLI.md#rules).
 
 ### `petal suggest` — safe refactors, on request

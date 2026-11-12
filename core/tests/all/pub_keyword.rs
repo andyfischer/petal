@@ -266,8 +266,8 @@ fn migrate_does_not_touch_export_used_as_a_name() {
     assert!(out.findings.is_empty(), "{:?}", out.findings);
     assert_eq!(out.output, src);
     assert_eq!(
-        migrate("export let r = {export: 1}\nprint(r.export) // export this\n").output,
-        "pub let r = {export: 1}\nprint(r.export) // export this\n"
+        migrate("export let r = {export: 1}\nprint(r.export) # export this\n").output,
+        "pub let r = {export: 1}\nprint(r.export) # export this\n"
     );
     assert_eq!(migrate("let s = \"export fn f\"\n").output, "let s = \"export fn f\"\n");
 }
@@ -283,7 +283,7 @@ export let b = 2
     assert_eq!(out.count(EXPORT_TO_PUB), 1, "only the un-ignored one");
     assert_eq!(
         out.output,
-        "// petal-lint-ignore export-to-pub -- kept for the old toolchain\nexport let a = 1\npub let b = 2\n"
+        "# petal-lint-ignore export-to-pub -- kept for the old toolchain\nexport let a = 1\npub let b = 2\n"
     );
     // `--only` another migration leaves it alone.
     let only = migrate_source(
@@ -309,24 +309,24 @@ fn trailing_comments_stay_lined_up_after_the_keyword_shrinks() {
     // `export` → `pub` pulls each line three columns left; a comment column
     // shared with a line that did not move is still shared afterwards.
     let mixed = "\
-export let black = 15   // $0F
-let other_name = 0      // $00
+export let black = 15   # $0F
+let other_name = 0      # $00
 ";
     let out = migrate(mixed).output;
-    let cols: Vec<usize> = out.lines().map(|l| l.find("//").unwrap()).collect();
+    let cols: Vec<usize> = out.lines().map(|l| l.find('#').unwrap()).collect();
     assert_eq!(cols[0], cols[1], "{out}");
     assert!(out.starts_with("pub let black = 15"), "{out}");
     // Every line of the group is rewritten: the table shifts left as one.
     let all = "\
-export let black = 15   // $0F
-export let white = 48   // $30
+export let black = 15   # $0F
+export let white = 48   # $30
 ";
     assert_eq!(
         migrate(all).output,
-        "pub let black = 15   // $0F\npub let white = 48   // $30\n"
+        "pub let black = 15   # $0F\npub let white = 48   # $30\n"
     );
     // A lone trailing comment has nothing to stay lined up with.
-    assert_eq!(migrate("export let a = 1 // one\n").output, "pub let a = 1 // one\n");
+    assert_eq!(migrate("export let a = 1 # one\n").output, "pub let a = 1 # one\n");
 }
 
 // ── `petal lint` reports it and leaves it ────────────────────────
@@ -348,7 +348,7 @@ fn lint_reports_the_old_spelling_and_does_not_fix_it() {
     assert!(out.output.contains("n += 1"), "{}", out.output);
     // Silenced under either name.
     for rule in [OLD_SYNTAX, EXPORT_TO_PUB] {
-        let quiet = lint(&format!("// petal-lint-ignore {rule}\n{src}"));
+        let quiet = lint(&format!("# petal-lint-ignore {rule}\n{src}"));
         assert_eq!(quiet.count(OLD_SYNTAX), 0, "{rule}");
     }
     let excluded = lint_source(

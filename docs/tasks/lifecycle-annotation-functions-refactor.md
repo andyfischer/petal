@@ -156,14 +156,14 @@ const(value) -> value
 pub const ART = "../trailkeeper/art"
 const COSTS = map(TILES, fn(t) -> t.cost)
 const PALETTE = [
-  #101418, #ff2e88,
+  :101418, :ff2e88,
 ]
 
 // after
 pub let ART = "../trailkeeper/art"          // a literal: `const` added nothing (lint, below)
 let COSTS = const(map(TILES, fn(t) -> t.cost))
 let PALETTE = const([
-  #101418, #ff2e88,
+  :101418, :ff2e88,
 ])
 ```
 

@@ -345,7 +345,7 @@ impl Finder<'_> {
         let start = stmt.span.start.offset as usize;
         let end = stmt.span.end.offset as usize;
         let whole = self.text(start, end)?;
-        if !whole.starts_with("for") || !whole.ends_with("end") || whole.contains("//") {
+        if !whole.starts_with("for") || !whole.ends_with("end") || crate::trivia::may_hold_comment(&whole) {
             return None;
         }
         Some(Fix {

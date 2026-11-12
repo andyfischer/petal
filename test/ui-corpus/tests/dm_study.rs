@@ -230,7 +230,9 @@ fn parse_example(file: &Path, root: &Path) -> Result<Example, String> {
         goals: Vec::new(),
     };
     for line in source.lines() {
-        let Some(c) = line.trim().strip_prefix("//") else { continue };
+        // A comment line, in either marker (`#`, or the deprecated `//`).
+        let line = line.trim();
+        let Some(c) = line.strip_prefix('#').or_else(|| line.strip_prefix("//")) else { continue };
         let c = c.trim();
         if let Some(r) = c.strip_prefix("dm-goal ") {
             ex.goals.push(parse_goal(r).map_err(|e| format!("{}: {e}", file.display()))?);
@@ -394,7 +396,7 @@ fn metrics(ui: &Headless, ex: &Example, emits: usize) -> Metrics {
         m.files += 1;
         for line in f.source.lines() {
             let t = line.trim_start();
-            if t.is_empty() || t.starts_with("//") {
+            if t.is_empty() || t.starts_with('#') || t.starts_with("//") {
                 continue;
             }
             m.lines += 1;
@@ -421,6 +423,7 @@ fn metrics(ui: &Headless, ex: &Example, emits: usize) -> Metrics {
                     v.trim()
                         .strip_prefix("tunable(")
                         .and_then(|a| a.split("//").next())
+                        .and_then(|a| a.split('#').next())
                         .is_some_and(|a| a.trim_end().ends_with(')') && !a.contains(','))
                 });
             if starts("config let ") || plain_setting {
@@ -1158,10 +1161,14 @@ fn extra_examples(dir: &Path) -> Vec<Example> {
     out
 }
 
-/// The `// headless-size: WxH` of an app's `layout.ptl`, if it has one.
+/// The `# headless-size: WxH` of an app's `layout.ptl`, if it has one.
 fn headless_size(dir: &Path) -> Option<(i32, i32)> {
     let text = std::fs::read_to_string(dir.join("layout.ptl")).ok()?;
-    let line = text.lines().find_map(|l| l.trim().strip_prefix("// headless-size:"))?;
+    let line = text.lines().find_map(|l| {
+        let l = l.trim();
+        let body = l.strip_prefix('#').or_else(|| l.strip_prefix("//"))?;
+        body.trim_start().strip_prefix("headless-size:")
+    })?;
     let (w, h) = line.trim().split_once('x')?;
     Some((w.parse().ok()?, h.parse().ok()?))
 }

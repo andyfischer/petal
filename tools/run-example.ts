@@ -65,7 +65,7 @@ function resolveExample(name: string): string {
 
 function headlessSize(exampleDir: string): string {
     const layout = readFileSync(join(exampleDir, 'layout.ptl'), 'utf8');
-    return /^\/\/\s*headless-size:\s*(\d+x\d+)\s*$/m.exec(layout)?.[1] ?? DEFAULT_HEADLESS_SIZE;
+    return /^(?:#|\/\/)\s*headless-size:\s*(\d+x\d+)\s*$/m.exec(layout)?.[1] ?? DEFAULT_HEADLESS_SIZE;
 }
 
 function git(args: string[]): string | null {

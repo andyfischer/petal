@@ -291,14 +291,12 @@ impl ImportFixer {
                 )]);
             }
         };
-        // `// petal-fix-imports-ignore` on a line of its own: the file names
+        // `# petal-fix-imports-ignore` on a line of its own: the file names
         // things no package is meant to provide (a shader's environment, a
         // host this tool cannot see), so a package that happens to export
         // one of them is not what it meant.
         if source.lines().any(|line| {
-            line.trim()
-                .strip_prefix("//")
-                .is_some_and(|rest| rest.trim() == IGNORE_FILE)
+            crate::trivia::comment_body(line.trim()).is_some_and(|rest| rest.trim() == IGNORE_FILE)
         }) {
             return unchanged(Vec::new());
         }
@@ -841,7 +839,7 @@ fn insert_import_lines(source: &str, lines: &[String]) -> String {
         Some(line) => (line.min(src_lines.len()), false),
         None => {
             let mut i = 0;
-            while i < src_lines.len() && src_lines[i].trim_start().starts_with("//") {
+            while i < src_lines.len() && crate::trivia::starts_comment(src_lines[i].trim_start()) {
                 i += 1;
             }
             if i > 0 && i < src_lines.len() && src_lines[i].trim().is_empty() {
@@ -1208,17 +1206,21 @@ mod tests {
                 .source,
             "import parts/gear\nimport kit\nprint(knob(teeth()))\n"
         );
-        assert_eq!(
-            fixer
-                .add_missing_imports("// A header.\n// More.\n\nprint(knob(1))\n", None)
-                .source,
-            "// A header.\n// More.\n\nimport kit\n\nprint(knob(1))\n"
-        );
-        // A comment that sits on the first statement stays on it.
-        assert_eq!(
-            fixer.add_missing_imports("// about x\nlet x = knob(1)\n", None).source,
-            "import kit\n\n// about x\nlet x = knob(1)\n"
-        );
+        for m in ["#", "//"] {
+            assert_eq!(
+                fixer
+                    .add_missing_imports(&format!("{m} A header.\n{m} More.\n\nprint(knob(1))\n"), None)
+                    .source,
+                format!("{m} A header.\n{m} More.\n\nimport kit\n\nprint(knob(1))\n")
+            );
+            // A comment that sits on the first statement stays on it.
+            assert_eq!(
+                fixer
+                    .add_missing_imports(&format!("{m} about x\nlet x = knob(1)\n"), None)
+                    .source,
+                format!("import kit\n\n{m} about x\nlet x = knob(1)\n")
+            );
+        }
     }
 
     #[test]
@@ -1273,10 +1275,12 @@ mod tests {
     fn the_ignore_comment_keeps_added_imports_out_of_a_file() {
         let mut fixer = ImportFixer::new(&[]);
         // `clear` is exported by `ui`, but this file says not to guess.
-        let src = "// petal-fix-imports-ignore\nlet f = fn() clear(0, 0, 0) end\n";
-        let fixed = fixer.fix(src, None).unwrap();
-        assert_eq!(fixed.source, src);
-        assert!(fixed.changes.is_empty(), "{:?}", fixed.changes);
+        for marker in ["#", "//"] {
+            let src = format!("{marker} petal-fix-imports-ignore\nlet f = fn() clear(0, 0, 0) end\n");
+            let fixed = fixer.fix(&src, None).unwrap();
+            assert_eq!(fixed.source, src);
+            assert!(fixed.changes.is_empty(), "{:?}", fixed.changes);
+        }
         // Without the comment the import is added.
         let fixed = fixer.fix("let f = fn() clear(0, 0, 0) end\n", None).unwrap();
         assert!(fixed.source.starts_with("import ui\n"), "{}", fixed.source);

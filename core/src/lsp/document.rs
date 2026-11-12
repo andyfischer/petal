@@ -833,7 +833,7 @@ fn import_header(source: &str) -> String {
     let mut out = String::new();
     let mut continues = false;
     for line in source.lines() {
-        let code = line.split("//").next().unwrap_or("").trim();
+        let code = crate::trivia::before_comment(line).trim();
         let is_import = ["import ", "pub import ", "export import "]
             .iter()
             .any(|kw| code.starts_with(kw));
@@ -1396,6 +1396,7 @@ fn is_code_at(source: &str, line: u32, col: usize) -> bool {
             '\\' if in_string => i += 1,
             '"' => in_string = !in_string,
             '/' if !in_string && chars.get(i + 1) == Some(&'/') => return false,
+            '#' if !in_string => return false,
             _ => {}
         }
         i += 1;

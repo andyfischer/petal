@@ -313,11 +313,23 @@ colours, colours move to `:`.
    "colour literals are now written `:f80`; run `petal migrate-old-code`
    [colour-literals]". The migration rewrites each colour *token*, so `"#…"`
    strings and `"""…"""` GLSL are never touched.
-2. **P1b.** `#` becomes a comment. While the old form is being removed, a `#`
-   followed directly by a colour-shaped hex word is an **error**, not a comment:
-   "`#f80` is no longer a colour literal; write `:f80` (or `# f80` for a
-   comment)". Comments that start `# ` or `#` + a non-hex word are fine. `//` is
-   deprecated, and the `hash-comments` migration rewrites it.
+2. **P1b (done 2026-11-12).** `#` becomes a comment. While the old form is
+   being removed, a `#` followed directly by a colour-shaped hex word is an
+   **error**, not a comment: "`#f80` is no longer a colour literal; write `:f80`
+   (or `# f80` for a comment)". Comments that start `# ` or `#` + a non-hex word
+   are fine. `//` is deprecated, and the `hash-comments` migration rewrites it.
+   As implemented:
+   - "Colour-shaped" is 3, 4, 6 or 8 hex digits and then a character that
+     cannot continue an identifier, so `#fade in` is the error and `#fade_in`
+     is a comment.
+   - `petal migrate-old-code` reads old source with the lexer's legacy mode
+     (`Lexer::legacy`), in which that shape is a colour token and every other
+     `#` is a comment. `colour-literals` and `hash-comments` run first, on
+     that lexer, so a fully unmigrated project migrates in one run.
+   - `hash-comments` turns a run of `n` slashes into `n - 1` hashes
+     (`/// doc` → `## doc`) and reports once per file, not once per comment.
+   - `#` is a comment wherever code is lexed, including a JSX open tag and a
+     multi-line `{…}` hole.
 3. **P6.** Once the vendored projects (cheesecake, worlds-fair) have migrated,
    the error is dropped and `#` is unconditionally a comment.
 
@@ -353,6 +365,9 @@ Today a children line starting with `//` or `/*` is a comment
   "# of items" is plausible.
 - Deprecate the line-start `//` in children. The migration rewrites it to
   `{/* … */}` (`literal_edit.rs:780-784` already does this for one comment).
+  As implemented: a `//` line between two lines of text is what joins them
+  into one text child, and a hole there would make them two, so that one site
+  is listed for a hand edit. No corpus file in this repo has one.
 
 ### 3.5 Strings, embedded snippets and the base indent
 

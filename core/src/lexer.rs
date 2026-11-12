@@ -99,8 +99,9 @@ pub enum Token {
     JsxCloseStart,      // `</`
     JsxText(String),    // text content between tags
 
-    // Color literal (:rgb, :rgba, :rrggbb, :rrggbbaa; `#rgb` is the deprecated
-    // spelling). The payload is the hex digits, without the sigil.
+    // Color literal (:rgb, :rgba, :rrggbb, :rrggbbaa; `#rgb` is the removed
+    // spelling, read only by `Lexer::legacy`). The payload is the hex digits,
+    // without the sigil.
     Color(String),
 
     // Special
@@ -355,6 +356,28 @@ pub fn can_end_operand(tok: &Token) -> bool {
     )
 }
 
+/// The length of the color-shaped hex word `after` (the text after a sigil)
+/// starts with: 3, 4, 6 or 8 hex digits and then a character that cannot
+/// continue an identifier. `f80)` is 3; `fade_in`, `abcx`, `f80?` and `12345`
+/// are `None`: the word goes on, or is not a color's length.
+///
+/// After `:` this is a color literal (given the token rule of
+/// [`Lexer::colon_color_len`]); after `#` it is the removed spelling, which
+/// is an error rather than a comment (`Lexer::read_hash`).
+pub fn hash_color_len(after: &[char]) -> Option<usize> {
+    let digits = after.iter().take_while(|c| c.is_ascii_hexdigit()).count();
+    if !matches!(digits, 3 | 4 | 6 | 8) {
+        return None;
+    }
+    if after
+        .get(digits)
+        .is_some_and(|c| c.is_alphanumeric() || *c == '_' || *c == '?')
+    {
+        return None;
+    }
+    Some(digits)
+}
+
 /// Lexer mode for JSX disambiguation.
 #[derive(Debug, Clone, PartialEq)]
 enum LexerMode {
@@ -395,9 +418,17 @@ pub struct Lexer {
     /// hole): no token before it belongs to the hole's expression, so a `:`
     /// there can start a color literal. See [`Lexer::colon_color_len`].
     expr_start: usize,
-    /// Every color literal written in the deprecated `#f80` spelling, in
-    /// source order.
+    /// Every color literal written in the removed `#f80` spelling, in
+    /// source order. Only [`Lexer::legacy`] reads one; the language's own
+    /// lexer rejects it.
     pub legacy_colors: Vec<LegacyColor>,
+    /// Read `#f80` as a color literal, the way source written before `#`
+    /// became the comment marker has it ([`Lexer::legacy`]).
+    legacy_hash_colors: bool,
+    /// The offset of every `//` comment that starts a line of element
+    /// children, in source order: the deprecated form `petal migrate-old-code`
+    /// rewrites to `{/* … */}` (`hash-comments`).
+    pub jsx_line_comments: Vec<u32>,
 }
 
 /// A color literal written `#f80` (now `:f80`): what the `colour-literals`
@@ -467,7 +498,20 @@ impl Lexer {
             keep_trivia: true,
             expr_start: 0,
             legacy_colors: Vec::new(),
+            legacy_hash_colors: false,
+            jsx_line_comments: Vec::new(),
         }
+    }
+
+    /// Lex source that may predate `#` comments: a `#` followed directly by
+    /// a color-shaped hex word ([`hash_color_len`]) is a [`Token::Color`]
+    /// recorded in [`Lexer::legacy_colors`], where the language's own lexer
+    /// reports an error. Every other `#` is a comment in both, so migrated
+    /// source lexes the same either way. For `petal migrate-old-code` only
+    /// (`crate::migrate::colour_literals::legacy_lex`).
+    pub fn legacy(mut self) -> Self {
+        self.legacy_hash_colors = true;
+        self
     }
 
     /// Leave `token_leading_trivia` empty: for a caller that reads only the
@@ -576,7 +620,8 @@ impl Lexer {
 
             let ch = self.input[self.pos];
 
-            // Skip comments
+            // Skip comments (`#` is handled in `tokenize_one`, so that it is
+            // a comment inside a multi-line `{…}` hole too).
             if ch == '/' && self.peek_next() == Some('/') {
                 self.skip_line_comment();
                 continue;
@@ -879,7 +924,7 @@ impl Lexer {
             '\\' if self.interp_depth > 0 && self.peek_next() == Some('"') => {
                 self.read_string_inner(true)?
             }
-            '#' => self.read_color()?,
+            '#' => self.read_hash()?,
             c if c.is_ascii_digit() => self.read_number()?,
             c if c.is_alphabetic() || c == '_' => self.read_identifier(),
             ';' => {
@@ -921,6 +966,8 @@ impl Lexer {
         }
     }
 
+    /// Skip a line comment (`# …`, or the deprecated `// …`), the cursor on
+    /// its marker: up to, not including, the line break.
     fn skip_line_comment(&mut self) {
         while self.pos < self.input.len() && self.input[self.pos] != '\n' {
             self.advance_char();
@@ -929,7 +976,7 @@ impl Lexer {
 
     /// Skip a `/* … */` comment, the cursor on its `/`. Block comments do not
     /// nest (as in JS and C), and the line breaks inside one are not
-    /// significant: the comment as a whole is trivia, like a `//` comment
+    /// significant: the comment as a whole is trivia, like a `#` comment
     /// without its newline.
     fn skip_block_comment(&mut self) -> Result<(), String> {
         let (line, col) = (self.line, self.col);
@@ -948,7 +995,8 @@ impl Lexer {
     }
 
     /// Whether the cursor is the first non-blank character on its line. In
-    /// element children a `//` or `/*` there starts a comment rather than text.
+    /// element children a `/*` (or the deprecated `//`) there starts a comment
+    /// rather than text.
     fn at_line_start(&self) -> bool {
         self.input[..self.pos]
             .iter()
@@ -1201,21 +1249,8 @@ impl Lexer {
     /// `f(:f80)`, `= :fff` and `when :fff ->` are colors. The rule reads
     /// tokens, never whitespace (docs/tasks/pythonic-syntax.md, B16).
     fn colon_color_len(&self) -> Option<usize> {
-        let digits = self.input[self.pos + 1..]
-            .iter()
-            .take_while(|c| c.is_ascii_hexdigit())
-            .count();
-        if !matches!(digits, 3 | 4 | 6 | 8) {
-            return None;
-        }
         // `:fade_in`, `:abcx`, `:f80?` are not colors: the word goes on.
-        if self
-            .input
-            .get(self.pos + 1 + digits)
-            .is_some_and(|c| c.is_alphanumeric() || *c == '_' || *c == '?')
-        {
-            return None;
-        }
+        let digits = hash_color_len(&self.input[self.pos + 1..])?;
         if !self.at_value_start() {
             return None;
         }
@@ -1228,30 +1263,38 @@ impl Lexer {
         self.tokens.len() <= self.expr_start || !self.tokens.last().is_some_and(can_end_operand)
     }
 
-    /// The deprecated `#f80` spelling of a color literal (`:f80`). The compiler
-    /// warns about it (`crate::migrate::colour_literals`).
-    fn read_color(&mut self) -> Result<(), String> {
+    /// A `#`: a line comment, which runs to the end of the line (`#!` on the
+    /// first line, a shebang, is one too).
+    ///
+    /// Transitional: `#f80` was the color literal until 2026-11-12, so a `#`
+    /// followed directly by a color-shaped hex word ([`hash_color_len`]) is
+    /// an error rather than a comment: an unmigrated `a ?? #fff` must not
+    /// turn into `a ??` and a comment (docs/tasks/pythonic-syntax.md §3.3).
+    /// [`Lexer::legacy`] reads it as the color it was, for the migration.
+    fn read_hash(&mut self) -> Result<(), String> {
+        let Some(digits) = hash_color_len(&self.input[self.pos + 1..]) else {
+            self.skip_line_comment();
+            return Ok(());
+        };
         let start = self.current_pos();
-        self.advance_char();
-        let hex_start = self.pos;
-        while self.pos < self.input.len() && self.input[self.pos].is_ascii_hexdigit() {
-            self.advance_char();
+        let hex: String = self.input[self.pos + 1..self.pos + 1 + digits].iter().collect();
+        if !self.legacy_hash_colors {
+            return Err(format!(
+                "`#{hex}` is no longer a color literal; write `:{hex}` (or `# {hex}` for a \
+                 comment); {} [{}] [line {}, column {}]",
+                crate::migrate::RUN_HINT,
+                crate::migrate::COLOUR_LITERALS,
+                start.line,
+                start.column
+            ));
         }
-        let hex: String = self.input[hex_start..self.pos].iter().collect();
-        match hex.len() {
-            3 | 4 | 6 | 8 => {
-                self.legacy_colors.push(LegacyColor {
-                    token: self.tokens.len(),
-                    respellable: self.at_value_start(),
-                });
-                self.push_token(Token::Color(hex), start);
-                Ok(())
-            }
-            _ => Err(format!(
-                "Invalid color literal: #{} (expected 3, 4, 6, or 8 hex digits) [line {}, column {}]",
-                hex, start.line, start.column
-            )),
-        }
+        self.legacy_colors.push(LegacyColor {
+            token: self.tokens.len(),
+            respellable: self.at_value_start(),
+        });
+        self.advance_n(1 + digits);
+        self.push_token(Token::Color(hex), start);
+        Ok(())
     }
 
     /// Tokenize an expression inside braces (already past the opening `{`).
@@ -1411,8 +1454,12 @@ impl Lexer {
                     // Text that really starts that way is written `{"//"}`.
                     // The comment is trivia between two text runs; the parser
                     // joins the runs back up (see `parse_jsx_element`).
+                    // A `#` line is not a comment here ("# of items" is
+                    // text), and the `//` form is deprecated for
+                    // `{/* … */}` (`petal migrate-old-code`, hash-comments).
                     self.flush_jsx_text(&mut text, run_start);
                     if self.peek_next() == Some('/') {
+                        self.jsx_line_comments.push(self.pos as u32);
                         self.skip_line_comment();
                     } else {
                         self.skip_block_comment()?;
@@ -2085,12 +2132,114 @@ mod tests {
     }
 
     #[test]
-    fn both_color_spellings_are_the_same_token_and_span_width() {
-        assert_eq!(tokenize("let c = :F80a"), tokenize("let c = #F80a"));
+    fn the_legacy_lexer_reads_both_color_spellings_as_the_same_token() {
+        let mut legacy = Lexer::new("let c = #F80a").legacy();
+        let mut both = tokenize("let c = :F80a");
+        both.push(Token::Eof);
+        assert_eq!(both, legacy.tokenize().unwrap().to_vec());
+        assert_eq!(legacy.legacy_colors.len(), 1);
         let mut lexer = Lexer::new("x = :ff8800");
         lexer.tokenize().unwrap();
         let span = lexer.token_spans[2];
         assert_eq!((span.start.column, span.end.column), (5, 12));
+    }
+
+    // ---- `#` comments ------------------------------------------------------
+
+    #[test]
+    fn hash_starts_a_line_comment() {
+        assert_eq!(
+            tokenize("# header\nlet x = 1 # one\n#\n#no space\nx"),
+            tokenize("\nlet x = 1\n\n\nx")
+        );
+        // Both markers are comments; `//` is the deprecated one.
+        assert_eq!(tokenize("let x = 1 // one # two"), tokenize("let x = 1"));
+        assert_eq!(tokenize("let x = 1 # one // two"), tokenize("let x = 1"));
+    }
+
+    #[test]
+    fn a_shebang_line_is_a_comment() {
+        assert_eq!(tokenize("#!/usr/bin/env petal run\nprint(1)"), tokenize("\nprint(1)"));
+    }
+
+    #[test]
+    fn hash_in_a_string_is_text() {
+        assert_eq!(
+            tokenize("let css = \"#ff8800\" # orange"),
+            vec![
+                Token::Let,
+                Token::Ident("css".into()),
+                Token::Assign,
+                Token::String("#ff8800".into()),
+            ]
+        );
+        assert_eq!(tokenize("\"\"\"\n#define K 1\n\"\"\""), vec![Token::String("\n#define K 1\n".into())]);
+    }
+
+    #[test]
+    fn hash_then_a_color_shaped_word_is_an_error_not_a_comment() {
+        for src in ["let c = a ?? #fff", "#f80a", "x = #FF8800\n", "#12345678 trailing", "f(#abc)"] {
+            let err = tokenize_err(src);
+            assert!(err.contains("is no longer a color literal"), "{src}: {err}");
+            assert!(err.contains("petal migrate-old-code"), "{src}: {err}");
+        }
+        let err = tokenize_err("let a = 1\n  x = #f80");
+        assert!(err.contains("`#f80`") && err.contains("write `:f80` (or `# f80` for a comment)"), "{err}");
+        assert!(err.contains("[line 2, column 7]"), "{err}");
+        // Not color-shaped: the word goes on, or has no color's length.
+        for src in ["#fade_in the title", "#ab", "#12345", "#abcdefg", "#fffx", "# fff", "#f80?", "#-fff"] {
+            assert_eq!(tokenize(src), vec![], "{src}");
+        }
+    }
+
+    #[test]
+    fn hash_is_a_comment_in_a_tag_and_in_a_multi_line_hole_but_text_in_children() {
+        // In an open tag, between attributes.
+        assert_eq!(
+            tokenize("<rect # the box\n  w={1} />"),
+            tokenize("<rect\n  w={1} />")
+        );
+        // In a hole of element children.
+        assert_eq!(
+            tokenize("<col>{\n  # pick one\n  a\n}</col>"),
+            tokenize("<col>{\n\n  a\n}</col>")
+        );
+        // A children line that starts with `#` is text.
+        assert_eq!(
+            tokenize("<p>\n  # of items\n</p>"),
+            vec![
+                Token::JsxOpenStart,
+                Token::JsxTagName("p".into()),
+                Token::Gt,
+                Token::JsxText("# of items".into()),
+                Token::JsxCloseStart,
+                Token::JsxTagName("p".into()),
+            ]
+        );
+        assert_eq!(tokenize("<p>#fff</p>")[3], Token::JsxText("#fff".into()));
+    }
+
+    #[test]
+    fn a_slash_comment_line_in_children_is_recorded() {
+        let mut lexer = Lexer::new("<p>\n  // note\n  text // not one\n</p> // nor this\n");
+        lexer.tokenize().unwrap();
+        assert_eq!(lexer.jsx_line_comments, vec![6]);
+    }
+
+    #[test]
+    fn hash_comments_are_line_comment_trivia() {
+        let src = "# a\nlet x = 1 # b\n";
+        let mut lexer = Lexer::new(src);
+        lexer.tokenize().unwrap();
+        let comments: Vec<&str> = lexer
+            .token_leading_trivia
+            .iter()
+            .flatten()
+            .filter(|t| t.kind == crate::trivia::TriviaKind::LineComment)
+            .map(|t| t.text.as_str())
+            .collect();
+        assert_eq!(comments, vec!["# a", "# b"]);
+        assert_eq!(crate::trivia::reconstruct(src, &lexer.token_spans), src);
     }
 
     // ---- a literal `{` in a double-quoted string --------------------------

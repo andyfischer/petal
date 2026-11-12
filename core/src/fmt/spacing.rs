@@ -170,7 +170,7 @@ pub fn respace(source: &str, protected: &[bool]) -> Result<String, String> {
         if keep {
             // A trailing comment keeps the column it was written in, however
             // the code before it was respaced — but never touches the code.
-            let slash = gap.iter().position(|&c| c == '/');
+            let slash = gap.iter().position(|&c| c == '/' || c == '#');
             if let Some(slash) = slash
                 && !protected.get(line).copied().unwrap_or(false)
                 && !matches!(tokens[i], Token::Newline)
@@ -271,7 +271,7 @@ impl Columns {
             ends[s.start.line as usize].insert(s.end.column);
         }
         let mut comment_only = vec![false];
-        comment_only.extend(source.split('\n').map(|l| l.trim_start().starts_with("//")));
+        comment_only.extend(source.split('\n').map(|l| crate::trivia::starts_comment(l.trim_start())));
         comment_only.resize(starts.len().max(comment_only.len()), false);
         Columns {
             starts,

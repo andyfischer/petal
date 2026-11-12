@@ -505,7 +505,7 @@ DESCRIPTION
        dependency that is not installed is not fetched: run 'petal install'
        first.
 
-       A file with the comment '// petal-fix-imports-ignore' on a line of its
+       A file with the comment '# petal-fix-imports-ignore' on a line of its
        own gets no import added (its import lines are still rewritten): for
        a file whose unknown names are not meant to come from a package.
 
@@ -574,6 +574,22 @@ DESCRIPTION
        The migrations run in this order ('petal migrate-old-code --list'
        shows each with the date it was added and what it replaces):
 
+       colour-literals
+              a color literal is written :f80: each #f80 color token becomes
+              :f80. Strings, raw strings and comments are not tokens and are
+              left as written. A # color directly after a value or a name
+              (fn bg() #fff end), where a ':' would be a separator, is
+              reported and left for a hand edit: write (:fff). The old form
+              is an error now (# starts a comment), so this runs first
+       hash-comments
+              a line comment starts with #: '// note' becomes '# note' (a
+              space is added when there was none, '/// doc' becomes
+              '## doc', and petal-lint-ignore and the other directives
+              follow). A // in a string or a raw string is left as written,
+              and so is a /* ... */ comment. A // comment line in element
+              children becomes a hole that holds a /* ... */ comment, since
+              a # line there is text; one between two lines of text is
+              reported and left for a hand edit
        at-rebind
               the removed rebind operator: f(@x) becomes x = f(x). An @x
               inside a larger expression lifts its call into an assignment
@@ -582,12 +598,6 @@ DESCRIPTION
               was not liftable (two in one call, a while condition, a match
               arm), or whose statement shares its line with other code, is
               reported and left for a hand edit
-       colour-literals
-              a color literal is written :f80: each #f80 color token becomes
-              :f80. Strings, raw strings and comments are not tokens and are
-              left as written. A # color directly after a value or a name
-              (fn bg() #fff end), where a ':' would be a separator, is
-              reported and left for a hand edit: write (:fff)
        export-to-pub
               the deprecated modifier 'export' becomes 'pub'
        const-decl-deprecated
@@ -611,8 +621,8 @@ DESCRIPTION
        reported and skipped.
 
        To keep one site in its old form, put
-       '// petal-lint-ignore <migration>' on the line before it or at the
-       end of its line ('// petal-lint-ignore-file <migration>' for a whole
+       '# petal-lint-ignore <migration>' on the line before it or at the
+       end of its line ('# petal-lint-ignore-file <migration>' for a whole
        file): the same comment that silences the compiler's warning there.
 
 OPTIONS
@@ -689,9 +699,9 @@ DESCRIPTION
        lex to exactly the original tokens. A file that does not parse is
        reported and left alone.
 
-       To keep lines exactly as written, put '// petal-fmt-ignore' on the
-       line before one line, or wrap a region in '// petal-fmt-off' and
-       '// petal-fmt-on'. '// petal-fmt-ignore-file' anywhere in a file skips
+       To keep lines exactly as written, put '# petal-fmt-ignore' on the
+       line before one line, or wrap a region in '# petal-fmt-off' and
+       '# petal-fmt-on'. '# petal-fmt-ignore-file' anywhere in a file skips
        the whole file.
 
 OPTIONS
@@ -943,9 +953,9 @@ DESCRIPTION
               check warns about (const X = e, config let, state(key)) are
               the same command's
 
-       To silence a rule, put '// petal-lint-ignore <rule> [<rule>...]' on
+       To silence a rule, put '# petal-lint-ignore <rule> [<rule>...]' on
        the line before the finding or at the end of its line; with no rule
-       names it silences them all. '// petal-lint-ignore-file [<rule>...]'
+       names it silences them all. '# petal-lint-ignore-file [<rule>...]'
        does the same for a whole file. Text after '--' is a reason. A
        silenced finding's fix is not applied.
 

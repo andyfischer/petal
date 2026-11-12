@@ -484,15 +484,20 @@ fn an_empty_element_set_whole_keeps_the_comments_inside() {
 
 #[test]
 fn a_list_element_moved_into_an_element_keeps_its_trailing_comment() {
-    let src = "let layers = [\n  <a />, // keep me\n  <g>\n    <b />\n  </g>,\n]\n";
-    let got = literal_edit::move_path(src, "layers[0]", "layers[0]/*[1]").unwrap();
-    assert_eq!(
-        got,
-        "let layers = [\n  <g>\n    <b />\n    // keep me\n    <a />\n  </g>,\n]\n"
-    );
-    // And back out again: the comment comes along.
-    let back = literal_edit::move_path(&got, "layers[0]/a", "layers[0]").unwrap();
-    assert!(back.contains("// keep me"), "{back}");
+    // In element children a `#` line is text, so the comment goes in as a
+    // `{/* … */}` hole, whichever marker it was written with.
+    for marker in ["#", "//"] {
+        let src = format!("let layers = [\n  <a />, {marker} keep me\n  <g>\n    <b />\n  </g>,\n]\n");
+        let got = literal_edit::move_path(&src, "layers[0]", "layers[0]/*[1]").unwrap();
+        assert_eq!(
+            got,
+            "let layers = [\n  <g>\n    <b />\n    {/* keep me */}\n    <a />\n  </g>,\n]\n"
+        );
+    }
+    // And back out again: the comment is not lost.
+    let got = "let layers = [\n  <g>\n    <b />\n    {/* keep me */}\n    <a />\n  </g>,\n]\n";
+    let back = literal_edit::move_path(got, "layers[0]/a", "layers[0]").unwrap();
+    assert!(back.contains("{/* keep me */}"), "{back}");
 }
 
 #[test]

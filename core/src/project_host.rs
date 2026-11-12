@@ -354,7 +354,7 @@ pub(crate) fn header_lines(text: &str) -> Vec<usize> {
     let mut out = Vec::new();
     let mut continues = false;
     for (i, line) in text.split('\n').enumerate() {
-        let code = line.split("//").next().unwrap_or("").trim();
+        let code = crate::trivia::before_comment(line).trim();
         let is_import = ["import ", "pub import ", "export import "]
             .iter()
             .any(|kw| code.starts_with(kw));

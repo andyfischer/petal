@@ -12,6 +12,29 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **Comments start with `#`; `//` is deprecated, and `#f80` is now an error.**
+  `#` starts a comment that runs to the end of the line, as in Python and
+  shell (a `#!` first line is one too). `/* … */` is unchanged. `//` still
+  works and compiles without a warning; `petal lint` reports it once per file
+  (`old-syntax`). **Run `petal migrate-old-code`**: its new `hash-comments`
+  migration rewrites `// note` to `# note` (adding the space when there was
+  none, so `//fff` never becomes a `#fff`), carries `// petal-lint-ignore`,
+  `// petal-fmt-ignore` and `// petal-fix-imports-ignore` over (both markers
+  are read), and leaves a `//` inside a string or a `"""` GLSL block alone.
+  In element children a line that starts with `#` is text (`# of items`), so
+  there a comment is `{/* … */}`; a `//` line in children still works, is
+  deprecated, and is rewritten to the hole form.
+
+  The old color spelling is removed with this: a `#` followed directly by a
+  color-shaped hex word (`#f80`, `#ff8800aa`) is an error that says to write
+  `:f80` and names `petal migrate-old-code`, so that an unmigrated
+  `a ?? #fff` can never turn into `a ??` and a comment. Write `# f80` (with
+  the space) for a comment that starts with such a word. `migrate-old-code`
+  still reads the old form, with a legacy lexer, and runs `colour-literals`
+  before `hash-comments`, so a project that has run neither migrates in one
+  pass. Tools that write Petal comments now write `#`; the LSP's hover notes
+  are `# static …`. docs/tasks/pythonic-syntax.md, P1b.
+
 - **Color literals are written `:f80`; `#f80` is deprecated.** `#` is becoming
   the line-comment marker (docs/tasks/pythonic-syntax.md), so the color sigil
   moves to `:`: `:f80`, `:f80a`, `:ff8800`, `:ff8800aa`, the same 3, 4, 6 or 8

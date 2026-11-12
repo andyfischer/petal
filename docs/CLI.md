@@ -880,7 +880,7 @@ host can write a `state` by name, saved state can be restored into it, its
 value survives a hot reload where a `const(…)` is rebuilt, and its initializer
 runs once in every host where a `const(…)` is built once only if the host's run
 keeps static values. Where any of that matters, leave the `state` and put
-`// petal-lint-ignore state-as-constant` on its line.
+`# petal-lint-ignore state-as-constant` on its line.
 
 `state-as-constant` also asks the compiler rather than the text: it
 compiles the file, classifies it as [`show-static`](#show-static--static-declarations)
@@ -890,9 +890,9 @@ alone (lint has no host). Converting one `state` can make the next one's
 initializer static (`state SORTED = sort(RAW)`), and the rule repeats until
 nothing changes, so one `--fix` is enough.
 
-Silence a rule with `// petal-lint-ignore <rule> [<rule>…]` on the line before
+Silence a rule with `# petal-lint-ignore <rule> [<rule>…]` on the line before
 the finding or at the end of its line (no names silences every rule), or for a
-whole file with `// petal-lint-ignore-file [<rule>…]`. Text after `--` is a
+whole file with `# petal-lint-ignore-file [<rule>…]`. Text after `--` is a
 reason. A silenced finding's fix is not applied.
 
 #### `--verify` — prove the rewrite
@@ -1019,8 +1019,8 @@ It never wraps lines, reorders anything, or edits strings, raw strings or JSX
 text, and it checks every result: the output must lex to exactly the input's
 tokens, or the file is refused with a `fmt bug` error.
 
-Opt out with `// petal-fmt-ignore` (the next line stays as written),
-`// petal-fmt-off` … `// petal-fmt-on` (a region), or `// petal-fmt-ignore-file`.
+Opt out with `# petal-fmt-ignore` (the next line stays as written),
+`# petal-fmt-off` … `# petal-fmt-on` (a region), or `# petal-fmt-ignore-file`.
 
 ### `migrate-old-code` — Rewrite old syntax
 
@@ -1043,8 +1043,9 @@ one is an error that names the command.
 
 | Migration | Rewrites | Old form |
 |---|---|---|
-| `at-rebind` | the `@` rebind operator, exactly as it desugared: `f(@x)` → `x = f(x)`; an `@x` deeper in a statement lifts its nearest enclosing call into an assignment on the line before (`let r = g(f(@x))` → `x = f(x)` then `let r = g(x)`). An `@` the operator could not lift (two in one call, a `while` condition, a `match` arm, a `memo` initializer), or one whose statement shares its line with other code (`if c then g(f(@x)) end`), is listed for a hand edit. It runs first: the file does not parse until it has | removed 2026-11-09 (`@` is kept for [annotations](proposals/annotation-syntax.md)): a parse error that names the command |
-| `colour-literals` | a color literal's sigil: `#f80` → `:f80`, for each color *token* (a `"#f80"` in a string, a `#define` in a `"""` GLSL block and a `#hex` word in a comment are not tokens and stay). The migrated text must lex to the same tokens as the original, or nothing is written. A `#` color directly after a value or a name (`fn bg() #fff end`), where a `:` would be a separator, is listed for a hand edit: write `(:fff)` | warns (2026-11-12): `#` is becoming the comment marker ([plan](tasks/pythonic-syntax.md)) |
+| `colour-literals` | a color literal's sigil: `#f80` → `:f80`, for each color *token* (a `"#f80"` in a string, a `#define` in a `"""` GLSL block and a `#hex` word in a comment are not tokens and stay). The migrated text must lex to the same tokens as the original, or nothing is written. A `#` color directly after a value or a name (`fn bg() #fff end`), where a `:` would be a separator, is listed for a hand edit: write `(:fff)`. It runs first, reading the file with a legacy lexer: the file does not lex until it has | removed 2026-11-12 (`#` is the comment marker, [plan](tasks/pythonic-syntax.md)): `#` followed directly by a color-shaped hex word is an error that names the command, never a comment |
+| `hash-comments` | the line-comment marker: `// note` → `# note`, for each comment (a `//` in a string or in a `"""` GLSL block is part of a token and stays; `/* … */` comments stay). A space is added when the text followed the marker directly (`//note` → `# note`), a longer run keeps its look (`/// doc` → `## doc`), and `// petal-lint-ignore …` and the other `petal-` directives follow. A `//` comment line in element children becomes `{/* … */}`, since a `#` line there is text; one between two lines of text, which a hole would split into two children, is listed for a hand edit. The migrated text must lex to the same tokens on the same lines, comments aside, or nothing is written | accepted without a warning; `petal lint` reports it (`old-syntax`, once per file) |
+| `at-rebind` | the `@` rebind operator, exactly as it desugared: `f(@x)` → `x = f(x)`; an `@x` deeper in a statement lifts its nearest enclosing call into an assignment on the line before (`let r = g(f(@x))` → `x = f(x)` then `let r = g(x)`). An `@` the operator could not lift (two in one call, a `while` condition, a `match` arm, a `memo` initializer), or one whose statement shares its line with other code (`if c then g(f(@x)) end`), is listed for a hand edit. It runs before every migration that needs a parse: the file does not parse until it has | removed 2026-11-09 (`@` is kept for [annotations](proposals/annotation-syntax.md)): a parse error that names the command |
 | `export-to-pub` | `export fn f` → `pub fn f`, on any declaration or `import` (trailing comments kept in their column) | accepted without a warning; `petal lint` reports it (`old-syntax`) |
 | `const-decl-deprecated` | `const X = e` → `let X = const(e)`, literals included, with a closing `)` after a multi-line initializer and trailing comments kept in their column ([plan](tasks/lifecycle-annotation-functions-refactor.md)) | warns (Phase 5); removed in Phase 6 |
 | `config-let-deprecated` | `config let X = v` → `let X = tunable(v)`, or only `config` dropped when `v` is already a `tunable(…)` call | warns (Phase 5); removed in Phase 6 |
@@ -1075,8 +1076,8 @@ migrated 1 of 2 file(s)
 
 A site left for a hand edit goes to stderr and does not change the exit
 status. To keep one site in its old form (a fixture of the deprecated form,
-say), put `// petal-lint-ignore <migration>` on the line before it or at the
-end of its line, or `// petal-lint-ignore-file <migration>` anywhere: the
+say), put `# petal-lint-ignore <migration>` on the line before it or at the
+end of its line, or `# petal-lint-ignore-file <migration>` anywhere: the
 same comment silences the compiler's warning there.
 
 Adding a migration for a future syntax change: see
@@ -1146,7 +1147,7 @@ where the name is used. It is a command of its own rather than a `lint`
 rule: a lint fix starts from a file that compiles, and an old-style file
 does not.
 
-A file with the comment `// petal-fix-imports-ignore` on a line of its own
+A file with the comment `# petal-fix-imports-ignore` on a line of its own
 gets no import *added* (its import lines are still rewritten). It is for a
 file whose unknown names are not meant to come from a package — a shader
 written as Petal lambdas, whose `step` is GLSL's and not bloom's.

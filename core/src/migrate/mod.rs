@@ -16,9 +16,12 @@
 //! one rewrites only the old form, so running the tool again changes nothing
 //! (it is idempotent, and the tests hold every rule to that).
 //!
-//! **Text migrations** ([`migrate_source`]) need one file and a parse:
+//! **Text migrations** ([`migrate_source`]) need one file: first the two
+//! that read tokens and trivia, `colour-literals` and `hash-comments`, with
+//! the lexer's legacy mode (the language's own lexer rejects a `#f80` color,
+//! see [`colour_literals::legacy_lex`]); then the ones that need a parse,
 //! `at-rebind` (which reads the old `@` itself, since the parser no longer
-//! does), `colour-literals` (which reads tokens), `export-to-pub`, `const-decl-deprecated`, `config-let-deprecated`,
+//! does), `export-to-pub`, `const-decl-deprecated`, `config-let-deprecated`,
 //! `state-key-deprecated`. **`old-imports`** rewrites imports for the current
 //! module system and needs every file of the batch and a module resolver; it
 //! is [`crate::fix_imports`], which the CLI runs after the text migrations
@@ -31,7 +34,7 @@
 //! through `petal fmt`: a migration edits what it rewrites and nothing else
 //! (re-padding a trailing comment it pushed or pulled out of its column).
 //!
-//! **Opting out.** `// petal-lint-ignore <migration>` on the line before a
+//! **Opting out.** `# petal-lint-ignore <migration>` on the line before a
 //! site, or trailing on its line (`petal-lint-ignore-file <migration>` for the
 //! whole file), keeps that site in the old form. It is the same comment that
 //! silences the compiler's deprecation warning for the site.
@@ -49,11 +52,11 @@ mod at_rebind;
 mod colour_literals;
 pub mod export_keyword;
 mod export_to_pub;
+mod hash_comments;
 mod lifecycle_keywords;
 mod state_key;
 
 pub use crate::lint::Finding;
-pub(crate) use colour_literals::deprecated_colour_literals;
 pub use colour_literals::respell_colour_literals;
 pub(crate) use lifecycle_keywords::deprecated_lifecycle_decls;
 pub use lifecycle_keywords::migrate_lifecycle_keywords;
@@ -66,6 +69,7 @@ pub const RUN_HINT: &str = "run `petal migrate-old-code`";
 
 pub const AT_REBIND: &str = "at-rebind";
 pub const COLOUR_LITERALS: &str = "colour-literals";
+pub const HASH_COMMENTS: &str = "hash-comments";
 pub const EXPORT_TO_PUB: &str = "export-to-pub";
 pub const CONST_DECL_DEPRECATED: &str = "const-decl-deprecated";
 pub const CONFIG_LET_DEPRECATED: &str = "config-let-deprecated";
@@ -103,8 +107,35 @@ pub struct Migration {
 
 /// Every migration, in the order it runs.
 pub const MIGRATIONS: &[Migration] = &[
-    // First: the current parser rejects its old form, and every later
-    // migration needs a parse.
+    // First, the two that read tokens and trivia and need no parse. The
+    // language's lexer rejects `#f80`, so until `colour-literals` has run
+    // nothing after it can read the file.
+    Migration {
+        name: COLOUR_LITERALS,
+        summary: "a color literal is written `:f80`: each `#f80` color token becomes `:f80` \
+                  (strings, raw strings and comments are untouched); a `#` color directly \
+                  after a value or a name is reported for a hand edit",
+        added: "2026-11-12",
+        replaces: "`#f80` color literals, removed 2026-11-12 to free `#` for comments \
+                   (docs/tasks/pythonic-syntax.md)",
+        old_form: OldForm::Removed,
+        partial: true,
+        batch: false,
+    },
+    Migration {
+        name: HASH_COMMENTS,
+        summary: "a line comment starts with `#`: `// note` becomes `# note` (a space is added \
+                  when there was none, and `// petal-lint-ignore` directives follow), and a \
+                  `//` comment line in element children becomes `{/* … */}`; one between two \
+                  lines of text is reported for a hand edit",
+        added: "2026-11-12",
+        replaces: "`//` line comments, deprecated 2026-11-12 (docs/tasks/pythonic-syntax.md)",
+        old_form: OldForm::Accepted,
+        partial: true,
+        batch: false,
+    },
+    // Then the one whose old form the parser rejects: every later migration
+    // needs a parse.
     Migration {
         name: AT_REBIND,
         summary: "the `@` rebind operator: `f(@x)` becomes `x = f(x)` (a nested call is \
@@ -114,20 +145,6 @@ pub const MIGRATIONS: &[Migration] = &[
         replaces: "`f(@x)`, removed 2026-11-09 to free `@` for annotations \
                    (docs/proposals/annotation-syntax.md)",
         old_form: OldForm::Removed,
-        partial: true,
-        batch: false,
-    },
-    // Token-based, before anything that plans on a parse: it changes one
-    // character per site and no offset.
-    Migration {
-        name: COLOUR_LITERALS,
-        summary: "a color literal is written `:f80`: each `#f80` color token becomes `:f80` \
-                  (strings, raw strings and comments are untouched); a `#` color directly \
-                  after a value or a name is reported for a hand edit",
-        added: "2026-11-12",
-        replaces: "`#f80` color literals, deprecated 2026-11-12 to free `#` for comments \
-                   (docs/tasks/pythonic-syntax.md)",
-        old_form: OldForm::Warns,
         partial: true,
         batch: false,
     },
@@ -284,18 +301,59 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         ),
         exclude: Vec::new(),
     };
-    let mut p = Pipeline::new(source, &filter)?;
+    // The file may still hold `#f80` colors, so its ignore comments are
+    // read the way the first two migrations read it.
+    let mut p = Pipeline::new_legacy(source, &filter)?;
     let lint_opts = LintOptions {
         include_dirs: opts.include_dirs.clone(),
         origin: opts.origin.clone(),
         rules: RuleFilter::default(),
     };
 
-    // `@` rebinds first: until they are gone the file does not parse.
+    // Color tokens first: one character each, no offset moves, and gated on
+    // the token stream (the same tokens are the same parse). Until they are
+    // respelled the file does not lex.
+    let mut colours = 0;
+    if opts.enabled(COLOUR_LITERALS) {
+        let before = p.text.clone();
+        colours = p.apply(COLOUR_LITERALS, colour_literals::plan_colour_fixes(&before)?);
+        if colours > 0 {
+            colour_literals::same_tokens(&before, &p.text)?;
+        }
+    }
+
+    // Comments next: trivia only, gated on the token stream too.
+    let mut comments = 0;
+    if opts.enabled(HASH_COMMENTS) {
+        let before = p.text.clone();
+        comments = p.apply(HASH_COMMENTS, hash_comments::plan_comment_fixes(&before)?);
+        if comments > 0 {
+            hash_comments::same_tokens_but_comments(&before, &p.text)?;
+        }
+    }
+
+    // A `#f80` left in the file (the migration was not selected, the site
+    // is ignored, or it needs a hand edit) keeps it from lexing: report what
+    // was done and stop. When nothing was done at all, the lexer's own error
+    // is the report.
+    if p.text.contains('#')
+        && !colour_literals::lexes_today(&p.text)
+        && colour_literals::legacy_lex(&p.text).is_ok()
+    {
+        if colours + comments == 0 && p.unfixed(COLOUR_LITERALS) == 0 {
+            reparse(&p.text)?;
+        }
+        let (output, mut findings) = p.finish();
+        findings.sort_by_key(|f| (f.line, f.column));
+        return Ok(MigrateOutcome { findings, output });
+    }
+
+    // `@` rebinds: until they are gone the file does not parse.
     let mut rebinds = 0;
     let mut rebinds_left = 0;
     if opts.enabled(AT_REBIND) {
-        rebinds = p.apply(AT_REBIND, at_rebind::plan_at_rebind_fixes(source)?);
+        let before = p.text.clone();
+        rebinds = p.apply(AT_REBIND, at_rebind::plan_at_rebind_fixes(&before)?);
         rebinds_left = p.unfixed(AT_REBIND);
     }
     let (chars, stmts) = match reparse(&p.text) {
@@ -310,21 +368,8 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         Err(e) => return Err(e),
     };
 
-    // Color tokens next: one character each, no offset moves, and gated on
-    // the token stream (the same tokens are the same parse), so the parse
-    // above stays good for the migrations after it.
-    let mut colours = 0;
-    if opts.enabled(COLOUR_LITERALS) {
-        let before = p.text.clone();
-        colours = p.apply(COLOUR_LITERALS, colour_literals::plan_colour_fixes(&before)?);
-        if colours > 0 {
-            colour_literals::same_tokens(&before, &p.text)?;
-        }
-    }
-    let (chars, stmts) = if colours > 0 { reparse(&p.text)? } else { (chars, stmts) };
-
     let exports = p.apply(EXPORT_TO_PUB, export_to_pub::plan_export_fixes(&stmts, &chars)?);
-    let mut rewrites = rebinds + colours + exports;
+    let mut rewrites = rebinds + colours + comments + exports;
 
     // One keyword, then the other over its output: each pads trailing
     // comments against the text as it stands.
@@ -359,14 +404,15 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         // Only meaningful when the original compiles here at all; a file
         // whose imports don't resolve outside its app is migrated ungated.
         //
-        // A file with `@` rebinds does not parse today; it compiled before
-        // their removal if it compiles with each `@` read as nothing (the
-        // same names, read instead of written).
-        let compiled = if rebinds > 0 {
-            compiles(&at_rebind::blank_markers(source)?, &lint_opts).is_ok()
-        } else {
-            compiles(source, &lint_opts).is_ok()
-        };
+        // "The original" is the source as today's compiler can read it: its
+        // `#f80` colors respelled (the same tokens), and, since a file with
+        // `@` rebinds does not parse, each `@` read as nothing (the same
+        // names, read instead of written).
+        let mut original = colour_literals::respell_colour_literals(source)?;
+        if rebinds > 0 {
+            original = at_rebind::blank_markers(&original)?;
+        }
+        let compiled = compiles(&original, &lint_opts).is_ok();
         if compiled
             && let Err(e) = compiles(&output, &lint_opts)
         {
@@ -375,13 +421,7 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
             ));
         }
         if exports > 0 {
-            // The original read with its `@` rebinds blanked, which parses
-            // and has the same declarations.
-            let before = if rebinds > 0 {
-                count_exports(&at_rebind::blank_markers(source)?)?
-            } else {
-                count_exports(source)?
-            };
+            let before = count_exports(&original)?;
             let after = count_exports(&output)?;
             if before.0 != after.0 || before.1 != after.1 + exports {
                 return Err(format!(

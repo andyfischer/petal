@@ -77,6 +77,34 @@ fn ignore_file_leaves_everything() {
     assert_eq!(fmt(src), src);
 }
 
+/// The directives are read with either comment marker: `#`, and the
+/// deprecated `//` the tests above use.
+#[test]
+fn directives_work_in_hash_comments() {
+    let src = "# petal-fmt-ignore\nquad(x0,y0,z1,   x1,y0,z1)\nquad(x0,y0)\n";
+    assert_eq!(fmt(src), "# petal-fmt-ignore\nquad(x0,y0,z1,   x1,y0,z1)\nquad(x0, y0)\n");
+    let src = "let a=1\n# petal-fmt-off\nlet m = [\n  1,0,\n      0,1,\n]\n# petal-fmt-on\nlet b=2\n";
+    assert_eq!(
+        fmt(src),
+        "let a = 1\n# petal-fmt-off\nlet m = [\n  1,0,\n      0,1,\n]\n# petal-fmt-on\nlet b = 2\n"
+    );
+    let src = "# petal-fmt-ignore-file\nlet a=1\n\n\n\nlet b  =  2";
+    assert_eq!(fmt(src), src);
+}
+
+/// A `#` comment is laid out exactly as a `//` one is: a whole-line comment
+/// is indented with its block, and a trailing one keeps its column.
+#[test]
+fn hash_comments_are_laid_out_like_slash_comments() {
+    let slash = "fn f()\n// c\nlet a=1   // one\nlet bb =  2 // two\na+bb\nend\n";
+    let hash = slash.replace("//", "#");
+    // The comment starts in the same column either way, so the layout is
+    // the same text but for the marker.
+    assert_eq!(fmt(&hash), fmt(slash).replace("//", "#"));
+    assert_eq!(fmt(&fmt(&hash)), fmt(&hash));
+    assert!(fmt(&hash).contains("\n  # c\n"), "{}", fmt(&hash));
+}
+
 #[test]
 fn refuses_a_file_that_does_not_parse() {
     assert!(format_source("fn (").is_err());
@@ -93,6 +121,10 @@ fn directive_word_reads_the_first_word() {
         Some("petal-lint-ignore")
     );
     assert_eq!(directive_word("// a note"), None);
+    assert_eq!(directive_word("# petal-fmt-ignore"), Some("petal-fmt-ignore"));
+    assert_eq!(directive_word("#petal-lint-ignore prefer-let"), Some("petal-lint-ignore"));
+    assert_eq!(directive_word("# a note"), None);
+    assert_eq!(directive_word("petal-fmt-ignore"), None);
 }
 
 /// The AST of `src` as `show-ast` prints it, without positions — what must

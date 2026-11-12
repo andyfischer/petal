@@ -8,25 +8,31 @@
 //!
 //! The rule is deliberately conservative:
 //!
-//! - a line whose first non-blank characters are `//` becomes an empty line;
+//! - a line whose first non-blank characters are `# ` (or a lone `#`, or the
+//!   deprecated `//`) becomes an empty line;
 //! - every other line loses its trailing whitespace and is otherwise kept.
 //!
 //! Lines are never removed, so every token keeps its line number, and nothing
 //! before a token on its line changes, so it keeps its column too: error
 //! positions inside an embedded module read the same as in the repository
-//! file. A `//` after code on the same line is left alone (telling it apart
-//! from `//` inside a string needs the real lexer), and so is a line inside a
-//! multi-line string that happens to start with `//` — which is why the check
-//! test lexes the result rather than trusting this rule.
+//! file. A comment after code on the same line is left alone (telling it
+//! apart from a `#` inside a string needs the real lexer). A `#` directly
+//! followed by text is left alone too: that is what a `#define` line of a
+//! GLSL raw string looks like. A line inside a multi-line string that happens
+//! to start with `# ` or `//` is still blanked — which is why the check test
+//! lexes the result rather than trusting this rule.
 
-/// `source` with its whole-line `//` comments blanked and trailing whitespace
+/// `source` with its whole-line `# ` (and `//`) comments blanked and trailing whitespace
 /// trimmed. Line count and every token's line and column are unchanged.
 pub fn strip_comments(source: &str) -> String {
     let mut out = String::with_capacity(source.len() / 2);
     let mut lines = source.split('\n').peekable();
     while let Some(line) = lines.next() {
         let trimmed = line.trim_start();
-        if !trimmed.starts_with("//") {
+        let hash = trimmed
+            .strip_prefix('#')
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace));
+        if !(hash || trimmed.starts_with("//")) {
             out.push_str(line.trim_end());
         }
         if lines.peek().is_some() {

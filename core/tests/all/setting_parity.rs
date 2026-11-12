@@ -26,9 +26,14 @@ fn comment_start(s: &str) -> Option<usize> {
             b'\\' if in_str => i += 1,
             b'"' => in_str = !in_str,
             b'/' if !in_str && b[i + 1] == b'/' => return Some(i),
+            b'#' if !in_str => return Some(i),
             _ => {}
         }
         i += 1;
+    }
+    // A `#` in the last column (the loop above stops one short, for `//`).
+    if !in_str && b.last() == Some(&b'#') {
+        return Some(b.len() - 1);
     }
     None
 }
@@ -281,6 +286,10 @@ fn the_rewriter_keeps_comments_and_skips_multi_line_values() {
     assert_eq!(
         rewrite_line("pub config let SPEED = 4.0   // m/s").as_deref(),
         Some("pub let SPEED = tunable(4.0)  // m/s")
+    );
+    assert_eq!(
+        rewrite_line("pub config let SPEED = 4.0   # m/s").as_deref(),
+        Some("pub let SPEED = tunable(4.0)  # m/s")
     );
     assert_eq!(
         rewrite_line("config let URL = \"a//b\"").as_deref(),

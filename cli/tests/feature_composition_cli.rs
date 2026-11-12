@@ -77,7 +77,7 @@ enum Kind
   a,
 end
 const K = lv.Kind.b(2)
-config let SPEED = 2.5 // knob
+config let SPEED = 2.5 # knob
 pub config let G = tunable(9.8, 0, 20)
 fn show(k: lv.Kind?) -> string
   if k == nil then \"none\" else k.label() end
@@ -119,7 +119,7 @@ fn deprecated_declarations_warn_and_migrate_old_code_round_trips() {
     assert_eq!(code, 0, "{out}\n{err}");
     let main = t.read("main.ptl");
     assert!(main.contains("let K = const(lv.Kind.b(2))\n"), "{main}");
-    assert!(main.contains("let SPEED = tunable(2.5) // knob\n"), "{main}");
+    assert!(main.contains("let SPEED = tunable(2.5) # knob\n"), "{main}");
     assert!(main.contains("pub let G = tunable(9.8, 0, 20)\n"), "{main}");
     assert!(t.read("level.ptl").contains("let STEP = const(3)\n"), "{}", t.read("level.ptl"));
 

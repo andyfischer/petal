@@ -1514,9 +1514,10 @@ print(theme.edge.a, tint.g, size.w)         // 170 136 100
 A color cannot follow a value or a name directly, so the body of a one-line
 function takes parentheses: `fn ink() (:fff) end`.
 
-`#ff8800` is the old spelling. It still works, with a deprecation warning;
-`petal migrate-old-code` rewrites it (the `colour-literals` migration). A
-`"#ff8800"` inside a string was never a literal and stays as it is.
+`#ff8800` is the old spelling, removed when `#` became the comment marker: it
+is an error that says to write `:ff8800`. `petal migrate-old-code` rewrites it
+(the `colour-literals` migration). A `"#ff8800"` inside a string was never a
+literal and stays as it is.
 
 ## Enums
 
@@ -2640,16 +2641,19 @@ let page = <div class="root">
   is therefore not a child; write `<br />` (or `{"\n"}`) where one should be.
 - Self-closing tags use `<Tag />`.
 - `{expr}` embeds a Petal expression as a child.
-- A line in the children whose first non-blank characters are `//` or `/*`
-  is a comment, not text, as it is everywhere else in Petal. Anywhere else in
-  the children, write the comment in a hole: `{/* … */}`. Text that really
-  starts a line with `//` is written `{"//"}`. A comment line inside a run of
-  text drops out as if it were not there, so the lines around it still join
-  with one space.
+- A comment in the children is a hole that holds nothing else, `{/* … */}`,
+  on a line of its own or beside anything. A line whose first non-blank
+  characters are `/*` is a comment too. A line that starts with `#` is
+  **text**, not a comment (`# of items`), unlike everywhere else in Petal.
+  A line that starts with `//` is still read as a comment, but that spelling
+  is deprecated (`petal migrate-old-code` rewrites it to `{/* … */}`); text
+  that really starts a line with `//` is written `{"//"}`. A `/*` or `//`
+  comment line inside a run of text drops out as if it were not there, so
+  the lines around it still join with one space.
 
   ```petal
   let card = <group>
-      // the photo
+      {/* the photo */}
       <image src="a.png" />
       /* the caption,
          set in the brand font */

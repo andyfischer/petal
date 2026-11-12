@@ -1276,9 +1276,9 @@ fn hover_says_a_static_declaration_is_static() {
     let text = static_hover(STATIC_DOC, 0, 5);
     // One list, with a function declaration (`double`, hoisted) between it
     // and what reads it: kept all the same.
-    assert_eq!(text, "```petal\n(variable) TILES\n// static, kept between runs\n```");
+    assert_eq!(text, "```petal\n(variable) TILES\n# static, kept between runs\n```");
     let text = static_hover(STATIC_DOC, 1, 7);
-    assert_eq!(text, "```petal\n(variable) LIMIT\n// static, kept between runs\n```");
+    assert_eq!(text, "```petal\n(variable) LIMIT\n# static, kept between runs\n```");
 }
 
 /// The classification behind the hover is worked out by the first hover
@@ -1295,15 +1295,15 @@ fn hover_classifies_lazily_and_once_per_change() {
     open(&mut server, uri, &text(4));
     change(&mut server, uri, 2, &text(5));
     assert_eq!(petal::static_classify::analyses_run(), before, "a change classifies nothing");
-    assert!(said(hover(&mut server, uri, 0, 5)).ends_with("// static, kept between runs\n```"));
+    assert!(said(hover(&mut server, uri, 0, 5)).ends_with("# static, kept between runs\n```"));
     let n = said(hover(&mut server, uri, 1, 6));
-    assert!(n.contains("// dynamic"), "{n}");
+    assert!(n.contains("# dynamic"), "{n}");
     assert_eq!(petal::static_classify::analyses_run(), before + 1, "two hovers, one classification");
     // An edit that makes the table dynamic is seen by the next hover.
     change(&mut server, uri, 3, &text(6).replace("[3, 6]", "[3, n0]").replace("let ROWS", "state n0 = 0\nlet ROWS"));
     assert_eq!(petal::static_classify::analyses_run(), before + 1);
     let now = said(hover(&mut server, uri, 1, 5));
-    assert!(now.contains("// dynamic"), "{now}");
+    assert!(now.contains("# dynamic"), "{now}");
     assert_eq!(petal::static_classify::analyses_run(), before + 2);
 }
 
@@ -1324,18 +1324,18 @@ let SMALL = [1, 2, 3]
 let grown = append(BASE, frame)
 print(ROWS[frame % 2], NAMES, SMALL, grown, SUM)
 ";
-    assert_eq!(static_hover(doc, 0, 5), "```petal\n(variable) ROWS\n// static, kept between runs\n```");
-    assert!(static_hover(doc, 1, 7).ends_with("// static, kept between runs\n```"));
-    assert!(static_hover(doc, 9, 7).ends_with("// static, kept between runs\n```"), "at a use");
+    assert_eq!(static_hover(doc, 0, 5), "```petal\n(variable) ROWS\n# static, kept between runs\n```");
+    assert!(static_hover(doc, 1, 7).ends_with("# static, kept between runs\n```"));
+    assert!(static_hover(doc, 9, 7).ends_with("# static, kept between runs\n```"), "at a use");
     // A constant `let` is hoisted, so `SMALL` is built, and kept, with the
     // tables above it.
-    assert!(static_hover(doc, 7, 5).ends_with("// static, kept between runs\n```"));
-    assert!(static_hover(doc, 2, 5).contains("// static, not kept:"), "written to");
+    assert!(static_hover(doc, 7, 5).ends_with("# static, kept between runs\n```"));
+    assert!(static_hover(doc, 2, 5).contains("# static, not kept:"), "written to");
     // Read by `SUM` alone, which is built past a function declaration (the
     // one in `NAMES`): the two are stored apart, so `SUM` can be rebuilt
     // without it.
-    assert!(static_hover(doc, 3, 5).ends_with("// static, kept between runs\n```"));
-    assert!(static_hover(doc, 4, 5).ends_with("// static, kept between runs\n```"));
+    assert!(static_hover(doc, 3, 5).ends_with("# static, kept between runs\n```"));
+    assert!(static_hover(doc, 4, 5).ends_with("# static, kept between runs\n```"));
     let doc = "\
 let ONLY_FOR_SUM = [[7], [8]]
 let SUM = [ONLY_FOR_SUM[0][0], [9]]
@@ -1343,14 +1343,14 @@ state frame = 0
 frame = frame + 1
 print(frame, SUM)
 ";
-    assert!(static_hover(doc, 0, 5).ends_with("// static\n```"), "built with what reads it");
-    assert!(static_hover(doc, 1, 5).ends_with("// static, kept between runs\n```"));
+    assert!(static_hover(doc, 0, 5).ends_with("# static\n```"), "built with what reads it");
+    assert!(static_hover(doc, 1, 5).ends_with("# static, kept between runs\n```"));
 }
 
 #[test]
 fn hover_on_a_use_shows_the_class_of_its_declaration() {
     // `TILES` where it is read on line 5.
-    assert!(static_hover(STATIC_DOC, 4, 13).ends_with("// static, kept between runs\n```"));
+    assert!(static_hover(STATIC_DOC, 4, 13).ends_with("# static, kept between runs\n```"));
 }
 
 #[test]
@@ -1358,20 +1358,20 @@ fn hover_says_why_a_declaration_is_dynamic() {
     let text = static_hover(STATIC_DOC, 4, 5);
     assert_eq!(
         text,
-        "```petal\n(variable) shown\n// dynamic: shown reads frame at line 5\n```"
+        "```petal\n(variable) shown\n# dynamic: shown reads frame at line 5\n```"
     );
     let text = static_hover(STATIC_DOC, 2, 7);
-    assert!(text.contains("// dynamic: frame is state, which changes between runs"), "{text}");
+    assert!(text.contains("# dynamic: frame is state, which changes between runs"), "{text}");
     let text = static_hover(STATIC_DOC, 11, 4);
-    assert!(text.contains("// dynamic: v is a var"), "{text}");
+    assert!(text.contains("# dynamic: v is a var"), "{text}");
 }
 
 #[test]
 fn hover_says_whether_a_function_is_static_pure() {
     let text = static_hover(STATIC_DOC, 5, 4);
-    assert_eq!(text, "```petal\n(function) double fn(x)\n// function, static-pure\n```");
+    assert_eq!(text, "```petal\n(function) double fn(x)\n# function, static-pure\n```");
     let text = static_hover(STATIC_DOC, 8, 4);
-    assert!(text.contains("// function, not static-pure: tick reads frame"), "{text}");
+    assert!(text.contains("# function, not static-pure: tick reads frame"), "{text}");
 }
 
 #[test]
@@ -1386,14 +1386,14 @@ fn hover_points_out_a_state_whose_initializer_is_static() {
 #[test]
 fn hover_flags_a_const_that_is_not_constant() {
     let text = static_hover(STATIC_DOC, 13, 5);
-    assert!(text.contains("// dynamic: BAD reads frame at line 14"), "{text}");
+    assert!(text.contains("# dynamic: BAD reads frame at line 14"), "{text}");
     assert!(text.contains("(declared const: an error)"), "{text}");
 }
 
 #[test]
 fn hover_on_a_const_of_host_natives_says_it_cannot_be_verified_here() {
     let text = static_hover("native fn tile(n)\nlet T = const([tile(1)])\nprint(T)\n", 1, 4);
-    assert!(text.contains("// dynamic: T calls tile, a native that is not registered here"), "{text}");
+    assert!(text.contains("# dynamic: T calls tile, a native that is not registered here"), "{text}");
     assert!(text.contains("(declared const: cannot be verified without its host)"), "{text}");
 }
 
@@ -1402,7 +1402,7 @@ fn hover_on_a_local_says_nothing_about_static_values() {
     let doc = "let x = [1, 2]\nfn f()\n  let x = 3\n  x\nend\nprint(x, f())\n";
     // The local `x` on line 3 is not the top-level declaration of that name.
     assert_eq!(static_hover(doc, 2, 6), "```petal\n(variable) x\n```");
-    assert!(static_hover(doc, 0, 4).contains("// static"));
+    assert!(static_hover(doc, 0, 4).contains("# static"));
 }
 
 #[test]
@@ -1695,7 +1695,7 @@ fn a_script_sees_what_its_projects_host_puts_in_scope() {
     // The static note is the script's declaration's, on the script's line.
     let resp = hover(&mut server, &menu, 1, 4);
     let value = resp["result"]["contents"]["value"].as_str().unwrap();
-    assert!(value.contains("(variable) LIMIT\n//"), "{value}");
+    assert!(value.contains("(variable) LIMIT\n#"), "{value}");
 
     // A prelude file sees the files before it, and not those after.
     let more = project.uri("lib/more.ptl");

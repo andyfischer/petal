@@ -179,9 +179,10 @@ impl Directives {
     }
 }
 
-/// The first word of a `//` comment's text, when it names a `petal-` directive.
+/// The first word of a line comment's text (`# …`, or the deprecated
+/// `// …`), when it names a `petal-` directive.
 pub(crate) fn directive_word(comment: &str) -> Option<&str> {
-    let body = comment.strip_prefix("//")?.trim_start();
+    let body = crate::trivia::comment_body(comment)?.trim_start();
     let word = body.split(|c: char| c.is_whitespace() || c == ':').next()?;
     word.starts_with("petal-").then_some(word)
 }
@@ -209,11 +210,18 @@ fn block_comment_lines(source: &str) -> Result<Vec<usize>, String> {
     Ok(out)
 }
 
-/// Every `//` comment in `source` as (0-based line, text, is it alone on its
-/// line). Comments are found in the gaps between tokens, so text that merely
-/// looks like one inside a string is never picked up.
+/// Every line comment in `source` (`#`, or the deprecated `//`) as (0-based
+/// line, text, is it alone on its line). Comments are found in the gaps
+/// between tokens, so text that merely looks like one inside a string is
+/// never picked up.
 pub(crate) fn line_comments(source: &str) -> Result<Vec<(usize, String, bool)>, String> {
-    let mut lexer = Lexer::new(source);
+    line_comments_with(source, false)
+}
+
+/// [`line_comments`], with `legacy` to read source that may still hold `#f80`
+/// colors ([`Lexer::legacy`]): for `petal migrate-old-code` only.
+pub(crate) fn line_comments_with(source: &str, legacy: bool) -> Result<Vec<(usize, String, bool)>, String> {
+    let mut lexer = if legacy { Lexer::new(source).legacy() } else { Lexer::new(source) };
     lexer.tokenize()?;
     // Char offset of the start of each line, for offset -> line lookups.
     let mut line_starts = vec![0usize];

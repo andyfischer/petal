@@ -54,7 +54,7 @@ Every path that worked before child steps existed means what it did before.
   between the tags, or an element in a `{<tag />}` hole. These are not
   counted:
   - text, and the whitespace between tags;
-  - `//` comment lines and `{/* … */}` comment holes (comment trivia);
+  - `{/* … */}` comment holes and `//` comment lines (comment trivia);
   - `{expr}` holes that are not element literals.
 
   `/*[n]` also skips `<br />`, which is a line break in text, not a layer.
@@ -103,8 +103,9 @@ Layout of a new or moved child:
 Setting a whole element whose children are all elements, before and after,
 edits the children one at a time, like a list's elements. So a host that writes
 back a whole `layers` list after moving a layer inside a group changes only
-what moved. A child (or list element) that only moved takes the `//` comment
-lines directly above it along (`move_path` does not: it moves only the
+what moved. A child (or list element) that only moved takes the comment
+lines directly above it along (`#` lines above a list element; `{/* … */}`
+or `//` lines above a child) (`move_path` does not: it moves only the
 element and its trailing comment). An element with no children before counts
 as all elements: the new ones go below any comments inside. When text is
 among the children and stays the same, with each element child still an

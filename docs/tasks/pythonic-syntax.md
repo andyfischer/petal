@@ -1,6 +1,6 @@
 # Indentation-delimited blocks (Scala 3 style), `#` comments, `:hex` colours and `else if`
 
-Status: proposed plan, revised 2026-11-11. P1, P2 and the P3 parser are implemented (§3.3, §3.6, §3.7); fmt, lint, the LSP, the `end-lines` migration and the tooling are not.
+Status: proposed plan, revised 2026-11-11. P1, P2 and P3 (parser, fmt, lint, LSP) are implemented (§3.3, §3.6, §3.7, §5.3); the `end-lines` migration and the tooling are not.
 
 Decided 2026-11-11:
 - Comments are `#`. `--` was considered and rejected.
@@ -488,9 +488,8 @@ open:
   compiles it. `petal fmt`, `petal lint` and `petal migrate-old-code` fall
   back to it for a file whose indentation disagrees with its `end`s, so fmt
   can still indent such a file by its `end`s; fmt then checks that the result
-  is the same AST under the layout parser. fmt also refuses, with a message,
-  a file whose blocks are closed by indentation alone when its `end`-driven
-  indentation pass would change the parse (the fmt rewrite is the next step).
+  is the same AST under the layout parser. (fmt lays out blocks with no `end`
+  as of §5.3.)
 - **Corpus invariance** is `test/benchmarks/harness/layout_corpus.rs`
   (`cargo run --release --example layout_corpus`), against a baseline written
   by the parser from before the change. Result on 2026-11-12, each file read
@@ -639,6 +638,64 @@ Two spellings now exist, so `petal fmt` picks the canonical one:
 Whether a stray multi-line `end` is a lint (`redundant-end`) or simply formatted
 away is open question 1. Scala 3 keeps optional `end` markers for long blocks.
 Petal could do the same, but fmt would then have to leave them alone.
+
+### 5.3 As implemented (P3 fmt, lint, LSP, done 2026-11-12)
+
+- **fmt keeps the block structure of the parse.** `fmt::Blocks`
+  (`core/src/fmt/blocks.rs`) lists the constructs no `end` closes, each with
+  its last token, read off the green tree. The indentation pass
+  (`fmt/reindent.rs`) is still token-driven; it drops such a construct from
+  its stack once that token has gone by, where it used to wait for an `end`.
+  Tokens are named by their index among the tokens that are not line breaks,
+  which whitespace edits do not move.
+- **The gate is AST equality** (`rewrite::ast_shape`) on top of the token
+  comparison, for every file fmt changes.
+- **Three readings.** The language's own; by `end`s, for a legacy file whose
+  indentation disagrees with them; and, for a file rejected only for its tabs
+  (B11), with a tab as one column, accepted when the parse is the same with a
+  tab as eight columns. A file with no reading is reported with the parser's
+  error.
+- **A comment after a block with no `end`** goes to the deepest level still
+  open that it was written at least as deep as.
+- **fmt removes no `end`** (open question 1). The transform is
+  `fmt::remove_block_ends` (`core/src/fmt/ends.rs`), for `end-lines` to call
+  after `petal fmt`:
+  - it removes an `end` alone on its line, and the `end` of `end)` / `end]` /
+    `end}`;
+  - a comment after a removed `end` stays, on its own line at the block's
+    column;
+  - it keeps an inline `end`, `end,`, an `end` followed by anything else, the
+    `end` of an empty block, and one whose next line starts with an operator;
+  - the gate is AST equality, and an `end` whose removal changes the parse is
+    put back, one at a time (`if c then a; b` / `end`, B3);
+  - it reports the lines of the `end`s it kept.
+
+  `end,` is kept: the plan's step 3 would leave a line that starts with a
+  comma. Over this repo's formatted `.ptl` it removes more than 5,000 `end`s,
+  and every result is a fixed point of fmt and the same AST
+  (`fmt_lays_out_blocks_without_ends_over_repo_corpus`).
+- **Lint fixes.** `prefer-match` writes a `match` closed the way the chain
+  was. A body over several lines is not moved, so the arms are placed where
+  those lines still read as the body before fmt runs: by `end`s when the chain
+  has one and the result reads that way, otherwise one column in from the
+  chain with each body left on its own line. A chain neither placement reads
+  for is left alone. `prefer-repeat` takes a loop with no `end`. The corpus
+  sweep `lint_reads_blocks_without_ends_over_repo_corpus` holds the `end`-less
+  spelling of every repo file to the findings of the `end`-ful one.
+- **Other emitters.** None emits a multi-line block. `fix-imports` and the
+  goal edits start an inserted top-level statement at the file's left margin
+  (B12). Hint text still shows one-liners with `end`, which stay valid (P6).
+- **LSP.** `textDocument/foldingRange` is new and reads the blocks off the
+  parse (`lsp/folding.rs`). The outline needed no change: a declaration's
+  range is its statement's span. The tolerant parse behind completion gives a
+  block whose only line was blanked a `nil` to stand for its body. The server
+  has no selection-range or on-type-formatting support, before or after.
+- **source_diff.** A removed `end` maps to the end of the token before it, so
+  the `end-lines` migration reloads as `SourceChange::None` (Relocated), with
+  every span where a recompile puts it. An added `end` is `Full`: the tokens
+  do not say where the old end of the block went. When some of a run of
+  consecutive `end`s are removed, the kept ones are found by column; if two
+  share a column the answer is `Full`.
 
 ## 6. Assessment
 

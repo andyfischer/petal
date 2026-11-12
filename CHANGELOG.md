@@ -46,9 +46,28 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   - "… is unclosed; expected `end`" is gone: a block with no `end` is closed
     by its indentation.
 
-  `petal fmt` does not lay out blocks without an `end` yet: where its
-  indentation pass would change what such a file means, it refuses the file
-  and says so. Embedder API: `Parser::by_end()` and
+  The tools read and write both spellings, and any mix of them:
+  - `petal fmt` takes the blocks from the parse, so a block with no `end`
+    keeps its extent while every level moves to two columns. It converts
+    tabs in indentation to spaces, and adds and removes no `end`. Every
+    result must now parse to the same AST as the input, not only lex to the
+    same tokens.
+  - `petal lint --fix`: `prefer-match` turns a chain with no `end` into a
+    `match` with none, and `prefer-repeat` takes a loop with no `end`.
+  - `petal lsp` answers `textDocument/foldingRange` from the parse (the same
+    folds with and without `end`s), and completion keeps a declaration whose
+    body is still being typed.
+  - Hot reload: deleting the `end`s that indentation makes redundant is a
+    layout-only edit (`SourceChange::None`): nothing is recompiled and
+    `state` is untouched. Adding an `end` is the same program but is
+    recompiled.
+  - Goal edits (`modify_source_with_goals`) and `petal fix-imports` start a
+    new top-level statement at the file's left margin.
+
+  Embedder API: `fmt::remove_block_ends` drops the `end`s indentation makes
+  redundant (gated on AST equality; `petal fmt` does not run it),
+  `fmt::Blocks` says which constructs of a parse no `end` closes, and
+  `fmt::reindent::reindent_protected` takes it. `Parser::by_end()` and
   `cst::parse_source_by_end` read source the old way (every block to its
   `end`), for tools that repair old files; `Lexer::token_first_on_line` and
   `Lexer::token_tab_indented` are new, and `Parser::with_tab_indentation`

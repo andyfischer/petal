@@ -395,6 +395,24 @@ fn insert_statement(
     placement: &Placement,
     stmts: &[crate::ast::Stmt],
 ) -> String {
+    // Indentation delimits blocks, and the column of a file's first
+    // statement is its left margin (source held in an indented host string
+    // has one): a new top-level statement starts there, every line of it.
+    let margin = stmts
+        .first()
+        .map_or(0, |s| (s.span.start.column as usize).saturating_sub(1));
+    let indented;
+    let statement = if margin == 0 {
+        statement
+    } else {
+        let pad = " ".repeat(margin);
+        indented = statement
+            .split('\n')
+            .map(|l| if l.is_empty() { l.to_string() } else { format!("{pad}{l}") })
+            .collect::<Vec<_>>()
+            .join("\n");
+        indented.as_str()
+    };
     let anchored = match placement {
         Placement::End => None,
         Placement::After(anchor) => insert_after(source, statement, anchor, stmts),

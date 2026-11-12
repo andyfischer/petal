@@ -129,6 +129,42 @@ print(evens([1, 2, 3, 4]))
     assert_eq!(run_source("let-run", &got), run_source("let-run0", src));
 }
 
+/// The same rewrite on source whose blocks are closed by indentation alone:
+/// only the mentions change, and the result is the program the `end`-ful
+/// source converts to.
+#[test]
+fn a_let_becomes_a_var_in_source_with_no_end() {
+    let with_ends = "\
+fn evens(xs)
+  let out = []   # collected so far
+  for x in xs do
+    if x % 2 == 0 then
+      out = append(out, x)
+    end
+  end
+  let peek = fn()
+    len(out)
+  end
+  print(peek())
+  out
+end
+print(evens([1, 2, 3, 4]))
+";
+    let src = petal::fmt::remove_block_ends(with_ends).unwrap().text;
+    assert!(!src.contains("end\n"), "{src}");
+    let got = converted("no-end", &src, "evens/out");
+    assert_eq!(
+        got,
+        src.replace("let out", "var out")
+            .replace("      out = ", "      set out = ")
+            // Read through the cell only where a closure captured it.
+            .replace("len(out)", "len(get out)")
+    );
+    let ended = converted("no-end-ended", with_ends, "evens/out");
+    assert_eq!(petal::fmt::remove_block_ends(&ended).unwrap().text, got);
+    assert_eq!(run_source("no-end-run", &got), run_source("no-end-run0", &src));
+}
+
 #[test]
 fn a_state_becomes_a_state_var() {
     let src = "state hits = 0\nhits = hits + 1\nprint(hits)\n";

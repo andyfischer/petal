@@ -143,7 +143,7 @@ rest.
 shape.** `else`/`elsif` (`else if` after this change) align with the statement line and the body is indented
 under it:
 
-```petal ignore
+```petal ignore no-migrate
 let bucket = if ci < 0 then          # examples/dashboards/finance-dashboard/app.ptl:350
   zeros(len(CATS))
 else
@@ -639,7 +639,7 @@ program**, in every case I could construct:
   lands at a column that doesn't match the innermost open block, so B5 reports
   an error.
 
-  ```petal ignore
+  ```petal ignore no-migrate
   fn f()
     if c then
       a()

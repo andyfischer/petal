@@ -18,7 +18,7 @@ print(clamp_all([1, 5, 9], 2, 8)) # [2, 5, 8]
 The same program with its `end`s is still valid, and the two can be mixed block
 by block:
 
-```petal
+```petal no-migrate
 fn clamp_all(xs, lo, hi)
   for x in xs do
     if x < lo then lo
@@ -79,7 +79,7 @@ error.
 
 `end` is still the way to do three things that indentation alone cannot:
 
-```petal
+```petal no-migrate
 let xs = [3, 1, 2]
 
 # Two statements in a one-line body.

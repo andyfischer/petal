@@ -16,10 +16,10 @@ their output").
 - [ ] `tools/dm-mode-integration-test.ts`: 12 of 36 steps fail, before and
       after Phase 3b (01-helper-row's plain drag no longer rewrites `gap`;
       03-fractal-tree's "the root stays").
-- [ ] Re-vendor: petal-lang.org (`pnpm build:sdk`; `aim.ptl` already uses
-      `deriv` and fails on the vendored wasm until then), Cheesecake and
-      worlds-fair (`Value::Dual` and the dual C-bridge view are gone, an
-      **embedder-visible** change).
+- [x] Re-vendor (2026-11-11, all at `0349c2a3`): petal-lang.org (`aim.ptl`
+      runs on the new SDK), Cheesecake and worlds-fair. None of the three
+      used `Value::Dual` or the dual C-bridge view, so only the vendored
+      trees changed.
 
 ## Summary
 

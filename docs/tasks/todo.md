@@ -59,35 +59,28 @@ Fix the hosting, then test the one-liner on a clean machine
   not only the report, misses these reads before trusting `const` folding
   near an `if`.
 
-## 4. Re-vendor wave (downstream drift)
+## 4. Re-vendor wave (done 2026-11-11)
 
-Three landings since the last vendoring change what embedders see:
-bloom owns the widgets (R4, 2026-11-10), dual numbers are gone
-(`Value::Dual`, the C bridge's dual view; 2026-11-11), and the
-differentiation rewrite's edit modes and `speculate` fast path.
-
-- **petal-lang.org**: `pnpm build:sdk` + `scripts/sync-examples.mjs`. The
-  site's `aim.ptl` already calls `deriv`, which the vendored wasm lacks; the
-  DM gallery's `settings-card.ptl` still uses `ui.card` / `progress_bar`;
-  the SDK predates `ui/drag`, `speculate` and the memo/emit-trace fix.
-- **Cheesecake** (vendored `07b0ad48`, 2026-11-09): port its remaining calls
-  of deprecated `ui` widgets (e.g. `games/trailkeeper-art-tool`), then
-  re-vendor. Its `third_party/petal/VENDORED.md` (lines 14 and 187) says
-  `petal lint --fix` rewrites `const`/`config let` and `state(key)`; after
-  the re-vendor it should say `petal migrate-old-code`. Its next re-vendor
-  archives `core-libs/gpp` instead of `garden/gpp` and drops its one local
-  modification (`gpp/Cargo.toml`).
-- **worlds-fair** (`vendor/petal`, 2026-11-10): picks up the dual removal.
+All three embedders are vendored at `0349c2a3` (bloom owns the widgets,
+dual numbers removed, edit modes, element-child edit paths):
+petal-lang.org (`~/biz` `543aaea4`: SDK, garden-web, `settings-card.ptl`
+ported off `ui`'s widgets), Cheesecake (widgets ported in `7246a93`, then
+the re-vendor; `VENDORED.md` now says `petal migrate-old-code`) and
+worlds-fair (`e578cf6`). Left: style-only lint findings in the site's
+examples and worlds-fair's `ui/ptl` (`petal lint --fix` handles most).
 
 ## 5. Goal-based edits reach element children (done 2026-11-11)
 
 Done: XPath-style child steps (`layers[2]/group[0]/image[1].x`,
 [edit-paths.md](../features/edit-paths.md)) with set / insert / remove /
 move as minimal splices, and `to_source` writes `{x: 1}`
-([images-followup.md](images-followup.md) items 1 and 3). Left downstream:
-petal-images can delete `Doc::edit_nested` and its whole-`layers`
-rewrite, and petal-creative's `crates/movie/src/effects.rs` tests expect the
-old `{ type: … }` padding.
+([images-followup.md](images-followup.md) items 1 and 3). petal-images
+uses them (petal-creative `5a8069b`: `Doc::edit_nested` and the
+whole-`layers` rewrite are gone) and the `movie` tests expect `{type: …}`.
+Left: the C JSON value format has no element form, so C hosts cannot
+insert or set a whole child element with a value (`pb_source_set` with
+source text works), and petal-creative's social editor and petal-design
+still splice text themselves.
 
 ## 6. Differentiation rewrite: small leftovers
 

@@ -258,6 +258,9 @@ pub fn reindent_protected(
     let mut open_tags: Vec<usize> = Vec::new();
 
     let mut out_lines: Vec<String> = Vec::with_capacity(lines.len());
+    // Per line: the column a block opened on it is measured from. The column
+    // the line is shown at, except for a line that begins inside a string.
+    let mut anchors: Vec<usize> = Vec::with_capacity(lines.len());
     let mut ti = 0usize; // next token index
 
     for (line_idx, &(ls, le)) in lines.iter().enumerate() {
@@ -274,8 +277,9 @@ pub fn reindent_protected(
         // is read, so its lines are laid out like code.
         let inside =
             |k: usize| (spans[k].start.offset as usize) < ls && (spans[k].end.offset as usize) > ls;
-        let starts_inside =
-            (0..first_ti).any(|k| inside(k) && !matches!(tokens[k], Token::JsxText(_)));
+        let inside_token =
+            (0..first_ti).rfind(|&k| inside(k) && !matches!(tokens[k], Token::JsxText(_)));
+        let starts_inside = inside_token.is_some();
 
         // Leading-whitespace run.
         let mut ws_end = ls;
@@ -441,11 +445,20 @@ pub fn reindent_protected(
         // Constructs opened on this line indent their contents one step past
         // the column this line is shown at, however many of them open here.
         let content = shown_cols + INDENT;
+        // A line that begins inside a string is not a line start for layout:
+        // a block opened on it is measured from the line the string began
+        // on (`emit("…` / `…", fn(x)` / body), so its body goes a step in
+        // from that line, wherever the string's last line happens to start.
+        let anchor_cols = inside_token.map_or(shown_cols, |k| {
+            anchors[spans[k].start.line as usize - 1]
+        });
+        anchors.push(anchor_cols);
+        let block_content = anchor_cols + INDENT;
         for k in line_tokens {
             if !matches!(tokens[k], Token::Newline) {
                 close_by_layout(&mut stack, ord[k]);
             }
-            let construct = |content: usize| Open::construct(content, blocks.closed_by_layout(ord[k]));
+            let construct = || Open::construct(block_content, blocks.closed_by_layout(ord[k]));
             match &tokens[k] {
                 _ if is_label(tokens, k) => {}
                 // An or-pattern may run over several lines, each ending or
@@ -474,10 +487,18 @@ pub fn reindent_protected(
                         && !is_lambda_arrow(tokens, k);
                     if arms {
                         // `when pattern ->` with the body on the lines below.
-                        if matches!(tokens.get(k + 1), Some(Token::Newline)) {
+                        // In a `{…}` hole among an element's children the
+                        // lexer drops the line breaks, so the next token
+                        // sitting on a later line says the same thing.
+                        let breaks = match tokens.get(k + 1) {
+                            Some(Token::Newline) => true,
+                            Some(Token::Eof) | None => false,
+                            Some(_) => spans[k + 1].start.line > spans[k].end.line,
+                        };
+                        if breaks {
                             stack.push(Open {
                                 arm_body: true,
-                                ..Open::block(content)
+                                ..Open::block(block_content)
                             });
                         }
                         when_header = None;
@@ -491,12 +512,12 @@ pub fn reindent_protected(
                         pending_do = false;
                     } else {
                         // The body of a `when … do` arm or of a `test`.
-                        stack.push(construct(content));
+                        stack.push(construct());
                     }
                 }
                 Token::For | Token::While => {
                     pending_do = true;
-                    stack.push(construct(content));
+                    stack.push(construct());
                 }
                 Token::If => {
                     let guard = when_header
@@ -508,17 +529,17 @@ pub fn reindent_protected(
                         let mid_line = sig.first() != Some(&k);
                         stack.push(Open {
                             hang: mid_line.then_some(this_line),
-                            ..construct(content)
+                            ..construct()
                         });
                     }
                 }
-                Token::Match | Token::Enum => stack.push(construct(content)),
+                Token::Match | Token::Enum => stack.push(construct()),
                 // `class Name … end` — contextual, so it arrives as an
                 // identifier; only the declaration form (a name follows) opens
                 // a block, never a variable or a JSX `class=` attribute.
                 Token::Ident(w) if w == crate::parse::CLASS_KEYWORD => {
                     if matches!(tokens.get(k + 1), Some(Token::Ident(_))) {
-                        stack.push(construct(content));
+                        stack.push(construct());
                     }
                 }
                 Token::Fn => {
@@ -526,7 +547,7 @@ pub fn reindent_protected(
                     let native = k > 0
                         && matches!(&tokens[k - 1], Token::Ident(w) if w == crate::parse::NATIVE_KEYWORD);
                     if !native && fn_takes_end(tokens, k) {
-                        stack.push(construct(content));
+                        stack.push(construct());
                     }
                 }
                 Token::LParen | Token::LBracket | Token::LBrace => {

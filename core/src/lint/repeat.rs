@@ -345,7 +345,10 @@ impl Finder<'_> {
         let start = stmt.span.start.offset as usize;
         let end = stmt.span.end.offset as usize;
         let whole = self.text(start, end)?;
-        if !whole.starts_with("for") || !whole.ends_with("end") || crate::trivia::may_hold_comment(&whole) {
+        // The statement runs to its `end`, or, closed by its indentation
+        // alone, to the piece its body ends with.
+        let closed = whole.ends_with("end") || whole.ends_with(piece.as_str());
+        if !whole.starts_with("for") || !closed || crate::trivia::may_hold_comment(&whole) {
             return None;
         }
         Some(Fix {

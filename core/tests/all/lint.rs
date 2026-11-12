@@ -1492,3 +1492,181 @@ fn elsif_is_reported_as_old_syntax_and_left_as_written() {
     let src = src.replace("elsif", "else if");
     assert!(lint_source(&src, &LintOptions::default()).unwrap().findings.is_empty());
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Blocks closed by indentation (docs/tasks/pythonic-syntax.md §6.8)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// A chain with no `end` becomes a `match` with none.
+#[test]
+fn a_chain_closed_by_indentation_becomes_a_match_closed_the_same_way() {
+    assert_lints_to(
+        "\
+fn object_kind(ch)
+  if ch == \"@\" then \"spawn\"
+  else if ch == \"o\" then \"coin\"
+  else if ch == \"w\" then \"walker\"
+  else nil
+print(object_kind(\"o\"))
+",
+        "\
+fn object_kind(ch)
+  match ch
+    when \"@\" -> \"spawn\"
+    when \"o\" -> \"coin\"
+    when \"w\" -> \"walker\"
+    when _ -> nil
+print(object_kind(\"o\"))
+",
+    );
+    // With no `else`, the fallback is spelled out, and the line after the
+    // chain stays outside the `match`.
+    assert_lints_to(
+        "\
+fn f(x)
+  let r = if x == 1 then \"a\"
+    else if x == 2 then \"b\"
+    else if x == 3 then \"c\"
+  r
+print(f(2))
+",
+        "\
+fn f(x)
+  let r = match x
+    when 1 -> \"a\"
+    when 2 -> \"b\"
+    when 3 -> \"c\"
+    when _ -> nil
+  r
+print(f(2))
+",
+    );
+}
+
+/// Bodies on the lines under their `then`, and a body that is itself a
+/// block: nothing in the chain has an `end`, so the body lines must stay
+/// right of their arm for the rewrite to read at all.
+#[test]
+fn a_chain_of_indented_bodies_with_no_end_becomes_a_match() {
+    assert_lints_to(
+        "\
+fn f(mode, hit)
+  if mode == \"inspect\" then
+    if hit then
+      print(1)
+      print(2)
+  else if mode == \"demolish\" then
+    print(3)
+  else if mode == \"place\" then
+    draw(
+      4,
+    )
+  else
+    if hit then
+      print(5)
+    else
+      print(6)
+  nil
+fn draw(n) print(n)
+f(\"place\", true)
+",
+        "\
+fn f(mode, hit)
+  match mode
+    when \"inspect\" ->
+      if hit then
+        print(1)
+        print(2)
+    when \"demolish\" -> print(3)
+    when \"place\" ->
+      draw(
+        4,
+      )
+    when _ ->
+      if hit then
+        print(5)
+      else
+        print(6)
+  nil
+fn draw(n) print(n)
+f(\"place\", true)
+",
+    );
+}
+
+/// A chain that keeps its `end` around blocks that have none.
+#[test]
+fn a_chain_with_an_end_around_blocks_without_becomes_a_match() {
+    assert_lints_to(
+        "\
+fn f(mode, hit)
+  if mode == \"a\" then
+    if hit then
+      print(1)
+  else if mode == \"b\" then
+    print(3)
+  else if mode == \"c\" then
+    print(4)
+  end
+  nil
+f(\"a\", true)
+",
+        "\
+fn f(mode, hit)
+  match mode
+    when \"a\" ->
+      if hit then
+        print(1)
+    when \"b\" -> print(3)
+    when \"c\" -> print(4)
+    when _ -> nil
+  end
+  nil
+f(\"a\", true)
+",
+    );
+}
+
+/// The other rewriting rules on source with no `end`: a loop becomes
+/// `repeat`, a `var` becomes a `let`, a write becomes a compound one.
+#[test]
+fn the_rewriting_rules_work_without_ends() {
+    let src = "\
+fn rep(s: string, n: int) -> string
+  let out = \"\"
+  for i in range(0, n) do out = out ++ s
+  out
+let bar = \"[\"
+for i in range(4) do
+  bar = bar ++ \"=\"
+fn total(xs)
+  var sum = 0
+  var seen = 0
+  for x in xs do
+    set sum = get sum + x
+  get sum + get seen
+print(rep(\"ab\", 2) ++ bar)
+print(total([1, 2]))
+";
+    let outcome = lint_outcome(src);
+    assert_eq!(outcome.count(PREFER_REPEAT), 2);
+    assert_lints_to(
+        src,
+        "\
+fn rep(s: string, n: int) -> string
+  let out = \"\"
+  out ++= repeat(s, n)
+  out
+let bar = \"[\"
+bar ++= repeat(\"=\", 4)
+fn total(xs)
+  let sum = 0
+  let seen = 0
+  for x in xs do
+    sum += x
+  sum + seen
+print(rep(\"ab\", 2) ++ bar)
+print(total([1, 2]))
+",
+    );
+}

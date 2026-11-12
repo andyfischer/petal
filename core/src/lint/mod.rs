@@ -1115,6 +1115,60 @@ mod tests {
         );
     }
 
+    /// The same safeguard with the `end`s gone: every repo file, formatted
+    /// and stripped of the `end`s indentation makes redundant, must lint to
+    /// the findings it had with them, and a fix must leave a program that
+    /// compiles and has nothing left to fix.
+    #[test]
+    #[ignore = "expensive corpus sweep: run with `make expensive_lint_tests`"]
+    fn lint_reads_blocks_without_ends_over_repo_corpus() {
+        let files = crate::test_corpus::repo_ptl_files();
+        let checked = crate::test_corpus::par_map(&files, |path| {
+            let src = std::fs::read_to_string(path).ok()?;
+            let opts = LintOptions {
+                include_dirs: vec![],
+                origin: Some(path.to_path_buf()),
+                ..Default::default()
+            };
+            let formatted = crate::fmt::format_source(&src).ok()?;
+            let with_ends = lint_source(&formatted, &opts).ok()?;
+            let stripped = crate::fmt::remove_block_ends(&formatted).ok()?.text;
+            let outcome = lint_source(&stripped, &opts)
+                .unwrap_or_else(|e| panic!("lint failed without `end`s: {}: {e}", path.display()));
+            let rules = |o: &LintOutcome| {
+                let mut rules: Vec<_> = o.findings.iter().map(|f| (f.rule, f.fixable)).collect();
+                rules.sort_unstable();
+                rules
+            };
+            assert_eq!(
+                rules(&outcome),
+                rules(&with_ends),
+                "the findings of {} changed with its `end`s removed",
+                path.display()
+            );
+            if outcome.fixable() == 0 {
+                return Some(false);
+            }
+            if compiles(&stripped, &opts).is_ok()
+                && let Err(e) = compiles(&outcome.output, &opts)
+            {
+                panic!("lint broke compilation for {}: {}", path.display(), e);
+            }
+            let again = lint_source(&outcome.output, &opts).expect("relint");
+            assert!(
+                again.fixable() == 0,
+                "lint --fix not a fixed point without `end`s for {}: {:?}",
+                path.display(),
+                again.findings.iter().filter(|f| f.fixable).collect::<Vec<_>>()
+            );
+            Some(true)
+        });
+        let linted = checked.iter().flatten().count();
+        let fixed = checked.iter().filter(|c| **c == Some(true)).count();
+        eprintln!("linted {linted}, fixed {fixed}");
+        assert!(linted > 150, "expected a real corpus, linted {linted}");
+    }
+
     #[test]
     fn map_back_through_splices() {
         // "var x" -> "let x"; "set x = 1" -> "x = 1" (5 chars dropped at 6).

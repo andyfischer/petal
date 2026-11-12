@@ -165,7 +165,10 @@ impl ImportFixer {
                      selective import no longer binds it"
                 ));
                 let end = (stmt.span.end.offset as usize).min(chars.len());
-                edits.push((end, end, format!("\nimport {path}{alias}")));
+                // Indentation delimits blocks: the new line starts at the
+                // column of the import it follows.
+                let margin = " ".repeat((stmt.span.start.column as usize).saturating_sub(1));
+                edits.push((end, end, format!("\n{margin}import {path}{alias}")));
             }
             if let Some(new_path) = new_path {
                 let new_path = crate::ast::import_path_source(&new_path).into_owned();
@@ -824,10 +827,19 @@ fn apply_edits(chars: &[char], mut edits: Vec<(usize, usize, String)>) -> String
 /// block that a blank line sets apart from the code, since that is a file
 /// header and not a comment on the import.
 fn insert_import_lines(source: &str, lines: &[String]) -> String {
-    let block = lines.join("\n");
     let stmts = crate::cst::parse_source(source, ENTRY_FILE)
         .map(|(_, stmts)| stmts)
         .unwrap_or_default();
+    // Indentation delimits blocks, and the first statement's column is the
+    // file's left margin: the new lines start there too.
+    let margin = stmts
+        .first()
+        .map_or(0, |s| (s.span.start.column as usize).saturating_sub(1));
+    let block = lines
+        .iter()
+        .map(|l| format!("{}{l}", " ".repeat(margin)))
+        .collect::<Vec<_>>()
+        .join("\n");
     let last_import = stmts
         .iter()
         .filter(|s| matches!(s.kind, StmtKind::Import(_)))

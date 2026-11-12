@@ -20,8 +20,15 @@
 //! `then`, `else if <subject> ==` (or its old spelling `elsif`), `else`. Every
 //! arm's pattern and body is preserved as the author wrote it, comments and
 //! layout included, and the chain's trailing `end` is left in place because
-//! `match` ends the same way.
-//! Indentation is not this rule's problem: [`super::reindent`] runs after it.
+//! `match` ends the same way. A chain closed by its indentation alone becomes
+//! a `match` closed the same way.
+//!
+//! Indentation is mostly not this rule's problem: the formatter runs after
+//! it. But indentation delimits blocks, so what the rule writes must already
+//! be readable. Arms whose bodies fit on a line are written a step in from
+//! the chain. A body over several lines is not moved, and is tried in two
+//! placements ([`Placement`]); the first whose result parses is the fix, and
+//! a chain with none is left alone.
 //!
 //! ## What it refuses, and why
 //!
@@ -138,19 +145,51 @@ struct Chain<'a> {
     span: SourceSpan,
 }
 
-/// The ` -> ` that introduces an arm's body. A body that is itself a block
-/// over several lines (`if … then` with its branches below, a loop) starts on
-/// a line of its own under the `when`, where its lines indent as a body's do;
-/// left on the arrow's line, its branches would sit level with the arms.
-fn arrow(chars: &[char], body: SourceSpan, lead: &str) -> String {
+/// Where the arms of the `match` go when a body runs over several lines.
+/// The lines of a body stay where they are, so the arms have to be put
+/// where those lines still read as the body.
+#[derive(Clone, Copy, PartialEq)]
+enum Placement {
+    /// Arms a step in from the chain, and a block body's first line a step
+    /// in from its arm. The rest of the body is level with the arms until
+    /// the formatter indents it by its `end`s, so this reads only by them
+    /// ([`crate::rewrite::parse_ast_or_by_end`]): for a chain whose blocks
+    /// all have their `end`.
+    ByEnd,
+    /// Arms one column in from the chain, and a body that started on a line
+    /// of its own left there whole: every line of it is right of its arm,
+    /// as it was right of its `if`. Reads by indentation, whatever closes
+    /// the blocks; the formatter then moves each level to its column.
+    ByLayout,
+}
+
+/// The ` -> ` that introduces an arm's body, replacing the `then` (or
+/// `else`) glue `gap` that led to it.
+///
+/// A body on one line follows the arrow. Under [`Placement::ByEnd`], a body
+/// that is itself a block over several lines (`if … then` with its branches
+/// below, a loop) starts on a line of its own under the `when`, where its
+/// lines indent as a body's do; left on the arrow's line, its branches would
+/// sit level with the arms. Under [`Placement::ByLayout`], a body over
+/// several lines that started on a line of its own keeps that line.
+fn arrow(chars: &[char], body: SourceSpan, lead: &str, gap: &str, placement: Placement) -> String {
     let text = span_text(chars, body).unwrap_or_default();
-    let opens_block = ["if ", "for ", "while ", "match "]
-        .iter()
-        .any(|kw| text.trim_start().starts_with(kw));
-    if opens_block && text.contains('\n') {
-        format!(" ->\n{lead}    ")
-    } else {
-        " -> ".to_string()
+    let multi_line = text.contains('\n');
+    match placement {
+        Placement::ByEnd => {
+            let opens_block = ["if ", "for ", "while ", "match "]
+                .iter()
+                .any(|kw| text.trim_start().starts_with(kw));
+            if opens_block && multi_line {
+                format!(" ->\n{lead}    ")
+            } else {
+                " -> ".to_string()
+            }
+        }
+        Placement::ByLayout => match gap.find('\n') {
+            Some(at) if multi_line => format!(" ->{}", &gap[at..]),
+            _ => " -> ".to_string(),
+        },
     }
 }
 
@@ -210,6 +249,40 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
     if chain.arms.len() < MIN_ARMS {
         return None;
     }
+    let plan = plan_chain_placed(chain, chars, Placement::ByEnd)?;
+    let reads = |splices: &[Splice], by_end: bool| {
+        let text = apply_match_edits(chars, splices);
+        if by_end {
+            crate::rewrite::parse_ast_or_by_end(&text).is_ok()
+        } else {
+            crate::rewrite::parse_ast(&text).is_ok()
+        }
+    };
+    if !plan.multi_line {
+        // Every arm is one line, a step in from the chain: readable as
+        // written. With no `end` to mark where the `match` stops, make sure.
+        return (plan.has_end || reads(&plan.splices, true)).then_some(plan.splices);
+    }
+    // A body over several lines stays where it is, and which placement of
+    // the arms still reads it as the body depends on how its blocks close.
+    if plan.has_end && reads(&plan.splices, true) {
+        return Some(plan.splices);
+    }
+    let plan = plan_chain_placed(chain, chars, Placement::ByLayout)?;
+    reads(&plan.splices, false).then_some(plan.splices)
+}
+
+/// A chain's rewrite under one [`Placement`].
+struct ChainPlan {
+    /// In source order.
+    splices: Vec<Splice>,
+    /// An `end` closes the chain (and so the `match`).
+    has_end: bool,
+    /// Some arm's body runs over several lines.
+    multi_line: bool,
+}
+
+fn plan_chain_placed(chain: &Chain, chars: &[char], placement: Placement) -> Option<ChainPlan> {
 
     // Every arm has to be `<subject> == <literal>` over the same subject, with
     // a single expression for a body.
@@ -265,7 +338,12 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
         .iter()
         .take_while(|c| **c == ' ' || **c == '\t')
         .collect();
-    let arm = format!("\n{lead}  when ");
+    let step = if placement == Placement::ByLayout { " " } else { "  " };
+    let arm = format!("\n{lead}{step}when ");
+    let multi_line = bodies
+        .iter()
+        .chain(&else_span)
+        .any(|b| span_text(chars, *b).is_some_and(|t| t.contains('\n')));
 
     // `if ` -> `match `, leaving the subject text that follows it in place.
     let head_end = conds[0].0.start.offset as usize;
@@ -314,25 +392,29 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
         // ` then ` -> ` -> `.
         let then_from = rhs.end.offset as usize;
         let then_to = bodies[i].start.offset as usize;
-        if glue(chars, then_from, then_to)?.trim() != "then" {
+        let gap = glue(chars, then_from, then_to)?;
+        if gap.trim() != "then" {
             return None;
         }
         splices.push(Splice {
             start: then_from,
             end: then_to,
-            text: arrow(chars, bodies[i], &lead),
+            text: arrow(chars, bodies[i], &lead, &gap, placement),
         });
     }
 
-    // `match` closes with `end` exactly as the chain did, so the tail is only
-    // checked to be the tail we think it is — and, when its `end` sits on the
-    // last branch's line, moved to a line of its own under the `match`. A
-    // comment may sit in here; it is not rewritten, so it survives untouched.
+    // `match` closes exactly as the chain did, with an `end` or by its
+    // indentation alone, so the tail is only checked to be the tail we think
+    // it is — and, when its `end` sits on the last branch's line, moved to a
+    // line of its own under the `match`. A comment may sit in here; it is
+    // not rewritten, so it survives untouched.
     let last_body_end = bodies[bodies.len() - 1].end.offset as usize;
     let tail_from = else_span.map_or(last_body_end, |es| es.end.offset as usize);
     let tail: String = chars.get(tail_from..if_end)?.iter().collect();
     let tail = tail.trim_end();
-    if !tail.ends_with("end") {
+    // With no `end`, the chain stops at its last body.
+    let has_end = tail.ends_with("end");
+    if !has_end && !tail.is_empty() {
         return None;
     }
     let (end_at, end_line) = if tail.trim_start() == "end" && !tail.contains('\n') {
@@ -343,13 +425,17 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
     match else_span {
         Some(es) => {
             let to = es.start.offset as usize;
-            if glue(chars, last_body_end, to)?.trim() != "else" {
+            let gap = glue(chars, last_body_end, to)?;
+            if gap.trim() != "else" {
                 return None;
             }
+            // The glue runs from the body before the `else`; the arrow wants
+            // what follows the keyword.
+            let after_else = gap.trim_start().strip_prefix("else").unwrap_or("");
             splices.push(Splice {
                 start: last_body_end,
                 end: to,
-                text: format!("{arm}_{}", arrow(chars, es, &lead)),
+                text: format!("{arm}_{}", arrow(chars, es, &lead, after_else, placement)),
             });
             if !end_line.is_empty() {
                 splices.push(Splice {
@@ -368,7 +454,12 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
         }),
     }
 
-    Some(splices)
+    splices.sort_by_key(|s| s.start);
+    Some(ChainPlan {
+        splices,
+        has_end,
+        multi_line,
+    })
 }
 
 /// The source between two nodes, as long as it holds no comment.

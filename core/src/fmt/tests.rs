@@ -717,7 +717,7 @@ fn remove_block_ends_keeps_an_end_the_parse_needs() {
 /// what formatting gives back from any other indentation of it.
 #[test]
 #[ignore = "expensive corpus sweep: run with `make expensive_lint_tests`"]
-fn fmt_lays_out_the_repo_corpus_without_its_ends() {
+fn fmt_lays_out_blocks_without_ends_over_repo_corpus() {
     let files = crate::test_corpus::repo_ptl_files();
     let checked = crate::test_corpus::par_map(&files, |path| {
         let Ok(src) = std::fs::read_to_string(path) else {

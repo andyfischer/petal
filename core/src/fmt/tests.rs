@@ -298,11 +298,24 @@ fn fmt_is_ir_equal_and_idempotent_over_repo_corpus() {
             "fmt not idempotent for {}",
             path.display()
         );
-        if formatted == src {
-            // Already canonical: the IR comparison would be of a text with
-            // itself. Most of the repo is, so this is most of the sweep.
-            return Swept::Unchanged;
-        }
+        // Already canonical: the IR comparison would be of a text with
+        // itself. Most of the repo is (`petal migrate-old-code` formatted
+        // every file it took the `end` lines from), so one such file in
+        // five is compared with itself indented as a whole instead, which
+        // fmt must undo and which is the same program (the first statement
+        // sets the left margin).
+        let (src, formatted) = if formatted == src {
+            let sampled = path.to_string_lossy().bytes().map(usize::from).sum::<usize>() % 5 == 0;
+            let Some(mangled) = mangle_indentation(&src).filter(|_| sampled) else {
+                return Swept::Unchanged;
+            };
+            if mangled.contains(OFF) || mangled.contains(IGNORE_NEXT) || format_source(&mangled).ok().as_ref() != Some(&src) {
+                return Swept::Unchanged; // the mangle sweep's to judge
+            }
+            (mangled, src)
+        } else {
+            (src, formatted)
+        };
         let Ok((env_a, pid_a)) = compile_for_compare(&src, &includes, Some(path)) else {
             return Swept::Skipped; // doesn't compile standalone; nothing to compare
         };
@@ -718,7 +731,11 @@ fn remove_block_ends_keeps_an_end_the_parse_needs() {
 #[test]
 #[ignore = "expensive corpus sweep: run with `make expensive_lint_tests`"]
 fn fmt_lays_out_blocks_without_ends_over_repo_corpus() {
-    let files = crate::test_corpus::repo_ptl_files();
+    // The repo's own files have lost their `end` lines to the migration
+    // that calls this transform; the copies of ten of them taken with their
+    // `end`s are what still gives it something to remove.
+    let mut files = crate::test_corpus::repo_ptl_files();
+    files.extend(crate::test_corpus::with_ends_fixtures());
     let checked = crate::test_corpus::par_map(&files, |path| {
         let Ok(src) = std::fs::read_to_string(path) else {
             return (0, 0);
@@ -758,5 +775,5 @@ fn fmt_lays_out_blocks_without_ends_over_repo_corpus() {
     let files = checked.iter().map(|c| c.0).sum::<usize>();
     let removed = checked.iter().map(|c| c.1).sum::<usize>();
     assert!(files > 150, "expected a real corpus, checked {files}");
-    assert!(removed > 5000, "expected most `end` lines to go, removed {removed}");
+    assert!(removed > 300, "expected the `end` lines of the copies to go, removed {removed}");
 }

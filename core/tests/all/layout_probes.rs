@@ -37,8 +37,20 @@ impl Rng {
     }
 }
 
+/// A file of the repo, as it was written with its `end`s. The repo's own
+/// `.ptl` lost their `end` lines to `petal migrate-old-code` (`end-lines`),
+/// and these probes are about code that still has them, so [`REAL_FILES`]
+/// are read from the copies taken just before that migration
+/// (`core/tests/fixtures/with-ends/`, named by path, `.txt` so that no tool
+/// walks them). A file with no copy ([`MORE_REAL_FILES`], for the ignored
+/// sweeps) is read from the repo as it stands.
 fn repo_file(rel: &str) -> String {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let copy = core.join("tests/fixtures/with-ends").join(format!("{}.txt", rel.replace('/', "__")));
+    if let Ok(text) = std::fs::read_to_string(&copy) {
+        return text;
+    }
+    let root = core.parent().unwrap();
     std::fs::read_to_string(root.join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
 }
 
@@ -657,8 +669,8 @@ fn strip_sweep(files: &[&str]) -> usize {
 #[test]
 fn real_files_are_the_same_programs_without_their_end_lines() {
     let removed = strip_sweep(REAL_FILES);
-    // The files lose their `end`s for good when the migration runs.
     let had: usize = REAL_FILES.iter().map(|rel| strip_end_lines(&repo_file(rel)).1).sum();
+    assert!(had > 300, "the copies with their `end`s are gone: {had} `end` lines");
     assert!(removed * 10 >= had * 9, "stripped {removed} of {had} `end` lines");
 }
 

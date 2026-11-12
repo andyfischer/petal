@@ -22,6 +22,9 @@ function file(contents: string): string {
   return path;
 }
 
+// The keyword's migration alone: the whole command would also drop the `end`
+// line (`end-lines`).
+const MIGRATE = ["migrate-old-code", "--only", "export-to-pub"];
 const OLD = "export fn double(x)\n  x * 2\nend\nexport let limit = 10\nprint(double(limit))\n";
 const NEW = "pub fn double(x)\n  x * 2\nend\npub let limit = 10\nprint(double(limit))\n";
 
@@ -69,12 +72,12 @@ describe("pub / export", () => {
     expect(petalCapture(["lint", "--fix", path]).code).toBe(0);
     expect(readFileSync(path, "utf-8")).toBe(OLD);
 
-    expect(petalCapture(["migrate-old-code", "--check", path]).code).toBe(1);
-    const migrated = petalCapture(["migrate-old-code", path]);
+    expect(petalCapture([...MIGRATE, "--check", path]).code).toBe(1);
+    const migrated = petalCapture([...MIGRATE, path]);
     expect(migrated.code).toBe(0);
     expect(readFileSync(path, "utf-8")).toBe(NEW);
     expect(petalCapture(["lint", "--strict", path]).code).toBe(0);
-    expect(petalCapture(["migrate-old-code", "--check", path]).code).toBe(0);
+    expect(petalCapture([...MIGRATE, "--check", path]).code).toBe(0);
   });
 
   test("lint --rules lists old-syntax, and migrate-old-code --list lists export-to-pub", () => {
@@ -85,7 +88,7 @@ describe("pub / export", () => {
 
   test("fmt leaves the old spelling as written", () => {
     expect(petalCapture(["fmt", "-e", OLD]).stdout).toBe(OLD);
-    expect(petalCapture(["migrate-old-code", "-e", OLD]).stdout).toBe(NEW);
+    expect(petalCapture([...MIGRATE, "-e", OLD]).stdout).toBe(NEW);
   });
 
   test("`pub` is reserved; a dangling modifier is a parse error naming it", () => {

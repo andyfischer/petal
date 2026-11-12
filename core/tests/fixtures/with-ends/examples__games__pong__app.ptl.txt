@@ -1,0 +1,560 @@
+# ─────────────────────────────────────────────────────────────────────────
+#  PONG — a Garden panel app written in Petal.
+#
+#  Exercises: a real-time game loop over dt(), sub-stepped continuous
+#  collision, keyboard + mouse control, a small opponent AI with prediction,
+#  a particle system, and a multi-phase UI (title / serve / play / paused /
+#  over) drawn entirely with the petal-ui draw surface.
+#
+#  Designed for a 1040x720 viewport.  See README.md.
+# ─────────────────────────────────────────────────────────────────────────
+
+import ui
+
+# ── Palette ──────────────────────────────────────────────────────────────
+
+let C_BG      = :0a0c12
+let C_COURT   = :171b27
+let C_FIELD   = :11141e
+let C_LINE    = :232838
+let C_EDGE    = :2e3548
+let C_TEXT    = :e2e7f2
+let C_DIM     = :6f7a91
+let C_MUTE    = :4a5265
+let C_CHIP    = :171b26
+let C_YOU     = :ffb454
+let C_CPU     = :56c8ff
+let C_BALL    = :f6f8fd
+
+# ── Type scale ───────────────────────────────────────────────────────────
+
+# Only five type sizes in the whole app: 10 / 12 / 20 / 30 / 44.
+let S_TITLE = {size: 30, color: C_TEXT, spacing: 10}
+let S_KICK  = {size: 10, color: C_MUTE, spacing: 4}
+let S_LABEL = {size: 10, color: C_DIM,  spacing: 3}
+let S_STAT  = {size: 20, color: C_TEXT}
+let S_STATD = {size: 20, color: C_MUTE}
+let S_CAP   = {size: 12, color: C_TEXT}
+let S_HINT  = {size: 12, color: C_DIM}
+let S_BIG   = {size: 30, color: C_TEXT, spacing: 7}
+let S_SUB   = {size: 12, color: C_DIM}
+let S_SCORE = {size: 44, color: C_TEXT}
+
+# ── Tunables ─────────────────────────────────────────────────────────────
+
+let win_score      = tunable(7)
+let paddle_speed   = tunable(620.0)
+let ai_speed       = tunable(430.0)
+let ball_speed_min = tunable(330.0)
+let ball_speed_max = tunable(680.0)
+let tap_hold       = tunable(0.10)
+
+let PW   = 13
+let PH   = 96
+let BR   = 9
+let PAD  = 28
+let HEAD = 118
+let FOOT = 64
+
+# ── Persistent simulation state ──────────────────────────────────────────
+# Declared before the helper functions so closures see the live cells.
+
+state var ready      = false
+state var phase      = "title"      # title | play | paused | scored | serve | over
+state var bx         = 0.0
+state var by         = 0.0
+state var vx         = 0.0
+state var vy         = 0.0
+state var speed      = 0.0
+state var py         = 0.0
+state var ay         = 0.0
+state var hold_up    = 0.0
+state var hold_dn    = 0.0
+state var last_mx    = -1
+state var last_my    = -1
+state var s_you      = 0
+state var s_cpu      = 0
+state var rally      = 0
+state var best       = 0
+state var scorer     = ""
+state var banner     = ""
+state var subbanner  = ""
+state var serve_dir  = 1.0
+state var ai_timer   = 0.0
+state var ai_target  = 0.0
+state var ai_err     = 0.0
+state var flash_l    = 0.0
+state var flash_r    = 0.0
+state var flash_t    = 0.0
+state var flash_b    = 0.0
+state var goal_l     = 0.0
+state var goal_r     = 0.0
+state var bits       = []           # particles
+state var trail      = []
+state var pulse      = 0.0
+
+# ── Small pure helpers ───────────────────────────────────────────────────
+
+fn tx(s: string, x: num, y: num, style: record)
+  draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
+end
+
+fn tx_right(s: string, right_x: num, y: num, style: record)
+  draw_text(s, pos: {x: int(right_x) - text_width(s, style), y: int(y)}, style: style)
+end
+
+fn tx_center(s: string, cx: num, y: num, style: record)
+  draw_text(s, pos: {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style: style)
+end
+
+# Where a ball travelling (vx, vy) from (x, y) crosses the vertical line
+# `target_x`, reflected between `top` and `bot`.
+fn predict_y(x: num, y: num, dx: num, dy: num, target_x: num, top: num, bot: num) -> num
+  if dx == 0.0 then return (top + bot) / 2.0 end
+  let tt = (target_x - x) / dx
+  if tt < 0.0 then return (top + bot) / 2.0 end
+  var yy = y + dy * tt
+  for i in range(0, 80) do
+    if yy < top then
+      set yy = 2.0 * top - yy
+    else if yy > bot then
+      set yy = 2.0 * bot - yy
+    else
+      break
+    end
+  end
+  yy
+end
+
+# Append `n` sparks at (x, y) flying mostly along `dirx`.
+fn burst(list, x: num, y: num, n: num, col: record, dirx: num, spread: num)
+  var out = list
+  for i in range(0, n) do
+    let ang = random(-spread, spread)
+    let sp = random(90.0, 330.0)
+    set out = append(out, {
+      x: x,
+      y: y,
+      vx: dirx * sp * cos(ang),
+      vy: sp * sin(ang) + random(-70.0, 70.0),
+      life: random(0.28, 0.62),
+      max: 0.62,
+      c: col,
+      sz: random(1.6, 3.6),
+    })
+  end
+  out
+end
+
+fn draw_paddle(r: record, col: record, glow: num)
+  draw_rect_rounded(rect(r.x - 7, r.y - 7, r.w + 14, r.h + 14), radius: 13, c: col, a: int(18.0 + glow * 60.0))
+  draw_rect_rounded(rect(r.x - 3, r.y - 3, r.w + 6, r.h + 6), radius: 9, c: col, a: int(26.0 + glow * 80.0))
+  draw_rect_rounded(r, radius: 6, c: col)
+  draw_rect_rounded(rect(r.x + 4, r.y + 9, r.w - 8, r.h - 18), radius: 3, c: :ffffff, a: 60)
+end
+
+fn stat_cell(right_x: num, y: num, label: string, value: string, style: record)
+  tx_right(label, right_x, y, style: S_LABEL)
+  tx_right(value, right_x, y: y + 15, style: style)
+end
+
+fn chip(x: num, y: num, cap: string, desc: string) -> int
+  let cw = text_width(cap, S_CAP) + 20
+  let box = rect(int(x), int(y), cw, 24)
+  draw_rect_rounded(box, radius: 7, c: C_CHIP)
+  draw_rect_outline(box, c: C_LINE, a: 255, width: 1)
+  tx(cap, x: x + 10, y: y + 6, style: S_CAP)
+  tx(desc, x: x + cw + 10, y: y + 6, style: S_HINT)
+  cw + 10 + text_width(desc, S_HINT) + 26
+end
+
+# ── Frame ────────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let court = rect(PAD, HEAD, W - PAD * 2, H - HEAD - FOOT - PAD)
+let cx = court.x + court.w / 2
+let cy = court.y + court.h / 2
+let ct = float(court.y + 12)          # play-field top
+let cb = float(court.y + court.h - 12) # play-field bottom
+let plx = float(court.x + 26)          # player paddle x
+let prx = float(court.x + court.w - 26 - PW)
+
+if !ready then
+  set ready = true
+  set py = float(cy - PH / 2)
+  set ay = float(cy - PH / 2)
+  set bx = float(cx)
+  set by = float(cy)
+  set banner = "PONG"
+  set subbanner = "press SPACE to serve"
+end
+
+let raw_dt = dt()
+let sdt = min(raw_dt, 0.06)
+set pulse = pulse + sdt
+
+# ── Input ────────────────────────────────────────────────────────────────
+
+if key_pressed("up") || key_pressed("w") then set hold_up = tap_hold end
+if key_pressed("down") || key_pressed("s") then set hold_dn = tap_hold end
+
+if key_pressed("r") then
+  set phase = "title"
+  set s_you = 0
+  set s_cpu = 0
+  set rally = 0
+  set best = 0
+  set speed = 0.0
+  set vx = 0.0
+  set vy = 0.0
+  set bx = float(cx)
+  set by = float(cy)
+  set py = float(cy - PH / 2)
+  set ay = float(cy - PH / 2)
+  set bits = []
+  set trail = []
+  set banner = "PONG"
+  set subbanner = "press SPACE to serve"
+end
+
+if key_pressed("space") then
+  if phase == "title" || phase == "serve" then
+    set phase = "play"
+    set rally = 0
+    let ang = random(-0.32, 0.32)
+    set speed = ball_speed_min
+    set vx = serve_dir * speed * cos(ang)
+    set vy = speed * sin(ang)
+    set bx = float(cx)
+    set by = float(cy)
+    set trail = []
+    set bits = burst(bits, x: float(cx), y: float(cy), n: 14, col: C_BALL, dirx: serve_dir, spread: 1.2)
+  else if phase == "play" then
+    set phase = "paused"
+    set banner = "PAUSED"
+    set subbanner = "press SPACE to resume"
+  else if phase == "paused" then
+    set phase = "play"
+  else if phase == "over" then
+    set phase = "title"
+    set s_you = 0
+    set s_cpu = 0
+    set banner = "PONG"
+    set subbanner = "press SPACE to serve"
+  end
+end
+
+# Paddle: held keys, tap impulses, or the mouse when it is over the court.
+let k_up = key_down("up") || key_down("w") || hold_up > 0.0
+let k_dn = key_down("down") || key_down("s") || hold_dn > 0.0
+let mdir = (if k_up then -1.0 else 0.0 end) + (if k_dn then 1.0 else 0.0 end)
+set hold_up = max(0.0, hold_up - sdt)
+set hold_dn = max(0.0, hold_dn - sdt)
+
+if mdir != 0.0 && phase != "paused" then
+  set py = clamp(py + mdir * paddle_speed * sdt, lo: ct, hi: cb - float(PH))
+end
+
+let mx = mouse_x()
+let my = mouse_y()
+let mouse_moved = (mx != last_mx || my != last_my) && last_mx >= 0
+if mouse_moved && point_in(px: mx, py: my, r: court) && phase != "paused" then
+  set py = clamp(float(my - PH / 2), lo: ct, hi: cb - float(PH))
+end
+set last_mx = mx
+set last_my = my
+
+# ── Simulation ───────────────────────────────────────────────────────────
+
+if phase == "play" then
+  var left_t = sdt
+  while left_t > 0.0 do
+    let h = min(left_t, 0.004)
+    set left_t = left_t - h
+
+    set bx = bx + vx * h
+    set by = by + vy * h
+
+    if by - float(BR) < ct && vy < 0.0 then
+      set by = ct + float(BR)
+      set vy = -vy
+      set flash_t = 1.0
+      set bits = burst(bits, x: bx, y: ct, n: 8, col: C_EDGE, dirx: 0.0, spread: 3.14)
+    end
+    if by + float(BR) > cb && vy > 0.0 then
+      set by = cb - float(BR)
+      set vy = -vy
+      set flash_b = 1.0
+      set bits = burst(bits, x: bx, y: cb, n: 8, col: C_EDGE, dirx: 0.0, spread: 3.14)
+    end
+
+    # Player paddle
+    if vx < 0.0 && bx - float(BR) <= plx + float(PW) && bx - float(BR) > plx - 14.0 then
+      if by >= py - float(BR) && by <= py + float(PH) + float(BR) then
+        set bx = plx + float(PW) + float(BR)
+        let rel = clamp((by - (py + float(PH) / 2.0)) / (float(PH) / 2.0), lo: -1.0, hi: 1.0)
+        set speed = min(speed * 1.045 + 9.0, ball_speed_max)
+        let ang = rel * 0.92
+        set vx = speed * cos(ang)
+        set vy = speed * sin(ang)
+        set rally = rally + 1
+        set flash_l = 1.0
+        set ai_err = random(-30.0, 30.0)
+        set ai_timer = 0.0
+        set bits = burst(bits, x: bx, y: by, n: 16, col: C_YOU, dirx: 1.0, spread: 1.0)
+      end
+    end
+
+    # CPU paddle
+    if vx > 0.0 && bx + float(BR) >= prx && bx + float(BR) < prx + float(PW) + 14.0 then
+      if by >= ay - float(BR) && by <= ay + float(PH) + float(BR) then
+        set bx = prx - float(BR)
+        let rel = clamp((by - (ay + float(PH) / 2.0)) / (float(PH) / 2.0), lo: -1.0, hi: 1.0)
+        set speed = min(speed * 1.045 + 9.0, ball_speed_max)
+        let ang = rel * 0.92
+        set vx = -speed * cos(ang)
+        set vy = speed * sin(ang)
+        set rally = rally + 1
+        set flash_r = 1.0
+        set bits = burst(bits, x: bx, y: by, n: 16, col: C_CPU, dirx: -1.0, spread: 1.0)
+      end
+    end
+
+    if bx < float(court.x) - 26.0 then
+      set phase = "scored"
+      set scorer = "cpu"
+      break
+    end
+    if bx > float(court.x + court.w) + 26.0 then
+      set phase = "scored"
+      set scorer = "you"
+      break
+    end
+  end
+end
+
+if phase == "scored" then
+  set best = max(best, rally)
+  if scorer == "you" then
+    set s_you = s_you + 1
+    set serve_dir = 1.0
+    set banner = "YOUR POINT"
+    set goal_r = 1.0
+    set bits = burst(bits, x: float(court.x + court.w), y: by, n: 26, col: C_YOU, dirx: -1.0, spread: 1.1)
+  else
+    set s_cpu = s_cpu + 1
+    set serve_dir = -1.0
+    set banner = "CPU POINT"
+    set goal_l = 1.0
+    set bits = burst(bits, x: float(court.x), y: by, n: 26, col: C_CPU, dirx: 1.0, spread: 1.1)
+  end
+  set rally = 0
+  set bx = float(cx)
+  set by = float(cy)
+  set vx = 0.0
+  set vy = 0.0
+  set speed = 0.0
+  set trail = []
+  if s_you >= win_score || s_cpu >= win_score then
+    set phase = "over"
+    set banner = if s_you >= win_score then "YOU WIN" else "CPU WINS" end
+    set subbanner = "press R to play again"
+  else
+    set phase = "serve"
+    set subbanner = "press SPACE to serve"
+  end
+end
+
+# Opponent
+if phase == "play" then
+  set ai_timer = ai_timer - sdt
+  if ai_timer <= 0.0 then
+    set ai_timer = 0.11
+    if vx > 0.0 then
+      set ai_target = predict_y(x: bx, y: by, dx: vx, dy: vy, target_x: prx, top: ct + float(BR), bot: cb - float(BR)) + ai_err
+    else
+      set ai_target = (ct + cb) / 2.0 + ai_err * 0.4
+    end
+  end
+  let want = clamp(ai_target - float(PH) / 2.0, lo: ct, hi: cb - float(PH))
+  let step = ai_speed * sdt
+  if abs(want - ay) <= step then
+    set ay = want
+  else
+    set ay = ay + sign(want - ay) * step
+  end
+end
+
+# Trail + particles + flash decay
+if phase == "play" then
+  set trail = append(trail, {x: bx, y: by})
+  if len(trail) > 16 then
+    set trail = slice(trail, start: len(trail) - 16, end: len(trail))
+  end
+end
+
+set bits = for p in bits do
+  let nl = p.life - sdt
+  if nl <= 0.0 then continue end
+  {...p, x: p.x + p.vx * sdt, y: p.y + p.vy * sdt, vx: p.vx * 0.93, vy: p.vy * 0.93 + 120.0 * sdt, life: nl}
+end
+
+let decay = min(1.0, sdt * 4.5)
+set flash_l = flash_l - flash_l * decay
+set flash_r = flash_r - flash_r * decay
+set flash_t = flash_t - flash_t * decay
+set flash_b = flash_b - flash_b * decay
+set goal_l = goal_l - goal_l * decay
+set goal_r = goal_r - goal_r * decay
+
+# ── Draw: chrome ─────────────────────────────────────────────────────────
+
+clear(C_BG.r, C_BG.g, C_BG.b)
+
+tx("PONG", x: PAD, y: 26, style: S_TITLE)
+tx("PETAL / GARDEN TESTBED 01", x: PAD + 3, y: 64, style: S_KICK)
+
+# Scoreboard
+let s_you_txt = str(s_you)
+let s_cpu_txt = str(s_cpu)
+let you_style = {...S_SCORE, color: if s_you >= s_cpu then C_YOU else C_MUTE end}
+let cpu_style = {...S_SCORE, color: if s_cpu >= s_you then C_CPU else C_MUTE end}
+tx_right(s_you_txt, right_x: cx - 26, y: 20, style: you_style)
+tx(s_cpu_txt, x: cx + 26, y: 20, style: cpu_style)
+draw_rect(rect(cx - 1, 32, 2, 40), C_LINE)
+tx_right("YOU", right_x: cx - 26, y: 76, style: {...S_LABEL, color: C_YOU})
+tx("CPU", x: cx + 26, y: 76, style: {...S_LABEL, color: C_CPU})
+
+# Match pips — one per point needed to win.
+for i in range(0, win_score) do
+  let lit_you = i < s_you
+  let lit_cpu = i < s_cpu
+  let px_you = cx - 26 - 8 - i * 12
+  let px_cpu = cx + 26 + i * 12
+  draw_rect_rounded(rect(px_you, 96, 8, 3), radius: 1, c: if lit_you then C_YOU else C_LINE end)
+  draw_rect_rounded(rect(px_cpu, 96, 8, 3), radius: 1, c: if lit_cpu then C_CPU else C_LINE end)
+end
+
+# Stats, right-aligned
+let cell3 = W - PAD
+let cell2 = cell3 - 104
+let cell1 = cell2 - 104
+stat_cell(right_x: cell1, y: 32, label: "RALLY", value: str(rally), style: if rally > 0 then S_STAT else S_STATD end)
+stat_cell(right_x: cell2, y: 32, label: "BEST RALLY", value: str(best), style: if best > 0 then S_STAT else S_STATD end)
+stat_cell(right_x: cell3, y: 32, label: "BALL SPEED", value: str(int(speed)), style: if speed > 0.0 then S_STAT else S_STATD end)
+
+# ── Draw: court ──────────────────────────────────────────────────────────
+
+draw_rect_rounded(court, radius: 16, c: C_COURT)
+draw_rect_rounded(court.inset(1), radius: 15, c: C_FIELD)
+draw_rect_outline(court, c: C_EDGE, a: 255, width: 1)
+
+# Goal edges — they light up when a point lands there.
+draw_rect_rounded(rect(court.x + 4, int(ct), 3, int(cb - ct)), radius: 2, c: C_CPU, a: int(14.0 + goal_l * 210.0))
+draw_rect_rounded(rect(court.x + court.w - 7, int(ct), 3, int(cb - ct)), radius: 2, c: C_YOU, a: int(14.0 + goal_r * 210.0))
+
+# The rails the ball bounces off — always faintly present, lit on impact.
+draw_rect(rect(court.x + 14, int(ct) - 2, court.w - 28, 2), C_LINE)
+draw_rect(rect(court.x + 14, int(cb), court.w - 28, 2), C_LINE)
+draw_rect(rect(court.x + 14, int(ct) - 2, court.w - 28, 2), c: C_TEXT, a: int(flash_t * 200.0))
+draw_rect(rect(court.x + 14, int(cb), court.w - 28, 2), c: C_TEXT, a: int(flash_b * 200.0))
+
+# Dashed centre line
+let dash_n = (int(cb - ct) + 10) / 26
+for i in range(0, dash_n) do
+  let dy = int(ct) + 6 + i * 26
+  draw_rect_rounded(rect(cx - 1, dy, 3, 14), radius: 1, c: C_LINE)
+end
+
+clip(x: court.x, y: court.y, w: court.w, h: court.h)
+
+# Particles
+for p in bits do
+  let f = p.life / p.max
+  draw_circle({x: int(p.x), y: int(p.y)}, max(1, int(p.sz * f + 0.5)), p.c, int(230.0 * f))
+end
+
+# Ball trail
+let tn = len(trail)
+for i in range(0, tn) do
+  let f = float(i + 1) / float(tn)
+  if f > 0.22 then
+    let p = trail[i]
+    draw_circle({x: int(p.x), y: int(p.y)}, max(1, int(float(BR) * f * 0.8)), C_BALL, int(105.0 * f * f))
+  end
+end
+
+# Paddles
+draw_paddle(rect(int(plx), int(py), PW, PH), col: C_YOU, glow: flash_l)
+draw_paddle(rect(int(prx), int(ay), PW, PH), col: C_CPU, glow: flash_r)
+
+# Ball
+if phase != "over" then
+  let bob = if phase == "play" then 0.0 else sin(pulse * 2.6) * 3.0 end
+  draw_circle({x: int(bx), y: int(by + bob)}, BR + 15, C_BALL, 12)
+  draw_circle({x: int(bx), y: int(by + bob)}, BR + 7, C_BALL, 30)
+  draw_circle(center: {x: int(bx), y: int(by + bob)}, radius: BR, c: C_BALL)
+  draw_circle({x: int(bx) - 2, y: int(by + bob) - 2}, 3, :ffffff, 220)
+end
+
+clip_none()
+
+# ── Draw: overlay ────────────────────────────────────────────────────────
+
+if phase != "play" then
+  draw_rect_rounded(court.inset(1), radius: 15, c: C_BG, a: 168)
+  let bw = max(text_width(banner, S_BIG), text_width(subbanner, S_SUB)) + 72
+  let card = rect(cx - bw / 2, cy - 58, bw, 116)
+  draw_rect_rounded(card, radius: 14, c: C_COURT)
+  draw_rect_outline(card, c: C_EDGE, a: 255, width: 1)
+  let accent = if phase == "over" then (if s_you >= win_score then C_YOU else C_CPU end)
+  else if phase == "paused" then C_DIM
+  else C_TEXT end
+  draw_rect_rounded(rect(card.x + 20, cy - 26, 3, 52), radius: 2, c: accent, a: 190)
+  tx_center(banner, cx: cx + 8, y: cy - 34, style: {...S_BIG, color: accent})
+  tx_center(subbanner, cx: cx + 8, y: cy + 14, style: S_SUB)
+
+  # Which way the next ball goes.
+  if phase == "serve" || phase == "title" then
+    let col = if serve_dir > 0.0 then C_CPU else C_YOU end
+    let lab = "SERVE"
+    let lw = text_width(lab, S_LABEL)
+    let total = lw + 28
+    let left = cx - total / 2
+    let lab_x = if serve_dir > 0.0 then left else left + 28 end
+    let arrow = if serve_dir > 0.0 then left + lw + 17 else left + 11 end
+    tx(lab, x: lab_x, y: cy + 80, style: {...S_LABEL, color: C_DIM})
+    fill_triangle(x1: arrow + int(serve_dir * 11.0), y1: cy + 85, x2: arrow, y2: cy + 79, x3: arrow, y3: cy + 91, r: col.r, g: col.g, b: col.b, a: 210)
+  end
+end
+
+# ── Draw: footer ─────────────────────────────────────────────────────────
+
+let fy = court.y + court.h + 20
+var fx = PAD
+set fx = fx + chip(x: fx, y: fy, cap: "W / UP", desc: "up")
+set fx = fx + chip(x: fx, y: fy, cap: "S / DN", desc: "down")
+set fx = fx + chip(x: fx, y: fy, cap: "SPACE", desc: "serve · pause")
+set fx = fx + chip(x: fx, y: fy, cap: "R", desc: "restart")
+set fx = fx + chip(x: fx, y: fy, cap: "MOUSE", desc: "track paddle")
+
+let status = match phase
+  when "play" -> "RALLY IN PLAY"
+  when "paused" -> "PAUSED"
+  when "over" -> "MATCH OVER"
+  when _ -> "AWAITING SERVE"
+end
+tx_right("first to {win_score}   ·   {status}", right_x: W - PAD, y: fy + 7, style: S_HINT)
+
+# ── Observation mirrors (readable in /state panel.values) ────────────────
+
+let obs_phase = phase
+let obs_ball = [int(bx), int(by)]
+let obs_you_y = int(py)
+let obs_cpu_y = int(ay)
+let obs_score = [s_you, s_cpu]
+let obs_rally = rally
+let obs_best = best
+let obs_speed = int(speed)
+let obs_bits = len(bits)

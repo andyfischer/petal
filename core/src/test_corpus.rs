@@ -15,6 +15,20 @@ pub fn repo_ptl_files() -> Vec<PathBuf> {
     files
 }
 
+/// Copies of ten repo files taken with their `end` lines, just before
+/// `petal migrate-old-code` (`end-lines`) removed them from the repo's own
+/// `.ptl` (`core/tests/fixtures/with-ends/*.txt`): real code in the spelling
+/// the corpus no longer has.
+pub fn with_ends_fixtures() -> Vec<PathBuf> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/with-ends");
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .map(|entries| entries.filter_map(|e| e.ok().map(|e| e.path())).collect())
+        .unwrap_or_default();
+    files.retain(|p| p.extension().and_then(|e| e.to_str()) == Some("txt"));
+    files.sort();
+    files
+}
+
 /// The directories holding the interface packages of the in-repo hosts
 /// (`garden`, `garden_config`, `sdl`, `web`, `fps`, `nes`): what a sweep over the corpus
 /// passes as its package search path, so a panel that says `import garden`

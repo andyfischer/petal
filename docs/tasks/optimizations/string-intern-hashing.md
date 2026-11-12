@@ -1,8 +1,9 @@
 # Faster hashing for interned string lookups
 
-Status: **proposed**, 2026-09-15. Measured but not started (re-checked
-2026-11-02: `Heap::intern_table` in `core/src/heap.rs` is still a
-`HashMap<String, StringId>` on the default hasher, with no ASCII cache).
+Status: proposed 2026-09-15. **Change 1 is done** (re-checked 2026-11-11):
+`Heap::intern_table` is a `hashbrown::HashTable<StringId>` keyed by
+`text_hash`, which is `FxHasher`. **Change 2, the one-character ASCII cache,
+is still open**, and the before/after measurement below was not recorded.
 
 ## The observation
 

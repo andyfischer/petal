@@ -193,9 +193,6 @@ Each repro is a handful of files in one empty directory, run with
     read-only-`var` message.
 - `petal fmt` does not normalise the spacing in `pub   import ./m`
   (`import   ./m as q` is normalised now).
-- ~~`petal lint --fix` for `prefer-pub` also reformats the whole file.~~
-  Resolved: the rewrite is `petal migrate-old-code`'s `export-to-pub`, which
-  edits the keyword and nothing else (2026-11-09).
 - A method call on a value from another module (`mk().normalize()` without
   `import vec2`) passes `check` and fails at run. Documented; `check` cannot
   see it.

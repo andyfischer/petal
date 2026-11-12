@@ -1,6 +1,25 @@
 # Differentiation rewrite: drop dual numbers, solve by approximation
 
-Status: proposed, 2026-11-10
+Status: proposed 2026-11-10; **Phases 0, 1, 2, 3a, 3b, 5 and 6 done
+2026-11-11** (see [Progress](#progress)). Phase 4 lives in petal-creative
+(`~/petal-creative/docs/petal-upstream-ideas.md`, "Moving computed layers by
+their output").
+
+### Left open (2026-11-11)
+
+- [ ] `autodiff.ptl`'s `_run` still calls `speculate(f, arg).value`; switch it
+      to `speculate_value` (Phase 0 shipped it), which drops the result record.
+- [ ] One-release compatibility shims to remove at the next release: the
+      `drag_solve_step` alias of `gn_step`, `vary`'s ignored `sensitivity`
+      key (`lint/vary_sensitivity.rs`), and state storage loading a stored
+      dual as its value (`StateStorageLoad::converted`).
+- [ ] `tools/dm-mode-integration-test.ts`: 12 of 36 steps fail, before and
+      after Phase 3b (01-helper-row's plain drag no longer rewrites `gap`;
+      03-fractal-tree's "the root stays").
+- [ ] Re-vendor: petal-lang.org (`pnpm build:sdk`; `aim.ptl` already uses
+      `deriv` and fails on the vendored wasm until then), Cheesecake and
+      worlds-fair (`Value::Dual` and the dual C-bridge view are gone, an
+      **embedder-visible** change).
 
 ## Summary
 

@@ -609,7 +609,7 @@ Done in `~/cheesecake` on its `main`, from `dd5681e` to `e413eac`:
 
 #### Phase 5, revised: the rewrite moved to `petal migrate-old-code` (9 November 2026)
 
-Per docs/tasks/migration-tool.md, rewriting old syntax is no longer lint's.
+Per docs/dev/migrations.md, rewriting old syntax is no longer lint's.
 The two fixers are now the migrations `const-decl-deprecated` and
 `config-let-deprecated` of `petal migrate-old-code`
 (`core/src/migrate/lifecycle_keywords.rs`; `migrate_lifecycle_keywords` is
@@ -624,8 +624,8 @@ now keeps the migration off the site. `const-of-literal` stays a lint rule
 runs the dry run through `petal::migrate::migrate_source`; its
 `migrate_in_place` test is gone (`petal migrate-old-code --only
 const-decl-deprecated,config-let-deprecated <dir>` does that). Cheesecake
-scripts/docs that ran `petal lint --fix` for these: see the migration-tool
-task doc.
+scripts/docs that ran `petal lint --fix` for these: see the Cheesecake bullet
+in todo.md, "Smaller".
 
 ### Phase 6: remove (one release after Phase 5)
 

@@ -1,6 +1,6 @@
 # Website improvement ideas (from the Seedling demo)
 
-Status: 2026-11-06. These came out of building `seedling.ptl`, the new home-page
+Status: 2026-11-06, re-checked 2026-11-11 (item 1 shipped; 2–9 open). These came out of building `seedling.ptl`, the new home-page
 hero on petal-lang.org (`~/biz/petal-lang.org/frontend/public/petal/examples/seedling.ptl`).
 Seedling is a growing plant drawn in software 3D. Each stem segment is one
 recursive call with its own `state`. It uses a layered depth-of-field blur and
@@ -10,43 +10,19 @@ cost it pays every frame.
 
 Nothing in `~/petal` was changed while writing the demo.
 
-## 1. Sub-pixel coordinates in draw commands
+## 1. Sub-pixel coordinates: shipped, leftovers only
 
-**Status (2026-11-08): done — opt-in via** `register_draw_with(DrawOptions {
-subpixel: true, .. })` and the `take_frame_commands*` / `DrawWire::encode_frame`
-drains (petal-ui, ebbd6ab7); `PetalRuntime.with_subpixel(true)` +
-`take_draw_buffer_subpixel()` / `new PetalCanvas({ subpixel: true })` on the
-web (1c7c0d73); `--subpixel` / `DefaultHost::with_subpixel` in petal-sdl
-(476d264e). Curves, strokes and polygons go sub-pixel; the rect family stays
-snapped unless a script calls `pixel_snap(false)` (`pixel_snap(true)` snaps
-everything). Hosts that don't opt in are unchanged (`DrawCommand`, wire
-opcodes, `take_draw_buffer`, the C ABI). PRELUDE_LEVEL 13. Details:
-`core-libs/petal-ui/docs/host-contract.md` § "Sub-pixel coordinates". Left
-open: petal-lang.org still has to switch its loader to the sub-pixel drain;
-prelude helpers that `int()` positions (`layer`, `snapshot`, `canvas`,
-`cached_layer`) stay whole; images drawn under `pixel_snap(true)` can't yet
-be told apart from default-mode ones for smoothing.
+Shipped 2026-11-08 as an opt-in (petal-ui `DrawOptions { subpixel: true }`,
+`new PetalCanvas({ subpixel: true })`, petal-sdl `--subpixel`; see
+`core-libs/petal-ui/docs/host-contract.md` § "Sub-pixel coordinates").
+Still open:
 
-**Today.** Every `DrawCommand` position and size is `i32` or `u32`
-(`core-libs/petal-ui/src/draw.rs`). Script floats are truncated with `as`.
-A circle of radius 1.6 is drawn at radius 1. A point moving 0.3 px per frame
-sits still and then jumps.
-
-**How it hurts.** Small, slow things look jittery: dew drops, pollen motes,
-the swaying of thin stems. A drop that swells from radius 1 to 3 steps
-through three sizes instead of growing. Seedling works around it by drawing
-the in-focus layer into a canvas at 2× scale and scaling that back down. That
-costs a full-screen offscreen canvas and a resample every frame.
-
-**What to do.**
-- Carry `f32` for `x`, `y`, `w`, `h`, radii and line widths through
-  `DrawCommand`, the draw-wire encoding and `draw-wire.ts`. Either change the
-  existing fields, or add a float variant of the wire opcodes so old hosts
-  keep working.
-- Canvas 2D and the SDL rasterizer (`petal-desktop-sdl/src/renderer/raster.rs`)
-  already take floats or coverage, so most of the work is plumbing.
-- Decide what pixel-art sketches get. Possibly a `pixel_snap(true)` switch,
-  or snapping only `rect`.
+- petal-lang.org has not switched its loader to the sub-pixel drain, so
+  Seedling still needs its 2× offscreen workaround.
+- Prelude helpers that `int()` positions (`layer`, `snapshot`, `canvas`,
+  `cached_layer`) stay whole.
+- Images drawn under `pixel_snap(true)` can't yet be told apart from
+  default-mode ones for smoothing.
 
 ## 2. Reuse offscreen canvases between frames
 
@@ -139,6 +115,8 @@ NaN reaching `int()` kills every sketch on the page. Seedling guards its
 projection by clamping depth to at least 30. A playground user won't think to.
 
 **What to do.**
+- Note (2026-11-11): the native CLI does not trap; `int(sqrt(-1.0))` prints
+  `0`, silently. Reproduce the trap in the wasm host before fixing.
 - Make `int(NaN)` and `int(±inf)` raise an ordinary Petal runtime error,
   with the source span, instead of panicking.
 - Audit other float-to-int paths in the natives for the same pattern.
@@ -228,6 +206,6 @@ kind of bug is invisible in `~/petal`'s own tests, because they use upstream's
 2. **Same file, biggest performance win for the hero:** 2 (canvas pool), then
    3 (cached layers).
 3. **Removes drift on the site:** 9.
-4. **Larger features with the most visual payoff:** 1 (sub-pixel) and
-   4 (blend modes).
+4. **Larger features with the most visual payoff:** 4 (blend modes), and
+   the site's switch to the sub-pixel drain (item 1).
 5. **Wait for a second 3D demo:** 8, to confirm the API shape.

@@ -122,7 +122,7 @@ Ranked; the proposal's Implementation notes have the detail.
    Garden and petal-ui-run do not read them yet.
 5. **No nested-`speculate` lint**; nesting is a runtime error only.
 6. **`vary`**: no goals other than the element's centre, no step-size option,
-   no dual-safe `rect()`, no drop-zone map in the debugger, and `closest`
+   no drop-zone map in the debugger, and `closest`
    over n `vary` options costs n×(k+1) renderings per frame.
 7. **Overlapping draggables**: the first registered wins.
 8. **One drag at a time**; no multi-pointer.
@@ -159,12 +159,8 @@ external file imports `ui/drag`. Found and checked:
   one match, in moonbear, is a comma between two `for` expressions in a list
   literal, which parses as before).
 
-Needed outside this repo (not done here):
+Needed outside this repo (Cheesecake and worlds-fair have since re-vendored
+and carry D2):
 
-- **Re-vendor Petal** in `~/cheesecake/third_party/petal` and worlds-fair
-  (`wf-ui-ffi` / petal-c-bridge) to get `speculate`, `set_in`/`get_in`,
-  multi-generator `for`, `ui/drag`, `ui_debug` and the overload fix. Hosts
-  register input natives through `register_input` / `register_input_module`,
-  so `ui_debug` arrives with the re-vendor.
 - **petal-lang.org**: rebuild the WASM SDK (`build:sdk`) to pick up the same.
   A page for `ui/drag` and `speculate` would be new content, not a fix.

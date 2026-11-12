@@ -1,80 +1,111 @@
 # Open work, ranked
 
-Status: 2026-11-02, checked against `1064dcd`. Each item was reproduced with
+Status: 2026-11-11, checked against `c8e51996`. Each item was reproduced with
 a debug build of that commit or found in the source, unless it says it could
 not be checked. This file indexes what is still open across `docs/tasks/`,
 the design records in `docs/dev/` and `docs/proposals/`, and the example
 debriefs. The detail lives in the linked files.
 
 The ranking puts silent wrong results first, then hard failures and
-misleading diagnostics, then performance in the live-coding loop, then
-language growth.
+misleading diagnostics, then downstream drift, then performance in the
+live-coding loop, then language growth.
 
 History: the 2026-10-08 list is at `git show b0dfccc7:docs/tasks/todo.md`.
-Tests cite its numbering (items 5 and 9). The 2026-10-23 list ranked the
-release first. `v0.1.0` has since been published (GitHub release,
-2026-10-24), so that item is now a short check under "Smaller". Removed on
-2026-11-02 as resolved: `dev/wasm-use-case-feedback-10-15.md`. Its blocker,
-the CI wasm smoke test, the panic hook, the `std::time` lint, `BUILD_INFO`
-and the size profile have all shipped, and its leftovers are below.
+Tests cite its numbering (items 5 and 9). The 2026-11-02 list is at
+`git show c8e51996:docs/tasks/todo.md`. Removed on 2026-11-11 as resolved:
+host records with sorted keys (fixed 2026-11-03), the module-system fix plan
+(done 2026-11-04), the `{invert}` record message (done 2026-11-09),
+petal-web-html's panic hook, the SipHash intern table (now Fx), and the
+`PB_FX_CONTAINED` re-vendor (Cheesecake and worlds-fair both carry it).
+Deleted as shipped: `tasks/annotation-syntax.md` and `tasks/migration-tool.md`.
 
-## 1. `memo` initializers that are not pure give wrong answers silently
+## 1. The install one-liner is still a 404
 
-[memo-purity-check.md](memo-purity-check.md). Nothing checks that a `memo(k)`
-initializer reads only its key. `memo(k) v = k * scale` hands the first
-caller's `scale` to every caller: `scaled(2, 10), scaled(2, 100)` prints
-`20 20`, and `petal lint` is clean. The `state-key-deprecated` auto-fix no
-longer makes such memos (fixed 2026-11-03: it rewrites only an initializer
-built from its key alone). The check itself is planned in that file, as a
-seeded mode of the static classifier.
+`https://petal-lang.org/install.sh` returned 404 on 2026-11-11 (as on
+2026-10-23). It is the README's first command, so every new user hits it.
+Fix the hosting, then test the one-liner on a clean machine
+([dev/release-checklist.md](../dev/release-checklist.md) step 8).
 
-## 2. *(Fixed 2026-11-03)* Hosts got records with their keys sorted
+## 2. Silent wrong results
 
-Core now turns on serde_json's `preserve_order`, so `value_to_json`,
-element `props`, `json_stringify` and `json_parse` keep the written order
-(`core/tests/all/json_key_order.rs`). Still open from
-[images-followup.md](images-followup.md) item 2: a `value_to_static` that
-skips JSON.
+- **`memo` initializers that are not pure.**
+  [memo-purity-check.md](memo-purity-check.md). `memo(k) v = k * scale` hands
+  the first caller's `scale` to every caller: `scaled(2, 10), scaled(2, 100)`
+  prints `20 20`, and `petal lint` is clean (re-checked 2026-11-11). The plan
+  (a seeded mode of the static classifier) is written; nothing is built.
+- **Bare names from `import bloom` override `ui`'s with no warning**
+  ([ui-refactor.md](ui-refactor.md), "Left"). `clicked`, `theme`,
+  `popover_open`, `select` and five more change meaning when a file adds
+  `import bloom`. Rename bloom's, or warn when a second plain import changes
+  what a bare name resolves to.
+- **Colour channels wrap instead of clamping.** `color_of` and the
+  positional draw natives (`core-libs/petal-ui/src/draw.rs`) convert with
+  `as u8`, so 260 draws as 4 and −20 as 236
+  ([website-improvement-ideas.md](website-improvement-ideas.md) item 5).
+  A one-line fix plus a test.
+- **`int(NaN)` is `0`.** `int(sqrt(-1.0))` prints `0` natively; the website
+  reported a wasm trap (item 6 there). Either way it should be a runtime
+  error with a span.
 
-## 3. *(Done 2026-11-04)* Module system
+## 3. `lint` and `show-static` miss things they claim to see
 
-Every issue in [module-system-followup.md](module-system-followup.md)'s fix
-plan is fixed: loose files are named `./level` and no longer collide with
-packages, nested imports and nested-package paths are errors, slips after an
-import name their fix, trace frames name their file, and the arity-merge and
-facade-ambiguity messages name the right module. What is left there is the
-"Smaller things" list (formatter and `fix-imports` details, one misleading
-`set` message) and the documentation follow-up.
-
-## 4. `check` and `show-static` miss things they claim to see
-
-- **`list + list` through a function or parameter passes `check`.**
-  `[1] + [2]` is caught, with "use ++". But `segs + branch(1)`, where `branch`
-  returns a list, and `xs + [1]` on a parameter both pass and then fail at
-  run. `prefer-compound-assign` was seen turning the first into
-  `segs += …`, equally wrong. That rewrite was not re-tested.
+- **`list + list` on a parameter passes `lint`.** `fn f(xs) xs + [1] end`
+  lints clean and fails at run (re-checked 2026-11-11). `[1] + [2]` is
+  caught, with "use ++". `prefer-compound-assign` was seen turning
+  `segs + branch(1)` into `segs += …`; that rewrite was not re-tested.
 - **`show-static` reports `let`s read in an `if` expression as "not read".**
-  `let c = if r > 0.5 then LIME else NAVY end` marks both `LIME` and `NAVY`
-  unread, inside a `for` or not. Check whether the classifier itself, and
+  `let c = if r > 0.5 then LIME else NAVY end` still marks `LIME` and `NAVY`
+  unread (re-checked 2026-11-11). Check whether the classifier itself, and
   not only the report, misses these reads before trusting `const` folding
   near an `if`.
+
+## 4. Re-vendor wave (downstream drift)
+
+Three landings since the last vendoring change what embedders see:
+bloom owns the widgets (R4, 2026-11-10), dual numbers are gone
+(`Value::Dual`, the C bridge's dual view; 2026-11-11), and the
+differentiation rewrite's edit modes and `speculate` fast path.
+
+- **petal-lang.org**: `pnpm build:sdk` + `scripts/sync-examples.mjs`. The
+  site's `aim.ptl` already calls `deriv`, which the vendored wasm lacks; the
+  DM gallery's `settings-card.ptl` still uses `ui.card` / `progress_bar`;
+  the SDK predates `ui/drag`, `speculate` and the memo/emit-trace fix.
+- **Cheesecake** (vendored `07b0ad48`, 2026-11-09): port its remaining calls
+  of deprecated `ui` widgets (e.g. `games/trailkeeper-art-tool`), then
+  re-vendor. Its `third_party/petal/VENDORED.md` (lines 14 and 187) says
+  `petal lint --fix` rewrites `const`/`config let` and `state(key)`; after
+  the re-vendor it should say `petal migrate-old-code`. Its next re-vendor
+  archives `core-libs/gpp` instead of `garden/gpp` and drops its one local
+  modification (`gpp/Cargo.toml`).
+- **worlds-fair** (`vendor/petal`, 2026-11-10): picks up the dual removal.
 
 ## 5. Goal-based edits cannot reach element children
 
 [images-followup.md](images-followup.md) items 1 and 3. `literal_edit`
 takes `.attr` on an element but no `children[j]` step
 (`core/src/literal_edit.rs`), so structural edits inside a `<group>` rewrite
-the whole list. That loses the comments and hand formatting between tags.
-Related:
-
-- `StaticValue::to_source` pads records as `{ x: 1 }`, unlike the files.
-- A `//` line inside element children is a comment now (item 5, done
-  2026-11-09); a rewriter that edits siblings must keep such comments.
-
+the whole list, losing the comments and hand formatting between tags.
+`StaticValue::to_source` also pads records as `{ x: 1 }`
+(`render_record` in `core/src/static_value.rs`), unlike the files.
 Together these make a program edited by its own GUI drift from how it was
 written, which is the project's core promise.
 
-## 6. Static-value cache: UI panels and recompile cost
+## 6. Differentiation rewrite: small leftovers
+
+[differentiation-rewrite.md](differentiation-rewrite.md), "Left open".
+`autodiff`'s `_run` should use `speculate_value`;
+`tools/dm-mode-integration-test.ts` has 12 failing steps (pre-existing);
+Phase 4 (computed layers) is petal-creative's.
+
+## 7. Cut a release
+
+Nothing has been released since `v0.1.0` (2026-10-24). Several removals are
+gated on "one release after deprecation": lifecycle Phase 6 (the `const` and
+`config let` keywords; [lifecycle-annotation-functions-refactor.md](lifecycle-annotation-functions-refactor.md)),
+the `drag_solve_step` alias, `vary`'s ignored `sensitivity` key, loading a
+stored dual from state storage, and eventually `ui`'s deprecated widgets.
+
+## 8. Static-value cache: UI panels and recompile cost
 
 [static-value-optimization.md](static-value-optimization.md).
 
@@ -82,22 +113,19 @@ written, which is the project's core promise.
   depend only on the viewport or theme. This is where panels would gain:
   today they get about 1%.
 - **Item 2:** classification adds 30–100 ms to every structural edit.
-  Incremental classification was considered and set aside (see that file).
 - **Item 4:** function-body constants are rebuilt after every reload. Moses
   rebuilds 4,381.
-- **Item 5:** literal `Enum.variant.key` reads are not folded. `show-bytecode`
-  shows `enum "Kind.park"` and then a field read.
+- **Item 5:** literal `Enum.variant.key` reads are not folded.
 
-## 7. Draw coordinates are `i32` in the command format
+## 9. Declarative dragging: drag-start cost
 
-`coord_to_i32` and `as_i64` in `core-libs/petal-ui/src/draw.rs` truncate
-every float coordinate toward zero, so they do not round. Rotating polygons
-jitter by up to a pixel per vertex, and slow parallax layers stair-step
-(side-scroller debrief). A fix changes the draw-command format and every
-host: Garden, petal-sdl, petal-web and worlds-fair. Rotated text would be
-cheap to add in the same change.
+[declarative-dragging.md](declarative-dragging.md) open issue 1: 19 ms at 50
+kanban cards, 53 ms at 100, mostly `speculate` recording draws as `emits`
+that the engine throws away. A core option to drop emits would fix it. The
+rest of that list (memo inside `speculate`, quadratic in-place edits, runtime
+warnings only printed by `petal run`) follows.
 
-## 8. Language growth that a second large game will hit
+## 10. Language growth that a second large game will hit
 
 [moses-debrief.md](moses-debrief.md). These are held back by the owner, and
 each needs a proposal (`propose-language-change`):
@@ -111,24 +139,17 @@ each needs a proposal (`propose-language-change`):
 Related, and deferred on 2026-10-09: amortized O(1) `++` and in-place update
 in general, which is a matter of better alias checking.
 
-Planned on 2026-11-09:
-[lifecycle-annotation-functions-refactor.md](lifecycle-annotation-functions-refactor.md)
-replaces the `const` and `config` keywords with the builtins `const(…)` and
-`tunable(…)`. Settings already work without `config`; next come `const(…)`
-parity, the fixers, and the migration of Petal and Cheesecake.
-
-## 9. Interpreter and GC
+## 11. Interpreter and GC
 
 From [moses-debrief.md](moses-debrief.md), "VM":
 
 - reuse of swept slots, and a nursery. GC is 12% of a Moses career.
 - a two-target `Branch`, and register coalescing.
-- faster interning:
-  [optimizations/string-intern-hashing.md](optimizations/string-intern-hashing.md).
-  The table is still on SipHash. Reuse `core/src/fxhash.rs`, and add a
-  128-entry ASCII cache for one-character slices.
+- the one-character ASCII intern cache
+  ([optimizations/string-intern-hashing.md](optimizations/string-intern-hashing.md));
+  the Fx hasher half is done.
 
-## 10. Direct manipulation v2: what the shipped engine leaves open
+## 12. Direct manipulation v2: what the shipped engine leaves open
 
 [dev/direct-manipulation-v2-plan.md](../dev/direct-manipulation-v2-plan.md)
 §8 and §9, and [dev/direct-manipulation-v2-study.md](../dev/direct-manipulation-v2-study.md)
@@ -144,35 +165,36 @@ From [moses-debrief.md](moses-debrief.md), "VM":
   respelled `2500.0`, the `ObsValue` depth cost, a cancelling float/int
   screening pair, and `rigid` at an unreached place.
 - **Docs:** `features/time-travel.md` should say that spec mode contains
-  escaping effects (§4.5).
-- **Outside this repo:** re-vendor `petal-c-bridge` (with `PB_FX_CONTAINED`)
-  into cheesecake and worlds-fair.
+  escaping effects (§4.5). The v2 study report still describes the old
+  `l10b-ui-panel` goals (re-run `full_study` with `DM_STUDY_WRITE`).
+
+## 13. Draw coordinates and the web hosts
+
+Sub-pixel drawing shipped as an opt-in on 2026-11-08 (petal-ui, petal-web,
+petal-sdl). The `i32` draw format remains the default, so hosts that do not
+opt in (Garden, worlds-fair) still truncate. petal-lang.org has not switched
+to the sub-pixel drain. The site's other per-frame costs (canvas pool,
+cached layers, blend modes) are in
+[website-improvement-ideas.md](website-improvement-ideas.md).
+
+Wasm size: [wasm-size-improvements.md](wasm-size-improvements.md). Item 3
+(`fn_introspect` behind a feature) has no run-time cost and should land;
+serving brotli gets the transfer under 1 MB.
 
 ## Smaller
 
-- **Release:** `v0.1.0` is out. Nobody has re-checked whether
-  `https://petal-lang.org/install.sh` now serves the installer (it was a 404
-  on 2026-10-23), or tested the one-liner on a clean machine
-  ([dev/release-checklist.md](../dev/release-checklist.md) step 8). The
-  README's first command depends on it, so check it first.
 - **Diagnostics:**
   - `json_encode` / `to_json` should suggest `json_stringify` and
-    `import json`;
-  - `{invert}` in a record should say "did you mean `invert: true`?";
+    `import json` (still "unknown function", 2026-11-11);
   - `petal.toml` cannot set a minimum Petal version: `[requires] petal` is
     read as a host interface.
 - **Web hosts** (from the facetedllc.com report):
-  - petal-web-html has no panic hook, and still imports `./renderer.js`;
   - petal-web-canvas has no `pixelRatio` option or `dpr` native, so
     retina strokes blur;
   - neither host is an npm package with dist JS and `.d.ts`;
   - `panic = "abort"` is not set for the wasm build.
-- **Repository layout** (updated 2026-11-05;
-  [skills/project-organization.md](../skills/project-organization.md#current-misplacements-audit-of-2026-11-04-updated-2026-11-05)):
-  the 2026-11-04 audit's moves are done (`gpp` in `core-libs/`, the
-  element-tree wasm host in `integrations/petal-web-html`, the CLI/LSP behind
-  a `tooling` feature that embedders turn off, two tools moved next to
-  examples). Still open:
+- **Repository layout**
+  ([skills/project-organization.md](../skills/project-organization.md#current-misplacements-audit-of-2026-11-04-updated-2026-11-05)):
   - `glsl` is bundled though experimental; Cheesecake imports the bundled
     copy, so unbundling waits on its script host registering its own;
   - `petal-fps` and `petal-fantasy-nes` wait on a small in-repo example of
@@ -180,10 +202,6 @@ From [moses-debrief.md](moses-debrief.md), "VM":
   - `core/prelude/std.ptl` into `core/packages/std/` needs `std` registered
     as a package;
   - the `petal-sdl` crate and binary rename waits on downstream references.
-  Downstream follow-ups: Cheesecake's next re-vendor archives
-  `core-libs/gpp` instead of `garden/gpp` and drops its one local
-  modification (`gpp/Cargo.toml`); a page that vendors petal-web-html's pkg
-  now loads `petal_web_html.js`, not `petal.js`.
 - **Headless UI from the CLI:** `petal run` refuses `ui` scripts. Today the
   answer is `petal-sdl --headless --frames N`, or `petal-ui-run` from
   core-libs. A one-command way to report draw counts and frame times is still
@@ -197,7 +215,7 @@ From [moses-debrief.md](moses-debrief.md), "VM":
   ([images-followup.md](images-followup.md) item 4).
 - **Stdlib:**
   - a builtin from the wall clock to a calendar date;
-  - `split("", " ")` returns `[""]` (side-scroller debrief).
+  - `split("", " ")` returns `[""]` (side-scroller debrief; still so).
 - **`petal test`:** catching an expected runtime error, setup and teardown,
   and the call chain for a failure inside a helper.
 - **Examples:** in `examples/productivity/spreadsheet`, `digit_val` and
@@ -214,19 +232,24 @@ From [moses-debrief.md](moses-debrief.md), "VM":
   ([dev/reactive-rendering-plan.md](../dev/reactive-rendering-plan.md)).
 - **Pending values:** move `host_data` onto petal-query (step 5 of
   [dev/pending-values-plan.md](../dev/pending-values-plan.md)).
+- **Migrations:** `push`/`pop` (deprecated aliases of `append`/`drop_last`)
+  have no migration; a rename rule would need name resolution to avoid a
+  user's own `push`.
 - **Tests and docs hygiene:**
   - `test/vitest/doc-snippets.test.ts` covers only `docs/`, with
     `check --lenient`;
   - `editor-support/tree-sitter-petal/grammar.js` comments still say
-    `rust/src/…`;
+    `rust/src/…` (10 places);
   - `core-runtime/glsl/tests/effects.ptl:4` cites a Cheesecake path that has
-    moved.
+    moved;
+  - `docs/features/inline-state.md` has three `TODO` examples (recursion
+    and two debugger views; website item 7).
 - **Testbed:** 8 of the 50 target apps are unbuilt
   ([dev/testbed-challenge-plan.md](../dev/testbed-challenge-plan.md)).
 - **Could not be checked here** (needs `~/worlds-fair`, Moses or a quiet
   machine):
   - the `test/ui-golden/index.json` hashes for apps the driver skips as
-    unsupported;
+    unsupported, and the 63 apps whose goldens were already stale before D2;
   - Moses' recompile time (488 ms then about 800 ms);
   - the dated figures in `dev/performance.md`;
-  - petal-lang.org's SDK, which is still on an old WASM build.
+  - SDL sub-pixel in a live or HiDPI window.

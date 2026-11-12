@@ -5,7 +5,7 @@ under [Open questions](#open-questions): `@` is an accepted *alternative*
 spelling and the call forms stay fully valid; value-first insertion; `tunable`
 takes named `min:`/`max:`; one-line annotations are allowed. F1 and F2 stay
 deferred. D1 is implemented (see [Implementation](#implementation-as-built)).
-Requested in `docs/tasks/annotation-syntax.md`. The old `@` rebind operator
+Requested in `docs/tasks/annotation-syntax.md` (removed 2026-11-11 once shipped). The old `@` rebind operator
 this proposal inventoried was removed the same day (commit `f0522249`); the
 sections below that describe it are a record of what was there.
 
@@ -715,7 +715,7 @@ difference from Python, which is worse than a clear error.
   removal breaks one test file and about 12 fixtures, and a rule handles them.
   Making `@` canonical would be a second sweep of the same about 1,870
   declarations that were swept on 9 November. It would be done by the
-  `petal migrate-old-code` tool (`docs/tasks/migration-tool.md`,
+  `petal migrate-old-code` tool (`docs/dev/migrations.md`,
   `core/src/migrate/`). It could ship as an accepted alternative first and be
   canonicalised later. It depended on the rebind removal, which is done
   (`f0522249`). It closes off nothing: F1's reserved slot keeps both

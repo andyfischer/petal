@@ -1,7 +1,8 @@
 # petal-images follow-up: things to fix in Petal
 
-Status: 2026-10-23, re-checked against `1064dcd` on 2026-11-02. Items 5
-and 6 were done on 2026-11-09 and item 2 in part; the rest are open. These came out of building
+Status: 2026-10-23, re-checked 2026-11-11. Items 5 and 6 (done
+2026-11-09) and the finished half of item 2 (`preserve_order`, 2026-11-03)
+have been removed; everything below is open. These came out of building
 [`petal-creative/petal-images`](../../../petal-creative/petal-images), a layered
 image editor whose documents are `.ptl` scripts of JSX-style elements
 (`<image>`, `<text>`, `<group>`…) edited by the GUI through goal-based literal
@@ -35,34 +36,15 @@ Action:
 - [ ] After that, petal-images can delete `edit_nested` and its
       whole-`layers` rewrite.
 
-## 2. Attribute and record key order is lost on the way to the host
+## 2. Values reach the host through JSON
 
-The guide says an element's `props` are "a record of the attributes, in
-order". `value_to_json`, though, hands the host a `serde_json::Map`, which
-sorts its keys unless serde_json's `preserve_order` feature is on.
+Key order is kept now (`preserve_order`, 2026-11-03,
+`core/tests/all/json_key_order.rs`), so petal-images can drop its re-sort and
+apply effects in written order. What is left:
 
-This causes two problems:
-- **Effect order can't follow the file.** petal-images can't apply effects in
-  the order they're written (`<text stroke drop_shadow>` vs
-  `<text drop_shadow stroke>`). It falls back to a fixed order plus an
-  `effects={[…]}` list.
-- **Records come back in the wrong order.** A record sent to a native
-  (`{x, y, w, h}`) arrives as `{h, w, x, y}` and gets written back to the file
-  that way. petal-images re-sorts records against a hard-coded list of
-  familiar keys.
-
-Action:
-- [x] Keep insertion order when converting values for hosts: core turns on
-      serde_json's `preserve_order` (2026-11-03). Records, element `props`,
-      `json_stringify` and `json_parse` all keep the written order.
 - [ ] Add `value_to_static`, which converts a Petal value straight to a
       `StaticValue` with order kept, so hosts that write values back to
       source skip the JSON detour.
-- [x] Add a test that `props` keeps the order the attributes were written in
-      (`core/tests/all/json_key_order.rs`).
-
-petal-images can now drop its re-sort against a list of familiar keys, and
-apply effects in the order they are written.
 
 ## 3. `StaticValue::to_source` pads record braces
 
@@ -89,20 +71,6 @@ Action:
 - [ ] Consider a `byte_offset` alongside it, or a helper
       `span_to_byte_range(src, span)`. This ties in with the code-point
       switch ([String offsets](../Builtins.md#string-offsets)).
-
-## 5. A `//` line inside element children becomes text (done)
-
-Done 2026-11-09, both options: a line in element children whose first
-non-blank characters are `//` or `/*` is a comment, and `{/* … */}` (with
-`/* … */` block comments in code generally) is one anywhere. Comments are
-trivia between the children's tokens, so a rewriter that splices by span
-keeps them. Item 1's rewriter still has to keep them when it edits siblings.
-
-## 6. Record fields have no shorthand for `true` (done)
-
-Done 2026-11-09: no shorthand. `{type: "rect", invert}` now fails with
-"Record field `invert` needs a value. Write `invert: true` (or
-`invert: invert` for the variable); records have no shorthand".
 
 ## 7. A stale installed CLI is hard to spot
 

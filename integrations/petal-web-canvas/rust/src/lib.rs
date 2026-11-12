@@ -755,6 +755,7 @@ impl PetalRuntime {
         let Some(session) = self.edit.as_mut() else {
             return err_json("no drag is open");
         };
+        let prev = session.live_text().map(str::to_string);
         let live = match session.preview_live(&self.env, &[dx, dy]) {
             Ok(l) => l,
             Err(e) => return err_json(&e),
@@ -762,7 +763,14 @@ impl PetalRuntime {
         let rewrites: Vec<serde_json::Value> = live.rewrites.iter().map(rewrite_json).collect();
         match self.reload_in_place(&live.text) {
             Ok(()) => serde_json::json!({ "ok": true, "source": live.text, "rewrites": rewrites }),
-            Err(e) => serde_json::json!({ "ok": false, "error": e, "source": live.text }),
+            Err(e) => {
+                // The program still runs the text before this move, which
+                // stays the drag's own (the release is not stale).
+                if let Some(session) = self.edit.as_mut() {
+                    session.revert_live_text(prev);
+                }
+                serde_json::json!({ "ok": false, "error": e, "source": live.text })
+            }
         }
         .to_string()
     }

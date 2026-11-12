@@ -259,8 +259,16 @@ impl PanelHost {
     /// [`begin_adjust_v2`](Self::begin_adjust_v2).
     pub fn live_adjust_v2(&mut self, deltas: &[f64]) -> Result<LivePreview, String> {
         let drag = self.dm_drag.as_mut().ok_or("no drag is open")?;
+        let prev = drag.live_text().map(str::to_string);
         let live = drag.preview_live(&self.core.env, deltas)?;
-        self.reload_source(&live.text)?;
+        if let Err(e) = self.reload_source(&live.text) {
+            // The program still runs the text before this move: that stays
+            // the drag's own, so the release is not stale.
+            if let Some(drag) = self.dm_drag.as_mut() {
+                drag.revert_live_text(prev);
+            }
+            return Err(e);
+        }
         Ok(live)
     }
 

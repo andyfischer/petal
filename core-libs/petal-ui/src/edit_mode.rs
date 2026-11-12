@@ -755,6 +755,14 @@ impl EditSession {
         self.live = Some(text.into());
     }
 
+    /// Take back the last [`preview_live`](Self::preview_live) when the host
+    /// could not reload its text: `prev` (the live text before it, as
+    /// [`live_text`](Self::live_text) gave it) is what the program still
+    /// runs, so the release stays the drag's own rather than `Stale`.
+    pub fn revert_live_text(&mut self, prev: Option<String>) {
+        self.live = prev;
+    }
+
     /// The text the drag last wrote live, if any.
     pub fn live_text(&self) -> Option<&str> {
         self.live.as_deref()
@@ -1482,6 +1490,24 @@ mod tests {
     }
 
     #[test]
+    fn a_live_text_the_host_could_not_reload_is_taken_back() {
+        let (mut env, pid, stack) = running(TWO_WAYS);
+        let mut s = open(&mut env, stack, Vec::new());
+        let first = s.preview_live(&env, &[10.0, 0.0]).unwrap();
+        env.reload_program(stack, &first.text, None).unwrap();
+        frame(&mut env, stack);
+        // The next move's text does not reload (say it failed to compile):
+        // the program still runs the first, and the host says so.
+        let prev = s.live_text().map(str::to_string);
+        let second = s.preview_live(&env, &[20.0, 0.0]).unwrap();
+        assert_ne!(second.text, first.text);
+        s.revert_live_text(prev);
+        assert!(s.owns_text(&first.text) && !s.owns_text(&second.text));
+        let alts = alternatives(s.finish(&mut env, &mut NoHost, pid, &[20.0, 0.0]));
+        assert!(alts[0].verified, "{alts:?}");
+    }
+
+    #[test]
     fn an_external_edit_under_a_live_drag_is_still_stale() {
         let (mut env, pid, stack) = running(TWO_WAYS);
         let mut s = open(&mut env, stack, Vec::new());
@@ -1558,3 +1584,4 @@ mod tests {
         assert_eq!(DragSelector::At { line: 1, col: 12 }.label(), "at:2:13");
     }
 }
+

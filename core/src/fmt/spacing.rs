@@ -187,7 +187,10 @@ pub fn respace(source: &str, protected: &[bool]) -> Result<String, String> {
             {
                 let original_col = spans[i].end.column as usize - 1 + slash;
                 let current_col = out.chars().rev().take_while(|&c| c != '\n').count();
-                let pad = original_col.saturating_sub(current_col).max(1);
+                // A block comment written against the token before it
+                // (`{/* note */}` in element children) stays against it.
+                let abuts = slash == 0 && gap[slash..].starts_with(&['/', '*']);
+                let pad = if abuts { 0 } else { original_col.saturating_sub(current_col).max(1) };
                 out.extend(std::iter::repeat_n(' ', pad));
                 out.extend(&gap[slash..]);
                 continue;

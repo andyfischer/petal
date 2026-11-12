@@ -15,6 +15,21 @@ fn formats_spacing_indent_comments_and_blank_lines() {
     );
 }
 
+/// A comment hole in element children is `{/* … */}`, which is also what
+/// `hash-comments` writes: fmt used to push the comment a space off its
+/// brace (`{ /* … */}`), so a file migrated and then formatted came out
+/// different from one that was only migrated.
+#[test]
+fn a_block_comment_against_its_brace_stays_against_it() {
+    let src = "fn f()\n  1\n\nlet pages = [\n  <page>\n    {/* The card. */}\n    <rect />\n  </page>,\n]\n";
+    assert_eq!(fmt(src), src);
+    // In code too; a comment written off its token keeps its column, and a
+    // line comment still gets its space.
+    assert_eq!(fmt("let r = {/* c */ a: 1}\n"), "let r = {/* c */ a: 1}\n");
+    assert_eq!(fmt("let r = {  /* c */ a: 1}\n"), "let r = {  /* c */ a: 1}\n");
+    assert_eq!(fmt("let x = 1# one\n"), "let x = 1 # one\n");
+}
+
 #[test]
 fn a_keyword_after_an_operand_is_spaced_from_it() {
     let src = "let r = match v\n  when Op.fight(p,w)if w&&flag->p\n  when [a,b]if a->b\n  when _->0\nend\nif(r>1)then print(r)end\n";

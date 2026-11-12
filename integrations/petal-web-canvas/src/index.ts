@@ -13,3 +13,6 @@ export { onImageLoad, renderCommands, type DrawCommand } from "./canvas-renderer
 export { decodeDrawCommands, decodeFrameCommands } from "./draw-wire";
 export { InputTracker } from "./input";
 export { default as initRuntime, PetalRuntime } from "../pkg/petal_web_canvas.js";
+/** `petal migrate-old-code` for one source text, as JSON: for a page that
+ *  keeps sketches written in an older syntax (see the README). */
+export { migrate_old_code as migrateOldCode } from "../pkg/petal_web_canvas.js";

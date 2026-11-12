@@ -164,6 +164,25 @@ is `examples/custom-apps/diagram-canvas`; the API is described under "Hosts"
 in [direct-manipulation.md](../../docs/features/direct-manipulation.md#hosts).
 The Rust side has native unit tests (`cd rust && cargo test`).
 
+## Sketches saved in an older syntax
+
+A page that stores sketches (a share link, a saved draft) will meet source
+written before a syntax change. A removed form is an error at `load_program`
+(`#f80` colors have been `:f80` since 2026-11-12), so migrate what you load:
+
+```ts
+import { migrateOldCode } from "petal-web-canvas";
+
+// The forms that no longer load; "" runs every migration, which also
+// respells `//` comments and `elsif` and drops redundant `end` lines.
+const out = JSON.parse(migrateOldCode(saved, "colour-literals,else-if-nesting,at-rebind"));
+const source = out.ok ? out.source : saved;
+```
+
+It is `petal migrate-old-code` for one text ([CLI.md](../../docs/CLI.md#migrate-old-code--rewrite-old-syntax)),
+without the import rewrites, which need files. `out.sites` lists what was
+rewritten and what was left for a hand edit.
+
 ## Examples
 
 `examples/*.ptl`, listed in `src/main.ts`:

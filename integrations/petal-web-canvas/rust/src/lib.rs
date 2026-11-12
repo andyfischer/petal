@@ -1059,6 +1059,56 @@ impl Default for PetalRuntime {
     }
 }
 
+/// `petal migrate-old-code` for one source text: rewrite code written in an
+/// old syntax into the current one (`petal::migrate`). For a page that keeps
+/// source it did not write today (a saved sketch, a shared link): a form the
+/// language has removed, such as a `#f80` color, is an error at
+/// `load_program`, and this is how the page reads such a sketch.
+///
+/// `only` is a comma-separated list of migration names (`"colour-literals,
+/// else-if-nesting,at-rebind"` is the forms that no longer load); empty runs
+/// every text migration, `end-lines` included, which also formats the text.
+/// A text that lexes but does not parse still gets the migrations that read
+/// tokens alone. Import lines are not touched (`old-imports` needs files).
+///
+/// Returns JSON: `{ok: true, source, changed, sites: [{rule, line, column,
+/// message, fixed}]}`, where a site with `fixed: false` was left for a hand
+/// edit, or `{ok: false, error}` when the text cannot be read at all or a
+/// rewrite failed its check (the text is then to be used as it is).
+#[wasm_bindgen]
+pub fn migrate_old_code(source: &str, only: &str) -> String {
+    let only: Vec<String> = only
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    if let Some(unknown) = only.iter().find(|name| !petal::migrate::is_migration(name)) {
+        return err_json(&format!("migrate_old_code: no migration is named `{unknown}`"));
+    }
+    let opts = petal::migrate::MigrateOptions {
+        only: (!only.is_empty()).then_some(only),
+        fragment: true,
+        ..Default::default()
+    };
+    match petal::migrate::migrate_source(source, &opts) {
+        Ok(out) => serde_json::json!({
+            "ok": true,
+            "changed": out.changed(source),
+            "sites": out.findings.iter().map(|f| serde_json::json!({
+                "rule": f.rule,
+                "line": f.line,
+                "column": f.column,
+                "message": f.message,
+                "fixed": f.fixable,
+            })).collect::<Vec<_>>(),
+            "source": out.output,
+        })
+        .to_string(),
+        Err(e) => err_json(&e),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1210,6 +1260,48 @@ mod tests {
         assert_eq!(out["alternatives"][0]["prefer"], prefer, "{out}");
         rt.edit_clear_preference();
         assert_eq!(rt.edit_preference(), "[]");
+    }
+
+    /// A sketch saved before `:f80` colors, `#` comments and `else if`
+    /// (the playground's shared snippets) no longer loads: `#hex` is an
+    /// error. The page migrates it on load, with the forms the language
+    /// removed, and the rest of the text stays as its author wrote it.
+    #[test]
+    fn a_saved_sketch_in_the_old_syntax_is_migrated_to_one_that_loads() {
+        let old = "import ui\n// a dot\nlet c = #ff8800\nif c.r > 200 then\n    draw_circle(100, 80, 20, c.r, c.g, c.b)\nelsif c.r > 100 then\n    draw_circle(10, 8, 2, 0, 0, 0)\nend\n";
+        let mut rt = PetalRuntime::new();
+        let err = rt.load_program_inner(old).unwrap_err();
+        assert!(err.contains("is no longer a color literal"), "{err}");
+
+        let removed = "colour-literals,else-if-nesting,at-rebind";
+        let out = json(&migrate_old_code(old, removed));
+        assert_eq!(out["ok"], true, "{out}");
+        assert_eq!(out["changed"], true);
+        assert_eq!(out["source"], old.replace("#ff8800", ":ff8800").as_str());
+        assert_eq!(out["sites"][0]["rule"], "colour-literals");
+        assert_eq!(out["sites"][0]["line"], 3);
+        let pid = rt.load_program_inner(out["source"].as_str().unwrap()).unwrap();
+        let sid = rt.create_stack_inner(pid).unwrap();
+        rt.set_frame_info(1.0 / 60.0, 0.0, 0, 640, 480);
+        rt.begin_frame();
+        rt.reset_and_run_inner(sid).unwrap();
+        assert!(!rt.take_draw_buffer().is_empty());
+
+        // Every migration: the text in today's spelling, and a fixed point.
+        let all = json(&migrate_old_code(old, ""));
+        let new = "import ui\n# a dot\nlet c = :ff8800\nif c.r > 200 then\n  draw_circle(100, 80, 20, c.r, c.g, c.b)\nelse if c.r > 100 then\n  draw_circle(10, 8, 2, 0, 0, 0)\n";
+        assert_eq!(all["source"], new, "{all}");
+        let again = json(&migrate_old_code(new, ""));
+        assert_eq!((again["changed"].clone(), again["source"].clone()), (false.into(), new.into()));
+
+        // Current code is returned as it is; a text that only lexes still
+        // gets its colors; nonsense is an error, not a panic.
+        let current = json(&migrate_old_code("let c = :fff # white\n", removed));
+        assert_eq!(current["changed"], false, "{current}");
+        let half = json(&migrate_old_code("let xs = [\n  {a: #fff}\n  {a: 2}\n]\n", removed));
+        assert_eq!(half["source"], "let xs = [\n  {a: :fff}\n  {a: 2}\n]\n", "{half}");
+        assert_eq!(json(&migrate_old_code("let s = \"open", removed))["ok"], false);
+        assert_eq!(json(&migrate_old_code("let a = 1\n", "no-such"))["ok"], false);
     }
 
     #[test]

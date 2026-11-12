@@ -389,6 +389,7 @@ impl Env {
     /// ([`add_tooling_implicit_imports`](Self::add_tooling_implicit_imports)),
     /// and unbind them afterwards: for a tool whose one `Env` reads files of
     /// several projects, each with its own `[host]`.
+    #[cfg(feature = "tooling")]
     pub(crate) fn with_tooling_implicit_imports<T>(
         &mut self,
         modules: &[String],

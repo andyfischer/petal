@@ -178,7 +178,7 @@ impl<'a> Vm<'a> {
         let related = call.map(|t| (t, format!("{runs} here, once per {per}")));
         let help = "state needs a fixed place in the program, and a callback has none.\n\
              For a value per element that persists across runs, use a loop:\n\
-             \x20   for x in xs do f(x) end   (add `key …` to follow items)\n\
+             \x20   for x in xs do f(x)   (add `key …` to follow items)\n\
              For a value carried from one element to the next, use reduce's accumulator."
             .to_string();
         let detail = crate::backend::errors::ErrorDetail { at, related, help: Some(help) };

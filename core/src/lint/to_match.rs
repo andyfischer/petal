@@ -6,8 +6,7 @@
 //! else if ch == "o" then "coin"    =>  when "@" -> "spawn"
 //! else if ch == "w" then "walker"      when "o" -> "coin"
 //! else nil                             when "w" -> "walker"
-//! end                                  when _ -> nil
-//!                                    end
+//!                                      when _ -> nil
 //! ```
 //!
 //! The chain re-reads the subject and re-spells `==` once per arm; the `match`
@@ -19,9 +18,9 @@
 //! Pass 2 shape), and the splices only ever cover *glue* — `if`, `==`,
 //! `then`, `else if <subject> ==` (or its old spelling `elsif`), `else`. Every
 //! arm's pattern and body is preserved as the author wrote it, comments and
-//! layout included, and the chain's trailing `end` is left in place because
-//! `match` ends the same way. A chain closed by its indentation alone becomes
-//! a `match` closed the same way.
+//! layout included. A chain closed by its indentation becomes a `match` closed
+//! the same way; a chain written with an `end` keeps it, because `match` ends
+//! the same way.
 //!
 //! Indentation is mostly not this rule's problem: the formatter runs after
 //! it. But indentation delimits blocks, so what the rule writes must already

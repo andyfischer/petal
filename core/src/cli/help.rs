@@ -799,7 +799,6 @@ DESCRIPTION
 
               test \"a hit costs one life\" do
                 expect_eq(after_hit(3), 2)
-              end
 
        'petal run' never runs it. 'petal test' finds the test blocks of
        every .ptl file under the given paths (the default is the current
@@ -1338,7 +1337,7 @@ TARGET PATHS
        A segment names a declaration: a named 'fn' ('Class.method' for a
        method) or a 'let', 'var', 'state' or 'state var' binding. A
        declaration encloses whatever is written inside its text, so a
-       function encloses its body and 'let row = fn(i) ... end' encloses the
+       function encloses its body and 'let row = fn(i) ...' encloses the
        lambda's body. Control flow and anonymous functions are transparent: a
        'let' inside an 'if', a loop or a callback belongs to the nearest
        declaration around it. Parameters, 'for' variables and pattern

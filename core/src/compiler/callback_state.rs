@@ -595,7 +595,7 @@ fn constant_of(p: &Program, mut t: TermId) -> Option<crate::constant_table::Cons
 
 /// The runtime error's help, on one line.
 const HELP: &str = "State needs a fixed place in the program, and a callback has none. For a \
-     value per element that persists across runs, use a loop: `for x in xs do f(x) end` (add \
+     value per element that persists across runs, use a loop: `for x in xs do f(x)` (add \
      `key …` to follow items). For a value carried from one element to the next, use reduce's \
      accumulator.";
 

@@ -87,7 +87,7 @@ fn the_error_is_at_the_declaration_and_cites_the_call() {
         d.message
     );
     for help in [
-        "use a loop: `for x in xs do f(x) end`",
+        "use a loop: `for x in xs do f(x)`",
         "reduce's accumulator",
     ] {
         assert!(d.message.contains(help), "{}", d.message);

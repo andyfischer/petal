@@ -206,7 +206,7 @@ print(map([10, 20, 30], seen))
 `petal lint` can prove this one, so the program does not start:
 
 ```
-error: `state n` cannot be used inside a callback of `map`: `map` runs `seen` on line 6, once per element. State needs a fixed place in the program, and a callback has none. For a value per element that persists across runs, use a loop: `for x in xs do f(x) end` (add `key …` to follow items). For a value carried from one element to the next, use reduce's accumulator. [state-in-callback]
+error: `state n` cannot be used inside a callback of `map`: `map` runs `seen` on line 6, once per element. State needs a fixed place in the program, and a callback has none. For a value per element that persists across runs, use a loop: `for x in xs do f(x)` (add `key …` to follow items). For a value carried from one element to the next, use reduce's accumulator. [state-in-callback]
  --> [line 2, column 5]
   |
 2 |     state n = 0
@@ -240,7 +240,7 @@ note: `map` runs the callback here, once per element, at line 6, column 21
   |                     -----------------------
 help: state needs a fixed place in the program, and a callback has none.
       For a value per element that persists across runs, use a loop:
-          for x in xs do f(x) end   (add `key …` to follow items)
+          for x in xs do f(x)   (add `key …` to follow items)
       For a value carried from one element to the next, use reduce's accumulator.
 ```
 

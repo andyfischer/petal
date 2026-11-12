@@ -844,7 +844,7 @@ fn the_error_points_at_the_declaration_and_the_builtin_call() {
         "{err}"
     );
     assert!(err.contains("help: "), "{err}");
-    assert!(err.contains("for x in xs do f(x) end"), "{err}");
+    assert!(err.contains("for x in xs do f(x) "), "{err}");
     assert!(err.contains("reduce's accumulator"), "{err}");
 }
 

@@ -7,8 +7,7 @@
 //!
 //! ```petal
 //! fn squares(xs)                 fn draw_all(items)
-//!   for x in xs do x * x end       for it in items do draw(it) end
-//! end                            end
+//!   for x in xs do x * x           for it in items do draw(it)
 //! ```
 //!
 //! The first is a mapping and wants `-> list`. The second is a side-effect

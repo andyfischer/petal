@@ -3581,7 +3581,7 @@ pub fn collect_type_decls(
                     stmt.span,
                     format!(
                         "cannot declare a method on `{class}`: no class of that name \
-                         (declare it with `class {class} … end`)"
+                         (declare it with `class {class}` and its fields indented under it)"
                     ),
                 );
                 continue;

@@ -2239,7 +2239,7 @@ impl Parser {
         if !matches!(self.peek(), Token::Do) {
             return Err(self.error_at_current(format!(
                 "Expected `do` after the name of the test, got {}. A test is written \
-                 `test \"name\" do … end`, and its name is a plain string (no `{{…}}` holes)",
+                 `test \"name\" do` with its body indented under it, and its name is a plain string (no `{{…}}` holes)",
                 token_desc(&self.peek().clone())
             )));
         }

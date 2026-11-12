@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! let out = ""
-//! for i in range(0, n) do out = out ++ s end   =>   out ++= repeat(s, n)
+//! for i in range(0, n) do out = out ++ s   =>   out ++= repeat(s, n)
 //! ```
 //!
 //! `x ++ s` builds a new string, so the loop copies everything written so far

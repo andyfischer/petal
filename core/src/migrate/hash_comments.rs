@@ -117,6 +117,40 @@ pub(super) fn plan_comment_fixes(source: &str) -> Result<Vec<Fix>, String> {
             });
         }
     }
+    // `<image /> // keep it small`: after an element on its line, `//` never
+    // was a comment. It is a text child, then and now, and almost certainly
+    // not what was meant, so the site is listed: once, in the run that
+    // respells the file's real `//` comments. In a file that has none it is
+    // text in the current syntax, and nothing of this migration's.
+    let chars: Vec<char> = source.chars().collect();
+    let old_syntax = !ordinary.is_empty() || !fixes.is_empty();
+    for (k, token) in lexer.tokens.iter().enumerate() {
+        if !old_syntax || !matches!(token, Token::JsxText(_)) {
+            continue;
+        }
+        let (start, end) = (
+            lexer.token_spans[k].start.offset as usize,
+            (lexer.token_spans[k].end.offset as usize).min(chars.len()),
+        );
+        let mut at = start;
+        while at + 1 < end {
+            let marker = chars[at] == '/' && chars[at + 1] == '/';
+            if marker && (at == start || chars[at - 1].is_whitespace()) {
+                fixes.push(Fix {
+                    anchor: at,
+                    message: "`//` after an element or text in element children is text, not a \
+                              comment; if a comment was meant, write `{/* … */}`"
+                        .to_string(),
+                    splices: Vec::new(),
+                });
+                // One report per line of text.
+                while at < end && chars[at] != '\n' {
+                    at += 1;
+                }
+            }
+            at += 1;
+        }
+    }
     if let Some(first) = ordinary.first() {
         let n = ordinary.len();
         fixes.push(Fix {
@@ -242,6 +276,29 @@ mod tests {
         assert!(fixes[0].splices.is_empty());
         assert!(fixes[0].message.contains("by hand"), "{}", fixes[0].message);
         assert_eq!(migrate(src), "let v = <p>\n  one\n  // note\n  two\n</p>\n# after\n");
+    }
+
+    /// `//` after an element on its line is a text child in the old syntax
+    /// and the new: nothing to rewrite, but the author meant a comment, so
+    /// the site is listed (petal-creative's petal-images tests had one). A
+    /// URL in text is not one.
+    #[test]
+    fn a_trailing_comment_that_is_really_text_is_listed() {
+        let src = "// old\nlet v = <col>\n  <image w={2} /> // keep it small\n  see http://example.com // twice // here\n</col>\n";
+        let fixes = plan_comment_fixes(src).unwrap();
+        assert_eq!(fixes.len(), 3, "{:?}", fixes.iter().map(|f| f.anchor).collect::<Vec<_>>());
+        assert!(fixes[1..].iter().all(|f| f.splices.is_empty()));
+        assert!(fixes[1].message.contains("is text, not a comment"), "{}", fixes[1].message);
+        assert_eq!(fixes[1].anchor, src.find("// keep").unwrap());
+        assert_eq!(fixes[2].anchor, src.find("// twice").unwrap());
+        let once = migrate(src);
+        assert_eq!(once, src.replacen("// old", "# old", 1));
+        // It is text in the current syntax: with the file's comments
+        // respelled, a second run has nothing to say.
+        assert!(plan_comment_fixes(&once).unwrap().is_empty());
+        // Nothing is listed for a URL, or once the comment is a hole.
+        let fine = "// old\nlet v = <col>\n  <image w={2} /> {/* keep it small */}\n  see http://example.com\n</col>\n";
+        assert_eq!(plan_comment_fixes(fine).unwrap().len(), 1);
     }
 
     #[test]

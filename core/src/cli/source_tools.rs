@@ -422,6 +422,9 @@ struct MigrateSummary {
     gated: Vec<String>,
     /// Files that could not be read at all.
     unreadable: Vec<String>,
+    /// Files that lex but do not parse: only the migrations that read
+    /// tokens ran on them.
+    token_only: Vec<String>,
     /// Markdown: fences migrated by their tokens alone, and fences left as
     /// written because they do not lex.
     fragments: usize,
@@ -480,6 +483,17 @@ impl MigrateSummary {
                 eprintln!("  {line}");
             }
         }
+        if !self.token_only.is_empty() {
+            eprintln!(
+                "{} file(s) do not parse: only the migrations that read tokens {} them \
+                 (`colour-literals`, `hash-comments`, `elsif-to-else-if`):",
+                self.token_only.len(),
+                if check { "would run on" } else { "ran on" }
+            );
+            for line in &self.token_only {
+                eprintln!("  {line}");
+            }
+        }
         if !self.gated.is_empty() {
             eprintln!(
                 "{} skipped by a gate ({} for the migration named):",
@@ -535,6 +549,8 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
     let mut texts: Vec<Option<String>> = Vec::with_capacity(inputs.len());
     let mut findings: Vec<Vec<crate::migrate::Finding>> = Vec::with_capacity(inputs.len());
     let mut ends: Vec<(usize, usize)> = Vec::with_capacity(inputs.len());
+    // Files that do not parse and got the token migrations only.
+    let mut unparsed: Vec<bool> = Vec::with_capacity(inputs.len());
     for input in &inputs {
         if is_markdown(input) {
             let out = crate::migrate::markdown::migrate_markdown(&input.source, &options(input));
@@ -548,6 +564,7 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
             texts.push(Some(out.output));
             findings.push(out.findings);
             ends.push((out.ends_removed, out.ends_kept));
+            unparsed.push(false);
             continue;
         }
         match crate::migrate::migrate_source_checked(&input.source, &options(input)) {
@@ -560,9 +577,32 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
                 texts.push(Some(out.output));
                 findings.push(out.findings);
                 ends.push((out.ends_removed, out.ends_kept));
+                unparsed.push(false);
             }
             Err(e) => {
                 eprintln!("error: {}: {}", input.name, e);
+                // A file that lexes but does not parse still gets the
+                // migrations that read tokens alone, as a Markdown fence
+                // does: a `#f80` left in it is a hard error, where the
+                // parse error may be years old (a stale generated file).
+                // It is still reported and still fails the run.
+                if let MigrateError::Unreadable(reason) = &e {
+                    let tokens = MigrateOptions { fragment: true, ..options(input) };
+                    if let Ok(out) = crate::migrate::migrate_source_checked(&input.source, &tokens)
+                        && out.fragment
+                        && out.changed(&input.source)
+                    {
+                        let first = reason.lines().next().unwrap_or("");
+                        summary.token_only.push(format!("{}: {first}", input.name));
+                        errors += 1;
+                        texts.push(Some(out.output));
+                        findings.push(out.findings);
+                        ends.push((0, 0));
+                        unparsed.push(true);
+                        continue;
+                    }
+                }
+                unparsed.push(false);
                 match &e {
                     MigrateError::Unreadable(reason) => {
                         let first = reason.lines().next().unwrap_or("");
@@ -590,12 +630,18 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
         let parseable: Vec<Option<String>> = texts
             .iter()
             .zip(&findings)
-            .zip(&inputs)
-            .map(|((text, found), input)| {
+            .zip(inputs.iter().zip(&unparsed))
+            .map(|((text, found), (input, unparsed))| {
                 let stuck = found
                     .iter()
                     .any(|f| f.rule == crate::migrate::AT_REBIND && !f.fixable);
-                if stuck || is_markdown(input) { None } else { text.clone() }
+                // `# petal-lint-ignore-file old-imports` keeps a file's
+                // imports as written (a fixture of an import that must not
+                // resolve), as it keeps any other migration out of a file.
+                let ignored = text.as_deref().is_some_and(|text| {
+                    crate::lint::Ignores::scan_legacy(text).is_ok_and(|i| i.ignores_file(OLD_IMPORTS))
+                });
+                if stuck || ignored || *unparsed || is_markdown(input) { None } else { text.clone() }
             })
             .collect();
         fix_imports_batch(&inputs, &parseable, &opts.paths, include_dirs, &mut errors)
@@ -653,6 +699,17 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
             }
         }
         let Some(path) = &input.path else {
+            // Text with no file is often a piece of something else (Petal
+            // in a host-language string): the blank lines it starts with,
+            // which `end-lines` formats away, are the caller's.
+            if !input.source.trim().is_empty() && !output.trim().is_empty() {
+                let lead = |s: &str| s.len() - s.trim_start_matches(['\n', '\r']).len();
+                let (had, has) = (lead(&input.source), lead(&output));
+                if had != has {
+                    output = format!("{}{}", &input.source[..had], &output[has..]);
+                }
+            }
+            let touched = output != input.source;
             if opts.check {
                 if touched {
                     changed += 1;

@@ -385,6 +385,22 @@ impl Env {
         }
     }
 
+    /// Run `f` with `modules` bound as implicit imports
+    /// ([`add_tooling_implicit_imports`](Self::add_tooling_implicit_imports)),
+    /// and unbind them afterwards: for a tool whose one `Env` reads files of
+    /// several projects, each with its own `[host]`.
+    pub(crate) fn with_tooling_implicit_imports<T>(
+        &mut self,
+        modules: &[String],
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let saved = self.modules.base_implicit_imports.clone();
+        self.add_tooling_implicit_imports(modules);
+        let out = f(self);
+        self.modules.base_implicit_imports = saved;
+        out
+    }
+
     /// Whether this `Env` compiles without linking
     /// ([`set_check_only`](Self::set_check_only)).
     pub fn is_check_only(&self) -> bool {

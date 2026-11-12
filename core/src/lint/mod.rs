@@ -570,6 +570,14 @@ pub(crate) struct Ignores {
 }
 
 impl Ignores {
+    /// Whether a `petal-lint-ignore-file` comment silences `rule` for the
+    /// whole file.
+    pub(crate) fn ignores_file(&self, rule: &str) -> bool {
+        self.file
+            .as_ref()
+            .is_some_and(|rules| rules.is_empty() || rules.iter().any(|r| r == rule))
+    }
+
     pub(crate) fn scan(source: &str) -> Result<Self, String> {
         Self::scan_with(source, false)
     }

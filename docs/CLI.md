@@ -1057,14 +1057,14 @@ one is an error that names the command.
 | Migration | Rewrites | Old form |
 |---|---|---|
 | `colour-literals` | a color literal's sigil: `#f80` → `:f80`, for each color *token* (a `"#f80"` in a string, a `#define` in a `"""` GLSL block and a `#hex` word in a comment are not tokens and stay). The migrated text must lex to the same tokens as the original, or nothing is written. A `#` color directly after a value or a name (`fn bg() #fff end`), where a `:` would be a separator, is listed for a hand edit: write `(:fff)`. It runs first, reading the file with a legacy lexer: the file does not lex until it has | removed 2026-11-12 (`#` is the comment marker, [plan](tasks/pythonic-syntax.md)): `#` followed directly by a color-shaped hex word is an error that names the command, never a comment |
-| `hash-comments` | the line-comment marker: `// note` → `# note`, for each comment (a `//` in a string or in a `"""` GLSL block is part of a token and stays; `/* … */` comments stay). A space is added when the text followed the marker directly (`//note` → `# note`), a longer run keeps its look (`/// doc` → `## doc`), and `// petal-lint-ignore …` and the other `petal-` directives follow. A `//` comment line in element children becomes `{/* … */}`, since a `#` line there is text; one between two lines of text, which a hole would split into two children, is listed for a hand edit. The migrated text must lex to the same tokens on the same lines, comments aside, or nothing is written | accepted without a warning; `petal lint` reports it (`old-syntax`, once per file) |
+| `hash-comments` | the line-comment marker: `// note` → `# note`, for each comment (a `//` in a string or in a `"""` GLSL block is part of a token and stays; `/* … */` comments stay). A space is added when the text followed the marker directly (`//note` → `# note`), a longer run keeps its look (`/// doc` → `## doc`), and `// petal-lint-ignore …` and the other `petal-` directives follow. A `//` comment line in element children becomes `{/* … */}`, since a `#` line there is text; one between two lines of text, which a hole would split into two children, is listed for a hand edit. A `//` after an element on its line (`<image /> // small`) never was a comment: it is a text child, stays as written, and is listed once, in the run that respells the file's comments. The migrated text must lex to the same tokens on the same lines, comments aside, or nothing is written | accepted without a warning; `petal lint` reports it (`old-syntax`, once per file) |
 | `else-if-nesting` | the old nesting reading of `else if`: `else if c then … end end` (an `if` nested in an `else`, each with its `end`) → `else if c then … end`, one chain with one `end`, where the nested `if` is the `else`'s only statement (the nested `if`'s own `end` is deleted: its line, or the word in a one-liner). Where the `else` holds more than the `if`, the `if` moves to the line after `else`, where it is not merged and stays nested. The sites are read from tokens and a parse in which `else if` is still two tokens, so GLSL `else if` in a `"""` block, strings and comments stay. The migrated text must compile to the same IR as the original read the old way (and parse to the same AST, a one-`if` block read as a chain), or nothing is written | removed: `else if` is one token that continues the chain, so the second `end` is an error that names this migration |
 | `elsif-to-else-if` | `elsif` → `else if`, for each keyword token (a field or record key named `elsif`, strings and comments stay; a trailing comment keeps a column it shares with other lines). Same tokens but for the keyword, same AST, or nothing is written | accepted without a warning; `petal lint` reports it (`old-syntax`) |
 | `at-rebind` | the `@` rebind operator, exactly as it desugared: `f(@x)` → `x = f(x)`; an `@x` deeper in a statement lifts its nearest enclosing call into an assignment on the line before (`let r = g(f(@x))` → `x = f(x)` then `let r = g(x)`). An `@` the operator could not lift (two in one call, a `while` condition, a `match` arm, a `memo` initializer), or one whose statement shares its line with other code (`if c then g(f(@x)) end`), is listed for a hand edit. It runs before every migration that needs a parse: the file does not parse until it has | removed 2026-11-09 (`@` is kept for [annotations](proposals/annotation-syntax.md)): a parse error that names the command |
 | `export-to-pub` | `export fn f` → `pub fn f`, on any declaration or `import` (trailing comments kept in their column) | accepted without a warning; `petal lint` reports it (`old-syntax`) |
 | `const-decl-deprecated` | `const X = e` → `let X = const(e)`, literals included, with a closing `)` after a multi-line initializer and trailing comments kept in their column ([plan](tasks/lifecycle-annotation-functions-refactor.md)) | warns (Phase 5); removed in Phase 6 |
 | `config-let-deprecated` | `config let X = v` → `let X = tunable(v)`, or only `config` dropped when `v` is already a `tunable(…)` call | warns (Phase 5); removed in Phase 6 |
-| `state-key-deprecated` | `state(k) x = e` → `memo(k) x = e` where the slot is never written and `e` is plainly a pure function of the key (no calls, no `get`, no name the key does not read): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Any other `state(key)` is listed for a hand edit ([Deprecated: `state(key)`](features/inline-state.md#deprecated-statekey)): a top-level `state var` Map for state shared on purpose, plain `state` for per-instance state | warns |
+| `state-key-deprecated` | `state(k) x = e` → `memo(k) x = e` where the slot is never written and `e` is plainly a pure function of the key (no calls, no `get`, nothing the key does not hold: with the key `[g.id]`, `g.id` and what is read through it, but not `g.name` or `g`): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Any other `state(key)` is listed for a hand edit ([Deprecated: `state(key)`](features/inline-state.md#deprecated-statekey)): a top-level `state var` Map for state shared on purpose, plain `state` for per-instance state | warns |
 | `end-lines` | the `end` on a line of its own: [indentation closes the block](syntax/indentation.md). The file is formatted first (`petal fmt`: a file whose indentation disagrees with its `end`s is indented by them), then each `end` alone on its line is deleted and `end)` / `end]` / `end}` keep the bracket, at the same column. A comment after a deleted `end` stays, on a line of its own at the block's column. What stays: an `end` on the line of the block it closes (`if c then a else b end`); `end,` (the next argument follows: two block lambdas in one call); `end \|> f` and `end.len()`; the `end` of a block with no statement; an `end` before a line that starts with an operator, which would otherwise continue the block's last statement; and any other `end` the parse needs (`if c then a; b` / `end`). The migrated text must parse to the same AST as the original, or the file keeps what the other migrations wrote and is listed as skipped. A file with no `end` at the start of a line is not reformatted. `# petal-lint-ignore-file end-lines` keeps a file's `end`s | still the language: `end` is optional, with no warning and no lint report |
 | `old-imports` | import lines for the current module system: everything [`fix-imports`](#fix-imports--migrate-imports) does | removed: an error |
 
@@ -1113,7 +1113,26 @@ the summary, under "skipped by a gate", with the migration and the reason,
 and the run exits 1. For every migration but `end-lines` nothing is written
 for that file; for `end-lines` the file is written as the other migrations
 left it, with its `end`s. A file that does not parse is listed under "could
-not be read" and exits 1 too. The other files are migrated either way.
+not be read" and exits 1 too. If it lexes, it still gets the migrations that
+read tokens alone (`colour-literals`, `hash-comments`, `elsif-to-else-if`),
+as a Markdown fence does, and is listed under "do not parse" instead: a
+`#f80` left in it would be one more error. The other files are migrated
+either way.
+
+**Imports and the host.** `old-imports` adds an import only for a name that
+nothing in reach provides. A project whose `petal.toml` says what its host
+puts in scope ([`[host]`](packages.md#host): packages bound as implicit
+imports, files joined ahead of each script) is read that way, as `petal
+lint` reads it, so a screen that calls the host's `draw_rect` gets no
+`import ui`. A script that also calls names no package here exports is
+written for a host this run cannot see, and gets no import at all: a package
+that happens to export one of its other names would be a guess (`row` in a
+Garden config script is `garden_config`'s, not `ui`'s). The note names them;
+pass the host's packages with `-I` (`-I garden/garden-script/packages` for a
+Garden script). `--except old-imports` leaves imports alone, which is what a
+fragment on stdin usually wants (Petal cut from a host-language string,
+whose host is not this tool's to guess). Text on stdin keeps the blank lines
+it starts with.
 
 **Markdown.** `--markdown` walks the same directories for `.md` files (a
 `.md` file named on the command line is read as Markdown without the flag)
@@ -1135,6 +1154,8 @@ status. To keep one site in its old form (a fixture of the deprecated form,
 say), put `# petal-lint-ignore <migration>` on the line before it or at the
 end of its line, or `# petal-lint-ignore-file <migration>` anywhere: the
 same comment silences the compiler's warning there.
+`# petal-lint-ignore-file old-imports` keeps a file's imports as written (a
+fixture of an import that must not resolve).
 
 Adding a migration for a future syntax change: see
 [dev/migrations.md](dev/migrations.md).

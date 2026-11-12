@@ -67,6 +67,29 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `MigrateOutcome` gained `ends_removed`, `ends_kept`, `skipped` and
   `fragment`, and `migrate::markdown::migrate_markdown` is the Markdown
   mode.
+- **`petal migrate-old-code` fixes found migrating the other projects.**
+  - `old-imports` reads `[host]` in the project's `petal.toml`, as `petal
+    lint` and `petal lsp` do: a name the host's implicit imports or prelude
+    files provide gets no import. And a file that also calls names no
+    package in reach exports (a script for a host the run cannot see) gets
+    no import at all, with a note that says to pass the host's packages
+    with `-I`; it used to get the import of any package that happened to
+    export one of its other names.
+  - `# petal-lint-ignore-file old-imports` keeps a file's imports as
+    written.
+  - A `.ptl` file that lexes but does not parse still gets
+    `colour-literals`, `hash-comments` and `elsif-to-else-if`, as a Markdown
+    fence does. It is still reported and the run still exits 1.
+  - `state-key-deprecated` rewrote `state([g.a]) x = g.b` to `memo`: its
+    purity check compared names, not what the key holds. It now compares
+    access paths, and a key computed from a name (`state(x % 2) v = x`) no
+    longer counts as holding it. Such sites are listed for a hand edit.
+  - A `//` after an element on its line in element children
+    (`<image /> // small`) is text, not a comment; `hash-comments` lists it
+    once, in the run that respells the file's comments.
+  - Text on stdin keeps the blank lines it starts with.
+  - `petal fmt` no longer puts a space into `{/* comment */}` (it wrote
+    `{ /* comment */}`).
 - **`petal fmt` keeps a line continued by a trailing operator where it
   hangs.** The second line of `let busy = a || b ||` / `    c || d`, and of
   an `import m: a, b,` list, used to move to the block's own column; it now

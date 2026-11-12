@@ -68,6 +68,9 @@ pub struct ImportFixer {
     /// `[dependencies]` are importable only from its own files, so the index
     /// is rebuilt when a file of another project comes along.
     index_project: Option<PathBuf>,
+    /// Every file [`stage`](Self::stage)d, with its text: what a project's
+    /// `[host]` prelude files read as, whatever is on disk.
+    staged: Vec<(PathBuf, String)>,
 }
 
 /// The opt-out comment: a file carrying `// petal-fix-imports-ignore` on a
@@ -97,6 +100,7 @@ impl ImportFixer {
             unreadable: Vec::new(),
             loads: HashMap::new(),
             index_project: None,
+            staged: Vec::new(),
         }
     }
 
@@ -274,6 +278,52 @@ impl ImportFixer {
     /// result does not depend on what has been written yet.
     pub fn stage(&mut self, file: &Path, source: &str) {
         self.env.override_file_source(file, source);
+        let file = crate::module::canonical_path(file);
+        match self.staged.iter_mut().find(|(p, _)| *p == file) {
+            Some((_, text)) => *text = source.to_string(),
+            None => self.staged.push((file, source.to_string())),
+        }
+    }
+
+    /// The names of `missing`, and the packages of `methods`, that the
+    /// host of `file` does not put in scope. A project's `petal.toml` may
+    /// say what its host provides (`[host]`: packages it binds as implicit
+    /// imports, files it joins ahead of each script), and `petal lint` and
+    /// `petal lsp` read the file that way; a name that comes from there
+    /// needs no import, and adding one would be wrong where the host
+    /// defines the name itself. `Err` when the file does not compile the
+    /// way its host would compile it: then nothing is known, and nothing
+    /// is added.
+    fn not_provided_by_host(
+        &mut self,
+        source: &str,
+        file: &Path,
+        missing: &mut BTreeSet<String>,
+        methods: &mut Vec<(String, &'static str)>,
+    ) -> Result<(), String> {
+        let open: Vec<(PathBuf, &str)> = self
+            .staged
+            .iter()
+            .map(|(p, text)| (p.clone(), text.as_str()))
+            .collect();
+        let host = crate::project_host::HostView::for_document(file, &open);
+        if host.imports.is_empty() && host.prelude.is_empty() {
+            return Ok(());
+        }
+        methods.retain(|(_, package)| !host.imports.iter().any(|i| i == package));
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let joined = host.join(source);
+        let program = self
+            .env
+            .with_tooling_implicit_imports(&host.imports, |env| {
+                env.compile_program_diag(crate::program::ProgramId(0), &joined.text, Some(file))
+            })
+            .map_err(|e| e.to_string().lines().next().unwrap_or_default().to_string())?;
+        let still = unresolved_names_where(&program, |span| joined.doc_span(span).is_some());
+        missing.retain(|name| still.contains(name));
+        Ok(())
     }
 
     /// Rewrite 3: add the imports `source` needs for the bare names nothing
@@ -303,7 +353,16 @@ impl ImportFixer {
         }) {
             return unchanged(Vec::new());
         }
-        let missing = unresolved_names(&program);
+        let mut missing = unresolved_names(&program);
+        let mut methods = builtin_method_calls(source, &program);
+        if let Some(file) = file
+            && let Err(e) = self.not_provided_by_host(source, file, &mut missing, &mut methods)
+        {
+            return unchanged(vec![format!(
+                "does not compile as its host reads it (`[host]` in petal.toml), so no missing \
+                 imports were looked for: {e}"
+            )]);
+        }
         // What the file already imports is never added again, and a name a
         // module the file imports would provide is not this rewrite's job.
         let already: HashSet<String> = program
@@ -317,7 +376,7 @@ impl ImportFixer {
         // `x.name()` used to fall back to any builtin `name(x)`; for a
         // builtin that now lives in a package it does so only where the
         // package is imported, and nothing fails until the line runs.
-        for (name, package) in builtin_method_calls(source, &program) {
+        for (name, package) in methods {
             if already.contains(package) {
                 continue;
             }
@@ -330,7 +389,7 @@ impl ImportFixer {
         }
         self.export_index(file);
         let index = self.index.as_ref().expect("just built");
-        let mut unprovided = false;
+        let mut unprovided: Vec<&String> = Vec::new();
         // Names with one provider first: the import one of them adds may be
         // what a name with several providers is waiting for.
         let mut contested: Vec<(&String, &[String])> = Vec::new();
@@ -340,7 +399,7 @@ impl ImportFixer {
                     add.entry(only.clone()).or_default().push(name.clone());
                 }
                 Some([_]) => {}
-                None => unprovided = true,
+                None => unprovided.push(name),
                 Some(several) => contested.push((name, several)),
             }
         }
@@ -374,12 +433,34 @@ impl ImportFixer {
         }
         // A package that would not load may be the one a still-missing name
         // is waiting for.
-        if unprovided {
+        if !unprovided.is_empty() {
             notes.extend(self.unreadable.iter().map(|problem| {
                 format!("{problem} — its exports were not considered")
             }));
         }
         if add.is_empty() {
+            return unchanged(notes);
+        }
+        // A name no package here exports means the file is written for a
+        // host this run cannot see (a Garden config script calls `layout`,
+        // `editor` and `row`). A package that happens to export one of its
+        // other names (`ui` has a `row` too) is then a guess, and a wrong
+        // one once the host's own package is in reach: nothing is added.
+        if !unprovided.is_empty() {
+            let would: Vec<String> = add
+                .iter()
+                .map(|(path, names)| {
+                    format!("`{}` (for {})", crate::ast::plain_import_source(path), some_names(names))
+                })
+                .collect();
+            let names: Vec<String> = unprovided.iter().map(|n| n.to_string()).collect();
+            notes.push(format!(
+                "{} {} defined nowhere this run can see, so no import was added (not {}): if the \
+                 file is written for a host, pass the directory of the host's packages with `-I`",
+                some_names(&names),
+                if names.len() == 1 { "is" } else { "are" },
+                would.join(", ")
+            ));
             return unchanged(notes);
         }
         let lines: Vec<String> = add
@@ -482,6 +563,15 @@ impl ImportFixer {
 /// The bare names the entry file of `program` calls or reads that nothing
 /// defines: not a declaration, not an import, not a `core`/`std` builtin.
 pub fn unresolved_names(program: &Program) -> BTreeSet<String> {
+    unresolved_names_where(program, |_| true)
+}
+
+/// [`unresolved_names`], of the terms of the entry file whose span `keep`
+/// takes (the lines of a document joined behind its host's prelude files).
+fn unresolved_names_where(
+    program: &Program,
+    keep: impl Fn(crate::source_map::SourceSpan) -> bool,
+) -> BTreeSet<String> {
     use crate::typecheck::globals::{UNDEFINED_VARIABLE_PREFIX, UNKNOWN_FUNCTION_PREFIX};
     let mut out = BTreeSet::new();
     for term in &program.terms {
@@ -490,7 +580,7 @@ pub fn unresolved_names(program: &Program) -> BTreeSet<String> {
         if program
             .source_map
             .get(term.id)
-            .is_none_or(|span| span.file != ENTRY_FILE)
+            .is_none_or(|span| span.file != ENTRY_FILE || !keep(*span))
         {
             continue;
         }

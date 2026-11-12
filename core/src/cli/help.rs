@@ -597,7 +597,9 @@ DESCRIPTION
               and so is a /* ... */ comment. A // comment line in element
               children becomes a hole that holds a /* ... */ comment, since
               a # line there is text; one between two lines of text is
-              reported and left for a hand edit
+              reported and left for a hand edit. A // after an element on
+              its line never was a comment: it is text, stays, and is
+              reported once
        else-if-nesting
               'else if' continues the if chain, so the old nesting form
               'else if ... end end' (an if inside an else, each with its

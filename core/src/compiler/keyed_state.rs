@@ -24,8 +24,6 @@
 //! A first-party bundled package is not warned about: its author is not the
 //! reader of the warning ([`super::is_bundled_copy`]).
 
-use std::collections::HashSet;
-
 use crate::ast::{Expr, ExprKind, ExprVisitor, RecordField, Stmt, StmtKind, walk_expr, walk_stmt};
 use crate::diagnostic::Diagnostic;
 use crate::source_map::SourceSpan;
@@ -98,55 +96,90 @@ pub(crate) fn keyed_states(stmts: &[Stmt]) -> Vec<KeyedState> {
 /// recomputes it after a reload or a run that does not reach it, so the
 /// rewrite from `state(key)` is sound only when the initializer cannot give
 /// a different answer for an equal key. This accepts the initializers that
-/// provably cannot: literals, the names the key reads, operators, and list,
+/// provably cannot: literals, the values the key holds, operators, and list,
 /// record, field, index and interpolation forms over those. Anything else
-/// (any call, a `get`, a name the key does not read, a lambda, a branch or a
+/// (any call, a `get`, a value the key does not hold, a lambda, a branch or a
 /// loop) is rejected, though many such initializers are pure: the full
 /// purity check, with the static classifier, is docs/tasks/memo-purity-check.md.
+///
+/// "The values the key holds" are access paths, not names: the key
+/// `[g.code_hash]` holds `g.code_hash` and whatever is read through it, but
+/// not `g.uniforms`, and not `g`. And a path counts only where the key keeps
+/// its whole value: as the key itself, or as an element of a list or the
+/// value of a field the key is built of. Under an operator or an index
+/// (`state(x % 2)`) equal keys do not mean equal `x`.
 pub(crate) fn init_is_pure_of_key(init: &Expr, key: &Expr) -> bool {
-    struct KeyNames {
-        names: HashSet<String>,
-        lambda: bool,
-    }
-    impl ExprVisitor for KeyNames {
+    struct HasLambda(bool);
+    impl ExprVisitor for HasLambda {
         fn visit_expr(&mut self, e: &Expr) {
-            match &e.kind {
-                ExprKind::Ident(n) | ExprKind::CellGet(n) => {
-                    self.names.insert(n.clone());
-                }
-                ExprKind::Lambda { .. } => self.lambda = true,
-                _ => {}
+            if matches!(e.kind, ExprKind::Lambda { .. }) {
+                self.0 = true;
             }
             walk_expr(self, e);
         }
     }
-    let mut key_names = KeyNames {
-        names: HashSet::new(),
-        lambda: false,
-    };
-    key_names.visit_expr(key);
-    !key_names.lambda && pure_over(init, &key_names.names)
+    let mut lambda = HasLambda(false);
+    lambda.visit_expr(key);
+    let mut held = Vec::new();
+    key_paths(key, &mut held);
+    !lambda.0 && pure_over(init, &held)
 }
 
-fn pure_over(e: &Expr, names: &HashSet<String>) -> bool {
-    let all = |es: &[Expr]| es.iter().all(|x| pure_over(x, names));
+/// `e` as an access path: a name, then the fields read through it
+/// (`g.pass.code_hash` is `[g, pass, code_hash]`). `None` for anything else.
+fn access_path(e: &Expr) -> Option<Vec<&str>> {
+    match &e.kind {
+        ExprKind::Ident(n) => Some(vec![n.as_str()]),
+        ExprKind::FieldAccess { object, field } => {
+            let mut path = access_path(object)?;
+            path.push(field.as_str());
+            Some(path)
+        }
+        _ => None,
+    }
+}
+
+/// The access paths whose whole value `key` holds.
+fn key_paths<'a>(key: &'a Expr, out: &mut Vec<Vec<&'a str>>) {
+    if let Some(path) = access_path(key) {
+        out.push(path);
+        return;
+    }
+    match &key.kind {
+        ExprKind::List(items) => items.iter().for_each(|item| key_paths(item, out)),
+        ExprKind::Record(fields) => {
+            for f in fields {
+                if let RecordField::Named(_, v) = f {
+                    key_paths(v, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn pure_over(e: &Expr, held: &[Vec<&str>]) -> bool {
+    let all = |es: &[Expr]| es.iter().all(|x| pure_over(x, held));
+    // A path the key holds, or one read through such a path.
+    if let Some(path) = access_path(e) {
+        return held.iter().any(|k| path.starts_with(k));
+    }
     match &e.kind {
         ExprKind::Literal(_) => true,
-        ExprKind::Ident(n) => names.contains(n),
-        ExprKind::BinaryOp { left, right, .. } => pure_over(left, names) && pure_over(right, names),
-        ExprKind::UnaryOp { operand, .. } => pure_over(operand, names),
+        ExprKind::BinaryOp { left, right, .. } => pure_over(left, held) && pure_over(right, held),
+        ExprKind::UnaryOp { operand, .. } => pure_over(operand, held),
         ExprKind::List(items) => all(items),
         ExprKind::Record(fields) => fields.iter().all(|f| match f {
-            RecordField::Named(_, v) => pure_over(v, names),
+            RecordField::Named(_, v) => pure_over(v, held),
             // A computed key is a spread of an internal call; a spread
-            // of a name the key reads is pure.
-            RecordField::Spread(v) => pure_over(v, names),
+            // of a value the key holds is pure.
+            RecordField::Spread(v) => pure_over(v, held),
         }),
-        ExprKind::FieldAccess { object, .. } => pure_over(object, names),
+        ExprKind::FieldAccess { object, .. } => pure_over(object, held),
         ExprKind::IndexAccess { object, index } => {
-            pure_over(object, names) && pure_over(index, names)
+            pure_over(object, held) && pure_over(index, held)
         }
-        ExprKind::OptionalAccess(inner) => pure_over(inner, names),
+        ExprKind::OptionalAccess(inner) => pure_over(inner, held),
         ExprKind::StringInterp { exprs, .. } => all(exprs),
         _ => false,
     }

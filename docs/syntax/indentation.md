@@ -172,6 +172,27 @@ language, or pasted with its indentation, parses as it would at column 1:
     print(total)
 ```
 
+That covers a snippet that is indented consistently. Source a host builds
+piece by piece is where old code breaks: an `end` used to be all the
+structure a block needed, so a host could join lines with no indentation at
+all, and a block whose body sits at its opener's column is now an error.
+
+```petal ignore no-migrate
+if ok then
+print(1)
+end
+```
+
+```text
+expected an indented block after `then`
+```
+
+`petal migrate-old-code` and `petal fmt` repair files on disk (they read such
+a file by its `end`s and indent it), but they cannot see a string a host
+concatenates at run time. A host that generates Petal either indents each
+body it emits, or keeps a body on its opener's line and closes it with `end`
+(`if ok then print(1) end`), which needs no indentation.
+
 ## Strings
 
 Strings are opaque to layout. A string may span lines, and a line that begins

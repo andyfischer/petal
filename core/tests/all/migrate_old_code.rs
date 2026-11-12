@@ -48,11 +48,11 @@ const FIXTURES: &[(&str, &str, &str)] = &[
         HASH_COMMENTS,
         "// header\n/// doc\nlet a = 1 //one\nlet n = 2 // two\n\
          let url = \"http://x\" /* kept // as is */\n\
-         let v = <col>\n  // the rows\n  <row n={a} /> // text\n</col>\n\
+         let v = <col>\n  // the rows\n  <row n={a} />\n</col>\n\
          print(a + n, url, v.children.length) //3\n",
         "# header\n## doc\nlet a = 1 # one\nlet n = 2 # two\n\
          let url = \"http://x\" /* kept // as is */\n\
-         let v = <col>\n  {/* the rows */}\n  <row n={a} /> // text\n</col>\n\
+         let v = <col>\n  {/* the rows */}\n  <row n={a} />\n</col>\n\
          print(a + n, url, v.children.length) # 3\n",
     ),
     // An `if` nested in an `else` on the `else`'s line: alone there, it
@@ -333,6 +333,71 @@ fn a_site_that_needs_a_hand_edit_is_reported_and_left() {
     assert_eq!(out.findings[0].rule, STATE_KEY_DEPRECATED);
 }
 
+/// `//` after an element on its line was never a comment: it is a text
+/// child, before and after. The text is not touched (this case used to be
+/// part of the `hash-comments` fixture above), and the run that respells the
+/// file's comments lists it, since a comment was almost certainly meant
+/// (petal-creative's petal-images tests had one). A second run is silent.
+#[test]
+fn slashes_after_an_element_are_text_and_listed_once() {
+    let before = "// header\nlet a = 1\nlet v = <col>\n  <row n={a} /> // text\n</col>\nprint(v.children.length)\n";
+    let after = "# header\nlet a = 1\nlet v = <col>\n  <row n={a} /> // text\n</col>\nprint(v.children.length)\n";
+    let out = migrate_with(before, Some(&[HASH_COMMENTS]));
+    assert_eq!(out.output, after);
+    assert_eq!((out.rewritten(), out.left()), (1, 1), "{:?}", out.findings);
+    let listed = out.findings.iter().find(|f| !f.fixable).unwrap();
+    assert_eq!((listed.line, listed.column), (4, 17));
+    assert!(listed.message.contains("is text, not a comment"), "{}", listed.message);
+    let again = migrate_with(after, None);
+    assert_eq!(again.output, after);
+    assert!(again.findings.is_empty(), "{:?}", again.findings);
+    assert!(compiles(before) && compiles(after));
+    // The element and the text: two children, as before.
+    assert_eq!(run_out(before), ["2"]);
+    assert_eq!(run_out(after), ["2"]);
+}
+
+/// `state(key)` becomes `memo(key)` only where the initializer reads what
+/// the key holds. The check is on access paths: a key that holds `g.a` says
+/// nothing about `g.b` or `g`, and a key computed from a name (`x % 2`) does
+/// not hold the name. (cheesecake's petal_fx.ptl: `state([name, g.code_hash])
+/// first_seen = g.uniforms` was rewritten, and a memo recomputed after a
+/// reload would have changed the shader's defaults.)
+#[test]
+fn a_keyed_state_whose_initializer_reads_past_its_key_is_left() {
+    let only = Some(vec![STATE_KEY_DEPRECATED.to_string()]);
+    for left in [
+        "fn f(g)\n  state([g.a]) first = g.b\n  first\nprint(f({a: 1, b: 2}))\n",
+        "fn f(g)\n  state([g.a]) first = g\n  first\nprint(f({a: 1, b: 2}))\n",
+        "fn f(name, g)\n  state([name, g.code_hash, g.uniform_types]) first_seen = g.uniforms\n  first_seen\n\
+         print(f(\"n\", {code_hash: 1, uniform_types: 2, uniforms: 3}))\n",
+        "fn f(x)\n  state(x % 2) v = x\n  v\nprint(f(3))\n",
+        "fn f(xs, i)\n  state(xs[i]) v = xs\n  v\nprint(f([1], 0))\n",
+        "fn f(g)\n  state({id: g.id}) v = g.name\n  v\nprint(f({id: 1, name: 2}))\n",
+    ] {
+        let out = migrate_source(left, &MigrateOptions { only: only.clone(), ..Default::default() }).unwrap();
+        assert_eq!(out.output, left);
+        assert_eq!((out.rewritten(), out.left()), (0, 1), "{left}");
+    }
+    for (old, new) in [
+        (
+            "fn f(g)\n  state([g.a]) first = g.a.x\n  first\nprint(f({a: {x: 1}, b: 2}))\n",
+            "fn f(g)\n  memo([g.a]) first = g.a.x\n  first\nprint(f({a: {x: 1}, b: 2}))\n",
+        ),
+        (
+            "fn f(g, n)\n  state({id: g.id, n: n}) v = [g.id, n * 2]\n  v\nprint(f({id: 1}, 2))\n",
+            "fn f(g, n)\n  memo({id: g.id, n: n}) v = [g.id, n * 2]\n  v\nprint(f({id: 1}, 2))\n",
+        ),
+        (
+            "fn f(xs, i)\n  state([xs, i]) v = xs[i]\n  v\nprint(f([1], 0))\n",
+            "fn f(xs, i)\n  memo([xs, i]) v = xs[i]\n  v\nprint(f([1], 0))\n",
+        ),
+    ] {
+        let out = migrate_source(old, &MigrateOptions { only: only.clone(), ..Default::default() }).unwrap();
+        assert_eq!(out.output, new);
+    }
+}
+
 #[test]
 fn an_ignore_comment_keeps_the_old_form_and_silences_the_warning() {
     let src = "# petal-lint-ignore const-decl-deprecated -- a fixture of the old form\n\
@@ -591,7 +656,7 @@ fn a_fully_unmigrated_file_migrates_in_one_run() {
 fn a_migrated_comment_file_is_the_same_program() {
     let (_, before, after) = FIXTURES.iter().find(|(r, _, _)| *r == HASH_COMMENTS).unwrap();
     assert_eq!(run_out(before), run_out(after));
-    assert_eq!(run_out(after), ["3 http://x 2"]);
+    assert_eq!(run_out(after), ["3 http://x 1"]);
 }
 
 #[test]

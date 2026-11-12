@@ -635,3 +635,150 @@ print(1) // kept
     // A Markdown file named without the flag is read as Markdown too.
     assert_eq!(petal_in(&t.root, &["migrate-old-code", "--check", "docs/guide.md"]).2, 0);
 }
+
+/// Run `petal <args>` in `dir` with `input` on stdin.
+fn petal_stdin(dir: &Path, args: &[&str], input: &str) -> (String, String, i32) {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = Command::new(PETAL)
+        .args(args)
+        .current_dir(dir)
+        .env_remove("PETAL_PATH")
+        .env("PETAL_OFFLINE", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to run petal");
+    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+        out.status.code().unwrap_or(-1),
+    )
+}
+
+/// A file that lexes but does not parse (here a generated list with no
+/// commas, stale for months) still gets the migrations that read tokens
+/// alone, as a Markdown fence does: its `#hex` colors are a hard error now,
+/// whatever else is wrong with it. It is still reported and fails the run.
+#[test]
+fn a_file_that_only_lexes_gets_the_token_migrations() {
+    let t = Tree::new("lexes");
+    let old = "// generated\nlet xs = [\n  {a: 1}\n  {a: 2}\n]\nlet BG = #0d1117\nif a then 1 elsif b then 2 end\n";
+    let new = "# generated\nlet xs = [\n  {a: 1}\n  {a: 2}\n]\nlet BG = :0d1117\nif a then 1 else if b then 2 end\n";
+    t.write("git.ptl", old);
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--check", "."]);
+    assert_eq!(code, 1, "{out}\n{err}");
+    assert_eq!(t.read("git.ptl"), old);
+    assert!(out.contains("+let BG = :0d1117"), "{out}");
+
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "."]);
+    assert_eq!(code, 1, "{out}\n{err}");
+    assert_eq!(t.read("git.ptl"), new);
+    assert!(err.contains("Expected ',' between list elements"), "{err}");
+    assert!(err.contains("1 file(s) do not parse: only the migrations that read tokens ran on them"), "{err}");
+    // Nothing is left for the tokens the second time: the parse error is
+    // what remains to report.
+    let (_, err, code) = petal_in(&t.root, &["migrate-old-code", "."]);
+    assert_eq!(code, 1, "{err}");
+    assert_eq!(t.read("git.ptl"), new);
+    assert!(err.contains("could not be read"), "{err}");
+}
+
+/// `# petal-lint-ignore-file old-imports` keeps a file's imports as they
+/// are written, as it keeps any other migration out of a file: a fixture of
+/// an import that must not resolve stays one (cheesecake's
+/// tests/data/petal_check/undefined_name.ptl).
+#[test]
+fn an_ignore_file_comment_keeps_old_imports_out_of_a_file() {
+    let t = Tree::new("ignore-imports");
+    t.write("helper.ptl", "pub fn help()\n  1\n");
+    let fixture = "# petal-lint-ignore-file old-imports -- must stay a bare import\nimport helper\nprint(help(), draw_rect)\n";
+    t.write("fixture.ptl", fixture);
+    t.write("main.ptl", "import helper\nprint(help())\n");
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "."]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert_eq!(t.read("fixture.ptl"), fixture);
+    assert_eq!(t.read("main.ptl"), "import ./helper\nprint(help())\n");
+}
+
+/// Text on stdin is often a piece of something else (Petal in a
+/// host-language string): the blank lines it starts with are kept, though
+/// `end-lines` formats what follows them.
+#[test]
+fn stdin_keeps_its_leading_blank_lines() {
+    let t = Tree::new("stdin");
+    let (out, err, code) = petal_stdin(&t.root, &["migrate-old-code", "-"], "\n\nfn probe(x)\n    x // it\nend\n");
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(out, "\n\nfn probe(x)\n  x # it\n");
+    // `--except old-imports` is how a fragment keeps the tool from guessing
+    // at an import: `mix` here is its host's.
+    let (out, err, code) =
+        petal_stdin(&t.root, &["migrate-old-code", "--except", "old-imports", "-"], "let c = mix(a, b, 0.5) // blend\n");
+    assert_eq!((out.as_str(), code), ("let c = mix(a, b, 0.5) # blend\n", 0), "{err}");
+}
+
+/// `old-imports` reads `[host]` in the project's petal.toml, as `petal lint`
+/// and `petal lsp` do: a name the host's implicit imports or its prelude
+/// files provide needs no import, and gets none (worlds-fair's ui/ptl: 31
+/// imports were added to 17 files, one of them of a package whose names the
+/// host shim defines itself).
+#[test]
+fn old_imports_adds_nothing_for_what_the_projects_host_provides() {
+    let t = Tree::new("host");
+    t.write(
+        "petal.toml",
+        "[package]\nname = \"screens\"\nversion = \"0.1.0\"\n\n[host]\nimports = [\"ui\"]\nprelude = [\"host/shim.ptl\", \"lib/theme.ptl\"]\n",
+    );
+    // Written in the old syntax throughout: the prelude files are read as
+    // this run migrates them, not as they are on disk.
+    t.write("host/shim.ptl", "// the host's own\nfn seam_query(name)\n  name\nend\n");
+    t.write("lib/theme.ptl", "let INK = #102030\nfn ink()\n  seam_query(\"ink\")\n  INK\nend\n");
+    t.write("screens/hud.ptl", "fn hud()\n  draw_rect(rect(0, 0, 4, 4), ink())\n  seam_query(\"hud\")\nend\n");
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "."]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert!(!out.contains("old-imports"), "{out}");
+    assert_eq!(t.read("lib/theme.ptl"), "let INK = :102030\nfn ink()\n  seam_query(\"ink\")\n  INK\n");
+    assert_eq!(
+        t.read("screens/hud.ptl"),
+        "fn hud()\n  draw_rect(rect(0, 0, 4, 4), ink())\n  seam_query(\"hud\")\n"
+    );
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--check", "."]);
+    assert_eq!((out.as_str(), code), ("", 0), "{err}");
+
+    // Without `[host]` the same screen gets `import ui`, when nothing else
+    // in it is unknown.
+    let bare = Tree::new("no-host");
+    bare.write("hud.ptl", "fn hud()\n  draw_rect(rect(0, 0, 4, 4), :fff)\n");
+    let (out, err, code) = petal_in(&bare.root, &["migrate-old-code", "."]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert!(bare.read("hud.ptl").starts_with("import ui\n"), "{}", bare.read("hud.ptl"));
+}
+
+/// A script written for a host this run cannot see calls names no package
+/// here exports. A package that happens to export one of its other names is
+/// then a guess: `row` in a Garden config script is `garden_config`'s, not
+/// `ui`'s. Nothing is added, and the note says how to show the tool the host.
+#[test]
+fn old_imports_does_not_guess_when_other_names_are_unknown() {
+    let t = Tree::new("guess");
+    let src = "layout(row([editor(), editor()]))\n";
+    t.write("window.ptl", src);
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "window.ptl"]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert_eq!(t.read("window.ptl"), src);
+    assert!(err.contains("no import was added"), "{err}");
+    assert!(err.contains("`-I`"), "{err}");
+
+    // With the host's packages in reach, its package is the one imported.
+    t.write("packages/host_config/petal.toml", "[package]\nname = \"host_config\"\nversion = \"0.1.0\"\n");
+    t.write(
+        "packages/host_config/host_config.ptl",
+        "pub fn layout(x)\n  x\npub fn row(xs)\n  xs\npub fn editor()\n  1\n",
+    );
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "-I", "packages", "window.ptl"]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert_eq!(t.read("window.ptl"), format!("import host_config\n\n{src}"));
+}

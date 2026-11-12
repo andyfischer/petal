@@ -914,6 +914,13 @@ because `end` stays valid. Migrate them for consistency, not correctness:
 | Rust, TS and C++ test strings | Leave them. They test the parser, and `end`-ful input is still supported input. Add new tests for `end`-less input instead. |
 | Vendored copies (cheesecake `third_party/petal`, worlds-fair `tools/vendor-petal.ts`) | Re-vendor any time after P3: old scripts keep parsing. Migrate their `.ptl` with the vendored CLI when convenient. |
 
+"Keep working" holds for a snippet whose indentation agrees with its `end`s.
+One built by joining unindented lines (a body at its opener's column) is an
+error now ("expected an indented block after `then`"), and nothing migrates
+a string a host concatenates at run time: cheesecake's
+`tests/net_host_tests.cpp` was one. docs/syntax/indentation.md says how a
+generator should write blocks.
+
 Order: petal → website → worlds-fair → petal-creative → cheesecake. One commit
 per project holds the migration alone, so `git blame --ignore-rev` can skip it.
 

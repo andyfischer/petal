@@ -602,6 +602,26 @@ mod tests {
         assert_eq!(r.text, " -> nil");
     }
 
+    /// A function closed by its indentation alone, and one written on one
+    /// line (`fn f(xs) body`): the type goes after the parameter list, and
+    /// the text with it inserted is the program the suggestion describes.
+    #[test]
+    fn a_function_with_no_end_takes_the_type_after_its_parameters() {
+        for src in [
+            "fn draw_all(xs)\n  for x in xs do\n    print(x)\ndraw_all([1])\n",
+            "fn draw_all(xs) for x in xs do print(x)\ndraw_all([1])\n",
+        ] {
+            let r = one(src);
+            assert_eq!((r.usage, r.ty), (Usage::Unused, Some("nil")));
+            let chars: Vec<char> = src.chars().collect();
+            let at = chars.iter().position(|c| *c == ')').unwrap() + 1;
+            let fixed: String =
+                chars[..at].iter().chain(r.text.chars().collect::<Vec<_>>().iter()).chain(&chars[at..]).collect();
+            assert!(fixed.starts_with("fn draw_all(xs) -> nil"), "{fixed}");
+            assert!(find_in(&fixed).is_empty(), "{fixed}");
+        }
+    }
+
     #[test]
     fn a_used_call_suggests_list() {
         let r = one("fn sq(xs)\n  for x in xs do x * x end\nend\nlet s = sq([1])\n");

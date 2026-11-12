@@ -1,0 +1,219 @@
+================================================================================
+Colour literals
+================================================================================
+
+let a = :f80
+let b = :f80a
+let c = :ff8800
+let d = :ff8800aa
+let e = :FFF
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (color))
+  (let_declaration
+    name: (identifier)
+    value: (color))
+  (let_declaration
+    name: (identifier)
+    value: (color))
+  (let_declaration
+    name: (identifier)
+    value: (color))
+  (let_declaration
+    name: (identifier)
+    value: (color)))
+
+================================================================================
+Colours after a separator, an operator and a bracket (B16)
+================================================================================
+
+let r = {tint: :000, edge: :fff}
+draw(r, color: :ff8800aa)
+f(:f80)
+let c = a ?? :fff
+let xs = [:f00, :0f0, :00f]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (record
+      (record_field
+        key: (identifier)
+        value: (color))
+      (record_field
+        key: (identifier)
+        value: (color))))
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (identifier)
+      (named_argument
+        name: (identifier)
+        value: (color))))
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (color)))
+  (let_declaration
+    name: (identifier)
+    value: (binary_expression
+      left: (identifier)
+      right: (color)))
+  (let_declaration
+    name: (identifier)
+    value: (list
+      (color)
+      (color)
+      (color))))
+
+================================================================================
+A colon after a name stays a separator (B16)
+================================================================================
+
+let r = {x:100, y:fff}
+f(a:fff)
+let c:add = 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (record
+      (record_field
+        key: (identifier)
+        value: (integer))
+      (record_field
+        key: (identifier)
+        value: (identifier))))
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (named_argument
+        name: (identifier)
+        value: (identifier))))
+  (let_declaration
+    name: (identifier)
+    type: (type_annotation
+      type: (type_name
+        (identifier)))
+    value: (integer)))
+
+================================================================================
+A spaced colon, and a colon after an import path, are separators
+================================================================================
+
+let r = {a: 1}
+f(a: b)
+import ui: add, bad
+import ui:add
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (record
+      (record_field
+        key: (identifier)
+        value: (integer))))
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (named_argument
+        name: (identifier)
+        value: (identifier))))
+  (import_statement
+    module: (module_path
+      segment: (identifier))
+    name: (identifier)
+    name: (identifier))
+  (import_statement
+    module: (module_path
+      segment: (identifier))
+    name: (identifier)))
+
+================================================================================
+Colours in blocks and patterns
+================================================================================
+
+fn tint(on)
+  if on then :f80 else :000
+match c
+  when :fff -> "white"
+  when _ -> "other"
+let s = "{:f80}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)))
+    body: (block
+      (if_expression
+        condition: (identifier)
+        consequence: (block
+          (color))
+        (else_clause
+          body: (block
+            (color))))))
+  (match_expression
+    subject: (identifier)
+    (match_arm
+      pattern: (literal_pattern
+        (color))
+      body: (block
+        (string
+          (string_content))))
+    (match_arm
+      pattern: (identifier)
+      body: (block
+        (string
+          (string_content)))))
+  (let_declaration
+    name: (identifier)
+    value: (string
+      (interpolation
+        (color)))))
+
+================================================================================
+Two hex digits are not a colour
+:error
+================================================================================
+
+let n = :ff
+
+--------------------------------------------------------------------------------
+
+
+
+================================================================================
+Five hex digits are not a colour
+:error
+================================================================================
+
+let m = :fffff
+
+--------------------------------------------------------------------------------
+
+
+
+================================================================================
+Hex digits with an identifier tail are not a colour
+:error
+================================================================================
+
+let k = :fffg
+
+--------------------------------------------------------------------------------
+
+

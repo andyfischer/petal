@@ -1,0 +1,1593 @@
+================================================================================
+If block closed by indentation
+================================================================================
+
+if x < 0 then
+  return -x
+else if x == 0 then
+  return 0
+else
+  x
+let y = 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (if_expression
+    condition: (binary_expression
+      left: (identifier)
+      right: (integer))
+    consequence: (block
+      (return_statement
+        (unary_expression
+          operand: (identifier))))
+    (elsif_clause
+      condition: (binary_expression
+        left: (identifier)
+        right: (integer))
+      consequence: (block
+        (return_statement
+          (integer))))
+    (else_clause
+      body: (block
+        (identifier))))
+  (let_declaration
+    name: (identifier)
+    value: (integer)))
+
+================================================================================
+One-line if with no end stops at the line break
+================================================================================
+
+if x < 0 then return -x
+x
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (if_expression
+    condition: (binary_expression
+      left: (identifier)
+      right: (integer))
+    consequence: (block
+      (return_statement
+        (unary_expression
+          operand: (identifier)))))
+  (identifier))
+
+================================================================================
+One-line if in value position: else takes the whole expression (B1)
+================================================================================
+
+let x = if c then 1 else 2 + 3
+let y = 4
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (if_expression
+      condition: (identifier)
+      consequence: (block
+        (integer))
+      (else_clause
+        body: (block
+          (binary_expression
+            left: (integer)
+            right: (integer))))))
+  (let_declaration
+    name: (identifier)
+    value: (integer)))
+
+================================================================================
+Dangling else goes to the nearest if (B2)
+================================================================================
+
+let v = if a then if b then 1 else 2
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (if_expression
+      condition: (identifier)
+      consequence: (block
+        (if_expression
+          condition: (identifier)
+          consequence: (block
+            (integer))
+          (else_clause
+            body: (block
+              (integer))))))))
+
+================================================================================
+One-line chain continued on following lines (B4)
+================================================================================
+
+let ty = if t == "float" then Ty.float
+    else if t == "vec2" then Ty.vec2
+    else nil
+let aligned = if a then 1
+else 2
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (if_expression
+      condition: (binary_expression
+        left: (identifier)
+        right: (string
+          (string_content)))
+      consequence: (block
+        (field_access
+          object: (identifier)
+          field: (identifier)))
+      (elsif_clause
+        condition: (binary_expression
+          left: (identifier)
+          right: (string
+            (string_content)))
+        consequence: (block
+          (field_access
+            object: (identifier)
+            field: (identifier))))
+      (else_clause
+        body: (block
+          (nil)))))
+  (let_declaration
+    name: (identifier)
+    value: (if_expression
+      condition: (identifier)
+      consequence: (block
+        (integer))
+      (else_clause
+        body: (block
+          (integer))))))
+
+================================================================================
+An else left of the block belongs to the enclosing if (B4)
+================================================================================
+
+if a then
+  if b then x
+else
+  y
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (if_expression
+    condition: (identifier)
+    consequence: (block
+      (if_expression
+        condition: (identifier)
+        consequence: (block
+          (identifier))))
+    (else_clause
+      body: (block
+        (identifier)))))
+
+================================================================================
+Value-position if: else aligned with the statement line
+================================================================================
+
+let bucket = if ci < 0 then
+  zeros(len(CATS))
+else
+  zeros(len(CATS[ci].merchants))
+next()
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (if_expression
+      condition: (binary_expression
+        left: (identifier)
+        right: (integer))
+      consequence: (block
+        (call
+          function: (identifier)
+          arguments: (argument_list
+            (call
+              function: (identifier)
+              arguments: (argument_list
+                (identifier))))))
+      (else_clause
+        body: (block
+          (call
+            function: (identifier)
+            arguments: (argument_list
+              (call
+                function: (identifier)
+                arguments: (argument_list
+                  (field_access
+                    object: (index_access
+                      object: (identifier)
+                      index: (identifier))
+                    field: (identifier))))))))))
+  (call
+    function: (identifier)
+    arguments: (argument_list)))
+
+================================================================================
+Legacy if forms with end
+================================================================================
+
+if a then
+  b
+elsif c then
+  d
+else
+  e
+end
+let v = if c then a else b end + 3
+if c then a; b end
+if c then end
+if c then else x end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (if_expression
+    condition: (identifier)
+    consequence: (block
+      (identifier))
+    (elsif_clause
+      condition: (identifier)
+      consequence: (block
+        (identifier)))
+    (else_clause
+      body: (block
+        (identifier))))
+  (let_declaration
+    name: (identifier)
+    value: (binary_expression
+      left: (if_expression
+        condition: (identifier)
+        consequence: (block
+          (identifier))
+        (else_clause
+          body: (block
+            (identifier))))
+      right: (integer)))
+  (if_expression
+    condition: (identifier)
+    consequence: (block
+      (identifier)
+      (identifier)))
+  (if_expression
+    condition: (identifier))
+  (if_expression
+    condition: (identifier)
+    (else_clause
+      body: (block
+        (identifier)))))
+
+================================================================================
+An else at the end of a line opens a nested block
+================================================================================
+
+let ink = if m.disabled then t.dim else
+  if m.danger then t.red else t.fg end
+end
+let z = 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (if_expression
+      condition: (field_access
+        object: (identifier)
+        field: (identifier))
+      consequence: (block
+        (field_access
+          object: (identifier)
+          field: (identifier)))
+      (else_clause
+        body: (block
+          (if_expression
+            condition: (field_access
+              object: (identifier)
+              field: (identifier))
+            consequence: (block
+              (field_access
+                object: (identifier)
+                field: (identifier)))
+            (else_clause
+              body: (block
+                (field_access
+                  object: (identifier)
+                  field: (identifier)))))))))
+  (let_declaration
+    name: (identifier)
+    value: (integer)))
+
+================================================================================
+else then if on the next line is a nested if, not a chain
+================================================================================
+
+if a then
+  1
+else
+  if b then
+    2
+  else
+    3
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (if_expression
+    condition: (identifier)
+    consequence: (block
+      (integer))
+    (else_clause
+      body: (block
+        (if_expression
+          condition: (identifier)
+          consequence: (block
+            (integer))
+          (else_clause
+            body: (block
+              (integer))))))))
+
+================================================================================
+Legacy else-if nesting keeps both ends when the if is on its own line
+================================================================================
+
+if a then
+  1
+else
+  if b then
+    2
+  end
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (if_expression
+    condition: (identifier)
+    consequence: (block
+      (integer))
+    (else_clause
+      body: (block
+        (if_expression
+          condition: (identifier)
+          consequence: (block
+            (integer)))))))
+
+================================================================================
+for and while closed by indentation
+================================================================================
+
+for item in items do
+  print(item)
+while x < 10 do
+  x += 1
+done()
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (for_statement
+    variable: (identifier)
+    iterator: (identifier)
+    body: (block
+      (call
+        function: (identifier)
+        arguments: (argument_list
+          (identifier)))))
+  (while_statement
+    condition: (binary_expression
+      left: (identifier)
+      right: (integer))
+    body: (block
+      (assignment
+        left: (identifier)
+        right: (integer))))
+  (call
+    function: (identifier)
+    arguments: (argument_list)))
+
+================================================================================
+One-line for and while with no end
+================================================================================
+
+let squares = for i in range(1, 6) do i * i
+while x < 10 do x += 1
+for a in xs do print(a) end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (for_statement
+      variable: (identifier)
+      iterator: (call
+        function: (identifier)
+        arguments: (argument_list
+          (integer)
+          (integer)))
+      body: (block
+        (binary_expression
+          left: (identifier)
+          right: (identifier)))))
+  (while_statement
+    condition: (binary_expression
+      left: (identifier)
+      right: (integer))
+    body: (block
+      (assignment
+        left: (identifier)
+        right: (integer))))
+  (for_statement
+    variable: (identifier)
+    iterator: (identifier)
+    body: (block
+      (call
+        function: (identifier)
+        arguments: (argument_list
+          (identifier))))))
+
+================================================================================
+Function declaration closed by indentation
+================================================================================
+
+pub fn abs(x: int) -> int
+  if x < 0 then return -x
+  x
+
+fn next()
+  1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)
+        type: (type_annotation
+          type: (type_name
+            (identifier)))))
+    return_type: (return_type
+      type: (type_name
+        (identifier)))
+    body: (block
+      (if_expression
+        condition: (binary_expression
+          left: (identifier)
+          right: (integer))
+        consequence: (block
+          (return_statement
+            (unary_expression
+              operand: (identifier)))))
+      (identifier)))
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block
+      (integer))))
+
+================================================================================
+One-line named fn runs to the end of the line (B8)
+================================================================================
+
+fn box(w, h = w) "{w}x{h}"
+fn twice(x) -> int x * 2
+fn old(x) x end
+fn empty() end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        name: (identifier))
+      (parameter
+        name: (identifier)
+        default: (identifier)))
+    body: (block
+      (string
+        (interpolation
+          (identifier))
+        (string_content)
+        (interpolation
+          (identifier)))))
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)))
+    return_type: (return_type
+      type: (type_name
+        (identifier)))
+    body: (block
+      (binary_expression
+        left: (identifier)
+        right: (integer))))
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)))
+    body: (block
+      (identifier)))
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)))
+
+================================================================================
+Block lambda closed by indentation
+================================================================================
+
+let describe = fn(x)
+  print(x)
+  x * 2
+let after = 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (lambda
+      parameters: (parameter_list
+        (parameter
+          name: (identifier)))
+      body: (block
+        (call
+          function: (identifier)
+          arguments: (argument_list
+            (identifier)))
+        (binary_expression
+          left: (identifier)
+          right: (integer)))))
+  (let_declaration
+    name: (identifier)
+    value: (integer)))
+
+================================================================================
+One-line lambdas with and without end (B9)
+================================================================================
+
+let a = map(xs, fn(v) v * 2)
+let b = map(xs, fn(v) v * k + 0.5 end)
+let c = fn(x) -> x * 2
+let d = fn(v) v * 2
+let e = 1
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (call
+      function: (identifier)
+      arguments: (argument_list
+        (identifier)
+        (lambda
+          parameters: (parameter_list
+            (parameter
+              name: (identifier)))
+          body: (block
+            (binary_expression
+              left: (identifier)
+              right: (integer)))))))
+  (let_declaration
+    name: (identifier)
+    value: (call
+      function: (identifier)
+      arguments: (argument_list
+        (identifier)
+        (lambda
+          parameters: (parameter_list
+            (parameter
+              name: (identifier)))
+          body: (block
+            (binary_expression
+              left: (binary_expression
+                left: (identifier)
+                right: (identifier))
+              right: (float)))))))
+  (let_declaration
+    name: (identifier)
+    value: (lambda
+      parameters: (parameter_list
+        (parameter
+          name: (identifier)))
+      body: (binary_expression
+        left: (identifier)
+        right: (integer))))
+  (let_declaration
+    name: (identifier)
+    value: (lambda
+      parameters: (parameter_list
+        (parameter
+          name: (identifier)))
+      body: (block
+        (binary_expression
+          left: (identifier)
+          right: (integer)))))
+  (let_declaration
+    name: (identifier)
+    value: (integer)))
+
+================================================================================
+class and enum closed by indentation
+================================================================================
+
+class Point
+  x: int,
+  y: int,
+
+enum Shape
+  circle(radius, sides: 0),
+  rect(w, h, sides: 4),
+
+class Marker
+enum Legacy a, b end
+class Old
+  x: int
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (class_declaration
+    name: (identifier)
+    (class_field
+      name: (identifier)
+      type: (type_annotation
+        type: (type_name
+          (identifier))))
+    (class_field
+      name: (identifier)
+      type: (type_annotation
+        type: (type_name
+          (identifier)))))
+  (enum_declaration
+    name: (identifier)
+    (enum_variant
+      name: (identifier)
+      field: (identifier)
+      (enum_data
+        key: (identifier)
+        value: (integer)))
+    (enum_variant
+      name: (identifier)
+      field: (identifier)
+      field: (identifier)
+      (enum_data
+        key: (identifier)
+        value: (integer))))
+  (class_declaration
+    name: (identifier))
+  (enum_declaration
+    name: (identifier)
+    (enum_variant
+      name: (identifier))
+    (enum_variant
+      name: (identifier)))
+  (class_declaration
+    name: (identifier)
+    (class_field
+      name: (identifier)
+      type: (type_annotation
+        type: (type_name
+          (identifier))))))
+
+================================================================================
+test block closed by indentation
+================================================================================
+
+test "addition" do
+  expect_eq(1 + 1, 2)
+
+test "one line" do expect(true)
+test "legacy" do
+  expect(true)
+end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (test_declaration
+    name: (string
+      (string_content))
+    body: (block
+      (call
+        function: (identifier)
+        arguments: (argument_list
+          (binary_expression
+            left: (integer)
+            right: (integer))
+          (integer)))))
+  (test_declaration
+    name: (string
+      (string_content))
+    body: (block
+      (call
+        function: (identifier)
+        arguments: (argument_list
+          (boolean)))))
+  (test_declaration
+    name: (string
+      (string_content))
+    body: (block
+      (call
+        function: (identifier)
+        arguments: (argument_list
+          (boolean))))))
+
+================================================================================
+match closed by indentation, one-line and block arms
+================================================================================
+
+match dir
+  when "left" -> slide_left(g)
+  when "right" ->
+    let res = slide_left(mirror(g))
+    {grid: mirror(res.grid), gained: res.gained}
+  when d -> {grid: g, gained: 0, bad: d}
+after()
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (match_expression
+    subject: (identifier)
+    (match_arm
+      pattern: (literal_pattern
+        (string
+          (string_content)))
+      body: (block
+        (call
+          function: (identifier)
+          arguments: (argument_list
+            (identifier)))))
+    (match_arm
+      pattern: (literal_pattern
+        (string
+          (string_content)))
+      body: (block
+        (let_declaration
+          name: (identifier)
+          value: (call
+            function: (identifier)
+            arguments: (argument_list
+              (call
+                function: (identifier)
+                arguments: (argument_list
+                  (identifier))))))
+        (record
+          (record_field
+            key: (identifier)
+            value: (call
+              function: (identifier)
+              arguments: (argument_list
+                (field_access
+                  object: (identifier)
+                  field: (identifier)))))
+          (record_field
+            key: (identifier)
+            value: (field_access
+              object: (identifier)
+              field: (identifier))))))
+    (match_arm
+      pattern: (identifier)
+      body: (block
+        (record
+          (record_field
+            key: (identifier)
+            value: (identifier))
+          (record_field
+            key: (identifier)
+            value: (integer))
+          (record_field
+            key: (identifier)
+            value: (identifier))))))
+  (call
+    function: (identifier)
+    arguments: (argument_list)))
+
+================================================================================
+Legacy match forms
+================================================================================
+
+match s
+  when 1 -> "a"
+  when 2 do "b" end
+  when _ ->
+    "c"
+end
+let n = match x when 1 -> "a" when 2 -> "b" end
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (match_expression
+    subject: (identifier)
+    (match_arm
+      pattern: (literal_pattern
+        (integer))
+      body: (block
+        (string
+          (string_content))))
+    (match_arm
+      pattern: (literal_pattern
+        (integer))
+      body: (block
+        (string
+          (string_content))))
+    (match_arm
+      pattern: (identifier)
+      body: (block
+        (string
+          (string_content)))))
+  (let_declaration
+    name: (identifier)
+    value: (match_expression
+      subject: (identifier)
+      (match_arm
+        pattern: (literal_pattern
+          (integer))
+        body: (block
+          (string
+            (string_content))))
+      (match_arm
+        pattern: (literal_pattern
+          (integer))
+        body: (block
+          (string
+            (string_content)))))))
+
+================================================================================
+match in value position inside a function
+================================================================================
+
+fn name(k)
+  let s = match k
+    when 1 -> "one"
+    when _ -> "many"
+  s ++ "!"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)))
+    body: (block
+      (let_declaration
+        name: (identifier)
+        value: (match_expression
+          subject: (identifier)
+          (match_arm
+            pattern: (literal_pattern
+              (integer))
+            body: (block
+              (string
+                (string_content))))
+          (match_arm
+            pattern: (identifier)
+            body: (block
+              (string
+                (string_content))))))
+      (binary_expression
+        left: (identifier)
+        right: (string
+          (string_content))))))
+
+================================================================================
+Block lambda inside a call: the closing bracket ends it (offside rule)
+================================================================================
+
+defer_paint(fn()
+  draw_shadow(r, {radius: 4, blur: 14})
+  draw_rect(r)
+)
+after()
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (lambda
+        parameters: (parameter_list)
+        body: (block
+          (call
+            function: (identifier)
+            arguments: (argument_list
+              (identifier)
+              (record
+                (record_field
+                  key: (identifier)
+                  value: (integer))
+                (record_field
+                  key: (identifier)
+                  value: (integer)))))
+          (call
+            function: (identifier)
+            arguments: (argument_list
+              (identifier)))))))
+  (call
+    function: (identifier)
+    arguments: (argument_list)))
+
+================================================================================
+Block lambda inside a call, legacy end before the bracket
+================================================================================
+
+defer_paint(fn()
+  draw_rect(r)
+end)
+on(a, fn()
+  one()
+end, fn()
+  two()
+end)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (lambda
+        parameters: (parameter_list)
+        body: (block
+          (call
+            function: (identifier)
+            arguments: (argument_list
+              (identifier)))))))
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (identifier)
+      (lambda
+        parameters: (parameter_list)
+        body: (block
+          (call
+            function: (identifier)
+            arguments: (argument_list))))
+      (lambda
+        parameters: (parameter_list)
+        body: (block
+          (call
+            function: (identifier)
+            arguments: (argument_list)))))))
+
+================================================================================
+A closing bracket on the body's own line ends the block
+================================================================================
+
+run(fn()
+  work())
+after()
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (lambda
+        parameters: (parameter_list)
+        body: (block
+          (call
+            function: (identifier)
+            arguments: (argument_list))))))
+  (call
+    function: (identifier)
+    arguments: (argument_list)))
+
+================================================================================
+Two block lambdas in one call, separated by a leading comma
+================================================================================
+
+on(a, fn()
+  one()
+, fn()
+  two()
+)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (identifier)
+      (lambda
+        parameters: (parameter_list)
+        body: (block
+          (call
+            function: (identifier)
+            arguments: (argument_list))))
+      (lambda
+        parameters: (parameter_list)
+        body: (block
+          (call
+            function: (identifier)
+            arguments: (argument_list)))))))
+
+================================================================================
+Block if inside brackets
+================================================================================
+
+let xs = [
+  if a then
+    1
+  else
+    2
+]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (list
+      (if_expression
+        condition: (identifier)
+        consequence: (block
+          (integer))
+        (else_clause
+          body: (block
+            (integer)))))))
+
+================================================================================
+JSX hole with a block if and no end
+================================================================================
+
+fn view()
+  <group>
+    {if !outlined then
+      <rect id="indicator" x={0} />
+    else nil}
+  </group>
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block
+      (jsx_element
+        (jsx_opening_element
+          name: (jsx_open_tag))
+        (jsx_expression
+          (if_expression
+            condition: (unary_expression
+              operand: (identifier))
+            consequence: (block
+              (jsx_element
+                (jsx_self_closing_element
+                  name: (jsx_open_tag)
+                  (jsx_attribute
+                    name: (identifier)
+                    value: (string
+                      (string_content)))
+                  (jsx_attribute
+                    name: (identifier)
+                    value: (jsx_expression
+                      (integer))))))
+            (else_clause
+              body: (block
+                (nil)))))
+        (jsx_closing_element
+          name: (jsx_close_tag))))))
+
+================================================================================
+Nested blocks close together at a dedent and at the end of the file
+================================================================================
+
+fn f(xs)
+  for x in xs do
+    if x then
+      a()
+    else
+      while b do
+        c()
+let done = 1
+fn g()
+  if a then
+    b()
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)))
+    body: (block
+      (for_statement
+        variable: (identifier)
+        iterator: (identifier)
+        body: (block
+          (if_expression
+            condition: (identifier)
+            consequence: (block
+              (call
+                function: (identifier)
+                arguments: (argument_list)))
+            (else_clause
+              body: (block
+                (while_statement
+                  condition: (identifier)
+                  body: (block
+                    (call
+                      function: (identifier)
+                      arguments: (argument_list)))))))))))
+  (let_declaration
+    name: (identifier)
+    value: (integer))
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block
+      (if_expression
+        condition: (identifier)
+        consequence: (block
+          (call
+            function: (identifier)
+            arguments: (argument_list)))))))
+
+================================================================================
+end-ful and end-less blocks mixed
+================================================================================
+
+fn f()
+  for x in xs do
+    if c then
+      a()
+    end
+  g()
+end
+fn h()
+  if c then
+    a()
+  end
+  b()
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block
+      (for_statement
+        variable: (identifier)
+        iterator: (identifier)
+        body: (block
+          (if_expression
+            condition: (identifier)
+            consequence: (block
+              (call
+                function: (identifier)
+                arguments: (argument_list))))))
+      (call
+        function: (identifier)
+        arguments: (argument_list))))
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block
+      (if_expression
+        condition: (identifier)
+        consequence: (block
+          (call
+            function: (identifier)
+            arguments: (argument_list))))
+      (call
+        function: (identifier)
+        arguments: (argument_list)))))
+
+================================================================================
+Base indent: a snippet indented as a whole
+================================================================================
+
+    fn step(input)
+      if input then
+        1
+      else
+        2
+    let x = step(true)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)))
+    body: (block
+      (if_expression
+        condition: (identifier)
+        consequence: (block
+          (integer))
+        (else_clause
+          body: (block
+            (integer))))))
+  (let_declaration
+    name: (identifier)
+    value: (call
+      function: (identifier)
+      arguments: (argument_list
+        (boolean)))))
+
+================================================================================
+Comments and blank lines do not count for layout (B15)
+================================================================================
+
+fn f()
+  if c then # opener, then a comment
+    # a comment line
+
+    a()
+# a comment at column 0
+  // a deprecated comment
+    b()
+  /* a block comment */
+  c()
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block
+      (if_expression
+        condition: (identifier)
+        consequence: (block
+          (comment)
+          (comment)
+          (call
+            function: (identifier)
+            arguments: (argument_list))
+          (comment)
+          (comment)
+          (call
+            function: (identifier)
+            arguments: (argument_list))))
+      (comment)
+      (call
+        function: (identifier)
+        arguments: (argument_list)))))
+
+================================================================================
+Leading-operator lines continue the statement
+================================================================================
+
+fn f()
+  let total = base
+    + bonus
+    * multiplier
+  let s = if c then xs else ys
+    |> sort
+  items
+    .filter(ok)
+    .map(show)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block
+      (let_declaration
+        name: (identifier)
+        value: (binary_expression
+          left: (identifier)
+          right: (binary_expression
+            left: (identifier)
+            right: (identifier))))
+      (let_declaration
+        name: (identifier)
+        value: (if_expression
+          condition: (identifier)
+          consequence: (block
+            (identifier))
+          (else_clause
+            body: (block
+              (pipe_expression
+                left: (identifier)
+                right: (identifier))))))
+      (call
+        function: (field_access
+          object: (call
+            function: (field_access
+              object: (identifier)
+              field: (identifier))
+            arguments: (argument_list
+              (identifier)))
+          field: (identifier))
+        arguments: (argument_list
+          (identifier))))))
+
+================================================================================
+A line starting with < and a letter is a new statement
+================================================================================
+
+fn f()
+  if d then e
+  <group />
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block
+      (if_expression
+        condition: (identifier)
+        consequence: (block
+          (identifier)))
+      (jsx_element
+        (jsx_self_closing_element
+          name: (jsx_open_tag))))))
+
+================================================================================
+Multi-line header (B13)
+================================================================================
+
+if (a &&
+    b) then
+  c()
+for x in [
+  1,
+  2,
+] do
+  print(x)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (if_expression
+    condition: (parenthesized_expression
+      (binary_expression
+        left: (identifier)
+        right: (identifier)))
+    consequence: (block
+      (call
+        function: (identifier)
+        arguments: (argument_list))))
+  (for_statement
+    variable: (identifier)
+    iterator: (list
+      (integer)
+      (integer))
+    body: (block
+      (call
+        function: (identifier)
+        arguments: (argument_list
+          (identifier))))))
+
+================================================================================
+Brackets and strings inside a block ignore layout
+================================================================================
+
+fn f()
+  let r = {
+    a: 1,
+b: 2,
+  }
+  let s = "line one
+line two"
+  let g = """
+void main() {}
+"""
+  r
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block
+      (let_declaration
+        name: (identifier)
+        value: (record
+          (record_field
+            key: (identifier)
+            value: (integer))
+          (record_field
+            key: (identifier)
+            value: (integer))))
+      (let_declaration
+        name: (identifier)
+        value: (string
+          (string_content)))
+      (let_declaration
+        name: (identifier)
+        value: (raw_string))
+      (identifier))))
+
+================================================================================
+Statements after a one-line body stay outside it
+================================================================================
+
+for x in xs do print(x)
+print("done")
+fn id(x) x
+let y = id(1)
+match x
+  when 1 -> a
+b
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (for_statement
+    variable: (identifier)
+    iterator: (identifier)
+    body: (block
+      (call
+        function: (identifier)
+        arguments: (argument_list
+          (identifier)))))
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (string
+        (string_content))))
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)))
+    body: (block
+      (identifier)))
+  (let_declaration
+    name: (identifier)
+    value: (call
+      function: (identifier)
+      arguments: (argument_list
+        (integer))))
+  (match_expression
+    subject: (identifier)
+    (match_arm
+      pattern: (literal_pattern
+        (integer))
+      body: (block
+        (identifier))))
+  (identifier))
+
+================================================================================
+An end on the last line of an indented block closes that block
+================================================================================
+
+let c = match state
+    when "cleared" -> GOLD
+    when _ -> SHIP end
+toast(if ok then "taken" else
+  "approved" end, "ok")
+fn f()
+  if c then a end
+  b
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (match_expression
+      subject: (identifier)
+      (match_arm
+        pattern: (literal_pattern
+          (string
+            (string_content)))
+        body: (block
+          (identifier)))
+      (match_arm
+        pattern: (identifier)
+        body: (block
+          (identifier)))))
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (if_expression
+        condition: (identifier)
+        consequence: (block
+          (string
+            (string_content)))
+        (else_clause
+          body: (block
+            (string
+              (string_content)))))
+      (string
+        (string_content))))
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block
+      (if_expression
+        condition: (identifier)
+        consequence: (block
+          (identifier)))
+      (identifier))))
+
+================================================================================
+An end line aligned with a one-line chain closes it (B5)
+================================================================================
+
+fn f()
+  let mode = if a then "lift"
+  elsif b then "sel"
+  else "plain"
+  end
+  mode
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block
+      (let_declaration
+        name: (identifier)
+        value: (if_expression
+          condition: (identifier)
+          consequence: (block
+            (string
+              (string_content)))
+          (elsif_clause
+            condition: (identifier)
+            consequence: (block
+              (string
+                (string_content))))
+          (else_clause
+            body: (block
+              (string
+                (string_content))))))
+      (identifier))))
+
+================================================================================
+An end line left of the block closes the enclosing form
+================================================================================
+
+for x in xs do
+  if c then y
+end
+z
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (for_statement
+    variable: (identifier)
+    iterator: (identifier)
+    body: (block
+      (if_expression
+        condition: (identifier)
+        consequence: (block
+          (identifier)))))
+  (identifier))

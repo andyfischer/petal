@@ -45,3 +45,113 @@ Comment lines inside element children
       (comment))
     (jsx_closing_element
       name: (jsx_close_tag))))
+
+================================================================================
+Hash comments
+================================================================================
+
+#!/usr/bin/env petal
+# a whole-line comment
+let x = 1 # trailing
+let y = 2 #no space
+# let z = :f80
+let s = "# not a comment"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (comment)
+  (comment)
+  (let_declaration
+    name: (identifier)
+    value: (integer))
+  (comment)
+  (let_declaration
+    name: (identifier)
+    value: (integer))
+  (comment)
+  (comment)
+  (let_declaration
+    name: (identifier)
+    value: (string
+      (string_content))))
+
+================================================================================
+Hash comments at every indent do not change layout
+================================================================================
+
+fn f()
+  # leading
+  a()
+      # deeper than the block
+  b()
+# at the margin
+  c()
+# after the block
+g()
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (block
+      (comment)
+      (call
+        function: (identifier)
+        arguments: (argument_list))
+      (comment)
+      (call
+        function: (identifier)
+        arguments: (argument_list))
+      (comment)
+      (call
+        function: (identifier)
+        arguments: (argument_list))))
+  (comment)
+  (call
+    function: (identifier)
+    arguments: (argument_list)))
+
+================================================================================
+A hash in element children is text, not a comment
+================================================================================
+
+<group>
+  # of items: {n}
+  Item #5
+  // a comment
+</group>
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (jsx_element
+    (jsx_opening_element
+      name: (jsx_open_tag))
+    (jsx_text)
+    (jsx_expression
+      (identifier))
+    (jsx_text)
+    (comment)
+    (jsx_closing_element
+      name: (jsx_close_tag))))
+
+================================================================================
+A hash is never a colour
+================================================================================
+
+let c = a #fff
+let d = b
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (identifier))
+  (comment)
+  (let_declaration
+    name: (identifier)
+    value: (identifier)))

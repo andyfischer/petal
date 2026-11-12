@@ -24,10 +24,13 @@
 (identifier) @variable
 
 ; ---- Comments ----
+; `# …`, the deprecated `// …`, and `/* … */`.
 
 (comment) @comment
 
 ; ---- Keywords ----
+; `else if` is two tokens, `else` and `if`, so it needs no entry of its own.
+; `elsif` is its older spelling.
 
 [
   "import"
@@ -117,6 +120,7 @@
 (float) @number
 (boolean) @constant.builtin
 (nil) @constant.builtin
+; `:f80`. The node includes the leading colon.
 (color) @constant
 
 [

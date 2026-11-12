@@ -7,9 +7,26 @@
  * surface syntax tokenized by `rust/src/lexer.rs` and parsed by
  * `rust/src/parse.rs`, primarily so editors can syntax-highlight `.ptl` files.
  *
- * Newlines are treated as insignificant (part of `extras`): the real parser
- * uses them as statement separators, but statement boundaries are recoverable
- * from grammar structure in practice. See the README.
+ * Newlines between statements are treated as insignificant (part of
+ * `extras`): the real parser uses them as statement separators, but statement
+ * boundaries are recoverable from grammar structure in practice.
+ *
+ * Layout is the exception. Blocks close by indentation and `end` is an
+ * optional closer (docs/tasks/pythonic-syntax.md), so the external scanner
+ * (src/scanner.c) supplies three zero-width layout tokens:
+ *
+ *   _indent      after a block opener, when the body starts on a later line
+ *                indented deeper than the enclosing block
+ *   _dedent      when a line starts to the left of the open indented block
+ *                (or a closing bracket / the end of the file ends it)
+ *   _inline_end  the line break that ends a one-line body with no `end`
+ *
+ * Every block body therefore comes in two shapes: an indented block
+ * (`_indent … _dedent`, then an optional `end`), or a one-line body (closed by
+ * an `end` on the line, by the line break, or by whatever token follows that
+ * cannot continue it, such as the `)` of an enclosing call). The scanner also
+ * lexes the `if` of a same-line `else if`, and `:f80` colour literals. See the
+ * README.
  */
 
 /// <reference types="tree-sitter-cli/dsl" />
@@ -53,12 +70,73 @@ function commaSep(rule) {
   return optional(seq(rule, repeat(seq(',', rule)), optional(',')));
 }
 
+/**
+ * What follows a block opener (`do`, a `fn` header, …) for a form with one
+ * body: the body and its closer.
+ *
+ * - An indented block on the following lines, then an optional `end`.
+ * - A one-line body, closed by `end`, by the line break, or by nothing at all
+ *   when the next token cannot continue it (`map(xs, fn(v) v * 2)`).
+ * - No body: just `end`.
+ * @param {GrammarSymbols<string>} $
+ * @param {string} name
+ */
+function closedBody($, name) {
+  return choice(
+    seq(field(name, alias($._indented_block, $.block)), optional('end')),
+    seq(field(name, $.block), optional(choice('end', $._inline_end))),
+    'end',
+  );
+}
+
+/**
+ * The comma-separated members of a `class` or `enum`, with the same three
+ * shapes as `closedBody`. A declaration with no members and no `end` closes at
+ * the line break.
+ * @param {GrammarSymbols<string>} $
+ * @param {RuleOrLiteral} rule
+ */
+function closedList($, rule) {
+  const members = seq(rule, repeat(seq(',', rule)), optional(','));
+  return choice(
+    seq($._indent, members, $._dedent, optional('end')),
+    seq(optional(members), choice('end', $._inline_end)),
+  );
+}
+
 module.exports = grammar({
   name: 'petal',
 
   // Keyword extraction needs a single token; `identifier` is a two-token
   // sequence (see its definition), so the core regex is the word token.
   word: $ => $._identifier_core,
+
+  externals: $ => [
+    $._indent,
+    $._dedent,
+    $._inline_end,
+    // The `if` of `else if`, when it follows the `else` on the same line with
+    // only blanks between. On a later line the `if` is an ordinary nested
+    // `if` inside the `else` block.
+    $._chain_if,
+    $.color,
+    // Zero-width, at the very start of the file: where the scanner records
+    // the base indent (the first statement's column is the left margin).
+    $._start,
+    // Never emitted by the scanner; the internal lexer lexes `end` as the
+    // keyword it is. Listing it here tells the scanner whether an `end` can
+    // be taken where the parser stands, which is how it knows that an `end`
+    // on the last line of an indented block closes that block
+    // (`when _ -> x end`) and not a one-line form on the line.
+    'end',
+    // Likewise never emitted. Where a `:` separator can be taken, `:fff` is
+    // that separator and a name (`import ui:add`), not a colour: the half of
+    // B16 that looks at the previous token.
+    ':',
+    // Never used in a rule: valid only during error recovery, which is how
+    // the scanner recognises it.
+    $._error_sentinel,
+  ],
 
   extras: $ => [
     // The lexer turns `;` into a newline-style separator; with newlines
@@ -69,7 +147,7 @@ module.exports = grammar({
 
   rules: {
     // A test block is a statement of the file's top level only.
-    source_file: $ => repeat(choice($._statement, $.test_declaration)),
+    source_file: $ => seq($._start, repeat(choice($._statement, $.test_declaration))),
 
     // ---- Statements ----
 
@@ -82,8 +160,6 @@ module.exports = grammar({
       $.native_function_declaration,
       $.enum_declaration,
       $.class_declaration,
-      $.for_statement,
-      $.while_statement,
       $.return_statement,
       $.break_statement,
       $.continue_statement,
@@ -105,7 +181,7 @@ module.exports = grammar({
     // which is safe because a syntax-highlighting grammar never needs `as`
     // as an ordinary identifier. The selective list requires commas between
     // names, matching the parser and stopping the list at the next statement.
-    import_statement: $ => seq(
+    import_statement: $ => prec.right(seq(
       optional(PUB),
       'import',
       field('module', $.module_path),
@@ -117,7 +193,7 @@ module.exports = grammar({
           repeat(seq(',', field('name', $.identifier))),
         ),
       )),
-    ),
+    )),
 
     // What an import names: an optional relative prefix — `./`, or one or
     // more `../` — then one or more identifier segments joined by `/`
@@ -128,11 +204,11 @@ module.exports = grammar({
     // path, prefix included.
     module_path: $ => choice(
       field('quoted', $.string),
-      seq(
+      prec.right(seq(
         optional(field('relative', $.relative_prefix)),
         field('segment', $.identifier),
         repeat(seq('/', field('segment', $.identifier))),
-      ),
+      )),
     ),
 
     relative_prefix: _ => token(choice('./', /(\.\.\/)+/)),
@@ -163,10 +239,13 @@ module.exports = grammar({
       repeat(field('annotation', $.annotation)),
       optional(PUB),
       // `config let x = …` marks an edit knob for propose-edit (docs/CLI.md).
-      // `config` is a contextual identifier in the real lexer, recognized only
-      // in this slot, so it is a literal here and stays usable as a name.
-      optional('config'),
-      choice('let', 'var', 'const'),
+      // `config` is a contextual identifier in the real lexer, recognized
+      // only directly before `let`, and an everyday name everywhere else
+      // (`config.speed`). So, like `test`, it cannot be a keyword literal:
+      // `config`, blanks and `let` are one token, which is longer than the
+      // identifier `config` and wins only where a declaration can start. It
+      // is aliased to the anonymous node `config` for the highlight query.
+      choice(alias($._config_let, 'config'), 'let', 'var', 'const'),
       field('name', $.identifier),
       optional(field('type', $.type_annotation)),
       '=',
@@ -203,15 +282,14 @@ module.exports = grammar({
     // class is the name before the dot (rust/src/parse.rs `parse_fn_decl`).
     // Higher precedence than `lambda`: at statement start `fn name(…)` is
     // always a declaration, never an argless lambda calling `name`.
-    function_declaration: $ => prec(1, seq(
+    function_declaration: $ => prec.right(1, seq(
       optional(PUB),
       'fn',
       optional(seq(field('class', $.identifier), '.')),
       field('name', $.identifier),
       field('parameters', $.parameter_list),
       optional(field('return_type', $.return_type)),
-      optional(field('body', $.block)),
-      'end',
+      closedBody($, 'body'),
     )),
 
     // `native fn name(params) -> type = "host_name"` — the declaration of a
@@ -219,7 +297,7 @@ module.exports = grammar({
     // docs/usage/ffi.md). No body and no `end`. `native` is a *contextual* keyword
     // in the real lexer (a keyword only directly before `fn`); as with `as`
     // and `class`, a highlighting grammar can treat it as a literal.
-    native_function_declaration: $ => prec(2, seq(
+    native_function_declaration: $ => prec.right(2, seq(
       optional(PUB),
       'native',
       'fn',
@@ -283,26 +361,24 @@ module.exports = grammar({
     // *contextual* keyword in the real lexer (it stays usable as an identifier
     // and as the JSX `class=` attribute); as with `as`, a highlighting grammar
     // can treat it as a literal.
-    class_declaration: $ => seq(
+    class_declaration: $ => prec.right(seq(
       optional(PUB),
       'class',
       field('name', $.identifier),
-      commaSep($.class_field),
-      'end',
-    ),
+      closedList($, $.class_field),
+    )),
 
     class_field: $ => seq(
       field('name', $.identifier),
       optional(field('type', $.type_annotation)),
     ),
 
-    enum_declaration: $ => seq(
+    enum_declaration: $ => prec.right(seq(
       optional(PUB),
       'enum',
       field('name', $.identifier),
-      commaSep($.enum_variant),
-      'end',
-    ),
+      closedList($, $.enum_variant),
+    )),
 
     // A variant: `red`, `custom(r, g, b)`, `park(shape: "area")`. Inside the
     // parentheses a bare name is a payload field and `key: expr` is constant
@@ -333,22 +409,23 @@ module.exports = grammar({
     // and it matches nothing else. It is aliased to the anonymous node `test`
     // so the highlight query can name it; the rest of the name is aliased to
     // an ordinary `string`. The name takes no `{…}` holes.
-    test_declaration: $ => seq(
+    test_declaration: $ => prec.right(seq(
       alias($._test_open, 'test'),
       field('name', alias($._test_name, $.string)),
       'do',
-      optional(field('body', $.block)),
-      'end',
-    ),
+      closedBody($, 'body'),
+    )),
 
     _test_open: _ => token(seq('test', /[ \t]+/, '"')),
+
+    _config_let: _ => token(seq('config', /[ \t]+/, 'let')),
 
     _test_name: $ => seq(
       repeat(choice($.string_content, $.escape_sequence)),
       '"',
     ),
 
-    for_statement: $ => seq(
+    for_statement: $ => prec.right(seq(
       'for',
       field('variable', $.identifier),
       'in',
@@ -365,17 +442,15 @@ module.exports = grammar({
         optional(seq('key', field('key', $._expression))),
       )),
       'do',
-      optional(field('body', $.block)),
-      'end',
-    ),
+      closedBody($, 'body'),
+    )),
 
-    while_statement: $ => seq(
+    while_statement: $ => prec.right(seq(
       'while',
       field('condition', $._expression),
       'do',
-      optional(field('body', $.block)),
-      'end',
-    ),
+      closedBody($, 'body'),
+    )),
 
     return_statement: $ => prec.right(seq('return', optional($._expression))),
 
@@ -383,24 +458,36 @@ module.exports = grammar({
 
     continue_statement: _ => 'continue',
 
+    // The target is a name, a field or an index, not any expression: with
+    // `end` optional, `while c do x += 1` must not read as
+    // `(while c do x) += 1`.
     assignment: $ => prec.right(PREC.assign, seq(
-      field('left', $._expression),
+      field('left', $._assignable),
       field('operator', choice('=', '+=', '-=', '*=', '/=', '%=', '++=', '??=')),
       field('right', $._expression),
     )),
+
+    _assignable: $ => choice($.identifier, $.field_access, $.index_access),
 
     // `set x = v` — a write through a `var` cell. Same shape as `assignment`,
     // under its own node because it is a different statement.
     set_statement: $ => prec.right(PREC.assign, seq(
       'set',
-      field('left', $._expression),
+      field('left', $._assignable),
       field('operator', choice('=', '+=', '-=', '*=', '/=', '%=', '++=', '??=')),
       field('right', $._expression),
     )),
 
-    // A run of statements; the `end`/`else`/`elsif`/`when` that closes the
-    // enclosing form is a keyword, so the repeat stops there naturally.
-    block: $ => repeat1($._statement),
+    // A one-line body: a run of statements on the opener's line. It stops at
+    // the `end`/`else`/`when` that closes the enclosing form, at the line
+    // break (`_inline_end`), or at a token that cannot continue it. Given the
+    // choice it keeps going (`if c then a; b end` is one body of two
+    // statements), hence the right associativity.
+    block: $ => prec.right(repeat1($._statement)),
+
+    // A body on the lines after its opener, delimited by indentation. It is
+    // aliased to `block` wherever it is used, so both shapes are one node.
+    _indented_block: $ => seq($._indent, repeat1($._statement), $._dedent),
 
     // ---- Expressions ----
 
@@ -418,6 +505,11 @@ module.exports = grammar({
       $.lambda,
       $.if_expression,
       $.match_expression,
+      // `for` and `while` are expressions too: in value position they
+      // collect their body's values into a list
+      // (`let squares = for i in range(1, 6) do i * i`).
+      $.for_statement,
+      $.while_statement,
       $.unary_expression,
       $.get_expression,
       $.binary_expression,
@@ -545,53 +637,107 @@ module.exports = grammar({
 
     // `fn(params) -> expr` or `fn(params) body end`. The parameter list is
     // optional: `fn 42 end` and `fn -> 42` are argless lambdas.
-    lambda: $ => seq(
+    lambda: $ => prec.right(seq(
       'fn',
       optional(field('parameters', $.parameter_list)),
       choice(
         seq('->', field('body', $._expression)),
-        seq(optional(field('body', $.block)), 'end'),
+        closedBody($, 'body'),
       ),
-    ),
+    )),
 
-    if_expression: $ => seq(
+    // `if c then … [else if c then …]* [else …] [end]`. Each body is an
+    // indented block or a one-line body, independently of the others, and the
+    // `end` is optional: the chain closes after its last body. `_if_tail` is
+    // what follows a `then`; it is right-recursive through
+    // `_if_continuation` so a dangling `else` goes to the nearest `if` (B2)
+    // and an `end` closes the innermost open form.
+    if_expression: $ => prec.right(seq(
       'if',
       field('condition', $._expression),
       'then',
-      optional(field('consequence', $.block)),
-      repeat($.elsif_clause),
-      optional($.else_clause),
-      'end',
-    ),
+      $._if_tail,
+    )),
 
-    elsif_clause: $ => seq(
-      'elsif',
+    _if_tail: $ => prec.right(choice(
+      seq(
+        field('consequence', $.block),
+        optional(choice($._if_continuation, 'end', $._inline_end)),
+      ),
+      seq(
+        field('consequence', alias($._indented_block, $.block)),
+        optional(choice($._if_continuation, 'end')),
+      ),
+      // An empty body needs something after it.
+      $._if_continuation,
+      'end',
+    )),
+
+    _if_continuation: $ => prec.right(choice(
+      seq(
+        alias($._elsif_inline, $.elsif_clause),
+        optional(choice($._if_continuation, 'end', $._inline_end)),
+      ),
+      seq(
+        alias($._elsif_indented, $.elsif_clause),
+        optional(choice($._if_continuation, 'end')),
+      ),
+      seq(alias($._elsif_empty, $.elsif_clause), choice($._if_continuation, 'end')),
+      seq(alias($._else_inline, $.else_clause), optional(choice('end', $._inline_end))),
+      seq(alias($._else_indented, $.else_clause), optional('end')),
+      seq(alias($._else_empty, $.else_clause), 'end'),
+    )),
+
+    // `else if c then …`, or its older spelling `elsif c then …`, in the
+    // three body shapes. All three are aliased to `elsif_clause`.
+    //
+    // `else if` chains only when the two words share a line; the scanner
+    // lexes that `if` as `_chain_if` (docs/tasks/pythonic-syntax.md §3.6).
+    _elsif_head: $ => seq(
+      choice('elsif', seq('else', alias($._chain_if, 'if'))),
       field('condition', $._expression),
       'then',
-      optional(field('consequence', $.block)),
     ),
 
-    else_clause: $ => seq('else', optional(field('body', $.block))),
+    _elsif_inline: $ => seq($._elsif_head, field('consequence', $.block)),
+    _elsif_indented: $ => seq(
+      $._elsif_head,
+      field('consequence', alias($._indented_block, $.block)),
+    ),
+    _elsif_empty: $ => $._elsif_head,
 
-    match_expression: $ => seq(
+    _else_inline: $ => seq('else', field('body', $.block)),
+    _else_indented: $ => seq('else', field('body', alias($._indented_block, $.block))),
+    _else_empty: _ => 'else',
+
+    // `match x` then its arms: indented on the following lines, or on the
+    // `match` line itself (`match x when 1 -> "a" when 2 -> "b" end`).
+    match_expression: $ => prec.right(seq(
       'match',
       field('subject', $._expression),
-      repeat($.match_arm),
-      'end',
-    ),
+      choice(
+        seq($._indent, repeat1($.match_arm), $._dedent, optional('end')),
+        seq(repeat1($.match_arm), optional(choice('end', $._inline_end))),
+        'end',
+      ),
+    )),
 
-    // After `->` an arm's body is a run of statements, up to the next `when`
-    // of this match or its `end`; the last expression is the arm's value.
-    // `do … end` is the older block form.
-    match_arm: $ => seq(
+    // After `->` an arm's body is a run of statements: an indented block on
+    // the following lines, or a one-line body up to the line break, the next
+    // `when` of this match, or its `end`. The last expression is the arm's
+    // value. `do … end` is the older block form.
+    match_arm: $ => prec.right(seq(
       'when',
       field('pattern', $._pattern),
       optional($.guard),
       choice(
-        seq('->', field('body', $.block)),
-        seq('do', optional(field('body', $.block)), 'end'),
+        seq('->', choice(
+          seq(field('body', $.block), optional($._inline_end)),
+          field('body', alias($._indented_block, $.block)),
+        )),
+        seq('do', closedBody($, 'body')),
       ),
-    ),
+    )),
 
     guard: $ => seq('if', field('condition', $._expression)),
 
@@ -646,6 +792,7 @@ module.exports = grammar({
       $.string,
       $.boolean,
       $.nil,
+      $.color,
       seq('-', choice($.integer, $.float)),
     ),
 
@@ -724,14 +871,16 @@ module.exports = grammar({
 
     integer: _ => /\d+/,
 
-    float: _ => /\d+\.\d+/,
+    // `1.5`, and with an exponent `1.5e-3`, `1e9`.
+    float: _ => /\d+(\.\d+([eE][+-]?\d+)?|[eE][+-]?\d+)/,
 
     boolean: _ => choice('true', 'false'),
 
     nil: _ => 'nil',
 
-    // #rgb, #rgba, #rrggbb, #rrggbbaa
-    color: _ => /#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})/,
+    // `:rgb`, `:rgba`, `:rrggbb`, `:rrggbbaa` are lexed by the external
+    // scanner (`color` in `externals`), which can check what a regex cannot:
+    // that the hex digits are followed by a non-identifier character.
 
     // Double-quoted string with `{expr}` interpolation and backslash escapes.
     string: $ => seq(
@@ -761,10 +910,19 @@ module.exports = grammar({
       '"""',
     )),
 
-    // `//` to the end of the line, or a `/* … */` block (which does not nest).
-    comment: _ => token(choice(
-      seq('//', /[^\n]*/),
-      seq('/*', /[^*]*\*+([^/*][^*]*\*+)*/, '/'),
-    )),
+    // `#` to the end of the line; its deprecated spelling `//`; or a
+    // `/* … */` block (which does not nest).
+    //
+    // The `#` form is its own token with a lower precedence than `jsx_text`,
+    // so a children line that starts with `#` stays text ("# of items",
+    // docs/tasks/pythonic-syntax.md §3.4), while `//` and `/*` still win
+    // there.
+    comment: _ => choice(
+      token(prec(-2, seq('#', /[^\n]*/))),
+      token(choice(
+        seq('//', /[^\n]*/),
+        seq('/*', /[^*]*\*+([^/*][^*]*\*+)*/, '/'),
+      )),
+    ),
   },
 });

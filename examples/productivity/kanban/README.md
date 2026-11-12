@@ -65,7 +65,7 @@ dragged, the lane counts show the board it would drop.
   `cols[c][i] = card`).
 - `fn view(cs, sc, sel)`: the board as a function of the columns, which the
   drag engine also runs, speculatively, on every board a drag can reach.
-- Functions returning records, string interpolation, `elsif` chains for the
+- Functions returning records, string interpolation, `else if` chains for the
   colour lookups.
 
 **Host / petal-ui**

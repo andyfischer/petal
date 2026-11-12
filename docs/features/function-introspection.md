@@ -131,7 +131,7 @@ a flat encoding made for walking from Petal:
   (1-based, in the function's file);
 - every field of a node is always present, `nil` when it does not apply, so
   reading one never fails;
-- an `elsif` is the nested `if` it means: `else_body` is a list holding one
+- an `else if` is the nested `if` it means: `else_body` is a list holding one
   `Expr` statement whose `expr` is the next `If`.
 
 Two things the parser has already done show up in the tree: `set x += e`

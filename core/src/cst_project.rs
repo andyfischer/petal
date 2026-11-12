@@ -1312,19 +1312,20 @@ impl Projector {
         })
     }
 
-    /// An `ElseBranch` node is either `else <block> end` or an `elsif` chain,
-    /// which the AST represents as a nested if-expression spanning from the
-    /// `elsif` keyword through the chain's closing `end`.
+    /// An `ElseBranch` node is either `else <block> end` or an `else if`
+    /// chain (old spelling `elsif`), which the AST represents as a nested
+    /// if-expression spanning from the `else if` keyword through the chain's
+    /// closing `end`.
     fn else_branch(&mut self, node: &SyntaxNode) -> Result<ElseBranch, String> {
         let is_elsif = matches!(
             first_token_deep(node).and_then(|t| t.token().cloned()),
-            Some(Token::Elsif)
+            Some(Token::ElseIf | Token::Elsif)
         );
         if !is_elsif {
             return Ok(ElseBranch::Block(self.block(node)?));
         }
         let nodes = child_nodes(node);
-        let condition = self.expr(nodes.first().ok_or("elsif missing its condition")?)?;
+        let condition = self.expr(nodes.first().ok_or("else if missing its condition")?)?;
         let then_body = self.block(node)?;
         let else_body = match nodes
             .into_iter()

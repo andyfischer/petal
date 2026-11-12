@@ -75,7 +75,7 @@ simulation running.
 sampler, the step counter), top-level `while` driving the fixed-step loop with
 `state` writes inside it, list building with `append` inside a captured `for`,
 `contains`/`slice` for collision and history, string interpolation in every
-label, colour literals plus a `mix` helper for the body gradient, `if`/`elsif`
+label, colour literals plus a `mix` helper for the body gradient, `if`/`else if`
 in expression position, and function overload-free helpers (`cell_x`,
 `level_of`, `interval_of`, `opposite`, `seg_color`).
 

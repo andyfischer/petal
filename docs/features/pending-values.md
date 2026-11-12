@@ -123,7 +123,7 @@ import ui
 let user = query("user", id)
 if is_loading(user) then
   spinner(10, 10)
-elsif is_error(user) then
+else if is_error(user) then
   draw_text("could not load: {error_of(user)}", 10, 10)
 else
   draw_text(user.name, 10, 10)

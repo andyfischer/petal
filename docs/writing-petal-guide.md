@@ -539,19 +539,20 @@ one asymmetric and easy to misread — space both, always.
 
 ## 6. Control flow you should know before you write anything
 
-### `elsif`, not `else if`
+### `else if` continues the chain
 
 ```petal
 fn classify(n)
   if n < 0 then "negative"
-  elsif n == 0 then "zero"
+  else if n == 0 then "zero"
   else "positive"
   end
 end
 ```
 
-`else if` opens a *nested* `if` that needs its own `end`. One `end` per chain
-with `elsif`.
+One `end` per chain: `else if` on one line continues the same `if` and never
+opens a nested one. (An `if` on the line *after* `else` is nested, and takes
+its own `end`.) `elsif` is the old spelling; write `else if`.
 
 ### `for` in value position builds a list
 
@@ -1066,7 +1067,7 @@ petal lint --fix app.ptl     # apply the fixes in place
 spacing, with strings, comments and hand-made alignment left alone. `lint`
 runs named rules, each with a fix: a `var` that no nested function shares
 becomes a `let`, `x = x + e` becomes `x += e`, a cast of a value already of
-that type is dropped, an `if`/`elsif` chain over literals becomes a `match`.
+that type is dropped, an `if`/`else if` chain over literals becomes a `match`.
 `petal lint --rules` lists them, and `--fix --verify` proves a rewrite against
 the compiled IR before writing it.
 

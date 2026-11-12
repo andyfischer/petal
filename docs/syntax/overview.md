@@ -59,7 +59,9 @@ when  do  end  return  break  continue  state  enum  import  pub  export
 true  false  nil
 ```
 
-`export` is the deprecated spelling of `pub`; it stays reserved and keeps
+`else if`, written on one line, is a single keyword: it continues an `if`
+chain. `elsif` is its deprecated spelling; it stays reserved and keeps
+working. `export` is the deprecated spelling of `pub`; it stays reserved and keeps
 working. `const` is reserved too: `let X = const(e)` is an
 [annotation](../language-guide.md#annotations), and the declaration
 `const X = e` is its deprecated spelling.
@@ -358,17 +360,20 @@ collection early.
 A block is a statement sequence delimited by a construct's keywords (e.g.
 `then … end`, `do … end`). It evaluates to its last expression.
 
-### `if` / `elsif` / `else`
+### `if` / `else if` / `else`
 
 An expression. `then` introduces each branch; a single `end` closes the whole
-chain. `elsif` (one word, not `else if`) continues the same `if`. See
+chain. `else if` on one line continues the same `if` (the lexer reads the two
+words as one keyword); `else` at the end of a line followed by an `if` on the
+next is an `else` block holding a nested `if`, which takes its own `end`.
+`elsif` is the deprecated spelling of `else if`. See
 [If / Else](../language-guide.md#if--else).
 
 ```petal
 let label = if x > 5 then "big" else "small" end
 
 let color = if line.kind == "add" then GREEN
-    elsif line.kind == "del" then RED
+    else if line.kind == "del" then RED
     else CONTEXT
     end
 ```

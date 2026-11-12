@@ -43,7 +43,7 @@ struct Open {
 
 /// A construct whose contents the author may have aligned by eye: a delimiter
 /// with contents on its own line, or an `if` that starts mid-line
-/// (`let y = if c then a` with `elsif`/`else` lined up below).
+/// (`let y = if c then a` with `else if`/`else` lined up below).
 #[derive(Clone, Copy)]
 struct Hang {
     /// How many columns the opener's line moved.
@@ -248,7 +248,7 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
         // Display indent, in columns. A line opening no new construct sits at
         // the innermost open construct's content column. A run of closers at
         // the start of the line realigns with the line that opened the
-        // construct its first closer closes; `else`/`elsif` realign with
+        // construct its first closer closes; `else`/`else if` realign with
         // their `if`.
         let sig: Vec<usize> = line_tokens
             .clone()
@@ -296,7 +296,7 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
         }
         let leads_with_else = matches!(
             sig.first().map(|&k| &tokens[k]),
-            Some(Token::Else | Token::Elsif)
+            Some(Token::Else | Token::Elsif | Token::ElseIf)
         );
         // The construct this line's column is judged against, and the column
         // the block rule gives it.

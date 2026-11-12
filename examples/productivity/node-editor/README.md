@@ -94,7 +94,7 @@ to cut it), the live output value, fan-out count, and duplicate/delete.
   `for n in nodes key n.id`, so each scope's `state samples` follows its node
   rather than its draw position, and reordering nodes never mixes traces. A
   deleted node's history is dropped with it.
-- A `match` with `do … end` arms in the evaluator; `elsif` chains for the
+- A `match` with `do … end` arms in the evaluator; `else if` chains for the
   hit-test and the hint bar.
 - Hand-rolled text serialization (`split`/`join`/`parse_float`/`??`) because
   Garden has no JSON builtins.

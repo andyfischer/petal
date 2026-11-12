@@ -53,7 +53,7 @@ the current ball speed; the pip rows under the score show progress to 7.
 **Language.** `state var` cells written with `set` from inside a `while`
 sub-step loop; a collecting `for` with `continue` as a filter (the particle
 update is one expression); record spread (`{...p, x: …}`) for immutable particle
-updates; `config let` for the tunables; `elsif` chains as value expressions;
+updates; `config let` for the tunables; `else if` chains as value expressions;
 string interpolation; closures-free pure helpers (`predict_y`, `burst`) that
 return new values rather than mutating.
 

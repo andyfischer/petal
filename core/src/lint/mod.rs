@@ -19,7 +19,7 @@
 //!    checker, which is deliberately conservative — anything it cannot prove
 //!    infers `any` and is left alone — and are applied as two minimal string
 //!    splices per cast, so comments and layout inside the argument survive.
-//! 3. **`prefer-match`** ([`to_match`]) — an `if`/`elsif` chain that tests one
+//! 3. **`prefer-match`** ([`to_match`]) — an `if`/`else if` chain that tests one
 //!    subject against string/bool/nil literals becomes a `match`. The splices
 //!    only ever cover the glue between the arms, so every pattern and body
 //!    survives verbatim.
@@ -44,7 +44,7 @@
 //! the current one is `petal migrate-old-code` ([`crate::migrate`]); the
 //! compiler warns about most of those forms and its warning names that
 //! command. For the ones it accepts without a word (the `export` spelling of
-//! `pub`), the report-only rule **`old-syntax`** says the same, and `--fix`
+//! `pub`, `//` comments, the `elsif` spelling of `else if`), the report-only rule **`old-syntax`** says the same, and `--fix`
 //! leaves them alone.
 //!
 //! Each rule detects over a fresh parse of the previous rule's output, so a
@@ -173,7 +173,8 @@ pub const RULES: &[RuleInfo] = &[
     RuleInfo {
         name: OLD_SYNTAX,
         summary: "a deprecated form the compiler accepts without a warning (the `export` \
-                  spelling of `pub`): `petal migrate-old-code` rewrites it",
+                  spelling of `pub`, `//` comments, the `elsif` spelling of `else if`): \
+                  `petal migrate-old-code` rewrites it",
         opt_in: false,
         fixes: Fixes::None,
     },
@@ -192,7 +193,7 @@ pub const RULES: &[RuleInfo] = &[
     },
     RuleInfo {
         name: PREFER_MATCH,
-        summary: "an if/elsif chain testing one value against literals should be a `match`",
+        summary: "an if/else if chain testing one value against literals should be a `match`",
         opt_in: false,
         fixes: Fixes::All,
     },
@@ -796,7 +797,7 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
 }
 
 /// Count `if` and `match` nodes before and after. Converting `n` chains must
-/// remove exactly `n` `if` nodes (a chain's `elsif`s are `If` nodes too, so
+/// remove exactly `n` `if` nodes (a chain's `else if`s are `If` nodes too, so
 /// the arms beyond the first come off as well) and add exactly `n` `match`
 /// nodes. Anything else means a splice landed somewhere unintended, and the
 /// linter refuses the file rather than writing it.

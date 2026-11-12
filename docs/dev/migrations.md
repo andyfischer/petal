@@ -45,7 +45,11 @@ first, then everything else works on it.
    `colour_literals.rs` reads the removed `#f80` color with `Lexer::legacy`
    (`legacy_lex`), and it and `hash_comments.rs`, which need tokens and
    trivia but no parse, run before everything else, because until they have
-   run the file does not lex.
+   run the file does not lex. `else_if.rs` (`else-if-nesting`) is the
+   example of a form whose *meaning* changed in the lexer: `else if` became
+   one token, so it lexes with `Lexer::unmerged_else_if`, parses that old
+   reading (`parse_source_unmerged_else_if`), and gates on IR equality
+   against the old reading respelled for today's compiler.
 4. **Test it.** Add a fixture row to `FIXTURES` in
    `core/tests/all/migrate_old_code.rs` (old source → migrated source; the tests
    check it alone and with every other migration, idempotency, that both

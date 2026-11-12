@@ -93,7 +93,7 @@ you dropped it. Values are rounded to nice numbers (`42.5`, not
 
 This works through nested helpers, loops, `map`, records, trigonometry,
 recursion (the tip of a fractal tree, say) and values assigned in nested
-branches (an `elsif` arm, an `if` inside an `else`, a `match` arm). Where the relationship
+branches (an `else if` arm, an `if` inside an `else`, a `match` arm). Where the relationship
 isn't a straight line, Petal takes a few steps towards the goal,
 re-checking each time.
 

@@ -6,9 +6,8 @@
 
 use petal::env::Env;
 use petal::migrate::{
-    AT_REBIND, COLOUR_LITERALS, CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED, EXPORT_TO_PUB, HASH_COMMENTS, MIGRATIONS,
-    MigrateOptions,
-    MigrateOutcome, STATE_KEY_DEPRECATED, migrate_source,
+    AT_REBIND, COLOUR_LITERALS, CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED, ELSE_IF_NESTING, ELSIF_TO_ELSE_IF,
+    EXPORT_TO_PUB, HASH_COMMENTS, MIGRATIONS, MigrateOptions, MigrateOutcome, STATE_KEY_DEPRECATED, migrate_source,
 };
 
 /// (migration, old source, migrated source). Each old source compiles (or,
@@ -55,6 +54,34 @@ const FIXTURES: &[(&str, &str, &str)] = &[
          let v = <col>\n  {/* the rows */}\n  <row n={a} /> // text\n</col>\n\
          print(a + n, url, v.children.length) # 3\n",
     ),
+    // An `if` nested in an `else` on the `else`'s line: alone there, it
+    // joins the chain and its own `end` goes (a line of its own, or a word
+    // of a one-liner); with a statement after it, it moves under the `else`
+    // and stays nested. The GLSL and the comment are not tokens.
+    (
+        ELSE_IF_NESTING,
+        "fn sign(n)\n  if n > 0 then\n    1\n  else if n < 0 then\n    2\n  else\n    3\n  end\n  end\nend\n\
+         fn grade(n)\n  if n > 8 then \"a\" else if n > 5 then \"b\" else \"c\" end end\nend\n\
+         fn step(n)\n  if n > 1 then\n    n\n  else if n > 0 then\n      print(\"one\")\n    end\n    n + 1\n  end\nend\n\
+         let glsl = \"\"\"\nif (a) {} else if (b) {} } }\n\"\"\"\n\
+         print(sign(0 - 3), grade(6), step(1), glsl.length) # else if x end end\n",
+        "fn sign(n)\n  if n > 0 then\n    1\n  else if n < 0 then\n    2\n  else\n    3\n  end\nend\n\
+         fn grade(n)\n  if n > 8 then \"a\" else if n > 5 then \"b\" else \"c\" end\nend\n\
+         fn step(n)\n  if n > 1 then\n    n\n  else\n    if n > 0 then\n      print(\"one\")\n    end\n    n + 1\n  end\nend\n\
+         let glsl = \"\"\"\nif (a) {} else if (b) {} } }\n\"\"\"\n\
+         print(sign(0 - 3), grade(6), step(1), glsl.length) # else if x end end\n",
+    ),
+    // The keyword token only: a field and a record key named `elsif`, the
+    // string and the comment stay.
+    (
+        ELSIF_TO_ELSE_IF,
+        "fn sign(n)\n  if n > 0 then\n    1\n  elsif n < 0 then # neg\n    2\n  else\n    3\n  end\nend\n\
+         let r = {elsif: 1}\nlet s = \"elsif\" # elsif\n\
+         print(sign(0 - 3), if r.elsif > 1 then 1 elsif r.elsif > 0 then 2 else 3 end, s)\n",
+        "fn sign(n)\n  if n > 0 then\n    1\n  else if n < 0 then # neg\n    2\n  else\n    3\n  end\nend\n\
+         let r = {elsif: 1}\nlet s = \"elsif\" # elsif\n\
+         print(sign(0 - 3), if r.elsif > 1 then 1 else if r.elsif > 0 then 2 else 3 end, s)\n",
+    ),
     (
         EXPORT_TO_PUB,
         "export fn double(x)\n  x * 2\nend\nexport let limit = 10 # max\nprint(double(limit))\n",
@@ -96,9 +123,30 @@ fn compiled_before(rule: &str, src: &str) -> bool {
     } else if rule == COLOUR_LITERALS {
         // `#f80` no longer lexes; it was the color `:f80` lexes to.
         !compiles(src) && compiles(&petal::migrate::respell_colour_literals(src).unwrap())
+    } else if rule == ELSE_IF_NESTING {
+        // `else if … end end` no longer parses; it was an `else` block
+        // holding the `if`, which is what a line break after `else` still is.
+        !compiles(src) && compiles(&nested_today(src))
     } else {
         compiles(src)
     }
+}
+
+/// `src` with every `else if` of its code (the fixtures keep other `else if`
+/// text on lines that start with `if (` or hold a `#`) read the way it was
+/// before `else if` was one token.
+fn nested_today(src: &str) -> String {
+    src.lines()
+        .map(|l| {
+            if l.starts_with("if (") || l.contains('#') {
+                l.to_string()
+            } else {
+                l.replace("else if", "else\nif")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
 }
 
 fn run_out(src: &str) -> Vec<String> {
@@ -171,9 +219,10 @@ fn migrating_twice_changes_nothing() {
 fn another_migration_leaves_a_fixture_alone() {
     for (rule, before, _) in FIXTURES {
         for (other, _, _) in FIXTURES.iter().filter(|(o, _, _)| o != rule) {
-            if *rule == AT_REBIND || *rule == COLOUR_LITERALS {
-                // Without its own migration, an `@` file does not parse and
-                // a `#f80` file does not lex.
+            if *rule == AT_REBIND || *rule == COLOUR_LITERALS || *rule == ELSE_IF_NESTING {
+                // Without its own migration, an `@` file and an
+                // `else if … end end` file do not parse, and a `#f80` file
+                // does not lex.
                 let opts = MigrateOptions {
                     only: Some(vec![other.to_string()]),
                     ..Default::default()
@@ -523,4 +572,116 @@ fn glsl_in_a_raw_string_keeps_its_comments_and_directives() {
         "let frag = \"\"\"\n#version 300 es\n// glsl\n#define K 1 // k\nif (a) {} else if (b) {}\n\"\"\" # shader\nprint(frag.length)\n"
     );
     assert_eq!(run_out(src), run_out(&out.output));
+}
+
+// ---------------------------------------------------------------------------
+// `else if` (docs/tasks/pythonic-syntax.md §3.6, B17)
+// ---------------------------------------------------------------------------
+
+/// B17: read as a chain, the old nesting form has an `end` too many. That is
+/// an error, never a different program, and it names the migration.
+#[test]
+fn a_nested_else_if_is_a_stray_end_error_that_names_the_tool() {
+    let mut env = Env::new();
+    env.set_echo(false);
+    for (src, at) in [
+        ("let a = 1\nlet x = if a > 1 then 1 else if a > 0 then 2 else 3 end end\nprint(x)\n", "[line 2, column 57]"),
+        ("let a = 1\nif a > 1 then\n  print(1)\nelse if a > 0 then\n  print(2)\nend\nend\n", "[line 7, column 1]"),
+    ] {
+        let err = env.load_program(src).err().expect("an `end` too many").to_string();
+        assert!(err.contains("Unexpected token: `end`"), "{err}");
+        assert!(
+            err.contains(
+                "`else if` continues its `if` chain, and the whole chain takes one `end`: if the `end` at line"
+            ),
+            "{err}"
+        );
+        assert!(err.contains("run `petal migrate-old-code` [else-if-nesting]"), "{err}");
+        assert!(err.contains(at), "{err}");
+    }
+    // Inside a function the surplus `end` closes the function early; the
+    // hint still names the line of the `end` that did it.
+    let src = "fn f(a)\n  if a > 1 then\n    1\n  else if a > 0 then\n    2\n  end\n  end\n  3\nend\n";
+    let err = env.load_program(src).err().expect("an `end` too many").to_string();
+    assert!(err.contains("if the `end` at line 7 closed"), "{err}");
+    assert!(err.contains("[line 9, column 1]"), "{err}");
+    // An unrelated surplus `end` gets no such hint.
+    let err = env.load_program("let a = 1\nend\n").err().expect("stray end").to_string();
+    assert!(!err.contains("else if"), "{err}");
+}
+
+#[test]
+fn a_migrated_nesting_file_is_the_program_it_was() {
+    let (_, before, after) = FIXTURES.iter().find(|(r, _, _)| *r == ELSE_IF_NESTING).unwrap();
+    assert_eq!(run_out(&nested_today(before)), run_out(after));
+    assert_eq!(run_out(after), ["one", "2 b 2 30"]);
+}
+
+#[test]
+fn a_migrated_elsif_file_is_the_same_program() {
+    let (_, before, after) = FIXTURES.iter().find(|(r, _, _)| *r == ELSIF_TO_ELSE_IF).unwrap();
+    assert_eq!(run_out(before), run_out(after));
+    assert_eq!(run_out(after), ["2 2 elsif"]);
+}
+
+/// `else` at the end of a line with `if` on the next is an `else` block
+/// holding an `if`, as it always was: not a site, and not a chain.
+#[test]
+fn an_if_on_the_line_after_else_stays_nested() {
+    let src = "fn f(a)\n  if a > 1 then\n    1\n  else\n    if a > 0 then\n      2\n    end\n    3\n  end\nend\nprint(f(1))\n";
+    let out = migrate_with(src, None);
+    assert!(out.findings.is_empty(), "{:?}", out.findings);
+    assert_eq!(out.output, src);
+    assert_eq!(run_out(src), ["3"]);
+}
+
+/// Chains of the old nesting form, three deep, and one inside another's
+/// branch: each nested `if` gives up its `end`.
+#[test]
+fn nested_else_ifs_several_deep_become_one_chain() {
+    let src = "fn f(a)\n  if a > 3 then\n    4\n  else if a > 2 then\n    3\n  else if a > 1 then\n    \
+               if a > 5 then 9 else if a > 4 then 8 else 2 end end\n  else\n    1\n  end\n  end\n  end\nend\n\
+               print(f(4), f(3), f(2), f(1))\n";
+    let out = migrate_with(src, None);
+    assert_eq!(
+        out.output,
+        "fn f(a)\n  if a > 3 then\n    4\n  else if a > 2 then\n    3\n  else if a > 1 then\n    \
+         if a > 5 then 9 else if a > 4 then 8 else 2 end\n  else\n    1\n  end\nend\n\
+         print(f(4), f(3), f(2), f(1))\n"
+    );
+    assert_eq!(out.count(ELSE_IF_NESTING), 3);
+    assert_eq!(run_out(&out.output), ["4 3 2 1"]);
+    assert_eq!(run_out(&nested_today(src)), ["4 3 2 1"]);
+}
+
+/// A file that still needs every lexical migration: the nesting form is
+/// read through `#f80` colors, `//` comments, `elsif` and an `@` rebind.
+#[test]
+fn a_nested_else_if_migrates_with_every_other_old_form() {
+    let src = "// tints\nfn pick(n)\n  if n > 2 then #fff else if n > 1 then #000 else #f80 end end // nested\nend\n\
+               fn kind(n)\n  if n > 1 then 1 elsif n > 0 then 2 else 3 end\nend\n\
+               fn inc(x)\n  x + 1\nend\nlet k = 0\ninc(@k)\nprint(pick(1).r + kind(k)) // 257\n";
+    assert!(!compiles(src));
+    let out = migrate_with(src, None);
+    assert_eq!(
+        out.output,
+        "# tints\nfn pick(n)\n  if n > 2 then :fff else if n > 1 then :000 else :f80 end # nested\nend\n\
+         fn kind(n)\n  if n > 1 then 1 else if n > 0 then 2 else 3 end\nend\n\
+         fn inc(x)\n  x + 1\nend\nlet k = 0\nk = inc(k)\nprint(pick(1).r + kind(k)) # 257\n"
+    );
+    assert_eq!(run_out(&out.output), ["257"]);
+    let again = migrate_with(&out.output, None);
+    assert_eq!(again.output, out.output);
+    assert!(again.findings.is_empty(), "{:?}", again.findings);
+}
+
+/// `else if` text that is not code: GLSL in a raw string (the cheesecake
+/// shaders), a string and a comment are left exactly as written.
+#[test]
+fn else_if_text_outside_code_is_untouched() {
+    let src = "let frag = \"\"\"\nif (a) {} else if (b) {} elsif\n\"\"\"\nlet s = \"else if c then 1 end end\"\n\
+               # else if c then 1 end end; elsif\nprint(frag.length + s.length)\n";
+    let out = migrate_with(src, None);
+    assert!(out.findings.is_empty(), "{:?}", out.findings);
+    assert_eq!(out.output, src);
 }

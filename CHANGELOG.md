@@ -12,6 +12,30 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **`else if` continues an `if` chain; `elsif` is deprecated.** `else` and
+  `if` on one line (only spaces or tabs between them) are now one keyword,
+  which continues the chain exactly as `elsif` did: one `end` closes the whole
+  `if … else if … else … end`. `else` at the end of a line with an `if` on
+  the next line is unchanged: an `else` block holding a nested `if`, which
+  takes its own `end`. `elsif` still works and compiles without a warning;
+  `petal lint` reports it (`old-syntax`). **Run `petal migrate-old-code`**:
+  `elsif-to-else-if` respells each `elsif` keyword (strings, comments and a
+  field named `elsif` stay).
+
+  This changes what `else if` on one line used to mean. Before, it was an
+  `if` nested in the `else`, and each took an `end` (`else if c then a else b
+  end end`). Read as a chain, the second `end` is one too many, so such code
+  is now a parse error (never a different program); the error names the
+  `end` and the migration. `migrate-old-code`'s `else-if-nesting` reads the
+  old form and rewrites it: where the nested `if` is the `else`'s only
+  statement its own `end` is removed, otherwise the `if` moves to the line
+  after `else` and stays nested. The rewrite is checked against the compiled
+  IR of the original. GLSL `else if` in a `"""` block is not touched.
+  `petal fmt` writes the keyword with one space, and `prefer-match` reads
+  `else if` chains. Lexer API: the new token is `Token::ElseIf` (its span
+  covers both words); `Token::Elsif` remains for the old spelling.
+  docs/tasks/pythonic-syntax.md, P2.
+
 - **Comments start with `#`; `//` is deprecated, and `#f80` is now an error.**
   `#` starts a comment that runs to the end of the line, as in Python and
   shell (a `#!` first line is one too). `/* … */` is unchanged. `//` still

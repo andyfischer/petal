@@ -97,6 +97,7 @@ pub(crate) fn token_desc(tok: &Token) -> String {
         Token::Then => kw("then"),
         Token::Do => kw("do"),
         Token::Elsif => kw("elsif"),
+        Token::ElseIf => kw("else if"),
         Token::When => kw("when"),
         Token::Import => kw("import"),
         Token::Pub => kw("pub"),
@@ -164,6 +165,13 @@ pub struct Parser {
     /// (`fn(x) -> expr`). An `end` found there is the arrow lambda's
     /// block-form habit, and the error says so (see [`Parser::error_hint`]).
     arrow_lambda_end: Option<usize>,
+    /// Token position of the latest `end` that directly follows the closing
+    /// `end` of a chain written with `else if`. Source from before `else if`
+    /// was one token nested the `if` in the `else` and closed both
+    /// (`else if … end end`); read as a chain, the second `end` is one too
+    /// many, and the error for an unexpected `end` says so (see
+    /// [`Parser::error_hint`]).
+    else_if_second_end: Option<usize>,
     /// The titles of the test blocks parsed so far, in source order. A
     /// block's position here names its function ([`crate::ast::test_fn_name`]),
     /// and a title written twice is an error.
@@ -182,6 +190,7 @@ impl Parser {
             events: EventBuilder::new(),
             pending_optional: false,
             arrow_lambda_end: None,
+            else_if_second_end: None,
             test_titles: Vec::new(),
             at_top_level: false,
         }
@@ -1850,7 +1859,7 @@ impl Parser {
         self.advance(); // consume 'return'
         let stmt = if matches!(
             self.peek(),
-            Token::Newline | Token::End | Token::Else | Token::Elsif | Token::Eof
+            Token::Newline | Token::End | Token::Else | Token::Elsif | Token::ElseIf | Token::Eof
         ) {
             self.mk_stmt(StmtKind::Return(None), start)
         } else {
@@ -2036,17 +2045,18 @@ impl Parser {
     /// somewhere near, but not naming, the actual mistake: `a and b`, `not a`,
     /// and an `end` after an arrow lambda's expression body. `pos` is the
     /// token the error is reported at.
-    fn error_hint(&self, pos: usize) -> Option<&'static str> {
+    fn error_hint(&self, pos: usize) -> Option<String> {
         let tok = |i: usize| self.tokens.get(i);
+        let fixed = |s: &str| Some(s.to_string());
         match tok(pos) {
             Some(Token::Ident(w)) if w == "and" => {
-                return Some("Petal spells logical and as `&&`");
+                return fixed("Petal spells logical and as `&&`");
             }
             Some(Token::Ident(w)) if w == "or" => {
-                return Some("Petal spells logical or as `||`");
+                return fixed("Petal spells logical or as `||`");
             }
             Some(Token::Ident(w)) if w == "not" => {
-                return Some("Petal spells logical not as `!`");
+                return fixed("Petal spells logical not as `!`");
             }
             _ => {}
         }
@@ -2054,9 +2064,9 @@ impl Parser {
             && let Some(Token::Ident(w)) = tok(prev)
         {
             match w.as_str() {
-                "not" => return Some("Petal spells logical not as `!`"),
-                "and" => return Some("Petal spells logical and as `&&`"),
-                "or" => return Some("Petal spells logical or as `||`"),
+                "not" => return fixed("Petal spells logical not as `!`"),
+                "and" => return fixed("Petal spells logical and as `&&`"),
+                "or" => return fixed("Petal spells logical or as `||`"),
                 _ => {}
             }
         }
@@ -2065,10 +2075,26 @@ impl Parser {
             && end <= pos
             && (end..pos).all(|i| matches!(tok(i), Some(Token::Newline)))
         {
-            return Some(
+            return fixed(
                 "an arrow lambda (`fn(x) -> expr`) takes no `end`; \
                  drop the `end`, or write the block form `fn(x) expr end`",
             );
+        }
+        // An `end` too many after a chain written with `else if`: the shape
+        // source from before the `else if` token has, where the `if` was
+        // nested in the `else` and each took an `end`.
+        if matches!(tok(pos), Some(Token::End))
+            && let Some(second) = self.else_if_second_end
+            && second <= pos
+        {
+            let line = self.token_spans.get(second).map_or(0, |s| s.start.line);
+            return Some(format!(
+                "`else if` continues its `if` chain, and the whole chain takes one `end`: \
+                 if the `end` at line {line} closed an `if` nested in an `else` \
+                 (`else if … end end`), delete it, or {} [{}]",
+                crate::migrate::RUN_HINT,
+                crate::migrate::ELSE_IF_NESTING
+            ));
         }
         None
     }
@@ -2856,7 +2882,7 @@ impl Parser {
         let condition = self.parse_expr()?;
         self.skip_newlines();
         self.expect(&Token::Then)?;
-        let then_body = self.parse_block_until(&[Token::Elsif, Token::Else, Token::End])?;
+        let then_body = self.parse_block_until(&[Token::ElseIf, Token::Elsif, Token::Else, Token::End])?;
         let else_body = self.parse_else_chain(start)?;
         self.ev_close();
         Ok(self.mk_expr(
@@ -2870,20 +2896,30 @@ impl Parser {
     }
 
     /// Parse the tail of an if-expression after the then-body. Consumes the
-    /// single closing `end` for the whole if/elsif/else chain. Precondition:
-    /// peek is Elsif, Else, or End.
+    /// single closing `end` for the whole `if` / `else if` / `else` chain.
+    /// Precondition: peek is ElseIf (or its old spelling Elsif), Else, or End.
     fn parse_else_chain(&mut self, if_pos: usize) -> Result<Option<ElseBranch>, String> {
         match self.peek() {
-            Token::Elsif => {
+            Token::ElseIf | Token::Elsif => {
                 let start = self.pos;
+                let merged = matches!(self.peek(), Token::ElseIf);
                 self.ev_open(SyntaxKind::ElseBranch);
-                self.advance(); // consume 'elsif'
+                self.advance(); // consume 'else if' (or 'elsif')
                 let condition = self.parse_expr()?;
                 self.skip_newlines();
                 self.expect(&Token::Then)?;
-                let then_body = self.parse_block_until(&[Token::Elsif, Token::Else, Token::End])?;
+                let then_body = self.parse_block_until(&[Token::ElseIf, Token::Elsif, Token::Else, Token::End])?;
                 let else_body = self.parse_else_chain(if_pos)?; // consumes the final 'end'
                 self.ev_close();
+                if merged {
+                    let next = (self.pos..self.tokens.len())
+                        .find(|&i| !matches!(self.tokens[i], Token::Newline));
+                    if let Some(i) = next
+                        && matches!(self.tokens[i], Token::End)
+                    {
+                        self.else_if_second_end = Some(i);
+                    }
+                }
                 let inner = self.mk_expr(
                     ExprKind::If {
                         condition: Box::new(condition),
@@ -2934,7 +2970,7 @@ impl Parser {
 
     fn parse_match_arm(&mut self) -> Result<MatchArm, String> {
         self.ev_open(SyntaxKind::MatchArm);
-        if matches!(self.peek(), Token::Else | Token::Elsif) {
+        if matches!(self.peek(), Token::Else | Token::Elsif | Token::ElseIf) {
             return Err(self.error_at_current(format!(
                 "Expected `when`, got {} — a `match` has no `else` arm; the arm for \
                  everything else is `when _ -> …`",
@@ -2963,7 +2999,7 @@ impl Parser {
             // the next `when` of this match or to the match's `end`. A nested
             // construct consumes its own `when`s and `end`.
             let stmts =
-                self.parse_block_until(&[Token::When, Token::End, Token::Else, Token::Elsif])?;
+                self.parse_block_until(&[Token::When, Token::End, Token::Else, Token::Elsif, Token::ElseIf])?;
             if stmts.is_empty() {
                 return Err(self.error_at_current(format!(
                     "Expected the arm's body after '->', got {} (an arm that does nothing \

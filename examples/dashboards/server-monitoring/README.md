@@ -84,7 +84,7 @@ in the app — inject a key or move the mouse to keep it running.
   loops as list expressions (`let row = for m in range(0,4) do … end`) for the
   per-host/per-metric threshold table, `flat` to prepend to a log, record spread
   (`{...al, ack: true}`) to acknowledge in one pass, function overloading (`tx`
-  with and without letter-spacing), `elsif` chains for the colour ramp,
+  with and without letter-spacing), `else if` chains for the colour ramp,
   `smoothstep` / `clamp` / `color_lerp` / `noise` / `noise_seed`.
 - **Host / petal-ui:** `list_update` + `ensure_visible` + `draw_scrollbar` for
   the fleet column, `scroll_update` for the alert feed, `clip`/`clip_none`,

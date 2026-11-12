@@ -532,7 +532,7 @@ fn literal_json(lit: &Literal) -> J {
     }
 }
 
-/// An `else` branch as a statement list. An `elsif` is the nested `if` it
+/// An `else` branch as a statement list. An `else if` is the nested `if` it
 /// means, as the single statement of the block.
 fn else_json(e: &ElseBranch) -> J {
     match e {

@@ -89,7 +89,7 @@ took its place, so a burst of `space` walks down the list.
   nested one inside a record field, to rewrite a subtask list), `var`/`set`
   accumulators inside helpers, string interpolation, immutable list append and
   slice for the undo stack, `sort` with a comparator, keyed
-  multi-way `if`/`elsif` classification.
+  multi-way `if`/`else if` classification.
 - **Host / petal-ui:** `state` across frames and hot reload, `ellipsize`,
   `preview`/`wrap`, `fit_parts`, `ensure_visible_px`, styled `draw_text`
   records, rounded rects and translucent fills, `clip` for the scrolled feed,

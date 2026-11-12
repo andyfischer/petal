@@ -48,6 +48,24 @@ pub fn parse_source_phased(
     source: &str,
     file: FileId,
 ) -> Result<(Rc<GreenNode>, Vec<Stmt>), LoadError> {
+    parse_with(Lexer::new_in_file(source, file), source, file)
+}
+
+/// [`parse_source`] the way source read before `else if` was one token: each
+/// `else if` is an `else` block holding an `if` that takes its own `end`
+/// ([`Lexer::unmerged_else_if`]). For the `else-if-nesting` migration of
+/// `petal migrate-old-code` only; nothing compiles this parse.
+pub(crate) fn parse_source_unmerged_else_if(source: &str) -> Result<Vec<Stmt>, String> {
+    parse_with(Lexer::new_in_file(source, ENTRY_FILE).unmerged_else_if(), source, ENTRY_FILE)
+        .map(|(_, stmts)| stmts)
+        .map_err(|e| e.to_string())
+}
+
+fn parse_with(
+    mut lexer: Lexer,
+    source: &str,
+    file: FileId,
+) -> Result<(Rc<GreenNode>, Vec<Stmt>), LoadError> {
     let phased = |phase: Phase| {
         move |e: String| {
             let mut err = LoadError::legacy(phase, e);
@@ -57,7 +75,6 @@ pub fn parse_source_phased(
             err
         }
     };
-    let mut lexer = Lexer::new_in_file(source, file);
     lexer.tokenize().map_err(phased(Phase::Lex))?;
     let mut parser = crate::parse::Parser::new(lexer.tokens.clone(), lexer.token_spans.clone());
     let direct = parser.parse_program().map_err(phased(Phase::Parse))?;

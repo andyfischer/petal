@@ -464,7 +464,7 @@ if scene() == "title" then
   map_text_center(10, "PETAL QUEST", 0)
   if btnp("start") then set_scene("game") end
 
-elsif scene() == "game" then
+else if scene() == "game" then
   if scene_entered() then             // true for exactly the first frame of the scene
     fill_map(0, 0)
     map_rect(0, 24, 32, 6, 1, 0)
@@ -472,7 +472,7 @@ elsif scene() == "game" then
   // ... gameplay ...
   if btnp("start") then set_scene("paused") end
 
-elsif scene() == "paused" then
+else if scene() == "paused" then
   text_sprites_center(112, "PAUSED", 4)
   if scene_time() > 0.5 && btnp("start") then set_scene("game") end
 end

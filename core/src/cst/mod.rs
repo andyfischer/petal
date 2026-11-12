@@ -43,6 +43,7 @@ mod green;
 mod red;
 
 pub use driver::{parse_cst, parse_source, parse_source_phased};
+pub(crate) use driver::parse_source_unmerged_else_if;
 pub use events::{Checkpoint, Event, EventBuilder, build_lossless, build_tree};
 pub use green::{GreenChild, GreenNode, GreenNodeBuilder, GreenToken};
 pub use red::{SyntaxElement, SyntaxNode, SyntaxToken};
@@ -152,7 +153,7 @@ pub enum SyntaxKind {
     EnumVariant,
     /// One `key: expr` constant-data entry of a [`SyntaxKind::EnumVariant`].
     EnumData,
-    /// An `elsif …` / `else …` tail of an if-expression.
+    /// An `else if …` / `else …` tail of an if-expression.
     ElseBranch,
     /// The `key <expr>` clause of a `for` header: the contextual `key`
     /// identifier and the key expression's node.

@@ -69,7 +69,7 @@ function's tail, each branch's tail is the function's tail:
 fn sign(n)
   if n > 0 then
     "positive"
-  elsif n < 0 then
+  else if n < 0 then
     "negative"
   else
     "zero"

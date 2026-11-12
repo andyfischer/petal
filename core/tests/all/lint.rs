@@ -1296,7 +1296,7 @@ end
     assert_eq!(outcome.count(PREFER_MATCH), 1);
     assert_eq!(outcome.count(NO_REDUNDANT_CAST), 0);
     assert!(
-        outcome.findings.iter().any(|f| f.message.contains("if/elsif chain")),
+        outcome.findings.iter().any(|f| f.message.contains("if/else if chain")),
         "{:?}",
         outcome.findings
     );
@@ -1444,4 +1444,51 @@ end
 print(rep(\"ab\", 2) ++ bar ++ digits)
 ",
     );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// `else if` (docs/tasks/pythonic-syntax.md §3.6)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// The chain rule reads `else if` exactly as it reads the old `elsif`.
+#[test]
+fn an_else_if_chain_becomes_a_match() {
+    assert_lints_to(
+        "\
+fn object_kind(ch)
+  if ch == \"@\" then \"spawn\"
+  else if ch == \"o\" then \"coin\"
+  else  if ch == \"w\" then \"walker\"
+  else nil
+  end
+end
+",
+        "\
+fn object_kind(ch)
+  match ch
+    when \"@\" -> \"spawn\"
+    when \"o\" -> \"coin\"
+    when \"w\" -> \"walker\"
+    when _ -> nil
+  end
+end
+",
+    );
+}
+
+/// The compiler accepts `elsif` without a word, so `petal lint` is what
+/// reports it; `--fix` leaves it for `petal migrate-old-code`.
+#[test]
+fn elsif_is_reported_as_old_syntax_and_left_as_written() {
+    let src = "fn f(a)\n  if a > 1 then\n    1\n  elsif a > 0 then\n    2\n  else\n    3\n  end\nend\n";
+    let outcome = lint_source(src, &LintOptions::default()).unwrap();
+    assert_eq!(outcome.output, src);
+    let found: Vec<(&str, usize, usize)> = outcome.findings.iter().map(|f| (f.rule, f.line, f.column)).collect();
+    assert_eq!(found, [("old-syntax", 4, 3)]);
+    let message = &outcome.findings[0].message;
+    assert!(message.contains("write `else if`"), "{message}");
+    assert!(message.contains("run `petal migrate-old-code` [elsif-to-else-if]"), "{message}");
+    // The current spelling is not reported.
+    let src = src.replace("elsif", "else if");
+    assert!(lint_source(&src, &LintOptions::default()).unwrap().findings.is_empty());
 }

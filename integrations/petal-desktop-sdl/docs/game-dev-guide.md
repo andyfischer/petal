@@ -297,7 +297,7 @@ state score = 0           // persists across frames
 // Control flow: blocks end with `end`
 if x > 5 then
     print("big")
-elsif x > 2 then
+else if x > 2 then
     print("medium")
 else
     print("small")

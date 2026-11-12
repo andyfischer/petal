@@ -138,7 +138,7 @@ the visibility / lock toggles.
 settings; `let` dataflow everywhere else; pure list-rebuilding helpers
 (`put`, `del_sel`, `apply_order`, `apply_align`) instead of mutation; record
 field assignment as rebinding; `for`-as-expression for point lists; function
-overloading, `elsif` chains, string interpolation, color literals, and
+overloading, `else if` chains, string interpolation, color literals, and
 `atan2` / `radians` / `degrees` for the rotation math.
 
 ## Notes

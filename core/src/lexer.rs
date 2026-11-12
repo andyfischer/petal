@@ -34,7 +34,17 @@ pub enum Token {
     End,
     Then,
     Do,
+    /// `elsif` — the old spelling of [`Token::ElseIf`]. It parses to the same
+    /// chain; `petal lint` reports it (`old-syntax`) and
+    /// `petal migrate-old-code` rewrites it (`elsif-to-else-if`).
     Elsif,
+    /// `else if` — `else` and `if` on one line with only spaces or tabs
+    /// between them, merged into one token whose span covers both words (its
+    /// text is the source as written). It continues an `if` chain exactly as
+    /// `elsif` did. `else` at the end of a line with `if` on the next is not
+    /// merged: that is an `else` block holding an `if`. See
+    /// [`Lexer::read_identifier`].
+    ElseIf,
     When,
     Import,
     /// `pub` — the export modifier.
@@ -145,6 +155,7 @@ impl Token {
             Token::Then => "Then",
             Token::Do => "Do",
             Token::Elsif => "Elsif",
+            Token::ElseIf => "ElseIf",
             Token::When => "When",
             Token::Import => "Import",
             Token::Pub => "Pub",
@@ -425,6 +436,10 @@ pub struct Lexer {
     /// Read `#f80` as a color literal, the way source written before `#`
     /// became the comment marker has it ([`Lexer::legacy`]).
     legacy_hash_colors: bool,
+    /// Leave `else if` as the two tokens it was before the merge into
+    /// [`Token::ElseIf`], so it parses as an `if` nested in an `else`
+    /// ([`Lexer::legacy`], [`Lexer::unmerged_else_if`]).
+    legacy_else_if: bool,
     /// The offset of every `//` comment that starts a line of element
     /// children, in source order: the deprecated form `petal migrate-old-code`
     /// rewrites to `{/* … */}` (`hash-comments`).
@@ -499,18 +514,34 @@ impl Lexer {
             expr_start: 0,
             legacy_colors: Vec::new(),
             legacy_hash_colors: false,
+            legacy_else_if: false,
             jsx_line_comments: Vec::new(),
         }
     }
 
-    /// Lex source that may predate `#` comments: a `#` followed directly by
-    /// a color-shaped hex word ([`hash_color_len`]) is a [`Token::Color`]
-    /// recorded in [`Lexer::legacy_colors`], where the language's own lexer
-    /// reports an error. Every other `#` is a comment in both, so migrated
-    /// source lexes the same either way. For `petal migrate-old-code` only
-    /// (`crate::migrate::colour_literals::legacy_lex`).
+    /// Lex source the way it was read before the `#` comment and `else if`
+    /// changes, for `petal migrate-old-code` only
+    /// (`crate::migrate::colour_literals::legacy_lex`):
+    ///
+    /// - A `#` followed directly by a color-shaped hex word
+    ///   ([`hash_color_len`]) is a [`Token::Color`] recorded in
+    ///   [`Lexer::legacy_colors`], where the language's own lexer reports an
+    ///   error. Every other `#` is a comment in both.
+    /// - `else if` stays two tokens ([`Lexer::unmerged_else_if`]).
     pub fn legacy(mut self) -> Self {
         self.legacy_hash_colors = true;
+        self.legacy_else_if = true;
+        self
+    }
+
+    /// Leave `else if` as an `else` and an `if`: the reading it had before
+    /// the two were merged into [`Token::ElseIf`], in which the `if` is
+    /// nested in the `else` block and takes its own `end`
+    /// (`else if c then a else b end end`). For the `else-if-nesting`
+    /// migration of `petal migrate-old-code` only. Everything else lexes as
+    /// it does today.
+    pub fn unmerged_else_if(mut self) -> Self {
+        self.legacy_else_if = true;
         self
     }
 
@@ -1520,8 +1551,37 @@ impl Lexer {
         }
 
         let text: String = self.input[text_start..self.pos].iter().collect();
-        let token = keyword_token(&text).unwrap_or(Token::Ident(text));
+        let mut token = keyword_token(&text).unwrap_or(Token::Ident(text));
+        if token == Token::Else && self.merges_else_if() {
+            // `else if`: one token spanning both words, as written.
+            while self.input[self.pos] != 'i' {
+                self.advance_char();
+            }
+            self.advance_char();
+            self.advance_char();
+            token = Token::ElseIf;
+        }
         self.push_token(token, start);
+    }
+
+    /// Whether the `else` just read (the cursor is after it) and an `if`
+    /// later on its line are one [`Token::ElseIf`]: only spaces and tabs lie
+    /// between the two words (no line break, no comment), and `if` is the
+    /// whole word. A field named `else` (`r.else`) is never merged.
+    fn merges_else_if(&self) -> bool {
+        if self.legacy_else_if
+            || matches!(self.tokens.last(), Some(Token::Dot | Token::QuestionDot))
+        {
+            return false;
+        }
+        let rest = &self.input[self.pos..];
+        let blanks = rest.iter().take_while(|c| matches!(c, ' ' | '\t')).count();
+        blanks > 0
+            && rest.get(blanks) == Some(&'i')
+            && rest.get(blanks + 1) == Some(&'f')
+            && !rest
+                .get(blanks + 2)
+                .is_some_and(|c| c.is_alphanumeric() || *c == '_' || *c == '?')
     }
 }
 
@@ -2142,6 +2202,71 @@ mod tests {
         lexer.tokenize().unwrap();
         let span = lexer.token_spans[2];
         assert_eq!((span.start.column, span.end.column), (5, 12));
+    }
+
+    // ---- `else if` ----------------------------------------------------------
+
+    #[test]
+    fn else_if_on_one_line_is_one_token_spanning_both_words() {
+        assert_eq!(
+            tokenize("if a then 1 else if b then 2 end"),
+            vec![
+                Token::If,
+                Token::Ident("a".into()),
+                Token::Then,
+                Token::Int(1),
+                Token::ElseIf,
+                Token::Ident("b".into()),
+                Token::Then,
+                Token::Int(2),
+                Token::End,
+            ]
+        );
+        // Its text is the source as written: any run of spaces and tabs.
+        let mut lexer = Lexer::new("else \t  if x");
+        lexer.tokenize().unwrap();
+        assert_eq!(lexer.tokens[0], Token::ElseIf);
+        let span = lexer.token_spans[0];
+        assert_eq!((span.start.offset, span.end.offset), (0, 10));
+        assert_eq!((lexer.token_spans[1].start.line, lexer.token_spans[1].start.column), (1, 12));
+        // `elsif` is its old spelling, a token of its own.
+        assert_eq!(tokenize("elsif"), vec![Token::Elsif]);
+    }
+
+    #[test]
+    fn else_and_if_are_merged_only_across_blanks() {
+        // A line break: an `else` block that holds an `if`.
+        assert_eq!(tokenize("else\nif"), vec![Token::Else, Token::If]);
+        assert_eq!(tokenize("else  \n  if"), vec![Token::Else, Token::If]);
+        // A comment between them.
+        assert_eq!(tokenize("else /* c */ if"), vec![Token::Else, Token::If]);
+        assert_eq!(tokenize("else # c\nif"), vec![Token::Else, Token::If]);
+        // `if` must be the whole word.
+        assert_eq!(tokenize("else iffy"), vec![Token::Else, Token::Ident("iffy".into())]);
+        assert_eq!(tokenize("else if_ok"), vec![Token::Else, Token::Ident("if_ok".into())]);
+        assert_eq!(tokenize("else if?"), vec![Token::Else, Token::Ident("if?".into())]);
+        assert_eq!(tokenize("else if("), vec![Token::ElseIf, Token::LParen]);
+        assert_eq!(tokenize("else if"), vec![Token::ElseIf]);
+        // A field named `else` is a name.
+        assert_eq!(
+            tokenize("r.else if"),
+            vec![Token::Ident("r".into()), Token::Dot, Token::Else, Token::If]
+        );
+        // The other order is two keywords.
+        assert_eq!(tokenize("if else"), vec![Token::If, Token::Else]);
+    }
+
+    #[test]
+    fn the_legacy_lexer_leaves_else_if_as_two_tokens() {
+        for mut lexer in [Lexer::new("else if x").legacy(), Lexer::new("else if x").unmerged_else_if()] {
+            assert_eq!(
+                lexer.tokenize().unwrap().to_vec(),
+                vec![Token::Else, Token::If, Token::Ident("x".into()), Token::Eof]
+            );
+        }
+        // Only the legacy mode reads a `#` color; `unmerged_else_if` lexes
+        // everything else as the language does.
+        assert!(Lexer::new("let c = #f80").unmerged_else_if().tokenize().is_err());
     }
 
     // ---- `#` comments ------------------------------------------------------

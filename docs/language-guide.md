@@ -660,27 +660,44 @@ end
 let label = if x > 5 then "big" else "small" end
 ```
 
-Chain conditions with `elsif` — it continues the same `if` and shares the
+Chain conditions with `else if` — it continues the same `if` and shares the
 single closing `end` (no nested blocks):
 
 ```petal
 fn classify(n)
   if n < 0 then "negative"
-  elsif n == 0 then "zero"
+  else if n == 0 then "zero"
   else "positive"
   end
 end
 
 // Reads well for the multi-way branches common in drawer code:
 let color = if line.kind == "hunk" then HUNK
-  elsif line.kind == "add" then GREEN
-  elsif line.kind == "del" then RED
+  else if line.kind == "add" then GREEN
+  else if line.kind == "del" then RED
   else CONTEXT
   end
 ```
 
-Note the keyword is `elsif` (one word, Ruby-style), not `else if` — writing
-`else if` opens a nested `if` that needs its own `end`.
+`else if` on one line always continues the chain. To nest an `if` inside an
+`else` block instead, put it on the next line; that `if` takes its own `end`:
+
+```petal
+fn describe(n)
+  if n < 0 then
+    "negative"
+  else
+    if n == 0 then print("zero!") end
+    "not negative"
+  end
+end
+```
+
+`elsif` is the old spelling of `else if`. It still works; `petal lint`
+reports it and `petal migrate-old-code` rewrites it (`elsif-to-else-if`). Code
+from before `else if` was a chain wrote the nested form on one line
+(`else if c then … end end`); that now has an `end` too many, and
+`petal migrate-old-code` fixes it (`else-if-nesting`).
 
 ### For Loops
 

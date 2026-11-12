@@ -154,7 +154,7 @@ groups and drops members of a hidden one.
   and passed to the functions that need it.
 - Collecting `for` with `continue` as a filter; index writes through a list
   held in `state` (`px[i] = …`, `pins[i] = …`) for the dragged nodes; `match`
-  for the kind labels; `elsif` chains as value expressions.
+  for the kind labels; `else if` chains as value expressions.
 - A hand-rolled LCG for the scatter so every layout is reproducible without a
   seed from the host.
 

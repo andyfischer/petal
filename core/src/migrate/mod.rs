@@ -20,8 +20,9 @@
 //! that read tokens and trivia, `colour-literals` and `hash-comments`, with
 //! the lexer's legacy mode (the language's own lexer rejects a `#f80` color,
 //! see [`colour_literals::legacy_lex`]); then the ones that need a parse,
-//! `at-rebind` (which reads the old `@` itself, since the parser no longer
-//! does), `export-to-pub`, `const-decl-deprecated`, `config-let-deprecated`,
+//! `else-if-nesting` (which reads `else if` the old way, as an `if` nested in
+//! an `else`), `elsif-to-else-if`, `at-rebind` (which reads the old `@`
+//! itself, since the parser no longer does), `export-to-pub`, `const-decl-deprecated`, `config-let-deprecated`,
 //! `state-key-deprecated`. **`old-imports`** rewrites imports for the current
 //! module system and needs every file of the batch and a module resolver; it
 //! is [`crate::fix_imports`], which the CLI runs after the text migrations
@@ -50,6 +51,7 @@ use std::path::PathBuf;
 
 mod at_rebind;
 mod colour_literals;
+mod else_if;
 pub mod export_keyword;
 mod export_to_pub;
 mod hash_comments;
@@ -70,6 +72,8 @@ pub const RUN_HINT: &str = "run `petal migrate-old-code`";
 pub const AT_REBIND: &str = "at-rebind";
 pub const COLOUR_LITERALS: &str = "colour-literals";
 pub const HASH_COMMENTS: &str = "hash-comments";
+pub const ELSE_IF_NESTING: &str = "else-if-nesting";
+pub const ELSIF_TO_ELSE_IF: &str = "elsif-to-else-if";
 pub const EXPORT_TO_PUB: &str = "export-to-pub";
 pub const CONST_DECL_DEPRECATED: &str = "const-decl-deprecated";
 pub const CONFIG_LET_DEPRECATED: &str = "config-let-deprecated";
@@ -132,6 +136,30 @@ pub const MIGRATIONS: &[Migration] = &[
         replaces: "`//` line comments, deprecated 2026-11-12 (docs/tasks/pythonic-syntax.md)",
         old_form: OldForm::Accepted,
         partial: true,
+        batch: false,
+    },
+    // `else if`: first the old nesting form, which no longer parses (it
+    // reads the old form itself), then the old spelling of the chain.
+    Migration {
+        name: ELSE_IF_NESTING,
+        summary: "`else if` continues the `if` chain: in `else if … end end` (an `if` nested \
+                  in an `else`, each with its `end`) the nested `if`'s own `end` is removed; \
+                  where the `else` holds more than the `if`, the `if` moves to the line after \
+                  `else` and stays nested",
+        added: "2026-11-12",
+        replaces: "`else if` read as an `if` nested in an `else`, removed 2026-11-12 when \
+                   `else if` became one token (docs/tasks/pythonic-syntax.md)",
+        old_form: OldForm::Removed,
+        partial: false,
+        batch: false,
+    },
+    Migration {
+        name: ELSIF_TO_ELSE_IF,
+        summary: "`elsif` is spelled `else if`",
+        added: "2026-11-12",
+        replaces: "`elsif`, deprecated 2026-11-12 (docs/tasks/pythonic-syntax.md)",
+        old_form: OldForm::Accepted,
+        partial: false,
         batch: false,
     },
     // Then the one whose old form the parser rejects: every later migration
@@ -348,6 +376,28 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         return Ok(MigrateOutcome { findings, output });
     }
 
+    // `else if … end end`: until the nested `if`s are chains (or on lines
+    // of their own) the file does not parse. Planned on the old reading of
+    // `else if`, and gated on the parse and the compiled program.
+    let mut nestings = 0;
+    if opts.enabled(ELSE_IF_NESTING) {
+        let before = p.text.clone();
+        nestings = p.apply(ELSE_IF_NESTING, else_if::plan_nesting_fixes(&before)?);
+        if nestings > 0 && !else_if::has_nesting(&p.text) {
+            else_if::check_nesting(&before, &p.text, &lint_opts)?;
+        }
+    }
+
+    // `elsif`: one keyword each, gated on the tokens and the parse.
+    let mut elsifs = 0;
+    if opts.enabled(ELSIF_TO_ELSE_IF) {
+        let before = p.text.clone();
+        elsifs = p.apply(ELSIF_TO_ELSE_IF, else_if::plan_elsif_fixes(&before)?);
+        if elsifs > 0 {
+            else_if::check_elsif(&before, &p.text, gate)?;
+        }
+    }
+
     // `@` rebinds: until they are gone the file does not parse.
     let mut rebinds = 0;
     let mut rebinds_left = 0;
@@ -369,7 +419,7 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
     };
 
     let exports = p.apply(EXPORT_TO_PUB, export_to_pub::plan_export_fixes(&stmts, &chars)?);
-    let mut rewrites = rebinds + colours + comments + exports;
+    let mut rewrites = rebinds + colours + comments + nestings + elsifs + exports;
 
     // One keyword, then the other over its output: each pads trailing
     // comments against the text as it stands.
@@ -408,7 +458,12 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         // `#f80` colors respelled (the same tokens), and, since a file with
         // `@` rebinds does not parse, each `@` read as nothing (the same
         // names, read instead of written).
+        // An `else if` that was nesting is moved to its own line, where it
+        // still is.
         let mut original = colour_literals::respell_colour_literals(source)?;
+        if nestings > 0 {
+            original = else_if::nesting_as_read_today(&original)?;
+        }
         if rebinds > 0 {
             original = at_rebind::blank_markers(&original)?;
         }

@@ -39,7 +39,7 @@ impl Compiler {
     /// emitted here — or the enclosing conditional's phi-out wires from the
     /// stale earlier binding. That stale wiring ran correctly (the join shares
     /// the arm's carry slot register) but hid the nested branch from the term
-    /// graph: an `elsif` arm or an `if` nested in an arm was invisible to
+    /// graph: an `else if` arm or an `if` nested in an arm was invisible to
     /// provenance, slicing and direct manipulation. Mirrors the
     /// `already_rebound_here` rule in `rebind_name`.
     fn rebind_parent(&mut self, name: String, new_tid: TermId, outer_tid: TermId) {
@@ -82,7 +82,7 @@ impl Compiler {
     }
 
     /// Same as `detect_rebinds_stmts` but for expression-shaped bodies
-    /// (an `elsif` and while conditions).
+    /// (an `else if` and while conditions).
     pub(super) fn detect_rebinds_exprs(&self, bodies: &[&Expr]) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();

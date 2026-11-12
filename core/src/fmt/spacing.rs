@@ -107,7 +107,15 @@ pub fn respace(source: &str, protected: &[bool]) -> Result<String, String> {
     }
     for i in 0..tokens.len() {
         let (ts, te) = (spans[i].start.offset as usize, spans[i].end.offset as usize);
-        out.extend(&chars[ts..te]);
+        // `else if` is one token whose text is the two words as written: the
+        // gap inside it is spacing like any other, and becomes one space.
+        if matches!(tokens[i], Token::ElseIf)
+            && !protected.get(spans[i].start.line as usize - 1).copied().unwrap_or(false)
+        {
+            out.push_str("else if");
+        } else {
+            out.extend(&chars[ts..te]);
+        }
 
         // Update the context with token `i`: the gap after it is read in the
         // state it leaves behind.
@@ -370,7 +378,7 @@ fn gap_rule(g: GapCtx) -> Gap {
     }
     // A keyword after an operand stands apart from it: `f(x) if ok`,
     // `(a > 1) then`, `[a, b] do`.
-    if matches!(b, If | Then | Else | Elsif | Do | In | When | End) && ends_operand(Some(a)) {
+    if matches!(b, If | Then | Else | Elsif | ElseIf | Do | In | When | End) && ends_operand(Some(a)) {
         return Gap::One;
     }
     // A unary operator binds to its operand. A `+`/`-` that opens a line is

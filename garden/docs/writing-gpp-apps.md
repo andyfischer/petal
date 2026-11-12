@@ -348,7 +348,7 @@ draw_rect(rect(0, 0, w, h), P.panel)
 if !loaded then
   let rd = query("log", "")
   if is_ready(rd) then commits = rd.commits; loaded = true
-  elsif is_error(rd) then draw_text("error: " ++ (error_of(rd) ?? "?"), {x: 8, y: 8}, 14, P.error)
+  else if is_error(rd) then draw_text("error: " ++ (error_of(rd) ?? "?"), {x: 8, y: 8}, 14, P.error)
   else draw_text("loading…", {x: 8, y: 8}, 14, P.text_dim) end
 end
 
@@ -376,8 +376,8 @@ if n > 0 then
         let marker = " "
         let style = ""
         if ln.kind == "add" then marker = "+"; style = "added"
-        elsif ln.kind == "del" then marker = "-"; style = "removed"
-        elsif ln.kind == "hunk" then marker = "@"; style = "hunk" end
+        else if ln.kind == "del" then marker = "-"; style = "removed"
+        else if ln.kind == "hunk" then marker = "@"; style = "hunk" end
         lines = append(lines, marker ++ " " ++ ln.text)
         styles = append(styles, style)
       end

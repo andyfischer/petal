@@ -590,6 +590,16 @@ DESCRIPTION
               children becomes a hole that holds a /* ... */ comment, since
               a # line there is text; one between two lines of text is
               reported and left for a hand edit
+       else-if-nesting
+              'else if' continues the if chain, so the old nesting form
+              'else if ... end end' (an if inside an else, each with its
+              end) has an end too many and no longer parses. Where the
+              nested if is all the else holds, its own end is removed; where
+              the else holds more, the if moves to the line after 'else',
+              where it stays nested. The compiled program must be the same,
+              or nothing is written
+       elsif-to-else-if
+              the deprecated keyword 'elsif' becomes 'else if'
        at-rebind
               the removed rebind operator: f(@x) becomes x = f(x). An @x
               inside a larger expression lifts its call into an assignment
@@ -888,7 +898,7 @@ DESCRIPTION
               which converts n the same way. A cast beside an int operand
               stays: / on two ints truncates
        prefer-match
-              an if/elsif chain testing one value against literals becomes
+              an if/else if chain testing one value against literals becomes
               a match
        prefer-repeat
               a loop appending one string n times becomes repeat(s, n)

@@ -106,7 +106,7 @@ family (`menu_state`, `menu_open_on_right_click`,
 `state` for the document and every tool setting, `let` dataflow everywhere else,
 function overloading (`mk/4` and `mk/5`), records-as-structs, list rebuilding
 with `append` / `drop_last` / `last` / `slice`, `continue` as a filter inside a
-`for`, string interpolation, `elsif` chains, and color literals.
+`for`, string interpolation, `else if` chains, and color literals.
 
 ## Notes
 

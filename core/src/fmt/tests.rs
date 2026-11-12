@@ -25,6 +25,24 @@ fn a_keyword_after_an_operand_is_spaced_from_it() {
 }
 
 #[test]
+fn else_if_takes_one_space_and_lines_up_with_its_if() {
+    let src = "fn f(a)\nif a>1 then\n1\n  else   \t if a>0 then\n2\nelse\n3\nend\nend\n";
+    let out = "fn f(a)\n  if a > 1 then\n    1\n  else if a > 0 then\n    2\n  else\n    3\n  end\nend\n";
+    assert_eq!(fmt(src), out);
+    assert_eq!(fmt(out), out);
+    // One-line arms hung under a value keep their column, as `elsif` arms do.
+    let arms = "let y = if a then 1\n        else  if b then 2\n        else 3 end\n";
+    assert_eq!(fmt(arms), "let y = if a then 1\n        else if b then 2\n        else 3 end\n");
+    // The old spelling is laid out as written: respelling it is
+    // `petal migrate-old-code`'s.
+    let old = "if a then\n  1\nelsif b then\n  2\nend\n";
+    assert_eq!(fmt(old), old);
+    // A protected line keeps its spacing, inside the token too.
+    let kept = "if a then\n  1\n  # petal-fmt-ignore\nelse    if b then\n  2\nend\n";
+    assert_eq!(fmt(kept), kept);
+}
+
+#[test]
 fn is_idempotent_on_its_own_output() {
     let src = "state a=1 // x\nstate bbb   =  2 // y\nif(a>1)then\nprint( \"{a+1}\" )\nend\n";
     let once = fmt(src);

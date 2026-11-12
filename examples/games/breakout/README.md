@@ -92,7 +92,7 @@ four patterns by `level % 4`: **SOLID WALL**, **OPEN ARCH**, **WEAVE**,
 `continue` as a filter do all four destruction passes in one expression each
 (dead balls, expired particles, faded trail points, landed pills). Record
 spread (`{...p, x: …}`) for immutable particle updates; `config let` for the
-tunables; `elsif` chains as value expressions; string interpolation in every
+tunables; `else if` chains as value expressions; string interpolation in every
 banner; functions returning records (`mix`, `row_color`, `power_by_key`); a
 `var` accumulator written from inside a collecting `for` (`caught`).
 

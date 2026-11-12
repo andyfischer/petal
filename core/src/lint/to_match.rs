@@ -1,10 +1,10 @@
-//! Rule — rewrite an `if`/`elsif` chain that tests one subject against
+//! Rule — rewrite an `if`/`else if` chain that tests one subject against
 //! literals into a `match`.
 //!
 //! ```text
 //! if ch == "@" then "spawn"          match ch
-//! elsif ch == "o" then "coin"    =>    when "@" -> "spawn"
-//! elsif ch == "w" then "walker"        when "o" -> "coin"
+//! else if ch == "o" then "coin"    =>  when "@" -> "spawn"
+//! else if ch == "w" then "walker"      when "o" -> "coin"
 //! else nil                             when "w" -> "walker"
 //! end                                  when _ -> nil
 //!                                    end
@@ -17,9 +17,10 @@
 //!
 //! Detection is over the AST, the rewrite is span splices (the linter-plan's
 //! Pass 2 shape), and the splices only ever cover *glue* — `if`, `==`,
-//! `then`, `elsif <subject> ==`, `else`. Every arm's pattern and body is
-//! preserved as the author wrote it, comments and layout included, and the
-//! chain's trailing `end` is left in place because `match` ends the same way.
+//! `then`, `else if <subject> ==` (or its old spelling `elsif`), `else`. Every
+//! arm's pattern and body is preserved as the author wrote it, comments and
+//! layout included, and the chain's trailing `end` is left in place because
+//! `match` ends the same way.
 //! Indentation is not this rule's problem: [`super::reindent`] runs after it.
 //!
 //! ## What it refuses, and why
@@ -32,7 +33,7 @@
 //! - **A subject that could compute.** `match` reads the subject once where
 //!   the chain read it per arm. A name or a field path off a name is safe to
 //!   move; a call or an index is left alone.
-//! - **A comment in the glue.** A comment between `then` and the next `elsif`
+//! - **A comment in the glue.** A comment between `then` and the next `else if`
 //!   has no home in the `match`, so the whole chain is skipped rather than
 //!   dropping it.
 //! - **A chain inside a string.** A `"{…}"` hole cannot span lines, and the
@@ -93,7 +94,7 @@ impl ExprVisitor for Finder<'_> {
             walk_expr(self, e);
             return;
         };
-        // Take the whole `elsif` spine at once. Descending normally would
+        // Take the whole `else if` spine at once. Descending normally would
         // reach each inner `If` again and mistake the chain's own tail for a
         // shorter chain of its own.
         let chain = collect_chain(e);
@@ -106,7 +107,7 @@ impl ExprVisitor for Finder<'_> {
             self.fixes.push(Fix {
                 anchor: e.span.start.offset as usize,
                 message: format!(
-                    "this if/elsif chain compares `{subject}` against {} literals; \
+                    "this if/else if chain compares `{subject}` against {} literals; \
                      write it as a `match`",
                     chain.arms.len()
                 ),
@@ -153,7 +154,22 @@ fn arrow(chars: &[char], body: SourceSpan, lead: &str) -> String {
     }
 }
 
-/// Flatten `if / elsif / … / else` into its arms. `e` must be an `If`.
+/// What follows the keyword that continues a chain at the start of `glue`:
+/// `else if` (the two words on one line, any blanks between them) or its old
+/// spelling `elsif`.
+fn strip_else_if(glue: &str) -> Option<&str> {
+    if let Some(rest) = glue.strip_prefix("elsif") {
+        return Some(rest);
+    }
+    let rest = glue.strip_prefix("else")?;
+    let after = rest.trim_start_matches([' ', '\t']);
+    if after.len() == rest.len() {
+        return None;
+    }
+    after.strip_prefix("if")
+}
+
+/// Flatten `if / else if / … / else` into its arms. `e` must be an `If`.
 fn collect_chain(e: &Expr) -> Chain<'_> {
     let mut arms = Vec::new();
     let mut cur = e;
@@ -264,7 +280,7 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
 
     for (i, (lhs, rhs)) in conds.iter().enumerate() {
         // The arm head. On the first arm that is just the ` == ` after the
-        // subject; on the rest it is `\n…elsif <subject> == `, and the
+        // subject; on the rest it is `\n…else if <subject> == `, and the
         // repeated subject goes away with it.
         let from = if i == 0 {
             lhs.end.offset as usize
@@ -276,10 +292,10 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
         let rest = if i == 0 {
             g.trim()
         } else {
-            let after_kw = g.trim().strip_prefix("elsif")?;
+            let after_kw = strip_else_if(g.trim())?;
             let subj_and_op = after_kw.trim_start();
             if subj_and_op.len() == after_kw.len() {
-                return None; // `elsifx`, not `elsif x`
+                return None; // `else ifx`, not `else if x`
             }
             // Whatever follows the subject must be the operator and nothing
             // else, which is also what rules out a subject that is only a

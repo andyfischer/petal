@@ -144,7 +144,7 @@ lands in `common`. It has to be a named `fn` or a lambda the code captures.
 | `vec2(...)`, `vec3(...)`, `float(x)`, `int(x)` | the same, arguments converted to float |
 | `step`, `mod` | passed through (GLSL has them; Petal does not, so such a function cannot also run on the CPU) |
 | `let`, `var`, `set`, `set x += e` | a typed declaration, an assignment. A second `let x` gets a new name (`x_1`); a name that is a GLSL keyword or function gets a trailing `_` |
-| `if` as a statement, `elsif`, `else` | `if (...) { ... } else { ... }` |
+| `if` as a statement, `else if`, `else` | `if (...) { ... } else { ... }` |
 | `if` as a value | `c ? a : b`, or a temporary assigned in both arms when an arm has statements |
 | `for i in range(a, b)` (and a literal step) | `for (int i = a; i < b; i++)` |
 | `while`, `break`, `continue`, `return` | the same |

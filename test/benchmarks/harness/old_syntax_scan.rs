@@ -10,8 +10,9 @@
 //! cargo run --example old_syntax_scan -- same A.ptl B.ptl   # do the two parse to the same AST?
 //! ```
 //!
-//! `scan` reads every `.ptl` under the directories (skipping `node_modules`,
-//! `target`, `dist` and dot-directories) and reports, per file and in total:
+//! `scan` reads every `.ptl` under the directories (skipping what `petal
+//! migrate-old-code` skips: `node_modules`, `target`, `temp`, `out`, `dist`
+//! and dot-directories) and reports, per file and in total:
 //!
 //! - `hex`: `#f80` color literals, an error since 2026-11-12 (read with
 //!   `Lexer::legacy`, the reading `petal migrate-old-code` uses);
@@ -45,7 +46,8 @@ fn collect_ptl(dir: &Path, out: &mut Vec<PathBuf>) {
     for path in entries {
         if path.is_dir() {
             if path.file_name().is_some_and(|n| {
-                n == "node_modules" || n == "target" || n == "dist" || n.to_string_lossy().starts_with('.')
+                ["node_modules", "target", "temp", "out", "dist"].iter().any(|skip| n == *skip)
+                    || n.to_string_lossy().starts_with('.')
             }) {
                 continue;
             }

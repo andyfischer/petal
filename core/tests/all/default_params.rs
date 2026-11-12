@@ -620,7 +620,7 @@ fn the_function_records_how_many_parameters_are_optional() {
 
 #[test]
 fn the_formatter_spaces_a_default_and_is_then_stable() {
-    let src = "fn f(a,b=1,c:num   =   a*2)\na+b+c\nend\nlet g = fn(x,y=[1,2])->x\n";
+    let src = "fn f(a,b=1,c:num   =   a*2)\n  a+b+c\nend\nlet g = fn(x,y=[1,2])->x\n";
     let formatted = petal::fmt::format_source(src).unwrap();
     assert_eq!(
         formatted,

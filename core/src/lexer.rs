@@ -444,6 +444,52 @@ pub struct Lexer {
     /// children, in source order: the deprecated form `petal migrate-old-code`
     /// rewrites to `{/* … */}` (`hash-comments`).
     pub jsx_line_comments: Vec<u32>,
+    /// Whether each token is the first on its line, parallel to `tokens`
+    /// ([`first_on_line`]). The column of such a token is the indentation the
+    /// parser measures blocks by. Filled when [`Lexer::tokenize`] finishes.
+    pub token_first_on_line: Vec<bool>,
+    /// Whether each token is the first on a line whose indentation holds a
+    /// tab, parallel to `tokens`. Indentation delimits blocks and a tab has
+    /// no agreed width, so the parser rejects such a line wherever it
+    /// measures one ([`crate::parse::Parser::with_tab_indentation`]); a tab
+    /// in front of a line that only continues a bracket or an expression is
+    /// harmless. Filled when [`Lexer::tokenize`] finishes.
+    pub token_tab_indented: Vec<bool>,
+}
+
+/// Whether each token is the first on its line, from the tokens and their
+/// spans: a token is, when the token before it (line breaks aside) ended on
+/// an earlier line. A token that follows a string spanning several lines is
+/// therefore not first on its line: a line that begins inside a string is
+/// not a line start for layout. [`Token::Newline`] and [`Token::Eof`] are
+/// never first.
+///
+/// Element text is the exception. A [`Token::JsxText`] spans the raw text up
+/// to the hole or tag that ends it, line break and indentation included, so
+/// its end says nothing about where the next token sits. A token after text
+/// that began on an earlier line counts as first on its line, which is right
+/// for a hole or a tag on a line of its own.
+pub fn first_on_line(tokens: &[Token], spans: &[SourceSpan]) -> Vec<bool> {
+    let mut out = Vec::with_capacity(tokens.len());
+    let mut prev_end_line = 0u32;
+    for (tok, span) in tokens.iter().zip(spans) {
+        match tok {
+            Token::Newline | Token::Eof => out.push(false),
+            Token::JsxText(_) => {
+                out.push(span.start.line > prev_end_line);
+                // Whatever follows is measured against where the text began.
+                prev_end_line = span.start.line.max(prev_end_line);
+                if span.end.line == span.start.line {
+                    prev_end_line = span.end.line;
+                }
+            }
+            _ => {
+                out.push(span.start.line > prev_end_line);
+                prev_end_line = span.end.line;
+            }
+        }
+    }
+    out
 }
 
 /// A color literal written `#f80` (now `:f80`): what the `colour-literals`
@@ -516,6 +562,8 @@ impl Lexer {
             legacy_hash_colors: false,
             legacy_else_if: false,
             jsx_line_comments: Vec::new(),
+            token_first_on_line: Vec::new(),
+            token_tab_indented: Vec::new(),
         }
     }
 
@@ -689,6 +737,9 @@ impl Lexer {
         let start = self.current_pos();
         self.push_token(Token::Eof, start);
 
+        self.token_first_on_line = first_on_line(&self.tokens, &self.token_spans);
+        self.token_tab_indented = self.tab_indented_tokens();
+
         // Recover the trivia (whitespace/comments) between tokens from the
         // spans, so downstream tooling can reproduce the original source. This
         // does not affect `tokens`, which the parser consumes unchanged.
@@ -698,6 +749,27 @@ impl Lexer {
         }
 
         Ok(&self.tokens)
+    }
+
+    /// For each token, whether it is the first on a line whose indentation
+    /// holds a tab. Only the whitespace in front of the first token of a line
+    /// counts; a tab anywhere else (inside a string, between two tokens, on a
+    /// line that holds only a comment) is not indentation.
+    fn tab_indented_tokens(&self) -> Vec<bool> {
+        let mut out = vec![false; self.tokens.len()];
+        for (i, span) in self.token_spans.iter().enumerate() {
+            if !self.token_first_on_line[i] {
+                continue;
+            }
+            let mut at = span.start.offset as usize;
+            let mut tab = false;
+            while at > 0 && matches!(self.input[at - 1], ' ' | '\t') {
+                at -= 1;
+                tab |= self.input[at] == '\t';
+            }
+            out[i] = tab && (at == 0 || self.input[at - 1] == '\n');
+        }
+        out
     }
 
     /// Tokenize a single token at the current position.

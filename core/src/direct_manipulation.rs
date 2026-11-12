@@ -712,7 +712,7 @@ mod tests {
     fn a_loop_counter_supplies_the_value_a_solve_inverts_against() {
         let src = "config let spacing = 50\n\
                    let x0 = 20\n\
-                   for i in range(0, 3) do\n\
+                   for i in range(0, 3) do\n  \
                      print(x0 + i * spacing)\n\
                    end\n";
         let (env, pid) = run_traced(src);

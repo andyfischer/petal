@@ -38,6 +38,44 @@ pub fn parse_ast(source: &str) -> Result<(Rc<GreenNode>, Vec<Stmt>), String> {
     parse_source(source, ENTRY_FILE)
 }
 
+/// [`parse_ast`] for a tool that repairs source written before indentation
+/// delimited blocks: when the source does not parse, it is read by its
+/// `end`s alone ([`crate::cst::parse_source_by_end`]), which is what its
+/// author's compiler did. The flag says whether that reading was needed:
+/// the source's indentation then disagrees with its `end`s, and the language
+/// itself rejects it. The error, when neither reading parses, is the
+/// language's own.
+pub fn parse_ast_or_by_end(source: &str) -> Result<(Rc<GreenNode>, Vec<Stmt>, bool), String> {
+    match parse_source(source, ENTRY_FILE) {
+        Ok((tree, stmts)) => Ok((tree, stmts, false)),
+        Err(e) => match crate::cst::parse_source_by_end(source) {
+            Ok((tree, stmts)) => Ok((tree, stmts, true)),
+            Err(_) => Err(e),
+        },
+    }
+}
+
+/// The AST as JSON with every source span dropped: equal for two sources
+/// exactly when they are the same program written with different layout
+/// (indentation, line breaks, comments, an `end` that indentation makes
+/// redundant). What a rewrite that must not change the parse is gated on.
+pub fn ast_shape(stmts: &[Stmt]) -> Result<serde_json::Value, String> {
+    use serde_json::Value;
+    fn strip(v: &mut Value) {
+        match v {
+            Value::Array(items) => items.iter_mut().for_each(strip),
+            Value::Object(map) => {
+                map.retain(|k, _| !k.ends_with("span"));
+                map.values_mut().for_each(strip);
+            }
+            _ => {}
+        }
+    }
+    let mut json = serde_json::to_value(stmts).map_err(|e| e.to_string())?;
+    strip(&mut json);
+    Ok(json)
+}
+
 /// Find a top-level call `name(...)` written as its own statement, returning the
 /// source span covering the whole call expression — from the function name
 /// through the closing parenthesis. Returns the first such call in source order,
@@ -530,11 +568,11 @@ mod tests {
         // node (leading trivia of its first token); the splice must keep it
         // around the new subtree rather than dropping it with the old node.
         let out = tree_replaced(
-            "x = 1\n    layout(editor()) // note\n",
+            "    x = 1\n    layout(editor()) // note\n",
             "layout",
             "layout(editor(\"a.rs\"))",
         );
-        assert_eq!(out, "x = 1\n    layout(editor(\"a.rs\")) // note\n");
+        assert_eq!(out, "    x = 1\n    layout(editor(\"a.rs\")) // note\n");
     }
 
     #[test]

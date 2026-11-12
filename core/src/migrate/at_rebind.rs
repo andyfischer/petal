@@ -70,7 +70,7 @@ pub(super) fn plan_at_rebind_fixes(source: &str) -> Result<Vec<Fix>, String> {
     }
     let chars: Vec<char> = source.chars().collect();
     let blanked = blank(&chars, &markers);
-    let (_tree, stmts) = crate::rewrite::parse_ast(&blanked)
+    let (_tree, stmts, _by_end) = crate::rewrite::parse_ast_or_by_end(&blanked)
         .map_err(|e| format!("cannot read the `@` rebinds in this file: {e}"))?;
 
     let mut p = Planner {

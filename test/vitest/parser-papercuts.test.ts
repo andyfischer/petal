@@ -131,17 +131,17 @@ describe("scientific notation floats", () => {
   });
 });
 
-describe("unclosed `if` diagnostic", () => {
-  it("names where the unclosed if started", () => {
-    const src = "fn rr(a, b, c, d)\n  print(a)\nend\nlet q = true\nrr(1, 9, if q then 2 else 3, if q then 4 else 5)";
-    const err = runPetalError(src);
-    expect(err).toContain("started at line 5 column 10");
-    expect(err).toContain("expected `end`");
+describe("an inline `if` with no `end`", () => {
+  // Indentation closes blocks and `end` is optional, so an `if` among a
+  // call's arguments ends at the `,` or the `)` (docs/syntax/indentation.md).
+  // Before that, these two were the "is unclosed; expected `end`" errors.
+  it("ends at the argument separator", () => {
+    const src = "fn rr(a, b, c, d)\n  print(a, b, c, d)\nend\nlet q = true\nrr(1, 9, if q then 2 else 3, if q then 4 else 5)";
+    expect(runPetal(src).trim()).toBe("1 9 2 4");
   });
 
-  it("names the unclosed if with no else branch", () => {
-    const err = runPetalError('let q = true\nprint(if q then 1)');
-    expect(err).toContain("is unclosed; expected `end`");
+  it("ends at the closing paren, with no else branch", () => {
+    expect(runPetal('let q = true\nprint(if q then 1)').trim()).toBe("1");
   });
 
   it("a closed inline if still parses", () => {

@@ -136,7 +136,8 @@ fn compiled_before(rule: &str, src: &str) -> bool {
 /// text on lines that start with `if (` or hold a `#`) read the way it was
 /// before `else if` was one token.
 fn nested_today(src: &str) -> String {
-    src.lines()
+    let broken = src
+        .lines()
         .map(|l| {
             if l.starts_with("if (") || l.contains('#') {
                 l.to_string()
@@ -146,7 +147,10 @@ fn nested_today(src: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
-        + "\n"
+        + "\n";
+    // The `if` and the lines under it are now one level short of where a
+    // nested block sits; the formatter indents the file by its `end`s.
+    petal::fmt::format_source(&broken).unwrap_or(broken)
 }
 
 fn run_out(src: &str) -> Vec<String> {
@@ -599,12 +603,13 @@ fn a_nested_else_if_is_a_stray_end_error_that_names_the_tool() {
         assert!(err.contains("run `petal migrate-old-code` [else-if-nesting]"), "{err}");
         assert!(err.contains(at), "{err}");
     }
-    // Inside a function the surplus `end` closes the function early; the
-    // hint still names the line of the `end` that did it.
+    // Inside a function the surplus `end` would close the function, and does
+    // not line up with it: the error is at that `end`, with the hint.
     let src = "fn f(a)\n  if a > 1 then\n    1\n  else if a > 0 then\n    2\n  end\n  end\n  3\nend\n";
     let err = env.load_program(src).err().expect("an `end` too many").to_string();
     assert!(err.contains("if the `end` at line 7 closed"), "{err}");
-    assert!(err.contains("[line 9, column 1]"), "{err}");
+    assert!(err.contains("does not line up with the `fn` block opened at line 1"), "{err}");
+    assert!(err.contains("[line 7, column 3]"), "{err}");
     // An unrelated surplus `end` gets no such hint.
     let err = env.load_program("let a = 1\nend\n").err().expect("stray end").to_string();
     assert!(!err.contains("else if"), "{err}");

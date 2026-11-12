@@ -812,7 +812,7 @@ mod tests {
     #[test]
     fn whitespace_and_comments_are_ignored() {
         let a = "let x = 1\nlet y = x + 2\nprint(y)\n";
-        let b = "\n// a comment\nlet x   =  1\n\n    let y = x + 2   // trailing\nprint(y)\n";
+        let b = "\n// a comment\nlet x   =  1\n\nlet y  =  x + 2   // trailing\nprint( y )\n";
         assert!(equiv(a, b).is_ok(), "{:?}", equiv(a, b).unwrap_err());
     }
 

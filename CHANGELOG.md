@@ -12,6 +12,48 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **Indentation delimits blocks, and `end` is optional.** A block starts
+  after its opener (`then`, `else`, `do`, the `->` of a `match` arm, the
+  header of a `fn`, `class`, `enum` or `match`) and ends where the
+  indentation ends. A line break after the opener starts an indented block,
+  whose statements share one column; code on the opener's line is a one-line
+  body that runs to the end of the line (`fn double(x) x * 2`,
+  `let s = if c then "a" else "b"`). `end` still closes the innermost open
+  block. On a line of its own it must sit at the column of the line that
+  opened the block; on the last statement's line it closes a one-liner as
+  before. See [docs/syntax/indentation.md](docs/syntax/indentation.md).
+
+  Code whose indentation agrees with its `end`s parses exactly as it did
+  (checked over every `.ptl` of the five projects against the parser from
+  before the change). Code whose indentation disagrees with them is now a
+  parse error, never a different program: "expected an indented block after
+  `then`", "unexpected indent", "this line is indented less than its block,
+  but more than the enclosing one", "`end` at column 4 does not line up with
+  the `for` block opened at line 14 (column 3)". **Run `petal fmt`** on such a
+  file: it reads the file by its `end`s and indents it by them. Other
+  changes that follow from the rule:
+  - A tab in the indentation of a statement is an error (a tab in front of a
+    line that only continues a bracket or an expression is not).
+  - `if c then a; b` with no `end` is an error (the `;` could end the body or
+    continue it); `if c then a; b end` is unchanged.
+  - A line that starts with `-`, indented under the line it was meant to
+    continue, was a separate statement with a warning and is now an
+    "unexpected indent" error with the same advice.
+  - A snippet indented as a whole keeps working: the first statement sets
+    the left margin. A snippet whose first line is flush and whose other
+    lines are indented (a host-language string that starts at the quote) does
+    not.
+  - "… is unclosed; expected `end`" is gone: a block with no `end` is closed
+    by its indentation.
+
+  `petal fmt` does not lay out blocks without an `end` yet: where its
+  indentation pass would change what such a file means, it refuses the file
+  and says so. Embedder API: `Parser::by_end()` and
+  `cst::parse_source_by_end` read source the old way (every block to its
+  `end`), for tools that repair old files; `Lexer::token_first_on_line` and
+  `Lexer::token_tab_indented` are new, and `Parser::with_tab_indentation`
+  takes the latter. docs/tasks/pythonic-syntax.md, P3.
+
 - **`else if` continues an `if` chain; `elsif` is deprecated.** `else` and
   `if` on one line (only spaces or tabs between them) are now one keyword,
   which continues the chain exactly as `elsif` did: one `end` closes the whole

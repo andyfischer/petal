@@ -148,7 +148,8 @@ fn directive_word_reads_the_first_word() {
 /// The AST of `src` as `show-ast` prints it, without positions — what must
 /// survive formatting.
 fn ast_shape(src: &str) -> String {
-    let (_tree, stmts) = crate::rewrite::parse_ast(src).unwrap();
+    // The input of a formatting test may be indented against its `end`s.
+    let (_tree, stmts, _by_end) = crate::rewrite::parse_ast_or_by_end(src).unwrap();
     crate::ast_display::display_stmts(&stmts)
         .lines()
         .map(|line| line.split(" @").next().unwrap_or(line))
@@ -260,14 +261,12 @@ print(f(Kind.all[0], Op.gift(1)), Kind.from("park").shape)
     assert_eq!(fmt(&out), out, "not a fixed point");
     assert_eq!(ast_shape(&out), ast_shape(src), "formatting changed the AST");
 
-    use crate::ir_equiv::{compile_for_compare, ir_equivalent};
-    let (env_a, pid_a) = compile_for_compare(src, &[], None).unwrap();
-    let (env_b, pid_b) = compile_for_compare(&out, &[], None).unwrap();
-    ir_equivalent(
-        env_a.get_program(pid_a).unwrap(),
-        env_b.get_program(pid_b).unwrap(),
-    )
-    .unwrap();
+    // The input is indented against its `end`s, which the language rejects
+    // (indentation delimits blocks): only the formatted text compiles. The
+    // AST comparison above is what holds the two to one program.
+    use crate::ir_equiv::compile_for_compare;
+    assert!(compile_for_compare(src, &[], None).is_err());
+    compile_for_compare(&out, &[], None).unwrap();
 }
 
 /// The safety property, over every `.ptl` in the repo: formatting leaves the
@@ -419,4 +418,22 @@ fn annotations_keep_their_lines() {
     assert_eq!(fmt(src), want);
     assert_eq!(fmt(want), want);
     assert_eq!(ast_shape(src), ast_shape(want));
+}
+
+/// Indentation delimits blocks, so re-indenting is no longer free: the
+/// output must be the program the input was.
+#[test]
+fn a_block_closed_by_indentation_is_laid_out_the_same_or_refused() {
+    // Already in canonical layout: unchanged.
+    let src = "fn f(c)\n  if c then\n    print(1)\n  print(2)\nprint(f(true))\n";
+    match format_source(src) {
+        Ok(out) => assert_eq!(ast_shape(&out), ast_shape(src), "{out}"),
+        Err(e) => assert!(e.contains("cannot yet lay out"), "{e}"),
+    }
+    // Spacing only: the same program, respaced.
+    let src = "fn f(c)\n  if c then\n    print( 1 )\n  print(2)\nprint(f(true))\n";
+    match format_source(src) {
+        Ok(out) => assert_eq!(ast_shape(&out), ast_shape(src), "{out}"),
+        Err(e) => assert!(e.contains("cannot yet lay out"), "{e}"),
+    }
 }

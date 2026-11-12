@@ -3502,17 +3502,17 @@ mod tests {
         assert!(warns("fn f(a: num) a end\nf(1)\nf(2.5)").is_empty());
         assert_eq!(warns("fn f(a: num) a end\nf(\"hi\")").len(), 1);
 
-        assert!(warns("fn f() -> num\n1\nend").is_empty());
-        assert_eq!(warns("fn f() -> num\n\"hi\"\nend").len(), 1);
+        assert!(warns("fn f() -> num\n  1\nend").is_empty());
+        assert_eq!(warns("fn f() -> num\n  \"hi\"\nend").len(), 1);
     }
 
     /// `num` widens; it never narrows. Passing one to an `int` slot needs the
     /// explicit cast, or the checker would be sanctioning an implicit one.
     #[test]
     fn a_num_does_not_fill_an_int_slot_without_a_cast() {
-        let src = "fn takes_int(a: int) a end\nfn f(n: num)\ntakes_int(n)\nend";
+        let src = "fn takes_int(a: int) a end\nfn f(n: num)\n  takes_int(n)\nend";
         assert_eq!(warns(src).len(), 1, "{:?}", warns(src));
-        let cast = "fn takes_int(a: int) a end\nfn f(n: num)\ntakes_int(int(n))\nend";
+        let cast = "fn takes_int(a: int) a end\nfn f(n: num)\n  takes_int(int(n))\nend";
         assert!(warns(cast).is_empty(), "{:?}", warns(cast));
     }
 

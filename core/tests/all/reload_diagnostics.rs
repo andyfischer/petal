@@ -53,7 +53,8 @@ fn a_reload_reports_the_warning_the_edit_introduced_and_not_the_standing_one() {
 fn double(x: int) x end
 let a = double(\"one\")
 let drag = 4
-  - 1
+drag
+- 1
 print(drag)
 ";
     let report = env.reload_program(sid, edited, None).expect("reload");
@@ -62,11 +63,11 @@ print(drag)
     assert_eq!(report.new_diagnostics.len(), 1, "{:?}", report.new_diagnostics);
     let new = &report.new_diagnostics[0];
     assert_eq!(new.severity, Severity::Warning);
-    assert_eq!(new.span.start.line, 6);
+    assert_eq!(new.span.start.line, 7);
     let text = env.render_diagnostics(pid, &report.new_diagnostics);
     assert!(text.starts_with("warning: "), "{text}");
-    assert!(text.contains("[line 6, column"), "{text}");
-    assert!(text.contains("  - 1"), "{text}");
+    assert!(text.contains("[line 7, column"), "{text}");
+    assert!(text.contains("- 1"), "{text}");
     assert!(!text.contains("double"), "the standing warning is not repeated: {text}");
 
     // Saving again with nothing new says nothing.

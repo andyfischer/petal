@@ -116,7 +116,7 @@ mod tests {
             "fn f(tunable) tunable end\n",
             "let g = fn(rigid) rigid end\n",
             "for tunable in [1] do print(tunable) end\n",
-            "fn f() let tunable = 2\n tunable end\n",
+            "fn f()\n  let tunable = 2\n  tunable\nend\n",
         ] {
             let errs = errors(src);
             assert_eq!(errs.len(), 1, "{src:?}: {errs:?}");

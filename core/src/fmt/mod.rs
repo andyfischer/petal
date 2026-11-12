@@ -62,8 +62,12 @@ pub const ON: &str = "petal-fmt-on";
 /// such a file) and — a formatter bug, not a user error — when the result
 /// would not lex to the same tokens.
 pub fn format_source(source: &str) -> Result<String, String> {
-    // Parsed first: nothing is written for a file that does not parse.
-    crate::rewrite::parse_ast(source)?;
+    // Parsed first: nothing is written for a file that does not parse. A
+    // file from before indentation delimited blocks may be indented in a way
+    // that disagrees with its `end`s; it is read by its `end`s, the passes
+    // below derive the indentation from them, and the result must then be
+    // the same program to the language's own parser.
+    let (_tree, stmts, by_end) = crate::rewrite::parse_ast_or_by_end(source)?;
     let directives = Directives::scan(source)?;
     if directives.ignore_file {
         return Ok(source.to_string());
@@ -102,8 +106,41 @@ pub fn format_source(source: &str) -> Result<String, String> {
             after.get(at)
         ));
     }
+    // The same tokens are no longer the same program: indentation delimits
+    // blocks, so the indentation pass can move a statement out of its block.
+    // The output must parse to the AST the input did. (Skipped when nothing
+    // changed; a pass that only respaced inside lines still pays for it.)
+    if by_end || output != source {
+        let (_tree, after) = crate::rewrite::parse_ast(&output).map_err(|e| {
+            if by_end {
+                format!(
+                    "the indentation of this file disagrees with its `end`s, and indenting \
+                     it by its `end`s did not make it parse ({e})"
+                )
+            } else {
+                format!("{NO_END_YET} (the formatted text no longer parses: {e})")
+            }
+        })?;
+        if crate::rewrite::ast_shape(&stmts)? != crate::rewrite::ast_shape(&after)? {
+            return Err(if by_end {
+                "fmt bug: re-indenting a file by its `end`s changed its parse — refusing to \
+                 produce output"
+                    .to_string()
+            } else {
+                format!("{NO_END_YET} (formatting would change what the file means)")
+            });
+        }
+    }
     Ok(output)
 }
+
+/// The indentation pass derives a block's extent from its `end`
+/// ([`reindent`]). A block closed by its indentation alone has none, so the
+/// pass can lay it out wrongly; the AST gate catches that, and this is what
+/// the refusal says.
+const NO_END_YET: &str = "`petal fmt` cannot yet lay out this file: it indents a block by its \
+                          `end`, and a block here is closed by its indentation alone. Nothing \
+                          was changed";
 
 /// The tokens of `source`, with every run of `Newline`s collapsed to one and
 /// none at either end: blank lines are layout, a line break is not.

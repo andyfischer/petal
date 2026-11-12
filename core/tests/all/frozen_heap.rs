@@ -133,22 +133,22 @@ fn writing_through_a_cell_that_holds_a_frozen_value_copies() {
 #[test]
 fn writes_after_freezing_an_owned_cell_copy() {
     expect_both(
-        "fn build()\n\
-           var xs = [[0]]\n\
-           freeze(xs)\n\
-           set xs = append(xs, [1, 2])\n\
-           set xs[0] = [5]\n\
-           var r = { tags: [1] }\n\
-           freeze(r)\n\
-           set r.tags = [2, 3]\n\
-           var a = set_at(f64_array(2), 0, 1.5)\n\
-           freeze(a)\n\
-           set a[1] = 2.5\n\
-           print(frozen(xs), frozen(r), frozen(a))\n\
+        "fn build()\n  \
+           var xs = [[0]]\n  \
+           freeze(xs)\n  \
+           set xs = append(xs, [1, 2])\n  \
+           set xs[0] = [5]\n  \
+           var r = { tags: [1] }\n  \
+           freeze(r)\n  \
+           set r.tags = [2, 3]\n  \
+           var a = set_at(f64_array(2), 0, 1.5)\n  \
+           freeze(a)\n  \
+           set a[1] = 2.5\n  \
+           print(frozen(xs), frozen(r), frozen(a))\n  \
            [xs, r, a]\n\
          end\n\
          let kept = build()\n\
-         for i in range(0, 20000) do\n\
+         for i in range(0, 20000) do\n  \
            let junk = [i, \"junk \" ++ str(i)]\n\
          end\n\
          print(kept)\n",
@@ -162,11 +162,11 @@ fn writes_after_freezing_an_owned_cell_copy() {
 fn a_loop_growing_from_a_frozen_seed_leaves_the_seed_alone() {
     expect_both(
         "let seed = freeze([0])\n\
-         fn grow(xs, n)\n\
-           var out = xs\n\
-           for i in range(1, n) do\n\
-             set out = append(out, i)\n\
-           end\n\
+         fn grow(xs, n)\n  \
+           var out = xs\n  \
+           for i in range(1, n) do\n    \
+             set out = append(out, i)\n  \
+           end\n  \
            out\n\
          end\n\
          let big = grow(seed, 500)\n\

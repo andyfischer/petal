@@ -690,12 +690,12 @@ mod tests {
         // The existing call is flexible about layout: leading indentation and a
         // trailing comment are trivia around the call node and survive the edit.
         let out = apply(
-            "// user config\nx = 1\n    set_color_scheme(\"light\") // was light\ny = 2\n",
+            "    // user config\n    x = 1\n    set_color_scheme(\"light\") // was light\n    y = 2\n",
             &[Goal::should_call("set_color_scheme", ["dracula"])],
         );
         assert_eq!(
             out,
-            "// user config\nx = 1\n    set_color_scheme(\"dracula\") // was light\ny = 2\n"
+            "    // user config\n    x = 1\n    set_color_scheme(\"dracula\") // was light\n    y = 2\n"
         );
     }
 

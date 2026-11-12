@@ -179,10 +179,99 @@ pub struct Parser {
     /// True while [`Parser::parse_program`] is about to parse a statement of
     /// the file's top level — the only place a test block may be written.
     at_top_level: bool,
+    /// Whether each token is the first on its line
+    /// ([`crate::lexer::first_on_line`]). Layout is measured at these tokens
+    /// only.
+    first_on_line: Vec<bool>,
+    /// For each token, the column of the first token of its line: the
+    /// *indent* of the line. A token after a string that spans lines carries
+    /// the indent of the line the string began on.
+    line_indent: Vec<u32>,
+    /// For each token, how many `(`, `[` and `{` are open in front of it. An
+    /// `end` on a line of its own can only close a construct that began at
+    /// its own depth.
+    depth: Vec<u32>,
+    /// The constructs whose bodies are being parsed, outermost first. An
+    /// `end` on its own line that sits left of the innermost one is checked
+    /// against the rest (see [`Parser::end_is_ours`]).
+    open: Vec<OpenBlock>,
+    /// How many string interpolation holes (`"… {here} …"`) enclose the
+    /// cursor.
+    interp_holes: usize,
+    /// Whether indentation delimits blocks. Off only in the reading of
+    /// [`Parser::by_end`].
+    layout: bool,
+    /// For each token, whether the indentation of its line holds a tab
+    /// ([`Parser::with_tab_indentation`]). Empty when the caller did not
+    /// say, which reads every line as indented with spaces.
+    tab_line: Vec<bool>,
+    /// The index of the first token that is not a line break.
+    first_code: usize,
+    /// Set for the second reading of [`Parser::parse_program`]: the column
+    /// the first line is read at.
+    first_line_margin: Option<u32>,
+}
+
+/// A construct with a body, while that body is being parsed.
+#[derive(Debug, Clone, Copy)]
+struct OpenBlock {
+    /// The token the construct starts at (`if`, `for`, `fn`, `match`, …). The
+    /// indent of its line is the construct's *statement indent*: the column
+    /// its `end` must sit at, and the column its body must be indented past.
+    head: usize,
+    /// The keyword a diagnostic names it by.
+    name: &'static str,
+}
+
+/// Which closing keywords a body may stop at, and whose they are.
+#[derive(Debug, Clone, Copy)]
+enum Closers {
+    /// The body of the construct that starts at `head`: an `end` closes that
+    /// construct, and with `or_else` an `else` / `else if` continues it.
+    /// `clause` is the keyword the body's own clause starts at (the `if`,
+    /// an `else if`, the `else`).
+    Own { head: usize, clause: usize, or_else: bool },
+    /// The body of a `when … ->` arm of the `match` that starts at `head`:
+    /// the next `when` and the `end` belong to the match. `arm_col` is the
+    /// column its arms sit at when they are on lines of their own under the
+    /// header, and `None` when the first arm shares the header's line.
+    Arm { head: usize, arm_col: Option<u32> },
+}
+
+/// A `;` that separated two statements of a one-line body: where it is, and
+/// the opener of that body. An error when the construct is not closed by an
+/// `end` (B3 of docs/tasks/pythonic-syntax.md).
+type Semi = Option<(usize, &'static str)>;
+
+/// A parsed body.
+struct Body {
+    stmts: Vec<Stmt>,
+    semi: Semi,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>, token_spans: Vec<SourceSpan>) -> Self {
+        let first_on_line = crate::lexer::first_on_line(&tokens, &token_spans);
+        let first_code = tokens
+            .iter()
+            .position(|t| !matches!(t, Token::Newline))
+            .unwrap_or(tokens.len());
+        let mut line_indent = Vec::with_capacity(tokens.len());
+        let mut depth = Vec::with_capacity(tokens.len());
+        let (mut indent, mut open) = (1u32, 0u32);
+        for (i, tok) in tokens.iter().enumerate() {
+            if first_on_line[i] {
+                indent = token_spans[i].start.column;
+            }
+            line_indent.push(indent);
+            if matches!(tok, Token::RParen | Token::RBracket | Token::RBrace) {
+                open = open.saturating_sub(1);
+            }
+            depth.push(open);
+            if matches!(tok, Token::LParen | Token::LBracket | Token::LBrace) {
+                open += 1;
+            }
+        }
         Self {
             tokens,
             token_spans,
@@ -193,7 +282,48 @@ impl Parser {
             else_if_second_end: None,
             test_titles: Vec::new(),
             at_top_level: false,
+            first_on_line,
+            line_indent,
+            depth,
+            open: Vec::new(),
+            interp_holes: 0,
+            layout: true,
+            tab_line: Vec::new(),
+            first_code,
+            first_line_margin: None,
         }
+    }
+
+    /// Tell the parser which lines are indented with a tab:
+    /// [`crate::lexer::Lexer::token_tab_indented`], parallel to the tokens.
+    /// A block is measured in columns and a tab has no agreed width, so a
+    /// line whose indentation holds one is an error wherever its column
+    /// decides something (B11): the statements of a block, an `end` or an
+    /// `else` on a line of its own, the line that opens a block. A line that
+    /// only continues a bracket or an expression may hold what it likes.
+    pub fn with_tab_indentation(mut self, tab_indented: &[bool]) -> Self {
+        let mut on_line = false;
+        self.tab_line = (0..self.tokens.len())
+            .map(|i| {
+                if self.first_on_line[i] {
+                    on_line = tab_indented.get(i).copied().unwrap_or(false);
+                }
+                on_line
+            })
+            .collect();
+        self
+    }
+
+    /// Read the source the way it was read before indentation delimited
+    /// blocks: every block runs to its `end`, which is required, and columns
+    /// mean nothing. For the tools that repair source written that way
+    /// whose indentation disagrees with its `end`s (`petal fmt`, which
+    /// derives the indentation from the `end`s, and `petal migrate-old-code`).
+    /// Nothing compiles this parse: for source both readings accept, they are
+    /// the same parse (docs/tasks/pythonic-syntax.md §5.1).
+    pub fn by_end(mut self) -> Self {
+        self.layout = false;
+        self
     }
 
     /// The tokens and their spans, given back when parsing is done.
@@ -225,10 +355,100 @@ impl Parser {
     }
 
     pub fn parse_program(&mut self) -> Result<Vec<Stmt>, String> {
+        let first = match self.parse_program_once() {
+            Ok(stmts) => return Ok(stmts),
+            Err(e) => e,
+        };
+        // Source held in a host-language string often starts at the opening
+        // quote, with every later line indented to the host code:
+        //
+        //     run("import vec2
+        //          let v = vec3(1, 2, 3)
+        //          print(v)")
+        //
+        // Read as written, the second line is an unexpected indent. When
+        // every later line sits right of the first, the first line is read
+        // as sitting at their margin instead. At most one of the two
+        // readings parses: the first line either opens a block (and the
+        // lines under it are that block) or does not.
+        let Some(margin) = self.hosted_margin() else {
+            return Err(first);
+        };
+        self.restart();
+        self.first_line_margin = Some(margin);
+        // Everything up to the next line start hangs off the first line.
+        for i in self.first_code..self.tokens.len() {
+            if i > self.first_code && self.first_on_line[i] {
+                break;
+            }
+            self.line_indent[i] = margin;
+        }
+        self.parse_program_once().map_err(|second| {
+            // Report the reading that got further.
+            let line_of = |e: &str| {
+                e.rfind("[line ")
+                    .and_then(|at| e[at + 6..].split(',').next()?.parse::<u32>().ok())
+                    .unwrap_or(0)
+            };
+            if line_of(&second) > line_of(&first) { second } else { first }
+        })
+    }
+
+    /// The column the first line is read at when the source looks like a
+    /// host-language string that starts at its quote (see
+    /// [`Parser::parse_program`]): the leftmost column a later line starts
+    /// at, when that is right of the first token's. `None` otherwise.
+    fn hosted_margin(&self) -> Option<u32> {
+        if !self.layout || self.first_line_margin.is_some() {
+            return None;
+        }
+        let first = self.token_spans.get(self.first_code)?;
+        let later = (self.first_code + 1..self.tokens.len())
+            .filter(|&i| self.first_on_line[i])
+            .map(|i| self.token_spans[i].start.column)
+            .min()?;
+        (later > first.start.column).then_some(later)
+    }
+
+    /// Back to the first token, for a second reading of the same tokens.
+    fn restart(&mut self) {
+        self.pos = 0;
+        self.events = EventBuilder::new();
+        self.pending_optional = false;
+        self.arrow_lambda_end = None;
+        self.else_if_second_end = None;
+        self.test_titles.clear();
+        self.at_top_level = false;
+        self.open.clear();
+        self.interp_holes = 0;
+    }
+
+    fn parse_program_once(&mut self) -> Result<Vec<Stmt>, String> {
         let mut stmts = Vec::new();
         self.skip_newlines();
+        // The first statement's column is the program's left margin, so a
+        // snippet indented as a whole (in a host-language string, a Markdown
+        // fence, a paste) reads as it would at column 1.
+        let margin = self.column_of(self.pos);
         while !self.is_at_end() {
             let stmt_pos = self.pos;
+            if self.layout && self.is_first_on_line(stmt_pos) {
+                self.no_tab(stmt_pos)?;
+                let col = self.column_of(stmt_pos);
+                if col > margin {
+                    return Err(self.unexpected_indent(stmt_pos, margin));
+                }
+                if col < margin {
+                    return Err(self.error_at(
+                        stmt_pos,
+                        format!(
+                            "this line is indented less than the first line of the program \
+                             (column {col}, and the program starts at column {margin}): \
+                             top-level statements share one left margin"
+                        ),
+                    ));
+                }
+            }
             self.at_top_level = true;
             let stmt = self.parse_stmt()?;
             // Imports must come before any other statement: resolution runs
@@ -401,9 +621,10 @@ impl Parser {
 
     /// Can this token begin a statement? Tokens that cannot (a closing
     /// delimiter, a separator, a keyword that only ever continues a construct)
-    /// end a block instead of being fed to `parse_stmt`, so the *enclosing*
-    /// construct reports what is unfinished. See
-    /// [`Parser::expect_block_end`].
+    /// end a block instead of being fed to `parse_stmt`: the closing bracket
+    /// of a call ends a block lambda written in it, and otherwise the
+    /// *enclosing* construct reports what is unfinished. See
+    /// [`Parser::ends_body`].
     fn can_start_stmt(tok: &Token) -> bool {
         !matches!(
             tok,
@@ -422,34 +643,540 @@ impl Parser {
         )
     }
 
-    /// Consume the `end` that closes a block opened by the token at
-    /// `opener_pos`. When it is missing, name where the unclosed construct
-    /// *started* — the token the parser stopped on is usually a comma or a
-    /// paren many lines later (or the end of the file), which tells the
-    /// reader nothing:
+    // ---- Layout ----
+    //
+    // Blocks are closed by indentation, and `end` is an optional closer
+    // (docs/tasks/pythonic-syntax.md §3.1). The lexer knows nothing of it:
+    // tokens carry their position, and the parser measures a body's column
+    // where a block opener is followed by a line break. Three things close a
+    // block: a line that starts left of the block, a closing bracket or
+    // separator of an enclosing construct, and an `end`.
+
+    /// The column `pos` starts at (1-based); 0 past the last token. The
+    /// first token of a source read as a host string's is at the margin of
+    /// the lines after it (see [`Parser::parse_program`]).
+    fn column_of(&self, pos: usize) -> u32 {
+        match self.first_line_margin {
+            Some(margin) if pos == self.first_code => margin,
+            _ => self.token_spans.get(pos).map_or(0, |s| s.start.column),
+        }
+    }
+
+    fn is_first_on_line(&self, pos: usize) -> bool {
+        self.first_on_line.get(pos).copied().unwrap_or(false)
+    }
+
+    /// Refuse to measure the line `pos` is on when its indentation holds a
+    /// tab (see [`Parser::with_tab_indentation`]).
+    fn no_tab(&self, pos: usize) -> Result<(), String> {
+        if !self.tab_line.get(pos).copied().unwrap_or(false) {
+            return Ok(());
+        }
+        let mut first = pos;
+        while first > 0 && !self.first_on_line[first] {
+            first -= 1;
+        }
+        Err(self.error_at(
+            first,
+            "a tab in the indentation of this line: indent with spaces (indentation delimits \
+             blocks, and a tab has no fixed width)"
+                .to_string(),
+        ))
+    }
+
+    /// The indent of the line `pos` is on: the *statement indent* of a
+    /// construct that starts at `pos`.
+    fn indent_of(&self, pos: usize) -> u32 {
+        self.line_indent.get(pos).copied().unwrap_or(1)
+    }
+
+    /// The position of the next token that is not a line break (or `;`).
+    fn next_code(&self) -> usize {
+        let mut i = self.pos;
+        while matches!(self.tokens.get(i), Some(Token::Newline)) {
+            i += 1;
+        }
+        i
+    }
+
+    fn token_at(&self, pos: usize) -> &Token {
+        self.tokens.get(pos).unwrap_or(&Token::Eof)
+    }
+
+    /// Is the cursor at the end of a line: a line break (not a `;`, which the
+    /// lexer also spells [`Token::Newline`]) or the end of the input?
+    ///
+    /// Where the lexer drops line breaks (a `{…}` hole among an element's
+    /// children or attributes), the next token being the first on its line
+    /// says the same thing, so a block in a hole is laid out like any other.
+    fn at_line_break(&self) -> bool {
+        match self.peek() {
+            Token::Eof => true,
+            Token::Newline => {
+                let next = self.next_code();
+                self.is_first_on_line(next) || matches!(self.token_at(next), Token::Eof)
+            }
+            _ => self.is_first_on_line(self.pos),
+        }
+    }
+
+    /// The error for the line that starts at token `t`, right of the column
+    /// `block` its block's statements start at.
+    fn unexpected_indent(&self, t: usize, block: u32) -> String {
+        let col = self.column_of(t);
+        let mut message = format!(
+            "unexpected indent: this line starts at column {col}, and the block it is in \
+             starts at column {block}"
+        );
+        // The one operator that does not continue the line above when it
+        // leads a line (see [`Parser::at_binary_op`]).
+        if matches!(self.token_at(t), Token::Minus) {
+            message.push_str(
+                " — a line that starts with `-` is a new statement (a negation), not a \
+                 continuation of the line above. To continue the expression, end the line \
+                 above with the `-`",
+            );
+        }
+        self.error_at(t, message)
+    }
+
+    /// Does this token end the body it is found in, whatever its column? A
+    /// token no statement starts with: a closing bracket or a separator of
+    /// an enclosing construct, or a keyword that closes or continues a
+    /// construct.
+    fn ends_body(tok: &Token) -> bool {
+        !Self::can_start_stmt(tok)
+            || matches!(
+                tok,
+                Token::End | Token::Else | Token::ElseIf | Token::Elsif | Token::When
+            )
+    }
+
+    /// Does the `end` at `t`, the first token of its line, close the
+    /// construct that starts at `head`? It does when it sits at that
+    /// construct's statement indent (B5). Left of it, it is left for an
+    /// enclosing construct, provided one starts at that column; anything
+    /// else is an `end` that lines up with nothing, and is reported here,
+    /// against the innermost construct, rather than wherever the stray
+    /// token would later surface.
+    ///
+    /// Two more columns line up with a construct that hangs off the middle
+    /// of a line: the column of its own keyword, and the column of the line
+    /// its last clause (`clause`: an `else`, an `else if`) starts, as in
     ///
     /// ```text
-    /// f(1, if q then a else b, 2)
-    ///                        ^ "an `if` expression started at line 1 column 6
-    ///                           is unclosed; expected `end`"
+    /// let title = if event == nil then "none"
+    ///     else event.title
+    ///     end
     /// ```
+    fn end_is_ours(&self, t: usize, head: usize, clause: usize) -> Result<bool, String> {
+        let col = self.column_of(t);
+        let indent = self.indent_of(head);
+        if col == indent
+            || col == self.column_of(head)
+            || (self.is_first_on_line(clause) && col == self.column_of(clause))
+        {
+            return Ok(true);
+        }
+        let inner = self.open.iter().rposition(|b| b.head == head);
+        if col < indent {
+            let outer = &self.open[..inner.unwrap_or(self.open.len())];
+            for block in outer.iter().rev() {
+                // An `end` cannot close a construct outside the brackets it
+                // is written in.
+                if self.depth[block.head] < self.depth[t] {
+                    break;
+                }
+                let outer_indent = self.indent_of(block.head);
+                if outer_indent == col {
+                    return Ok(false);
+                }
+                if outer_indent < col {
+                    break;
+                }
+            }
+        }
+        let name = inner.map_or("block", |i| self.open[i].name);
+        let line = self.token_spans.get(head).map_or(0, |s| s.start.line);
+        Err(self.error_at(
+            t,
+            format!(
+                "`end` at column {col} does not line up with the `{name}` block opened at \
+                 line {line} (column {indent})"
+            ),
+        ))
+    }
+
+    /// Is the closing keyword at `t` (`end`, `else`, `else if`, `when`) the
+    /// one the body being parsed stops at? On the line the body is on, it
+    /// is: an inline `end` closes the innermost open block, and an `else`
+    /// binds to the nearest `if`. On a line of its own, its column decides
+    /// (B4, B5). False for any other token.
+    fn closer_is_ours(&self, t: usize, closers: Closers) -> Result<bool, String> {
+        let tok = self.token_at(t);
+        let inline = !self.is_first_on_line(t);
+        let col = self.column_of(t);
+        if !inline && self.is_closing_keyword(t) {
+            self.no_tab(t)?;
+            let (Closers::Own { head, .. } | Closers::Arm { head, .. }) = closers;
+            self.no_tab(head)?;
+        }
+        match (closers, tok) {
+            (Closers::Own { head, clause, .. }, Token::End) => {
+                if inline { Ok(true) } else { self.end_is_ours(t, head, clause) }
+            }
+            (Closers::Arm { head, .. }, Token::End) => {
+                if inline { Ok(true) } else { self.end_is_ours(t, head, head) }
+            }
+            (
+                Closers::Own { head, or_else: true, .. },
+                Token::Else | Token::ElseIf | Token::Elsif,
+            ) => Ok(inline || col >= self.indent_of(head)),
+            (Closers::Arm { head, arm_col }, Token::When) => match arm_col {
+                _ if inline => Ok(true),
+                Some(arm) if col == arm => Ok(true),
+                Some(arm) if col > arm => {
+                    Err(self.unexpected_indent(t, arm))
+                }
+                Some(arm) => {
+                    let indent = self.indent_of(head);
+                    if col > indent {
+                        return Err(self.error_at(t, partial_dedent_message(col, arm, indent)));
+                    }
+                    Ok(false)
+                }
+                None => Ok(col >= self.indent_of(head)),
+            },
+            // A `match` has no `else` arm; the match says so.
+            (Closers::Arm { arm_col, .. }, Token::Else | Token::ElseIf | Token::Elsif) => {
+                Ok(inline || arm_col.is_some_and(|arm| col >= arm))
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// Parse the body that follows a block opener (`then`, `else`, `do`, the
+    /// `->` of an arm, the header of a `fn`), the cursor just past it.
     ///
-    /// `what` is the construct with its article: ``an `if` expression``,
-    /// ``a `fn` declaration``.
-    fn expect_block_end(&mut self, opener_pos: usize, what: &str) -> Result<(), String> {
+    /// - **Code on the opener's line** is a one-line body: statements to the
+    ///   end of the line, or to a token that ends a body. It extends as far
+    ///   as the expression grammar reaches (B1), so `if c then 1 else 2 + 3`
+    ///   is `else (2 + 3)`.
+    /// - **A line break** opens a block: the next code line must be indented
+    ///   past the indent of the line `clause` is on (the keyword that
+    ///   starts this clause: `if`, `else`, `for`, `when`, `fn`, …). Its
+    ///   column is the block's; every statement starts at that column, and
+    ///   the block ends at the first line left of it.
+    ///
+    /// The closer is not consumed. When the body stops at a closing keyword
+    /// that is this construct's ([`Parser::closer_is_ours`]), the line breaks
+    /// in front of it are consumed and the cursor is on it; otherwise the
+    /// cursor stays at the end of the body's last statement, so a construct
+    /// with no `end` spans exactly its own tokens.
+    fn parse_body(
+        &mut self,
+        clause: usize,
+        opener: &'static str,
+        closers: Closers,
+        name: &'static str,
+    ) -> Result<Body, String> {
+        if !self.layout {
+            return self.parse_body_by_end(closers);
+        }
+        if let Closers::Own { head, .. } = closers {
+            self.open.push(OpenBlock { head, name });
+        }
+        let body = if self.at_line_break() {
+            self.parse_block_body(clause, opener, closers)
+        } else {
+            self.parse_inline_body(opener, closers)
+        };
+        if matches!(closers, Closers::Own { .. }) {
+            self.open.pop();
+        }
+        body
+    }
+
+    /// [`Parser::parse_body`] in the reading of [`Parser::by_end`]:
+    /// statements up to the closing keyword, wherever they sit.
+    fn parse_body_by_end(&mut self, closers: Closers) -> Result<Body, String> {
+        let stops = |tok: &Token| match (closers, tok) {
+            (_, Token::End) => true,
+            (Closers::Own { or_else, .. }, Token::Else | Token::ElseIf | Token::Elsif) => or_else,
+            (Closers::Arm { .. }, Token::When | Token::Else | Token::ElseIf | Token::Elsif) => true,
+            _ => false,
+        };
+        let mut stmts = Vec::new();
+        self.skip_newlines();
+        self.ev_open(SyntaxKind::Block);
+        while Self::can_start_stmt(self.peek()) && !stops(self.peek()) {
+            stmts.push(self.parse_stmt()?);
+            self.skip_newlines();
+        }
+        self.ev_close();
+        Ok(Body { stmts, semi: None })
+    }
+
+    fn parse_block_body(
+        &mut self,
+        clause: usize,
+        opener: &'static str,
+        closers: Closers,
+    ) -> Result<Body, String> {
+        let indent = self.indent_of(clause);
+        let first = self.next_code();
+        let mut stmts = Vec::new();
+        self.no_tab(clause)?;
+        if Self::ends_body(self.token_at(first)) {
+            // No statements. Legal when the construct is closed right here
+            // (`fn noop()` / `end`, `if c then` / `else`); an arm reports
+            // its own empty body.
+            let ours = self.closer_is_ours(first, closers)?;
+            if !ours && !matches!(closers, Closers::Arm { .. }) {
+                return Err(self.error_at(first, missing_block_message(opener, indent)));
+            }
+            if ours {
+                self.skip_newlines();
+            }
+            self.ev_open(SyntaxKind::Block);
+            self.ev_close();
+            return Ok(Body { stmts, semi: None });
+        }
+        let block = self.column_of(first);
+        if block <= indent {
+            if matches!(closers, Closers::Arm { .. }) {
+                self.ev_open(SyntaxKind::Block);
+                self.ev_close();
+                return Ok(Body { stmts, semi: None });
+            }
+            return Err(self.error_at(first, missing_block_message(opener, indent)));
+        }
+        self.skip_newlines();
+        self.ev_open(SyntaxKind::Block);
+        loop {
+            let t = self.next_code();
+            if Self::ends_body(self.token_at(t)) {
+                if self.closer_is_ours(t, closers)? {
+                    self.skip_newlines();
+                } else if self.is_first_on_line(t) {
+                    // A closing keyword that is not ours ends the block like
+                    // any other line: by its column.
+                    let col = self.column_of(t);
+                    if col > indent && col < block && self.is_closing_keyword(t) {
+                        return Err(self.error_at(t, partial_dedent_message(col, block, indent)));
+                    }
+                }
+                break;
+            }
+            if self.is_first_on_line(t) {
+                self.no_tab(t)?;
+                let col = self.column_of(t);
+                if col > block {
+                    return Err(self.unexpected_indent(t, block));
+                }
+                if col < block {
+                    if col > indent {
+                        return Err(self.error_at(t, partial_dedent_message(col, block, indent)));
+                    }
+                    break;
+                }
+            }
+            self.skip_newlines();
+            stmts.push(self.parse_stmt()?);
+        }
+        self.ev_close();
+        Ok(Body { stmts, semi: None })
+    }
+
+    fn is_closing_keyword(&self, t: usize) -> bool {
+        matches!(
+            self.token_at(t),
+            Token::End | Token::Else | Token::ElseIf | Token::Elsif | Token::When
+        )
+    }
+
+    fn parse_inline_body(&mut self, opener: &'static str, closers: Closers) -> Result<Body, String> {
+        let mut stmts = Vec::new();
+        let mut semi = None;
+        self.ev_open(SyntaxKind::Block);
+        loop {
+            if self.at_line_break() {
+                // The body ends with its line. A closing keyword on a later
+                // line may still be this construct's (`if a then b` / `else
+                // c`, a legacy `end` on its own line).
+                let t = self.next_code();
+                if Self::ends_body(self.token_at(t)) && self.closer_is_ours(t, closers)? {
+                    self.skip_newlines();
+                }
+                break;
+            }
+            if matches!(self.peek(), Token::Newline) {
+                // A `;`.
+                let at = self.pos;
+                self.skip_newlines();
+                if !stmts.is_empty() && semi.is_none() && !Self::ends_body(self.peek()) {
+                    semi = Some((at, opener));
+                }
+                continue;
+            }
+            if Self::ends_body(self.peek()) {
+                break;
+            }
+            // A one-line body in a string's `{…}` hole ends with the hole,
+            // which no token marks: what follows is the string's next piece
+            // (a string token) or its closing quote.
+            if self.interp_holes > 0
+                && match self.peek() {
+                    Token::InterpEnd => true,
+                    Token::String(_) => !stmts.is_empty(),
+                    _ => false,
+                }
+            {
+                break;
+            }
+            stmts.push(self.parse_stmt()?);
+        }
+        self.ev_close();
+        Ok(Body { stmts, semi })
+    }
+
+    /// Finish a construct whose bodies are parsed: consume its `end` when
+    /// the cursor is on one (the bodies leave it there only when it is this
+    /// construct's). Without an `end` the construct is closed by its layout,
+    /// which a `;` in a one-line body makes ambiguous (B3): `if c then a; b`
+    /// could end at the `;` or at the end of the line.
+    ///
+    /// In the reading of [`Parser::by_end`] the `end` is required: `head` is
+    /// where the construct started and `what` names it with its article
+    /// (``an `if` expression``), for the error that says so.
+    fn close_block(&mut self, head: usize, what: &str, semi: Semi) -> Result<(), String> {
         if matches!(self.peek(), Token::End) {
             self.advance();
             return Ok(());
         }
-        let start = self
-            .token_spans
-            .get(opener_pos)
-            .map(|s| s.start)
-            .unwrap_or(ZERO_SPAN.start);
-        Err(self.error_at_current(format!(
-            "{what} started at line {} column {} is unclosed; expected `end`",
-            start.line, start.column
-        )))
+        if !self.layout {
+            let start = self.token_spans.get(head).map_or(ZERO_SPAN.start, |s| s.start);
+            return Err(self.error_at_current(format!(
+                "{what} started at line {} column {} is unclosed; expected `end`",
+                start.line, start.column
+            )));
+        }
+        if let Some((at, opener)) = semi {
+            return Err(self.error_at(
+                at,
+                format!(
+                    "`;` after a one-line {opener} is ambiguous; close it with `end` or use an \
+                     indented block"
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Consume the `,` after a member of a `class` or `enum` body, on the
+    /// member's line or leading the next one. False when there is none.
+    fn member_comma(&mut self) -> bool {
+        if !self.layout {
+            return false;
+        }
+        if !matches!(self.token_at(self.next_code()), Token::Comma) {
+            return false;
+        }
+        self.skip_newlines();
+        self.advance();
+        true
+    }
+
+    /// Position the cursor on the next member of a `class` or `enum` body,
+    /// or report the end of the body (`false`). `block` is the column the
+    /// members sit at when the body is a block under the header, and `None`
+    /// when it shares the header's line (`class P x, y end`).
+    fn next_member(
+        &mut self,
+        head: usize,
+        block: Option<u32>,
+        after_comma: bool,
+        what: &str,
+        closes: &str,
+    ) -> Result<bool, String> {
+        if !self.layout {
+            // The reading of [`Parser::by_end`]: members to the `end`.
+            if after_comma {
+                self.skip_newlines();
+            } else {
+                self.expect_element_separator_of(&Token::End, what, Some(closes))?;
+            }
+            return Ok(!matches!(self.peek(), Token::End | Token::Eof));
+        }
+        let t = self.next_code();
+        let tok = self.token_at(t).clone();
+        if matches!(tok, Token::Eof) {
+            return Ok(false);
+        }
+        if matches!(tok, Token::End) {
+            let ours = !self.is_first_on_line(t) || self.end_is_ours(t, head, head)?;
+            if ours {
+                self.skip_newlines();
+            }
+            return Ok(false);
+        }
+        if self.is_first_on_line(t) {
+            let Some(block) = block else {
+                return Ok(false);
+            };
+            self.no_tab(t)?;
+            let col = self.column_of(t);
+            let indent = self.indent_of(head);
+            if col > block {
+                return Err(self.unexpected_indent(t, block));
+            }
+            if col < block {
+                if col > indent {
+                    return Err(self.error_at(t, partial_dedent_message(col, block, indent)));
+                }
+                return Ok(false);
+            }
+        }
+        if !after_comma {
+            return Err(self.error_at(
+                t,
+                format!("Expected ',' between {what}, or {} to close {closes}", token_desc(&Token::End)),
+            ));
+        }
+        self.skip_newlines();
+        Ok(true)
+    }
+
+    /// The column a `class` / `enum` / `match` body sits at, the cursor just
+    /// past the header: `None` when the body shares the header's line.
+    /// `member` says whether a token can start a member.
+    fn member_block(
+        &self,
+        head: usize,
+        opener: &'static str,
+        member: fn(&Token) -> bool,
+    ) -> Result<Option<u32>, String> {
+        if !self.layout || !self.at_line_break() {
+            return Ok(None);
+        }
+        let t = self.next_code();
+        let indent = self.indent_of(head);
+        let col = self.column_of(t);
+        self.no_tab(head)?;
+        self.no_tab(t)?;
+        if matches!(self.token_at(t), Token::End) {
+            // An empty body closed by its `end`; the member loop takes it.
+            return Ok(Some(indent + 1));
+        }
+        // A `when` cannot start a statement, so the arms of a `match` may
+        // also sit at the column of the `match` itself, as an `else` sits
+        // under its `if`. A class field or an enum variant is a bare name,
+        // and has to be indented to be told from the next statement.
+        let arms = matches!(self.token_at(t), Token::When);
+        if member(self.token_at(t)) && (col > indent || (arms && col == indent)) {
+            return Ok(Some(col));
+        }
+        Err(self.error_at(t, missing_block_message(opener, indent)))
     }
 
     /// Consume the separator between two elements of a delimited,
@@ -1430,9 +2157,10 @@ impl Parser {
         self.expect(&Token::RParen)?;
         self.ev_close(); // ParamList
         let ret = self.parse_return_type()?;
-        self.skip_newlines();
-        let body = self.parse_block_until(&[Token::End])?;
-        self.expect_block_end(start, &format!("the function `{name}`"))?;
+        let closers = Closers::Own { head: start, clause: start, or_else: false };
+        let Body { stmts: body, semi } =
+            self.parse_body(start, "the `fn` header", closers, "fn")?;
+        self.close_block(start, &format!("the function `{name}`"), semi)?;
         self.ev_close(); // FnDecl
         let mut stmt = self.mk_stmt(
             StmtKind::FnDecl {
@@ -1488,8 +2216,9 @@ impl Parser {
             ));
         }
         self.advance(); // consume 'do'
-        let body = self.parse_block_until(&[Token::End])?;
-        self.expect_block_end(start, &format!("the test \"{title}\""))?;
+        let closers = Closers::Own { head: start, clause: start, or_else: false };
+        let Body { stmts: body, semi } = self.parse_body(start, "`do`", closers, "test")?;
+        self.close_block(start, &format!("the test \"{title}\""), semi)?;
         self.ev_close(); // TestDecl
         let name = crate::ast::test_fn_name(self.test_titles.len());
         self.test_titles.push(title.clone());
@@ -1686,9 +2415,13 @@ impl Parser {
         self.advance(); // consume the contextual `class`
         let name = self.expect_ident()?;
         let closes = format!("class `{name}`");
-        self.skip_newlines();
+        let block = self.member_block(start, "the `class` header", |tok| {
+            matches!(tok, Token::Ident(_))
+        })?;
+        self.open.push(OpenBlock { head: start, name: "class" });
         let mut fields: Vec<ClassFieldDecl> = Vec::new();
-        while !matches!(self.peek(), Token::End | Token::Eof) {
+        let mut after_comma = true;
+        while self.next_member(start, block, after_comma, "class fields", &closes)? {
             let field_start = self.pos;
             self.ev_open(SyntaxKind::ClassField);
             let field_name = self.expect_member_name("a field name", &closes)?;
@@ -1699,9 +2432,10 @@ impl Parser {
                 ty,
                 span: self.span_from(field_start),
             });
-            self.expect_element_separator_of(&Token::End, "class fields", Some(&closes))?;
+            after_comma = self.member_comma();
         }
-        self.expect_block_end(start, "a `class` declaration")?;
+        self.open.pop();
+        self.close_block(start, "a `class` declaration", None)?;
         self.ev_close(); // ClassDecl
         let mut stmt = self.mk_stmt(StmtKind::ClassDecl { name, fields }, start);
         stmt.exported = exported;
@@ -1716,9 +2450,13 @@ impl Parser {
         self.advance(); // consume 'enum'
         let name = self.expect_ident()?;
         let closes = format!("enum `{name}`");
-        self.skip_newlines();
+        let block = self.member_block(start, "the `enum` header", |tok| {
+            matches!(tok, Token::Ident(_))
+        })?;
+        self.open.push(OpenBlock { head: start, name: "enum" });
         let mut variants = Vec::new();
-        while !matches!(self.peek(), Token::End | Token::Eof) {
+        let mut after_comma = true;
+        while self.next_member(start, block, after_comma, "enum variants", &closes)? {
             let variant_start = self.pos;
             self.ev_open(SyntaxKind::EnumVariant);
             let variant_name = self.expect_member_name("a variant name", &closes)?;
@@ -1763,9 +2501,10 @@ impl Parser {
                 data,
                 span: self.span_from(variant_start),
             });
-            self.expect_element_separator_of(&Token::End, "enum variants", Some(&closes))?;
+            after_comma = self.member_comma();
         }
-        self.expect_block_end(start, "an `enum` declaration")?;
+        self.open.pop();
+        self.close_block(start, "an `enum` declaration", None)?;
         self.ev_close();
         let mut stmt = self.mk_stmt(StmtKind::EnumDecl { name, variants }, start);
         stmt.exported = exported;
@@ -1817,8 +2556,9 @@ impl Parser {
         }
         self.skip_newlines();
         self.expect(&Token::Do)?;
-        let body = self.parse_block_until(&[Token::End])?;
-        self.expect_block_end(for_pos, "a `for` loop")?;
+        let closers = Closers::Own { head: for_pos, clause: for_pos, or_else: false };
+        let Body { stmts: body, semi } = self.parse_body(for_pos, "`do`", closers, "for")?;
+        self.close_block(for_pos, "a `for` loop", semi)?;
         let end = self.span_from(for_pos);
         crate::ast::desugar_multi_for(gens, body, end.end, end.file)
     }
@@ -1848,8 +2588,9 @@ impl Parser {
         let condition = self.parse_expr()?;
         self.skip_newlines();
         self.expect(&Token::Do)?;
-        let body = self.parse_block_until(&[Token::End])?;
-        self.expect_block_end(start, "a `while` loop")?;
+        let closers = Closers::Own { head: start, clause: start, or_else: false };
+        let Body { stmts: body, semi } = self.parse_body(start, "`do`", closers, "while")?;
+        self.close_block(start, "a `while` loop", semi)?;
         self.ev_close();
         Ok(self.mk_stmt(StmtKind::While { condition, body }, start))
     }
@@ -1857,10 +2598,9 @@ impl Parser {
     fn parse_return(&mut self, start: usize) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ReturnStmt);
         self.advance(); // consume 'return'
-        let stmt = if matches!(
-            self.peek(),
-            Token::Newline | Token::End | Token::Else | Token::Elsif | Token::ElseIf | Token::Eof
-        ) {
+        // A bare `return` ends where its body does: at the end of the line or
+        // at a token that ends a body (`foo(fn() return)`).
+        let stmt = if matches!(self.peek(), Token::Newline) || Self::ends_body(self.peek()) {
             self.mk_stmt(StmtKind::Return(None), start)
         } else {
             let expr = self.parse_expr()?;
@@ -1912,21 +2652,6 @@ impl Parser {
             Token::CoalesceAssign => Some(BinOp::Coalesce),
             _ => None,
         }
-    }
-
-    /// Parse statements until the next significant token is one of `stops`
-    /// (or Eof). Does NOT consume the stop token.
-    fn parse_block_until(&mut self, stops: &[Token]) -> Result<Vec<Stmt>, String> {
-        let mut stmts = Vec::new();
-        self.skip_newlines();
-        self.ev_open(SyntaxKind::Block);
-        while Self::can_start_stmt(self.peek()) && !stops.contains(self.peek()) {
-            let stmt = self.parse_stmt()?;
-            stmts.push(stmt);
-            self.skip_newlines();
-        }
-        self.ev_close();
-        Ok(stmts)
     }
 
     fn parse_param_list(&mut self) -> Result<Vec<Param>, String> {
@@ -2584,6 +3309,8 @@ impl Parser {
                                 .to_string(),
                         ));
                     }
+                    // A block with no `end` leaves the closer on a later line.
+                    self.skip_newlines();
                     self.expect(&Token::RBracket)?;
                     self.ev_wrap(cp, SyntaxKind::IndexAccessExpr);
                     let span = SourceSpan {
@@ -2772,6 +3499,8 @@ impl Parser {
                 self.ev_open(SyntaxKind::ParenExpr);
                 self.advance();
                 let expr = self.parse_expr()?;
+                // A block with no `end` leaves the closer on a later line.
+                self.skip_newlines();
                 self.expect(&Token::RParen)?;
                 self.ev_close();
                 Ok(expr)
@@ -2882,8 +3611,9 @@ impl Parser {
         let condition = self.parse_expr()?;
         self.skip_newlines();
         self.expect(&Token::Then)?;
-        let then_body = self.parse_block_until(&[Token::ElseIf, Token::Elsif, Token::Else, Token::End])?;
-        let else_body = self.parse_else_chain(start)?;
+        let closers = Closers::Own { head: start, clause: start, or_else: true };
+        let Body { stmts: then_body, semi } = self.parse_body(start, "`then`", closers, "if")?;
+        let else_body = self.parse_else_chain(start, semi)?;
         self.ev_close();
         Ok(self.mk_expr(
             ExprKind::If {
@@ -2895,10 +3625,17 @@ impl Parser {
         ))
     }
 
-    /// Parse the tail of an if-expression after the then-body. Consumes the
-    /// single closing `end` for the whole `if` / `else if` / `else` chain.
-    /// Precondition: peek is ElseIf (or its old spelling Elsif), Else, or End.
-    fn parse_else_chain(&mut self, if_pos: usize) -> Result<Option<ElseBranch>, String> {
+    /// Parse the tail of an if-expression after the then-body: the `else if`
+    /// and `else` branches that continue it, and the single `end` that
+    /// closes the whole chain when one is written. The body before left the
+    /// cursor on the keyword when it is this chain's (see
+    /// [`Parser::parse_body`]); anything else ends the chain with no `end`.
+    /// `semi` is the first `;` of a one-line branch so far.
+    fn parse_else_chain(
+        &mut self,
+        if_pos: usize,
+        semi: Semi,
+    ) -> Result<Option<ElseBranch>, String> {
         match self.peek() {
             Token::ElseIf | Token::Elsif => {
                 let start = self.pos;
@@ -2908,8 +3645,11 @@ impl Parser {
                 let condition = self.parse_expr()?;
                 self.skip_newlines();
                 self.expect(&Token::Then)?;
-                let then_body = self.parse_block_until(&[Token::ElseIf, Token::Elsif, Token::Else, Token::End])?;
-                let else_body = self.parse_else_chain(if_pos)?; // consumes the final 'end'
+                let closers = Closers::Own { head: if_pos, clause: start, or_else: true };
+                let Body { stmts: then_body, semi: branch_semi } =
+                    self.parse_body(start, "`then`", closers, "if")?;
+                // Consumes the final `end`, when there is one.
+                let else_body = self.parse_else_chain(if_pos, semi.or(branch_semi))?;
                 self.ev_close();
                 if merged {
                     let next = (self.pos..self.tokens.len())
@@ -2931,15 +3671,18 @@ impl Parser {
                 Ok(Some(ElseBranch::ElseIf(Box::new(inner))))
             }
             Token::Else => {
+                let start = self.pos;
                 self.ev_open(SyntaxKind::ElseBranch);
                 self.advance(); // consume 'else'
-                let body = self.parse_block_until(&[Token::End])?;
-                self.expect_block_end(if_pos, "an `if` expression")?;
+                let closers = Closers::Own { head: if_pos, clause: start, or_else: false };
+                let Body { stmts: body, semi: branch_semi } =
+                    self.parse_body(start, "`else`", closers, "if")?;
+                self.close_block(if_pos, "an `if` expression", semi.or(branch_semi))?;
                 self.ev_close();
                 Ok(Some(ElseBranch::Block(body)))
             }
             _ => {
-                self.expect_block_end(if_pos, "an `if` expression")?;
+                self.close_block(if_pos, "an `if` expression", semi)?;
                 Ok(None)
             }
         }
@@ -2950,14 +3693,37 @@ impl Parser {
         self.ev_open(SyntaxKind::MatchExpr);
         self.advance(); // consume 'match'
         let subject = self.parse_expr()?;
-        self.skip_newlines();
+        // The arms are a block under the header (each `when` on a line of
+        // its own, at one column), or share the header's line.
+        let arm_col = self.member_block(start, "the `match` header", |tok| {
+            matches!(tok, Token::When)
+        })?;
+        let closers = Closers::Arm { head: start, arm_col };
+        self.open.push(OpenBlock { head: start, name: "match" });
         let mut arms = Vec::new();
-        while !matches!(self.peek(), Token::End | Token::Eof) {
-            let arm = self.parse_match_arm()?;
-            arms.push(arm);
+        let mut semi = None;
+        if !self.layout {
             self.skip_newlines();
         }
-        self.expect_block_end(start, "a `match` expression")?;
+        while !self.layout && !matches!(self.peek(), Token::End | Token::Eof) {
+            arms.push(self.parse_match_arm(closers)?.0);
+            self.skip_newlines();
+        }
+        while self.layout {
+            let t = self.next_code();
+            if !self.is_closing_keyword(t) || !self.closer_is_ours(t, closers)? {
+                break;
+            }
+            self.skip_newlines();
+            if matches!(self.peek(), Token::End) {
+                break;
+            }
+            let (arm, arm_semi) = self.parse_match_arm(closers)?;
+            arms.push(arm);
+            semi = semi.or(arm_semi);
+        }
+        self.open.pop();
+        self.close_block(start, "a `match` expression", semi)?;
         self.ev_close();
         Ok(self.mk_expr(
             ExprKind::Match {
@@ -2968,7 +3734,10 @@ impl Parser {
         ))
     }
 
-    fn parse_match_arm(&mut self) -> Result<MatchArm, String> {
+    /// One arm of a `match`, whose `closers` say where the arm's body stops.
+    /// Also returns the first `;` of a one-line `->` body (see
+    /// [`Parser::close_block`]).
+    fn parse_match_arm(&mut self, closers: Closers) -> Result<(MatchArm, Semi), String> {
         self.ev_open(SyntaxKind::MatchArm);
         if matches!(self.peek(), Token::Else | Token::Elsif | Token::ElseIf) {
             return Err(self.error_at_current(format!(
@@ -2977,6 +3746,7 @@ impl Parser {
                 token_desc(self.peek())
             )));
         }
+        let when_pos = self.pos;
         self.expect(&Token::When)?;
         let pattern_start = self.pos;
         let pattern = self.parse_pattern()?;
@@ -2987,36 +3757,44 @@ impl Parser {
         } else {
             None
         };
+        let mut semi = None;
         let body = if matches!(self.peek(), Token::Do) {
-            let start = self.pos;
+            let do_pos = self.pos;
             self.advance(); // consume 'do'
-            let stmts = self.parse_block_until(&[Token::End])?;
-            self.expect_block_end(start, "a `do` block")?;
+            let own = Closers::Own { head: when_pos, clause: when_pos, or_else: false };
+            let Body { stmts, semi: do_semi } = self.parse_body(when_pos, "`do`", own, "when")?;
+            self.close_block(do_pos, "a `do` block", do_semi)?;
             stmts
         } else {
             self.expect(&Token::Arrow)?;
-            // The body is a statement list, like an `if` branch: it runs to
-            // the next `when` of this match or to the match's `end`. A nested
-            // construct consumes its own `when`s and `end`.
-            let stmts =
-                self.parse_block_until(&[Token::When, Token::End, Token::Else, Token::Elsif, Token::ElseIf])?;
-            if stmts.is_empty() {
-                return Err(self.error_at_current(format!(
-                    "Expected the arm's body after '->', got {} (an arm that does nothing \
-                     is written `-> nil`)",
-                    token_desc(self.peek())
-                )));
+            // The body is a statement list, like an `if` branch: one line, or
+            // an indented block under the arm. A nested construct consumes
+            // its own `when`s and `end`.
+            let body = self.parse_body(when_pos, "`->`", closers, "when")?;
+            if body.stmts.is_empty() {
+                let at = self.next_code();
+                return Err(self.error_at(
+                    at,
+                    format!(
+                        "Expected the arm's body after '->', got {} (an arm that does nothing \
+                         is written `-> nil`)",
+                        token_desc(self.token_at(at))
+                    ),
+                ));
             }
-            stmts
+            semi = body.semi;
+            body.stmts
         };
         self.ev_close(); // MatchArm
-        self.skip_newlines();
-        Ok(MatchArm {
-            pattern,
-            pattern_span,
-            guard,
-            body,
-        })
+        Ok((
+            MatchArm {
+                pattern,
+                pattern_span,
+                guard,
+                body,
+            },
+            semi,
+        ))
     }
 
     /// A pattern: one alternative, or several separated by `|`.
@@ -3188,9 +3966,10 @@ impl Parser {
             self.ev_close(); // LambdaExpr
             Ok(self.mk_expr(ExprKind::Lambda { params, body }, start))
         } else {
-            self.skip_newlines();
-            let body = self.parse_block_until(&[Token::End])?;
-            self.expect_block_end(start, "a `fn` expression")?;
+            let closers = Closers::Own { head: start, clause: start, or_else: false };
+            let Body { stmts: body, semi } =
+                self.parse_body(start, "the `fn` header", closers, "fn")?;
+            self.close_block(start, "a `fn` expression", semi)?;
             self.ev_close(); // LambdaExpr
             Ok(self.mk_expr(ExprKind::Lambda { params, body }, start))
         }
@@ -3250,7 +4029,9 @@ impl Parser {
                 break;
             }
 
+            self.interp_holes += 1;
             let expr = self.parse_expr()?;
+            self.interp_holes -= 1;
             exprs.push(expr);
         }
 
@@ -3333,6 +4114,7 @@ impl Parser {
                         Token::LBrace => {
                             self.advance();
                             let expr = self.parse_expr()?;
+                            self.skip_newlines();
                             self.expect(&Token::RBrace)?;
                             expr
                         }
@@ -3399,6 +4181,7 @@ impl Parser {
                 Token::LBrace => {
                     self.advance();
                     let expr = self.parse_expr()?;
+                    self.skip_newlines();
                     self.expect(&Token::RBrace)?;
                     children.push(JsxChild::Expr(expr));
                 }
@@ -3501,6 +4284,22 @@ impl Parser {
             || crate::lexer::keyword_text(self.peek()).is_some();
         is_name && matches!(self.peek_at(1), Token::Colon)
     }
+}
+
+/// A line that starts between its block's column and the enclosing one's.
+fn partial_dedent_message(col: u32, block: u32, indent: u32) -> String {
+    format!(
+        "this line is indented less than its block, but more than the enclosing one: it \
+         starts at column {col}, between column {indent} and the block's column {block}"
+    )
+}
+
+/// A block opener followed by a line break and no indented line.
+fn missing_block_message(opener: &str, indent: u32) -> String {
+    format!(
+        "expected an indented block after {opener}: the next line must start right of \
+         column {indent}, or the body goes on the same line"
+    )
 }
 
 /// The parse error for an `@` where an expression starts. `@` is reserved

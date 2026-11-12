@@ -46,7 +46,7 @@ describe("petal ir-equal", () => {
   test("whitespace and comments do not count", () => {
     const a = file("let x = 1\nlet y = x + 2\nprint(y)\n");
     const b = file(
-      "\n// a comment\nlet x   =  1\n\n      let y = x + 2  // trailing\nprint(y)\n"
+      "\n// a comment\nlet x   =  1\n\nlet y  =  x + 2  // trailing\nprint( y )\n"
     );
     expect(petalCapture(["ir-equal", a, b]).code).toBe(0);
   });

@@ -4,6 +4,7 @@ import {
   checkJsonAllowFail,
   checkText,
   checkStrict,
+  runPetalError,
   runWithStderr,
 } from "./helpers";
 
@@ -325,11 +326,19 @@ describe("statically-known arity errors", () => {
 describe("silently wrong programs warn", () => {
   it("a leading `-` under a line it was meant to continue", () => {
     const sum = "fn score(a, b, c)\n  a * 2\n    + b * 3\n    - c * 4\nend\nprint(score(1, 2, 3))";
-    const out = checkJson(sum);
+    // Indented under the line it was meant to continue, the `-` line is no
+    // statement of the block at all: a parse error, with the same advice.
+    const err = runPetalError(sum);
+    expect(err).toContain("unexpected indent");
+    expect(err).toMatch(/starts with `-` is a new statement/);
+    expect(err).toContain("line 4");
+    expect(checkStrict(sum).code).toBe(1);
+    // At the column of the line above, it is a statement, and warns.
+    const flat = "fn f(a, b)\n  a\n  - b\nend\nprint(f(1, 2))";
+    const out = checkJson(flat);
     expect(out.warnings).toHaveLength(1);
     expect(out.warnings[0].message).toMatch(/starts with `-` is a new statement/);
-    expect(out.warnings[0].line).toBe(4);
-    expect(checkStrict(sum).code).toBe(1);
+    expect(out.warnings[0].line).toBe(3);
     // The fix the guide gives: end the line with the operator.
     const fixed = "fn score(a, b, c)\n  a * 2 +\n    b * 3 -\n    c * 4\nend\nprint(score(1, 2, 3))";
     expect(checkJson(fixed).warnings).toEqual([]);

@@ -91,8 +91,10 @@ fn a_test_block_is_top_level_only_and_its_mistakes_are_named() {
     let unnamed = parse("test \"  \" do end\n").unwrap_err();
     assert!(unnamed.contains("a test needs a name"), "{unnamed}");
 
-    let open = parse("test \"a\" do\n  expect(true)\n").unwrap_err();
-    assert!(open.contains("the test \"a\" started at line 1"), "{open}");
+    // Indentation closes the block; an `end` is not needed.
+    assert_eq!(parse("test \"a\" do\n  expect(true)\n").unwrap().len(), 1);
+    let flat = parse("test \"a\" do\nexpect(true)\n").unwrap_err();
+    assert!(flat.contains("expected an indented block after `do`"), "{flat}");
 }
 
 #[test]

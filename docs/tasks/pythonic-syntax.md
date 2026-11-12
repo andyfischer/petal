@@ -1,6 +1,6 @@
 # Indentation-delimited blocks (Scala 3 style), `#` comments, `:hex` colours and `else if`
 
-Status: proposed plan, revised 2026-11-11. Nothing is implemented yet.
+Status: proposed plan, revised 2026-11-11. P1, P2 and the P3 parser are implemented (§3.3, §3.6, §3.7); fmt, lint, the LSP, the `end-lines` migration and the tooling are not.
 
 Decided 2026-11-11:
 - Comments are `#`. `--` was considered and rejected.
@@ -436,6 +436,70 @@ handles `elsif` today (`parse.rs:2875-2908`).
 Why the lexer rather than the parser: one token keeps every parser site that
 handles `elsif` unchanged. It also means `else if` can never mean nesting by
 accident, so there's no lookahead special case spread through the parser.
+
+### 3.7 As implemented (P3 parser, done 2026-11-12)
+
+The layout parser is in `core/src/parse.rs` (`parse_body`, `closer_is_ours`,
+`end_is_ours`, `close_block`). User-facing rules: `docs/syntax/indentation.md`.
+Fixtures: `core/tests/all/layout.rs`, one group per B-row plus a generative
+test. Where the implementation settled something the tables above leave
+open:
+
+- **The statement indent is the indent of the line the construct's keyword
+  is on** (`if`, `for`, `fn`, `when`, …; for an `else` branch's body, the
+  line of that `else`). A block's column must exceed it, and an `end` on its
+  own line must equal it. That is the layout `petal fmt` already produces,
+  inside brackets too (`  if c then` as a list element takes its `end` at the
+  element's column, not the statement's).
+- **Two more columns line up for an `end`** when a construct hangs off the
+  middle of a line: the column of its own keyword, and the column of the line
+  its last `else` / `else if` starts (`examples/productivity/settings`, which
+  `petal fmt` leaves that way).
+- **An `end` left of its own construct is passed outward** only when an
+  enclosing construct, inside the same brackets, starts at that column.
+  Otherwise the error is reported there, against the innermost block.
+- **`when` arms** sit at one column: indented from the `match`, or at its
+  column (a `when` starts no statement). A class field or an enum variant is a
+  bare name and must be indented.
+- **B3** covers every one-line body: `then`, `else`, `do`, a `fn` header, and
+  an arm's `->` (for which the whole `match` must take the `end`).
+- **B11** is checked where a line's column is measured (the statements of a
+  block, an `end` / `else` / `when` on its own line, the line that opens a
+  block). A tab in front of a line that only continues a bracket or an
+  expression is not an error. The lexer records the lines
+  (`Lexer::token_tab_indented`) and the parser is told
+  (`Parser::with_tab_indentation`).
+- **B12:** a line left of the margin is an error too ("indented less than the
+  first line of the program"). A host string whose first line starts at the
+  quote and whose other lines are indented to the host code is therefore an
+  error; the tests that had one were fixed by hand.
+- **`{…}` holes in element children and attributes** are laid out like any
+  other bracket. The lexer drops line breaks there, so the parser also treats
+  "the next token is the first on its line" as a line break. A token after
+  element text that began on an earlier line counts as first on its line.
+- **A string's `{…}` hole** ends a one-line body with no `end`
+  (`"{if c then 1 else 2}"`).
+- **A leading `-` under the line it was meant to continue** used to be a
+  separate statement with a warning; indented, it is now "unexpected indent",
+  with the same advice.
+- **The old reading stays available as `Parser::by_end`**
+  (`cst::parse_source_by_end`, `rewrite::parse_ast_or_by_end`): every block
+  runs to its `end`, columns mean nothing, tabs are whitespace. Nothing
+  compiles it. `petal fmt`, `petal lint` and `petal migrate-old-code` fall
+  back to it for a file whose indentation disagrees with its `end`s, so fmt
+  can still indent such a file by its `end`s; fmt then checks that the result
+  is the same AST under the layout parser. fmt also refuses, with a message,
+  a file whose blocks are closed by indentation alone when its `end`-driven
+  indentation pass would change the parse (the fmt rewrite is the next step).
+- **Corpus invariance** is `test/benchmarks/harness/layout_corpus.rs`
+  (`cargo run --release --example layout_corpus`), against a baseline written
+  by the parser from before the change. Result on 2026-11-12, each file read
+  both as today's syntax and with `Lexer::legacy`: no file parses to a
+  different AST. Files that fail with an indentation error: petal 1
+  (`garden/examples/panels/fonts.ptl`, fixed with `petal fmt`), worlds-fair 20
+  of 20 (the rest of the file left flush under an `else`), cheesecake 6
+  source files (an `end` hung between two columns, and one test fixture
+  indented on purpose), petal-creative 0, petal-lang.org 0.
 
 ## 4. Grammar, by construct
 

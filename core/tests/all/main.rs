@@ -48,6 +48,7 @@ mod implicit_return;
 mod intrinsics;
 mod json_key_order;
 mod keyword_sync;
+mod layout;
 mod lifecycle_migration;
 mod lint_rewrites;
 mod lint_state_const;

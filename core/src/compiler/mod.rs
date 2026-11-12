@@ -4182,7 +4182,7 @@ end";
 fn spinner(r)
   _native(r.a)
 end
-                   fn widget()
+fn widget()
   spinner({a: 1})
 end";
         assert_eq!(hoistable(src, &["spinner"]), Vec::<String>::new());

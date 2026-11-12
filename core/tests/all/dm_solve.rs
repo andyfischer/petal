@@ -466,12 +466,12 @@ fn loop_shape_any_iteration() {
 // ── 9. nonlinear_converges ───────────────────────────────────────────────
 
 const TREE: &str = "let spread = 0.4\nlet shrink = 0.7\n\
-fn branch(x, y, angle, len, depth)\n\
-  if depth > 0 then\n\
-    let nx = x + cos(angle) * len\n\
-    let ny = y - sin(angle) * len\n\
-    draw(nx, ny, 2)\n\
-    branch(nx, ny, angle + spread, len * shrink, depth - 1)\n\
+fn branch(x, y, angle, len, depth)\n  \
+  if depth > 0 then\n    \
+    let nx = x + cos(angle) * len\n    \
+    let ny = y - sin(angle) * len\n    \
+    draw(nx, ny, 2)\n    \
+    branch(nx, ny, angle + spread, len * shrink, depth - 1)\n  \
   end\n\
 end\n\
 branch(200.0, 300.0, 1.2, 80.0, 4)\n";

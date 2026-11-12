@@ -44,6 +44,7 @@ When you add to the docs, extend the owner and link to it from elsewhere.
 | [Implicit Return Values](syntax/implicit-return-values.md) | What a function yields without `return`, where a `for` loop collects a list, and how `-> nil` turns both off |
 | [Settings](syntax/settings.md) | `let X = tunable(…)`: marking a binding as a setting that tools and hosts are meant to edit (formerly `config let`) |
 | [Commas](syntax/commas.md) | Where commas are required, and how a leading `-` is read |
+| [Indentation and Blocks](syntax/indentation.md) | Blocks closed by indentation, the optional `end`, one-line bodies |
 | [Line Continuation](syntax/line-continuation.md) | Breaking a long expression across lines |
 
 ## Features

@@ -79,8 +79,11 @@ end
 
 Things to notice, because each is a rule you will meet again:
 
-- **`end` closes every block.** `if … then … end`, `for … do … end`,
-  `fn … end`. No braces, no significant indentation.
+- **Indentation delimits blocks, and `end` closes one too.** `if … then`,
+  `for … do` and `fn …` open a block that ends where the indentation ends;
+  the `end` written here is optional, and must line up with the line that
+  opened its block. No braces. See
+  [Indentation and blocks](syntax/indentation.md).
 - **The last expression is the return value.** `Task.label` has no `return`.
   An explicit `return expr` exists for early exit; a bare `return` returns
   `nil`. A function declared `-> nil` is the exception: it has no implicit

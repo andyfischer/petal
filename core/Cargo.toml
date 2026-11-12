@@ -75,6 +75,10 @@ name = "implicit_keys_frame"
 path = "../test/benchmarks/harness/implicit_keys_frame.rs"
 
 [[example]]
+name = "layout_corpus"
+path = "../test/benchmarks/harness/layout_corpus.rs"
+
+[[example]]
 name = "lower_passes"
 path = "../test/benchmarks/harness/lower_passes.rs"
 

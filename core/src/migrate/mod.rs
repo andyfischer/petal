@@ -63,7 +63,30 @@ pub use colour_literals::respell_colour_literals;
 pub(crate) use lifecycle_keywords::deprecated_lifecycle_decls;
 pub use lifecycle_keywords::migrate_lifecycle_keywords;
 
-use crate::lint::{LintOptions, Pipeline, RuleFilter, compiles, reparse};
+use crate::lint::{LintOptions, Pipeline, RuleFilter, compiles};
+
+/// Parse the text a migration plans against. Old source may be indented in
+/// a way that disagrees with its `end`s, which the language now rejects; a
+/// migration still reads it, by its `end`s
+/// ([`crate::rewrite::parse_ast_or_by_end`]).
+fn reparse(source: &str) -> Result<(Vec<char>, Vec<crate::ast::Stmt>), String> {
+    let (_tree, stmts, _by_end) = crate::rewrite::parse_ast_or_by_end(source)?;
+    Ok((source.chars().collect(), stmts))
+}
+
+/// `text` as the compiler can read it. Old source may be indented in a way
+/// that disagrees with its `end`s, which the language now rejects; when
+/// `text` parses only by its `end`s it is re-indented by them (`petal fmt`,
+/// which checks that the result is the same parse). Anything else is
+/// returned as it is. What the compile gates compile: a migration leaves
+/// indentation alone, so a file indented that way before it is afterwards
+/// too.
+pub(crate) fn indented_by_end(text: &str) -> String {
+    match crate::rewrite::parse_ast_or_by_end(text) {
+        Ok((_, _, true)) => crate::fmt::format_source(text).unwrap_or_else(|_| text.to_string()),
+        _ => text.to_string(),
+    }
+}
 
 /// What a deprecation warning or a removed form's error appends: the command
 /// that rewrites it.
@@ -467,9 +490,10 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         if rebinds > 0 {
             original = at_rebind::blank_markers(&original)?;
         }
+        let original = indented_by_end(&original);
         let compiled = compiles(&original, &lint_opts).is_ok();
         if compiled
-            && let Err(e) = compiles(&output, &lint_opts)
+            && let Err(e) = compiles(&indented_by_end(&output), &lint_opts)
         {
             return Err(format!(
                 "migrate bug: a rewrite broke compilation — refusing to produce output ({e})"

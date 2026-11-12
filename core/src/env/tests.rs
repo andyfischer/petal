@@ -328,7 +328,7 @@ mod call_function_tests {
         let pid = env
             .load_program(
                 "import io; let s = symbol(\"draw\")\n\
-                 fn shape(x)\n\
+                 fn shape(x)\n  \
                    push_output(s, x)\n\
                  end\n\
                  shape(1)\n",
@@ -357,7 +357,7 @@ mod call_function_tests {
         let pid = env
             .load_program(
                 "import io; let s = symbol(\"draw\")\n\
-                 fn shape()\n\
+                 fn shape()\n  \
                    push_output(s, 1)\n\
                  end\n\
                  shape()\n",
@@ -424,8 +424,8 @@ mod call_function_tests {
             "import io; let s = symbol(\"out\")\n\
              push_output(s, \"keep-me\")\n\
              let acc = 0\n\
-             for i in range(0, 5000) do\n\
-               let tmp = \"garbage\" ++ str(i)\n\
+             for i in range(0, 5000) do\n  \
+               let tmp = \"garbage\" ++ str(i)\n  \
                acc = acc + len(tmp)\n\
              end\n",
         )
@@ -450,13 +450,13 @@ mod call_function_tests {
         let mut env = Env::new();
         let program = env
             .load_program(
-                "fn outer(n)\n\
-                   let scale = n * 2\n\
-                   let inner = fn(x) -> x * scale\n\
+                "fn outer(n)\n  \
+                   let scale = n * 2\n  \
+                   let inner = fn(x) -> x * scale\n  \
                    inner(3)\n\
                  end\n\
                  let acc = 0\n\
-                 for i in range(0, 50) do\n\
+                 for i in range(0, 50) do\n  \
                    acc = acc + outer(i)\n\
                  end\n\
                  acc\n",
@@ -493,8 +493,8 @@ mod call_function_tests {
             .load_program(
                 "state held = { f: fn(x) -> x + 40 }\n\
                  let acc = 0\n\
-                 for i in range(0, 2000) do\n\
-                   let tmp = \"garbage\" ++ str(i)\n\
+                 for i in range(0, 2000) do\n  \
+                   let tmp = \"garbage\" ++ str(i)\n  \
                    acc = acc + len(tmp)\n\
                  end\n\
                  held.f(2)\n",
@@ -527,8 +527,8 @@ mod call_function_tests {
         // Allocate enough to trip a GC, then read the binding back.
         env.run_source(
             "let acc = 0\n\
-             for i in range(0, 5000) do\n\
-               let tmp = \"g\" ++ str(i)\n\
+             for i in range(0, 5000) do\n  \
+               let tmp = \"g\" ++ str(i)\n  \
                acc = acc + len(tmp)\n\
              end\n",
         )

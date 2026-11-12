@@ -501,26 +501,41 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn leading_minus_continuation_warns_once_on_the_minus_line() {
-        let m = messages("fn score(a, b, c)\n  a * 2\n    + b * 3\n    - c * 4\nend\nprint(score(1, 2, 3))");
-        assert_eq!(m.len(), 1, "{m:?}");
-        assert!(m[0].contains("starts with `-`"), "{m:?}");
-        // Under a bare name, with no extra indentation.
-        let m = messages("fn f(a, b)\n  a\n  - b\nend\nprint(f(1, 2))");
-        assert_eq!(m.len(), 1, "{m:?}");
-        assert!(m[0].contains("starts with `-`"), "{m:?}");
+    /// The parse error of `src`.
+    fn parse_error(src: &str) -> String {
+        let mut lexer = Lexer::new(src);
+        lexer.tokenize().expect("tokenize");
+        Parser::new(lexer.tokens.clone(), lexer.token_spans.clone())
+            .parse_program()
+            .expect_err("a parse error")
     }
 
     #[test]
-    fn leading_minus_under_a_let_or_call_needs_deeper_indentation() {
+    fn leading_minus_continuation_warns_once_on_the_minus_line() {
+        // Under a bare name, at its column: a statement of its own.
+        let m = messages("fn f(a, b)\n  a\n  - b\nend\nprint(f(1, 2))");
+        assert_eq!(m.len(), 1, "{m:?}");
+        assert!(m[0].contains("starts with `-`"), "{m:?}");
+        // Indented under the line it was meant to continue, it is no
+        // statement of the block at all: the parser's indentation error says
+        // the same thing.
+        let e = parse_error(
+            "fn score(a, b, c)\n  a * 2\n    + b * 3\n    - c * 4\nend\nprint(score(1, 2, 3))",
+        );
+        assert!(e.contains("unexpected indent") && e.contains("starts with `-`"), "{e}");
+    }
+
+    #[test]
+    fn leading_minus_under_a_let_or_call_is_an_indentation_error() {
         let w = "a line that starts with `-`";
-        let m = messages("fn f(a, b)\n  let x = a\n    - b\n  x\nend\nprint(f(1, 2))");
-        assert!(m.len() == 1 && m[0].contains(w), "{m:?}");
-        let m = messages("fn f(a, b)\n  return a\n    - b\nend\nprint(f(1, 2))");
-        assert!(m.len() == 1 && m[0].contains(w), "{m:?}");
-        let m = messages("fn f(a, b)\n  g(a)\n    - g(b)\nend\nfn g(x)\n  x\nend\nprint(f(1, 2))");
-        assert!(m.len() == 1 && m[0].contains(w), "{m:?}");
+        for src in [
+            "fn f(a, b)\n  let x = a\n    - b\n  x\nend\nprint(f(1, 2))",
+            "fn f(a, b)\n  return a\n    - b\nend\nprint(f(1, 2))",
+            "fn f(a, b)\n  g(a)\n    - g(b)\nend\nfn g(x)\n  x\nend\nprint(f(1, 2))",
+        ] {
+            let e = parse_error(src);
+            assert!(e.contains("unexpected indent") && e.contains(w), "{e}");
+        }
         // The ordinary shapes: a negated tail after a `let`, a call, a block.
         assert!(messages("fn f(a, b)\n  let d = a - b\n  -d\nend\nprint(f(1, 2))").is_empty());
         assert!(messages("fn f(a)\n  print(a)\n  -a\nend\nprint(f(1))").is_empty());

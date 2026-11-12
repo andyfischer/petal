@@ -116,14 +116,30 @@ fn a_newline_is_not_a_field_separator() {
 /// A body that runs past its `end` used to be reported as a separator problem
 /// on whatever line the parser choked on, never naming the missing keyword.
 #[test]
-fn a_class_missing_its_end_says_so() {
-    let err = parse_err("class C\n  x: int,\n  y: int,\nlet z = 1\n");
+fn a_class_body_ends_with_its_indentation_or_its_end() {
+    // Indentation closes the body: the line back at the header's column is
+    // the next statement.
+    for src in [
+        "class C\n  x: int,\n  y: int,\nlet z = 1\n",
+        "class C\n  x: int,\n  y: int\nprint(1)\n",
+        "enum E\n  A,\n  B,\nlet z = 1\n",
+    ] {
+        assert_eq!(parse(src).len(), 2, "{src:?}");
+    }
+    // A member line with no comma before it still names both ways out.
+    let err = parse_err("class C\n  x: int\n  y: int\n");
     assert!(err.contains("`end` to close class `C`"), "{err}");
-    // …including when the run-on line is field-shaped and only fails later.
-    let err = parse_err("class C\n  x: int,\n  y: int,\nprint(1)\n");
-    assert!(err.contains("`end` to close class `C`"), "{err}");
-    let enum_err = parse_err("enum E\n  A,\n  B,\nlet z = 1\n");
+    let enum_err = parse_err("enum E\n  A\n  B\n");
     assert!(enum_err.contains("`end` to close enum `E`"), "{enum_err}");
+    // Read by its `end`s alone, as `petal fmt` reads old source, a body
+    // without one runs on.
+    let by_end = |src: &str| {
+        let mut lexer = Lexer::new(src);
+        lexer.tokenize().unwrap();
+        Parser::new(lexer.tokens, lexer.token_spans).by_end().parse_program().unwrap_err()
+    };
+    let err = by_end("class C\n  x: int,\n  y: int,\nlet z = 1\n");
+    assert!(err.contains("`end` to close class `C`"), "{err}");
 }
 
 #[test]

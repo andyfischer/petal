@@ -762,8 +762,12 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     {
         // Only meaningful when the original compiles here at all; a file whose
         // imports don't resolve outside its app gets the detection rules alone.
+        // A rewrite is laid out by the formatter afterwards (a chain turned
+        // into a `match` keeps its branches at the chain's columns until
+        // then), and indentation delimits blocks: the gate compiles the
+        // rewritten text indented by its `end`s, as the formatter will.
         if compiles(source, opts).is_ok()
-            && let Err(e) = compiles(&rewritten, opts)
+            && let Err(e) = compiles(&crate::migrate::indented_by_end(&rewritten), opts)
         {
             return Err(format!(
                 "lint bug: a rewrite broke compilation — refusing to produce output ({e})"
@@ -806,7 +810,9 @@ fn verify_chain_counts(
     after: &str,
     chains: usize,
 ) -> Result<(), String> {
-    let (_tree, after_stmts) = crate::rewrite::parse_ast(after)
+    // Not yet laid out by the formatter: read by its `end`s (see the
+    // compile gate in `lint_source`).
+    let (_tree, after_stmts, _by_end) = crate::rewrite::parse_ast_or_by_end(after)
         .map_err(|e| format!("lint bug: match rewrite no longer parses ({e})"))?;
     let (if_before, match_before) = count_nodes(before);
     let (if_after, match_after) = count_nodes(&after_stmts);
@@ -837,8 +843,12 @@ const MAX_STATE_ROUNDS: usize = 64;
 /// aliases a file is expected to hold.
 const MAX_ALIAS_ROUNDS: usize = 16;
 
+/// Parse the text a rule plans against. Source from before indentation
+/// delimited blocks may be indented against its `end`s; lint still reads it,
+/// by its `end`s ([`crate::rewrite::parse_ast_or_by_end`]), since its last
+/// stage is the formatter, which indents the file by them.
 pub(crate) fn reparse(source: &str) -> Result<(Vec<char>, Vec<crate::ast::Stmt>), String> {
-    let (_tree, stmts) = crate::rewrite::parse_ast(source)?;
+    let (_tree, stmts, _by_end) = crate::rewrite::parse_ast_or_by_end(source)?;
     Ok((source.chars().collect(), stmts))
 }
 

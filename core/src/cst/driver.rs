@@ -48,7 +48,7 @@ pub fn parse_source_phased(
     source: &str,
     file: FileId,
 ) -> Result<(Rc<GreenNode>, Vec<Stmt>), LoadError> {
-    parse_with(Lexer::new_in_file(source, file), source, file)
+    parse_with(Lexer::new_in_file(source, file), source, file, true)
 }
 
 /// [`parse_source`] the way source read before `else if` was one token: each
@@ -56,8 +56,22 @@ pub fn parse_source_phased(
 /// ([`Lexer::unmerged_else_if`]). For the `else-if-nesting` migration of
 /// `petal migrate-old-code` only; nothing compiles this parse.
 pub(crate) fn parse_source_unmerged_else_if(source: &str) -> Result<Vec<Stmt>, String> {
-    parse_with(Lexer::new_in_file(source, ENTRY_FILE).unmerged_else_if(), source, ENTRY_FILE)
+    let lexer = || Lexer::new_in_file(source, ENTRY_FILE).unmerged_else_if();
+    parse_with(lexer(), source, ENTRY_FILE, true)
+        // Source that old may also be indented in a way that says nothing
+        // about its blocks.
+        .or_else(|e| parse_with(lexer(), source, ENTRY_FILE, false).map_err(|_| e))
         .map(|(_, stmts)| stmts)
+        .map_err(|e| e.to_string())
+}
+
+/// [`parse_source`] the way source read before indentation delimited blocks:
+/// every block runs to its `end`, and columns mean nothing
+/// ([`crate::parse::Parser::by_end`]). For the tools that repair such source
+/// when its indentation disagrees with its `end`s (`petal fmt`, `petal
+/// migrate-old-code`); nothing compiles this parse.
+pub fn parse_source_by_end(source: &str) -> Result<(Rc<GreenNode>, Vec<Stmt>), String> {
+    parse_with(Lexer::new_in_file(source, ENTRY_FILE), source, ENTRY_FILE, false)
         .map_err(|e| e.to_string())
 }
 
@@ -65,6 +79,7 @@ fn parse_with(
     mut lexer: Lexer,
     source: &str,
     file: FileId,
+    layout: bool,
 ) -> Result<(Rc<GreenNode>, Vec<Stmt>), LoadError> {
     let phased = |phase: Phase| {
         move |e: String| {
@@ -77,6 +92,11 @@ fn parse_with(
     };
     lexer.tokenize().map_err(phased(Phase::Lex))?;
     let mut parser = crate::parse::Parser::new(lexer.tokens.clone(), lexer.token_spans.clone());
+    parser = if layout {
+        parser.with_tab_indentation(&lexer.token_tab_indented)
+    } else {
+        parser.by_end()
+    };
     let direct = parser.parse_program().map_err(phased(Phase::Parse))?;
     let green = build_tree(
         parser.cst_events(),

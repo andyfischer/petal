@@ -519,7 +519,7 @@ fn a_runtime_error_reports_its_moved_position() {
     Case::new(
         "error position",
         "let xs = [1, 2]\nfn pick(i)\n  xs[i]\nend\nprint(pick(1))\nprint(pick(5))\n",
-        "let xs = [1, 2]\n\n// lookup\nfn pick(i)\n      xs[i]\nend\nprint(pick(1))\n\n\n  print(pick(5))\n",
+        "let xs = [1, 2]\n\n// lookup\nfn pick(i)\n      xs[i]\nend\nprint(pick(1))\n\n\nprint(  pick(5))\n",
         Relocated,
     )
     .check();
@@ -559,19 +559,21 @@ fn a_layout_edit_rewrites_a_warning_that_cites_a_line() {
 /// compiler, and is recompiled; one that keeps it is relocated.
 #[test]
 fn a_layout_edit_that_changes_a_warning_is_recompiled() {
-    let flat = "fn f(a, d)\n  let x = a * 2\n  -d\nend\nprint(f(1, 2))\n";
-    let indented = "fn f(a, d)\n  let x = a * 2\n    -d\nend\nprint(f(1, 2))\n";
+    // A `-` line under a bare name warns (it reads as a continuation that
+    // is not one); on the name's own line, after a `;`, it does not.
+    let flat = "fn f(a, d)\n  a; -d\nend\nprint(f(1, 2))\n";
+    let indented = "fn f(a, d)\n  a\n  -d\nend\nprint(f(1, 2))\n";
     let warns = |src: &str| {
         let w = world(src, &[], RunPolicy::FAST);
         w.env.get_program(w.pid).unwrap().warnings.len()
     };
-    assert!(warns(indented) > warns(flat), "the fixture no longer warns on the indent");
-    Case::new("indent adds a warning", flat, indented, Recompiled).check();
-    Case::new("dedent removes a warning", indented, flat, Recompiled).check();
+    assert!(warns(indented) > warns(flat), "the fixture no longer warns on the line break");
+    Case::new("a line break adds a warning", flat, indented, Recompiled).check();
+    Case::new("joining the lines removes a warning", indented, flat, Recompiled).check();
     // The same statements moved without changing how they sit relative to
     // each other.
-    let shifted = "// moved\n\nfn f(a, d)\n  let x = a * 2\n\n    -d\nend\nprint(f(1, 2))\n";
-    Case::new("indent kept", indented, shifted, Relocated).check();
+    let shifted = "// moved\n\nfn f(a, d)\n  a\n\n  -d\nend\nprint(f(1, 2))\n";
+    Case::new("line break kept", indented, shifted, Relocated).check();
 }
 
 #[test]

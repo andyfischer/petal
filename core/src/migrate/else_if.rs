@@ -346,7 +346,10 @@ pub(super) fn check_nesting(before: &str, after: &str, opts: &LintOptions) -> Re
             .to_string());
     }
     // The compiled program, where the original compiles here at all.
-    let original = nesting_as_read_today(before)?;
+    // Moving an `if` under its `else` leaves the lines below it where they
+    // were, which may not be where a nested block sits.
+    let original = super::indented_by_end(&nesting_as_read_today(before)?);
+    let after = &super::indented_by_end(after);
     let Ok((env_a, pid_a)) =
         crate::ir_equiv::compile_for_compare(&original, &opts.include_dirs, opts.origin.as_deref())
     else {

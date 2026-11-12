@@ -426,7 +426,7 @@ pub(crate) fn deprecated_lifecycle_decls(stmts: &[Stmt], source: &str) -> Vec<cr
 pub fn migrate_lifecycle_keywords(source: &str) -> Result<String, String> {
     let mut text = source.to_string();
     for consts in [true, false] {
-        let (_tree, stmts) = crate::rewrite::parse_ast(&text)?;
+        let (_tree, stmts, _by_end) = crate::rewrite::parse_ast_or_by_end(&text)?;
         let chars: Vec<char> = text.chars().collect();
         let mut splices: Vec<Splice> = plan_decl_fixes(&stmts, &chars, consts)?
             .into_iter()

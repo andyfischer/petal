@@ -101,6 +101,14 @@ Statements are separated by newlines; a `;` also separates two statements on
 one line. A binary operator at the end of a line, or at the start of the next
 one, continues the expression ([Line Continuation](line-continuation.md)).
 
+### Blocks
+
+Indentation delimits blocks: the body of an `if`, a loop, a `fn`, a `match`
+arm, a `class` or an `enum` is the lines indented under it, or the rest of
+the opener's own line. `end` closes a block too and is optional; on a line of
+its own it must line up with the line that opened the block. The examples in
+this document write the `end`. See [Indentation and Blocks](indentation.md).
+
 **Commas are required** between adjacent elements of every comma-separated
 construct. Whitespace and newlines are not separators (`[1 2]` is a parse
 error); a trailing comma is always allowed. See [Commas](commas.md).
@@ -572,6 +580,7 @@ assignability rules.
 - [Function overloading, named arguments and default parameters](function-overloading.md).
 - [Implicit Return Values](implicit-return-values.md) — function tails, collecting loops, `-> nil`.
 - [Commas](commas.md) — where commas are required, and how `-` is disambiguated.
+- [Indentation and Blocks](indentation.md) — blocks closed by indentation, the optional `end`, one-line bodies.
 - [Line Continuation](line-continuation.md) — breaking a long expression across lines.
 - [Inline state](../features/inline-state.md) — the `state` keyword.
 - [Module System](../module-system.md) — `import`, exports, resolution.

@@ -8,6 +8,7 @@ use garden_core::projection::{Intent, Outcome, Projection, RowOp};
 use garden_core::{Buffer, Point, Selection};
 use garden_render::{Color, Primitive, Rect, TextStyle, FONT_SIZE};
 
+use crate::petal_indent;
 use crate::search;
 use crate::syntax::{self, Span};
 use crate::theme;
@@ -652,15 +653,167 @@ impl EditorView {
     /// One `insert` call, so the break and its indent are one undo
     /// transaction. Used by the Enter key (and only by it) — paste and other
     /// programmatic inserts go through [`insert`](Self::insert) untouched.
+    ///
+    /// In a Petal buffer the new line is indented one step further when the
+    /// text before the break opens a block (`if c then`, `fn f()`, …), and a
+    /// line that is only `else` is first pulled back to its `if` (see
+    /// [`petal_indent`]).
     pub fn insert_newline(&mut self) {
+        if self.selection().is_none() {
+            self.petal_dedent_keyword();
+        }
         // Typing over a selection replaces it, so the break lands at the
         // selection start; take the indent from that line.
         let at = match self.selection() {
             Some(sel) => sel.ordered().0,
             None => self.cursor,
         };
-        let text = format!("\n{}", self.open_seed(at.line, at.col));
+        let step = self.petal_step_after(at.line, at.col);
+        let text = format!("\n{}{step}", self.open_seed(at.line, at.col));
         self.insert(&text);
+    }
+
+    /// The name of the buffer's language in the syntax registry, by its path.
+    pub fn language_name(&self) -> Option<&'static str> {
+        self.buffer
+            .path()
+            .and_then(syntax::Language::from_path)
+            .map(|lang| lang.name())
+    }
+
+    /// Whether Petal's indentation rules apply to edits here: a `.ptl` file
+    /// shown as itself. A projection's lines carry decoration in front of the
+    /// code (a diff's `+`/`-`), so columns there are not the file's.
+    fn petal_layout(&self) -> bool {
+        self.projection.is_none() && self.language_name() == Some("Petal")
+    }
+
+    /// The extra indentation for a line opened after the first `col`
+    /// characters of `line`: one step when that text opens a Petal block.
+    fn petal_step_after(&self, line: usize, col: usize) -> &'static str {
+        const STEP: &str = "  ";
+        debug_assert_eq!(STEP.len(), petal_indent::STEP);
+        if !self.petal_layout() {
+            return "";
+        }
+        let text = self.buffer.line(line);
+        let head: String = text.chars().take(col).collect();
+        if petal_indent::opens_block(&head) {
+            STEP
+        } else {
+            ""
+        }
+    }
+
+    /// When the cursor ends a line that holds only `else` or `when`, typed
+    /// at the column of the body above it, pull the line back to the `if` /
+    /// the arm it continues. Petal buffers only; a no-op anywhere else.
+    fn petal_dedent_keyword(&mut self) {
+        if !self.petal_layout() {
+            return;
+        }
+        let line = self.cursor.line;
+        let text = self.buffer.line(line);
+        if self.cursor.col < text.trim_end().chars().count() {
+            return;
+        }
+        let Some(keyword) = petal_indent::Dedent::of_line(&text) else {
+            return;
+        };
+        let Some(current) = petal_indent::indent_of(&text) else {
+            return;
+        };
+        let above = (0..line).rev().map(|l| self.buffer.line(l).to_string());
+        let Some(target) = petal_indent::dedent_target(above, current, keyword) else {
+            return;
+        };
+        if target >= current {
+            return;
+        }
+        let col = self.cursor.col;
+        self.edit(Point::new(line, target), Point::new(line, current), "");
+        self.cursor = Point::new(line, col - (current - target));
+    }
+
+    /// Insert a typed character. As [`insert`](Self::insert), and in a Petal
+    /// buffer the space after a line's `else` / `when` pulls that line back
+    /// to where the keyword belongs (`else` under its `if`, `when` under the
+    /// arm before it). The space is the trigger, not the keyword's last
+    /// letter, so a name that merely starts with one (`elsewhere`) is never
+    /// moved.
+    pub fn type_char(&mut self, c: char) {
+        let mut buf = [0u8; 4];
+        if c == ' ' && self.selection().is_none() {
+            self.petal_dedent_keyword();
+        }
+        self.insert(c.encode_utf8(&mut buf));
+    }
+
+    /// Insert pasted text. In a Petal buffer, text pasted where the line so
+    /// far is only indentation is moved as a block to the cursor's column:
+    /// its first line lands at the cursor and the other lines keep their
+    /// offsets from it, so the pasted code is in the block the cursor is in
+    /// rather than wherever its old indentation happens to put it. A paste
+    /// into the middle of a line, and any paste outside Petal, is verbatim.
+    pub fn paste(&mut self, text: &str) {
+        match self.petal_reindent_paste(text) {
+            Some(moved) => self.insert(&moved),
+            None => self.insert(text),
+        }
+    }
+
+    fn petal_reindent_paste(&self, text: &str) -> Option<String> {
+        if !self.petal_layout() {
+            return None;
+        }
+        let (start, end) = match self.selection() {
+            Some(sel) => sel.ordered(),
+            None => (self.cursor, self.cursor),
+        };
+        let head: String = self.buffer.line(start.line).chars().take(start.col).collect();
+        if !head.chars().all(|c| c == ' ') {
+            return None;
+        }
+        let tail: String = self.buffer.line(end.line).chars().skip(end.col).collect();
+        petal_indent::reindent_paste(text, start.col, !tail.trim().is_empty())
+    }
+
+    /// Whole lines to paste under (`below`) or over line `line`, moved to
+    /// that line's block column in a Petal buffer: the line's own column, or
+    /// one step in when pasting under a line that opens a block. `None` when
+    /// they should go in as they are.
+    pub fn petal_reindent_lines(&self, block: &str, line: usize, below: bool) -> Option<String> {
+        if !self.petal_layout() {
+            return None;
+        }
+        let text = self.buffer.line(line);
+        let mut target = petal_indent::indent_of(&text)?;
+        if below && petal_indent::opens_block(&text) {
+            target += petal_indent::STEP;
+        }
+        Some(petal_indent::reindent_lines(block, target)?.join("\n"))
+    }
+
+    /// Toggle line comments on lines `first..=last` with the language's
+    /// marker (`#` in Petal), as one undo step. `false` when the buffer's
+    /// language has no line comment or is unknown.
+    pub fn toggle_comment(&mut self, first: usize, last: usize) -> bool {
+        let Some(marker) = self.language_name().and_then(petal_indent::line_comment) else {
+            return false;
+        };
+        if self.projection.is_some() {
+            return false;
+        }
+        let last = last.min(self.buffer.line_count().saturating_sub(1));
+        let (a, b) = (Point::new(first, 0), Point::new(last, self.buffer.line_len(last)));
+        let old = self.buffer.text_range(a, b);
+        let lines: Vec<&str> = old.split('\n').collect();
+        let new = petal_indent::toggle_comment(&lines, marker).join("\n");
+        if new != old {
+            self.edit(a, b, &new);
+            self.buffer.end_undo_run();
+        }
+        true
     }
 
     pub fn insert(&mut self, text: &str) {
@@ -955,10 +1108,12 @@ impl EditorView {
     }
 
     /// Open a line below the cursor, carrying the current line's full indent
-    /// (vim's `autoindent`), and move past the indent. Used by `o`.
+    /// (vim's `autoindent`; one step more under a line that opens a Petal
+    /// block), and move past the indent. Used by `o`.
     pub fn open_below(&mut self) {
         let line = self.cursor.line;
-        let indent = self.open_seed(line, usize::MAX);
+        let step = self.petal_step_after(line, usize::MAX);
+        let indent = format!("{}{step}", self.open_seed(line, usize::MAX));
         let end = Point::new(line, self.buffer.line_len(line));
         self.cursor = self.insert_at(end, &format!("\n{indent}"));
         self.anchor = None;
@@ -2681,11 +2836,37 @@ fn thumb(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn view(text: &str) -> EditorView {
         EditorView::from_buffer(Buffer::from_str(text))
+    }
+
+    /// A view of a `.ptl` file holding `text`, so Petal's indentation rules
+    /// apply. The file itself is gone when this returns; the buffer keeps
+    /// the path, which is all the language lookup reads.
+    pub(crate) fn petal_view(text: &str) -> EditorView {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sketch.ptl");
+        std::fs::write(&path, text).unwrap();
+        EditorView::from_buffer(Buffer::open(&path).unwrap())
+    }
+
+    /// Type `text` at the cursor the way Insert mode does, Enter included.
+    fn type_text(v: &mut EditorView, text: &str) {
+        for c in text.chars() {
+            match c {
+                '\n' => v.insert_newline(),
+                c => v.type_char(c),
+            }
+        }
+    }
+
+    fn at_end(mut v: EditorView) -> EditorView {
+        let last = v.buffer.line_count() - 1;
+        v.cursor = Point::new(last, v.buffer.line_len(last));
+        v
     }
 
     #[test]
@@ -3200,12 +3381,253 @@ mod tests {
 
     #[test]
     fn plain_multiline_insert_does_not_auto_indent() {
-        // The paste path (Cmd+V and the debug /text endpoint) goes through
-        // insert(), which must never add indentation to pasted lines.
+        // insert() is the raw path (the debug /text endpoint, programmatic
+        // edits): it never adds indentation to the lines it is given.
         let mut v = view("    foo");
         v.cursor = Point::new(0, 7);
         v.insert("\nbar\nbaz");
         assert_eq!(v.buffer.to_string(), "    foo\nbar\nbaz");
+        // In a Petal buffer too.
+        let mut v = at_end(petal_view("  if a then"));
+        v.insert("\nbar\nbaz");
+        assert_eq!(v.buffer.to_string(), "  if a then\nbar\nbaz");
+    }
+
+    #[test]
+    fn paste_outside_petal_is_verbatim() {
+        // Cmd+V goes through paste(); a buffer that is not Petal gets the
+        // clipboard's text exactly, whatever column the cursor is at.
+        let mut v = at_end(view("fn f() {\n    "));
+        v.paste("        a();\n        b();");
+        assert_eq!(v.buffer.to_string(), "fn f() {\n            a();\n        b();");
+    }
+
+    // --- Petal: indentation-delimited blocks --------------------------------
+
+    #[test]
+    fn petal_newline_after_an_opener_indents_a_step() {
+        for (line, body) in [
+            ("if x < 0 then", "  "),
+            ("for item in items do", "  "),
+            ("fn clamp(x, lo, hi)", "  "),
+            ("pub fn abs(x: int) -> int", "  "),
+            ("class Point", "  "),
+            ("enum Shape", "  "),
+            ("match dir", "  "),
+            ("  when \"left\" ->", "    "),
+            ("  else", "    "),
+            ("defer_paint(fn()", "  "),
+            ("  if c then  # why", "    "),
+        ] {
+            let mut v = at_end(petal_view(line));
+            v.insert_newline();
+            assert_eq!(v.buffer.to_string(), format!("{line}\n{body}"), "{line}");
+            assert_eq!(v.cursor, Point::new(1, body.len()), "{line}");
+        }
+    }
+
+    #[test]
+    fn petal_newline_after_a_complete_line_copies_the_indent() {
+        for line in [
+            "  let x = 1",
+            "  if x < 0 then return -x",
+            "  fn box(w) \"{w}\"",
+            "  let double = fn(x) -> x * 2",
+            "  when d -> 0",
+            "  native fn sqrt(x: num) -> float",
+            "  # and then",
+        ] {
+            let mut v = at_end(petal_view(line));
+            v.insert_newline();
+            assert_eq!(v.buffer.to_string(), format!("{line}\n  "), "{line}");
+        }
+    }
+
+    #[test]
+    fn petal_newline_reads_only_the_text_before_the_cursor() {
+        // Breaking a one-liner after its `then` makes the rest the body.
+        let mut v = petal_view("if c then a()");
+        v.cursor = Point::new(0, 9);
+        v.insert_newline();
+        assert_eq!(v.buffer.to_string(), "if c then\n   a()");
+        // Breaking before the opener opens nothing.
+        let mut v = petal_view("  foo() then");
+        v.cursor = Point::new(0, 7);
+        v.insert_newline();
+        assert_eq!(v.buffer.to_string(), "  foo()\n   then");
+    }
+
+    #[test]
+    fn opener_indent_is_petal_only() {
+        let mut v = at_end(view("if x then"));
+        v.insert_newline();
+        assert_eq!(v.buffer.to_string(), "if x then\n");
+    }
+
+    #[test]
+    fn petal_open_below_indents_under_an_opener() {
+        let mut v = petal_view("  for x in xs do\n  done()");
+        v.open_below();
+        assert_eq!(v.buffer.to_string(), "  for x in xs do\n    \n  done()");
+        assert_eq!(v.cursor, Point::new(1, 4));
+        // Opening above never does: that line is a sibling.
+        let mut v = petal_view("  for x in xs do");
+        v.open_above();
+        assert_eq!(v.buffer.to_string(), "  \n  for x in xs do");
+    }
+
+    #[test]
+    fn petal_typing_an_if_chain_dedents_else() {
+        let mut v = petal_view("");
+        type_text(&mut v, "fn sign(x)\nif x < 0 then\n-1\nelse if x == 0 then\n0\nelse\n1");
+        assert_eq!(
+            v.buffer.to_string(),
+            "fn sign(x)\n  if x < 0 then\n    -1\n  else if x == 0 then\n    0\n  else\n    1"
+        );
+    }
+
+    #[test]
+    fn petal_else_is_pulled_back_by_the_space_or_the_enter_after_it() {
+        // Not by its last letter: `elsewhere` is a name.
+        let mut v = at_end(petal_view("if a then\n  b\n  "));
+        type_text(&mut v, "else");
+        assert_eq!(v.buffer.line(2).to_string(), "  else");
+        type_text(&mut v, "where()");
+        assert_eq!(v.buffer.line(2).to_string(), "  elsewhere()");
+
+        let mut v = at_end(petal_view("if a then\n  b\n  "));
+        type_text(&mut v, "else ");
+        assert_eq!(v.buffer.line(2).to_string(), "else ");
+        assert_eq!(v.cursor, Point::new(2, 5));
+
+        let mut v = at_end(petal_view("if a then\n  b\n  "));
+        type_text(&mut v, "else\n");
+        assert_eq!(v.buffer.to_string(), "if a then\n  b\nelse\n  ");
+        assert_eq!(v.cursor, Point::new(3, 2));
+    }
+
+    #[test]
+    fn petal_else_placed_by_hand_is_left_alone() {
+        // Pulled back to the inner `if` by hand: not moved on to the outer.
+        let mut v = at_end(petal_view("if a then\n  if b then\n    x\n  "));
+        type_text(&mut v, "else ");
+        assert_eq!(v.buffer.line(3).to_string(), "  else ");
+        // Continuing a one-line `if` at its own column (B4).
+        let mut v = at_end(petal_view("fn f()\n  if a then b\n  "));
+        type_text(&mut v, "else c");
+        assert_eq!(v.buffer.line(2).to_string(), "  else c");
+        // `else` in the middle of other text.
+        let mut v = at_end(petal_view("if a then\n  b\n  x = c "));
+        type_text(&mut v, "else ");
+        assert_eq!(v.buffer.line(2).to_string(), "  x = c else ");
+    }
+
+    #[test]
+    fn petal_typing_match_arms_dedents_when() {
+        let mut v = petal_view("");
+        type_text(
+            &mut v,
+            "match dir\nwhen \"left\" ->\nslide(g)\nwhen \"right\" -> g\nwhen d ->\nfail(d)",
+        );
+        assert_eq!(
+            v.buffer.to_string(),
+            "match dir\n  when \"left\" ->\n    slide(g)\n  when \"right\" -> g\n  when d ->\n    fail(d)"
+        );
+    }
+
+    #[test]
+    fn dedent_keys_are_petal_only() {
+        let mut v = at_end(view("if a then\n  b\n  "));
+        type_text(&mut v, "else ");
+        assert_eq!(v.buffer.line(2).to_string(), "  else ");
+    }
+
+    #[test]
+    fn petal_paste_lands_in_the_cursors_block() {
+        // Copied from a deeper block, pasted at the body column of `fn f()`.
+        let mut v = at_end(petal_view("fn f()\n  "));
+        v.paste("      if a then\n        b()\n      else\n        c()");
+        assert_eq!(
+            v.buffer.to_string(),
+            "fn f()\n  if a then\n    b()\n  else\n    c()"
+        );
+        // Copied from the top level, pasted into a nested block.
+        let mut v = at_end(petal_view("fn f()\n  for x in xs do\n    "));
+        v.paste("if a then\n  b()\nc()");
+        assert_eq!(
+            v.buffer.to_string(),
+            "fn f()\n  for x in xs do\n    if a then\n      b()\n    c()"
+        );
+        // At column 0 the block goes to the top level.
+        let mut v = at_end(petal_view("fn f()\n  a()\n"));
+        v.paste("    fn g()\n      b()\n");
+        assert_eq!(v.buffer.to_string(), "fn f()\n  a()\nfn g()\n  b()\n");
+    }
+
+    #[test]
+    fn petal_paste_of_a_selection_that_began_at_its_first_character() {
+        // The first line lost its indentation to the selection; the body
+        // lines still show where the block stood.
+        let mut v = at_end(petal_view("fn f()\n  "));
+        v.paste("for x in xs do\n        g(x)\n        h(x)");
+        assert_eq!(v.buffer.to_string(), "fn f()\n  for x in xs do\n    g(x)\n    h(x)");
+    }
+
+    #[test]
+    fn petal_paste_in_front_of_code_keeps_that_code_at_its_column() {
+        let mut v = petal_view("fn f()\n  z()");
+        v.cursor = Point::new(1, 2);
+        v.paste("    a()\n    b()\n");
+        assert_eq!(v.buffer.to_string(), "fn f()\n  a()\n  b()\n  z()");
+    }
+
+    #[test]
+    fn petal_paste_into_the_middle_of_a_line_is_verbatim() {
+        let mut v = at_end(petal_view("  let xs = "));
+        v.paste("[\n      1,\n    ]");
+        assert_eq!(v.buffer.to_string(), "  let xs = [\n      1,\n    ]");
+    }
+
+    #[test]
+    fn petal_paste_leaves_string_content_and_tabs_alone() {
+        let mut v = at_end(petal_view("fn f()\n  "));
+        v.paste("    let s = \"\"\"\n  raw\n\"\"\"\n    g(s)");
+        assert_eq!(
+            v.buffer.to_string(),
+            "fn f()\n  let s = \"\"\"\n  raw\n\"\"\"\n  g(s)"
+        );
+        let mut v = at_end(petal_view("fn f()\n  "));
+        v.paste("\ta()\n\tb()");
+        assert_eq!(v.buffer.to_string(), "fn f()\n  \ta()\n\tb()");
+    }
+
+    #[test]
+    fn petal_paste_replaces_a_selection_and_undoes_in_one_step() {
+        let mut v = petal_view("fn f()\n  old()");
+        v.anchor = Some(Point::new(1, 2));
+        v.cursor = Point::new(1, 7);
+        v.paste("      a()\n      b()");
+        assert_eq!(v.buffer.to_string(), "fn f()\n  a()\n  b()");
+        v.undo();
+        assert_eq!(v.buffer.to_string(), "fn f()\n  old()");
+    }
+
+    #[test]
+    fn comment_toggle_uses_the_languages_marker() {
+        let mut v = petal_view("fn f()\n  a()\n  b()");
+        assert!(v.toggle_comment(1, 2));
+        assert_eq!(v.buffer.to_string(), "fn f()\n  # a()\n  # b()");
+        assert!(v.toggle_comment(1, 2));
+        assert_eq!(v.buffer.to_string(), "fn f()\n  a()\n  b()");
+        // An old `//` comment is not Petal's marker: it is commented again,
+        // not stripped.
+        let mut v = petal_view("// old");
+        v.toggle_comment(0, 0);
+        assert_eq!(v.buffer.to_string(), "# // old");
+        // No known language, no marker.
+        let mut v = view("a()");
+        assert!(!v.toggle_comment(0, 0));
+        assert_eq!(v.buffer.to_string(), "a()");
     }
 
     #[test]

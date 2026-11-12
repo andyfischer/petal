@@ -105,6 +105,8 @@ pub struct VimState {
     g_pending: bool,
     /// Saw a leading `z`, waiting for the scroll target (`zz`/`zt`/`zb`).
     z_pending: bool,
+    /// Saw `gc`, waiting for the second `c` of `gcc` (toggle line comments).
+    gc_pending: bool,
     /// `r` was pressed; the next character replaces the one(s) under the cursor.
     replace_pending: bool,
     /// Last yanked/deleted text and whether it was line-oriented.
@@ -141,6 +143,7 @@ impl VimState {
         self.operator = None;
         self.g_pending = false;
         self.z_pending = false;
+        self.gc_pending = false;
         self.replace_pending = false;
         self.find_pending = None;
         self.object_pending = None;
@@ -158,7 +161,7 @@ impl VimState {
         VimPending {
             count: self.count,
             operator: self.operator,
-            g_pending: self.g_pending,
+            g_pending: self.g_pending || self.gc_pending,
             z_pending: self.z_pending,
             replace_pending: self.replace_pending,
             find_pending: self.find_pending,
@@ -176,7 +179,8 @@ pub struct VimPending {
     pub count: Option<usize>,
     /// Operator awaiting a motion (`d`/`c`/`y`).
     pub operator: Option<char>,
-    /// A leading `g` awaiting its second key (`gg`, `gj`).
+    /// A leading `g` awaiting its second key (`gg`, `gj`), or `gc` awaiting
+    /// the `c` of `gcc`.
     pub g_pending: bool,
     /// A leading `z` awaiting its scroll target (`zz`/`zt`/`zb`).
     pub z_pending: bool,
@@ -264,7 +268,7 @@ fn handle_insert(
             view.cursor = view.step_backward_in_line(view.cursor);
             view.clamp_cursor_normal();
         }
-        Key::Char(c) => view.insert(&c.to_string()),
+        Key::Char(c) => view.type_char(c),
         // Ctrl chords never insert text (vim's insert-mode Ctrl commands,
         // like Ctrl+R register paste, are not implemented).
         Key::Ctrl(_) => {}
@@ -445,10 +449,33 @@ fn handle_normal(
             // reduce to `j`/`k`.
             'j' => display_line_motion(view, false, visible_cols, clipboard),
             'k' => display_line_motion(view, true, visible_cols, clipboard),
+            // `gc` on a visual selection toggles line comments on its lines;
+            // in Normal mode it waits for the second `c` of `gcc`.
+            'c' if view.vim.mode.is_visual() => {
+                let (first, last) = visual_line_span(view);
+                view.toggle_comment(first, last);
+                let cursor = Point::new(first, first_non_blank(view, first));
+                finish_visual_edit(view, cursor);
+            }
+            'c' if view.vim.operator.is_none() => view.vim.gc_pending = true,
             _ => {
                 view.vim.count = None;
                 view.vim.operator = None;
             }
+        }
+        return Action::None;
+    }
+
+    // `gcc`: toggle line comments on `count` lines from the cursor, with the
+    // marker of the buffer's language (`#` in Petal).
+    if view.vim.gc_pending {
+        view.vim.gc_pending = false;
+        let n = view.vim.count.take().unwrap_or(1);
+        if c == 'c' {
+            let first = view.cursor.line;
+            view.toggle_comment(first, first + n - 1);
+            view.cursor = Point::new(first, first_non_blank(view, first));
+            view.clamp_cursor_normal();
         }
         return Action::None;
     }
@@ -1888,6 +1915,10 @@ fn paste(view: &mut EditorView, after: bool, count: usize, clipboard: &mut dyn C
             .collect::<Vec<_>>()
             .join("\n");
         let line = view.cursor.line;
+        // In a Petal buffer the lines go to the block they are pasted into.
+        let block = view
+            .petal_reindent_lines(&block, line, after)
+            .unwrap_or(block);
         if after {
             let at = Point::new(line, view.buffer.line_len(line));
             view.insert_at(at, &format!("\n{block}"));
@@ -2338,6 +2369,73 @@ mod tests {
         for ch in s.chars() {
             handle(v, Key::Char(ch), visible_lines, WIDE, &mut clip);
         }
+    }
+
+    #[test]
+    fn gcc_toggles_petal_line_comments() {
+        let mut v = crate::editor_view::tests::petal_view("fn f()\n  a()\n  b()");
+        v.cursor = Point::new(1, 2);
+        keys(&mut v, "gcc");
+        assert_eq!(v.buffer.to_string(), "fn f()\n  # a()\n  b()");
+        assert!(v.vim.pending().is_clean());
+        keys(&mut v, "gcc");
+        assert_eq!(v.buffer.to_string(), "fn f()\n  a()\n  b()");
+        // With a count, and undone as one step.
+        keys(&mut v, "2gcc");
+        assert_eq!(v.buffer.to_string(), "fn f()\n  # a()\n  # b()");
+        keys(&mut v, "u");
+        assert_eq!(v.buffer.to_string(), "fn f()\n  a()\n  b()");
+        // `gc` and then something else does nothing.
+        keys(&mut v, "gcx");
+        assert_eq!(v.buffer.to_string(), "fn f()\n  a()\n  b()");
+        assert!(v.vim.pending().is_clean());
+    }
+
+    #[test]
+    fn visual_gc_toggles_comments_on_the_selected_lines() {
+        let mut v = crate::editor_view::tests::petal_view("if a then\n  b()\nelse\n  c()");
+        keys(&mut v, "Vjjgc");
+        assert_eq!(v.buffer.to_string(), "# if a then\n#   b()\n# else\n  c()");
+        assert_eq!(v.vim.mode, Mode::Normal);
+        keys(&mut v, "Vjjgc");
+        assert_eq!(v.buffer.to_string(), "if a then\n  b()\nelse\n  c()");
+    }
+
+    #[test]
+    fn linewise_paste_in_petal_goes_to_the_block_under_the_cursor() {
+        // Yank a nested line, paste it under a top-level statement.
+        let mut v = crate::editor_view::tests::petal_view("fn f()\n  if a then\n    deep()\nlet x = 1");
+        v.cursor = Point::new(2, 4);
+        keys(&mut v, "yyjp");
+        assert_eq!(
+            v.buffer.to_string(),
+            "fn f()\n  if a then\n    deep()\nlet x = 1\ndeep()"
+        );
+        // Under an opener it becomes the first line of the body; over a
+        // line (`P`) it is that line's sibling.
+        let mut v = crate::editor_view::tests::petal_view("a()\nfor x in xs do\n  b()");
+        keys(&mut v, "yyjp");
+        assert_eq!(v.buffer.to_string(), "a()\nfor x in xs do\n  a()\n  b()");
+        keys(&mut v, "jP");
+        assert_eq!(v.buffer.to_string(), "a()\nfor x in xs do\n  a()\n  a()\n  b()");
+    }
+
+    #[test]
+    fn linewise_paste_outside_petal_is_verbatim() {
+        let mut v = view("    deep()\nx");
+        keys(&mut v, "yyjp");
+        assert_eq!(v.buffer.to_string(), "    deep()\nx\n    deep()");
+    }
+
+    #[test]
+    fn insert_mode_typing_in_petal_indents_and_dedents() {
+        let mut v = crate::editor_view::tests::petal_view("");
+        keys(&mut v, "iif a then");
+        key(&mut v, Key::Enter);
+        keys(&mut v, "b()");
+        key(&mut v, Key::Enter);
+        keys(&mut v, "else c()");
+        assert_eq!(v.buffer.to_string(), "if a then\n  b()\nelse c()");
     }
 
     /// Feed one non-character key.

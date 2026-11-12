@@ -1132,7 +1132,7 @@ fn clipboard_paste(
     visible_cols: usize,
 ) {
     if let Some(text) = clipboard.get().filter(|t| !t.is_empty()) {
-        view.insert(&text);
+        view.paste(&text);
         after_clipboard_edit(view);
         view.ensure_cursor_visible(visible, visible_cols);
     }

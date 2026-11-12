@@ -136,7 +136,7 @@ struct Token {
 
 /// Words after which a `-` starts a negative number rather than subtracting.
 const UNARY_AFTER: &[&str] = &[
-    "return", "then", "else", "do", "in", "and", "or", "not", "if", "elif", "while", "let", "var",
+    "return", "then", "else", "do", "in", "and", "or", "not", "if", "elsif", "while", "let", "var",
 ];
 
 /// Keywords a value can follow directly, so a `:` after one can start a
@@ -173,11 +173,16 @@ fn tokenize(chars: &[char]) -> Vec<Token> {
             out.push(Token { tok: Tok::Opaque, start, end: i });
             continue;
         }
-        if c == '#' && chars.get(i + 1).is_some_and(|c| c.is_ascii_alphanumeric()) {
-            i += 1;
-            while i < n && is_ident(chars[i]) {
-                i += 1;
+        // `#` starts a comment, except in the deprecated colour spelling
+        // (`#rrggbb`: 3, 4, 6 or 8 hex digits and a word end), which Petal's
+        // lexer does not read as a comment either.
+        if c == '#' {
+            let digits = chars[i + 1..].iter().take_while(|c| c.is_ascii_hexdigit()).count();
+            let word_end = !chars.get(i + 1 + digits).is_some_and(|c| is_ident(*c));
+            if !(matches!(digits, 3 | 4 | 6 | 8) && word_end) {
+                break;
             }
+            i += 1 + digits;
             out.push(Token { tok: Tok::Opaque, start, end: i });
             continue;
         }

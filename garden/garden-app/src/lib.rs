@@ -20,6 +20,7 @@ mod lsp;
 mod panel_tess;
 mod panel_view;
 mod petal_ide;
+mod petal_indent;
 mod process_pane;
 mod recents;
 mod script_client;
@@ -728,15 +729,15 @@ fn seed_petal_ide_ir_view() {
 /// The starter panel sketch written into a fresh Petal-IDE file. A small, safe
 /// animated scene using only documented panel natives, so a brand-new canvas is
 /// alive on launch and every line is an obvious thing to tweak.
-const PETAL_IDE_STARTER: &str = r#"// ── Petal IDE ──────────────────────────────────────────────────────────────
-// Edit this file on the left; the canvas on the right updates live as you type
-// (no save needed — though Cmd+S still writes to disk). `state` variables
-// survive each live reload, so animation keeps its place while you edit.
-//
-// Draw:   clear / draw_rect / draw_rect_outline / draw_line / draw_circle /
-//         fill_triangle / fill_poly / draw_text
-// Timing: dt() / frame_count() / screen_width() / screen_height()
-// Try changing a number below and watch the canvas react.
+const PETAL_IDE_STARTER: &str = r#"# ── Petal IDE ──────────────────────────────────────────────────────────────
+# Edit this file on the left; the canvas on the right updates live as you type
+# (no save needed — though Cmd+S still writes to disk). `state` variables
+# survive each live reload, so animation keeps its place while you edit.
+#
+# Draw:   clear / draw_rect / draw_rect_outline / draw_line / draw_circle /
+#         fill_triangle / fill_poly / draw_text
+# Timing: dt() / frame_count() / screen_width() / screen_height()
+# Try changing a number below and watch the canvas react.
 
 state t = 0.0
 t = t + dt()
@@ -749,7 +750,7 @@ let cy = int(float(h) * 0.5)
 clear(14, 16, 24)
 draw_rect_outline(0, 0, w, h, 40, 48, 66)
 
-// A ring of pulsing dots orbiting the center.
+# A ring of pulsing dots orbiting the center.
 let n = 12
 for i in range(0, n) do
   let a = t + float(i) * (6.2832 / float(n))
@@ -758,9 +759,8 @@ for i in range(0, n) do
   let y = cy + int(sin(a) * rad)
   let pulse = (sin(t * 2.0 + float(i)) + 1.0) * 0.5
   draw_circle(x, y, 4 + int(pulse * 6.0), 90, int(150.0 + pulse * 100.0), 230)
-end
 
-// A heartbeat disc in the middle.
+# A heartbeat disc in the middle.
 let beat = (sin(t * 3.0) + 1.0) * 0.5
 draw_circle(cx, cy, 14 + int(beat * 8.0), 240, 130, 90)
 

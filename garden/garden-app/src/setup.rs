@@ -19,12 +19,12 @@ fn config_dir() -> Result<PathBuf, String> {
 fn default_init_ptl(config_dir: &Path) -> String {
     let scratch = config_dir.join("scratch.md");
     format!(
-        "// Garden layout script — your personal config (~/.garden/init.ptl).\n\
-         // Edit while Garden is running and the layout hot-reloads.\n\
-         //\n\
-         // editor()       → an empty scratch pane\n\
-         // editor(\"path\") → open a file (relative paths resolve to the launch directory)\n\
-         // row([...]) / column([...], [ratios]) → split panes\n\
+        "# Garden layout script — your personal config (~/.garden/init.ptl).\n\
+         # Edit while Garden is running and the layout hot-reloads.\n\
+         #\n\
+         # editor()       → an empty scratch pane\n\
+         # editor(\"path\") → open a file (relative paths resolve to the launch directory)\n\
+         # row([...]) / column([...], [ratios]) → split panes\n\
          \n\
          layout(\n\
          \x20   column([\n\

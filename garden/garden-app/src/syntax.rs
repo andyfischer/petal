@@ -809,6 +809,41 @@ mod tests {
         assert_eq!(span_at(&lines, 1, 2).unwrap().kind, TokenKind::Function);
     }
 
+    /// The indentation-delimited spelling: blocks with no `end`, `#`
+    /// comments, `:hex` colours and `else if`. The grammar's external scanner
+    /// (layout, colours) has to be compiled in for any of this to parse.
+    #[test]
+    fn petal_layout_blocks_comments_and_colours() {
+        let mut h = Highlighter::new();
+        let src = "# a note\nfn tint(x)\n  if x < 0 then\n    :f80\n  else if x == 0 then\n    :000000\n  else\n    {r: x}\nlet t = tint(1)";
+        let lines = h.highlight_lines(lang("init.ptl"), src);
+        let kind = |line: usize, col: usize| span_at(&lines, line, col).map(|s| s.kind);
+        assert_eq!(kind(0, 0), Some(TokenKind::Comment));
+        assert_eq!(kind(0, 5), Some(TokenKind::Comment));
+        assert_eq!(kind(1, 0), Some(TokenKind::Keyword)); // fn
+        assert_eq!(kind(1, 3), Some(TokenKind::Function)); // tint
+        assert_eq!(kind(2, 2), Some(TokenKind::Keyword)); // if
+        assert_eq!(kind(2, 11), Some(TokenKind::Keyword)); // then
+        // A colour is a literal, not a comment and not a separator + name.
+        let colour = span_at(&lines, 3, 5).expect("span on the colour");
+        assert_eq!((colour.start_col, colour.end_col), (4, 8));
+        assert!(!matches!(colour.kind, TokenKind::Comment | TokenKind::Variable));
+        assert_eq!(kind(4, 2), Some(TokenKind::Keyword)); // else
+        assert_eq!(kind(4, 7), Some(TokenKind::Keyword)); // if
+        assert_eq!(kind(6, 2), Some(TokenKind::Keyword)); // else
+        // The statement after the dedent is its own statement: `tint` is a
+        // call again, not swallowed by the block above.
+        assert_eq!(kind(8, 0), Some(TokenKind::Keyword)); // let
+        assert_eq!(kind(8, 8), Some(TokenKind::Function));
+
+        // The same block with its `end`s still highlights.
+        let src = "fn f(x)\n  if x then\n    1\n  end\nend\nlet y = f(1)";
+        let lines = h.highlight_lines(lang("init.ptl"), src);
+        assert_eq!(span_at(&lines, 3, 2).map(|s| s.kind), Some(TokenKind::Keyword));
+        assert_eq!(span_at(&lines, 4, 0).map(|s| s.kind), Some(TokenKind::Keyword));
+        assert_eq!(span_at(&lines, 5, 8).map(|s| s.kind), Some(TokenKind::Function));
+    }
+
     /// Every registry grammar must build and compile its highlights query — a
     /// stale grammar/query or wrong const name would otherwise fail silently at
     /// runtime (highlighting just goes blank for that language).

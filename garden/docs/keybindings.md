@@ -34,8 +34,27 @@ still works, and typing in Insert mode replaces a selection as one undo step.
 
 **Auto-indent** (vim's `autoindent`): Enter in Insert mode and `o`/`O` carry the
 current line's leading whitespace onto the new line, cursor after the indent;
-Enter inside the indent carries only the part left of the cursor. Plain
-copy-indent only — no language awareness — and pasting never re-indents.
+Enter inside the indent carries only the part left of the cursor. Outside
+Petal that is all: plain copy-indent, and pasting never re-indents.
+
+**Petal buffers** (`.ptl`), where indentation delimits blocks
+([indentation.md](../../docs/syntax/indentation.md)):
+
+- Enter and `o` after a block opener (a line ending in `then`, `do`, `else` or
+  `->`, or a `fn` / `class` / `enum` / `match` header) indent the new line one
+  step (two spaces) further.
+- A line holding only `else` or `when`, typed at the body's column, is pulled
+  back to its `if` / the previous arm by the space or Enter after the keyword
+  (so `else if` works, and `elsewhere` is never moved). A keyword already
+  placed by hand, or an `else` continuing a one-line `if` above it, stays.
+- Cmd+V where the line so far is only indentation, and linewise `p` / `P`,
+  move the pasted lines as a block to the cursor's block column (one step in
+  when pasting under an opener); the lines keep their offsets from each other.
+  String content and tab-indented text are left as they are; a paste into the
+  middle of a line is verbatim.
+
+**Comments:** `gcc` (count-aware, `3gcc`) and Visual-mode `gc` toggle line
+comments with the language's marker: `#` in Petal, `//` in Rust, and so on.
 
 ## Global keybindings (every mode)
 

@@ -476,7 +476,14 @@ open:
 - **`{…}` holes in element children and attributes** are laid out like any
   other bracket. The lexer drops line breaks there, so the parser also treats
   "the next token is the first on its line" as a line break. A token after
-  element text that began on an earlier line counts as first on its line.
+  element text that began on an earlier line counts as first on its line,
+  and is measured where the text on its line starts (`some text {if c then`
+  is a line indented to `some`).
+- **A line that starts with a `/* … */` comment** is measured at the comment
+  (B15), wherever its first token is: `Lexer::token_layout_column`, passed
+  with `Parser::with_layout_columns`. A comment that began on an earlier
+  line counts when it starts that line. A tab in front of the comment is a
+  tab in the indentation (B11).
 - **A string's `{…}` hole** ends a one-line body with no `end`
   (`"{if c then 1 else 2}"`).
 - **A leading `-` under the line it was meant to continue** used to be a
@@ -499,6 +506,33 @@ open:
   of 20 (the rest of the file left flush under an `else`), cheesecake 6
   source files (an `end` hung between two columns, and one test fixture
   indented on purpose), petal-creative 0, petal-lang.org 0.
+
+### 3.8 Independent verification (2026-11-12)
+
+A second pass probed every B-row and the bullets of §3.1, §3.2, §3.5 and
+§5.1 through the CLI, without reading the fixtures first. The fixtures it
+left are in `core/tests/all/layout_probes.rs`.
+
+- **Bugs found and fixed:** a line starting with a `/* … */` comment was
+  measured at its first token (B15); a hole after element text on its line
+  was measured at the hole; fmt put the body of a `when … ->` arm in a
+  `{…}` hole at the arm's column, and the body of a block opened on the last
+  line of a multi-line string a step in from that line (both refused by the
+  gate, so the file could not be formatted).
+- **Real files:** 36 files of `examples/` and `core-runtime/` with their
+  `end` lines stripped by a throwaway script parse to the AST they had, and
+  fmt is idempotent and AST-preserving on both spellings.
+- **Misindentation:** 4,300 random misindentations of those files that
+  their `end`s still read are each an error or the same program (§5.1).
+- **Corpus invariance** re-run over the five projects, tabs now refused as
+  the compiler refuses them: no file parses to a different AST; the files
+  that fail with an indentation error are the ones listed in §3.7.
+- **A hazard the rules allow:** a line that starts with a binary operator
+  continues the statement above it wherever it is indented (B13), so under a
+  block with no `end` it continues the block's last statement:
+  `let s = for x in xs do` / `  str(x)` / `|> join(" ")` joins each element.
+  B7 says the block form cannot chain without `end`; nothing reports the
+  attempt. `end-lines` keeps such an `end`.
 
 ## 4. Grammar, by construct
 
@@ -650,6 +684,11 @@ Petal could do the same, but fmt would then have to leave them alone.
   which whitespace edits do not move.
 - **The gate is AST equality** (`rewrite::ast_shape`) on top of the token
   comparison, for every file fmt changes.
+- **A block opened on a line that begins inside a string** (`emit("…` /
+  `…", fn(x)`) is laid out a step in from the line the string began on,
+  which is the line the parser measures it from. The body of a `when … ->`
+  arm in a `{…}` hole is found by the line the `->` ends, since the lexer
+  drops the line breaks there.
 - **Three readings.** The language's own; by `end`s, for a legacy file whose
   indentation disagrees with them; and, for a file rejected only for its tabs
   (B11), with a tab as one column, accepted when the parse is the same with a

@@ -63,8 +63,10 @@ A one-line body extends as far as the expression reaches, so
 it sooner: `if c then 1 else 2 end + 3`.
 
 Comments and blank lines play no part in any of this: only lines of code are
-measured. Indent with spaces; a tab in the indentation of a line that is
-measured is an error.
+measured. A line that starts with a `/* … */` comment is measured where the
+comment starts, so `/* note */ step()` is indented like any other line.
+Indent with spaces; a tab in the indentation of a line that is measured is an
+error.
 
 ## `end`
 
@@ -155,7 +157,8 @@ each([1, 2], fn(x)
 
 Everything else inside brackets is free-form, as before: line breaks between
 elements and arguments mean nothing. A `{…}` hole among an element's children
-follows the rule too, measured from the first token of its line.
+follows the rule too, measured from where its line starts: the hole itself,
+or the text in front of it (`some text {if c then`).
 
 ## A snippet indented as a whole
 

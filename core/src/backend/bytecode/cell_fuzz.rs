@@ -674,6 +674,21 @@ fn state_cell_differential_fuzz() {
     }
 }
 
+/// Both soaks on the spelling with no `end` on a block over several lines.
+#[test]
+fn cell_differential_fuzz_without_ends() {
+    let n = iters().min(100);
+    let mut removed = 0;
+    for seed in 0..n {
+        for decl in ["var", "state var"] {
+            let (code, ends) = super::fuzz::without_block_ends(&Gen::new(seed).program(decl));
+            removed += (ends > 0) as u64;
+            assert_cell_parity(seed, decl, &code);
+        }
+    }
+    assert!(removed >= n, "only {removed} of {} programs lost an `end`", n * 2);
+}
+
 /// The soak proves nothing unless the programs run and the pass fires on
 /// them. Guards the generator against drifting into programs that all fail to
 /// compile, or that no longer contain a write the pass can take.

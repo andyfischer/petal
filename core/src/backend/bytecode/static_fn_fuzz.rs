@@ -654,7 +654,23 @@ const POLICIES: [&str; 4] = ["replay", "replay-memo", "fast", "baseline"];
 
 #[track_caller]
 fn assert_parity(seed: u64) -> Driven {
-    let texts = versions(seed);
+    assert_parity_of(seed, versions(seed))
+}
+
+/// The seed's three versions with no `end` on a block over several lines,
+/// and whether every one of them lost an `end`.
+fn versions_without_ends(seed: u64) -> ([String; 3], bool) {
+    let mut all = true;
+    let texts = versions(seed).map(|text| {
+        let (text, ends) = super::fuzz::without_block_ends(&text);
+        all &= ends > 0;
+        text
+    });
+    (texts, all)
+}
+
+#[track_caller]
+fn assert_parity_of(seed: u64, texts: [String; 3]) -> Driven {
     let mut first = None;
     for name in POLICIES {
         let base = RunPolicy::parse(name).unwrap();
@@ -704,6 +720,20 @@ fn static_in_functions_differential_fuzz() {
     for seed in 0..iters() {
         assert_parity(seed);
     }
+}
+
+/// The soak on the spelling with no `end` on a block over several lines:
+/// the reloads then diff two such texts.
+#[test]
+fn static_in_functions_differential_fuzz_without_ends() {
+    let n = iters().min(40);
+    let mut removed = 0;
+    for seed in 0..n {
+        let (texts, all) = versions_without_ends(seed);
+        removed += all as u64;
+        assert_parity_of(seed, texts);
+    }
+    assert!(removed * 2 >= n, "only {removed} of {n} seeds lost an `end` in every version");
 }
 
 /// The soak proves nothing unless the programs compile, run, keep values

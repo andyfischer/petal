@@ -680,6 +680,19 @@ fn enum_all_differential_fuzz() {
     }
 }
 
+/// The soak on the spelling with no `end` on a block over several lines.
+#[test]
+fn enum_all_differential_fuzz_without_ends() {
+    let n = iters().min(75);
+    let mut removed = 0;
+    for seed in 0..n {
+        let (code, ends) = super::fuzz::without_block_ends(&Gen::new(seed).program());
+        removed += (ends > 0) as u64;
+        assert_enum_all_parity(seed, &code);
+    }
+    assert!(removed * 2 >= n, "only {removed} of {n} programs lost an `end`");
+}
+
 /// The soak proves nothing unless the programs run, read `Enum.all` where the
 /// analysis makes it copy, and are rewritten in place by each route.
 #[test]

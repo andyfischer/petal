@@ -86,6 +86,11 @@ struct Gen {
     loop_depth: usize,
     /// Global cap on emitted statements, so nesting can't run away.
     stmt_budget: i64,
+    /// Spell the program in the canonical style: a block over several lines
+    /// is closed by its indentation and a one-line `if` takes no `end`. An
+    /// empty block keeps its `end`, which is what says it is a block. Draws
+    /// nothing from the rng, so a seed is the same program in both spellings.
+    endless: bool,
 }
 
 impl Gen {
@@ -100,6 +105,23 @@ impl Gen {
             next_id: 0,
             loop_depth: 0,
             stmt_budget: 60,
+            endless: false,
+        }
+    }
+
+    /// The generator for `seed`, writing blocks with no `end`.
+    fn endless(seed: u64) -> Gen {
+        Gen {
+            endless: true,
+            ..Gen::new(seed)
+        }
+    }
+
+    /// Close a construct. `empty` says one of its blocks has no statement,
+    /// which only an `end` can close.
+    fn close(&mut self, empty: bool) {
+        if !self.endless || empty {
+            self.line("end");
         }
     }
 
@@ -207,7 +229,11 @@ impl Gen {
                 let c = self.cond_expr(depth - 1);
                 let a = self.int_expr(depth - 1);
                 let b = self.int_expr(depth - 1);
-                format!("(if {c} then {a} else {b} end)")
+                if self.endless {
+                    format!("(if {c} then {a} else {b})")
+                } else {
+                    format!("(if {c} then {a} else {b} end)")
+                }
             }
         }
     }
@@ -282,8 +308,10 @@ impl Gen {
             s.push_str(&format!("{pad}when {g} if {g} > 2 -> {body}\n"));
         }
         let body = self.int_expr(1);
-        s.push_str(&format!("{pad}when _ -> {body}\n"));
-        s.push_str(&format!("{}end", "  ".repeat(self.indent)));
+        s.push_str(&format!("{pad}when _ -> {body}"));
+        if !self.endless {
+            s.push_str(&format!("\n{}end", "  ".repeat(self.indent)));
+        }
         s
     }
 
@@ -454,6 +482,7 @@ impl Gen {
         let c = self.cond_expr(1);
         self.line(&format!("if {c} then"));
         self.indent += 1;
+        let mut body = self.src.len();
         self.block(3);
         // break/continue coverage: from inside an if within a loop, the
         // lowering must run every enclosing region's phi carry-outs — the
@@ -463,13 +492,16 @@ impl Gen {
             self.line(kw);
         }
         self.indent -= 1;
+        let mut empty = self.src.len() == body;
         if self.rng.chance(40) {
             self.line("else");
             self.indent += 1;
+            body = self.src.len();
             self.block(2);
+            empty |= self.src.len() == body;
             self.indent -= 1;
         }
-        self.line("end");
+        self.close(empty);
     }
 
     fn for_stmt(&mut self) {
@@ -486,11 +518,13 @@ impl Gen {
             frozen: true,
             is_var: false,
         });
+        let body = self.src.len();
         self.block(3);
+        let empty = self.src.len() == body;
         self.exit_scope();
         self.loop_depth -= 1;
         self.indent -= 1;
-        self.line("end");
+        self.close(empty);
     }
 
     fn while_stmt(&mut self) {
@@ -514,7 +548,8 @@ impl Gen {
         self.exit_scope();
         self.loop_depth -= 1;
         self.indent -= 1;
-        self.line("end");
+        // The counter's decrement is always there, so the body is not empty.
+        self.close(false);
         self.vars.push(Var {
             name: w,
             kind: Kind::Int,
@@ -546,7 +581,8 @@ impl Gen {
         self.vars = outer_vars;
         self.scopes = outer_scopes;
         self.indent -= 1;
-        self.line("end");
+        // The result expression is always there.
+        self.close(false);
         self.funcs.push((name, arity));
     }
 
@@ -828,4 +864,64 @@ fn static_cache_fuzz() {
         skipping * 5 >= iters,
         "only {skipping}/{iters} generated programs had a static run skipped"
     );
+}
+
+// ── Blocks closed by indentation ────────────────────────────────
+
+/// `code` with every `end` that `petal migrate-old-code` [end-lines] removes
+/// taken out, and how many that was: the canonical spelling of a program a
+/// generator wrote with `end`s. The other fuzzers in this directory run their
+/// oracles on it too. The transform checks that the parse is unchanged and
+/// keeps an `end` it cannot remove, so `Gen::endless` above is the stricter
+/// test of the layout rules; this one covers the shapes those generators
+/// emit. A program that does not parse is returned as it is.
+pub(super) fn without_block_ends(code: &str) -> (String, usize) {
+    match crate::fmt::remove_block_ends(code) {
+        Ok(r) => (r.text, r.removed),
+        Err(_) => (code.to_string(), 0),
+    }
+}
+
+/// A seed's program with no `end`s must be the program it is with them: the
+/// same IR, so everything below the parser sees no difference.
+#[test]
+fn a_seed_is_the_same_program_without_ends() {
+    let iters: u64 = std::env::var("PETAL_FUZZ_ITERS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(500);
+    let (mut fewer, mut none) = (0, 0);
+    for seed in 0..iters {
+        let with = Gen::new(seed).program();
+        let without = Gen::endless(seed).program();
+        fewer += (without.len() < with.len()) as u64;
+        none += !without.lines().any(|l| l.trim() == "end") as u64;
+        let compile = |code: &str| {
+            Env::new()
+                .compile_program(ProgramId(0), code)
+                .unwrap_or_else(|e| panic!("seed {seed} failed to compile: {e}\n--- program ---\n{code}"))
+        };
+        if let Err(diff) = crate::ir_equiv::ir_equivalent(&compile(&with), &compile(&without)) {
+            panic!(
+                "seed {seed} is a different program without its `end`s: {diff:?}\
+                 \n--- with ---\n{with}\n--- without ---\n{without}"
+            );
+        }
+    }
+    assert!(fewer * 10 >= iters * 9, "only {fewer}/{iters} programs lost an `end`");
+    assert!(none * 2 > iters, "only {none}/{iters} programs have no `end` line left");
+}
+
+/// The oracles above, on the spelling with no `end`s.
+#[test]
+fn differential_fuzz_without_ends() {
+    let iters: u64 = std::env::var("PETAL_FUZZ_ITERS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(200);
+    for seed in 0..iters {
+        let code = Gen::endless(seed).program();
+        assert_exact_parity(seed, &code);
+        assert_ir_round_trip(seed, &code);
+    }
 }

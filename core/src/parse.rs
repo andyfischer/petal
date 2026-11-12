@@ -68,7 +68,7 @@ pub(crate) fn token_desc(tok: &Token) -> String {
         Token::String(_) => "a string literal".to_string(),
         Token::Ident(name) | Token::JsxTagName(name) => kw(name),
         Token::JsxText(_) => "text".to_string(),
-        Token::Color(hex) => kw(&format!("#{hex}")),
+        Token::Color(hex) => kw(&format!(":{hex}")),
         Token::Newline => "a line break".to_string(),
         Token::Eof => "end of input".to_string(),
         Token::InterpStart | Token::InterpEnd => "a string interpolation".to_string(),
@@ -3525,7 +3525,7 @@ fn literal_token_text(tok: &Token) -> Option<String> {
     })
 }
 
-/// Parse a hex color string (without '#') into (field_name, value) pairs.
+/// Parse a hex color string (without its sigil) into (field_name, value) pairs.
 /// Supports #rgb, #rgba, #rrggbb, #rrggbbaa formats.
 /// Shared with `crate::cst_project` so the CST projection can't drift.
 pub(crate) fn parse_color_hex(hex: &str) -> Vec<(&'static str, i64)> {

@@ -218,7 +218,7 @@ Other patterns that matter:
 | B13 | Multi-line headers: `if (a &&`⏎`b) then` (38 sites) | No conflict | Lines continued by a bracket or an operator don't count for layout. The block column is measured against the line where the statement started. |
 | B14 | `#` comment vs colour literal (`lexer.rs:828`) | **Resolved by moving colours** | Colours become `:f80`, and `#` is unconditionally a comment once the transition ends. During the transition, `#` + a colour-shaped hex word is an error that points at the migration (§3.3). |
 | B15 | `then`/`do`/`else` at the end of a line followed by a comment | No conflict | Comments and blank lines are ignored for layout. The block starts at the next code line. |
-| B16 | `:f80` colour vs `:` as a separator (type annotations, record fields, named args, `import m:`, enum data, record patterns) | Resolved by a rule | `:` starts a colour only when it is followed directly by 3, 4, 6 or 8 hex digits and a non-identifier character, **and** the previous token cannot end an expression or name. "Can end" means an identifier, a literal, `)`, `]`, `}`, a string, or `end`/`nil`/`true`/`false`. So `{x:100}`, `f(a:fff)` and `let c:add` keep `:` as a separator, while `{tint: :000}`, `f(:f80)`, `= :fff` and `when :fff ->` are colours. The rule depends on tokens, not whitespace. The corpus has no `:hex` today (§2). |
+| B16 | `:f80` colour vs `:` as a separator (type annotations, record fields, named args, `import m:`, enum data, record patterns) | Resolved by a rule | `:` starts a colour only when it is followed directly by 3, 4, 6 or 8 hex digits and a non-identifier character, **and** the previous token cannot end an expression or name. "Can end" means an identifier, a literal, `)`, `]`, `}`, a string, or `end`/`nil`/`true`/`false`. So `{x:100}`, `f(a:fff)` and `let c:add` keep `:` as a separator, while `{tint: :000}`, `f(:f80)`, `= :fff` and `when :fff ->` are colours. The rule depends on tokens, not whitespace. The corpus has no `:hex` today (§2). As implemented (P1a): the first token of a `{…}` string or JSX hole starts a value whatever precedes the hole (`"{:f80}"`); and a colour directly after a value cannot be respelled (`fn bg() #fff end` → `fn bg() :fff end` would read a separator), so `colour-literals` lists that site for a hand edit, `(:fff)`. No corpus has one. |
 | B17 | `else if` merged in the lexer vs legacy `else if … end end` (an `if` nested in an `else`) | **Real**, 8 sites | Merged, the inner `if` joins the chain, so the legacy second `end` becomes a stray `end`: an error, not a silent change. The `else-if-nesting` migration removes the inner `end` when the nested `if` is the `else`'s only statement. Otherwise it breaks the line after `else` so the nesting is kept (§3.6). |
 
 What the Pythonic draft needed and this design doesn't: the per-file style
@@ -309,7 +309,7 @@ colours, colours move to `:`.
 
 **Transition**, so a stale `#f80` never silently turns into a comment:
 
-1. **P1a.** The lexer accepts `:f80`. `#f80` still works but warns:
+1. **P1a (done 2026-11-12).** The lexer accepts `:f80`. `#f80` still works but warns:
    "colour literals are now written `:f80`; run `petal migrate-old-code`
    [colour-literals]". The migration rewrites each colour *token*, so `"#…"`
    strings and `"""…"""` GLSL are never touched.

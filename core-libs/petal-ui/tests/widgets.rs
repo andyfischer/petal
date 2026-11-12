@@ -128,7 +128,7 @@ fn host_palette_defaults_the_theme_and_theme_set_outranks_it() {
     let src = "state accent_r = 0\n\
                state n = 0\n\
                n = n + 1\n\
-               if n == 3 then theme_set({panel: #010101}) end\n\
+               if n == 3 then theme_set({panel: :010101}) end\n\
                if n == 4 then theme_reset() end\n\
                accent_r = ui_theme().accent.r\n\
                button({x: 200, y: 200, w: 80, h: 24}, \"Go\")";
@@ -209,8 +209,8 @@ fn theme_carries_semantic_tokens_and_scales() {
 #[test]
 fn theme_from_palette_maps_the_new_tokens_too() {
     let src = "state s = \"\"\n\
-               let t = theme_from_palette({green: #010101, red: #020202,\n\
-                                           orange: #030303, border_focused: #040404})\n\
+               let t = theme_from_palette({green: :010101, red: :020202,\n\
+                                           orange: :030303, border_focused: :040404})\n\
                s = str([t.success.r, t.danger.r, t.warn.r, t.border_strong.r, t.font_md])";
     run_headless(src, |ui| {
         ui.frame().unwrap();
@@ -1112,9 +1112,9 @@ fn over_flattens_a_tint_and_is_idempotent() {
     // Two 50% fills stacked read 75%; one `over` at 50% drawn twice reads 50%.
     let src = "state a = \"\"\n\
                state b = \"\"\n\
-               let c = over(#000000, #ffffff, 0.5)\n\
+               let c = over(:000000, :ffffff, 0.5)\n\
                a = str([c.r, c.g, c.b])\n\
-               let d = over(c, #ffffff, 0)\n\
+               let d = over(c, :ffffff, 0)\n\
                b = str([d.r, d.g, d.b])\n\
                state pct = 0\n\
                pct = alpha_pct(40)";

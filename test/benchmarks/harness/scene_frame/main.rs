@@ -1211,12 +1211,12 @@ fn main() {
     let source = match variant.as_str() {
         // Ships do their math but declare nothing: the VM's share.
         "math-only" => source
-            .replace("  body(1000 + i, {shape: \"box\", size: 2.0, mass: 5.0, kinematic: true, color: #ff8800,\n                  roughness: 0.4, metallic: 0.2, pos: p})\n", "")
-            .replace("  draw_mesh(\"ship_hull\", {pos: p, rot: a, color: #ff8800, metallic: 0.2, emissive: 0.0})\n", "  p\n"),
+            .replace("  body(1000 + i, {shape: \"box\", size: 2.0, mass: 5.0, kinematic: true, color: :ff8800,\n                  roughness: 0.4, metallic: 0.2, pos: p})\n", "")
+            .replace("  draw_mesh(\"ship_hull\", {pos: p, rot: a, color: :ff8800, metallic: 0.2, emissive: 0.0})\n", "  p\n"),
         // Ships declare their motion, not this frame's sample: the
         // declaration no longer reads the clock, so it is static and replays.
         "orbit" => source.replace("for i in range(0, N_SHIPS) do ship(i, t) end", "declare_fleet(N_SHIPS)")
-            + "\nfn declare_fleet(n)\n  for i in range(0, n) do\n    body(1000 + i, {shape: \"box\", size: 2.0, mass: 5.0, kinematic: true, color: #ff8800,\n                    roughness: 0.4, metallic: 0.2, orbit: {radius: 60.0, speed: 0.3, phase: float(i) * 0.021, y: 12.0, bob: 2.0, bob_phase: float(i)}})\n  end\n  nil\nend\n",
+            + "\nfn declare_fleet(n)\n  for i in range(0, n) do\n    body(1000 + i, {shape: \"box\", size: 2.0, mass: 5.0, kinematic: true, color: :ff8800,\n                    roughness: 0.4, metallic: 0.2, orbit: {radius: 60.0, speed: 0.3, phase: float(i) * 0.021, y: 12.0, bob: 2.0, bob_phase: float(i)}})\n  end\n  nil\nend\n",
         _ => source,
     };
     if !variant.is_empty() {

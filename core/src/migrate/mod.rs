@@ -18,7 +18,7 @@
 //!
 //! **Text migrations** ([`migrate_source`]) need one file and a parse:
 //! `at-rebind` (which reads the old `@` itself, since the parser no longer
-//! does), `export-to-pub`, `const-decl-deprecated`, `config-let-deprecated`,
+//! does), `colour-literals` (which reads tokens), `export-to-pub`, `const-decl-deprecated`, `config-let-deprecated`,
 //! `state-key-deprecated`. **`old-imports`** rewrites imports for the current
 //! module system and needs every file of the batch and a module resolver; it
 //! is [`crate::fix_imports`], which the CLI runs after the text migrations
@@ -46,12 +46,15 @@
 use std::path::PathBuf;
 
 mod at_rebind;
+mod colour_literals;
 pub mod export_keyword;
 mod export_to_pub;
 mod lifecycle_keywords;
 mod state_key;
 
 pub use crate::lint::Finding;
+pub(crate) use colour_literals::deprecated_colour_literals;
+pub use colour_literals::respell_colour_literals;
 pub(crate) use lifecycle_keywords::deprecated_lifecycle_decls;
 pub use lifecycle_keywords::migrate_lifecycle_keywords;
 
@@ -62,6 +65,7 @@ use crate::lint::{LintOptions, Pipeline, RuleFilter, compiles, reparse};
 pub const RUN_HINT: &str = "run `petal migrate-old-code`";
 
 pub const AT_REBIND: &str = "at-rebind";
+pub const COLOUR_LITERALS: &str = "colour-literals";
 pub const EXPORT_TO_PUB: &str = "export-to-pub";
 pub const CONST_DECL_DEPRECATED: &str = "const-decl-deprecated";
 pub const CONFIG_LET_DEPRECATED: &str = "config-let-deprecated";
@@ -110,6 +114,20 @@ pub const MIGRATIONS: &[Migration] = &[
         replaces: "`f(@x)`, removed 2026-11-09 to free `@` for annotations \
                    (docs/proposals/annotation-syntax.md)",
         old_form: OldForm::Removed,
+        partial: true,
+        batch: false,
+    },
+    // Token-based, before anything that plans on a parse: it changes one
+    // character per site and no offset.
+    Migration {
+        name: COLOUR_LITERALS,
+        summary: "a color literal is written `:f80`: each `#f80` color token becomes `:f80` \
+                  (strings, raw strings and comments are untouched); a `#` color directly \
+                  after a value or a name is reported for a hand edit",
+        added: "2026-11-12",
+        replaces: "`#f80` color literals, deprecated 2026-11-12 to free `#` for comments \
+                   (docs/tasks/pythonic-syntax.md)",
+        old_form: OldForm::Warns,
         partial: true,
         batch: false,
     },
@@ -292,8 +310,21 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         Err(e) => return Err(e),
     };
 
+    // Color tokens next: one character each, no offset moves, and gated on
+    // the token stream (the same tokens are the same parse), so the parse
+    // above stays good for the migrations after it.
+    let mut colours = 0;
+    if opts.enabled(COLOUR_LITERALS) {
+        let before = p.text.clone();
+        colours = p.apply(COLOUR_LITERALS, colour_literals::plan_colour_fixes(&before)?);
+        if colours > 0 {
+            colour_literals::same_tokens(&before, &p.text)?;
+        }
+    }
+    let (chars, stmts) = if colours > 0 { reparse(&p.text)? } else { (chars, stmts) };
+
     let exports = p.apply(EXPORT_TO_PUB, export_to_pub::plan_export_fixes(&stmts, &chars)?);
-    let mut rewrites = rebinds + exports;
+    let mut rewrites = rebinds + colours + exports;
 
     // One keyword, then the other over its output: each pads trailing
     // comments against the text as it stands.

@@ -321,8 +321,8 @@ fn config_sign_flip_and_call_arguments() {
 fn config_color_and_string_and_bool() {
     Case::new(
         "color string bool",
-        "let TINT = tunable(#ff2e88)\nlet TITLE = tunable(\"neon\")\nlet ON = tunable(true)\nprint(TINT.r, TINT.g, TINT.b, TITLE, ON)\n",
-        "let TINT = tunable(#ff2e80)\nlet TITLE = tunable(\"night\")\nlet ON = tunable(false)\nprint(TINT.r, TINT.g, TINT.b, TITLE, ON)\n",
+        "let TINT = tunable(:ff2e88)\nlet TITLE = tunable(\"neon\")\nlet ON = tunable(true)\nprint(TINT.r, TINT.g, TINT.b, TITLE, ON)\n",
+        "let TINT = tunable(:ff2e80)\nlet TITLE = tunable(\"night\")\nlet ON = tunable(false)\nprint(TINT.r, TINT.g, TINT.b, TITLE, ON)\n",
         Patched,
     )
     .check();
@@ -694,8 +694,8 @@ fn an_unchanged_source_is_a_no_op() {
 /// does the frame that follows it.
 #[test]
 fn the_value_path_does_no_recompile() {
-    let old = "let K = tunable({speed: 2, tint: #102030})\nfn step(x)\n  x + K.speed\nend\nstate x = 0\nx = step(x)\nprint(x, K.tint.g)\n";
-    let new = "let K = tunable({speed: 5, tint: #104030})\nfn step(x)\n  x + K.speed\nend\nstate x = 0\nx = step(x)\nprint(x, K.tint.g)\n";
+    let old = "let K = tunable({speed: 2, tint: :102030})\nfn step(x)\n  x + K.speed\nend\nstate x = 0\nx = step(x)\nprint(x, K.tint.g)\n";
+    let new = "let K = tunable({speed: 5, tint: :104030})\nfn step(x)\n  x + K.speed\nend\nstate x = 0\nx = step(x)\nprint(x, K.tint.g)\n";
     let mut w = world(old, &[], RunPolicy::FAST);
     let before = w.env.work_counters();
 

@@ -5424,7 +5424,7 @@ fn view(steps)
     let k = steps[i]
     let r = place(k, rect(20, 20 + i * 50, 200, 40))
     draggable(k, r, fn() closest(moves(steps, i)) |> floating() end)
-    place(k, r, fn(p) draw_rect(p, #446688) end)
+    place(k, r, fn(p) draw_rect(p, :446688) end)
   end
   nil
 end
@@ -5458,7 +5458,7 @@ fn drag_mode_writes_a_ui_drag_drop_into_its_literal() {
 fn drag_debug_command_switches_the_overlay_in_panels() {
     let (mut app, _editor, canvas, _dir) = traced_pair(
         "petal-ide-drag-debug",
-        "clear(0, 0, 0)\nif ui_debug(\"drag\") then draw_rect(0, 0, 5, 5, #ffffff) end\n",
+        "clear(0, 0, 0)\nif ui_debug(\"drag\") then draw_rect(0, 0, 5, 5, :ffffff) end\n",
     );
     app.settle_panels();
     let off = app.panes[canvas].panel.as_ref().unwrap().commands().len();

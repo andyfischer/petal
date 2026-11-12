@@ -16,13 +16,13 @@ let margin = tunable(12)
 let bar_h = tunable(18)
 
 fn health_bar(x, y, frac)
-  draw_rect(x, y, 120, bar_h, #303030)
-  draw_rect(x, y, 120 * frac, bar_h, #40c040)
+  draw_rect(x, y, 120, bar_h, :303030)
+  draw_rect(x, y, 120 * frac, bar_h, :40c040)
 end
 
 fn hud()
   health_bar(margin, margin, 0.75)
-  draw_text(\"SCORE 120\", margin, margin + bar_h + 6, #ffffff)
+  draw_text(\"SCORE 120\", margin, margin + bar_h + 6, :ffffff)
 end
 
 hud()

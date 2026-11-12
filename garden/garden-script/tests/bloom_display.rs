@@ -192,7 +192,7 @@ fn load_view_is_true_only_once_the_value_is_ready() {
 fn a_button_takes_its_fill_and_ink_from_opts() {
     let ui = Ui::new(
         "import bloom: button\n\
-         button(rect(20, 20, 120, 30), \"Go\", {fill: #c80a1e, ink: #0aff14})\n",
+         button(rect(20, 20, 120, 30), \"Go\", {fill: :c80a1e, ink: :0aff14})\n",
     );
     assert!(ui.has_fill((0xc8, 0x0a, 0x1e)), "the face is the fill");
     assert!(ui.has_text_color((0x0a, 0xff, 0x14)), "the label is the ink");
@@ -203,7 +203,7 @@ fn badges_and_pills_return_their_rects_for_flowing() {
     let ui = Ui::new(
         "import bloom: badge, pill, hint, hint_bar, card, section_label, spinner_glyph, spinner\n\
          let b = badge(10, 10, \"new\")\n\
-         let p = pill(b.x + b.w + 4, 10, \"ok\", #3fb950)\n\
+         let p = pill(b.x + b.w + 4, 10, \"ok\", :3fb950)\n\
          let px = p.x\n\
          let inner = card(rect(10, 60, 200, 100))\n\
          let ix = inner.x\n\
@@ -211,8 +211,8 @@ fn badges_and_pills_return_their_rects_for_flowing() {
          let w = section_label(\"Files\", 10, 200, true)\n\
          let g = spinner_glyph()\n\
          spinner(300, 100, 10)\n\
-         spinner(300, 100, 10, {color: #ffffff})\n\
-         spinner(300, 100, 10, #ffffff)\n",
+         spinner(300, 100, 10, {color: :ffffff})\n\
+         spinner(300, 100, 10, :ffffff)\n",
     );
     let i = |n: &str| ui.value(n).and_then(|v| v.as_f64());
     assert!(i("px").unwrap() > 10.0 + 14.0, "the pill flows after the badge");

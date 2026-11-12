@@ -394,8 +394,8 @@ is taken whole from `a` while `t < 0.5` and from `b` after. A field `b` does
 not have keeps `a`'s value.
 
 ```petal
-let noir   = {sepia: 0.0, grain: 0.8, tint: #202830, id: "noir"}
-let golden = {sepia: 1.0, grain: 0.2, tint: #ffd08a, id: "golden"}
+let noir   = {sepia: 0.0, grain: 0.8, tint: :202830, id: "noir"}
+let golden = {sepia: 1.0, grain: 0.2, tint: :ffd08a, id: "golden"}
 lerp(noir, golden, 0.25)
 // { sepia: 0.25, grain: 0.65, tint: { r: 88, g: 82, b: 71 }, id: "noir" }
 ```
@@ -405,7 +405,7 @@ import vec2
 lerp(0.0, 100.0, 0.3)   // 30.0
 lerp(10.0, 20.0, 0.5)   // 15.0
 lerp(vec3(0.0, 0.0, 0.0), vec3(10.0, 20.0, 30.0), 0.5)   // vec3(5.0, 10.0, 15.0)
-lerp(#6a5a48, #ffd08a, 0.5)            // { r: 181, g: 149, b: 105 }
+lerp(:6a5a48, :ffd08a, 0.5)            // { r: 181, g: 149, b: 105 }
 lerp([0.0, 10.0], [1.0, 20.0], 0.5)    // [0.5, 15.0]
 ```
 
@@ -502,7 +502,7 @@ choose(["red", "green"])      // "red" or "green"
 Needs `import color`.
 
 All color builtins return an RGB record `{r: int, g: int, b: int}` with channels
-in 0..255 — the same shape produced by the `#rrggbb` color literal.
+in 0..255 — the same shape produced by the `:rrggbb` color literal.
 
 ### `hsv(h, s, v)`
 

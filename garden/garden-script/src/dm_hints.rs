@@ -123,7 +123,7 @@ enum Tok {
     Ident(String),
     Num,
     Punct(char),
-    /// A string, or a `#rrggbb` color: never a number.
+    /// A string, or a `:rrggbb` (or old `#rrggbb`) color: never a number.
     Opaque,
 }
 
@@ -137,6 +137,13 @@ struct Token {
 /// Words after which a `-` starts a negative number rather than subtracting.
 const UNARY_AFTER: &[&str] = &[
     "return", "then", "else", "do", "in", "and", "or", "not", "if", "elif", "while", "let", "var",
+];
+
+/// Keywords a value can follow directly, so a `:` after one can start a
+/// `:rrggbb` color. Any other word is a name, and a `:` after it separates.
+const VALUE_AFTER: &[&str] = &[
+    "return", "then", "else", "do", "in", "when", "if", "elsif", "while", "match", "and", "or",
+    "not",
 ];
 
 fn tokenize(chars: &[char]) -> Vec<Token> {
@@ -173,6 +180,24 @@ fn tokenize(chars: &[char]) -> Vec<Token> {
             }
             out.push(Token { tok: Tok::Opaque, start, end: i });
             continue;
+        }
+        // A `:rrggbb` color (`#rrggbb` above is its deprecated spelling):
+        // 3, 4, 6 or 8 hex digits and a word end, where a value starts. After
+        // a value or a name the `:` is a separator (`{x:100}`), as in Petal's
+        // lexer.
+        if c == ':' {
+            let digits = chars[i + 1..].iter().take_while(|c| c.is_ascii_hexdigit()).count();
+            let word_end = !chars.get(i + 1 + digits).is_some_and(|c| is_ident(*c));
+            let after_value = match out.last().map(|t| &t.tok) {
+                Some(Tok::Num | Tok::Opaque | Tok::Punct(')' | ']' | '}')) => true,
+                Some(Tok::Ident(word)) => !VALUE_AFTER.contains(&word.as_str()),
+                _ => false,
+            };
+            if matches!(digits, 3 | 4 | 6 | 8) && word_end && !after_value {
+                i += 1 + digits;
+                out.push(Token { tok: Tok::Opaque, start, end: i });
+                continue;
+            }
         }
         if c.is_alphabetic() || c == '_' {
             while i < n && is_ident(chars[i]) {
@@ -609,8 +634,20 @@ mod tests {
     }
 
     #[test]
+    fn a_colon_color_is_not_a_number_literal() {
+        // Colors where a value starts; separators after a name or a value.
+        let texts = |line: &str| -> Vec<String> {
+            literals(line).iter().map(|l| line.chars().skip(l.start).take(l.end - l.start).collect()).collect()
+        };
+        assert_eq!(texts("draw_rect(40, 10, :101418, color: :123456)"), ["40", "10"]);
+        assert_eq!(texts("let c = if on then :000 else :111"), Vec::<String>::new());
+        assert_eq!(texts("let r = {x:100, y:200}"), ["100", "200"]);
+        assert_eq!(texts("f(a:123, [1]:456)"), ["123", "1", "456"]);
+    }
+
+    #[test]
     fn cycles_free_tunable_rigid_free() {
-        let mut line = "draw_rect(40, 10, 5, 5, #101418)".to_string();
+        let mut line = "draw_rect(40, 10, 5, 5, :101418)".to_string();
         let mut states = Vec::new();
         for _ in 0..3 {
             let col = line.find("40").unwrap();
@@ -618,9 +655,9 @@ mod tests {
             line = next;
             states.push((line.clone(), to));
         }
-        assert_eq!(states[0].0, "draw_rect(tunable(40), 10, 5, 5, #101418)");
-        assert_eq!(states[1].0, "draw_rect(rigid(40), 10, 5, 5, #101418)");
-        assert_eq!(states[2].0, "draw_rect(40, 10, 5, 5, #101418)");
+        assert_eq!(states[0].0, "draw_rect(tunable(40), 10, 5, 5, :101418)");
+        assert_eq!(states[1].0, "draw_rect(rigid(40), 10, 5, 5, :101418)");
+        assert_eq!(states[2].0, "draw_rect(40, 10, 5, 5, :101418)");
         assert_eq!(
             states.iter().map(|s| s.1).collect::<Vec<_>>(),
             [HintState::Tunable, HintState::Rigid, HintState::Free]
@@ -657,11 +694,11 @@ mod tests {
 
     #[test]
     fn a_literal_inside_an_expression() {
-        let line = "  draw_rect(x0 + i * (size + 12), 100, size, size, #c08040)";
+        let line = "  draw_rect(x0 + i * (size + 12), 100, size, size, :c08040)";
         let col = line.find("12").unwrap();
         assert_eq!(
             cycled(line, col).0,
-            "  draw_rect(x0 + i * (size + tunable(12)), 100, size, size, #c08040)"
+            "  draw_rect(x0 + i * (size + tunable(12)), 100, size, size, :c08040)"
         );
     }
 
@@ -684,7 +721,7 @@ mod tests {
 
     #[test]
     fn strings_colors_comments_and_identifiers_hold_no_literals() {
-        let line = r#"draw_text("40 px", x2, 7, #101418) // 99"#;
+        let line = r#"draw_text("40 px", x2, 7, :101418) // 99"#;
         let lits = literals(line);
         assert_eq!(lits.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(), ["7"]);
         assert!(literal_at(line, line.find("99").unwrap()).is_none());

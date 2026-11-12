@@ -1663,7 +1663,7 @@ fn a_script_sees_what_its_projects_host_puts_in_scope() {
             ("petal.toml", HOST_MANIFEST),
             ("lib/base.ptl", "import color\n\n// not pub: the host joins files\nfn helper(x)\n  x + 1\nend\n"),
             ("lib/more.ptl", "fn twice(x)\n  helper(helper(x))\nend\n"),
-            ("screens/menu.ptl", "import noise\nlet LIMIT = twice(1)\ndraw_rect(rect(0, 0, 10, 10), #ffffff)\nprint(helper(LIMIT))\n"),
+            ("screens/menu.ptl", "import noise\nlet LIMIT = twice(1)\ndraw_rect(rect(0, 0, 10, 10), :ffffff)\nprint(helper(LIMIT))\n"),
         ],
     );
     let mut server = Server::new();
@@ -1722,7 +1722,7 @@ fn without_a_host_section_the_hosts_names_are_unknown() {
     let diags = get_diagnostics(&open(
         &mut server,
         &uri,
-        "draw_rect(rect(0, 0, 10, 10), #ffffff)\nprint(helper(1))\n",
+        "draw_rect(rect(0, 0, 10, 10), :ffffff)\nprint(helper(1))\n",
     ));
     assert_eq!(diags.len(), 3, "{diags:?}");
 }

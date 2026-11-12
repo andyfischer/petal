@@ -12,6 +12,23 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **Color literals are written `:f80`; `#f80` is deprecated.** `#` is becoming
+  the line-comment marker (docs/tasks/pythonic-syntax.md), so the color sigil
+  moves to `:`: `:f80`, `:f80a`, `:ff8800`, `:ff8800aa`, the same 3, 4, 6 or 8
+  hex digits and the same `{r, g, b[, a]}` record. A `:` starts a color only
+  when those digits follow it directly and the token before it is not a name
+  or a value, so `{x:100}`, `f(a:fff)` and `let c:add` keep their separator
+  while `{tint: :000}`, `f(:f80)` and `= :fff` are colors. `#f80` still
+  compiles, with a warning tagged `[colour-literals]`. **Run
+  `petal migrate-old-code`**: its new `colour-literals` migration respells
+  each color token and leaves `"#f80"` strings, `"""` GLSL and comments alone.
+  Everything that writes Petal source now writes `:hex`: `StaticValue::to_source`,
+  literal edits (DM v2 color drags, `pb_source_set_value`), and
+  `pb_source_set`, which respells a `#hex` value it is handed. The JSON form
+  keeps its CSS-style string, `{"color": "#ff2e88"}` (new
+  `StaticValue::css_hex`), and `color_to_hex` / `color_from_hex` are unchanged.
+  `StaticValue::color_hex` reads `:f80`, `#f80` and `f80`.
+
 - **`StaticValue::to_source` writes records unpadded: `{x: 1}`.** It used to
   write `{ x: 1 }`, unlike hand-written Petal and the docs, so a file edited
   by a GUI drifted in style. A literal edit that creates a record in a file

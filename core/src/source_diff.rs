@@ -1829,7 +1829,7 @@ mod tests {
 
     #[test]
     fn a_color_component_is_addressed_by_ordinal() {
-        let v = values("config let C = #808080\n", "config let C = #804080\n");
+        let v = values("config let C = :808080\n", "config let C = :804080\n");
         assert_eq!(v.len(), 1);
         assert_eq!((v[0].ordinal, v[0].span_count), (1, 3));
         assert_eq!(v[0].path.as_deref(), Some("C.g"));

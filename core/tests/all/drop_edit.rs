@@ -88,12 +88,12 @@ let BOARD = [
 
 #[test]
 fn a_scalar_drop_sets_the_path_and_colours_stay_literals() {
-    let src = "let SWATCH = {name: \"warm\", tint: #ff8800, size: 3}\n";
+    let src = "let SWATCH = {name: \"warm\", tint: :ff8800, size: 3}\n";
     let model = json!({"name": "warm", "tint": {"r": 255, "g": 136, "b": 0}, "size": 3});
     let drop = json!({"name": "warm", "tint": {"r": 255, "g": 136, "b": 0}, "size": 5});
     let edit = propose_drop(src, &model, &drop).unwrap();
     assert_eq!(edit.goals, vec![Goal::should_set_path("SWATCH.size", 5)]);
-    assert_eq!(edit.source, "let SWATCH = {name: \"warm\", tint: #ff8800, size: 5}\n");
+    assert_eq!(edit.source, "let SWATCH = {name: \"warm\", tint: :ff8800, size: 5}\n");
 }
 
 #[test]

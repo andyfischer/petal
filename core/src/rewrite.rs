@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn finds_a_value_inside_a_binding_by_path() {
-        let src = "export config let POST = {\n  exposure: 1.45,  // the night look\n  tint: #ff2e88,\n  effects: [{effect: \"grain\", amount: 0.3}, {effect: \"crt\"}],\n}\nlet DIR = vec3(0.35, -1.0, 0.55)\n";
+        let src = "export config let POST = {\n  exposure: 1.45,  // the night look\n  tint: :ff2e88,\n  effects: [{effect: \"grain\", amount: 0.3}, {effect: \"crt\"}],\n}\nlet DIR = vec3(0.35, -1.0, 0.55)\n";
         let (_, stmts) = parse_ast(src).unwrap();
         let at = |path: &str| {
             let (name, segs) = parse_binding_path(path).unwrap();
@@ -424,7 +424,7 @@ mod tests {
         };
         assert_eq!(at("POST.exposure").as_deref(), Some("1.45"));
         // A color literal is one value, whatever it lowers to.
-        assert_eq!(at("POST.tint").as_deref(), Some("#ff2e88"));
+        assert_eq!(at("POST.tint").as_deref(), Some(":ff2e88"));
         assert_eq!(at("POST.effects[0].amount").as_deref(), Some("0.3"));
         assert_eq!(at("POST.effects[1]").as_deref(), Some("{effect: \"crt\"}"));
         // A call's arguments are entered by position, like a list's elements.

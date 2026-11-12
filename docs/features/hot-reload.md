@@ -18,7 +18,7 @@ with the text that file holds now, and does only the work the edit calls for:
 |---|---|---|
 | nothing changed | `unchanged` | nothing |
 | whitespace, comments, layout | `relocated` | the program's recorded source text and positions are updated |
-| literal values (`0.35` to `0.4`, `"red"` to `"blue"`, `#ff2e88` to `#ff2e80`) | `patched` | the constants are written into the running program |
+| literal values (`0.35` to `0.4`, `"red"` to `"blue"`, `:ff2e88` to `:ff2e80`) | `patched` | the constants are written into the running program |
 | anything else | `recompiled` | the program is recompiled and swapped in with `transfer_state` |
 
 The first three compile nothing and lower nothing. On `games/neon` in the
@@ -227,7 +227,7 @@ let POST = tunable({
   bloom: 0.2,                   // any field, at any depth
   effects: [{amount: 0.3}],     // any element
   tint: rgb(255, 0, 80),        // any argument of a constructor call
-  accent: #ff2e88,              // a color, component by component
+  accent: :ff2e88,              // a color, component by component
   offset: -1.5,                 // -1.5 -> 1.5: see below
 })
 fn area(w)

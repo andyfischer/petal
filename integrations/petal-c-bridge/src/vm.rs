@@ -3949,7 +3949,7 @@ push_output(symbol(\"out\"), if MODE == \"a\" then STEP else -STEP end)
 
     const RETAINED: &str = "import ui\n\
         cached_layer(1, rect(10, 20, 30, 40), fn()\n\
-          draw_rects([0, 0, 4, 4, 0, 4, 0, 4, 4, 1], [#ff0000, {r: 0, g: 255, b: 0, a: 128}])\n\
+          draw_rects([0, 0, 4, 4, 0, 4, 0, 4, 4, 1], [:ff0000, {r: 0, g: 255, b: 0, a: 128}])\n\
         end)\n\
         button(rect(100, 100, 80, 20), \"Go\")\n";
 
@@ -4019,7 +4019,7 @@ push_output(symbol(\"out\"), if MODE == \"a\" then STEP else -STEP end)
         let mut vm = Vm::new();
         vm.load(
             "import ui\n\
-             draw_image(\"a.png\", rect(1, 2, 30, 40), {tint: #ff8000, src: rect(16, 0, 8, 8), slice: {l: 1, t: 2, r: 3, b: 4}})\n\
+             draw_image(\"a.png\", rect(1, 2, 30, 40), {tint: :ff8000, src: rect(16, 0, 8, 8), slice: {l: 1, t: 2, r: 3, b: 4}})\n\
              draw_image(\"a.png\", rect(1, 2, 30, 40))\n",
             None,
             "t".into(),

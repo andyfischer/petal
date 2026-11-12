@@ -36,7 +36,7 @@ must outlive the process.
 
 A panel draws in panel-local logical pixels: `(0,0)` is the pane's top-left,
 and `screen_width()` / `screen_height()` report the pane's current size,
-rebound every frame. Colors are `0–255` integer RGB (`#rrggbb` literals, or
+rebound every frame. Colors are `0–255` integer RGB (`:rrggbb` literals, or
 `{r, g, b, a}` records) and stay sRGB all the way to the pixel.
 
 The pane is not the window: it is inset by the tab strip, the status bar, and
@@ -161,7 +161,7 @@ color[, a])`, `draw_rect_rounded_outline(rect, radius, color[, a[, width]])`,
 `fill_arc(center, r_in, r_out, a0, a1, color[, a])`,
 `fill_triangle(p1, p2, p3, color[, a])`, `draw_polyline(points, color[, a[,
 width]])`, `fill_polygon(points, color[, a])` and so on, where `color` is an
-`{r, g, b}` record or `#rrggbb` literal and every optional argument sits where
+`{r, g, b}` record or `:rrggbb` literal and every optional argument sits where
 the flat form has it. Each primitive also takes flat coordinates with a colour
 record — `draw_line(x1, y1, x2, y2, color[, a[, width]])`,
 `draw_rect_rounded(x, y, w, h, radius, color[, a])`,

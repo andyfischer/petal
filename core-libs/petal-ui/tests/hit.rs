@@ -468,11 +468,11 @@ fn rect_x(cmds: &[DrawCommand]) -> Vec<i32> {
 
 #[test]
 fn a_higher_layer_draws_later_whatever_the_code_order() {
-    let mut ui = ui("draw_rect(1, 0, 5, 5, #ff0000)\n\
-                     with_layer(10, fn() draw_rect(2, 0, 5, 5, #ff0000) end)\n\
-                     draw_rect(3, 0, 5, 5, #ff0000)\n\
-                     with_layer(5, fn() draw_rect(4, 0, 5, 5, #ff0000) end)\n\
-                     draw_rect(5, 0, 5, 5, #ff0000)");
+    let mut ui = ui("draw_rect(1, 0, 5, 5, :ff0000)\n\
+                     with_layer(10, fn() draw_rect(2, 0, 5, 5, :ff0000) end)\n\
+                     draw_rect(3, 0, 5, 5, :ff0000)\n\
+                     with_layer(5, fn() draw_rect(4, 0, 5, 5, :ff0000) end)\n\
+                     draw_rect(5, 0, 5, 5, :ff0000)");
     let cmds = ui.frame().unwrap().to_vec();
     assert_eq!(rect_x(&cmds), [1, 3, 5, 4, 2]);
     assert!(
@@ -486,10 +486,10 @@ fn a_higher_layer_draws_later_whatever_the_code_order() {
 #[test]
 fn a_layer_keeps_the_clip_it_was_drawn_under() {
     let mut ui = ui("clip_push(rect(0, 0, 50, 50))\n\
-                     with_layer(10, fn() draw_rect(1, 0, 5, 5, #ff0000) end)\n\
-                     draw_rect(2, 0, 5, 5, #ff0000)\n\
+                     with_layer(10, fn() draw_rect(1, 0, 5, 5, :ff0000) end)\n\
+                     draw_rect(2, 0, 5, 5, :ff0000)\n\
                      clip_pop()\n\
-                     draw_rect(3, 0, 5, 5, #ff0000)");
+                     draw_rect(3, 0, 5, 5, :ff0000)");
     let cmds = ui.frame().unwrap().to_vec();
     let push = DrawCommand::ClipPush { x: 0, y: 0, w: 50, h: 50, radius: 0 };
     let x = |c: &DrawCommand| match c {
@@ -518,10 +518,10 @@ fn an_overlay_is_drawn_outside_every_clip_and_the_clip_comes_back() {
     let mut ui = ui("state hot = false\n\
                      clip_push(rect(0, 0, 50, 50))\n\
                      hot = ui_overlay(10, fn()\n\
-                       draw_rect(1, 0, 5, 5, #ff0000)\n\
+                       draw_rect(1, 0, 5, 5, :ff0000)\n\
                        ui_hot(rect(200, 200, 50, 50))\n\
                      end)\n\
-                     draw_rect(2, 0, 5, 5, #ff0000)\n\
+                     draw_rect(2, 0, 5, 5, :ff0000)\n\
                      clip_pop()");
     ui.mouse_move(210, 210);
     let cmds = ui.frame().unwrap().to_vec();
@@ -543,7 +543,7 @@ fn an_overlay_is_drawn_outside_every_clip_and_the_clip_comes_back() {
 #[test]
 fn a_tooltip_draws_over_what_is_drawn_after_it() {
     let mut ui = ui("tooltip(rect(0, 0, 100, 40), \"hello\", {delay: 0.0})\n\
-                     draw_rect(7, 7, 300, 300, #112233)");
+                     draw_rect(7, 7, 300, 300, :112233)");
     ui.mouse_move(20, 20);
     ui.frame().unwrap();
     ui.frames(20).unwrap();
@@ -570,9 +570,9 @@ fn layered_widgets_are_still_replayed_by_the_memo() {
     // shape of a scrolled list in a panel — and read both.
     let mut ui = ui("fn row(i)\n\
                        let r = rect(0, i * 20, 100, 20)\n\
-                       let c = if ui_hot(r, \"row-{i}\") then #090909 else #010101 end\n\
+                       let c = if ui_hot(r, \"row-{i}\") then :090909 else :010101 end\n\
                        draw_rect(r, c)\n\
-                       draw_text(\"row {i}\", 4, i * 20, 12, #ffffff)\n\
+                       draw_text(\"row {i}\", 4, i * 20, 12, :ffffff)\n\
                      end\n\
                      let prev = ui_layer(4)\n\
                      clip_push(rect(0, 0, 100, 100))\n\
@@ -660,7 +660,7 @@ fn ui_measure_runs_a_panel_without_drawing_or_registering_it() {
                        var hot = false\n\
                        for i in range(0, 3) do\n\
                          let row = flow_next(20)\n\
-                         draw_rect(row, #303030)\n\
+                         draw_rect(row, :303030)\n\
                          if ui_hot(row, \"row-{i}\") then set hot = true end\n\
                        end\n\
                        {size: flow_end(), hot: get hot}\n\
@@ -668,7 +668,7 @@ fn ui_measure_runs_a_panel_without_drawing_or_registering_it() {
                      let m = ui_measure(fn() panel(rect(0, 0, 200, 0)) end)\n\
                      measured_h = m.size.h\n\
                      hot_while_measuring = m.hot\n\
-                     draw_rect(1, 1, 1, 1, #ffffff)\n\
+                     draw_rect(1, 1, 1, 1, :ffffff)\n\
                      let d = panel(rect(300, 100, 200, m.size.h))\n\
                      drawn_h = d.size.h");
     ui.mouse_move(20, 20); // over where the measured copy would have been
@@ -710,7 +710,7 @@ fn ui_measure_leaves_no_state_behind() {
                      inside = get outer\n\
                      let s = speculate(fn() ui_measure(fn() panel(rect(0, 0, 100, 0)) end) end)\n\
                      spec_h = s.value.size.h\n\
-                     draw_rect(1, 1, 1, 1, #ffffff)");
+                     draw_rect(1, 1, 1, 1, :ffffff)");
     for _ in 0..3 {
         let cmds = ui.frame().unwrap().to_vec();
         assert_eq!(ui.state_int("counted"), Some(1), "the slot starts over every frame");

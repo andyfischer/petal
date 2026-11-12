@@ -2057,7 +2057,7 @@ mod tests {
         assert_projects("[1, 2, 3]\n[1, -2, 3]\n[]\n");
         assert_projects("{ a: 1, b: f(2), ...rest }\n");
         assert_projects("nil\ntrue\nfalse\n1.5\n\"plain\"\n");
-        assert_projects("let c = #ff8800\nlet d = #f80\nlet e = #f808\nlet g = #ff880080\n");
+        assert_projects("let c = :ff8800\nlet d = :f80\nlet e = :f808\nlet g = :ff880080\n");
     }
 
     #[test]

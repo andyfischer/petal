@@ -23,7 +23,7 @@ widget, and [`examples/ui/layers`](../../../examples/ui/layers/) is a HUD over a
 - **A rect** is `rect(x, y, w, h)`, or any `{x, y, w, h}` record. `rect` gives
   the methods (`r.right()`, `r.center_x()`, `r.inset(4)`).
 - **A colour** is a `{r, g, b}` record, which is what a hex literal is
-  (`#3c8cff`). `draw_rect`, `draw_polyline`, `draw_rects` and `draw_image`'s
+  (`:3c8cff`). `draw_rect`, `draw_polyline`, `draw_rects` and `draw_image`'s
   `tint` also take a packed int, `r * 65536 + g * 256 + b`.
 - **Alpha** is a trailing `a`, 0–255, on every draw call. Strokes also take a
   trailing `width`.
@@ -259,7 +259,7 @@ canvases, text positions) so that touching rects meet without a seam.
 | `slice` | Nine-slice insets in the image's own pixels, one number or `{l, t, r, b}`. Corners are drawn unscaled, edges stretch one way, the middle both. |
 
 ```petal
-draw_image("ui/atlas.png", r, {src: rect(32, 0, 16, 16), tint: #ffcc00})
+draw_image("ui/atlas.png", r, {src: rect(32, 0, 16, 16), tint: :ffcc00})
 draw_image("ui/frame.png", panel, {slice: 6})
 ```
 
@@ -362,7 +362,7 @@ A **text style** is a record. Every field is optional.
 | `outline` | `true`, a colour, or `{color, width, a}`: a ring around the glyphs, 1 px and black by default. |
 
 ```petal
-let title = {size: 22, color: #ffffff, tracking: 2, outline: #000000}
+let title = {size: 22, color: :ffffff, tracking: 2, outline: :000000}
 draw_text("ROUND 3", 40, 20, title)
 ```
 

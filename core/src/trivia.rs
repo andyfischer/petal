@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn round_trips_jsx_and_colors() {
-        assert_round_trips("let c = #ff8800\nlet d = #f80\n");
+        assert_round_trips("let c = :ff8800\nlet d = :f80\n");
         assert_round_trips("let e = <div class=\"x\">hello {name}</div>\n");
     }
 

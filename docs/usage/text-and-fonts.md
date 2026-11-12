@@ -99,7 +99,7 @@ and `text_width` accept — so what you measure is what you draw:
 ```petal
 import ui
 
-let BODY = {size: 15, color: #d8d8d8}
+let BODY = {size: 15, color: :d8d8d8}
 draw_text("Merge pull request ", {x: 10, y: 20}, BODY)
 draw_text("#482", {x: 170, y: 20}, {...BODY, weight: 700})
 draw_text("(draft)", {x: 210, y: 20}, {...BODY, italic: true, font: "mono"})

@@ -697,7 +697,7 @@ mod tests {
         let env = Envelope::notification(
             method::SET_SCRIPT,
             SetScriptParams {
-                source: "draw_text(\"hi\", {x: 0, y: 0}, 14, #ffffff)".into(),
+                source: "draw_text(\"hi\", {x: 0, y: 0}, 14, :ffffff)".into(),
             },
         );
         let v = reparse(&env);

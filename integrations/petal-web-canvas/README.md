@@ -68,7 +68,7 @@ blur_canvas(c, radius)        # Gaussian-blur c in place (CSS blur() semantics)
 layer(rect, fn() ... end)                 # draw the body into a canvas, composite it at rect
 layer(rect, {a: 128, blur: 4}, fn() ... end)
 draw_backdrop_blur(rect, radius)          # blur what is already under rect
-draw_material(rect, {kind: "regular", radius: 12, tint: #ffffff})  # translucent bar
+draw_material(rect, {kind: "regular", radius: 12, tint: :ffffff})  # translucent bar
 ```
 
 Snapshot and blur use the 2D context's own `drawImage` and `filter: blur()`,

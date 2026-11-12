@@ -582,6 +582,12 @@ DESCRIPTION
               was not liftable (two in one call, a while condition, a match
               arm), or whose statement shares its line with other code, is
               reported and left for a hand edit
+       colour-literals
+              a color literal is written :f80: each #f80 color token becomes
+              :f80. Strings, raw strings and comments are not tokens and are
+              left as written. A # color directly after a value or a name
+              (fn bg() #fff end), where a ':' would be a separator, is
+              reported and left for a hand edit: write (:fff)
        export-to-pub
               the deprecated modifier 'export' becomes 'pub'
        const-decl-deprecated

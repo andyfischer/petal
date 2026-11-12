@@ -1226,7 +1226,7 @@ typedef struct pb_reload_result {
  *   - nothing changed, or only whitespace / comments / layout: source
  *     positions move; nothing is recompiled and nothing is dropped;
  *   - only literal values changed (0.35 became 0.4, "red" became "blue",
- *     #ff2e88 became #ff2e80), each keeping its type: the values are written
+ *     :ff2e88 became :ff2e80), each keeping its type: the values are written
  *     into the running program; nothing is recompiled;
  *   - anything else: recompile, and swap the new program in with
  *     transfer_state.
@@ -1436,7 +1436,7 @@ pb_status pb_vm_apply_scenario(pb_vm* vm, const pb_scenario* s, size_t frame, si
  *   let SPEED = tunable(4.0, 0, 10)                      // a number, with bounds
  *   let START = tunable("title", options: ["title", "play"])
  *   let DEBUG = tunable(false)
- *   pub let LOOK = tunable({bloom: 0.3, tint: #ff2e88})  // a record
+ *   pub let LOOK = tunable({bloom: 0.3, tint: :ff2e88})  // a record
  *
  * The deprecated `config let X = v` is a setting too, with nothing written.
  * `let X = tunable(v) * 2`, `var X = tunable(v)` and a `tunable` below the
@@ -1503,12 +1503,13 @@ const char* pb_source_text(const pb_source* s);
  * the next call to this function on `s`. */
 const char* pb_source_bindings_json(pb_source* s);
 
-/* The text of the expression at `path` as written ("#ff2e88", "0.020000"),
+/* The text of the expression at `path` as written (":ff2e88", "0.020000"),
  * or NULL (pb_source_error). Valid until the next call to this function. */
 const char* pb_source_expr(pb_source* s, const char* path);
 
 /* Make the expression at `path` read `value` (Petal source for exactly one
- * expression). Only that expression's text changes; a value already spelled
+ * expression; a color in the old `#ff2e88` spelling is written `:ff2e88`).
+ * Only that expression's text changes; a value already spelled
  * that way changes nothing. PB_ERR_NOT_FOUND when the path names no literal
  * in the source, PB_ERR_INVALID_ARG for a malformed path or a value that is
  * not one expression (or would leave the text unparseable), PB_ERR_COMPILE
@@ -1523,7 +1524,7 @@ pb_status pb_source_set(pb_source* s, const char* path, const char* value);
  *     and fields keep their text, comments and alignment, and writing a value
  *     that already holds changes nothing at all;
  *   - a changed number or color keeps the old token's habits (`3.50` becomes
- *     `4.00`, `#F80` becomes `#0F8`); whether a number is an int or a float is
+ *     `4.00`, `:F80` becomes `:0F8`); whether a number is an int or a float is
  *     the value's say ({"int": 2} against 2.0);
  *   - new elements and fields are formatted like their siblings (one line or
  *     several, padding, separators, trailing comma, indentation), or like the

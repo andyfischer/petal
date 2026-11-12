@@ -186,7 +186,7 @@ v[1]["missing"]["deeper"].is_nil();      // true: misses chain safely
 | `symbol("s")` | `PB_SYMBOL` | `str()` |
 | handles | `PB_HANDLE` | `str()` = class name; the raw node has the slot in `raw()->integer`, the serial in `raw()->count` and the class's index (per VM) in `raw()->number` (`integer()` and `size()` return their fallbacks, since a handle is not a number or a container) |
 
-Color literals such as `#ff8800` are records `{r, g, b}` (0–255). A native
+Color literals such as `:ff8800` are records `{r, g, b}` (0–255). A native
 `vec3` decodes as `PB_VEC3`, with its components in `number`, `y` and `z`
 (full `f64` precision); an `{x, y, z}` *record* is still an ordinary
 `PB_MAP`.
@@ -351,7 +351,7 @@ vm.emitter("body", "physics", "declare_body");    // custom tag
 ```petal ignore
 import vec2
 import engine        // your interface package: it declares draw_mesh and sfx
-draw_mesh("cube", vec3(0, 1, 0), rot, 1.0, {color: #cc3333})
+draw_mesh("cube", vec3(0, 1, 0), rot, 1.0, {color: :cc3333})
 sfx("jump", {volume: 0.8})
 ```
 
@@ -626,7 +626,7 @@ script's field reads on it hit the VM's inline cache.
 
 ### Record templates: the static part of an options record, decoded once
 
-In `body(i, {shape: "box", size: 2.0, mass: 5.0, color: #f80, pos: p})`
+In `body(i, {shape: "box", size: 2.0, mass: 5.0, color: :f80, pos: p})`
 every field but `pos` is the same on every call. Petal compiles such a
 literal (one whose fields are mostly constants or values that cannot
 change) to a **template** plus **holes**, and every record it makes carries
@@ -1051,7 +1051,7 @@ write_file("games/neon/config.ptl", src.text());
   a variant of an enum the file declares `{"variant": "Mode.dark"}` (with
   `"args": [...]` when it carries a payload). A
   color is always `#rrggbb` or `#rrggbbaa` in lowercase there; `expr(path)`
-  returns an expression as written (`#F80`, `0.020000`).
+  returns an expression as written (`:F80`, `0.020000`).
 - A failed call returns false (the edits) or `nullopt` and leaves the text as
   it was; `error()` says why. The text is never left unparseable. A `Source`
   is independent of any `Vm`.
@@ -1067,7 +1067,7 @@ and a drag moves. The value can be any data:
 let SPEED = tunable(4.0, 0, 10)                       // a number, with bounds
 let START = tunable("title", options: ["title", "play"])
 let DEBUG = tunable(false)
-pub let LOOK = tunable({bloom: 0.3, tint: #ff2e88})   // every number a knob
+pub let LOOK = tunable({bloom: 0.3, tint: :ff2e88})   // every number a knob
 ```
 
 `let X = tunable(v) * 2`, `var X = tunable(v)` and a `tunable` below the top

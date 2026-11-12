@@ -217,7 +217,7 @@ mod tests {
         assert_round_trips("print(\"sum = {2 + 2} done\")\n");
         assert_round_trips("let s = \"\"\"\n  raw {braces} kept\n\"\"\"\n");
         assert_round_trips("print(\"{a}{b}{c}\")\n");
-        assert_round_trips("let c = #ff8800\nlet d = #f80\n");
+        assert_round_trips("let c = :ff8800\nlet d = :f80\n");
         assert_round_trips("let e = <div class=\"x\">hello {name} world</div>\n");
     }
 

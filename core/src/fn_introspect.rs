@@ -665,7 +665,7 @@ mod tests {
     #[test]
     fn static_defaults_cover_literals_colors_and_vectors() {
         let (_tree, stmts) =
-            crate::cst::parse_source("let f = fn(a = -1.5, c = #102030, v = vec2(1, 2.5), d = a * 2) -> a", FileId(0))
+            crate::cst::parse_source("let f = fn(a = -1.5, c = :102030, v = vec2(1, 2.5), d = a * 2) -> a", FileId(0))
                 .unwrap();
         let StmtKind::Let { value, .. } = &stmts[0].kind else { panic!() };
         let ExprKind::Lambda { params, .. } = &value.kind else { panic!() };

@@ -78,9 +78,9 @@ Scalars carry style too, captured from the token being replaced:
 | zero padding of a float | `3.50` | 4.0 | `4.00` |
 | | `3.50` | 3.125 | `3.125` (does not fit two decimals) |
 | | `1.45` | 1.2 | `1.2` (was not padded) |
-| color case | `#FF2E88` | 29d9ff | `#29D9FF` |
-| color short form | `#f80` | 00ff88 | `#0f8` |
-| | `#f80` | 29d9ff | `#29d9ff` (does not fit three digits) |
+| color case | `:FF2E88` | 29d9ff | `:29D9FF` |
+| color short form | `:f80` | 00ff88 | `:0f8` |
+| | `:f80` | 29d9ff | `:29d9ff` (does not fit three digits) |
 
 Whether a number is an int or a float is not style: the value decides
 (`StaticValue::Int(4)` writes `4`, `Float(4.0)` writes `4.0`).
@@ -205,7 +205,7 @@ line or one per line).
 
 ## Colors
 
-`#ff2e88` lowers to the record `{r, g, b}` at run time, but in a file it is one
+`:ff2e88` lowers to the record `{r, g, b}` at run time, but in a file it is one
 token. `StaticValue::Color { r, g, b, a }` reads and writes it as such: a path
 stops at a color (`POST.tint.r` names nothing), and an edit writes a color
 literal, in the old literal's case and length form. A record the author wrote

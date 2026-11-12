@@ -260,8 +260,8 @@ fn tab_reaches_a_text_field_and_the_focus_is_uis() {
 fn swatches_and_a_color_field_pick_colours() {
     let mut ui = Ui::new(
         "import bloom: swatches, color_field\n\
-         state c = #ff0000\n\
-         let p = swatches(rect(20, 20, 200, 20), [#ff0000, #00ff00, #0000ff], c)\n\
+         state c = :ff0000\n\
+         let p = swatches(rect(20, 20, 200, 20), [:ff0000, :00ff00, :0000ff], c)\n\
          if p != nil then c = p end\n\
          let res = color_field(rect(20, 80, 200, 26), c, {id: \"hex\"})\n\
          if res.color != nil then c = res.color end\n\

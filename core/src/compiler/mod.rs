@@ -1071,6 +1071,10 @@ impl Compiler {
             // (docs/tasks/lifecycle-annotation-functions-refactor.md, Phase 5).
             self.warnings
                 .extend(crate::migrate::deprecated_lifecycle_decls(&stmts, &module.source));
+            // `#f80` color literals are deprecated: write `:f80`
+            // (docs/tasks/pythonic-syntax.md §3.3).
+            self.warnings
+                .extend(crate::migrate::deprecated_colour_literals(&module.source));
         }
 
         if !is_entry {

@@ -232,7 +232,7 @@ Petal has the following value types:
 | `list` | `[1, 2, 3]` |
 | `record` | `{name: "Alice", age: 30}` |
 | `map` | `Map([[1, "one"], [[2, 3], "pair"]])` (keys of any type; see [Maps](#maps)) |
-| `color` | `#ff8800`, `#f80` (desugars to record) |
+| `color` | `:ff8800`, `:f80` (desugars to record) |
 | an enum | `Color.red`, `Shape.circle(2)` (a variant of a declared [enum](#enums)) |
 | `vec2` | `vec2(3.0, 4.0)` (see [Vectors](#vectors)) |
 | `vec3` | `vec3(1.0, 2.0, 3.0)` (see [Vectors](#vectors)) |
@@ -1478,12 +1478,13 @@ when empty). It crosses JSON as `{"type": "map", "entries": [[key, value],
 
 ## Color Literals
 
-CSS-style hex color literals desugar into records with `r`, `g`, `b` (and `a`) fields.
-Values are integers 0–255.
+A color literal is a `:` followed by hex digits, as in CSS but with `:` for the
+`#`. It desugars into a record with `r`, `g`, `b` (and `a`) fields. Values are
+integers 0–255.
 
 ```petal
-let red = #ff0000        // {r: 255, g: 0, b: 0}
-let coral = #ff7f50      // {r: 255, g: 127, b: 80}
+let red = :ff0000        // {r: 255, g: 0, b: 0}
+let coral = :ff7f50      // {r: 255, g: 127, b: 80}
 print(coral.r)           // 255
 ```
 
@@ -1491,12 +1492,31 @@ Four formats are supported:
 
 | Format | Example | Expansion |
 |--------|---------|-----------|
-| `#rgb` | `#f80` | `{r: 255, g: 136, b: 0}` |
-| `#rgba` | `#f80a` | `{r: 255, g: 136, b: 0, a: 170}` |
-| `#rrggbb` | `#ff8800` | `{r: 255, g: 136, b: 0}` |
-| `#rrggbbaa` | `#ff8800aa` | `{r: 255, g: 136, b: 0, a: 170}` |
+| `:rgb` | `:f80` | `{r: 255, g: 136, b: 0}` |
+| `:rgba` | `:f80a` | `{r: 255, g: 136, b: 0, a: 170}` |
+| `:rrggbb` | `:ff8800` | `{r: 255, g: 136, b: 0}` |
+| `:rrggbbaa` | `:ff8800aa` | `{r: 255, g: 136, b: 0, a: 170}` |
 
 In the short 3/4-digit forms, each digit is doubled (e.g. `f` → `ff` = 255).
+
+`:` is also the separator of record fields, named arguments and type
+annotations. It starts a color only where a value can start: directly followed
+by 3, 4, 6 or 8 hex digits, and not directly after a name or a value. The rule
+looks at the token before the `:`, not at spaces:
+
+```petal
+let theme = {tint: :000, edge: :ff8800aa}   // colors, after the field's own `:`
+let tint = :f80                             // a color
+let size = {w:100, h:200}                   // separators: `w` and `h` are names
+print(theme.edge.a, tint.g, size.w)         // 170 136 100
+```
+
+A color cannot follow a value or a name directly, so the body of a one-line
+function takes parentheses: `fn ink() (:fff) end`.
+
+`#ff8800` is the old spelling. It still works, with a deprecation warning;
+`petal migrate-old-code` rewrites it (the `colour-literals` migration). A
+`"#ff8800"` inside a string was never a literal and stays as it is.
 
 ## Enums
 

@@ -150,7 +150,7 @@ fn button_draws_and_reports_click() {
 #[test]
 fn record_draw_overloads_emit_flat_commands() {
     // Both the record form and the flat form work with the prelude loaded.
-    let src = "draw_rect({x: 1, y: 2, w: 3, h: 4}, #ff8800)\n\
+    let src = "draw_rect({x: 1, y: 2, w: 3, h: 4}, :ff8800)\n\
                draw_rect(5, 6, 7, 8, 10, 20, 30)\n\
                draw_text(\"hi\", {x: 9, y: 9}, 14, {r: 1, g: 2, b: 3})";
     run_headless(src, |ui| {
@@ -1596,9 +1596,9 @@ fn context_menu_flips_away_from_the_screen_edges() {
 /// "draw_line() expects 7 or 8 or 9 or 3 arguments, got 5".
 #[test]
 fn draw_line_record_overload_takes_alpha_and_width() {
-    let src = "draw_line({x: 1, y: 2}, {x: 3, y: 4}, #ff0000)\n\
-               draw_line({x: 5, y: 6}, {x: 7, y: 8}, #00ff00, 128)\n\
-               draw_line({x: 9, y: 10}, {x: 11, y: 12}, #0000ff, 64, 3)";
+    let src = "draw_line({x: 1, y: 2}, {x: 3, y: 4}, :ff0000)\n\
+               draw_line({x: 5, y: 6}, {x: 7, y: 8}, :00ff00, 128)\n\
+               draw_line({x: 9, y: 10}, {x: 11, y: 12}, :0000ff, 64, 3)";
     run_headless(src, |ui| {
         let cmds = ui.frame().unwrap().to_vec();
         let lines: Vec<(i32, u8, u32)> = cmds
@@ -1678,7 +1678,7 @@ fn context_menu_reports_an_empty_rect_when_closed() {
 fn theme_set_repaints_every_widget() {
     // Away from the pointer's resting (0, 0) so the button paints its face,
     // not its hover color.
-    let src = "theme_set({panel: #ffffff, text: #101010, outline: #cccccc})\n\
+    let src = "theme_set({panel: :ffffff, text: :101010, outline: :cccccc})\n\
                button({x: 100, y: 100, w: 80, h: 24}, \"Go\")";
     run_headless(src, |ui| {
         let cmds = ui.frame().unwrap().to_vec();
@@ -1711,7 +1711,7 @@ fn theme_set_merges_and_theme_reset_restores() {
                state n = 0\n\
                n = n + 1\n\
                if n == 1 then\n\
-                 theme_set({panel: #ffffff})\n\
+                 theme_set({panel: :ffffff})\n\
                end\n\
                if n == 3 then\n\
                  theme_reset()\n\
@@ -1741,10 +1741,10 @@ fn theme_set_merges_and_theme_reset_restores() {
 /// key — what it leaves out falls through to the live theme.
 #[test]
 fn widget_style_records_may_be_partial() {
-    let src = "button({x: 100, y: 100, w: 80, h: 24}, \"Go\", {bg: #ff0000})\n\
-               draw_scrollbar({x: 0, y: 40, w: 100, h: 200}, 20, 5, 0, {thumb: #00ff00})\n\
-               section_label(\"Files\", 10, 260, true, {active: #0000ff})\n\
-               draw_text_field({x: 0, y: 300, w: 120, h: 24}, \"hi\", false, {bg: #ffff00})";
+    let src = "button({x: 100, y: 100, w: 80, h: 24}, \"Go\", {bg: :ff0000})\n\
+               draw_scrollbar({x: 0, y: 40, w: 100, h: 200}, 20, 5, 0, {thumb: :00ff00})\n\
+               section_label(\"Files\", 10, 260, true, {active: :0000ff})\n\
+               draw_text_field({x: 0, y: 300, w: 120, h: 24}, \"hi\", false, {bg: :ffff00})";
     run_headless(src, |ui| {
         let cmds = ui.frame().unwrap().to_vec();
         let rect_colors: Vec<(u8, u8, u8)> = cmds
@@ -1806,8 +1806,8 @@ fn ellipsize_accepts_a_style_record() {
 /// runs land where they are measured.
 #[test]
 fn aligned_text_takes_a_style_record() {
-    let src = "draw_text_right(\"hi\", 100, 10, {size: 14, color: #ff0000})\n\
-               draw_text_center(\"hi\", 100, 30, {size: 14, color: #00ff00})";
+    let src = "draw_text_right(\"hi\", 100, 10, {size: 14, color: :ff0000})\n\
+               draw_text_center(\"hi\", 100, 30, {size: 14, color: :00ff00})";
     run_headless(src, |ui| {
         let cmds = ui.frame().unwrap().to_vec();
         let xs: Vec<i32> = cmds
@@ -1970,10 +1970,10 @@ fn color_helpers_mix_and_measure_luma() {
                state l = 0\n\
                state dark = 0\n\
                state light = 0\n\
-               m = mix(#000000, #ffffff, 0.5).r\n\
-               l = luma(#ffffff)\n\
-               dark = contrast_text(#ffffff).r\n\
-               light = contrast_text(#000000).r";
+               m = mix(:000000, :ffffff, 0.5).r\n\
+               l = luma(:ffffff)\n\
+               dark = contrast_text(:ffffff).r\n\
+               light = contrast_text(:000000).r";
     run_headless(src, |ui| {
         ui.frame().unwrap();
         assert_eq!(ui.state_int("m"), Some(128), "mix is a midpoint blend");
@@ -1988,7 +1988,7 @@ fn color_helpers_mix_and_measure_luma() {
         );
     });
 
-    let src = "state a = 0\n a = lerp_color(#000000, #ff0000, 1.0).r";
+    let src = "state a = 0\n a = lerp_color(:000000, :ff0000, 1.0).r";
     run_headless(src, |ui| {
         ui.frame().unwrap();
         assert_eq!(ui.state_int("a"), Some(255));
@@ -2021,7 +2021,7 @@ fn script_definitions_shadow_the_new_color_helpers() {
                  {r: 7, g: 7, b: 7}\n\
                end\n\
                state m = 0\n\
-               m = mix(#000000, #ffffff, 0.5).r";
+               m = mix(:000000, :ffffff, 0.5).r";
     run_headless(src, |ui| {
         ui.frame().unwrap();
         assert_eq!(ui.state_int("m"), Some(7), "the script's own mix wins");
@@ -2091,7 +2091,7 @@ fn area_fill_follows_the_data_and_stops_at_the_baseline() {
     // starting on the polyline and ending, transparent, on the baseline. The
     // alpha at a column's top is the global ramp's alpha *there*, so the fade
     // is one ramp across the whole area rather than one per column.
-    let src = "draw_area_fill([{x: 0, y: 100}, {x: 60, y: 40}], 100, #3c8cff, {step: 20, a: 200})";
+    let src = "draw_area_fill([{x: 0, y: 100}, {x: 60, y: 40}], 100, :3c8cff, {step: 20, a: 200})";
     run_headless(src, |ui| {
         let cmds = ui.frame().unwrap().to_vec();
         let bands: Vec<(i32, u32, u32, u8, u8)> = cmds
@@ -2126,7 +2126,7 @@ fn text_along_a_path_sets_one_upright_glyph_at_a_time() {
     // The honest workaround for the rotated run no host can draw: characters
     // step along the path, upright, measured and drawn with the one style.
     let src = "draw_text_along([{x: 0, y: 50}, {x: 200, y: 50}], \"abc\",\n\
-                               {size: 10, font: \"ui\", color: #ffffff})";
+                               {size: 10, font: \"ui\", color: :ffffff})";
     run_headless(src, |ui| {
         let cmds = ui.frame().unwrap().to_vec();
         let runs: Vec<(String, i32, i32)> = cmds
@@ -2203,17 +2203,17 @@ fn axis_labels_thin_and_stagger_instead_of_rotating() {
 #[test]
 fn remaining_primitives_take_record_overloads() {
     let src = "let pts = [{x: 1, y: 1}, {x: 5, y: 1}, {x: 5, y: 5}]\n\
-               draw_rect_rounded_outline({x: 1, y: 2, w: 30, h: 40}, 6, #ff0000, 128, 2)\n\
-               draw_circle_outline({x: 10, y: 20}, 5, #00ff00, 64, 3)\n\
-               draw_ellipse({x: 10, y: 20}, 6, 3, #0000ff, 200)\n\
-               draw_ellipse_outline({x: 10, y: 20}, 6, 3, #0000ff, 100, 2)\n\
-               fill_arc({x: 7, y: 8}, 2.0, 4.0, 0.0, 1.0, #112233, 99)\n\
-               fill_triangle({x: 0, y: 0}, {x: 4, y: 0}, {x: 0, y: 4}, #445566, 50)\n\
-               fill_poly(pts, #778899, 40)\n\
-               fill_polygon(pts, #aabbcc, 30)\n\
-               fill_fan({x: 3, y: 3}, pts, #ddeeff, 20)\n\
-               draw_polyline(pts, #010203, 235, 4)\n\
-               draw_polyline(pts, #040506)\n\
+               draw_rect_rounded_outline({x: 1, y: 2, w: 30, h: 40}, 6, :ff0000, 128, 2)\n\
+               draw_circle_outline({x: 10, y: 20}, 5, :00ff00, 64, 3)\n\
+               draw_ellipse({x: 10, y: 20}, 6, 3, :0000ff, 200)\n\
+               draw_ellipse_outline({x: 10, y: 20}, 6, 3, :0000ff, 100, 2)\n\
+               fill_arc({x: 7, y: 8}, 2.0, 4.0, 0.0, 1.0, :112233, 99)\n\
+               fill_triangle({x: 0, y: 0}, {x: 4, y: 0}, {x: 0, y: 4}, :445566, 50)\n\
+               fill_poly(pts, :778899, 40)\n\
+               fill_polygon(pts, :aabbcc, 30)\n\
+               fill_fan({x: 3, y: 3}, pts, :ddeeff, 20)\n\
+               draw_polyline(pts, :010203, 235, 4)\n\
+               draw_polyline(pts, :040506)\n\
                draw_polyline(pts, 7, 8, 9)";
     run_headless(src, |ui| {
         let cmds = ui.frame().unwrap().to_vec();

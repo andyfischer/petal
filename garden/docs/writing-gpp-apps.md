@@ -235,7 +235,7 @@ row helper (`fn row(item) state hovered = false … end`), and not what you want
 for a value two functions share. Key a per-item cell with `state(item.id)` if
 it must follow the item through a reorder.
 
-**Drawing** in panel-local pixels, colors as `#rrggbb`: `draw_rect(rect(x, y,
+**Drawing** in panel-local pixels, colors as `:rrggbb`: `draw_rect(rect(x, y,
 w, h), color)`, `draw_text(s, {x, y}, size, color)`, `draw_line`,
 `draw_circle`, `clip(...)` for scroll regions. `screen_width()` and
 `screen_height()` give the pane size.

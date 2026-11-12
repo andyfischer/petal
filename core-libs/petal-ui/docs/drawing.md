@@ -112,7 +112,7 @@ written with [named arguments](../../../docs/syntax/function-overloading.md#name
 and the names say which shape is meant:
 
 ```petal
-let red = #e5484d
+let red = :e5484d
 let card = rect(20, 20, 200, 120)
 
 draw_rect_outline(x: 0, y: 0, w: 10, h: 4, c: red, a: 255, width: 2)

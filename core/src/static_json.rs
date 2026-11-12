@@ -78,7 +78,9 @@ fn write_json(value: &StaticValue, out: &mut String) {
         StaticValue::Float(_) => out.push_str("null"),
         StaticValue::Str(s) => out.push_str(&quoted(s)),
         StaticValue::Color { .. } => {
-            out.push_str(&format!("{{\"color\":{}}}", quoted(&value.to_source())))
+            // The JSON form keeps the CSS-style `#` hex string: it is host
+            // data, not Petal source (where the literal is `:ff2e88`).
+            out.push_str(&format!("{{\"color\":{}}}", quoted(&value.css_hex().unwrap_or_default())))
         }
         StaticValue::List(items) => write_list(items, out),
         StaticValue::Record(fields) => {

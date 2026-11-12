@@ -184,20 +184,20 @@ fn a_subpixel_host_emits_the_scripts_own_numbers() {
 /// The same frame through `import ui`: the record overloads, decorated
 /// text, a batch, layers and a retained layer.
 const UI_SCRIPT: &str = "\
-draw_rect(rect(1.6, 2.4, 30.9, 4.5), #102030)
-draw_rect({x: -0.5, y: 2.5, w: 3.5, h: 4.5}, #102030, 128)
-draw_circle({x: 10.5, y: 20.25}, 1.6, #ff0000)
-draw_line({x: 0.5, y: 1.5}, {x: -10.25, y: 3.75}, #00ff00, 255, 2.5)
+draw_rect(rect(1.6, 2.4, 30.9, 4.5), :102030)
+draw_rect({x: -0.5, y: 2.5, w: 3.5, h: 4.5}, :102030, 128)
+draw_circle({x: 10.5, y: 20.25}, 1.6, :ff0000)
+draw_line({x: 0.5, y: 1.5}, {x: -10.25, y: 3.75}, :00ff00, 255, 2.5)
 pixel_snap(false)
-draw_text(\"hi\", {x: -0.5, y: 2.5}, {size: 14, color: #ffffff, shadow: true, outline: {width: 1}})
+draw_text(\"hi\", {x: -0.5, y: 2.5}, {size: 14, color: :ffffff, shadow: true, outline: {width: 1}})
 draw_text(\"hi\", 0.5, -1.5, 14, 1, 2, 3)
 ui_layer(2)
-draw_circle({x: 1.5, y: 2.5}, 3.5, #0000ff)
+draw_circle({x: 1.5, y: 2.5}, 3.5, :0000ff)
 ui_layer(0)
-draw_rects([1.5, 2.5, 3.5, 4.5, #ff0000, 5.5, 6.5, 7.5, 8.5, #00ff00])
+draw_rects([1.5, 2.5, 3.5, 4.5, :ff0000, 5.5, 6.5, 7.5, 8.5, :00ff00])
 pixel_snap(true)
-cached_layer(\"k\", rect(3, 4, 50, 50), fn() draw_circle({x: 10.5, y: 7.25}, 2.5, #ff0000) end)
-draw_polyline([{x: 0.5, y: 1.5}, {x: 2.5, y: 3.5}], #102030, 255, 1.5)";
+cached_layer(\"k\", rect(3, 4, 50, 50), fn() draw_circle({x: 10.5, y: 7.25}, 2.5, :ff0000) end)
+draw_polyline([{x: 0.5, y: 1.5}, {x: 2.5, y: 3.5}], :102030, 255, 1.5)";
 
 #[test]
 fn whole_pixel_drains_on_a_subpixel_env_return_what_a_default_env_returns() {
@@ -455,12 +455,12 @@ fn the_snapped_drain_reports_each_commands_mode() {
 fn a_retained_layer_moves_its_content_in_f32_and_keeps_its_mode() {
     let src = "pixel_snap(false)\n\
                cached_layer(\"k\", rect(3, 4, 50, 50), fn()\n\
-                 draw_circle({x: 10.5, y: 7.25}, 2.5, #ff0000)\n\
+                 draw_circle({x: 10.5, y: 7.25}, 2.5, :ff0000)\n\
                  pixel_snap(true)\n\
-                 draw_circle({x: 1.5, y: 1.5}, 1.5, #ff0000)\n\
+                 draw_circle({x: 1.5, y: 1.5}, 1.5, :ff0000)\n\
                end)\n\
                pixel_snap(nil)\n\
-               cached_layer(\"j\", rect(1, 1, 9, 9), fn() draw_circle({x: 0.25, y: 0.5}, 2.5, #ff0000) end)";
+               cached_layer(\"j\", rect(1, 1, 9, 9), fn() draw_circle({x: 0.25, y: 0.5}, 2.5, :ff0000) end)";
     let mut env = env_with(SUB, true);
     let script = petal_ui::script_for(&env, src);
     let program = env.load_program(&script).unwrap();

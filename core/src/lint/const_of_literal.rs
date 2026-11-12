@@ -100,7 +100,7 @@ mod tests {
     fn const_of_literal() {
         let src = "const A = 1\n\
                    let B = const(\"x\")\n\
-                   let C = const([1, -2.5, {k: #ff0000}])\n\
+                   let C = const([1, -2.5, {k: :ff0000}])\n\
                    const D = rgb(1, 2, 3)\n\
                    let E = const(A + 1)\n\
                    let F = const(\"{A}\")\n";

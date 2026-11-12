@@ -197,7 +197,7 @@ The value type shared by both directions.
 | `Float` | `StaticValue::float(f)` / `1.0.into()` | `1.0` (always has a `.`) |
 | `Bool` | `StaticValue::bool(b)` / `true.into()` | `true` |
 | `Nil` | `StaticValue::nil()` | `nil` |
-| `Color` | `StaticValue::color(r, g, b)` / `color_alpha(r, g, b, a)` / `color_hex("#ff2e88")` | `#ff2e88` |
+| `Color` | `StaticValue::color(r, g, b)` / `color_alpha(r, g, b, a)` / `color_hex("#ff2e88")` | `:ff2e88` |
 | `List` | `StaticValue::list(items)` | `[1, 2, 3]` |
 | `Record` | `StaticValue::record(fields)` | `{ tab_width: 4 }` |
 | `Call` | `StaticValue::call(name, args)` | `rgb(255, 0, 0)` |
@@ -211,7 +211,7 @@ is deliberately no verbatim/raw-source variant.
 Record keys and call names are rendered **bare**, so they must be valid Petal
 identifiers; they are not validated against the grammar.
 
-A color literal (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`) reads as `Color`,
+A color literal (`:rgb`, `:rgba`, `:rrggbb`, `:rrggbbaa`) reads as `Color`,
 with channels `0..=255` and `a` present only when the literal spells an alpha
 — not as the `{r, g, b}` record it becomes at run time — so writing it back
 gives a color literal. `to_source()` writes the long lowercase form; an edit

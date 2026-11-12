@@ -198,7 +198,7 @@ fn color_field_applies_a_valid_hex_only() {
 #[test]
 fn swatches_return_the_chip_clicked() {
     let mut ui = ui("state hex = \"\"\n\
-                     let picked = swatches({x: 10, y: 10, w: 200, h: 20}, [#ff0000, #00ff00, #0000ff], nil)\n\
+                     let picked = swatches({x: 10, y: 10, w: 200, h: 20}, [:ff0000, :00ff00, :0000ff], nil)\n\
                      if picked != nil then hex = color_to_hex(picked) end");
     // Chips are 20 px with a 4 px gap: the second spans x 34..54.
     click(&mut ui, 44, 20);
@@ -287,7 +287,7 @@ fn color_field_shows_a_nil_colour_empty() {
 #[test]
 fn swatches_leave_out_chips_that_do_not_fit() {
     let mut ui = ui("state n = 0\n\
-                     let picked = swatches({x: 0, y: 0, w: 50, h: 20}, [#ff0000, #00ff00, #0000ff], nil)\n\
+                     let picked = swatches({x: 0, y: 0, w: 50, h: 20}, [:ff0000, :00ff00, :0000ff], nil)\n\
                      if picked != nil then n += 1 end");
     click(&mut ui, 49, 10); // where the third chip (48..68) would start
     assert_eq!(ui.state_int("n"), Some(0));

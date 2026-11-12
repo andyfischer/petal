@@ -19,7 +19,7 @@ fn view(items)
     let k = items[i]
     let r = place(k, rect(40, 60 + i * 52, 240, 44))
     draggable(k, r, fn() closest(moves(items, i)) |> floating() end)
-    place(k, r, fn(p) draw_rect(p, #446688) end)
+    place(k, r, fn(p) draw_rect(p, :446688) end)
   end
   nil
 end

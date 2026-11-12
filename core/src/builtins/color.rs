@@ -1,6 +1,6 @@
 //! Color builtins: hsv, hsl, color_lerp. All return RGB records
 //! `{r, g, b}` with 0..255 integer channels, matching the shape produced
-//! by color literals like `#ff8800`.
+//! by color literals like `:ff8800`.
 
 use crate::heap::MapId;
 use crate::native_fn::PetalCxt;

@@ -196,7 +196,7 @@ var cur = nil
 fn view(on)
   let k = place("k", rect(if on then 200 else 100 end, 100, 20, 20))
   draggable("k", k, fn() between([false, true]) end)
-  let c = place("c", if on then #00ff00 else #808080 end)
+  let c = place("c", if on then :00ff00 else :808080 end)
   let a = place("a", if on then 255 else 55 end)
   set cur = {x: k.x, y: k.y, c: c, a: a}
   nil

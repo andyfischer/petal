@@ -6,7 +6,7 @@
 
 use petal::env::Env;
 use petal::migrate::{
-    AT_REBIND, CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED, EXPORT_TO_PUB, MIGRATIONS, MigrateOptions,
+    AT_REBIND, COLOUR_LITERALS, CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED, EXPORT_TO_PUB, MIGRATIONS, MigrateOptions,
     MigrateOutcome, STATE_KEY_DEPRECATED, migrate_source,
 };
 
@@ -25,6 +25,20 @@ const FIXTURES: &[(&str, &str, &str)] = &[
          let a = 5\na = double(a)\nprint(a) // 10\n\
          let b = 3\nb = double(b)\nlet r = inc(b)\nprint(b, r) // 6 7\n\
          let c = 4\nc = double(c)\nc = double(c)\nprint(c) // 16\n",
+    ),
+    // Color tokens only: the string, the raw GLSL and the comment keep their
+    // `#`; B16's four color positions (a field value, an argument, after
+    // `=`, a string hole) all respell.
+    (
+        COLOUR_LITERALS,
+        "let tint = #f80 // was #fff\nlet theme = {bg: #10203040, ink: #FFFFFF}\n\
+         let css = \"#ff8800\"\nlet glsl = \"\"\"\n#define K 1\nvec3 c = #abc;\n\"\"\"\n\
+         fn name(c)\n  if c == #f80 then \"orange\" else \"{#fff.r}\" end\nend\n\
+         print(name(#f80), tint.r, theme.bg.a, css, [#000, #abcd][1].a)\n",
+        "let tint = :f80 // was #fff\nlet theme = {bg: :10203040, ink: :FFFFFF}\n\
+         let css = \"#ff8800\"\nlet glsl = \"\"\"\n#define K 1\nvec3 c = #abc;\n\"\"\"\n\
+         fn name(c)\n  if c == :f80 then \"orange\" else \"{:fff.r}\" end\nend\n\
+         print(name(:f80), tint.r, theme.bg.a, css, [:000, :abcd][1].a)\n",
     ),
     (
         EXPORT_TO_PUB,
@@ -344,4 +358,71 @@ fn a_declaration_annotation_is_not_a_rebind() {
          @const @rigid let G = 9.8\na = double(a)\nprint(a, k, G)\n"
     );
     assert_eq!(run_out(&out.output), ["2 2 9.8"]);
+}
+
+// ---------------------------------------------------------------------------
+// `colour-literals`: `#f80` is written `:f80`
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_hash_colour_warns_and_names_the_tool_and_the_new_spelling() {
+    let w = deprecation_warnings("let a = #f80\nlet b = :fff\nprint(a.r + b.r)\n");
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert!(w[0].contains("`:f80`") && w[0].ends_with("[colour-literals]"), "{w:?}");
+}
+
+#[test]
+fn a_migrated_colour_is_the_same_program() {
+    let (_, before, after) = FIXTURES.iter().find(|(r, _, _)| *r == COLOUR_LITERALS).unwrap();
+    assert_eq!(run_out(before), run_out(after));
+    assert_eq!(run_out(after), ["orange 255 64 #ff8800 221"]);
+}
+
+/// B16: where `:` is a separator the migration never produces a colour, and
+/// where a colour is written the separator before it is kept.
+#[test]
+fn colour_separators_are_kept_and_only_colour_tokens_respell() {
+    let src = "let r = {x:100, tint:#000, edge: #abc}\nfn f(a:int, c = #fff) a + c.r end\nprint(r.x, f(1, c:#f80))\n";
+    let out = migrate_with(src, None);
+    assert_eq!(
+        out.output,
+        "let r = {x:100, tint::000, edge: :abc}\nfn f(a:int, c = :fff) a + c.r end\nprint(r.x, f(1, c::f80))\n"
+    );
+    assert_eq!(run_out(src), run_out(&out.output));
+    assert_eq!(out.count(COLOUR_LITERALS), 4);
+}
+
+#[test]
+fn a_colour_directly_after_a_value_is_reported_and_left() {
+    // `fn bg() :fff end` would read `:` as a separator, so this one is a
+    // hand edit (`(:fff)`); the rest of the file still migrates.
+    let src = "fn bg() #fff end\nlet ink = #000\nprint(bg().r + ink.r)\n";
+    let out = migrate_with(src, None);
+    assert_eq!(out.output, "fn bg() #fff end\nlet ink = :000\nprint(bg().r + ink.r)\n");
+    assert_eq!((out.rewritten(), out.left()), (1, 1));
+    assert!(out.findings[0].message.contains("(:fff)"), "{:?}", out.findings);
+    assert_eq!(run_out("fn bg() (:fff) end\nprint(bg().r)\n"), ["255"]);
+}
+
+#[test]
+fn a_colour_ignore_comment_keeps_the_hash_and_silences_the_warning() {
+    let src = "let a = #f80 // petal-lint-ignore colour-literals\nlet b = #fff\nprint(a.r + b.r)\n";
+    let out = migrate_with(src, None);
+    assert_eq!(
+        out.output,
+        "let a = #f80 // petal-lint-ignore colour-literals\nlet b = :fff\nprint(a.r + b.r)\n"
+    );
+    assert_eq!(deprecation_warnings(&out.output), Vec::<String>::new());
+}
+
+#[test]
+fn colours_and_other_old_forms_migrate_together() {
+    let src = "export const INK = #102030\nconfig let TINT = #f80 // warm\nprint(INK.r + TINT.g)\n";
+    let out = migrate_with(src, None);
+    assert_eq!(
+        out.output,
+        "pub let INK = const(:102030)\nlet TINT = tunable(:f80) // warm\nprint(INK.r + TINT.g)\n"
+    );
+    assert_eq!(run_out(&out.output), ["152"]);
+    assert_eq!(deprecation_warnings(&out.output), Vec::<String>::new());
 }

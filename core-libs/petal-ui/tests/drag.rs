@@ -141,7 +141,7 @@ fn view(items)
     draggable(k, r, fn() {spec} end)
     place(k, r, fn(p)
       set shown[k] = p.y
-      draw_rect(p, #808080)
+      draw_rect(p, :808080)
     end)
   end
   {extra}
@@ -519,7 +519,7 @@ fn view(items)
     let r = place(k, rect(40, 40 + i * 50, 220, 40))
     draggable(k, r, fn() closest(moves(items, i)) |> floating() end)
     set drawn = (get drawn) + 1
-    draw_rect(r, #808080)
+    draw_rect(r, :808080)
   end
   set renders = (get renders) + 1
   nil

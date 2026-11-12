@@ -53,8 +53,8 @@ to its owner.
 let offset = tunable(10)
 let scale: float = tunable(1.5)             // an optional type annotation, as on `let`
 pub let THEME = tunable({                   // exported from a module
-  bg: #101418,
-  accent: #ff2e88,
+  bg: :101418,
+  accent: :ff2e88,
 })
 let SPEED = tunable(4.0, 0, 10)             // a number with a range
 let START = tunable("title", options: ["title", "select", "play"])

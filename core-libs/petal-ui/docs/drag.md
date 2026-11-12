@@ -44,7 +44,7 @@ fn view(items)
     let k = items[i]
     let r = place(k, rect(40, 60 + i * 52, 240, 44))
     draggable(k, r, fn() closest(moves(items, i)) |> floating() end)
-    place(k, r, fn(p) draw_rect_rounded(p, 6, #64b5f6) end)
+    place(k, r, fn(p) draw_rect_rounded(p, 6, :64b5f6) end)
   end
   nil
 end

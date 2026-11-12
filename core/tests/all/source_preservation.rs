@@ -52,7 +52,7 @@ const POST: &str = "\
 export config let POST = {
   exposure: 1.45,   // the night is bright
   bloom:    0.42,
-  tint: #ff2e88,
+  tint: :ff2e88,
   // the stack, in the order it runs
   effects: [
     {effect: \"lens_dirt\", amount: 0.5, scale: 3.0},
@@ -92,7 +92,7 @@ fn cases() -> Vec<Case> {
 export config let POST = {
   exposure: 1.2,   // the night is bright
   bloom:    0.5,
-  tint: #ff2e88,
+  tint: :ff2e88,
   // the stack, in the order it runs
   effects: [
     {effect: \"lens_dirt\", amount: 0.5, scale: 3.0},
@@ -111,7 +111,7 @@ export config let POST = {
 export config let POST = {
   exposure: 1.45,   // the night is bright
   bloom:    0.42,
-  tint: #ff2e88,
+  tint: :ff2e88,
   // the stack, in the order it runs
   effects: [
     {effect: \"lens_dirt\", amount: 0.5, scale: 3.0},
@@ -166,7 +166,7 @@ export config let POST = {
 export config let POST = {
   exposure: 1.45,   // the night is bright
   bloom:    0.42,
-  tint: #29d9ff,
+  tint: :29d9ff,
   // the stack, in the order it runs
   effects: [
     {effect: \"lens_dirt\", amount: 0.5, scale: 3.0},
@@ -178,20 +178,20 @@ export config let POST = {
         ),
         case(
             "a color keeps its case and its short or long form",
-            "let a = #FF2E88\nlet b = #f80\nlet c = #F80\nlet d = #ff2e88cc\n",
+            "let a = :FF2E88\nlet b = :f80\nlet c = :F80\nlet d = :ff2e88cc\n",
             vec![
                 set("a", hex("#29d9ff")),
                 set("b", hex("#00ff88")),
                 set("c", hex("#29d9ff")),
                 set("d", StaticValue::color_alpha(1, 2, 3, 4)),
             ],
-            "let a = #29D9FF\nlet b = #0f8\nlet c = #29D9FF\nlet d = #01020304\n",
+            "let a = :29D9FF\nlet b = :0f8\nlet c = :29D9FF\nlet d = :01020304\n",
         ),
         case(
             "a new color beside an uppercase one is uppercase",
-            "let palette = [#FF2E88, #101018]\n",
+            "let palette = [:FF2E88, :101018]\n",
             vec![insert("palette[2]", hex("#29d9ff"))],
-            "let palette = [#FF2E88, #101018, #29d9ff]\n",
+            "let palette = [:FF2E88, :101018, :29d9ff]\n",
         ),
         // ── Inserting list elements ──────────────────────────────────────
         case(
@@ -219,7 +219,7 @@ export config let POST = {
 export config let POST = {
   exposure: 1.45,   // the night is bright
   bloom:    0.42,
-  tint: #ff2e88,
+  tint: :ff2e88,
   // the stack, in the order it runs
   effects: [
     {effect: \"crt\", amount: 0.2},
@@ -239,7 +239,7 @@ export config let POST = {
 export config let POST = {
   exposure: 1.45,   // the night is bright
   bloom:    0.42,
-  tint: #ff2e88,
+  tint: :ff2e88,
   // the stack, in the order it runs
   effects: [
     {effect: \"lens_dirt\", amount: 0.5, scale: 3.0},
@@ -266,13 +266,13 @@ export config let POST = {
 export config let POST = {
   exposure: 1.45,   // the night is bright
   bloom:    0.42,
-  tint: #ff2e88,
+  tint: :ff2e88,
   // the stack, in the order it runs
   effects: [
     {effect: \"lens_dirt\", amount: 0.5, scale: 3.0},
     // grain goes last
     {effect: \"grain\", amount: 0.30},
-    {effect: \"halftone\", amount: 0.7, ink: #101018},
+    {effect: \"halftone\", amount: 0.7, ink: :101018},
   ],
 }
 ",
@@ -322,7 +322,7 @@ export config let POST = {
   exposure: 1.45,   // the night is bright
   vignette: 0.3,
   bloom:    0.42,
-  tint: #ff2e88,
+  tint: :ff2e88,
   // the stack, in the order it runs
   effects: [
     {effect: \"lens_dirt\", amount: 0.5, scale: 3.0},
@@ -378,7 +378,7 @@ export config let POST = {
 export config let POST = {
   exposure: 1.45,   // the night is bright
   bloom:    0.42,
-  tint: #ff2e88,
+  tint: :ff2e88,
   // the stack, in the order it runs
   effects: [
     // grain goes last
@@ -396,7 +396,7 @@ export config let POST = {
 export config let POST = {
   exposure: 1.45,   // the night is bright
   bloom:    0.42,
-  tint: #ff2e88,
+  tint: :ff2e88,
   // the stack, in the order it runs
   effects: [
     {effect: \"lens_dirt\", amount: 0.5, scale: 3.0},
@@ -425,7 +425,7 @@ export config let POST = {
 // The night look.
 export config let POST = {
   bloom:    0.42,
-  tint: #ff2e88,
+  tint: :ff2e88,
   // the stack, in the order it runs
   effects: [
     {effect: \"lens_dirt\", amount: 0.5, scale: 3.0},
@@ -469,7 +469,7 @@ export config let POST = {
 export config let POST = {
   exposure: 1.45,   // the night is bright
   bloom:    0.6,
-  tint: #ff2e88,
+  tint: :ff2e88,
   // the stack, in the order it runs
   effects: [
     {effect: \"lens_dirt\", amount: 0.5, scale: 3.0},
@@ -495,7 +495,7 @@ export config let POST = {
 export config let POST = {
   exposure: 1.45,   // the night is bright
   bloom:    0.42,
-  tint: #ff2e88,
+  tint: :ff2e88,
   // the stack, in the order it runs
   effects: [
     {effect: \"crt\", amount: 0.2},
@@ -555,13 +555,13 @@ export config let POST = {
         // ── Paths through calls, spreads and awkward text ────────────────
         case(
             "a path through a call's arguments, and inserting one",
-            "let sun = light(vec3(0.3, -1.0, 0.5), { color: #fff })\n",
+            "let sun = light(vec3(0.3, -1.0, 0.5), { color: :fff })\n",
             vec![
                 set("sun[0][2]", 0.75.into()),
                 set("sun[1].color", hex("#ffeedd")),
                 insert("sun[0][3]", 1.0.into()),
             ],
-            "let sun = light(vec3(0.3, -1.0, 0.75, 1.0), { color: #fed })\n",
+            "let sun = light(vec3(0.3, -1.0, 0.75, 1.0), { color: :fed })\n",
         ),
         case(
             "a record with a spread is still edited field by field by path",
@@ -972,7 +972,7 @@ fn any_value_written_over_any_other_reads_back() {
         ),
         (
             "",
-            "let v = {effect: \"grain\", amount: 0.30, ink: #FFF}\n",
+            "let v = {effect: \"grain\", amount: 0.30, ink: :FFF}\n",
             "",
         ),
         (

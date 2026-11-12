@@ -78,14 +78,14 @@ pub enum StaticValue {
     /// A record literal `{key: value, ...}`, rendered inline. Keys are
     /// rendered bare, so they must be valid Petal identifiers.
     Record(Vec<(String, StaticValue)>),
-    /// A color literal `#rrggbb` (or `#rgb`, `#rgba`, `#rrggbbaa`): channels
+    /// A color literal `:rrggbb` (or `:rgb`, `:rgba`, `:rrggbbaa`): channels
     /// `0..=255`, with `a` present only when the literal spells an alpha.
-    /// Renders as `#rrggbb` / `#rrggbbaa` in lowercase; an edit of an existing
+    /// Renders as `:rrggbb` / `:rrggbbaa` in lowercase; an edit of an existing
     /// literal keeps that literal's case and short/long form (see
     /// [`crate::literal_edit`]).
     ///
     /// At run time a color literal *is* the record `{r, g, b}` (plus `a`), but
-    /// a config file that says `#ff2e88` should get `#29d9ff` written back,
+    /// a config file that says `:ff2e88` should get `:29d9ff` written back,
     /// not `{ r: 41, g: 217, b: 255 }` — hence its own variant.
     Color { r: u8, g: u8, b: u8, a: Option<u8> },
     /// A call `function(args...)`, held unevaluated — the building block for
@@ -137,11 +137,11 @@ impl StaticValue {
     pub fn nil() -> StaticValue {
         StaticValue::Nil
     }
-    /// An opaque color value, rendered `#rrggbb`.
+    /// An opaque color value, rendered `:rrggbb`.
     pub fn color(r: u8, g: u8, b: u8) -> StaticValue {
         StaticValue::Color { r, g, b, a: None }
     }
-    /// A color value with an alpha channel, rendered `#rrggbbaa`.
+    /// A color value with an alpha channel, rendered `:rrggbbaa`.
     pub fn color_alpha(r: u8, g: u8, b: u8, a: u8) -> StaticValue {
         StaticValue::Color {
             r,
@@ -150,12 +150,24 @@ impl StaticValue {
             a: Some(a),
         }
     }
+    /// A color as the CSS-style hex string host APIs and the JSON form carry
+    /// (`"#ff2e88"`, `"#ff2e88cc"`), which is not Petal source: the literal is
+    /// `:ff2e88` ([`StaticValue::to_source`]). `None` for any other value.
+    pub fn css_hex(&self) -> Option<String> {
+        match self {
+            StaticValue::Color { r, g, b, a } => Some(match a {
+                Some(a) => format!("#{r:02x}{g:02x}{b:02x}{a:02x}"),
+                None => format!("#{r:02x}{g:02x}{b:02x}"),
+            }),
+            _ => None,
+        }
+    }
     /// The color a hex literal spells — `"#ff2e88"`, `"#f80"`, `"#ff2e88cc"`,
-    /// with or without the `#`. `None` when the text is not 3, 4, 6 or 8 hex
+    /// `":ff2e88"`, with or without the sigil. `None` when the text is not 3, 4, 6 or 8 hex
     /// digits.
     pub fn color_hex(hex: &str) -> Option<StaticValue> {
         let hex = hex.trim();
-        let hex = hex.strip_prefix('#').unwrap_or(hex);
+        let hex = hex.strip_prefix([':', '#']).unwrap_or(hex);
         if !matches!(hex.len(), 3 | 4 | 6 | 8) || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
             return None;
         }
@@ -266,8 +278,8 @@ impl StaticValue {
             StaticValue::Bool(false) => "false".to_string(),
             StaticValue::Nil => "nil".to_string(),
             StaticValue::Color { r, g, b, a } => match a {
-                Some(a) => format!("#{r:02x}{g:02x}{b:02x}{a:02x}"),
-                None => format!("#{r:02x}{g:02x}{b:02x}"),
+                Some(a) => format!(":{r:02x}{g:02x}{b:02x}{a:02x}"),
+                None => format!(":{r:02x}{g:02x}{b:02x}"),
             },
             StaticValue::List(items) => render_list(items, depth),
             StaticValue::Record(fields) => render_record(fields, depth),
@@ -1216,7 +1228,7 @@ fn eval_in(expr: &Expr, scope: &Scope) -> Result<StaticValue, String> {
     }
 }
 
-/// The color `expr` spells, if it is a color literal (`#ff2e88`).
+/// The color `expr` spells, if it is a color literal (`:ff2e88`).
 ///
 /// The parser lowers a color literal to the record of its channels, every
 /// field carrying the span of the one color token — which is what tells it
@@ -1367,7 +1379,7 @@ mod tests {
 
     #[test]
     fn a_color_literal_reads_as_a_color_not_a_record() {
-        let src = "let tint = #ff2e88\nlet short = #F80\nlet glass = #10203040\nlet rec = { r: 255, g: 46, b: 136 }\n";
+        let src = "let tint = :ff2e88\nlet short = :F80\nlet glass = :10203040\nlet rec = { r: 255, g: 46, b: 136 }\n";
         assert_eq!(get(src, "tint"), StaticValue::color(0xff, 0x2e, 0x88));
         assert_eq!(get(src, "short"), StaticValue::color(0xff, 0x88, 0x00));
         assert_eq!(
@@ -1377,8 +1389,10 @@ mod tests {
         // A record somebody wrote out stays a record.
         assert!(matches!(get(src, "rec"), StaticValue::Record(_)));
         // Rendering is the canonical long lowercase form, and reads back.
-        assert_eq!(get(src, "short").to_source(), "#ff8800");
-        assert_eq!(get(src, "glass").to_source(), "#10203040");
+        assert_eq!(get(src, "short").to_source(), ":ff8800");
+        assert_eq!(get(src, "glass").to_source(), ":10203040");
+        assert_eq!(get(src, "glass").css_hex().as_deref(), Some("#10203040"));
+        assert_eq!(StaticValue::color_hex(":F80"), Some(get(src, "short")));
         assert_eq!(StaticValue::color_hex("#F80"), Some(get(src, "short")));
         assert_eq!(StaticValue::color_hex("ff2e88"), Some(get(src, "tint")));
         assert_eq!(StaticValue::color_hex("#ff2e8"), None);
@@ -1543,7 +1557,7 @@ let recent       = [\"a.rs\", \"b.rs\"]
     /// The binding named `name`, for asserting on one entry of a read.
     const MODES: &str = "let before = Mode.dark\n\
         // how the editor is lit\n\
-        pub enum Mode\n  dark(bg: #101010),\n  light(bg: #fafafa),\nend\n\
+        pub enum Mode\n  dark(bg: :101010),\n  light(bg: :fafafa),\nend\n\
         enum Shape\n  dot,\n  circle(r),\n  box(w, h),\nend\n";
 
     #[test]

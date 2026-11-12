@@ -1,7 +1,7 @@
 //! Record templates: the binding-time split of a record literal (L6 of the
 //! retained scene work, `docs/dev/retained-scene-output.md`).
 //!
-//! In `body(id, {shape: "box", size: 2.0, mass: 5.0, color: #f80, pos: p})`
+//! In `body(id, {shape: "box", size: 2.0, mass: 5.0, color: :f80, pos: p})`
 //! four of the five fields are the same on every call. The lowering marks
 //! such a literal (an `Inst::AllocMap` whose fields are mostly static) with a
 //! [`TemplatePlan`]: which fields are *holes* (vary per record) and the

@@ -26,7 +26,7 @@ let TAPS = 3
 fn weight(i: int, n: int) -> float
   1.0 - i / (n + 1.0)
 end
-let streak = fn(fx: Fx, amount = 0.6, tint = #1a2a6c)
+let streak = fn(fx: Fx, amount = 0.6, tint = :1a2a6c)
   fx.color * weight(1, TAPS) * amount
 end
 let info = fn_info(streak)
@@ -42,7 +42,7 @@ let info = fn_info(streak)
   params: [
     {name: "fx", type: "Fx", has_default: false, default: nil, default_source: nil},
     {name: "amount", type: nil, has_default: true, default: 0.6, default_source: "0.6"},
-    {name: "tint", type: nil, has_default: true, default: {r: 26, g: 42, b: 108}, default_source: "#1a2a6c"},
+    {name: "tint", type: nil, has_default: true, default: {r: 26, g: 42, b: 108}, default_source: ":1a2a6c"},
   ],
   returns: nil,               // "float" for fn_info(weight)
   captures: [
@@ -135,7 +135,7 @@ a flat encoding made for walking from Petal:
   `Expr` statement whose `expr` is the next `If`.
 
 Two things the parser has already done show up in the tree: `set x += e`
-arrives as `Set` with the value `x + e`, and a color literal `#1a2a6c` arrives
+arrives as `Set` with the value `x + e`, and a color literal `:1a2a6c` arrives
 as a `Record` of three int literals `r`, `g`, `b`.
 
 ## Nodes

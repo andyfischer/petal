@@ -45,7 +45,7 @@
       "id": "color",
       "title": "Color",
       "group": "core",
-      "doc": "Color builtins: hsv, hsl, color_lerp. All return RGB records `{r, g, b}` with 0..255 integer channels, matching the shape produced by color literals like `#ff8800`."
+      "doc": "Color builtins: hsv, hsl, color_lerp. All return RGB records `{r, g, b}` with 0..255 integer channels, matching the shape produced by color literals like `:ff8800`."
     },
     {
       "id": "vec2",

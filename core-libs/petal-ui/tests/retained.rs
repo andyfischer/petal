@@ -25,7 +25,7 @@ fn rect(x: i32, y: i32, w: u32, h: u32, rgb: (u8, u8, u8), a: u8) -> DrawCommand
 #[test]
 fn draw_rect_takes_every_shape_it_ever_did_and_a_packed_colour() {
     let out = cmds(
-        "let c = #102030\n\
+        "let c = :102030\n\
          draw_rect(1, 2, 3, 4, 16, 32, 48)\n\
          draw_rect(1, 2, 3, 4, 16, 32, 48, 128)\n\
          draw_rect(1, 2, 3, 4, c)\n\
@@ -70,7 +70,7 @@ fn draw_rect_says_what_is_wrong_with_a_bad_colour() {
 fn draw_polyline_takes_a_colour_record_a_packed_colour_or_flat_channels() {
     let out = cmds(
         "let pts = [[0, 0], [4, 0], [4, 4]]\n\
-         let c = #102030\n\
+         let c = :102030\n\
          draw_polyline(pts, c)\n\
          draw_polyline(pts, c, 128)\n\
          draw_polyline(pts, c, 128, 3)\n\
@@ -103,7 +103,7 @@ fn draw_polyline_takes_a_colour_record_a_packed_colour_or_flat_channels() {
 
 // ── draw_rects ────────────────────────────────────────────────────────────
 
-const BATCH: &str = "let pal = [#ff0000, {r: 0, g: 255, b: 0, a: 128}, 255]\n\
+const BATCH: &str = "let pal = [:ff0000, {r: 0, g: 255, b: 0, a: 128}, 255]\n\
                      draw_rects([0, 0, 4, 4, 0,  4, 0, 4, 4, 1,  8, 0, 4, 4, 2], pal, 100, 50)";
 
 fn batch_expected() -> Vec<BatchRect> {
@@ -143,7 +143,7 @@ fn a_batch_takes_nested_rows_a_packed_array_and_colours_without_a_palette() {
         rect(1, 2, 3, 4, (16, 32, 48), 255),
         rect(5, 6, 7, 8, (255, 0, 0), 255),
     ];
-    assert_eq!(cmds("draw_rects([[1, 2, 3, 4, 1056816], [5, 6, 7, 8, #ff0000]])"), want);
+    assert_eq!(cmds("draw_rects([[1, 2, 3, 4, 1056816], [5, 6, 7, 8, :ff0000]])"), want);
     assert_eq!(cmds("draw_rects([1, 2, 3, 4, 1056816, 5, 6, 7, 8, 16711680])"), want);
     assert_eq!(
         cmds(
@@ -159,7 +159,7 @@ fn a_batch_takes_nested_rows_a_packed_array_and_colours_without_a_palette() {
 
 #[test]
 fn a_batch_reports_a_bad_index_and_a_ragged_list() {
-    let err = ui("draw_rects([0, 0, 1, 1, 3], [#ff0000])").frame().unwrap_err();
+    let err = ui("draw_rects([0, 0, 1, 1, 3], [:ff0000])").frame().unwrap_err();
     assert!(err.contains("palette index 3 is outside the palette"), "{err}");
     let err = ui("draw_rects([0, 0, 1, 1])").frame().unwrap_err();
     assert!(err.contains("five values per rect"), "{err}");
@@ -178,8 +178,8 @@ const CACHED: &str = "state runs = 0\n\
                       var ran = false\n\
                       cached_layer(key, rect(x, 20, w, 30), fn()\n\
                         set ran = true\n\
-                        draw_rect(0, 0, 10, 10, #ff0000)\n\
-                        draw_line(0, 0, 5, 5, #00ff00)\n\
+                        draw_rect(0, 0, 10, 10, :ff0000)\n\
+                        draw_line(0, 0, 5, 5, :00ff00)\n\
                       end)\n\
                       if get ran then runs = runs + 1 end";
 
@@ -268,11 +268,11 @@ fn a_layer_that_was_not_drawn_for_a_frame_is_recorded_again() {
                      state show = true\n\
                      if key_pressed(\"s\") then show = !show end\n\
                      var ran = false\n\
-                     cached_layer(0, rect(0, 0, 10, 10), fn() draw_rect(0, 0, 1, 1, #ffffff) end)\n\
+                     cached_layer(0, rect(0, 0, 10, 10), fn() draw_rect(0, 0, 1, 1, :ffffff) end)\n\
                      if show then\n\
                        cached_layer(1, rect(50, 0, 10, 10), fn()\n\
                          set ran = true\n\
-                         draw_rect(0, 0, 2, 2, #ffffff)\n\
+                         draw_rect(0, 0, 2, 2, :ffffff)\n\
                        end)\n\
                      end\n\
                      if get ran then runs = runs + 1 end");
@@ -288,8 +288,8 @@ fn a_layer_that_was_not_drawn_for_a_frame_is_recorded_again() {
 fn layers_nest() {
     let out = cmds(
         "cached_layer(1, rect(100, 100, 50, 50), fn()\n\
-           draw_rect(0, 0, 50, 50, #000000)\n\
-           cached_layer(1, rect(10, 10, 20, 20), fn() draw_rect(1, 1, 2, 2, #ffffff) end)\n\
+           draw_rect(0, 0, 50, 50, :000000)\n\
+           cached_layer(1, rect(10, 10, 20, 20), fn() draw_rect(1, 1, 2, 2, :ffffff) end)\n\
          end)",
     );
     assert_eq!(
@@ -316,10 +316,10 @@ fn a_nested_layer_is_kept_while_the_layer_around_it_is_replayed() {
                      var ran = false\n\
                      let tick = frame_count()\n\
                      cached_layer(1, rect(100, 100, 50, 50), fn()\n\
-                       draw_rect(0, 0, 50, 50, #000000)\n\
+                       draw_rect(0, 0, 50, 50, :000000)\n\
                        cached_layer(1, rect(10, 10, 20, 20), fn()\n\
                          set ran = true\n\
-                         draw_rect(1, 1, 2, 2, #ffffff)\n\
+                         draw_rect(1, 1, 2, 2, :ffffff)\n\
                        end)\n\
                      end)\n\
                      if get ran then runs = runs + 1 end");
@@ -342,7 +342,7 @@ fn a_cached_batch_is_one_recording_of_one_command() {
                        end\n\
                      end\n\
                      cached_layer(1, rect(10, 10, 80, 60), fn()\n\
-                       draw_rects(cells, [#ff0000, #00ff00, #0000ff])\n\
+                       draw_rects(cells, [:ff0000, :00ff00, :0000ff])\n\
                      end)");
     set_host_caps(&mut ui.env, HostCaps { batch_rects: true, retained_layers: true });
     let first = ui.frame().unwrap().to_vec();
@@ -362,7 +362,7 @@ fn draw_image_keeps_its_old_shapes_and_takes_tint_atlas_and_nine_slice() {
     let out = cmds(
         "draw_image(\"a.png\", 1, 2, 30, 40)\n\
          draw_image(\"a.png\", rect(1, 2, 30, 40), 128, 6)\n\
-         draw_image(\"a.png\", rect(1, 2, 30, 40), {tint: #ff8000, src: rect(16, 0, 8, 8)})\n\
+         draw_image(\"a.png\", rect(1, 2, 30, 40), {tint: :ff8000, src: rect(16, 0, 8, 8)})\n\
          draw_image(\"a.png\", 1, 2, 30, 40, {slice: 5, a: 200})\n\
          draw_image(\"a.png\", rect(1, 2, 30, 40), {slice: {l: 1, t: 2, r: 3, b: 4}, tint: 255})",
     );
@@ -441,13 +441,13 @@ fn texts(cmds: &[DrawCommand]) -> Vec<(i32, i32, (u8, u8, u8), u8)> {
 
 #[test]
 fn a_shadow_is_one_copy_under_the_text() {
-    let out = cmds("draw_text(\"hi\", 10, 20, {size: 14, color: #ffffff, shadow: true})");
+    let out = cmds("draw_text(\"hi\", 10, 20, {size: 14, color: :ffffff, shadow: true})");
     assert_eq!(
         texts(&out),
         [(11, 21, (0, 0, 0), 160), (10, 20, (255, 255, 255), 255)]
     );
     let out = cmds(
-        "draw_text(\"hi\", {x: 10, y: 20}, {size: 14, color: #ffffff, shadow: {dx: 0, dy: 3, color: #102030, a: 255}})",
+        "draw_text(\"hi\", {x: 10, y: 20}, {size: 14, color: :ffffff, shadow: {dx: 0, dy: 3, color: :102030, a: 255}})",
     );
     assert_eq!(texts(&out)[0], (10, 23, (16, 32, 48), 255));
 }
@@ -455,7 +455,7 @@ fn a_shadow_is_one_copy_under_the_text() {
 #[test]
 fn an_outline_is_eight_copies_around_the_text_and_fades_with_it() {
     let out = cmds(
-        "draw_text(\"hi\", 10, 20, {size: 14, color: {r: 255, g: 255, b: 255, a: 128}, outline: #000000})",
+        "draw_text(\"hi\", 10, 20, {size: 14, color: {r: 255, g: 255, b: 255, a: 128}, outline: :000000})",
     );
     let t = texts(&out);
     assert_eq!(t.len(), 9);
@@ -467,7 +467,7 @@ fn an_outline_is_eight_copies_around_the_text_and_fades_with_it() {
         offsets,
         [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
     );
-    let wide = cmds("draw_text(\"hi\", 10, 20, {size: 14, outline: {color: #ff0000, width: 2}})");
+    let wide = cmds("draw_text(\"hi\", 10, 20, {size: 14, outline: {color: :ff0000, width: 2}})");
     assert!(texts(&wide)[..8].iter().any(|c| (c.0, c.1) == (12, 22)));
 }
 

@@ -38,7 +38,7 @@
 //! ([`crate::value::value_to_json`]); [`static_from_json`] reads them. Where
 //! the new value is the same as something already in the source — an element
 //! that moved, a colour the runtime holds as `{r, g, b}` — the source's own
-//! [`StaticValue`] is what is written, so a `#ff8800` stays a colour literal
+//! [`StaticValue`] is what is written, so a `:ff8800` stays a colour literal
 //! and an enum variant stays a variant.
 
 use crate::goal_based_editing::{modify_source_with_goals, Goal, GoalError, StaticValue};

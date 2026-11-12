@@ -2747,13 +2747,15 @@ pub(crate) fn float_like(f: f64, model: &str) -> String {
 }
 
 /// A color spelled the way `model` (another color literal) is: uppercase if it
-/// is, and in the short `#rgb` form if it is and the value fits.
+/// is, and in the short `:rgb` form if it is and the value fits.
 fn color_like(color: &StaticValue, model: Option<&str>) -> String {
     let long = color.to_source();
     let (Some(model), StaticValue::Color { r, g, b, a }) = (model, color) else {
         return long;
     };
-    let model = model.trim_start_matches('#');
+    // The model may still be in the deprecated `#` spelling; what is written
+    // is always the current one.
+    let model = model.trim_start_matches(['#', ':']);
     let mut hex = long[1..].to_string();
     let fits = [Some(*r), Some(*g), Some(*b), *a]
         .iter()
@@ -2767,7 +2769,7 @@ fn color_like(color: &StaticValue, model: Option<&str>) -> String {
     if upper {
         hex = hex.to_ascii_uppercase();
     }
-    format!("#{hex}")
+    format!(":{hex}")
 }
 
 /// Apply `ops` in order to the binding `name` of `source`. Each op is resolved

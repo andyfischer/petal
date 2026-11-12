@@ -7,7 +7,7 @@ lambda instead of GLSL inside a string:
 ```petal ignore
 import glsl
 
-let duotone = fn(fx: Fx, dark = #1b1040, light = #ffd9a0, amount = 0.6)
+let duotone = fn(fx: Fx, dark = :1b1040, light = :ffd9a0, amount = 0.6)
   let two = lerp(linear_to_srgb(dark), linear_to_srgb(light), fx_luma(fx.color))
   lerp(fx.color, two, amount)
 end
@@ -16,7 +16,7 @@ let g = glsl.glsl_function(duotone, ENV)
 // g.code:
 //   vec3 two = mix(linear_to_srgb(params.dark), linear_to_srgb(params.light), fx_luma(fx.color));
 //   fx.color = mix(fx.color, two, params.amount);
-// g.params:  {dark: #1b1040, light: #ffd9a0, amount: 0.6}
+// g.params:  {dark: :1b1040, light: :ffd9a0, amount: 0.6}
 ```
 
 **Experimental.** The library, its result record and the environment record
@@ -134,7 +134,7 @@ lands in `common`. It has to be a named `fn` or a lambda the code captures.
 | Petal | GLSL |
 |---|---|
 | `float`, `int`, `bool`, `vec2`, `vec3` | the same |
-| a color literal `#1a2a6c` in a body | a linear `vec3` constant |
+| a color literal `:1a2a6c` in a body | a linear `vec3` constant |
 | `+ - * /` | the same. An int meeting a float or a vector is converted: a literal is re-printed (`1` becomes `1.0`), anything else is wrapped in `float(...)`. GLSL ES has no implicit conversion |
 | `%` | `%` on ints, `mod(a, b)` on floats |
 | `< <= > >= == !=`, `&& \|\| !`, unary `-` | the same; conditions must be real bools |

@@ -74,7 +74,7 @@ fn writes_one_record_per_frame_and_replays_a_scenario_click() {
          state saw = 0\n\
          saw = frame_count()\n\
          if clicked({x: 10, y: 10, w: 100, h: 40}) then hits = hits + 1 end\n\
-         draw_rect({x: 10, y: 10, w: 100, h: 40}, #ffffff)\n",
+         draw_rect({x: 10, y: 10, w: 100, h: 40}, :ffffff)\n",
     );
     let scenario = s.write("s.json", r#"{"events": [{"at": 3, "click": [40, 20]}]}"#);
     let out = s.path("trace.jsonl");

@@ -190,7 +190,7 @@ fn a_material_is_a_clipped_blurred_snapshot_under_a_tint() {
 #[test]
 fn a_material_hairline_and_explicit_tint_are_honoured() {
     let out = cmds(
-        "draw_material(rect(0, 10, 100, 44), {tint: #ff0000, a: 40, blur: 5, hairline: \"top\"})",
+        "draw_material(rect(0, 10, 100, 44), {tint: :ff0000, a: 40, blur: 5, hairline: \"top\"})",
     );
     assert_eq!(
         tags(&out),

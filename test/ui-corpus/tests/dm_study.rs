@@ -1041,7 +1041,7 @@ fn generated() -> Vec<Generated> {
             family: "row",
             size: n,
             source: format!(
-                "import ui\nlet x0 = 10\nlet gap = 2.5\nlet w = 4\nfor i in range(0, {n}) do\n  draw_rect(x0 + i * (w + gap), 50, w, 20, #4080c0)\nend\n"
+                "import ui\nlet x0 = 10\nlet gap = 2.5\nlet w = 4\nfor i in range(0, {n}) do\n  draw_rect(x0 + i * (w + gap), 50, w, 20, :4080c0)\nend\n"
             ),
             goal: "drag: rect#LAST.0 += 10, rect#0.0 += 0 | expect=gap",
             frames: 1,
@@ -1053,7 +1053,7 @@ fn generated() -> Vec<Generated> {
             family: "tree-depth",
             size: d,
             source: format!(
-                "import ui\nlet trunk = 60.0\nlet shrink = 0.72\nlet spread = 0.4\nfn branch(x, y, a, len, depth)\n  let x2 = x + cos(a) * len\n  let y2 = y - sin(a) * len\n  draw_line(x, y, x2, y2, #806040, 255, 1)\n  if depth == 0 then\n    draw_circle(x2, y2, 2, #40c040)\n  else\n    branch(x2, y2, a + spread, len * shrink, depth - 1)\n    branch(x2, y2, a - spread, len * shrink, depth - 1)\n  end\nend\nbranch(400, 580, pi() / 2, trunk, {d})\n"
+                "import ui\nlet trunk = 60.0\nlet shrink = 0.72\nlet spread = 0.4\nfn branch(x, y, a, len, depth)\n  let x2 = x + cos(a) * len\n  let y2 = y - sin(a) * len\n  draw_line(x, y, x2, y2, :806040, 255, 1)\n  if depth == 0 then\n    draw_circle(x2, y2, 2, :40c040)\n  else\n    branch(x2, y2, a + spread, len * shrink, depth - 1)\n    branch(x2, y2, a - spread, len * shrink, depth - 1)\n  end\nend\nbranch(400, 580, pi() / 2, trunk, {d})\n"
             ),
             goal: "drag: circle#LAST.0 += 15 | expect=spread,shrink,trunk",
             frames: 1,
@@ -1065,7 +1065,7 @@ fn generated() -> Vec<Generated> {
             family: "sim-steps",
             size: s,
             source: format!(
-                "import ui\nlet v0 = 40.0\nlet angle = 0.9\nlet g = 9.8\nlet steps = {s}\nlet dt_sim = 6.0 / steps\nfn simulate()\n  var x = 0.0\n  var y = 0.0\n  var vx = v0 * cos(angle)\n  var vy = v0 * sin(angle)\n  for i in range(0, steps) do\n    set x = x + vx * dt_sim\n    set y = y + vy * dt_sim\n    set vy = vy - g * dt_sim\n  end\n  {{x: x, y: y}}\nend\nlet p = simulate()\ndraw_circle(rigid(20) + p.x, 400 - p.y, 5, #e04040)\n"
+                "import ui\nlet v0 = 40.0\nlet angle = 0.9\nlet g = 9.8\nlet steps = {s}\nlet dt_sim = 6.0 / steps\nfn simulate()\n  var x = 0.0\n  var y = 0.0\n  var vx = v0 * cos(angle)\n  var vy = v0 * sin(angle)\n  for i in range(0, steps) do\n    set x = x + vx * dt_sim\n    set y = y + vy * dt_sim\n    set vy = vy - g * dt_sim\n  end\n  {{x: x, y: y}}\nend\nlet p = simulate()\ndraw_circle(rigid(20) + p.x, 400 - p.y, 5, :e04040)\n"
             ),
             goal: "drag: circle#0.0 += 20 | expect=v0,angle",
             frames: 1,
@@ -1078,7 +1078,7 @@ fn generated() -> Vec<Generated> {
         for i in 0..k {
             let _ = write!(src, "{}{}.5", if i > 0 { ", " } else { "" }, i % 7);
         }
-        src.push_str("]\nlet total = sum(parts)\ndraw_circle(total, 100, 4, #ffffff)\n");
+        src.push_str("]\nlet total = sum(parts)\ndraw_circle(total, 100, 4, :ffffff)\n");
         out.push(Generated { family: "shared-sum", size: k, source: src, goal: "drag: circle#0.0 += 10", frames: 1 });
     }
     // N items in a `map` layout: each item's x is computed by a helper;
@@ -1088,7 +1088,7 @@ fn generated() -> Vec<Generated> {
             family: "map-items",
             size: n,
             source: format!(
-                "import ui\nlet margin = 12\nlet pitch = 7.5\nfn place(i)\n  {{x: margin + i * pitch, y: 40 + (i % 10) * 3}}\nend\nlet pts = map(range(0, {n}), fn(i) place(i) end)\nfor p in pts do\n  draw_circle(p.x, p.y, 2, #a0a0ff)\nend\n"
+                "import ui\nlet margin = 12\nlet pitch = 7.5\nfn place(i)\n  {{x: margin + i * pitch, y: 40 + (i % 10) * 3}}\nend\nlet pts = map(range(0, {n}), fn(i) place(i) end)\nfor p in pts do\n  draw_circle(p.x, p.y, 2, :a0a0ff)\nend\n"
             ),
             goal: "drag: circle#3.0 += 6, circle#0.0 += 0 | expect=pitch",
             frames: 1,

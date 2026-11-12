@@ -54,7 +54,7 @@ const FILES: &[(&str, &str)] = &[
     ("lib/util.ptl", "pub fn util_fn(x)\n  x * 2\nend\n"),
     (
         "screens/menu.ptl",
-        "let c = color_lerp(#000000, #ffffff, 0.5)\nprint(twice(util_fn(1)))\n",
+        "let c = color_lerp(:000000, :ffffff, 0.5)\nprint(twice(util_fn(1)))\n",
     ),
 ];
 

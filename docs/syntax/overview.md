@@ -72,7 +72,7 @@ patterns.
 | nil | `nil` | |
 | string | `"hello"`, `"line\n"`, `"2 + 2 = {2 + 2}"` (interpolation) | [String Operations](../language-guide.md#string-operations) |
 | raw string | `"""...multi-line, no escapes or interpolation..."""` | [Raw strings](../language-guide.md#raw-triple-quoted-strings) |
-| color | `#f80`, `#ff8800`, `#f80a`, `#ff8800aa` (desugar to `{r,g,b[,a]}` records) | [Color Literals](../language-guide.md#color-literals) |
+| color | `:f80`, `:ff8800`, `:f80a`, `:ff8800aa` (desugar to `{r,g,b[,a]}` records). A `:` starts a color when 3, 4, 6 or 8 hex digits follow it and the token before it is not a name or a value, so `{x:100}` and `f(a:fff)` keep their separator. `#f80` is the deprecated spelling | [Color Literals](../language-guide.md#color-literals) |
 | list | `[1, 2, 3]` | [Lists](../language-guide.md#lists) |
 | record | `{name: "Alice", age: 30}` | [Records](../language-guide.md#records) |
 | enum variant | `Color.red`, `Color.custom(255, 0, 0)` | [Enums](../language-guide.md#enums) |
@@ -129,7 +129,7 @@ its declaration (see [`var`, `set` and `get`](#var-set-and-get)).
 |------|-------------|-----|
 | `x \|> f(a)` | `f(x, a)` | [Pipe Operator](../language-guide.md#pipe-operator) |
 | `obj.method(a)` | `method(obj, a)` | [Method Syntax](../language-guide.md#method-syntax), [resolution order](../language-guide.md#resolution-order) |
-| `#ff8800` | `{r: 255, g: 136, b: 0}` | [Color Literals](../language-guide.md#color-literals) |
+| `:ff8800` | `{r: 255, g: 136, b: 0}` | [Color Literals](../language-guide.md#color-literals) |
 | `@tunable(a) let X = v` | `let X = tunable(v, a)` | [Annotations](../language-guide.md#writing-an-annotation-with-) |
 
 ## Statements

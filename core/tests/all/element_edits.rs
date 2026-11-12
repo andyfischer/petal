@@ -28,7 +28,7 @@ let items = [
   <text
     start={0.5}
     y={362}
-    color={#000000}
+    color={:000000}
     box_lines
   >
     Time to group up.<br />
@@ -277,7 +277,7 @@ fn to_source_renders_an_element_that_reads_back() {
     let source = value.to_source();
     assert_eq!(
         source,
-        "<text font=\"Futura\" size={57} italic color={#ffffff}>\n  a<br />\n  b\n</text>"
+        "<text font=\"Futura\" size={57} italic color={:ffffff}>\n  a<br />\n  b\n</text>"
     );
     let read = get_static_value(&format!("let x = {source}\n"), "x").unwrap();
     assert_eq!(read, value);

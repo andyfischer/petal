@@ -601,7 +601,7 @@ TEST(emitters_push_tagged_commands) {
     vm.emitter("sfx", "audio");
     vm.load_source(
         "import io; native fn spawn(...args); native fn light(...args); native fn sfx(...args)\nlet r = spawn(\"cube\", {x: 1, y: 2, z: 3}, 0.5)\n"
-        "light({x: 0, y: 5, z: 0}, #ffcc00, 2.0)\n"
+        "light({x: 0, y: 5, z: 0}, :ffcc00, 2.0)\n"
         "sfx(\"jump\")\n"
         "spawn(\"sphere\")\n"
         "push_output(symbol(\"out\"), r)\n");
@@ -766,7 +766,7 @@ TEST(a_snapshot_reports_which_options_changed) {
         "state t = 0\nt += 1\n"
         "let p = if t < 3 then vec3(0, 0, 0) else vec3(1, 2, float(t)) end\n"
         "let mass = if t < 4 then 2.0 else 3.0 end\n"
-        "body(1, {shape: \"box\", mass: mass, pos: p, mat: {color: #ff8800}})\n");
+        "body(1, {shape: \"box\", mass: mass, pos: p, mat: {color: :ff8800}})\n");
     petal::Plan plan("shape, mass, pos, mat");
     petal::Snapshot snap;
     std::vector<std::vector<size_t>> seen;
@@ -802,7 +802,7 @@ TEST(a_templated_record_carries_its_template_and_a_snapshot_compares_its_holes) 
             "import vec2\nnative fn body(id, opts)\n"
             "state t = 0\nt += 1\n"
             "fn ship(i, t)\n"
-            "  body(i, {shape: \"box\", size: 2.0, mat: {color: #ff8800}, pos: vec3(float(i), 0, float(t))})\n"
+            "  body(i, {shape: \"box\", size: 2.0, mat: {color: :ff8800}, pos: vec3(float(i), 0, float(t))})\n"
             "end\n"
             "for i in range(0, 2) do ship(i, t) end\n");
         petal::Plan plan("shape, size, mat, pos");
@@ -1807,13 +1807,13 @@ TEST(ui_draw_through_segments_matches_the_unmemoized_frames) {
         "state n = 0\n"
         "n += 1\n"
         "fn rows(k)\n"
-        "  for i in range(0, 30) do draw_rect({x: 4, y: i * 10, w: 50 + k, h: 8}, #336699) end\n"
-        "  draw_text(\"rows {k}\", vec2(4, 2), 12, #ffffff)\n"
+        "  for i in range(0, 30) do draw_rect({x: 4, y: i * 10, w: 50 + k, h: 8}, :336699) end\n"
+        "  draw_text(\"rows {k}\", vec2(4, 2), 12, :ffffff)\n"
         "  nil\n"
         "end\n"
         "rows(1)\n"
         "rows(n % 2)\n"
-        "draw_circle({x: 9, y: 9}, float(n), #ff0000)\n";
+        "draw_circle({x: 9, y: 9}, float(n), :ff0000)\n";
     const auto flat_of = [](petal::Vm& vm) {
         std::vector<std::tuple<int, int, int, int, int, std::string>> out;
         for (const pb_draw_cmd& d : vm.drain_draw())
@@ -1905,7 +1905,7 @@ TEST(ui_draw_full_vocabulary) {
         "import io; import ui\n"
         "native fn draw_sprite(...args)\n"
         "draw_rect_outline(1, 2, 3, 4, 10, 20, 30, 200, 3)\n"
-        "draw_rect_gradient({x: 0, y: 0, w: 50, h: 10}, #ff0000, #0000ff, 0.5)\n"
+        "draw_rect_gradient({x: 0, y: 0, w: 50, h: 10}, :ff0000, :0000ff, 0.5)\n"
         "draw_circle_gradient(5, 6, 7, 1, 2, 3, 255, 4, 5, 6, 0)\n"
         "draw_ellipse(10, 11, 12, 13, 1, 1, 1)\n"
         "draw_ellipse_outline(10, 11, 12, 13, 1, 1, 1, 255, 2)\n"
@@ -2429,14 +2429,14 @@ TEST(source_reads_bindings_and_edits_by_path) {
         "  exposure: 1.45,   // brighter than day\n"
         "  effects: [{effect: \"grain\", amount: 0.3}],\n"
         "}\n"
-        "let TINT = #ff2e88\n";
+        "let TINT = :ff2e88\n";
     petal::Source src(text);
     const std::optional<std::string> json = src.bindings_json();
     REQUIRE(json.has_value());
     CHECK_CONTAINS(*json, "\"name\":\"POST\",\"config\":true");
     CHECK_CONTAINS(*json, "\"comment\":\"The look.\"");
     CHECK_CONTAINS(*json, "\"exposure\":1.45");
-    CHECK_EQ(src.expr("TINT").value_or(""), std::string("#ff2e88"));
+    CHECK_EQ(src.expr("TINT").value_or(""), std::string(":ff2e88"));
     CHECK_EQ(src.expr("POST.effects[0].amount").value_or(""), std::string("0.3"));
 
     CHECK(src.set("POST.exposure", "1.2"));
@@ -2447,7 +2447,7 @@ TEST(source_reads_bindings_and_edits_by_path) {
                                      "  exposure: 1.2,   // brighter than day\n"
                                      "  effects: [{effect: \"grain\", amount: 0.55}],\n"
                                      "}\n"
-                                     "let TINT = #29d9ff\n"));
+                                     "let TINT = :29d9ff\n"));
 
     // A refused edit reports why and changes nothing.
     const std::string before = src.text();
@@ -2550,7 +2550,7 @@ TEST(source_edits_values_in_place_keeping_style) {
         "// The look.\n"
         "config let POST = {\n"
         "  exposure: 1.450,   // brighter than day\n"
-        "  tint: #FF2E88,\n"
+        "  tint: :FF2E88,\n"
         "  effects: [\n"
         "    {effect: \"grain\", amount: 0.3},\n"
         "    // curved glass\n"
@@ -2582,11 +2582,11 @@ TEST(source_edits_values_in_place_keeping_style) {
                                      "config let POST = {\n"
                                      "  exposure: 1.200,   // brighter than day\n"
                                      "  bloom: 0.4,\n"
-                                     "  tint: #29D9FF,\n"
+                                     "  tint: :29D9FF,\n"
                                      "  effects: [\n"
                                      "    // curved glass\n"
                                      "    {effect: \"crt\"},\n"
-                                     "    {effect: \"halftone\", ink: #101018},\n"
+                                     "    {effect: \"halftone\", ink: :101018},\n"
                                      "  ],\n"
                                      "}\n"
                                      "let DROPS = 500\n"));
@@ -2736,7 +2736,7 @@ button({x: 0, y: 0, w: 200, h: 100}, "B")
 
 static const char* RETAINED_UI = R"petal(import ui
 cached_layer(1, rect(10, 20, 30, 40), fn()
-  draw_rects([0, 0, 4, 4, 0, 4, 0, 4, 4, 1], [#ff0000, {r: 0, g: 255, b: 0, a: 128}])
+  draw_rects([0, 0, 4, 4, 0, 4, 0, 4, 4, 1], [:ff0000, {r: 0, g: 255, b: 0, a: 128}])
 end)
 state n = 0
 if button(rect(100, 100, 80, 20), "Go") then n += 1 end

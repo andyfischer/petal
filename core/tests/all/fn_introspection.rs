@@ -32,7 +32,7 @@ let K = 3
 fn helper(i: int, n: int) -> float
   1.0 - i / (n + 1.0)
 end
-let f = fn(fx: Fx, amount = 0.35, tint = #1a2a6c, dir: vec2 = vec2(1, 0.5), late = amount * 2)
+let f = fn(fx: Fx, amount = 0.35, tint = :1a2a6c, dir: vec2 = vec2(1, 0.5), late = amount * 2)
   helper(K, 2) * amount
 end
 let i = fn_info(f)
@@ -52,7 +52,7 @@ print(h.name, h.returns, h.params[1].name, h.params[1].type, len(h.captures))
             "nil 6 9 nil",
             "fx Fx false nil nil",
             "amount nil true 0.35 0.35",
-            "tint nil true { r: 26, g: 42, b: 108 } #1a2a6c",
+            "tint nil true { r: 26, g: 42, b: 108 } :1a2a6c",
             "dir vec2 true vec2(1.0, 0.5) vec2(1, 0.5)",
             "late nil true nil amount * 2",
             // in order of first use in the body
@@ -358,7 +358,7 @@ fn control_flow_helpers_uniforms_and_plain_functions() {
         r#"import glsl
 {POST_ENV}
 let TAU = 6.283185307179586
-let INK = #05030a
+let INK = :05030a
 fn wobble(x: float, k: float) -> float
   sin(x * TAU) * k
 end

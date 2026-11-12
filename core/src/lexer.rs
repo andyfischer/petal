@@ -99,7 +99,8 @@ pub enum Token {
     JsxCloseStart,      // `</`
     JsxText(String),    // text content between tags
 
-    // Color literal (#rgb, #rgba, #rrggbb, #rrggbbaa)
+    // Color literal (:rgb, :rgba, :rrggbb, :rrggbbaa; `#rgb` is the deprecated
+    // spelling). The payload is the hex digits, without the sigil.
     Color(String),
 
     // Special
@@ -329,6 +330,31 @@ pub fn keyword_text(tok: &Token) -> Option<&'static str> {
     })
 }
 
+/// Whether `tok` can be the last token of an expression or a name: after one,
+/// a `:` is a separator (a type annotation, a record field, a named argument,
+/// `import m:`), never the start of a `:f80` color literal.
+pub fn can_end_operand(tok: &Token) -> bool {
+    matches!(
+        tok,
+        Token::Int(_)
+            | Token::Float(_)
+            | Token::String(_)
+            | Token::True
+            | Token::False
+            | Token::Nil
+            | Token::Ident(_)
+            | Token::Color(_)
+            | Token::RParen
+            | Token::RBracket
+            | Token::RBrace
+            | Token::InterpEnd
+            | Token::End
+            | Token::JsxTagName(_)
+            | Token::JsxText(_)
+            | Token::JsxSelfClose
+    )
+}
+
 /// Lexer mode for JSX disambiguation.
 #[derive(Debug, Clone, PartialEq)]
 enum LexerMode {
@@ -365,6 +391,25 @@ pub struct Lexer {
     /// Whether [`Lexer::tokenize`] fills `token_leading_trivia`
     /// ([`Lexer::without_trivia`] turns it off).
     keep_trivia: bool,
+    /// The index the innermost `{…}` hole's first token has (0 outside any
+    /// hole): no token before it belongs to the hole's expression, so a `:`
+    /// there can start a color literal. See [`Lexer::colon_color_len`].
+    expr_start: usize,
+    /// Every color literal written in the deprecated `#f80` spelling, in
+    /// source order.
+    pub legacy_colors: Vec<LegacyColor>,
+}
+
+/// A color literal written `#f80` (now `:f80`): what the `colour-literals`
+/// migration of `petal migrate-old-code` rewrites and the compiler warns
+/// about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LegacyColor {
+    /// Index of its [`Token::Color`] in [`Lexer::tokens`].
+    pub token: usize,
+    /// Whether `:` in place of its `#` lexes as the same color: false when
+    /// the token before it can end an expression, where `:` is a separator.
+    pub respellable: bool,
 }
 
 /// How to write a brace that is not an interpolation hole. Shared by both
@@ -420,6 +465,8 @@ impl Lexer {
             file,
             interp_depth: 0,
             keep_trivia: true,
+            expr_start: 0,
+            legacy_colors: Vec::new(),
         }
     }
 
@@ -634,8 +681,15 @@ impl Lexer {
                 self.push_token(Token::Comma, start);
             }
             ':' => {
-                self.advance_char();
-                self.push_token(Token::Colon, start);
+                if let Some(digits) = self.colon_color_len() {
+                    self.advance_char();
+                    let hex: String = self.input[self.pos..self.pos + digits].iter().collect();
+                    self.advance_n(digits);
+                    self.push_token(Token::Color(hex), start);
+                } else {
+                    self.advance_char();
+                    self.push_token(Token::Colon, start);
+                }
             }
             '@' => {
                 self.advance_char();
@@ -1137,6 +1191,45 @@ impl Lexer {
         Ok(())
     }
 
+    /// With the cursor on a `:`, the number of hex digits after it when the
+    /// `:` starts a color literal (`:f80`), or `None` when it is a separator.
+    ///
+    /// It is a color when it is followed directly by 3, 4, 6 or 8 hex digits
+    /// and then a non-identifier character, **and** the token before it cannot
+    /// end an expression or a name ([`can_end_operand`]). So `{x:100}`,
+    /// `f(a:fff)` and `let c:add` keep their separator, while `{tint: :000}`,
+    /// `f(:f80)`, `= :fff` and `when :fff ->` are colors. The rule reads
+    /// tokens, never whitespace (docs/tasks/pythonic-syntax.md, B16).
+    fn colon_color_len(&self) -> Option<usize> {
+        let digits = self.input[self.pos + 1..]
+            .iter()
+            .take_while(|c| c.is_ascii_hexdigit())
+            .count();
+        if !matches!(digits, 3 | 4 | 6 | 8) {
+            return None;
+        }
+        // `:fade_in`, `:abcx`, `:f80?` are not colors: the word goes on.
+        if self
+            .input
+            .get(self.pos + 1 + digits)
+            .is_some_and(|c| c.is_alphanumeric() || *c == '_' || *c == '?')
+        {
+            return None;
+        }
+        if !self.at_value_start() {
+            return None;
+        }
+        Some(digits)
+    }
+
+    /// Whether the token before the cursor cannot end an expression or a
+    /// name, so a `:` here can start a color literal.
+    fn at_value_start(&self) -> bool {
+        self.tokens.len() <= self.expr_start || !self.tokens.last().is_some_and(can_end_operand)
+    }
+
+    /// The deprecated `#f80` spelling of a color literal (`:f80`). The compiler
+    /// warns about it (`crate::migrate::colour_literals`).
     fn read_color(&mut self) -> Result<(), String> {
         let start = self.current_pos();
         self.advance_char();
@@ -1147,6 +1240,10 @@ impl Lexer {
         let hex: String = self.input[hex_start..self.pos].iter().collect();
         match hex.len() {
             3 | 4 | 6 | 8 => {
+                self.legacy_colors.push(LegacyColor {
+                    token: self.tokens.len(),
+                    respellable: self.at_value_start(),
+                });
                 self.push_token(Token::Color(hex), start);
                 Ok(())
             }
@@ -1170,7 +1267,11 @@ impl Lexer {
         // `\"` as a string delimiter, so the escaped and bare spellings of a
         // nested literal lex identically. See `read_string_inner`.
         self.interp_depth += 1;
+        // The hole's first token starts an expression whatever was pushed
+        // before it (the string piece in front of an interpolation hole).
+        let outer_start = std::mem::replace(&mut self.expr_start, self.tokens.len());
         let result = self.tokenize_braced_expr_inner(emit_close, skip_newlines);
+        self.expr_start = outer_start;
         self.interp_depth -= 1;
         result
     }
@@ -1904,6 +2005,92 @@ mod tests {
         let escaped = tokenize(r#"<t>{b ?? \"q\"}</t>"#);
         let bare = tokenize(r#"<t>{b ?? "q"}</t>"#);
         assert_eq!(escaped, bare);
+    }
+
+    // ---- `:f80` color literals (docs/tasks/pythonic-syntax.md, B16) --------
+
+    fn colors(src: &str) -> Vec<String> {
+        tokenize(src)
+            .into_iter()
+            .filter_map(|t| match t {
+                Token::Color(hex) => Some(hex),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_colon_after_a_value_or_a_name_stays_a_separator() {
+        for src in [
+            "{x:100}",
+            "f(a:fff)",
+            "let c:add = 1",
+            "{x:100, y:abc}",
+            "fn f(a:fade) a end",
+            "import ui:add",
+            "{\"k\":fff}",
+            "xs[0]:fff",
+            "f():abc",
+            "{a: {}:fff}",
+            "{nil:000}",
+            "{end:000}",
+            ":fff:000",
+        ] {
+            let toks = tokenize(src);
+            let n = colors(src).len();
+            assert_eq!(n, usize::from(src == ":fff:000"), "{src}: {toks:?}");
+            assert!(toks.contains(&Token::Colon), "{src}: {toks:?}");
+        }
+    }
+
+    #[test]
+    fn a_colon_where_a_value_starts_is_a_color() {
+        for (src, want) in [
+            ("{tint: :000}", vec!["000"]),
+            ("{tint::000}", vec!["000"]),
+            ("f(:f80)", vec!["f80"]),
+            ("let c = :fff", vec!["fff"]),
+            ("match c\n  when :fff -> 1\nend", vec!["fff"]),
+            ("draw(r, color: :ff8800aa)", vec!["ff8800aa"]),
+            ("[:abc, :ABCD, :a1b2c3]", vec!["abc", "ABCD", "a1b2c3"]),
+            ("if c then :111 else :222 end", vec!["111", "222"]),
+            ("return :fade", vec!["fade"]),
+            ("a ?? :add", vec!["add"]),
+            ("x == :bad", vec!["bad"]),
+            (":fff", vec!["fff"]),
+            ("x =\n  :fff", vec!["fff"]),
+            ("\"{:f80}\"", vec!["f80"]),
+            ("<rect fill=:f80 stroke={:000} />", vec!["f80", "000"]),
+            ("f(:fff.r)", vec!["fff"]),
+        ] {
+            assert_eq!(colors(src), want, "{src}: {:?}", tokenize(src));
+        }
+    }
+
+    #[test]
+    fn a_colon_color_needs_3_4_6_or_8_hex_digits_and_a_word_end() {
+        for src in [
+            "import m: add_one",
+            "{a: :ff}",
+            "{a: :fffff}",
+            "{a: :fffffff}",
+            "{a: :fffffffff}",
+            "{a: :fade_in}",
+            "{a: :abcx}",
+            "{a: :xyz}",
+            "{a: :fff?}",
+        ] {
+            assert!(colors(src).is_empty(), "{src}: {:?}", tokenize(src));
+        }
+    }
+
+    #[test]
+    fn both_color_spellings_are_the_same_token_and_span_width() {
+        assert_eq!(tokenize("let c = :F80a"), tokenize("let c = #F80a"));
+        let mut lexer = Lexer::new("x = :ff8800");
+        lexer.tokenize().unwrap();
+        let span = lexer.token_spans[2];
+        assert_eq!((span.start.column, span.end.column), (5, 12));
     }
 
     // ---- a literal `{` in a double-quoted string --------------------------

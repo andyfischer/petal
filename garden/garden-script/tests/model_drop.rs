@@ -23,7 +23,7 @@ fn view(steps)
     let k = steps[i]
     let r = place(k, rect(20, 20 + i * 50, 200, 40))
     draggable(k, r, fn() closest(moves(steps, i)) |> floating() end)
-    place(k, r, fn(p) draw_rect(p, #446688) end)
+    place(k, r, fn(p) draw_rect(p, :446688) end)
   end
   nil
 end
@@ -107,7 +107,7 @@ fn a_drop_on_state_is_refused() {
 
 #[test]
 fn the_debug_flag_reaches_the_sketch() {
-    let src = "import ui\nimport garden\nclear(0, 0, 0)\nif ui_debug(\"drag\") then draw_rect(0, 0, 5, 5, #ffffff) end\n";
+    let src = "import ui\nimport garden\nclear(0, 0, 0)\nif ui_debug(\"drag\") then draw_rect(0, 0, 5, 5, :ffffff) end\n";
     let mut host = PanelHost::from_source("dbg.ptl", src).unwrap();
     host.set_dimensions(100, 100);
     let off = host.frame(0.0, 0).unwrap().len();

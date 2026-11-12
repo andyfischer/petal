@@ -20,12 +20,12 @@ const SRC: &str = "state n = 0
 n += 1
 fn grid(k)
   pixel_snap(true)
-  for i in range(0, 20) do draw_rect({x: i * 1.5, y: k * 2.5, w: 1.25, h: 1.25}, #102030) end
+  for i in range(0, 20) do draw_rect({x: i * 1.5, y: k * 2.5, w: 1.25, h: 1.25}, :102030) end
   pixel_snap(nil)
   nil
 end
 fn row(k, t)
-  for i in range(0, 12) do draw_circle({x: i * 3.5, y: k + t}, 1.5, #ff0000) end
+  for i in range(0, 12) do draw_circle({x: i * 3.5, y: k + t}, 1.5, :ff0000) end
   nil
 end
 fn panel(k)
@@ -35,9 +35,9 @@ fn panel(k)
 end
 panel(1)
 grid(2)
-cached_layer(\"k\", rect(3, 4, 50, 50), fn() draw_circle({x: 10.5, y: 7.25}, 2.5, #00ff00) end)
+cached_layer(\"k\", rect(3, 4, 50, 50), fn() draw_circle({x: 10.5, y: 7.25}, 2.5, :00ff00) end)
 row(2, float(n % 3))
-draw_rect({x: 0.5, y: 0.5, w: 2.5, h: 2.5}, #010203)
+draw_rect({x: 0.5, y: 0.5, w: 2.5, h: 2.5}, :010203)
 ";
 
 fn core(policy: RunPolicy) -> FrameCore {

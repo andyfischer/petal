@@ -232,7 +232,7 @@ let SIZE = const(2.0)
 fn ship(i, t)
   let a = t * 0.3 + float(i)
   let p = vec3(cos(a), 1.0, sin(a))
-  put({shape: "box", size: SIZE, mass: 5.0, kinematic: true, color: #ff8800, pos: p})
+  put({shape: "box", size: SIZE, mass: 5.0, kinematic: true, color: :ff8800, pos: p})
   put({mesh: "hull", pos: p, rot: a, tint: [1.0, 0.5, 0.0], emissive: 0.0})
   nil
 end

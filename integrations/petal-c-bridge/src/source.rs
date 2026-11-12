@@ -80,7 +80,10 @@ impl PbSource {
         // The replacement must be one expression: a tree splice checks that by
         // construction; the string fallback (for a span no single node covers)
         // only runs for text that parses as a lone expression statement.
-        let value = value.trim();
+        // A host may still hand over a color in the old `#ff2e88` spelling;
+        // what is written to the file is the current one (`:ff2e88`).
+        let respelled = petal::migrate::respell_colour_literals(value.trim());
+        let value = respelled.as_deref().unwrap_or(value).trim();
         let is_expression = parse_ast(value).is_ok_and(|(_, stmts)| {
             matches!(&stmts[..], [stmt] if matches!(stmt.kind, petal::ast::StmtKind::Expr(_)))
         });
@@ -488,7 +491,7 @@ pub extern "C" fn pb_source_error(s: *const PbSource) -> *const c_char {
 mod tests {
     use super::*;
 
-    const SRC: &str = "// The night look.\nexport config let POST = {\n  exposure: 1.45,   // brighter than day\n  tint: #ff2e88,\n  effects: [{effect: \"grain\", amount: 0.3}, {effect: \"crt\"}],\n}\nlet DROPS = 450\nlet DIR = vec3(0.35, -1.0, 0.55)\nfn f() 1 end\n";
+    const SRC: &str = "// The night look.\nexport config let POST = {\n  exposure: 1.45,   // brighter than day\n  tint: :ff2e88,\n  effects: [{effect: \"grain\", amount: 0.3}, {effect: \"crt\"}],\n}\nlet DROPS = 450\nlet DIR = vec3(0.35, -1.0, 0.55)\nfn f() 1 end\n";
 
     #[test]
     fn bindings_json_describes_every_binding() {
@@ -576,7 +579,7 @@ mod tests {
         let src = "let START = tunable(\"title\", options: [\"title\", \"select\", \"play\"])\n\
                    let SPEED = tunable(4.0, 0, 10)  // px per frame\n\
                    let DEBUG = tunable(false)\n\
-                   pub let LOOK = tunable({bloom: 0.3, tint: #ff2e88})\n\
+                   pub let LOOK = tunable({bloom: 0.3, tint: :ff2e88})\n\
                    config let OLD = 3\n\
                    let PLAIN = 2\n\
                    var V = tunable(1.0)\n";
@@ -638,7 +641,7 @@ mod tests {
         let expected = SRC
             .replace("1.45", "1.2")
             .replace("0.3}", "0.55}")
-            .replace("#ff2e88", "#29d9ff")
+            .replace(":ff2e88", ":29d9ff")
             .replace("0.55)", "0.6)");
         assert_eq!(s.text, expected);
     }
@@ -711,7 +714,7 @@ mod tests {
         );
         let expected = SRC
             .replace("1.45", "1.2")
-            .replace("  tint: #ff2e88,", "  bloom: 0.4,\n  tint: #29d9ff,")
+            .replace("  tint: :ff2e88,", "  bloom: 0.4,\n  tint: :29d9ff,")
             .replace("450", "500")
             .replace(
                 "[{effect: \"grain\", amount: 0.3}, {effect: \"crt\"}]",

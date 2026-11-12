@@ -494,10 +494,10 @@ mod tests {
 
     #[test]
     fn const_multi_line() {
-        let src = "const PALETTE = [\n  #101418, #ff2e88,\n]\nprint(PALETTE)\n";
+        let src = "const PALETTE = [\n  :101418, :ff2e88,\n]\nprint(PALETTE)\n";
         assert_eq!(
             migrate(src),
-            "let PALETTE = const([\n  #101418, #ff2e88,\n])\nprint(PALETTE)\n"
+            "let PALETTE = const([\n  :101418, :ff2e88,\n])\nprint(PALETTE)\n"
         );
         let src = "const T = {\n  a: 1, // one\n  b: 2,\n} // table\n";
         assert_eq!(migrate(src), "let T = const({\n  a: 1, // one\n  b: 2,\n}) // table\n");

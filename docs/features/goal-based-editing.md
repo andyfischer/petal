@@ -147,8 +147,11 @@ equal, so it is collapsed to the literal.
 ### Path goals
 
 A path names a place inside a binding's literal: a top-level name, then
-`.field` steps into record literals and `[index]` steps into list literals or
-the arguments of a call (`vec3(0.3, -1.0, 0.5)`).
+`.field` steps into record literals (and element attributes), `[index]` steps
+into list literals or the arguments of a call (`vec3(0.3, -1.0, 0.5)`), and
+XPath-style `/tag[n]` steps into an element's children
+(`layers[2]/group[0]/image[1].x`, 0-based). The grammar and its decisions are
+in [edit-paths.md](edit-paths.md).
 
 ```rust
 Goal::should_set_path("POST.effects[2].amount", 0.7);        // one number
@@ -158,6 +161,8 @@ Goal::should_append("POST.effects", effect);                 // new last element
 Goal::should_insert("POST.bloom", 0.4).after("exposure");    // new field, placed
 Goal::should_remove("POST.effects[1]");
 Goal::should_remove("POST.bloom");
+Goal::should_set_path("layers[2]/image[1].x", 600);           // inside a <group>
+Goal::should_move("layers[3]", "layers[1]/*[0]");            // a layer into a group
 ```
 
 | Goal | Outcome |
@@ -165,7 +170,8 @@ Goal::should_remove("POST.bloom");
 | `should_set_path(path, value)` | The value at `path` reads as `value`. Only what differs is rewritten; a value that already holds writes nothing. A record field that does not exist yet is added at the end of its record. |
 | `should_insert(path, value)` | `value` becomes the element or field `path` names: `xs[1]` inserts before the current element 1 (an index equal to the length appends), `rec.key` adds a field at the end, or next to a sibling with `.after(key)` / `.before(key)`. A field that already exists is set instead. |
 | `should_append(path, value)` | `value` becomes the last element of the list (or call arguments) at `path`. |
-| `should_remove(path)` | The element or field at `path` is gone. A field that is already absent satisfies the goal. |
+| `should_remove(path)` | The element, field, attribute or child element at `path` is gone. A field that is already absent satisfies the goal. |
+| `should_move(from, to)` | The list element or child element at `from` is at `to` instead, its text (comments inside included) carried over. `to` is read after `from` is taken out and may be in another list or element. A path moved onto itself changes nothing. |
 
 These edit the literal where it stands, so comments and formatting inside a
 list whose shape changes survive:

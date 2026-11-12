@@ -2610,6 +2610,33 @@ TEST(source_edits_values_in_place_keeping_style) {
     CHECK_EQ(src.text(), text);
     CHECK_EQ(pb_source_set_value(src.raw(), nullptr, "1"), PB_ERR_INVALID_ARG);
     CHECK_EQ(pb_source_remove(nullptr, "x"), PB_ERR_INVALID_ARG);
+    CHECK_EQ(pb_source_move(src.raw(), "POST.effects[0]", nullptr), PB_ERR_INVALID_ARG);
+}
+
+TEST(source_edits_reach_element_children) {
+    const std::string text = "let layers = [\n"
+                             "  <group name=\"cards\">\n"
+                             "    // The left card.\n"
+                             "    <image src=\"a.png\" x={40} />\n"
+                             "    <image src=\"b.png\" x={520} />\n"
+                             "  </group>,\n"
+                             "]\n";
+    petal::Source src(text);
+    CHECK_EQ(std::string(pb_source_expr(src.raw(), "layers[0]/image[1].x")), std::string("520"));
+    CHECK(src.set_value("layers[0]/image[1].x", "{\"int\":600}"));
+    CHECK(src.move("layers[0]/image[1]", "layers[0]/*[0]"));
+    CHECK_EQ(src.text(), std::string("let layers = [\n"
+                                     "  <group name=\"cards\">\n"
+                                     "    <image src=\"b.png\" x={600} />\n"
+                                     "    // The left card.\n"
+                                     "    <image src=\"a.png\" x={40} />\n"
+                                     "  </group>,\n"
+                                     "]\n"));
+    CHECK(src.remove("layers[0]/image[0]"));
+    CHECK(!src.set_value("layers[0]/image[3].x", "1"));
+    CHECK_CONTAINS(src.error(), "step `/image[3]`");
+    CHECK(!src.set_value("layers[0]/", "1"));
+    CHECK_EQ(pb_source_set_value(src.raw(), "layers[0]/", "1"), PB_ERR_INVALID_ARG);
 }
 
 TEST(scenario_parses_and_reports) {

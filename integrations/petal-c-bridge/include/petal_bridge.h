@@ -1416,8 +1416,13 @@ pb_status pb_vm_apply_scenario(pb_vm* vm, const pb_scenario* s, size_t frame, si
  *
  * A path is a top-level name followed by `.field` (into a record literal) and
  * `[index]` (into a list literal, or the arguments of a call such as
- * `vec3(0.3, -1.0, 0.5)`) steps. The name alone is the binding's whole
- * right-hand side; the last binding of a name is the one read and edited.
+ * `vec3(0.3, -1.0, 0.5)`) steps. Element literals (`<image x={4} />`) take
+ * `.attr` (an attribute) and xpath-style child steps: `/tag[n]` is the n-th
+ * child element with that tag, counted from 0 (`*` in place of the tag
+ * matches any tag), `/tag` the only one — "layers[2]/group[0]/image[1].x".
+ * Text, comments and <br /> are not counted (docs/features/edit-paths.md).
+ * The name alone is the binding's whole right-hand side; the last binding of
+ * a name is the one read and edited.
  * One exception: in a setting, `let SPEED = tunable(4.0, 0, 10)`, the name
  * is the value, `4.0`, so `SPEED` reads and edits that number and the bounds
  * stay as written (see Tunables below).
@@ -1551,10 +1556,17 @@ pb_status pb_source_insert(pb_source* s, const char* path, const char* value_jso
                            const char* before);
 /* Append a value to the list (or call arguments) at `path`. */
 pb_status pb_source_append(pb_source* s, const char* path, const char* value_json);
-/* Remove the list element or record field at `path`. An element on its own
- * line takes the line with it; comments on other lines stay. Removing a field
- * that is not there succeeds and changes nothing. */
+/* Remove the list element, record field, attribute or child element at
+ * `path`. An element on its own line takes the line with it; comments on
+ * other lines stay. Removing a field that is not there succeeds and changes
+ * nothing. */
 pb_status pb_source_remove(pb_source* s, const char* path);
+/* Move the list element or child element at `from` so that `to` names it,
+ * keeping its text (and the comments inside it) as written. `to` is an insert
+ * path read after `from` is taken out, and may be in another list or element:
+ * "layers[3]" to "layers[1]/image[0]" moves an image layer into a group,
+ * before the group's first image. */
+pb_status pb_source_move(pb_source* s, const char* from, const char* to);
 
 /* Why the last pb_source_bindings_json / _expr / _set / value edit on `s`
  * failed, or NULL if it succeeded. Valid until the next such call. */

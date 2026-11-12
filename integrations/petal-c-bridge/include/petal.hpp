@@ -678,6 +678,9 @@ public:
     }
     // Remove the list element or record field at `path`.
     bool remove(const std::string& path) { return pb_source_remove(s_, path.c_str()) == PB_OK; }
+    bool move(const std::string& from, const std::string& to) {
+        return pb_source_move(s_, from.c_str(), to.c_str()) == PB_OK;
+    }
     // Why the last call that can fail did ("" if it did not).
     std::string error() const { const char* e = pb_source_error(s_); return e ? e : ""; }
 

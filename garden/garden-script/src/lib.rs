@@ -721,7 +721,7 @@ mod tests {
         let expected = "import garden_config\n\
 layout(column([
     row([
-      editor(\"x.rs\", { line_numbers: true }),
+      editor(\"x.rs\", {line_numbers: true}),
       process(\"directory-browser\", [\"src\"]),
       panel(\"examples/panels/sketch.ptl\"),
     ], [0.5, 0.25, 0.25]),
@@ -762,8 +762,8 @@ layout(column([
         let text = fs::read_to_string(&written).unwrap();
         let expected = "import garden_config\n\
 layout(row([
-    editor(\"x.rs\", { wrap: false }),
-    editor(nil, { wrap: false }),
+    editor(\"x.rs\", {wrap: false}),
+    editor(nil, {wrap: false}),
   ]))\n";
         assert_eq!(text, expected);
     }
@@ -802,7 +802,7 @@ layout(row([
         let text = fs::read_to_string(&written).unwrap();
         assert_eq!(
             text,
-            "import garden_config\nlayout(panel(\"sketch.ptl\", { screens: [\"a.ptl\", \"b.ptl\"] }))\n"
+            "import garden_config\nlayout(panel(\"sketch.ptl\", {screens: [\"a.ptl\", \"b.ptl\"]}))\n"
         );
     }
 

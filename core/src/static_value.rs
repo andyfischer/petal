@@ -6,7 +6,7 @@
 //! ```text
 //! let color_scheme = "dracula"
 //! let font_size    = 14
-//! let editor       = { line_numbers: true, tab_width: 4 }
+//! let editor       = {line_numbers: true, tab_width: 4}
 //! ```
 //!
 //! [`StaticValue`] is the Rust mirror of one of those right-hand sides.
@@ -75,7 +75,7 @@ pub enum StaticValue {
     /// renders one element per line, indented — the shape of a declarative
     /// layout tree.
     List(Vec<StaticValue>),
-    /// A record literal `{ key: value, ... }`, rendered inline. Keys are
+    /// A record literal `{key: value, ...}`, rendered inline. Keys are
     /// rendered bare, so they must be valid Petal identifiers.
     Record(Vec<(String, StaticValue)>),
     /// A color literal `#rrggbb` (or `#rgb`, `#rgba`, `#rrggbbaa`): channels
@@ -331,7 +331,8 @@ fn render_list(items: &[StaticValue], depth: usize) -> String {
     out
 }
 
-/// Render a record literal inline: `{ key: value, ... }` (`{}` when empty).
+/// Render a record literal inline: `{key: value, ...}` (`{}` when empty),
+/// unpadded like hand-written Petal and the docs.
 fn render_record(fields: &[(String, StaticValue)], depth: usize) -> String {
     if fields.is_empty() {
         return "{}".to_string();
@@ -340,7 +341,7 @@ fn render_record(fields: &[(String, StaticValue)], depth: usize) -> String {
         .iter()
         .map(|(k, v)| format!("{k}: {}", v.render(depth)))
         .collect();
-    format!("{{ {} }}", rendered.join(", "))
+    format!("{{{}}}", rendered.join(", "))
 }
 
 /// Render a call `function(arg0, arg1, ...)` with its arguments at `depth`

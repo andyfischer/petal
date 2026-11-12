@@ -1011,7 +1011,14 @@ write_file("games/neon/config.ptl", src.text());
 ```
 
 - A **path** is a top-level name followed by `.field` steps into record
-  literals and `[index]` steps into list literals or call arguments. The name
+  literals and `[index]` steps into list literals or call arguments. Element
+  literals take `.attr` and XPath-style child steps, counted from 0:
+  `layers[2]/group[0]/image[1].x`, `layers[2]/*[0]`
+  ([../features/edit-paths.md](../features/edit-paths.md)).
+  `move(from, to)` moves a list element or child element and keeps its text
+  (`src.move("layers[3]", "layers[1]/*[0]")` puts a layer into a group). Element
+  values have no JSON form yet, so a child is set or inserted whole only from
+  Rust. Attributes, removes and moves work from C. The name
   alone is the binding's whole right-hand side, with one exception: in a
   setting, `let SPEED = tunable(4.0, 0, 10)`, the name `SPEED` is the value
   `4.0`, so `set_value("SPEED", "5.5")` writes `tunable(5.5, 0, 10)` and the

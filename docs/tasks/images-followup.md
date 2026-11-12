@@ -1,40 +1,18 @@
 # petal-images follow-up: things to fix in Petal
 
 Status: 2026-10-23, re-checked 2026-11-11. Items 5 and 6 (done
-2026-11-09) and the finished half of item 2 (`preserve_order`, 2026-11-03)
-have been removed; everything below is open. These came out of building
+2026-11-09), the finished half of item 2 (`preserve_order`, 2026-11-03), and
+items 1 and 3 (done 2026-11-11: element-child edit paths,
+[edit-paths.md](../features/edit-paths.md), and unpadded `{x: 1}` records from
+`to_source`) have been removed; everything below is open. petal-images can now
+delete `Doc::edit_nested` and its whole-`layers` rewrite: use
+`layers[i]/*[j].attr` paths, `should_insert` / `should_remove` at
+`layers[i]/*[j]`, and `should_move`. These came out of building
 [`petal-creative/petal-images`](../../../petal-creative/petal-images), a layered
 image editor whose documents are `.ptl` scripts of JSX-style elements
 (`<image>`, `<text>`, `<group>`…) edited by the GUI through goal-based literal
 edits. The original notes are in `petal-images/docs/petal-notes.md`. Nothing
 in `~/petal` was changed. They're listed by priority.
-
-## 1. Goal-based edits can't step into element children
-
-`literal_edit` treats an element's attributes as a path step
-(`layers[0].x`), but not its children. A layer inside a `<group>` can't be
-addressed as `layers[2].children[0].x`.
-
-What petal-images does now:
-
-- **Attribute edits** on a nested layer use a workaround (`Doc::edit_nested`).
-  It parses the AST, finds the child's span, edits that one element in a
-  scratch `let` source, and splices the result back.
-- **Structural edits** (insert, remove, move inside a group) still set the
-  whole `layers` list. That re-renders every child of the group, so the
-  comments and hand formatting between its tags are lost. Before the
-  workaround, even attribute edits replaced references with their values
-  (`fill={accent}` became `fill={#ff2d75}`), which silently broke shared
-  template colours.
-
-Action:
-- [ ] Add a `children[j]` path step on elements (or plain `[j]`) that counts
-      element children only, skipping whitespace text and `<br />`.
-- [ ] Support insert, remove and move at such a path, with the same
-      formatting rules as list items: keep the indentation and put the new
-      child on its own line when its siblings each have one.
-- [ ] After that, petal-images can delete `edit_nested` and its
-      whole-`layers` rewrite.
 
 ## 2. Values reach the host through JSON
 
@@ -45,18 +23,6 @@ apply effects in written order. What is left:
 - [ ] Add `value_to_static`, which converts a Petal value straight to a
       `StaticValue` with order kept, so hosts that write values back to
       source skip the JSON detour.
-
-## 3. `StaticValue::to_source` pads record braces
-
-Re-rendered records come out as `{ x: 520, y: 180 }`. A literal edit keeps the
-file's own `{x: 520, y: 180}`, and that unpadded form is also what the docs
-and hand-written Petal use. Because of item 1, a file's style drifts depending
-on which layers were edited.
-
-Action:
-- [ ] Render records without the inner padding, or follow a formatter
-      setting. Check the other `to_source` callers for snapshot tests that
-      would change.
 
 ## 4. AST span offsets are characters, not bytes, and this isn't documented
 

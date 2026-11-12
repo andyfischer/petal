@@ -673,11 +673,8 @@ impl Env {
             .programs
             .get(&program_id)
             .ok_or_else(|| ConfigSetError::NotFound("Program not found".to_string()))?;
-        let (binding, _) = crate::rewrite::parse_binding_path(path).ok_or_else(|| {
-            ConfigSetError::Invalid(format!(
-                "`{path}` is not a binding path (name, then .field or [index] steps)"
-            ))
-        })?;
+        let (binding, _) =
+            crate::rewrite::parse_edit_path(path).map_err(ConfigSetError::Invalid)?;
         if program.source_map.files.is_empty() {
             return Ok((0, String::new(), None, program.source.clone()));
         }

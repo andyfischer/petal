@@ -128,7 +128,8 @@ pub enum Goal {
     /// Reading the value at `path` should yield `value`. A path is a top-level
     /// name followed by `.field` and `[index]` steps — `POST.effects[2].amount`
     /// — entering record literals by field, and list literals and call
-    /// arguments by position.
+    /// arguments by position, and by `.attr` and `/tag[n]` steps into element
+    /// literals — `layers[2]/group[0]/image[1].x` (see [`crate::edit_path`]).
     ///
     /// Only the text that has to change does: where the old and new values
     /// agree nothing is written, a changed scalar is one token, and a list or
@@ -147,9 +148,14 @@ pub enum Goal {
     },
     /// The list at `path` should gain `value` as its last element.
     ShouldAppend { path: String, value: StaticValue },
-    /// The list element or record field at `path` should be gone. A field that
-    /// is already absent satisfies the goal.
+    /// The list element, record field, attribute or child element at `path`
+    /// should be gone. A field that is already absent satisfies the goal.
     ShouldRemove { path: String },
+    /// The list element or child element at `from` should be at `to` instead,
+    /// its text (comments inside included) carried over as written. `to` is
+    /// read after `from` is taken out, and may be in another list or element:
+    /// `layers[3]` → `layers[1]/*[0]` moves a layer into a group.
+    ShouldMove { from: String, to: String },
 }
 
 /// Where a goal's new statement goes when one has to be inserted.
@@ -279,6 +285,20 @@ impl Goal {
         Goal::ShouldRemove { path: path.into() }
     }
 
+    /// Construct a [`Goal::ShouldMove`]: the list element or child element at
+    /// `from` ends up at `to`.
+    ///
+    /// ```ignore
+    /// Goal::should_move("layers[0]", "layers[2]");             // reorder
+    /// Goal::should_move("layers[3]", "layers[1]/*[0]");        // into a group
+    /// ```
+    pub fn should_move(from: impl Into<String>, to: impl Into<String>) -> Goal {
+        Goal::ShouldMove {
+            from: from.into(),
+            to: to.into(),
+        }
+    }
+
     /// Place this goal's statement directly below `anchor` if it has to be
     /// inserted (see [`Placement::After`]).
     ///
@@ -356,6 +376,7 @@ fn apply_goal(source: &str, goal: &Goal) -> Result<String, GoalError> {
         } => Ok(literal_edit::insert_path(source, path, value, placement)?),
         Goal::ShouldAppend { path, value } => Ok(literal_edit::append_path(source, path, value)?),
         Goal::ShouldRemove { path } => Ok(literal_edit::remove_path(source, path)?),
+        Goal::ShouldMove { from, to } => Ok(literal_edit::move_path(source, from, to)?),
     }
 }
 
@@ -637,7 +658,7 @@ mod tests {
                 [StaticValue::record(vec![("bad key", StaticValue::int(1))])],
             )],
         );
-        assert_eq!(out, "foo({ bad key: 1 })\n");
+        assert_eq!(out, "foo({bad key: 1})\n");
     }
 
     #[test]
@@ -778,7 +799,7 @@ mod tests {
                 ])],
             )],
         );
-        assert_eq!(out, "editor_config({ line_numbers: true, tab_width: 4 })\n");
+        assert_eq!(out, "editor_config({line_numbers: true, tab_width: 4})\n");
     }
 
     #[test]
@@ -1000,7 +1021,7 @@ layout(row([
                 ]),
             )],
         );
-        assert_eq!(out, "let editor = { line_numbers: true, tab_width: 4 }\n");
+        assert_eq!(out, "let editor = {line_numbers: true, tab_width: 4}\n");
 
         let out = apply(
             "let panes = []\n",

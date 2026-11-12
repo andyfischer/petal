@@ -79,16 +79,15 @@ differentiation rewrite's edit modes and `speculate` fast path.
   modification (`gpp/Cargo.toml`).
 - **worlds-fair** (`vendor/petal`, 2026-11-10): picks up the dual removal.
 
-## 5. Goal-based edits cannot reach element children
+## 5. Goal-based edits reach element children (done 2026-11-11)
 
-[images-followup.md](images-followup.md) items 1 and 3. `literal_edit`
-takes `.attr` on an element but no `children[j]` step
-(`core/src/literal_edit.rs`), so structural edits inside a `<group>` rewrite
-the whole list, losing the comments and hand formatting between tags.
-`StaticValue::to_source` also pads records as `{ x: 1 }`
-(`render_record` in `core/src/static_value.rs`), unlike the files.
-Together these make a program edited by its own GUI drift from how it was
-written, which is the project's core promise.
+Done: XPath-style child steps (`layers[2]/group[0]/image[1].x`,
+[edit-paths.md](../features/edit-paths.md)) with set / insert / remove /
+move as minimal splices, and `to_source` writes `{x: 1}`
+([images-followup.md](images-followup.md) items 1 and 3). Left downstream:
+petal-images can delete `Doc::edit_nested` and its whole-`layers`
+rewrite, and petal-creative's `crates/movie/src/effects.rs` tests expect the
+old `{ type: … }` padding.
 
 ## 6. Differentiation rewrite: small leftovers
 

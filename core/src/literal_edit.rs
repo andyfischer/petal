@@ -29,11 +29,19 @@
 //! a time. So a list that gains and loses elements is edited in place, and the
 //! comments inside it survive.
 //!
-//! An element (`<text y={400}>Hi</text>`) is a container too: a `.name` step
-//! enters its attribute `name`, which is set, added and removed like a record
-//! field, and keeps the way it is written (`"text"`, `{value}`, or a bare
-//! name for `true`) when the new value allows. Its children are not a path
-//! step; setting the whole element rewrites the children only if they differ.
+//! An element (`<text y={400}>Hi</text>`) is a container too, in two ways.
+//! A `.name` step enters its attribute `name`, which is set, added and removed
+//! like a record field, and keeps the way it is written (`"text"`, `{value}`,
+//! or a bare name for `true`) when the new value allows. A child step
+//! (`/image[1]`, `/*[0]`; see [`crate::edit_path`]) enters a child element,
+//! which is set, inserted, removed and moved like a list element: a new child
+//! goes on its own line at its siblings' indentation when they each have one,
+//! and the comments and blank lines between the tags stay. Setting a whole
+//! element whose children are all elements edits them child by child the same
+//! way; children with text among them are rewritten whole, and only if they
+//! differ.
+//!
+//! [`move_path`] is remove plus insert, carrying the moved element's text.
 //!
 //! A value with no original to learn from renders through
 //! [`StaticValue::to_source`], exactly as before.
@@ -41,13 +49,16 @@
 use std::cell::OnceCell;
 use std::ops::Range;
 
-use crate::ast::{AssignTarget, Expr, ExprKind, JsxChild, RecordField, Stmt, StmtKind};
+use crate::ast::{AssignTarget, Expr, ExprKind, JsxChild, Literal, RecordField, Stmt, StmtKind};
+use crate::edit_path::{
+    element_children, insert_position, parse_edit_path, path_text, select_child, tag_of,
+};
 use crate::cst::{SyntaxElement, SyntaxKind, SyntaxNode};
 use crate::goal_based_editing::Placement;
 use crate::lexer::Token;
 use crate::rewrite::{
     PathSeg, Splice, apply_splices, edge_significant_token, find_node, parse_ast,
-    parse_binding_path, significant_range,
+    significant_range,
 };
 use crate::static_value::{
     StaticBinding, StaticValue, bindings_of, color_literal, setting_value_expr,
@@ -98,15 +109,17 @@ impl std::fmt::Display for EditError {
 
 impl std::error::Error for EditError {}
 
-// ── The three primitives ─────────────────────────────────────────────────
+// ── The primitives ───────────────────────────────────────────────────────
 
-/// Make the value at `path` (`POST.effects[2].amount`, or a bare binding name)
-/// read as `value`.
+/// Make the value at `path` (`POST.effects[2].amount`,
+/// `layers[2]/group[0]/image[1].x`, or a bare binding name) read as `value`.
 ///
 /// Where the old and new values agree nothing is written; a value that already
-/// holds returns the source byte-identical. A record field that does not exist
-/// yet is added at the end of its record. Anything else the path fails to name
-/// is [`EditErrorKind::NotFound`].
+/// holds returns the source byte-identical. A record field or an attribute that
+/// does not exist yet is added at the end of its record or open tag. Anything
+/// else the path fails to name is [`EditErrorKind::NotFound`], with a message
+/// naming the step that failed and what is there. A child element step
+/// (`/image[1]`) can only be set to an element.
 pub fn set_path(source: &str, path: &str, value: &StaticValue) -> Result<String, EditError> {
     let (name, segs) = parse_path(path)?;
     set_at(source, path, &name, &segs, value)
@@ -126,20 +139,22 @@ fn set_at(
 ) -> Result<String, EditError> {
     let doc = Doc::parse(source)?;
     let (stmt, root) = doc.binding(name)?;
-    let target = match resolve(root, segs) {
-        Ok(expr) => expr,
-        // The parent record exists and only the field is missing: add it.
-        Err(depth)
-            if depth + 1 == segs.len()
-                && matches!(segs[depth], PathSeg::Field(_))
-                && resolve(root, &segs[..depth]).is_ok_and(|parent| {
-                    matches!(shape(parent), Shape::Record(_) | Shape::Element(..))
-                }) =>
-        {
+    let (segs, target) = match locate(root, path, name, segs) {
+        Ok(found) => found,
+        // The parent record or element exists and only the field is missing:
+        // add it.
+        Err(fail) if fail.missing_field && fail.depth + 1 == segs.len() => {
             return insert_path(source, path, value, &Placement::End);
         }
-        Err(_) => return Err(nothing_at(path)),
+        Err(fail) => return Err(fail.error),
     };
+    if matches!(segs.last(), Some(PathSeg::ChildAt(_)))
+        && !matches!(value, StaticValue::Element { .. })
+    {
+        return Err(EditError::invalid(format!(
+            "`{path}` names a child element, so it can only be set to an element"
+        )));
+    }
     let bindings = bindings_of(&doc.stmts[..stmt], &doc.chars);
     let mut ops = Vec::new();
     // An attribute: how it is written decides whether its value can change
@@ -156,7 +171,7 @@ fn set_at(
         }
         return apply(source, name, &ops);
     }
-    doc.plan(&bindings, target, &mut segs.to_vec(), value, &mut ops);
+    doc.plan(&bindings, target, &mut segs.clone(), value, &mut ops);
     apply(source, name, &ops)
 }
 
@@ -168,7 +183,13 @@ fn set_at(
 /// - `POST.bloom` adds the field `bloom` to the record `POST`, at the end or
 ///   where `placement` says ([`Placement::After`] / [`Placement::Before`] name
 ///   a sibling field). If the field is already there its value is set instead —
-///   the goal is that the field reads as `value`.
+///   the goal is that the field reads as `value`. An element's attribute is
+///   added the same way.
+/// - `layers[2]/image[1]` inserts a child element into the `<group>` at
+///   `layers[2]`, before its current second `<image>` child (an index equal to
+///   the number of `<image>` children puts it just after the last one).
+///   `layers[2]/*[0]` makes it the first child element. Only an element can be
+///   inserted as a child.
 ///
 /// The new text is laid out like its siblings (see the module docs).
 pub fn insert_path(
@@ -177,15 +198,25 @@ pub fn insert_path(
     value: &StaticValue,
     placement: &Placement,
 ) -> Result<String, EditError> {
+    insert_what(source, path, What::Value(value.clone()), placement)
+}
+
+fn insert_what(
+    source: &str,
+    path: &str,
+    what: What,
+    placement: &Placement,
+) -> Result<String, EditError> {
     let (name, segs) = parse_path(path)?;
-    let Some((last, parent_segs)) = segs.split_last() else {
+    let Some((last, parent_path)) = segs.split_last() else {
         return Err(EditError::invalid(format!(
-            "`{path}` names a whole binding; insert needs a field or an index inside one"
+            "`{path}` names a whole binding; insert needs a field, an index or a child step inside one"
         )));
     };
     let doc = Doc::parse(source)?;
     let (_, root) = doc.binding(&name)?;
-    let parent = resolve(root, parent_segs).map_err(|_| nothing_at(path))?;
+    let (parent_segs, parent) = locate(root, path, &name, parent_path).map_err(|f| f.error)?;
+    let at = path_text(&name, parent_path);
     let (index, key) = match (last, shape(parent)) {
         (PathSeg::Index(i), Shape::List(items) | Shape::Call(items)) => {
             if *i > items.len() {
@@ -198,7 +229,12 @@ pub fn insert_path(
         }
         (PathSeg::Field(key), Shape::Record(fields)) => {
             if field_index(fields, key).is_some() {
-                return set_path(source, path, value);
+                return match what {
+                    What::Value(value) => set_path(source, path, &value),
+                    What::Text { .. } => Err(EditError::invalid(format!(
+                        "`{path}` is already there; a field cannot be moved onto another"
+                    ))),
+                };
             }
             let anchor = |anchor: &str, after: usize| {
                 field_index(fields, anchor).map_or(fields.len(), |i| i + after)
@@ -212,7 +248,12 @@ pub fn insert_path(
         }
         (PathSeg::Field(key), Shape::Element(props)) => {
             if attr_index(props, key).is_some() {
-                return set_path(source, path, value);
+                return match what {
+                    What::Value(value) => set_path(source, path, &value),
+                    What::Text { .. } => Err(EditError::invalid(format!(
+                        "`{path}` is already there; an attribute cannot be moved onto another"
+                    ))),
+                };
             }
             let anchor = |anchor: &str, after: usize| {
                 attr_index(props, anchor).map_or(props.len(), |i| i + after)
@@ -224,52 +265,106 @@ pub fn insert_path(
             };
             (index, Some(key.clone()))
         }
+        (PathSeg::Child(step), Shape::Element(_)) => {
+            check_child(path, &what)?;
+            let index = insert_position(&element_children(parent), step).map_err(|why| {
+                EditError::invalid(format!("`{path}`: {} {why}", describe_at(parent, &at)))
+            })?;
+            let op = Op::InsertChild {
+                segs: parent_segs,
+                index,
+                what,
+            };
+            return apply(source, &name, &[op]);
+        }
+        (PathSeg::Index(i), Shape::Element(_)) => {
+            return Err(EditError::invalid(format!(
+                "`{path}`: {} has no list to index; its child elements are `{at}/*[{i}]`",
+                describe_at(parent, &at)
+            )));
+        }
         _ => {
             return Err(EditError::invalid(format!(
-                "`{path}`: cannot insert there — an index needs a list (or a call's arguments) and a field needs a record or an element"
+                "`{path}`: cannot insert there — {} (an index needs a list or a call's arguments, a field needs a record or an element, and a child step needs an element)",
+                describe_at(parent, &at)
             )));
         }
     };
+    if key.is_some() && matches!(what, What::Text { .. }) {
+        return Err(EditError::invalid(format!(
+            "`{path}`: only a list element or a child element can be moved"
+        )));
+    }
     let op = Op::Insert {
-        segs: parent_segs.to_vec(),
+        segs: parent_segs,
         index,
         key,
-        what: What::Value(value.clone()),
+        what,
     };
     apply(source, &name, &[op])
 }
 
-/// Append `value` to the list (or call arguments) at `path`.
+/// Only an element can go among an element's children.
+fn check_child(path: &str, what: &What) -> Result<(), EditError> {
+    let ok = match what {
+        What::Value(value) => matches!(value, StaticValue::Element { .. }),
+        What::Text { text, .. } => text.starts_with('<'),
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(EditError::invalid(format!(
+            "`{path}`: only an element can be a child element"
+        )))
+    }
+}
+
+/// Append `value` to the list (or call arguments) at `path`, or, when `path`
+/// names an element, make `value` (an element) its last child element.
 pub fn append_path(source: &str, path: &str, value: &StaticValue) -> Result<String, EditError> {
     let (name, segs) = parse_path(path)?;
     let doc = Doc::parse(source)?;
     let (_, root) = doc.binding(&name)?;
-    let target = resolve(root, &segs).map_err(|_| nothing_at(path))?;
-    let (Shape::List(items) | Shape::Call(items)) = shape(target) else {
-        return Err(EditError::invalid(format!(
-            "`{path}` is not a list, so nothing can be appended to it"
-        )));
-    };
-    let op = Op::Insert {
-        segs,
-        index: items.len(),
-        key: None,
-        what: What::Value(value.clone()),
+    let (segs, target) = locate(root, path, &name, &segs).map_err(|f| f.error)?;
+    let op = match shape(target) {
+        Shape::List(items) | Shape::Call(items) => Op::Insert {
+            segs,
+            index: items.len(),
+            key: None,
+            what: What::Value(value.clone()),
+        },
+        Shape::Element(_) => {
+            let what = What::Value(value.clone());
+            check_child(path, &what)?;
+            Op::InsertChild {
+                segs,
+                index: element_children(target).len(),
+                what,
+            }
+        }
+        _ => {
+            return Err(EditError::invalid(format!(
+                "`{path}` is {}, not a list or an element, so nothing can be appended to it",
+                describe(target)
+            )));
+        }
     };
     apply(source, &name, &[op])
 }
 
-/// Remove the list element (or call argument) or record field `path` names.
+/// Remove the list element (or call argument), record field, attribute or
+/// child element `path` names.
 ///
-/// A record field that is not there is already removed: the source comes back
-/// unchanged. A list index past the end is [`EditErrorKind::NotFound`]. An
-/// element on its own line takes its line (and a comment trailing it on that
-/// line) with it; comments on other lines stay.
+/// A record field or attribute that is not there is already removed: the
+/// source comes back unchanged. A list index past the end, or a child step
+/// that names no child, is [`EditErrorKind::NotFound`]. An element on its own
+/// line takes its line (and a comment trailing it on that line) with it;
+/// comments on other lines stay.
 pub fn remove_path(source: &str, path: &str) -> Result<String, EditError> {
     let (name, segs) = parse_path(path)?;
-    let Some((last, parent_segs)) = segs.split_last() else {
+    let Some((last, parent_path)) = segs.split_last() else {
         return Err(EditError::invalid(format!(
-            "`{path}` names a whole binding; remove needs a field or an index inside one"
+            "`{path}` names a whole binding; remove needs a field, an index or a child step inside one"
         )));
     };
     let mut text = source.to_string();
@@ -277,45 +372,217 @@ pub fn remove_path(source: &str, path: &str) -> Result<String, EditError> {
     loop {
         let doc = Doc::parse(&text)?;
         let (_, root) = doc.binding(&name)?;
-        let parent = resolve(root, parent_segs).map_err(|_| nothing_at(path))?;
-        let index = match (last, shape(parent)) {
-            (PathSeg::Index(i), Shape::List(items) | Shape::Call(items)) => {
-                if *i >= items.len() {
+        let (parent_segs, parent) =
+            locate(root, path, &name, parent_path).map_err(|f| f.error)?;
+        let op = match (last, shape(parent)) {
+            (PathSeg::Child(_), Shape::Element(_)) => {
+                let (mut segs, _) = locate(root, path, &name, &segs).map_err(|f| f.error)?;
+                let Some(PathSeg::ChildAt(index)) = segs.pop() else {
                     return Err(nothing_at(path));
-                }
-                *i
+                };
+                let op = Op::RemoveChild { segs, index };
+                return apply(&text, &name, &[op]);
+            }
+            (PathSeg::Index(_), _) => {
+                let (mut segs, _) = locate(root, path, &name, &segs).map_err(|f| f.error)?;
+                let Some(PathSeg::Index(index)) = segs.pop() else {
+                    return Err(nothing_at(path));
+                };
+                let op = Op::Remove { segs, index };
+                return apply(&text, &name, &[op]);
             }
             (PathSeg::Field(key), Shape::Record(fields)) => match field_index(fields, key) {
-                Some(i) => i,
+                Some(index) => Op::Remove {
+                    segs: parent_segs,
+                    index,
+                },
                 None => return Ok(text),
             },
             (PathSeg::Field(key), Shape::Element(props)) => match attr_index(props, key) {
-                Some(i) => i,
+                Some(index) => Op::Remove {
+                    segs: parent_segs,
+                    index,
+                },
                 None => return Ok(text),
             },
-            _ => return Err(nothing_at(path)),
-        };
-        let op = Op::Remove {
-            segs: parent_segs.to_vec(),
-            index,
+            _ => return Err(locate(root, path, &name, &segs).err().map_or_else(|| nothing_at(path), |f| f.error)),
         };
         text = apply(&text, &name, &[op])?;
-        if matches!(last, PathSeg::Index(_)) {
-            return Ok(text);
-        }
     }
 }
 
+/// Move the list element or child element `from` names to `to`, keeping its
+/// text — its comments and layout inside — as written.
+///
+/// `to` is an insert path ([`insert_path`]) read *after* `from` is taken out,
+/// so it names where the value ends up: `layers[0]` → `layers[2]` makes the
+/// first layer the third. It can be in another container, of either kind:
+/// `layers[3]` → `layers[1]/*[0]` moves a top-level layer into a group as its
+/// first child. A multi-line value is re-indented to its new depth. A path
+/// moved onto itself changes nothing.
+pub fn move_path(source: &str, from: &str, to: &str) -> Result<String, EditError> {
+    let (name, segs) = parse_path(from)?;
+    parse_path(to)?;
+    let doc = Doc::parse(source)?;
+    let (_, root) = doc.binding(&name)?;
+    let (mut segs, value) = locate(root, from, &name, &segs).map_err(|f| f.error)?;
+    if from.trim() == to.trim() {
+        return Ok(source.to_string());
+    }
+    let parent = segs
+        .len()
+        .checked_sub(1)
+        .and_then(|n| resolve(root, &segs[..n]).ok());
+    let (op, what) = match (segs.pop(), parent) {
+        (Some(PathSeg::Index(index)), Some(parent))
+            if matches!(shape(parent), Shape::List(_) | Shape::Call(_)) =>
+        {
+            let seq = doc.container(parent)?;
+            let item = seq.items.get(index).ok_or_else(|| nothing_at(from))?;
+            let what = What::Text {
+                text: doc.text(item.start, item.end),
+                tail: doc.tail(item),
+                indent: doc.line_indent(item.start),
+            };
+            (Op::Remove { segs, index }, what)
+        }
+        (Some(PathSeg::ChildAt(index)), Some(_)) => {
+            let start = value.span.start.offset as usize;
+            let what = What::Text {
+                text: doc.expr_text(value),
+                tail: String::new(),
+                indent: doc.line_indent(start),
+            };
+            (Op::RemoveChild { segs, index }, what)
+        }
+        _ => {
+            return Err(EditError::invalid(format!(
+                "`{from}`: only a list element (or call argument) or a child element can be moved"
+            )));
+        }
+    };
+    let removed = apply(source, &name, &[op])?;
+    insert_what(&removed, to, what, &Placement::End)
+}
+
 fn parse_path(path: &str) -> Result<(String, Vec<PathSeg>), EditError> {
-    parse_binding_path(path).ok_or_else(|| {
-        EditError::invalid(format!(
-            "`{path}` is not a binding path (name, then .field or [index] steps)"
-        ))
-    })
+    parse_edit_path(path).map_err(EditError::invalid)
 }
 
 fn nothing_at(path: &str) -> EditError {
     EditError::not_found(format!("`{path}` names no literal value in the source"))
+}
+
+/// A path step that names nothing.
+struct StepFail {
+    /// Which step.
+    depth: usize,
+    /// The step is a field that the record or element before it lacks (so a
+    /// set can add it).
+    missing_field: bool,
+    error: EditError,
+}
+
+/// What `expr` is, for an error message: "a list of 3 elements", "a `<group>`
+/// element".
+fn describe(expr: &Expr) -> String {
+    match shape(expr) {
+        Shape::Record(_) => "a record".into(),
+        Shape::List(items) => format!("a list of {} elements", items.len()),
+        Shape::Call(args) => match &expr.kind {
+            ExprKind::Call { function, .. } => match &function.kind {
+                ExprKind::Ident(f) => format!("a call to `{f}` with {} arguments", args.len()),
+                _ => "a call".into(),
+            },
+            _ => "a call".into(),
+        },
+        Shape::Element(_) => format!("a `<{}>` element", tag_of(expr).unwrap_or("?")),
+        Shape::Leaf if color_literal(expr).is_some() => "a color".into(),
+        Shape::Leaf => match &expr.kind {
+            ExprKind::Literal(Literal::Int(_) | Literal::Float(_)) => "a number".into(),
+            ExprKind::Literal(Literal::String(_)) => "a string".into(),
+            ExprKind::Literal(Literal::Bool(_)) => "a boolean".into(),
+            ExprKind::Literal(Literal::Nil) => "nil".into(),
+            ExprKind::Ident(name) => {
+                format!("the name `{name}` (a path cannot see through a name)")
+            }
+            _ => "an expression that is not a literal".into(),
+        },
+    }
+}
+
+/// "the `<group>` element at `layers[2]`".
+fn describe_at(expr: &Expr, at: &str) -> String {
+    let what = describe(expr);
+    let what = what.strip_prefix("a ").unwrap_or(&what);
+    format!("the {what} at `{at}`")
+}
+
+/// Follow the steps of `path` (`name` then `segs`) from `root`, resolving each
+/// child step to the position of the child it names
+/// ([`PathSeg::ChildAt`]). Returns those steps and the expression they reach;
+/// the error names the first step that names nothing and says what is there.
+fn locate<'a>(
+    root: &'a Expr,
+    path: &str,
+    name: &str,
+    segs: &[PathSeg],
+) -> Result<(Vec<PathSeg>, &'a Expr), StepFail> {
+    let mut expr = root;
+    let mut out = Vec::with_capacity(segs.len());
+    for (depth, seg) in segs.iter().enumerate() {
+        let at = path_text(name, &segs[..depth]);
+        let fail = |missing_field: bool, why: String| StepFail {
+            depth,
+            missing_field,
+            error: EditError::not_found(format!(
+                "`{path}`: step `{seg}` names nothing — {why}"
+            )),
+        };
+        let here = describe_at(expr, &at);
+        let (next, resolved) = match (seg, shape(expr)) {
+            (PathSeg::Field(key), Shape::Record(fields)) => match field_index(fields, key) {
+                Some(i) => (element(expr, i), seg.clone()),
+                None => return Err(fail(true, format!("{here} has no field `{key}`"))),
+            },
+            (PathSeg::Field(key), Shape::Element(props)) => match attr_index(props, key) {
+                Some(i) => (element(expr, i), seg.clone()),
+                None => return Err(fail(true, format!("{here} has no attribute `{key}`"))),
+            },
+            (PathSeg::Index(i), Shape::List(items) | Shape::Call(items)) => match items.get(*i) {
+                Some(item) => (Some(item), seg.clone()),
+                None => return Err(fail(false, format!("{here} has no element {i}"))),
+            },
+            (PathSeg::Index(i), Shape::Element(_)) => {
+                return Err(fail(
+                    false,
+                    format!("{here} is not a list; its child elements are `{at}/*[{i}]`"),
+                ));
+            }
+            (PathSeg::Child(step), Shape::Element(_)) => {
+                let children = element_children(expr);
+                match select_child(&children, step) {
+                    Ok(i) => (Some(children[i]), PathSeg::ChildAt(i)),
+                    Err(why) => return Err(fail(false, format!("{here} {why}"))),
+                }
+            }
+            (PathSeg::ChildAt(i), Shape::Element(_)) => {
+                (element_children(expr).get(*i).copied(), seg.clone())
+            }
+            (PathSeg::Field(_), _) => {
+                return Err(fail(false, format!("`{at}` is {}, which has no fields", describe(expr))));
+            }
+            (PathSeg::Index(_), _) => {
+                return Err(fail(false, format!("`{at}` is {}, not a list", describe(expr))));
+            }
+            (PathSeg::Child(_) | PathSeg::ChildAt(_), _) => {
+                return Err(fail(false, format!("`{at}` is {}, not an element", describe(expr))));
+            }
+        };
+        expr = next.ok_or_else(|| fail(false, format!("{here} has nothing there")))?;
+        out.push(resolved);
+    }
+    Ok((out, expr))
 }
 
 // ── Reading the shape of a literal ───────────────────────────────────────
@@ -327,8 +594,9 @@ enum Shape<'a> {
     /// The positional arguments of a call to a plain name: a constructor like
     /// `vec3(0.3, -1.0, 0.5)`.
     Call(&'a [Expr]),
-    /// An element's attributes. A `.name` step enters an attribute; the
-    /// children are not a path step.
+    /// An element's attributes. A `.name` step enters an attribute, and a
+    /// child step (`/tag[n]`, resolved to [`PathSeg::ChildAt`]) a child
+    /// element.
     Element(&'a [(String, Expr)]),
     /// A scalar, a color literal (one token, whatever it lowers to), or an
     /// expression that is not a literal at all.
@@ -390,6 +658,15 @@ fn resolve<'a>(root: &'a Expr, segs: &[PathSeg]) -> Result<&'a Expr, usize> {
             (PathSeg::Field(key), Shape::Record(fields)) => field_index(fields, key),
             (PathSeg::Field(key), Shape::Element(props)) => attr_index(props, key),
             (PathSeg::Index(i), Shape::List(_) | Shape::Call(_)) => Some(*i),
+            (PathSeg::ChildAt(i), Shape::Element(_)) => {
+                expr = element_children(expr).get(*i).copied().ok_or(depth)?;
+                continue;
+            }
+            (PathSeg::Child(step), Shape::Element(_)) => {
+                let children = element_children(expr);
+                expr = children[select_child(&children, step).map_err(|_| depth)?];
+                continue;
+            }
             _ => None,
         };
         expr = index.and_then(|i| element(expr, i)).ok_or(depth)?;
@@ -400,12 +677,38 @@ fn resolve<'a>(root: &'a Expr, segs: &[PathSeg]) -> Result<&'a Expr, usize> {
 // ── The edit script ──────────────────────────────────────────────────────
 
 /// New content: a value to render in the surrounding style, or source text
-/// lifted from elsewhere in the same container (an element that only moved) —
-/// the element's own text, and the comment trailing it on its line, if any.
+/// lifted from elsewhere (an element that only moved) — the element's own
+/// text, the comment trailing it on its line, if any, and the indentation of
+/// the line it started on, so a multi-line text can be re-indented.
 #[derive(Debug, Clone)]
 enum What {
     Value(StaticValue),
-    Text(String, String),
+    Text {
+        text: String,
+        tail: String,
+        indent: String,
+    },
+}
+
+/// `text`, which started on a line indented by `from`, re-indented for a line
+/// indented by `to`: its later lines move by the difference.
+fn reindent(text: &str, from: &str, to: &str) -> String {
+    if from == to || !text.contains('\n') {
+        return text.to_string();
+    }
+    let mut lines = text.split('\n');
+    let mut out = lines.next().unwrap_or_default().to_string();
+    for line in lines {
+        out.push('\n');
+        match line.strip_prefix(from) {
+            Some(rest) => {
+                out.push_str(to);
+                out.push_str(rest);
+            }
+            None => out.push_str(line),
+        }
+    }
+    out
 }
 
 /// One primitive edit. `segs` is a path below the binding; ops are applied in
@@ -439,6 +742,15 @@ enum Op {
         segs: Vec<PathSeg>,
         children: Vec<StaticValue>,
     },
+    /// Insert a child element into the element at `segs` so it becomes child
+    /// element `index` (counting every child element, `<br />` included).
+    InsertChild {
+        segs: Vec<PathSeg>,
+        index: usize,
+        what: What,
+    },
+    /// Remove child element `index` of the element at `segs`.
+    RemoveChild { segs: Vec<PathSeg>, index: usize },
 }
 
 /// One step of lining an old sequence up with a new one.
@@ -962,7 +1274,7 @@ impl Doc {
             _ => None,
         };
         let text = match what {
-            What::Text(text, _) => text.clone(),
+            What::Text { text, .. } => text.clone(),
             What::Value(value) => {
                 let at = indent
                     .clone()
@@ -1172,19 +1484,277 @@ impl Doc {
                 }),
             }
         }
-        let old_children: Result<Vec<StaticValue>, String> = old_children
+        let old_values: Result<Vec<StaticValue>, String> = old_children
             .iter()
             .map(|child| match child {
                 JsxChild::Text(text) => Ok(StaticValue::Str(text.clone())),
                 JsxChild::Expr(expr) => eval(expr, bindings),
             })
             .collect();
-        if old_children.as_ref() != Ok(new_children) {
-            ops.push(Op::ReplaceChildren {
-                segs: segs.clone(),
-                children: new_children.to_vec(),
-            });
+        if old_values.as_ref() == Ok(new_children) {
+            return;
         }
+        // Children that are all elements, before and after, are edited one
+        // child at a time, like a list's elements, so the comments and
+        // layout between the tags stay. Text among them is rewritten whole.
+        let kids = element_children(old);
+        let all_elements = !kids.is_empty()
+            && kids.len() == old_children.len()
+            && !new_children.is_empty()
+            && new_children
+                .iter()
+                .all(|child| matches!(child, StaticValue::Element { .. }));
+        if all_elements && let Some(items) = self.child_items(old) {
+            return self.plan_children(bindings, &kids, &items, segs, new_children, ops);
+        }
+        ops.push(Op::ReplaceChildren {
+            segs: segs.clone(),
+            children: new_children.to_vec(),
+        });
+    }
+
+    /// Plan the ops that make the child elements `kids` (of the element at
+    /// `segs`, located at `items`) read as `new`: lined up like a list's
+    /// elements, edited in place where they look alike, and inserted, removed
+    /// or moved (keeping their text) where not.
+    fn plan_children(
+        &self,
+        bindings: &[StaticBinding],
+        kids: &[&Expr],
+        items: &[Item],
+        segs: &mut Vec<PathSeg>,
+        new: &[StaticValue],
+        ops: &mut Vec<Op>,
+    ) {
+        let old_values: Vec<Option<StaticValue>> =
+            kids.iter().map(|e| eval(e, bindings).ok()).collect();
+        let like = |i: usize, j: usize| {
+            old_values[i]
+                .as_ref()
+                .map_or(0, |old| likeness(old, &new[j]))
+        };
+        let mut steps = Vec::new();
+        align(
+            0..kids.len(),
+            0..new.len(),
+            &[
+                &|i, j| old_values[i].as_ref() == Some(&new[j]),
+                &|i, j| like(i, j) >= 2,
+                &|i, j| like(i, j) >= 1,
+            ],
+            &mut steps,
+        );
+        let mut moved: Vec<usize> = steps
+            .iter()
+            .filter_map(|step| match step {
+                Step::Remove(i) => Some(*i),
+                _ => None,
+            })
+            .collect();
+        let mut pos = 0;
+        for step in steps {
+            match step {
+                Step::Keep(i, j) => {
+                    segs.push(PathSeg::ChildAt(pos));
+                    self.plan(bindings, kids[i], segs, &new[j], ops);
+                    segs.pop();
+                    pos += 1;
+                }
+                Step::Insert(j) => {
+                    let source = moved
+                        .iter()
+                        .position(|&i| old_values[i].as_ref() == Some(&new[j]))
+                        .map(|at| moved.swap_remove(at));
+                    let what = match source {
+                        Some(i) => What::Text {
+                            text: self.expr_text(kids[i]),
+                            tail: String::new(),
+                            indent: self.line_indent(items[i].start),
+                        },
+                        None => What::Value(new[j].clone()),
+                    };
+                    ops.push(Op::InsertChild {
+                        segs: segs.clone(),
+                        index: pos,
+                        what,
+                    });
+                    pos += 1;
+                }
+                Step::Remove(_) => ops.push(Op::RemoveChild {
+                    segs: segs.clone(),
+                    index: pos,
+                }),
+            }
+        }
+    }
+
+    /// The child elements of `container`, located in the source: one
+    /// [`Item`] each, spanning the element (and the braces of a `{<tag />}`
+    /// hole around it). `None` when they cannot be located.
+    fn child_items(&self, container: &Expr) -> Option<Vec<Item>> {
+        let len = self.chars.len();
+        element_children(container)
+            .iter()
+            .map(|child| {
+                let (mut start, mut end) = (
+                    child.span.start.offset as usize,
+                    child.span.end.offset as usize,
+                );
+                if start >= end || end > len || self.chars[start] != '<' {
+                    return None;
+                }
+                let (mut s, mut e) = (start, end);
+                while s > 0 && self.chars[s - 1].is_whitespace() {
+                    s -= 1;
+                }
+                while e < len && self.chars[e].is_whitespace() {
+                    e += 1;
+                }
+                if s > 0 && self.chars[s - 1] == '{' && self.chars.get(e) == Some(&'}') {
+                    (start, end) = (s - 1, e + 1);
+                }
+                Some(Item {
+                    start,
+                    end,
+                    comma: None,
+                    colon: None,
+                    value_start: start,
+                })
+            })
+            .collect()
+    }
+
+    /// Whether a child element has its line(s) to itself. (A `//` after a tag
+    /// on its line is text, not a comment, so it does not count as room.)
+    fn child_own_line(&self, item: &Item) -> bool {
+        self.starts_line(item.start)
+            && self.chars[item.end..]
+                .iter()
+                .take_while(|&&c| c != '\n')
+                .all(|&c| is_blank(c))
+    }
+
+    /// Splices inserting a child element into `container` so it becomes
+    /// child element `index`, laid out like its siblings: on its own line at
+    /// their indentation when the sibling it goes next to has a line to
+    /// itself, else next to it with the spacing between the siblings.
+    fn insert_child(
+        &self,
+        container: &Expr,
+        index: usize,
+        what: &What,
+    ) -> Result<Vec<Splice>, EditError> {
+        let located = || EditError::invalid("the element there could not be located in the source");
+        let tag = self.tag(container).ok_or_else(located)?;
+        let items = self.child_items(container).ok_or_else(located)?;
+        let kids = element_children(container);
+        if index > items.len() {
+            return Err(EditError::invalid("insert index is past the end"));
+        }
+        let elem = |indent: &str, model: Option<&Expr>| match what {
+            What::Text { text, indent: from, .. } => reindent(text, from, indent),
+            What::Value(value) => self.render(value, model, indent),
+        };
+        let at = |at: usize, text: String| Splice {
+            start: at,
+            end: at,
+            text,
+        };
+        let outer = self.line_indent(container.span.start.offset as usize);
+
+        let Some(near) = items.get(index.saturating_sub(1)) else {
+            // No child elements yet: the first goes on a line of its own,
+            // one step in, as `to_source` writes children.
+            let inner = format!("{outer}{}", self.file_style().step);
+            let body = elem(&inner, None);
+            let Some(close) = tag.close else {
+                let own_line = self.starts_line(tag.open_end.start);
+                let mut before = tag.open_end.start;
+                if !own_line {
+                    while before > tag.name_end && is_blank(self.chars[before - 1]) {
+                        before -= 1;
+                    }
+                }
+                return Ok(vec![Splice {
+                    start: before,
+                    end: container.span.end.offset as usize,
+                    text: format!(">\n{inner}{body}\n{outer}</{}>", tag.name),
+                }]);
+            };
+            let inside = self.text(tag.open_end.end, close);
+            return Ok(vec![if inside.trim().is_empty() {
+                Splice {
+                    start: tag.open_end.end,
+                    end: close,
+                    text: format!("\n{inner}{body}\n{outer}"),
+                }
+            } else if self.starts_line(close) {
+                // Comments (or text) already inside: keep them, and add the
+                // child below them.
+                at(self.line_start(close), format!("{inner}{body}\n"))
+            } else {
+                at(close, body)
+            }]);
+        };
+        let model = kids.get(index.saturating_sub(1)).copied();
+        let indent = self.line_indent(near.start);
+        if self.child_own_line(near) {
+            let text = format!("{indent}{}\n", elem(&indent, model));
+            if index == 0 {
+                // Directly below the open tag (as a list's first element goes
+                // directly below its `[`).
+                let below_open = self.line_end_after(tag.open_end.end);
+                let line = self.line_start(near.start);
+                return Ok(vec![at(below_open.min(line), text)]);
+            }
+            return Ok(vec![at(self.line_end_after(near.end), text)]);
+        }
+        let sep = items
+            .windows(2)
+            .map(|pair| self.text(pair[0].end, pair[1].start))
+            .find(|gap| gap.chars().all(is_blank))
+            .unwrap_or_default();
+        Ok(vec![if index > 0 {
+            at(near.end, format!("{sep}{}", elem(&indent, model)))
+        } else {
+            at(near.start, format!("{}{sep}", elem(&indent, model)))
+        }])
+    }
+
+    /// Splices removing child element `index` of `container`: its whole
+    /// line(s) when it has them to itself, else the element and the spacing
+    /// between it and a sibling on the same line. Comments on other lines
+    /// stay.
+    fn remove_child(&self, container: &Expr, index: usize) -> Result<Vec<Splice>, EditError> {
+        let items = self.child_items(container).ok_or_else(|| {
+            EditError::invalid("the element there could not be located in the source")
+        })?;
+        let item = items
+            .get(index)
+            .ok_or_else(|| EditError::not_found("no child element at that index"))?;
+        let cut = |start: usize, end: usize| Splice {
+            start,
+            end,
+            text: String::new(),
+        };
+        if self.child_own_line(item) {
+            return Ok(vec![cut(
+                self.line_start(item.start),
+                self.line_end_after(item.end),
+            )]);
+        }
+        let blank_between = |a: usize, b: usize| self.chars[a..b].iter().all(|&c| is_blank(c));
+        if let Some(next) = items.get(index + 1).filter(|n| blank_between(item.end, n.start)) {
+            return Ok(vec![cut(item.start, next.start)]);
+        }
+        if let Some(prev) = index
+            .checked_sub(1)
+            .map(|i| &items[i])
+            .filter(|p| blank_between(p.end, item.start))
+        {
+            return Ok(vec![cut(prev.end, item.end)]);
+        }
+        Ok(vec![cut(item.start, item.end)])
     }
 
     // ── Locating sequences ───────────────────────────────────────────────
@@ -1305,8 +1875,8 @@ impl Doc {
                     .min_by_key(String::len)
             };
             FileStyle {
-                // A tie keeps what `to_source` writes: `{ a: 1 }` and `[1, 2]`.
-                record_pad: if votes[1] > votes[0] { "" } else { " " }.into(),
+                // A tie keeps what `to_source` writes: `{a: 1}` and `[1, 2]`.
+                record_pad: if votes[0] > votes[1] { " " } else { "" }.into(),
                 list_pad: if votes[2] > votes[3] { " " } else { "" }.into(),
                 sep: if seps[1] > seps[0] { "," } else { ", " }.into(),
                 step: step.or_else(shallowest).unwrap_or_else(|| "  ".into()),
@@ -1508,11 +2078,15 @@ impl Doc {
         }
         let mut steps = Vec::new();
         // The old elements' texts, for an element that only moved.
-        let texts: Vec<(String, String)> = match self.seq(old) {
+        let texts: Vec<What> = match self.seq(old) {
             Some(seq) => seq
                 .items
                 .iter()
-                .map(|item| (self.text(item.start, item.end), self.tail(item)))
+                .map(|item| What::Text {
+                    text: self.text(item.start, item.end),
+                    tail: self.tail(item),
+                    indent: self.line_indent(item.start),
+                })
                 .collect(),
             None => Vec::new(),
         };
@@ -1611,10 +2185,7 @@ impl Doc {
                         segs: segs.clone(),
                         index: pos,
                         key: keys.as_ref().map(|keys| keys[j].to_string()),
-                        what: match text {
-                            Some((text, tail)) => What::Text(text, tail),
-                            None => What::Value(new_values[j].clone()),
-                        },
+                        what: text.unwrap_or_else(|| What::Value(new_values[j].clone())),
                     });
                     pos += 1;
                 }
@@ -1663,7 +2234,7 @@ impl Doc {
             .or_else(|| style.as_ref().map(|s| s.colon.clone()))
             .unwrap_or_else(|| ": ".into());
         let elem = |indent: &str| match what {
-            What::Text(text, _) => text.clone(),
+            What::Text { text, indent: from, .. } => reindent(text, from, indent),
             What::Value(value) => {
                 let body = self.render(value, model, indent);
                 match key {
@@ -1673,7 +2244,7 @@ impl Doc {
             }
         };
         let tail = match what {
-            What::Text(_, tail) => tail.as_str(),
+            What::Text { tail, .. } => tail.as_str(),
             What::Value(_) => "",
         };
         let at = |at: usize, text: String| Splice {
@@ -1988,6 +2559,14 @@ fn apply(source: &str, name: &str, ops: &[Op]) -> Result<String, EditError> {
             }
             Op::ReplaceChildren { segs, children } => {
                 splices = doc.replace_children(at(segs)?, children)?;
+                next += 1;
+            }
+            Op::InsertChild { segs, index, what } => {
+                splices = doc.insert_child(at(segs)?, *index, what)?;
+                next += 1;
+            }
+            Op::RemoveChild { segs, index } => {
+                splices = doc.remove_child(at(segs)?, *index)?;
                 next += 1;
             }
         }

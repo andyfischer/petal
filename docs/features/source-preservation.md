@@ -89,7 +89,8 @@ Whether a number is an int or a float is not style: the value decides
 
 Every edit is one of three operations on a path such as
 `POST.effects[2].amount` (a top-level name, then `.field` steps into record
-literals and `[index]` steps into list literals or call arguments):
+literals and `[index]` steps into list literals or call arguments; elements
+take `.attr` and `/tag[n]` child steps, see [edit-paths.md](edit-paths.md)):
 
 | Primitive | Text change |
 |---|---|
@@ -184,13 +185,23 @@ like a record field:
 - **Remove** deletes the attribute and the whitespace before it, including a
   line break, so an attribute on its own line takes its line.
 
-Children are not a path step. Setting a whole element with the same tag lines
-the attributes up by name and plans them as above, and rewrites the children
-between `>` and `</tag>` only when they differ: one line of text stays on the
-tag's line, and anything else goes one line per child a step deeper, with each
-`<br />` ending its line. A self-closing element that gains children gets a
-close tag, and one whose children all go closes itself. A new element is laid
-out like its sibling (attributes on the tag's line or one per line).
+A child element is a path step too: `/tag[n]`, `/*[n]` or `/tag`
+([edit-paths.md](edit-paths.md)). It is set, inserted, removed and moved like a
+list element. A new child goes on its own line at its siblings' indentation
+when they each have one, and otherwise next to them on their line. The `//`
+and `{/* */}` comments and the blank lines between the tags stay where they
+are.
+
+Setting a whole element with the same tag lines the attributes up by name and
+plans them as above. When the children are all elements, before and after,
+they are lined up and planned like a list's elements, so a child that changed
+is edited in place and one that moved keeps its text. Other children (text
+among them) are rewritten between `>` and `</tag>`, and only when they differ:
+one line of text stays on the tag's line, and anything else goes one line per
+child a step deeper, with each `<br />` ending its line. A self-closing element
+that gains children gets a close tag, and one whose children all go closes
+itself. A new element is laid out like its sibling (attributes on the tag's
+line or one per line).
 
 ## Colors
 
@@ -198,7 +209,7 @@ out like its sibling (attributes on the tag's line or one per line).
 token. `StaticValue::Color { r, g, b, a }` reads and writes it as such: a path
 stops at a color (`POST.tint.r` names nothing), and an edit writes a color
 literal, in the old literal's case and length form. A record the author wrote
-out as `{ r: 255, g: 46, b: 136 }` is still a record.
+out as `{r: 255, g: 46, b: 136}` is still a record.
 
 ## What it does not do
 

@@ -76,53 +76,12 @@ pub fn find_binding(stmts: &[Stmt], name: &str) -> Option<SourceSpan> {
     })
 }
 
-/// One step from a value into one of its parts: a record field, or an element
-/// of a list (or an argument of a call, which a config file uses as a
-/// constructor: `vec3(0.3, -1.0, 0.5)`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PathSeg {
-    Field(String),
-    Index(usize),
-}
-
-/// Parse a binding path — a top-level name followed by any number of
-/// `.field` and `[index]` steps, e.g. `POST.effects[2].amount` — into the name
-/// and its steps. `None` when the text isn't of that shape.
-pub fn parse_binding_path(path: &str) -> Option<(String, Vec<PathSeg>)> {
-    fn ident_len(s: &str) -> usize {
-        s.char_indices()
-            .find(|&(i, c)| !(c == '_' || c.is_alphabetic() || (i > 0 && c.is_ascii_digit())))
-            .map_or(s.len(), |(i, _)| i)
-    }
-    let path = path.trim();
-    let n = ident_len(path);
-    if n == 0 {
-        return None;
-    }
-    let (name, mut rest) = path.split_at(n);
-    let mut segs = Vec::new();
-    while !rest.is_empty() {
-        if let Some(after) = rest.strip_prefix('.') {
-            let n = ident_len(after);
-            if n == 0 {
-                return None;
-            }
-            segs.push(PathSeg::Field(after[..n].to_string()));
-            rest = &after[n..];
-        } else if let Some(after) = rest.strip_prefix('[') {
-            let close = after.find(']')?;
-            segs.push(PathSeg::Index(after[..close].trim().parse().ok()?));
-            rest = &after[close + 1..];
-        } else {
-            return None;
-        }
-    }
-    Some((name.to_string(), segs))
-}
+pub use crate::edit_path::{ChildStep, PathSeg, parse_binding_path, parse_edit_path};
 
 /// Find the expression at `path` inside the top-level binding of `name` (the
 /// **last** one, as [`find_binding`]): each step enters a record literal by
-/// field name, or a list literal or a call's arguments by position. Returns
+/// field name, a list literal or a call's arguments by position, or an element
+/// by attribute or child step (see [`crate::edit_path`]). Returns
 /// that expression's span — the whole right-hand side for an empty path — or
 /// `None` when the binding or a step doesn't exist (or the value at a step is
 /// not a literal of the right shape: a path cannot see through a name, a
@@ -163,6 +122,13 @@ pub fn find_binding_path(stmts: &[Stmt], name: &str, path: &[PathSeg]) -> Option
             }
             (PathSeg::Index(i), ExprKind::List(items)) => items.get(*i)?,
             (PathSeg::Index(i), ExprKind::Call { args, .. }) => args.get(*i)?,
+            (PathSeg::Child(step), ExprKind::Element { .. }) => {
+                let children = crate::edit_path::element_children(expr);
+                children[crate::edit_path::select_child(&children, step).ok()?]
+            }
+            (PathSeg::ChildAt(i), ExprKind::Element { .. }) => {
+                *crate::edit_path::element_children(expr).get(*i)?
+            }
             _ => return None,
         };
     }

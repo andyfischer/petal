@@ -210,6 +210,7 @@ See [time-travel.md](time-travel.md).
 | Set a config value (formatting-preserved) | — | yes | `Goal::should_set_value` |
 | Set one value inside a config record or list | — | yes | `Goal::should_set_path`; `pb_source_set_value` in the C bridge |
 | Insert or remove a list element or record field in place | — | yes | `Goal::should_insert` / `should_append` / `should_remove`; `pb_source_insert` / `_append` / `_remove` |
+| Edit, insert, remove or move an element's child (`layers[2]/image[1].x`) | — | yes | the same goals plus `Goal::should_move`; `pb_source_move` ([edit-paths.md](edit-paths.md)) |
 | Ensure a top-level call, formatting-preserved | — | yes | `Goal::should_call` |
 | Rewrite a span of source, formatting-preserved | — | yes | `rewrite::splice_node` / `splice` |
 | Reformat source | — | yes | `petal fmt` |

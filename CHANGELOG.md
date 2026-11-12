@@ -12,6 +12,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **`StaticValue::to_source` writes records unpadded: `{x: 1}`.** It used to
+  write `{ x: 1 }`, unlike hand-written Petal and the docs, so a file edited
+  by a GUI drifted in style. A literal edit that creates a record in a file
+  with no one-line record to copy now uses the same unpadded form (a file
+  whose one-line records are mostly padded still gets padding). Tests that
+  compared rendered records changed with it. images-followup item 3.
+
+- **Path-edit errors name the step that failed.** For example, "`POST.effects[7].amount`:
+  step `[7]` names nothing — the list of 2 elements at `POST.effects` has no
+  element 7" replaces "names no literal value", and a malformed path says
+  where it went wrong.
+
 - **`vary` lost its `sensitivity` option.** `ui/drag`'s `vary` always uses
   forward differences: the `sensitivity` key is accepted and ignored for one
   release, and the new lint rule `vary-sensitivity` deletes it
@@ -306,6 +318,19 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
     `petal migrate-old-code` from working.
 
 ### Added
+
+- **Edit paths reach element children, XPath-style.**
+  `layers[2]/group[0]/image[1].x` names an attribute of the second `<image>`
+  in a `<group>`. `/tag[n]` (0-based), `/*[n]` and `/tag` are child steps,
+  and `/@x` is an alias for `.x`. Text, comments and `<br />` are not
+  counted. Set, insert, append, remove and the new move
+  (`literal_edit::move_path`, `Goal::should_move`, `pb_source_move`) are
+  minimal splices there: a new child goes on its own line like its siblings,
+  and the `//` / `{/* */}` comments and blank lines between tags stay.
+  Setting a whole element (or a whole `layers` list) now edits element
+  children one at a time instead of rewriting them all. Every existing path
+  keeps its meaning. See docs/features/edit-paths.md. images-followup
+  item 1.
 
 - **`speculate_value(f, ...args)`**: `speculate(f, ...args).value` without
   building the result record. `speculate` itself got cheaper: what it puts

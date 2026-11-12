@@ -162,6 +162,7 @@ fn goal_label(g: &petal::goal_based_editing::Goal) -> String {
         Goal::ShouldSetValue { name, .. } => format!("set {name}"),
         Goal::ShouldAppend { path, .. } => format!("append to {path}"),
         Goal::ShouldCall { function, .. } => format!("call {function}"),
+        Goal::ShouldMove { from, to } => format!("move {from} to {to}"),
     }
 }
 

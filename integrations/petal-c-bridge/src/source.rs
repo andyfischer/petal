@@ -22,7 +22,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use petal::goal_based_editing::Placement;
 use petal::literal_edit::{self, EditError, EditErrorKind};
-use petal::rewrite::{find_binding_path, parse_ast, parse_binding_path, splice, splice_node};
+use petal::rewrite::{find_binding_path, parse_ast, parse_edit_path, splice, splice_node};
 use petal::static_json;
 use petal::static_value::{StaticValue, static_bindings};
 
@@ -57,12 +57,7 @@ impl PbSource {
 
     /// The char range of the expression `path` names, or why there is none.
     fn locate(&self, path: &str) -> Result<petal::source_map::SourceSpan, (Status, String)> {
-        let (name, segs) = parse_binding_path(path).ok_or_else(|| {
-            (
-                Status::InvalidArg,
-                format!("`{path}` is not a binding path (name, then .field or [index] steps)"),
-            )
-        })?;
+        let (name, segs) = parse_edit_path(path).map_err(|e| (Status::InvalidArg, e))?;
         let (_, stmts) = parse_ast(&self.text)
             .map_err(|e| (Status::Compile, format!("source did not parse: {e}")))?;
         find_binding_path(&stmts, &name, &segs).ok_or_else(|| {
@@ -194,6 +189,10 @@ impl PbSource {
 
     fn remove(&mut self, path: &str) -> Status {
         self.edit(None, |text, _| literal_edit::remove_path(text, path))
+    }
+
+    fn move_to(&mut self, from: &str, to: &str) -> Status {
+        self.edit(None, |text, _| literal_edit::move_path(text, from, to))
     }
 }
 
@@ -455,6 +454,21 @@ pub unsafe extern "C" fn pb_source_remove(s: *mut PbSource, path: *const c_char)
         edit_call(s, [(path, "path", false)], |s, [path]| {
             s.remove(path.unwrap_or(""))
         })
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_source_move(
+    s: *mut PbSource,
+    from: *const c_char,
+    to: *const c_char,
+) -> Status {
+    unsafe {
+        edit_call(
+            s,
+            [(from, "from", false), (to, "to", false)],
+            |s, [from, to]| s.move_to(from.unwrap_or(""), to.unwrap_or("")),
+        )
     }
 }
 

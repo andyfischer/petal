@@ -291,7 +291,7 @@ export config let POST = {
                 Goal::should_append("xs", 2),
                 Goal::should_append("fx.effects", effect("crt", 0.2)),
             ],
-            "let xs = [1, 2]\nlet fx = {\n    effects: [\n        { effect: \"crt\", amount: 0.2 },\n    ],\n}\n",
+            "let xs = [1, 2]\nlet fx = {\n    effects: [\n        {effect: \"crt\", amount: 0.2},\n    ],\n}\n",
         ),
         case(
             "an empty list open across lines is filled one per line",
@@ -348,7 +348,7 @@ export config let POST = {
                 set("editor.wrap", true.into()),
                 set("other.wrap", true.into()),
             ],
-            "let editor = { wrap: true }\nlet other = { wrap: true }\n",
+            "let editor = {wrap: true}\nlet other = { wrap: true }\n",
         ),
         case(
             "a compact file gets compact new records",
@@ -550,7 +550,7 @@ export config let POST = {
                 "cfg.effects",
                 list(&[effect("crt", 0.2), effect("grain", 0.3)]),
             )],
-            "let cfg = {\n    name: \"neon\",\n    effects: [\n        { effect: \"crt\", amount: 0.2 },\n        { effect: \"grain\", amount: 0.3 },\n    ],\n}\n",
+            "let cfg = {\n    name: \"neon\",\n    effects: [\n        {effect: \"crt\", amount: 0.2},\n        {effect: \"grain\", amount: 0.3},\n    ],\n}\n",
         ),
         // ── Paths through calls, spreads and awkward text ────────────────
         case(
@@ -864,13 +864,17 @@ fn what_an_edit_writes_is_what_a_read_returns() {
 fn edits_that_cannot_be_made_are_errors_and_change_nothing() {
     let fails = |goal: Goal| modify_source_with_goals(POST, &[goal]).unwrap_err().message;
     assert!(fails(Goal::should_set_path("NOPE.x", 1)).contains("no top-level binding"));
-    assert!(fails(Goal::should_set_path("POST.effects[7].amount", 1)).contains("names no literal"));
-    assert!(fails(Goal::should_set_path("POST..x", 1)).contains("not a binding path"));
+    // A step that names nothing is named, with what is there instead.
+    assert!(
+        fails(Goal::should_set_path("POST.effects[7].amount", 1))
+            .contains("step `[7]` names nothing — the list of 2 elements at `POST.effects` has no element 7")
+    );
+    assert!(fails(Goal::should_set_path("POST..x", 1)).contains("not an edit path"));
     // A color is one token: there is nothing inside it to name.
-    assert!(fails(Goal::should_set_path("POST.tint.r", 1)).contains("names no literal"));
+    assert!(fails(Goal::should_set_path("POST.tint.r", 1)).contains("`POST.tint` is a color, which has no fields"));
     assert!(fails(Goal::should_insert("POST.effects[9]", 1)).contains("past the end"));
     assert!(fails(Goal::should_insert("POST.exposure[0]", 1)).contains("cannot insert"));
-    assert!(fails(Goal::should_remove("POST.effects[2]")).contains("names no literal"));
+    assert!(fails(Goal::should_remove("POST.effects[2]")).contains("has no element 2"));
     assert!(fails(Goal::should_remove("POST")).contains("whole binding"));
     assert!(fails(Goal::should_append("POST.exposure", 1)).contains("not a list"));
     // A key that is not an identifier would break the file: refused.
@@ -1048,6 +1052,6 @@ let look = { mode: Mode.dark, marks: [Shape.dot, Shape.circle(2)] }
     );
     assert_eq!(
         get_static_value(&edited, "look").unwrap().to_source(),
-        "{ mode: Mode.light, marks: [\n  Shape.dot,\n  Shape.circle(5),\n] }"
+        "{mode: Mode.light, marks: [\n  Shape.dot,\n  Shape.circle(5),\n]}"
     );
 }

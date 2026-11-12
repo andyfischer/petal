@@ -52,6 +52,7 @@ pub mod ir_equiv;
 pub mod ir_serialize;
 pub mod ir_validate;
 pub mod lexer;
+pub mod edit_path;
 pub mod literal_edit;
 pub mod fmt;
 pub mod lint;

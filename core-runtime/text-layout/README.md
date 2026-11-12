@@ -8,14 +8,14 @@ five host natives, and not one line of Rust.
 import text_layout
 import ui
 
-// One line, centred the way a designer means centred.
+# One line, centred the way a designer means centred.
 text_layout.draw_text_line("Save", r, style, "center")
 
-// A paragraph: wrapped, two lines at most, the second one elided.
+# A paragraph: wrapped, two lines at most, the second one elided.
 text_layout.draw_text_block(summary, card, style, {lines: 2, lead: 1.15})
 
-// A path that has to fit a column.
-text_layout.elide(path, style, col.w, "tail")     // "…/src/place.ptl"
+# A path that has to fit a column.
+text_layout.elide(path, style, col.w, "tail")     # "…/src/place.ptl"
 ```
 
 ## The bug it exists to fix
@@ -112,9 +112,9 @@ Import the facade, or one module when you want a slice of it
 ```petal ignore
 import text_layout
 
-draw_text_line(s, r, style)                    // left, centred vertically
-draw_text_line(s, r, style, "center")          // "left" | "center" | "right"
-draw_text_line(s, r, style, "right", "top")    // valign: "top" | "middle" | "bottom" | "baseline"
+draw_text_line(s, r, style)                    # left, centred vertically
+draw_text_line(s, r, style, "center")          # "left" | "center" | "right"
+draw_text_line(s, r, style, "right", "top")    # valign: "top" | "middle" | "bottom" | "baseline"
 ```
 
 Returns the run's width, for a caller flowing something after it.
@@ -134,12 +134,12 @@ one line.
 import text_layout
 
 let b = draw_text_block(body, r, style, {
-  align: "left",      // "left" | "center" | "right"
-  valign: "top",      // "top" | "middle" | "bottom"
-  wrap: true,         // false keeps one line whatever its width
-  lines: 0,           // a maximum line count; 0 for no limit
-  elide: true,        // mark a cut with "…"; "tail"/"both" pick which end survives
-  lead: 1.0,          // ×the face's own line spacing, or px when 4 or more
+  align: "left",      # "left" | "center" | "right"
+  valign: "top",      # "top" | "middle" | "bottom"
+  wrap: true,         # false keeps one line whatever its width
+  lines: 0,           # a maximum line count; 0 for no limit
+  elide: true,        # mark a cut with "…"; "tail"/"both" pick which end survives
+  lead: 1.0,          # ×the face's own line spacing, or px when 4 or more
 })
 ```
 
@@ -166,11 +166,11 @@ to *that* looks bottom-heavy.
 ```petal ignore
 import text_layout
 
-wrap_text(s, style, max_w)               // -> [line]; honours newlines, breaks long words
-elide(s, style, max_w)                   // -> "a long lab…"
-elide(s, style, max_w, "tail")           // -> "…/src/place.ptl"
-elide(s, style, max_w, "both")           // -> "commit 9f…identifier"
-clamp_lines(s, style, max_w, 2)          // wrap, stop at 2, elide the second
+wrap_text(s, style, max_w)               # -> [line]; honours newlines, breaks long words
+elide(s, style, max_w)                   # -> "a long lab…"
+elide(s, style, max_w, "tail")           # -> "…/src/place.ptl"
+elide(s, style, max_w, "both")           # -> "commit 9f…identifier"
+clamp_lines(s, style, max_w, 2)          # wrap, stop at 2, elide the second
 ```
 
 ### Carets
@@ -178,9 +178,9 @@ clamp_lines(s, style, max_w, 2)          // wrap, stop at 2, elide the second
 ```petal ignore
 import text_layout
 
-caret_index(s, style, dx)   // the character index a click dx px in falls on
-caret_x(s, style, i)        // the x offset of the caret before character i
-caret_rect(s, r, style, i)  // a 1px bar spanning the line's real ink
+caret_index(s, style, dx)   # the character index a click dx px in falls on
+caret_x(s, style, i)        # the x offset of the caret before character i
+caret_rect(s, r, style, i)  # a 1px bar spanning the line's real ink
 ```
 
 `caret_index` returns a **character** index, which is what `slice`, `s[i]` and

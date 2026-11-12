@@ -195,7 +195,7 @@ editor and a panel on the same file:
 ```petal
 import garden_config
 
-// init.ptl: a permanent Petal-IDE-style workspace
+# init.ptl: a permanent Petal-IDE-style workspace
 layout(
     row([ editor("sketch.ptl"), panel("sketch.ptl") ], [0.5, 0.5])
 )

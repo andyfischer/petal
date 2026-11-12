@@ -9,12 +9,11 @@ import glsl
 
 fn weight(i: int, n: int) -> float
   1.0 - abs(i) / (n + 1.0)
-end
 
 print(glsl.to_glsl(weight))
-// float weight(int i, int n) {
-//     return 1.0 - float(abs(i)) / (float(n) + 1.0);
-// }
+# float weight(int i, int n) {
+#     return 1.0 - float(abs(i)) / (float(n) + 1.0);
+# }
 ```
 
 The full description is [docs/game-engine-features/petal-to-glsl.md](../../docs/game-engine-features/petal-to-glsl.md):

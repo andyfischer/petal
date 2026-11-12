@@ -216,7 +216,6 @@ let res = text_field_update("name", r, buf, {text_style: MY_STYLE, inset: 0})
 buf = res.text
 for q in text_range_rects(buf, MY_STYLE, res.sel_start, res.sel_end) do
   draw_rect(r.x + q.x, r.y + q.y, q.w, q.h, MY_HIGHLIGHT)
-end
 draw_text(buf, {x: r.x, y: r.y}, MY_STYLE)
 ```
 
@@ -277,10 +276,8 @@ character offsets throughout.
 let rows = text_wrap_rows(body, style, 320.0)
 for q in text_range_rects(rows, style, hit_start, hit_end, 21) do
   draw_rect(x + q.x, y + q.y, q.w, q.h, MARK)
-end
 for i in range(0, len(rows)) do
   draw_text(rows[i].text, {x: x, y: y + i * 21}, style)
-end
 ```
 
 ### Spinner + progress

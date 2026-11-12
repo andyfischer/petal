@@ -82,7 +82,7 @@ content and shared by every caller.
 ```petal
 state var hero = 1
 let hero = {a: 2}
-log(str(hero.a))      // Error: internal error: cell_read on a record
+log(str(hero.a))      # Error: internal error: cell_read on a record
 ```
 
 Whether the right answer is to shadow or to reject, it should not be an

@@ -38,10 +38,10 @@ and is listed there as an open misplacement: Cheesecake's engine imports
 registering its own copy.
 
 ```petal ignore
-import bloom              // the facade module, named like its package
-import bloom/menu         // one implementation module
-import text_layout        // another package, by its manifest name
-import ui                 // the host interface bloom and text_layout draw through
+import bloom              # the facade module, named like its package
+import bloom/menu         # one implementation module
+import text_layout        # another package, by its manifest name
+import ui                 # the host interface bloom and text_layout draw through
 ```
 
 ```bash

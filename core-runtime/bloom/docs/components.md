@@ -6,7 +6,7 @@ of this document is [`examples/ui/bloom-gallery`](../../../examples/ui/bloom-gal
 Conventions used throughout:
 
 - **Rects** are `rect(x, y, w, h)` (the built-in `Rect`) or any `{x, y, w, h}`
-  record. **Colors** are `{r, g, b}` records; hex literals like `#3c8cff` work.
+  record. **Colors** are `{r, g, b}` records; hex literals like `:3c8cff` work.
 - **A component returns its value**, on the frame it changes: `button` returns
   true when clicked, `switch(r, on)` returns the new bool. There are no
   callbacks and no event objects.
@@ -27,7 +27,7 @@ Conventions used throughout:
 dark default), plus bloom's own tokens, plus your overrides.
 
 ```petal
-bloom.theme_set({accent: #7c5cff, radius: 10, speed: 1.4})
+bloom.theme_set({accent: :7c5cff, radius: 10, speed: 1.4})
 bloom.theme_reset()
 ```
 
@@ -106,7 +106,7 @@ harness pins — so a bloom UI settles identically in a trace and on screen.
 
 ```petal
 let p = bloom.probe(r)
-// p.hover  p.down  p.press  p.click  p.hot (0→1 eased)  p.active  p.rect  p.enabled
+# p.hover  p.down  p.press  p.click  p.hot (0→1 eased)  p.active  p.rect  p.enabled
 ```
 
 `click` means **press and release inside**: pressing a control and sliding off
@@ -299,7 +299,7 @@ its button is — usually early in the frame. bloom keeps a **late layer** for
 that: menus and tooltips hand their painting to a closure, and
 
 ```petal
-bloom.overlays()      // the last line of your frame
+bloom.overlays()      # the last line of your frame
 ```
 
 runs them. An app that never calls it still gets its overlays — they are

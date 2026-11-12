@@ -116,7 +116,7 @@ let red = :e5484d
 let card = rect(20, 20, 200, 120)
 
 draw_rect_outline(x: 0, y: 0, w: 10, h: 4, c: red, a: 255, width: 2)
-draw_rect_rounded_outline(rect: card, radius: 8, c: red, width: 2)   // alpha skipped
+draw_rect_rounded_outline(rect: card, radius: 8, c: red, width: 2)   # alpha skipped
 draw_line(0, 40, 200, 40, c: red, width: 3)
 draw_circle(center: {x: 60, y: 60}, radius: 12, c: red, a: 128)
 draw_text("Total", x: 24, y: 28, size: 13, c: red)
@@ -225,18 +225,18 @@ The body of a `layer` draws in canvas-local coordinates, and `draw_to` returns
 the target it replaced, so layers nest without a stack anyone has to keep:
 
 ```petal
-// Overlapping translucent shapes as one object at 50% — drawing each at 50%
-// would darken every overlap, since blending is not idempotent.
+# Overlapping translucent shapes as one object at 50% — drawing each at 50%
+# would darken every overlap, since blending is not idempotent.
 layer(card, {a: 128}, fn()
   draw_circle({x: 40, y: 40}, 40, c1)
   draw_circle({x: 80, y: 40}, 40, c2)
-end)
+)
 
-// A glow: the shape, blurred.
+# A glow: the shape, blurred.
 layer(halo, {blur: 12}, fn() draw_circle({x: halo.w / 2, y: halo.h / 2}, halo.w / 2, accent) end)
 
-// A tab bar the content scrolls under. Draw the content first — the
-// snapshot reads what is already there.
+# A tab bar the content scrolls under. Draw the content first — the
+# snapshot reads what is already there.
 draw_material(bar, {kind: "regular", hairline: "top"})
 ```
 

@@ -35,7 +35,7 @@ state frame = 0
 frame = frame + 1
 
 fn project(p)
-  memo(frame) cam = camera_basis()   // computed once per frame
+  memo(frame) cam = camera_basis()   # computed once per frame
   ...
 end
 ```

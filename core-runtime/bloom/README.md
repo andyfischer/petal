@@ -11,14 +11,13 @@ import ui
 
 if bloom.button(rect(20, 20, 120, 32), "Save", {variant: "primary", icon: "check"}) then
   bloom.toast("Saved", "success")
-end
 
 let picked = bloom.dropdown(rect(160, 20, 140, 32), "Actions",
                             ["Rename", {sep: true}, {label: "Delete", danger: true}])
 ```
 
 ```petal
-bloom.overlays()   // last line of the frame: paints menus and tooltips on top
+bloom.overlays()   # last line of the frame: paints menus and tooltips on top
 ```
 
 That is the whole event model: a component draws itself and returns its value.

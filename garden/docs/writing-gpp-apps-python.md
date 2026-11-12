@@ -70,7 +70,6 @@ clear(T.bg.r, T.bg.g, T.bg.b)
 ls = load_poll(ls, "fortune", query("fortune", ""))
 if draw_load(rect(0, 0, screen_width(), screen_height()), ls) then
   draw_text(ls.value.text, {x: 16, y: 16}, T.font_md, T.text)
-end
 ```
 
 Never print to stdout; every stdout line must be a protocol message. stderr

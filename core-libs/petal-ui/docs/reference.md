@@ -133,15 +133,14 @@ A layer orders two things:
   until it is.
 
 ```petal
-// A panel over the world. Its background takes the pointer; the world only
-// gets a click the UI did not want.
+# A panel over the world. Its background takes the pointer; the world only
+# gets a click the UI did not want.
 with_layer(10, fn()
   ui_block(panel)
   if button(close_r, "Close") then open = false end
-end)
+)
 if mouse_pressed(0) && !pointer_captured() then
   select_unit_at(mouse_x(), mouse_y())
-end
 ```
 
 **How it is resolved, and the one gap.** "What is above me under the pointer"
@@ -191,7 +190,7 @@ a `tab_bar` under their label, each row of a `radio_group` under its label, a
 a style (`button(r, "OK", {id: "confirm-ok"})`).
 
 ```petal
-// A tutorial highlights another module's button without knowing its layout.
+# A tutorial highlights another module's button without knowing its layout.
 let r = ui_target_rect("End turn")
 if r != nil then draw_focus_ring(r, 4) end
 ```
@@ -297,10 +296,10 @@ costs a lot to say, say it once.
 | `draw_rects(rects, palette?, dx?, dy?)` | One command for many rects. |
 
 ```petal
-// A minimap of a few hundred cells, emitted once per map version.
+# A minimap of a few hundred cells, emitted once per map version.
 cached_layer(map_version, minimap_rect, fn()
-  draw_rects(cells, PALETTE)          // (0, 0) is the layer's top-left
-end)
+  draw_rects(cells, PALETTE)          # (0, 0) is the layer's top-left
+)
 ```
 
 `cached_layer`:
@@ -432,7 +431,7 @@ A cursor that hands out rects one after another, so a panel is written without
 flow_begin(panel, {pad: 8, gap: 4})
 draw_text("Settings", flow_next(20), title)
 vol = slider(flow_next(18), vol, 0, 1)
-flow_begin(flow_next(24), {axis: "x", gap: 6})   // a row of buttons
+flow_begin(flow_next(24), {axis: "x", gap: 6})   # a row of buttons
 if button(flow_next(80), "Apply") then apply() end
 if button(flow_next(80), "Cancel") then close() end
 flow_end()
@@ -458,9 +457,8 @@ fn rows(r)
   flow_begin(r, {gap: 4})
   for it in items do row(flow_next(22), it) end
   flow_end()
-end
 let content = ui_measure(fn() rows(rect(0, 0, list.w, 0)) end)
-// scroll by content.h, then call rows(...) again to draw
+# scroll by content.h, then call rows(...) again to draw
 ```
 
 Nothing the body does outlives the measurement: `state` it writes, `set`s,

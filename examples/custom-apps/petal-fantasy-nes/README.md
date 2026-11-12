@@ -181,20 +181,20 @@ drive.
 ## A cart, in full
 
 ```petal
-set_backdrop(light_blue)                       // the sky — every palette's color 0
-palette(0, dark_green, green, white)           // background palette 0
-palette(4, maroon, red, peach)                 // sprite palette 4
+set_backdrop(light_blue)                       # the sky — every palette's color 0
+palette(0, dark_green, green, white)           # background palette 0
+palette(4, maroon, red, peach)                 # sprite palette 4
 
-define_art(1, ["oooooooo", "-o--o-o-", "--------", "---o----",     // grass
+define_art(1, ["oooooooo", "-o--o-o-", "--------", "---o----",     # grass
                "--------", "-------o", "--------", "-o------"])
-define_art(2, ["..----..", ".-####-.", "-#-##-#-", "-######-",     // the hero
+define_art(2, ["..----..", ".-####-.", "-#-##-#-", "-######-",     # the hero
                "-#-##-#-", ".-####-.", "..oooo..", ".o.oo.o."])
 
 set_map_size(32, 30)
-map_rect(0, 26, 32, 4, 1, 0)                   // a floor along the bottom four rows
+map_rect(0, 26, 32, 4, 1, 0)                   # a floor along the bottom four rows
 
 state var x = 120.0
-set x = clamp(x + btn_dx() * 1.5, 0, 248)      // arrows / WASD / a d-pad
+set x = clamp(x + btn_dx() * 1.5, 0, 248)      # arrows / WASD / a d-pad
 
 text_sprites_center(24, "HELLO", 4)
 sprite(px(x), 200, 2, 4)

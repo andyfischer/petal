@@ -45,9 +45,7 @@ fn view(items)
     let r = place(k, rect(40, 60 + i * 52, 240, 44))
     draggable(k, r, fn() closest(moves(items, i)) |> floating() end)
     place(k, r, fn(p) draw_rect_rounded(p, 6, :64b5f6) end)
-  end
   nil
-end
 
 let d = drag_session(items, view)
 view(d.preview)
@@ -204,7 +202,7 @@ disk on a small one:
 ```petal ignore
 fn hanoi_moves(pegs, p)
   let disk = top(pegs, p)
-  let out = [pegs]                       // staying put is always allowed
+  let out = [pegs]                       # staying put is always allowed
   for q in range(0, 3) do
     let t = top(pegs, q)
     if q != p && (t == nil || t > disk) then
@@ -212,10 +210,7 @@ fn hanoi_moves(pegs, p)
       next[p] = drop_last(pegs[p])
       next[q] = pegs[q] ++ [disk]
       out = out ++ [next]
-    end
-  end
   out
-end
 ```
 
 Note the `let next = pegs` before the path assignments: without it, the
@@ -240,10 +235,10 @@ blend into it. Frames cost no speculation: the table, with every key's value
 in every state, is built at the press.
 
 ```petal ignore
-// examples/ui/d2-switch: a knob with three positions in a triangle
+# examples/ui/d2-switch: a knob with three positions in a triangle
 let r = place("knob", rect(s.x - 26, s.y - 26, 52, 52))
 draggable("knob", r, fn() between(["off", "low", "high"]) end)
-let c = place("knob-color", COLORS[pos])       // blends while dragging
+let c = place("knob-color", COLORS[pos])       # blends while dragging
 ```
 
 `between` takes states (or `fixed_state`), not other specs; put it inside
@@ -259,7 +254,7 @@ element closer (else halved). The preview is `state` with the solved numbers
 in; so is the drop. Nothing in the app inverts the view.
 
 ```petal ignore
-// examples/ui/d2-dial: the knob on a circle at angle a
+# examples/ui/d2-dial: the knob on a circle at angle a
 let k = place("knob", {x: C.x + cos(a) * R - 16, y: C.y + sin(a) * R - 16, w: 32, h: 32})
 draggable("knob", k, fn() vary(dial, "angle") end)
 ```
@@ -307,19 +302,19 @@ since a room change does not move it in time), and each end handle is a
 [`examples/productivity/kanban`](../../../examples/productivity/kanban/app.ptl):
 
 ```petal ignore
-// columns are lists of cards
+# columns are lists of cards
 draggable(card.id, r, fn() closest(moves_nested(cs, card.id)) |> floating() end)
-// columns are records holding the list in `cards`
+# columns are records holding the list in `cards`
 draggable(card.id, r, fn() closest(moves_nested(cols, card.id, "cards")) |> floating() end)
 ```
 
 **A trash can** beside the reorder:
 
 ```petal ignore
-place("trash", trash_rect)                       // in the view, so the engine can find it
+place("trash", trash_rect)                       # in the view, so the engine can find it
 draggable(k, r, fn()
   closest(moves(items, i) ++ [drop_target("trash", remove_at(items, i))]) |> floating()
-end)
+)
 ```
 
 **Snap into place near a slot, float elsewhere:**
@@ -463,10 +458,10 @@ previews the drag as usual; the drop is then proposed as an edit of the
 literal in the paired editor:
 
 ```petal ignore
-// The pipeline, in the order it runs.
+# The pipeline, in the order it runs.
 let STEPS = [
   "fetch",
-  "parse",   // tolerant
+  "parse",   # tolerant
   "check",
 ]
 let d = drag_session(STEPS, view)

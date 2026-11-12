@@ -204,7 +204,7 @@ several hosts (one per OS window) coexist with no shared capture slot.
 ```petal
 import garden_config
 
-// init.ptl: declarative layout, re-evaluated on every hot reload
+# init.ptl: declarative layout, re-evaluated on every hot reload
 layout(
     row([
         column([ editor("src/main.rs"), editor("notes.md") ], [0.7, 0.3]),
@@ -212,11 +212,11 @@ layout(
     ], [0.6, 0.4])
 )
 
-color_scheme("dark")             // "dark", "light", "brown", "amiga"
-color_theme({                    // override any subset of the scheme's colors
+color_scheme("dark")             # "dark", "light", "brown", "amiga"
+color_theme({                    # override any subset of the scheme's colors
     window_bg: "#090a0d",
     text: "#e4eaf3",
-    selection: "#4f8cc94d",      // "#rgb", "#rrggbb", or "#rrggbbaa"
+    selection: "#4f8cc94d",      # "#rgb", "#rrggbb", or "#rrggbbaa"
 })
 ```
 

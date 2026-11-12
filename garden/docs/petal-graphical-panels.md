@@ -230,7 +230,6 @@ import ui
 
 if bloom.button(rect(20, 20, 120, 32), "Save", {variant: "primary", icon: "check"}) then
   bloom.toast("Saved", "success")
-end
 ```
 
 `bloom` is the facade module; the implementation modules are reachable by their
@@ -406,18 +405,18 @@ opacity, a glow, or a frosted bar needs. The prelude wraps them so the common
 cases are one call:
 
 ```petal
-// Content first: the snapshot reads what is already there.
+# Content first: the snapshot reads what is already there.
 draw_list(...)
-// A translucent bar it scrolls under: what is behind it, blurred, tinted.
+# A translucent bar it scrolls under: what is behind it, blurred, tinted.
 draw_material(rect(0, 0, w, 52), {kind: "regular", hairline: "bottom"})
 
-// A group at 50%: overlapping shapes as one object.
+# A group at 50%: overlapping shapes as one object.
 layer(card, {a: 128}, fn()
-  draw_circle(rect(0, 0, 80, 80), c1)      // canvas-local: (0, 0) is card's top-left
+  draw_circle(rect(0, 0, 80, 80), c1)      # canvas-local: (0, 0) is card's top-left
   draw_circle(rect(40, 0, 80, 80), c2)
 end)
 
-// A glow: the shape, blurred.
+# A glow: the shape, blurred.
 layer(halo, {blur: 12}, fn() draw_circle(rect(0, 0, halo.w, halo.h), accent) end)
 ```
 
@@ -455,8 +454,8 @@ library Garden registers for every panel:
 
 ```petal ignore
 import text_layout
-text_layout.draw_text_line("Save", r, style, "center")   // cap-height centred
-text_layout.draw_text_block(body, r, style, {lines: 2})  // wrapped, clamped
+text_layout.draw_text_line("Save", r, style, "center")   # cap-height centred
+text_layout.draw_text_block(body, r, style, {lines: 2})  # wrapped, clamped
 ```
 
 `text_wrap`, `text_ellipsize` and `text_index_at` are natives underneath it, so
@@ -475,7 +474,7 @@ let body = font("Helvetica Neue", 15)
 let title = font_size(font_bold(body), 28)
 
 draw_text("Chapter One", {x: 20, y: 40}, title)
-let w = text_width("Chapter One", title)      // measures that exact cut
+let w = text_width("Chapter One", title)      # measures that exact cut
 ```
 
 `name` is a family name, one of the two role names (`mono`, `ui`), or a
@@ -536,7 +535,7 @@ import garden
 import ui
 
 let TITLE = {size: 22, weight: 700, font: "ui", color: palette().text}
-let w = text_width("Pick your handle", 22, "ui")   // not text_width(s, 22)
+let w = text_width("Pick your handle", 22, "ui")   # not text_width(s, 22)
 draw_text("Pick your handle", {x: (screen_width() - w) / 2, y: 40}, TITLE)
 ```
 
@@ -619,8 +618,7 @@ import garden
 
 state saving = 0
 if key_down("ctrl") && key_pressed("s") then
-  saving = mutate("save", { text: edit_view_text(1) })
-end
+  saving = mutate("save", {text: edit_view_text(1)})
 let saved = mutate_result(saving)
 let save_failed = saved?.ok == false
 ```
@@ -643,12 +641,11 @@ target reads it back with `nav_arg()`:
 ```petal
 import garden
 
-// list.ptl
+# list.ptl
 if clicked then
-  navigate("detail.ptl", { id: rows[sel].id })
-end
+  navigate("detail.ptl", {id: rows[sel].id})
 
-// detail.ptl
+# detail.ptl
 let id = nav_arg()?.id ?? 0
 ```
 
@@ -687,8 +684,8 @@ freezes and reads as a hang.
 ```petal
 import garden
 
-request_frame()   // this frame is part of an animation; keep ticking
-animating()       // the same native, under a name that reads better in a loop
+request_frame()   # this frame is part of an animation; keep ticking
+animating()       # the same native, under a name that reads better in a loop
 ```
 
 The call is declarative and per frame: it covers only the frame that makes
@@ -701,7 +698,6 @@ import ui
 
 if loading() then
   request_frame()
-end
 draw_spinner(rect(20, 20, 24, 24), time())
 ```
 
@@ -714,9 +710,9 @@ chord back:
 ```petal
 import garden
 
-claim_key("z", "cmd")          // Cmd+Z reaches this panel, not Garden's Undo
-claim_key("s", "cmd+shift")    // one exact chord
-claim_key("escape")            // this key under any modifier combination
+claim_key("z", "cmd")          # Cmd+Z reaches this panel, not Garden's Undo
+claim_key("s", "cmd+shift")    # one exact chord
+claim_key("escape")            # this key under any modifier combination
 ```
 
 A claim is declarative and per frame: state it unconditionally near the top

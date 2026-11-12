@@ -39,13 +39,13 @@ Each file runs on its own in any petal-ui host (`petal-ui-run`, Garden);
 ## The header format
 
 ```petal
-// dm-title: a short description
-// dm-level: L3
-// dm-frames: 30          (frames to run before the checkpoint; default 1)
-// dm-state: fresh        (StateMode::Fresh instead of Frozen)
-// dm-panel               (register Garden's panel stubs)
-// dm-size: 1440x900      (default 800x600)
-// dm-goal <name>: <target>[, <target>…] [| <options>]
+# dm-title: a short description
+# dm-level: L3
+# dm-frames: 30          (frames to run before the checkpoint; default 1)
+# dm-state: fresh        (StateMode::Fresh instead of Frozen)
+# dm-panel               (register Garden's panel stubs)
+# dm-size: 1440x900      (default 800x600)
+# dm-goal <name>: <target>[, <target>…] [| <options>]
 ```
 
 A target is `tag#k.arg[.field] (+=|-=|=) number`: raw argument `arg` of the

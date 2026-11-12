@@ -292,8 +292,7 @@ import garden
 import ui
 
 if divider_drag && mouse_released(0) then
-  emit("divider", { pos: divider_x })
-end
+  emit("divider", {pos: divider_x})
 ```
 
 **Asking Garden to act.** `mutate(name, arg)` with a host-owned name
@@ -344,13 +343,12 @@ let w = screen_width()
 let h = screen_height()
 draw_rect(rect(0, 0, w, h), P.panel)
 
-// Load the list once; keep it in `state` after it lands.
+# Load the list once; keep it in `state` after it lands.
 if !loaded then
   let rd = query("log", "")
   if is_ready(rd) then commits = rd.commits; loaded = true
   else if is_error(rd) then draw_text("error: " ++ (error_of(rd) ?? "?"), {x: 8, y: 8}, 14, P.error)
   else draw_text("loading…", {x: 8, y: 8}, 14, P.text_dim) end
-end
 
 let n = len(commits)
 if key_pressed("j") || key_pressed("down") then sel = sel + 1 end
@@ -363,9 +361,8 @@ for i in range(0, n) do
   let y = 8 + i * 20
   if i == sel then draw_rect(rect(0, y - 2, 380, 20), P.sel) end
   draw_text(c.short ++ "  " ++ c.subject, {x: 8, y: y}, 14, P.text)
-end
 
-// A second query, keyed by the selection: the diff for the selected row.
+# A second query, keyed by the selection: the diff for the selected row.
 if n > 0 then
   let d = query("commit", commits[sel].hash)
   if is_ready(d) then
@@ -380,12 +377,8 @@ if n > 0 then
         else if ln.kind == "hunk" then marker = "@"; style = "hunk" end
         lines = append(lines, marker ++ " " ++ ln.text)
         styles = append(styles, style)
-      end
-    end
     text_view(1, 388, 8, w - 396, h - 16, join(lines, "\n"))
     text_view_line_styles(1, styles)
-  end
-end
 ```
 
 A selection change re-keys the second `query`; Garden requests the new diff,
@@ -470,7 +463,7 @@ thing being edited, or the edits its projection resolved
    seed is not recomputed every frame:
 
    ```petal
-   edit_view(1, x, y, col_w, body_h, seed)   // real vim; click to focus, edit
+   edit_view(1, x, y, col_w, body_h, seed)   # real vim; click to focus, edit
    ```
 
 2. **On an edit-commit edge, read the buffer and `mutate`.** `mutate` is a
@@ -479,10 +472,9 @@ thing being edited, or the edits its projection resolved
 
    ```petal
    if mod_ctrl() && key_pressed("s") then
-     mutate("save", { text: edit_view_text(1) })
-     invalidate("doc", "")   // drop the cached data so the panes re-read post-save
+     mutate("save", {text: edit_view_text(1)})
+     invalidate("doc", "")   # drop the cached data so the panes re-read post-save
      ready = false
-   end
    ```
 
 3. **Handle the mutation in the app** with `on_mutation`. Do the effect and
@@ -577,10 +569,9 @@ import garden
 import ui
 
 if mod_ctrl() && key_pressed("s") then
-  mutate("apply", { edits: edit_view_edits(5) })
+  mutate("apply", {edits: edit_view_edits(5)})
   invalidate("doc", "")
   ready = false
-end
 ```
 
 `edit_view_edits(id)` is a list of `{source, start, end, lines}`: replace

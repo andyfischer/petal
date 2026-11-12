@@ -49,8 +49,8 @@ Three consequences shape every cart:
    is born and dies inside one frame.
 
    ```petal
-   state var score = 0        // survives frames *and* file edits
-   let elapsed = time()       // recomputed every frame, and that is fine
+   state var score = 0        # survives frames *and* file edits
+   let elapsed = time()       # recomputed every frame, and that is fine
    ```
 
    A top-level `state` is one cell. A `state` inside a function gets one cell
@@ -64,9 +64,8 @@ Three consequences shape every cart:
    fn timer(who)
      set timers[who] = (get timers[who] ?? 0) + 1
      get timers[who]
-   end
-   timer("hero")     // 1, 2, 3, ...   independent of
-   timer("enemy")    // 1, 2, 3, ...   this one
+   timer("hero")     # 1, 2, 3, ...   independent of
+   timer("enemy")    # 1, 2, 3, ...   this one
    ```
 
    An entry stays until you remove it (`set timers = remove(get timers,
@@ -101,11 +100,11 @@ That is the whole constraint, and it is the one that makes the picture look
 like an NES game.
 
 ```petal
-set_backdrop(light_blue)                 // color 0, everywhere
-palette(0, dark_green, green, white)     // background palette 0: the other three
+set_backdrop(light_blue)                 # color 0, everywhere
+palette(0, dark_green, green, white)     # background palette 0: the other three
 palette(1, brown, orange, peach)
-palette(4, maroon, red, white)           // sprite palette 4
-palette(5, [black, gray, white])         // the list form, for palettes kept as data
+palette(4, maroon, red, white)           # sprite palette 4
+palette(5, [black, gray, white])         # the list form, for palettes kept as data
 ```
 
 `palette(i, c1, c2, c3)` fills color 0 in for you from the current backdrop, so
@@ -122,7 +121,7 @@ calls `$21`.
 cart that wants to compute something from the actual color:
 
 ```petal
-log("sky rgb: " ++ str(master_rgb(light_blue)))     // 5020396
+log("sky rgb: " ++ str(master_rgb(light_blue)))     # 5020396
 ```
 
 Fades and color cycles are just palette writes with a different argument each
@@ -178,7 +177,7 @@ cart lays out its pattern table by composition instead of by counting:
 let walk_a = ["..##....", ".####...", "..##...."]
 let walk_b = ["...##...", "..####..", "...##..."]
 let hero_base = 8
-let next_free = define_art_run(hero_base, [walk_a, walk_b])   // -> 10
+let next_free = define_art_run(hero_base, [walk_a, walk_b])   # -> 10
 ```
 
 `art(rows)` / `art(rows, remap)` does the normalization *without* defining
@@ -192,7 +191,7 @@ the character table.
 External art is supported but optional:
 
 ```petal
-load_tiles_png("art/tiles.png", 32)      // cut 8x8 left-to-right, top-to-bottom, from tile 32
+load_tiles_png("art/tiles.png", 32)      # cut 8x8 left-to-right, top-to-bottom, from tile 32
 ```
 
 Alpha below 128 becomes color 0; the opaque colors take entries 1–3 in order of
@@ -205,11 +204,11 @@ The map is a grid of cells, each naming a tile and a palette. Up to 64×60
 cells; 32×30 is exactly one screen.
 
 ```petal
-set_map_size(64, 30)              // 512 x 240 pixels of world
-fill_map(0, 0)                    // every cell -> tile 0, palette 0
-map_rect(0, 26, 64, 4, 2, 0)      // x_cell, y_cell, w_cells, h_cells, tile, palette
-map_row(4, 25, [1, 1, 1, 2], 1)   // a row of explicit tile indices
-set_tile(10, 12, 3, 1)            // one cell
+set_map_size(64, 30)              # 512 x 240 pixels of world
+fill_map(0, 0)                    # every cell -> tile 0, palette 0
+map_rect(0, 26, 64, 4, 2, 0)      # x_cell, y_cell, w_cells, h_cells, tile, palette
+map_row(4, 25, [1, 1, 1, 2], 1)   # a row of explicit tile indices
+set_tile(10, 12, 3, 1)            # one cell
 ```
 
 Levels are authored as string art too, through a legend:
@@ -220,8 +219,8 @@ map_art(2, 20, [
   "..#####..",
   "#########"
 ], [
-  ["#", 2],           // char, tile        (palette 0)
-  ["=", 1, 1]         // char, tile, palette
+  ["#", 2],           # char, tile        (palette 0)
+  ["=", 1, 1]         # char, tile, palette
 ])
 ```
 
@@ -244,22 +243,21 @@ past the window with no seam and no bookkeeping.
 Most games want the clamped version instead:
 
 ```petal
-camera_follow(center_x(hero), center_y(hero))   // centers, clamped to the map edges
-camera(x, y)                                    // top-left, clamped; returns where it landed
-cam_x()  cam_y()                                // read it back
+camera_follow(center_x(hero), center_y(hero))   # centers, clamped to the map edges
+camera(x, y)                                    # top-left, clamped; returns where it landed
+cam_x()  cam_y()                                # read it back
 ```
 
 With a camera in play, draw in **world** coordinates and let the helpers
 subtract it:
 
 ```petal
-sprite_world(140, 180, 1, 4)             // same as sprite(), but world-space
+sprite_world(140, 180, 1, 4)             # same as sprite(), but world-space
 draw_meta_world(80, 160, hero)
-let s = world_to_screen(300, 10)         // {x, y}, when you need it by hand
+let s = world_to_screen(300, 10)         # {x, y}, when you need it by hand
 
-if on_screen(rect(ex, ey, 16, 16)) then  // the cheap cull before spending a sprite
+if on_screen(rect(ex, ey, 16, 16)) then  # the cheap cull before spending a sprite
   sprite_world(ex, ey, enemy_tile, 5)
-end
 ```
 
 **Status-bar split.** `set_scroll_at(scanline, x)` overrides the horizontal
@@ -268,7 +266,7 @@ top N scanlines at x = 0 while the rest of the screen scrolls:
 
 ```petal
 camera_follow(hero.x, hero.y)
-lock_top(16)                             // the top two rows are now a HUD
+lock_top(16)                             # the top two rows are now a HUD
 ```
 
 Per-scanline scroll is also how parallax works: give each band of scanlines a
@@ -277,7 +275,6 @@ different fraction of the camera.
 ```petal
 for y in range(16, 240) do
   set_scroll_at(y, int(cam_x() * (if y < 120 then 0.25 else 1.0 end)))
-end
 ```
 
 (240 `set_scroll_at` calls per frame is affordable — see
@@ -308,15 +305,15 @@ Flags are bits:
 | `behind_bg` | 4 | draw behind non-transparent background pixels |
 
 ```petal
-sprite(px(x), px(y), tile, 4, flip(facing_left, false))   // flags from two booleans
-sprite(px(x), px(y), tile, 4, flip_x + behind_bg)         // or add them
+sprite(px(x), px(y), tile, 4, flip(facing_left, false))   # flags from two booleans
+sprite(px(x), px(y), tile, 4, flip_x + behind_bg)         # or add them
 ```
 
 Earlier sprites draw in front of later ones, which is also the priority order
 the drop-out uses:
 
 ```petal
-set_sprite_limit(true)      // emulate the 8-sprites-per-scanline drop-out (default: off)
+set_sprite_limit(true)      # emulate the 8-sprites-per-scanline drop-out (default: off)
 ```
 
 Leave the limit off unless flicker is the look you want; `carts/sprites.ptl`
@@ -349,10 +346,10 @@ let hero = define_meta(16, [
   "................",
   "................",
   "................"
-], 4)                                  // tiles 16..19, palette 4
+], 4)                                  # tiles 16..19, palette 4
 
 draw_meta(hero_x, hero_y, hero, flip(facing_left, false))
-draw_meta_world(hero_x, hero_y, hero)  // camera-relative
+draw_meta_world(hero_x, hero_y, hero)  # camera-relative
 ```
 
 `define_meta` returns the metasprite and defines its tiles, so it lives at the
@@ -362,12 +359,12 @@ top of the cart with the rest of the artwork. `meta_w(m)`, `meta_h(m)` and
 For tiles you already defined, or an irregular shape:
 
 ```petal
-let coin = meta(1, 1, 1, 4)             // tile_base, w_tiles, h_tiles, palette
+let coin = meta(1, 1, 1, 4)             # tile_base, w_tiles, h_tiles, palette
 
 let boss = meta_of([
-  meta_part(0, 0, 1, 4),                // dx, dy, tile [, palette [, flags]]
+  meta_part(0, 0, 1, 4),                # dx, dy, tile [, palette [, flags]]
   meta_part(8, 0, 1, 4, flip_x),
-  meta_part(4, 8, 2, 5)                 // a piece in a different palette
+  meta_part(4, 8, 2, 5)                 # a piece in a different palette
 ])
 ```
 
@@ -386,8 +383,8 @@ draw with it. There is no setup call.
 Two ways to put words on screen, and the choice matters:
 
 ```petal
-map_text(1, 1, "SCORE " ++ pad_num(1234, 6), 0)   // into the background map: free, but it scrolls
-text_sprites(8, 4, "HP " ++ pad_num(3, 2), 4)     // as sprites: floats over everything, costs sprites
+map_text(1, 1, "SCORE " ++ pad_num(1234, 6), 0)   # into the background map: free, but it scrolls
+text_sprites(8, 4, "HP " ++ pad_num(3, 2), 4)     # as sprites: floats over everything, costs sprites
 ```
 
 `map_text` writes glyph tiles into the map. It costs no sprites, it scrolls
@@ -410,18 +407,18 @@ map_text_right(30, 1, "TIME 30", 0)
 text_sprites_center(210, "PRESS START", 4)
 text_sprites_right(248, 220, "X3", 4)
 
-text_cells("SCORE")        // 5   — the font is fixed-width, so these are exact
-text_px("PRESS START")     // 88
-pad_num(7, 3)              // "007"
+text_cells("SCORE")        # 5   — the font is fixed-width, so these are exact
+text_px("PRESS START")     # 88
+pad_num(7, 3)              # "007"
 ```
 
 To move the font out of the way of your own artwork, or to change which palette
 entry it inks:
 
 ```petal
-let next = font_tiles(400, 3)     // 64 glyphs at 400.., inked with entry 3; returns 464
-font_base()                       // 400
-glyph("A")                        // the tile index for one character
+let next = font_tiles(400, 3)     # 64 glyphs at 400.., inked with entry 3; returns 464
+font_base()                       # 400
+glyph("A")                        # the tile index for one character
 ```
 
 ## Pads
@@ -429,13 +426,13 @@ glyph("A")                        // the tile index for one character
 Two 8-button pads: `"up" "down" "left" "right" "a" "b" "select" "start"`.
 
 ```petal
-btn("a")                    // held, pad 0
-btnp("a")                   // pressed this frame  (the one you want for jumps and menus)
-btnr("a")                   // released this frame
-btn(1, "a")                 // pad 1
-btn_dx()                    // -1 / 0 / +1 from left+right; opposites cancel
+btn("a")                    # held, pad 0
+btnp("a")                   # pressed this frame  (the one you want for jumps and menus)
+btnr("a")                   # released this frame
+btn(1, "a")                 # pad 1
+btn_dx()                    # -1 / 0 / +1 from left+right; opposites cancel
 btn_dy()
-btn_repeat("down", 0.35, 0.12)   // once on press, then every 0.12s after holding 0.35s
+btn_repeat("down", 0.35, 0.12)   # once on press, then every 0.12s after holding 0.35s
 ```
 
 `btn_repeat` is the menu/scroll input: the delay and rate are in seconds, and
@@ -458,24 +455,22 @@ A cart is title → game → game over, and since the whole file re-runs every
 frame, the structure that fits is a scene name plus an "entered" edge:
 
 ```petal
-start_scene("title")                  // the initial scene; safe to run every frame
+start_scene("title")                  # the initial scene; safe to run every frame
 
 if scene() == "title" then
   map_text_center(10, "PETAL QUEST", 0)
   if btnp("start") then set_scene("game") end
 
 else if scene() == "game" then
-  if scene_entered() then             // true for exactly the first frame of the scene
+  if scene_entered() then             # true for exactly the first frame of the scene
     fill_map(0, 0)
     map_rect(0, 24, 32, 6, 1, 0)
-  end
-  // ... gameplay ...
+  # ... gameplay ...
   if btnp("start") then set_scene("paused") end
 
 else if scene() == "paused" then
   text_sprites_center(112, "PAUSED", 4)
   if scene_time() > 0.5 && btnp("start") then set_scene("game") end
-end
 ```
 
 `set_scene` takes effect on the **next** frame: the rest of this frame belongs
@@ -513,15 +508,15 @@ Which tiles are walls is a cart decision, declared as index ranges. Nothing is
 solid until you say so:
 
 ```petal
-set_solid(1, 15)         // replaces the whole set — idempotent, so it belongs at the top
-add_solid(40, 42)        // ...and these too
+set_solid(1, 15)         # replaces the whole set — idempotent, so it belongs at the top
+add_solid(40, 42)        # ...and these too
 ```
 
 ```petal
-solid_tile(3)                    // is this tile index solid?
-solid_at(x, y)                   // is the map solid at this world pixel?
-solid_box(rect(x, y, w, h))      // does any solid tile touch this box?
-on_ground(hero)                  // is there solid ground directly under it?
+solid_tile(3)                    # is this tile index solid?
+solid_at(x, y)                   # is the map solid at this world pixel?
+solid_box(rect(x, y, w, h))      # does any solid tile touch this box?
+on_ground(hero)                  # is there solid ground directly under it?
 ```
 
 Outside the map counts as solid, so a level does not need a wall of tiles around
@@ -534,15 +529,14 @@ terrain:
 state var hero = rect(32, 100, 8, 8)
 state var vy = 0.0
 
-set vy = min(4.0, vy + 12.0 * dt())        // gravity, terminal velocity
+set vy = min(4.0, vy + 12.0 * dt())        # gravity, terminal velocity
 if on_ground(hero) then
   set vy = 0.0
-  if btnp("a") then set vy = -3.0 end      // jump
-end
+  if btnp("a") then set vy = -3.0 end      # jump
 
 let mv = move_box(hero, btn_dx() * 1.5, vy)
 set hero = mv.rect
-if mv.hit_y then set vy = 0.0 end          // hit the ceiling or landed: kill the velocity
+if mv.hit_y then set vy = 0.0 end          # hit the ceiling or landed: kill the velocity
 ```
 
 It returns `{rect, hit_x, hit_y, grounded}` and resolves X then Y in steps of at
@@ -553,11 +547,11 @@ so spawn clear of the terrain.
 Box geometry, for everything that is not terrain:
 
 ```petal
-overlaps(hero, coin)                          // rects
-overlaps(ax, ay, aw, ah, bx, by, bw, bh)      // or eight loose numbers
+overlaps(hero, coin)                          # rects
+overlaps(ax, ay, aw, ah, bx, by, bw, bh)      # or eight loose numbers
 point_in(120, 60, hero)
-inflate(hero, -2)                             // a forgiving hitbox
-inflate(coin, 4)                              // a generous pickup radius
+inflate(hero, -2)                             # a forgiving hitbox
+inflate(coin, 4)                              # a generous pickup radius
 center_x(r)  center_y(r)
 ```
 
@@ -567,8 +561,8 @@ center_x(r)  center_y(r)
 ## Animation and numbers
 
 ```petal
-sprite(24, 100, anim([8, 9, 10, 9], 8.0), 4)          // loop at 8 fps off the wall clock
-sprite(40, 100, anim_once([1, 2, 3], 6.0, t), 4)      // play once from t = 0, hold the last
+sprite(24, 100, anim([8, 9, 10, 9], 8.0), 4)          # loop at 8 fps off the wall clock
+sprite(40, 100, anim_once([1, 2, 3], 6.0, t), 4)      # play once from t = 0, hold the last
 if blink(2.0) then text_sprites_center(200, "PRESS START", 4) end
 ```
 
@@ -582,11 +576,11 @@ Movement is written in floats and becomes whole pixels only where it meets the
 hardware:
 
 ```petal
-px(3.7)                    // 3    — floor, for sprite positions
-cell_of(-1)                // -1   — pixel -> cell, correct for negatives
-cell_to_px(3)              // 24
-pmod(-1, 4)                // 3    — positive modulo, for wrapping cursors and scroll
-approach(v, 0.0, 0.25)     // move toward a target by at most a step, landing exactly on it
+px(3.7)                    # 3    — floor, for sprite positions
+cell_of(-1)                # -1   — pixel -> cell, correct for negatives
+cell_to_px(3)              # 24
+pmod(-1, 4)                # 3    — positive modulo, for wrapping cursors and scroll
+approach(v, 0.0, 0.25)     # move toward a target by at most a step, landing exactly on it
 ```
 
 ## Music
@@ -599,9 +593,9 @@ frame of the song.
 The cart's side of it is three lines:
 
 ```petal
-music_play(song_title())                       // idempotent — safe every frame
+music_play(song_title())                       # idempotent — safe every frame
 if btnp("a") then sfx_play("jump") end
-music_tick()                                   // exactly once per frame, near the end
+music_tick()                                   # exactly once per frame, near the end
 ```
 
 `music_tick()` is the only thing that writes the chip. Call it unconditionally,
@@ -622,11 +616,11 @@ Notes are MIDI semitones (60 is middle C, 69 is A440), written the way a tracker
 writes them:
 
 ```petal
-note("C-4")        // 60      "A#3", "Db5" and "C4" all work
-note_name(60)      // "C-4"
-note_hz(69)        // 440.0
-transpose(60, 12)  // 72
-octave(4)          // 60      — C in that octave
+note("C-4")        # 60      "A#3", "Db5" and "C4" all work
+note_name(60)      # "C-4"
+note_hz(69)        # 440.0
+transpose(60, 12)  # 72
+octave(4)          # 60      — C in that octave
 ```
 
 Two spellings are not notes: `"..."` holds (nothing happens on this row) and
@@ -669,15 +663,15 @@ frame and holding on the last value (or looping, if you say where):
 
 ```petal
 let lead2 = instrument({
-  vol: [13, 15, 12, 10],        // 0-15, scaled by the row's volume column
-  arp: chord_arp([0, 3, 7]),    // a looping minor triad
-  duty: [2, 1],                 // pulse duty 0-3 (12.5% 25% 50% 75%)
-  rel: [6, 3, 0]                // the volume envelope used after a "---" row
+  vol: [13, 15, 12, 10],        # 0-15, scaled by the row's volume column
+  arp: chord_arp([0, 3, 7]),    # a looping minor triad
+  duty: [2, 1],                 # pulse duty 0-3 (12.5% 25% 50% 75%)
+  rel: [6, 3, 0]                # the volume envelope used after a "---" row
 })
 
-envelope([15, 12, 10])          // an explicit envelope; a bare list means the same
-envelope([12, 10, 8, 10], 1)    // ...looping back to index 1 forever
-env_at(e, 4)                    // read one, for a debug overlay
+envelope([15, 12, 10])          # an explicit envelope; a bare list means the same
+envelope([12, 10, 8, 10], 1)    # ...looping back to index 1 forever
+env_at(e, 4)                    # read one, for a debug overlay
 ```
 
 `pitch:` is a detune envelope in 1/16 semitones (a blip's chirp, a slow drift)
@@ -701,12 +695,12 @@ let beat = rows("""
 """)
 
 let tune = song({
-  name: "level1",                             // identity: what makes music_play idempotent
-  bpm: 140, rows_per_beat: 4,                 // or: ticks: 6  (frames per row)
-  instruments: standard_instruments(),        // indexed by a row's instrument column
+  name: "level1",                             # identity: what makes music_play idempotent
+  bpm: 140, rows_per_beat: 4,                 # or: ticks: 6  (frames per row)
+  instruments: standard_instruments(),        # indexed by a row's instrument column
   patterns: [lead, bass, beat],
-  order: [song_frame(0, -1, 1, 2)],           // pattern per channel: p1, p2, tri, noise
-  loop_at: 0                                  // order index to repeat from; -1 plays once
+  order: [song_frame(0, -1, 1, 2)],           # pattern per channel: p1, p2, tri, noise
+  loop_at: 0                                  # order index to repeat from; -1 plays once
 })
 
 music_play(tune)
@@ -722,11 +716,11 @@ under a 64-row melody.
 Transport:
 
 ```petal
-music_play(tune, 2)     // force a (re)start at order index 2
+music_play(tune, 2)     # force a (re)start at order index 2
 music_restart()
 music_stop()   music_pause()   music_resume()
 music_playing()
-music_pos()             // {name, order, row, playing, ticks}
+music_pos()             # {name, order, row, playing, ticks}
 ```
 
 The playhead lives in console state, so a hot reload mid-song picks up on the
@@ -744,7 +738,7 @@ writes all four channels every frame.
 An effect is a one-shot instrument at a fixed pitch:
 
 ```petal
-sfx_standard()                        // jump, coin, hit, explode, select + a drum kit
+sfx_standard()                        # jump, coin, hit, explode, select + a drum kit
 
 sfx_def("laser", {ch: "p2", note: "G-5", pri: 3,
                   vol: [12, 11, 9, 7, 5, 3, 1, 0],
@@ -753,7 +747,7 @@ sfx_def("laser", {ch: "p2", note: "G-5", pri: 3,
 
 if btnp("a") then sfx_play("laser") end
 if btnp("b") then drum("kick") end
-sfx_stop("p2")     // hand a channel back to the music immediately
+sfx_stop("p2")     # hand a channel back to the music immediately
 sfx_stop_all()
 ```
 
@@ -786,11 +780,10 @@ synthesized **in Petal**.
 fn zap(start, count, rate)
   pcm_render(start, count, rate, fn(t, i) ->
     osc_square(t, 900.0 - 700.0 * t / 0.3, 2) * env_decay(t, 0.3))
-end
-register_sound("zap", 0.3, "zap")        // name, seconds, function name
+register_sound("zap", 0.3, "zap")        # name, seconds, function name
 
 if btnp("start") then play_sound("zap") end
-play_sound("zap", 0.4)                   // at 40% volume
+play_sound("zap", 0.4)                   # at 40% volume
 stop_sound("zap")
 ```
 
@@ -804,9 +797,7 @@ fn thud(start, count, rate)
   for k in range(0, count) do
     let t = pcm_time(start + k, rate)
     out[k] = (osc_sine(t, 90.0) * 0.7 + osc_noise(start + k) * 0.3) * env_ad(t, 0.005, 0.25)
-  end
   out
-end
 register_sound("thud", 0.25, "thud")
 ```
 
@@ -837,12 +828,10 @@ fn drone(start, count, rate)
   let out = f64_array(count)
   for k in range(0, count) do
     out[k] = osc_tri(pcm_time(start + k, rate), 55.0) * 0.15
-  end
   out
-end
 
-enable_dsp("drone")        // enable_dsp("") turns it off
-log(str(dsp_cost_ms()))    // what the last call cost, in milliseconds
+enable_dsp("drone")        # enable_dsp("") turns it off
+log(str(dsp_cost_ms()))    # what the last call cost, in milliseconds
 ```
 
 This is real Petal running inside the audio path, which is possible only because
@@ -913,12 +902,12 @@ art has stopped changing, because hoisting it is exactly what stops hot reload
 from repainting it:
 
 ```petal
-// While drawing: re-normalized every frame, so an edit shows up instantly.
+# While drawing: re-normalized every frame, so an edit shows up instantly.
 define_art(1, ["oooooooo", "-o--o-o-", "--------", "---o----",
                "--------", "-------o", "--------", "-o------"])
 
-// Once it is settled: normalize once, push every frame (still idempotent,
-// still correct, and now free).
+# Once it is settled: normalize once, push every frame (still idempotent,
+# still correct, and now free).
 state var floor_art = art(["oooooooo", "-o--o-o-", "--------", "---o----",
                            "--------", "-------o", "--------", "-o------"])
 define_tile(1, floor_art)

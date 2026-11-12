@@ -46,8 +46,8 @@ under `[dependencies]` in the nearest `petal.toml`, as this repository's
 imports were required gets its import lines from `petal fix-imports`.
 
 ```petal
-state x = 100.0          // initialized once, persists across frames
-x += 100.0 * dt()        // move 100 pixels per second
+state x = 100.0          # initialized once, persists across frames
+x += 100.0 * dt()        # move 100 pixels per second
 draw_rect(int(x), 100, 20, 20, 255, 0, 0)
 ```
 
@@ -65,14 +65,12 @@ file down to the declaration.
 
   ```petal
   fn enemy(x)
-    state hp = 100                       // one cell per caller, automatically
+    state hp = 100                       # one cell per caller, automatically
     draw_rect(int(x), 200, 16, 16, 255, 0, 0)
-  end
-  enemy(100.0)                           // its own hp
-  enemy(300.0)                           // its own hp
+  enemy(100.0)                           # its own hp
+  enemy(300.0)                           # its own hp
   for i in range(0, 8) do
-    enemy(float(i) * 40.0)               // eight more, one cell each
-  end
+    enemy(float(i) * 40.0)               # eight more, one cell each
   ```
 
   Each enemy gets its own health with no manual keying.
@@ -84,8 +82,7 @@ file down to the declaration.
 
   ```petal ignore
   for e in enemies key e.id do
-    draw_enemy(e)          // its `state hp = 100` belongs to e.id
-  end
+    draw_enemy(e)          # its `state hp = 100` belongs to e.id
   ```
 
   Keys must be unique within one run of the loop. The keyed form
@@ -118,14 +115,14 @@ integers 0-255.
 ```petal
 import ui
 
-clear(r, g, b)                              // fill the background
-draw_rect(x, y, width, height, r, g, b)     // filled rectangle
-draw_rect_outline(x, y, w, h, r, g, b)      // rectangle outline
-draw_line(x1, y1, x2, y2, r, g, b)          // line segment
-draw_circle(cx, cy, radius, r, g, b)        // filled circle
+clear(r, g, b)                              # fill the background
+draw_rect(x, y, width, height, r, g, b)     # filled rectangle
+draw_rect_outline(x, y, w, h, r, g, b)      # rectangle outline
+draw_line(x1, y1, x2, y2, r, g, b)          # line segment
+draw_circle(cx, cy, radius, r, g, b)        # filled circle
 fill_triangle(x1, y1, x2, y2, x3, y3, r, g, b)
-fill_poly(points, r, g, b)                  // points: list of vec2 or [x, y] pairs
-draw_text(text, x, y, font_size, r, g, b)   // text string
+fill_poly(points, r, g, b)                  # points: list of vec2 or [x, y] pairs
+draw_text(text, x, y, font_size, r, g, b)   # text string
 ```
 
 `petal-ui` has more: rounded rectangles, ellipses, arcs, gradients, shadows,
@@ -147,11 +144,10 @@ import ui
 
 state started = false
 if !started then
-  clear(0, 0, 0)   // paint the background once
+  clear(0, 0, 0)   # paint the background once
   started = true
-end
 
-// Each frame draws a few more dots that stay on screen.
+# Each frame draws a few more dots that stay on screen.
 draw_circle(int(x), int(y), 2, 255, 200, 80)
 ```
 
@@ -163,14 +159,14 @@ For layered compositing, masks, and per-layer trails, draw into an offscreen
 canvas and blit it onto the screen later (like Processing's `PGraphics`).
 
 ```petal
-// Build a stamp in a 24x24 offscreen canvas.
-let stamp = create_canvas(24, 24)   // returns a canvas handle (an int)
-draw_to(stamp)                       // redirect drawing into the canvas
+# Build a stamp in a 24x24 offscreen canvas.
+let stamp = create_canvas(24, 24)   # returns a canvas handle (an int)
+draw_to(stamp)                       # redirect drawing into the canvas
 draw_rect(9, 2, 6, 20, 240, 220, 120)
 draw_rect(2, 9, 20, 6, 240, 220, 120)
-draw_to_screen()                     // back to the main framebuffer
+draw_to_screen()                     # back to the main framebuffer
 
-// Composite it wherever you like. Transparent pixels show the background.
+# Composite it wherever you like. Transparent pixels show the background.
 draw_canvas(stamp, 100, 50)
 draw_canvas(stamp, 200, 80)
 ```
@@ -182,15 +178,15 @@ draw call. See `examples/cc_offscreen_layers.ptl`.
 ### Input
 
 ```petal
-key_down("left")       // true while the key is held
-key_pressed("space")   // true only on the frame the key went down
-key_released("space")  // true only on the frame the key came up
-mouse_x()              // mouse X position (pixels)
-mouse_y()              // mouse Y position (pixels)
-mouse_down(0)          // button held: 0 = left, 1 = right, 2 = middle
-mouse_pressed(0)       // true only on the frame the button went down
-mouse_released(0)      // true only on the frame the button came up
-text_input()           // text typed this frame
+key_down("left")       # true while the key is held
+key_pressed("space")   # true only on the frame the key went down
+key_released("space")  # true only on the frame the key came up
+mouse_x()              # mouse X position (pixels)
+mouse_y()              # mouse Y position (pixels)
+mouse_down(0)          # button held: 0 = left, 1 = right, 2 = middle
+mouse_pressed(0)       # true only on the frame the button went down
+mouse_released(0)      # true only on the frame the button came up
+text_input()           # text typed this frame
 ```
 
 Key names are lowercase strings: `a`-`z`, `0`-`9`, `up`, `down`, `left`,
@@ -206,10 +202,10 @@ d-pad. See [design.md](design.md#gamepads) for the mapping.
 ### Timing and screen
 
 ```petal
-dt()              // seconds since last frame (float, about 0.016 at 60 fps)
-frame_count()     // total frames rendered (int)
-screen_width()    // window width in pixels
-screen_height()   // window height in pixels
+dt()              # seconds since last frame (float, about 0.016 at 60 fps)
+frame_count()     # total frames rendered (int)
+screen_width()    # window width in pixels
+screen_height()   # window height in pixels
 ```
 
 ### Sound
@@ -218,7 +214,7 @@ Sound effects are synthesized on the host, sfxr-style; there are no audio
 files to load.
 
 ```petal
-sfx("jump")                                  // a built-in effect
+sfx("jump")                                  # a built-in effect
 sfx("pickup", {volume: 0.6, pitch: 1.5, pan: -0.5, variant: 2})
 synth({wave: "sine", freq: 880.0, slide: -2.0, decay: 0.15, volume: 0.4})
 ```
@@ -256,28 +252,28 @@ option key is an error at the call. See `examples/sfx_board.ptl`.
 Always available:
 
 ```petal
-// Math
+# Math
 abs(n)  sqrt(n)  floor(f)  ceil(f)  round(f)  min(a, b)  max(a, b)
-random(min, max)    // random float in [min, max)
+random(min, max)    # random float in [min, max)
 
-// Type conversion
+# Type conversion
 int(x)  float(x)  str(x)  type(x)
 
-// Collections
-len(list)  append(list, val)  pop(list)   // append returns a NEW list: xs = append(xs, val)
+# Collections
+len(list)  append(list, val)  pop(list)   # append returns a NEW list: xs = append(xs, val)
 contains(list_or_str, val)  range(start, end)
 slice(list, start, end)  reverse(list)  sort(list)
 flat(list)  enumerate(list)  zip(a, b)
 map(list, fn)  filter(list, fn)  reduce(list, init, fn)
 
-// Strings
+# Strings
 split(str, sep)  join(list, sep)
 
-// Records
+# Records
 keys(record)  values(record)
 
-// I/O
-print(...)    // goes to stderr, so it shows in the terminal
+# I/O
+print(...)    # goes to stderr, so it shows in the terminal
 ```
 
 The full list is in the [language guide](../../../docs/language-guide.md).
@@ -290,11 +286,11 @@ Just enough syntax to read the examples. The
 ```petal
 import ui
 
-// Variables
-let speed = 200.0         // local, recomputed every frame
-state score = 0           // persists across frames
+# Variables
+let speed = 200.0         # local, recomputed every frame
+state score = 0           # persists across frames
 
-// Control flow: blocks end with `end`
+# Control flow: blocks end with `end`
 if x > 5 then
     print("big")
 else if x > 2 then
@@ -305,26 +301,26 @@ end
 
 for item in list do ... end
 for i in range(0, 10) do ... end
-while running do ... end      // break and continue work in loops
+while running do ... end      # break and continue work in loops
 
-// Functions: the last expression is the return value
+# Functions: the last expression is the return value
 fn clamp(val, lo, hi)
     max(lo, min(val, hi))
 end
 
-let double = fn(x) -> x * 2   // lambda
+let double = fn(x) -> x * 2   # lambda
 
-// Collections
+# Collections
 let items = [1, 2, 3]
 items[0]
 let player = { x: 100, y: 200, health: 3 }
 player.x
 
-// Strings: ++ concatenates, {} interpolates
+# Strings: ++ concatenates, {} interpolates
 "Score: " ++ str(score)
 "Score: {score}"
 
-// Pattern matching (match is an expression)
+# Pattern matching (match is an expression)
 let dy = match direction
     when "up"   -> -speed
     when "down" -> speed
@@ -332,7 +328,7 @@ let dy = match direction
 end
 y += dy * dt()
 
-// Enums
+# Enums
 enum GameState
     Playing,
     Paused,
@@ -354,22 +350,22 @@ end
 ```petal
 import ui
 
-// 1. State
+# 1. State
 state x = 400.0
 state y = 300.0
 state vx = 0.0
 state vy = 0.0
 
-// 2. Input
+# 2. Input
 let delta = dt()
 if key_down("left") then vx = -200.0 end
 if key_down("right") then vx = 200.0 end
 
-// 3. Physics
+# 3. Physics
 x += vx * delta
 y += vy * delta
 
-// 4. Drawing (later draws are on top)
+# 4. Drawing (later draws are on top)
 clear(0, 0, 0)
 draw_rect(int(x), int(y), 20, 20, 255, 255, 255)
 ```
@@ -378,8 +374,7 @@ draw_rect(int(x), int(y), 20, 20, 255, 255, 255)
 
 ```petal
 fn rects_collide(x1, y1, w1, h1, x2, y2, w2, h2)
-    x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2
-end
+  x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2
 ```
 
 ### Wrapping around screen edges
@@ -399,14 +394,13 @@ state spawn_timer = 0.0
 
 spawn_timer += dt()
 if spawn_timer > 1.0 then
-    spawn_timer = 0.0
-    enemies = append(enemies, { x: random(0.0, 800.0), y: 0.0 })
-end
+  spawn_timer = 0.0
+  enemies = append(enemies, {x: random(0.0, 800.0), y: 0.0})
 
-// Move every enemy down
-enemies = map(enemies, fn(e) -> { x: e.x, y: e.y + 100.0 * dt() })
+# Move every enemy down
+enemies = map(enemies, fn(e) -> {x: e.x, y: e.y + 100.0 * dt()})
 
-// Drop the ones that left the screen
+# Drop the ones that left the screen
 enemies = filter(enemies, fn(e) -> e.y < 600.0)
 ```
 
@@ -419,8 +413,7 @@ state frame = 0
 frame += 1
 
 if frame % 60 < 30 then
-    draw_text("PRESS START", 300, 400, 24, 255, 255, 255)
-end
+  draw_text("PRESS START", 300, 400, 24, 255, 255, 255)
 ```
 
 ### Random colors

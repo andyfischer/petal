@@ -48,6 +48,7 @@ point an editor at it) is in
 - [Completion](#completion)
 - [Enum members](#enum-members)
 - [Document symbols](#document-symbols)
+- [Folding ranges](#folding-ranges)
 - [Positions](#positions)
 - [Tests](#tests)
 - [Editors](#editors)
@@ -69,6 +70,7 @@ This is the whole list.
 | `textDocument/definition` | one `Location`, or `null` |
 | `textDocument/completion` | a `CompletionList` with `isIncomplete: false` |
 | `textDocument/documentSymbol` | a tree of `DocumentSymbol` |
+| `textDocument/foldingRange` | a list of `FoldingRange`, or `null` when the document does not parse |
 
 | Notifications from the client | Effect |
 |---|---|
@@ -83,7 +85,7 @@ This is the whole list.
 | `textDocument/publishDiagnostics` | after every open, change and close |
 
 Any other request gets the error `-32601` (method not found), and any other
-notification is ignored. The four `textDocument/` requests answer `-32002`
+notification is ignored. The five `textDocument/` requests answer `-32002`
 (server not initialized) before `initialize`. Parameters that do not
 deserialize get `-32602`. A message that is not JSON is dropped.
 
@@ -96,7 +98,8 @@ The capabilities `initialize` returns:
   "hoverProvider": true,
   "definitionProvider": true,
   "completionProvider": { "triggerCharacters": [".", "/"] },
-  "documentSymbolProvider": true
+  "documentSymbolProvider": true,
+  "foldingRangeProvider": true
 }
 ```
 
@@ -441,6 +444,26 @@ parse: functions and native declarations (`Function`), `let` and `var`
 fields as children, and enums with their variants as children. `range` is the
 whole statement and `selectionRange` is the first whole-word occurrence of
 the name inside it. Nested declarations are not listed.
+
+## Folding ranges
+
+`folding::folding_ranges` reads the blocks off the parse, because a block may
+be closed by its indentation alone ([syntax/indentation.md](../syntax/indentation.md))
+and no pairing of keywords with `end`s finds those. There is one range per
+block construct that runs over several lines (`fn`, `test`, `class`, `enum`,
+`for`, `while`, `match`, each `when` arm, a block lambda), one per branch of
+an `if` chain, and one per list or record literal written over several lines.
+
+A range starts on the line of the keyword that opens the block. It ends on
+the block's last line, or, when the block has an `end` on a line of its own,
+on the line above it, so the `end` (like the `else` of the next branch and
+the closing bracket of a literal) stays visible when the block is collapsed.
+The same file with and without its `end`s folds the same bodies.
+
+The request parses the document's current text; a text that does not parse
+answers `null` and the editor keeps the folds it has. The outline needs no
+such care: a declaration's `range` is its statement's span, which ends at the
+`end` or, with none, at the block's last token.
 
 ## Positions
 

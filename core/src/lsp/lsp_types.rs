@@ -157,6 +157,8 @@ pub struct ServerCapabilities {
     pub completion_provider: Option<CompletionOptions>,
     #[serde(rename = "documentSymbolProvider", skip_serializing_if = "Option::is_none")]
     pub document_symbol_provider: Option<bool>,
+    #[serde(rename = "foldingRangeProvider", skip_serializing_if = "Option::is_none")]
+    pub folding_range_provider: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,6 +256,22 @@ pub struct CompletionList {
 pub struct DocumentSymbolParams {
     #[serde(rename = "textDocument")]
     pub text_document: TextDocumentIdentifier,
+}
+
+/// The parameters of `textDocument/foldingRange`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FoldingRangeParams {
+    #[serde(rename = "textDocument")]
+    pub text_document: TextDocumentIdentifier,
+}
+
+/// Lines `start_line..=end_line` (0-based) collapse to the first of them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FoldingRange {
+    #[serde(rename = "startLine")]
+    pub start_line: u32,
+    #[serde(rename = "endLine")]
+    pub end_line: u32,
 }
 
 protocol_enum!(SymbolKind {

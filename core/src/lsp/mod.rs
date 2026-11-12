@@ -3,13 +3,14 @@
 //! [`Server`] is transport-agnostic: callers feed raw JSON-RPC messages in via
 //! [`Server::handle_message`] and collect outgoing messages from the returned
 //! vec. The server manages open documents, re-compiles on change, and responds
-//! with diagnostics, hover info, go-to-definition, completions, and the
-//! document's outline.
+//! with diagnostics, hover info, go-to-definition, completions, the
+//! document's outline, and its folding ranges.
 //!
 //! [`stdio::serve`] wraps that core in the standard LSP stdio transport
 //! (Content-Length framing over stdin/stdout), which is what `petal lsp` runs.
 
 pub mod document;
+pub mod folding;
 pub mod lsp_types;
 pub mod members;
 pub mod position;

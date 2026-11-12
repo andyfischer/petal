@@ -790,7 +790,8 @@ fn compute_static_notes(
 /// document is asked for completions exactly when it does not parse
 /// (`Color.` with nothing after the dot yet), and its declarations are what
 /// the answer is made of. A dangling `.` is given a name to stand for the one
-/// not yet written; any other line that will not parse is blanked. Returns
+/// not yet written; any other line that will not parse is blanked (and a
+/// block left with no line at all is given one). Returns
 /// the statements with the text they were parsed from. Its lines are the
 /// document's lines, so a declaration is found on the line it is written on.
 fn parse_tolerant(source: &str) -> Option<(Vec<Stmt>, String)> {
@@ -815,12 +816,26 @@ fn parse_tolerant(source: &str) -> Option<(Vec<Stmt>, String)> {
             // The parser ran on to this line looking for the rest of the one
             // above (`print(Kind.` wants its `)`): that is the unfinished one.
             let above = (0..row).rev().find(|&r| !lines[r].trim().is_empty())?;
-            lines[above].clear();
+            // Unless what it wants is the body of a block whose only lines
+            // were blanked above: a block with no `end` needs one line, and
+            // losing its header would lose the declaration. A blanked line
+            // gets a statement to stand for the body.
+            let wants_body = err.items.first().is_some_and(|i| i.message.contains(MISSING_BLOCK));
+            if wants_body && above + 1 < row {
+                let indent = lines[above].len() - lines[above].trim_start().len();
+                lines[above + 1] = format!("{}nil", " ".repeat(indent + 2));
+            } else {
+                lines[above].clear();
+            }
         }
         text = lines.join("\n");
     }
     None
 }
+
+/// How the parser's error for a block opener with no indented line under it
+/// starts (`parse.rs`, `missing_block_message`).
+const MISSING_BLOCK: &str = "expected an indented block";
 
 /// The name [`parse_tolerant`] writes after a dangling `.`.
 const PLACEHOLDER: &str = "__lsp_member";

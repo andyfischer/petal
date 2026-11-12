@@ -130,6 +130,16 @@ impl Server {
                 }
                 self.handle_document_symbol(id, params)
             }
+            "textDocument/foldingRange" => {
+                if !self.initialized {
+                    return vec![OutgoingMessage::Response(RpcResponse::err(
+                        id,
+                        SERVER_NOT_INITIALIZED,
+                        "Server not initialized".into(),
+                    ))];
+                }
+                self.handle_folding_range(id, params)
+            }
             _ => vec![OutgoingMessage::Response(RpcResponse::err(
                 id,
                 METHOD_NOT_FOUND,
@@ -177,6 +187,7 @@ impl Server {
                     trigger_characters: Some(vec![".".to_string(), "/".to_string(), "@".to_string()]),
                 }),
                 document_symbol_provider: Some(true),
+                folding_range_provider: Some(true),
             },
         };
         vec![OutgoingMessage::Response(RpcResponse::ok(
@@ -728,6 +739,37 @@ impl Server {
         vec![OutgoingMessage::Response(RpcResponse::ok(
             id,
             serde_json::to_value(symbols).unwrap(),
+        ))]
+    }
+}
+
+impl Server {
+    // -----------------------------------------------------------------------
+    // Folding ranges
+    // -----------------------------------------------------------------------
+
+    /// The blocks of the document, from its parse: a block may be closed by
+    /// its indentation alone, which no pairing of keywords finds. A document
+    /// that does not parse right now answers `null`, so the editor keeps the
+    /// folds it has.
+    fn handle_folding_range(&self, id: Value, params: Value) -> Vec<OutgoingMessage> {
+        let p: FoldingRangeParams = match serde_json::from_value(params) {
+            Ok(p) => p,
+            Err(_) => {
+                return vec![OutgoingMessage::Response(RpcResponse::err(
+                    id,
+                    INVALID_PARAMS,
+                    "Invalid foldingRange params".into(),
+                ))];
+            }
+        };
+        let ranges = self.documents.get(&p.text_document.uri).and_then(|d| {
+            let (tree, _, _) = crate::rewrite::parse_ast_or_by_end(&d.text).ok()?;
+            Some(crate::lsp::folding::folding_ranges(&tree, &d.text))
+        });
+        vec![OutgoingMessage::Response(RpcResponse::ok(
+            id,
+            serde_json::to_value(ranges).unwrap(),
         ))]
     }
 }

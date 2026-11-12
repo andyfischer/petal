@@ -1881,3 +1881,215 @@ fn an_at_sign_in_a_string_or_a_comment_is_no_annotation() {
         .unwrap_or_default();
     assert!(!labels.contains(&"tunable".to_string()), "{labels:?}");
 }
+
+// ===========================================================================
+// Blocks closed by indentation (docs/syntax/indentation.md)
+// ===========================================================================
+
+/// [`ENUMS`] with no `end` anywhere: every block closed by its indentation.
+const ENUMS_NO_END: &str = r#"enum Use
+  road, green
+enum Kind
+  parkway(shape: "route", use: Use.road),
+  park(shape: "area", use: Use.green),
+enum Op
+  fight(place, won, tone: "bad"),
+  gift(amount, tone: "good"),
+fn describe(k: Kind, op: Op) -> Kind
+  let here = Kind.park
+  let hit = Op.fight("x", true)
+  print(k.shape, op.place, here.name, hit.won)
+  for each in Kind.all do
+    print(each.use)
+  match op
+    when Op.gift(amount) -> print(amount)
+    when Op.fight(_, _) -> nil
+  Kind.from("park")
+class Point
+  x: int,
+  y: int,
+let origin = Point(0, 0)
+"#;
+
+fn folding(server: &mut Server, uri: &str) -> Value {
+    let msgs = server.handle_message(&request(
+        6,
+        "textDocument/foldingRange",
+        json!({ "textDocument": { "uri": uri } }),
+    ));
+    let resp: Value = serde_json::from_str(&msgs[0].to_json()).unwrap();
+    resp["result"].clone()
+}
+
+fn folds(server: &mut Server, uri: &str) -> Vec<(u64, u64)> {
+    folding(server, uri)
+        .as_array()
+        .expect("folding ranges")
+        .iter()
+        .map(|r| (r["startLine"].as_u64().unwrap(), r["endLine"].as_u64().unwrap()))
+        .collect()
+}
+
+#[test]
+fn a_file_with_no_end_compiles_clean_and_outlines_with_whole_ranges() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///no_end.ptl";
+    let msgs = open(&mut server, uri, ENUMS_NO_END);
+    let diags = get_diagnostics(&msgs);
+    assert!(
+        diags.iter().all(|d| d.severity != Some(DiagnosticSeverity::Error)),
+        "{diags:?}"
+    );
+    let msgs = server.handle_message(&request(
+        4,
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": uri } }),
+    ));
+    let resp: Value = serde_json::from_str(&msgs[0].to_json()).unwrap();
+    let symbols = resp["result"].as_array().expect("symbols");
+    // (name, first line, last line): a block with no `end` runs to its last
+    // line, and the next declaration starts on the line after.
+    let outline: Vec<(&str, u64, u64)> = symbols
+        .iter()
+        .map(|s| {
+            (
+                s["name"].as_str().unwrap(),
+                s["range"]["start"]["line"].as_u64().unwrap(),
+                s["range"]["end"]["line"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        outline,
+        [
+            ("Use", 0, 1),
+            ("Kind", 2, 4),
+            ("Op", 5, 7),
+            ("describe", 8, 17),
+            ("Point", 18, 20),
+            ("origin", 21, 21),
+        ]
+    );
+    let children = |i: usize| -> Vec<&str> {
+        symbols[i]["children"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap()).collect()
+    };
+    assert_eq!(children(2), ["fight", "gift"]);
+    assert_eq!(children(4), ["x", "y"]);
+    assert_eq!(symbols[3]["selectionRange"]["start"], json!({"line": 8, "character": 3}));
+
+    // Hover, definition and member completion read the same declarations.
+    let h = hover(&mut server, uri, 9, 6);
+    assert!(h["result"]["contents"]["value"].as_str().unwrap().contains("here"), "{h}");
+    let d = definition(&mut server, uri, 11, 28);
+    assert_eq!(d["result"]["range"]["start"]["line"], 9, "{d}");
+}
+
+#[test]
+fn completion_inside_a_block_with_no_end_keeps_the_declarations_around_it() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///typing.ptl";
+    // The line being typed is the only line of `pick`'s body, and does not
+    // parse: `pick` has no `end` to hold it open.
+    let text = "enum Kind\n  parkway, park\nfn pick(k: Kind)\n  let here = Kind.\nfn other()\n  let v = (\nprint(pick(Kind.park))\n";
+    open(&mut server, uri, text);
+    assert_eq!(labels(&completion(&mut server, uri, 3, 18)), ["parkway", "park", "all", "from"]);
+    let msgs = server.handle_message(&request(
+        4,
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": uri } }),
+    ));
+    let resp: Value = serde_json::from_str(&msgs[0].to_json()).unwrap();
+    let names: Vec<&str> =
+        resp["result"].as_array().unwrap().iter().map(|s| s["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["Kind", "pick", "other"]);
+}
+
+#[test]
+fn folding_ranges_follow_the_blocks_however_they_close() {
+    let mut server = Server::new();
+    init(&mut server);
+    let caps = server.handle_message(&request(5, "initialize", json!({"capabilities": {}})));
+    let caps: Value = serde_json::from_str(&caps[0].to_json()).unwrap();
+    assert_eq!(caps["result"]["capabilities"]["foldingRangeProvider"], true);
+
+    let uri = "file:///fold_no_end.ptl";
+    open(&mut server, uri, ENUMS_NO_END);
+    assert_eq!(
+        folds(&mut server, uri),
+        [(0, 1), (2, 4), (5, 7), (8, 17), (12, 13), (14, 16), (18, 20)]
+    );
+
+    // With `end`s: the same blocks, each folded to the line above its `end`.
+    // An `if` chain is a fold per branch, and so is a literal over lines.
+    let uri = "file:///fold_end.ptl";
+    let text = "\
+fn f(c)
+  if c > 1 then
+    print(1)
+    print(2)
+  else if c > 0 then
+    print(3)
+  else
+    print(4)
+    print(5)
+  end
+  let xs = map([
+    1,
+    2,
+  ], fn(v)
+    v + 1
+  end)
+  let y = if c then 1 else 2 end
+  match c
+    when 1 ->
+      print(6)
+      print(7)
+    when _ -> nil
+  end
+end
+";
+    open(&mut server, uri, text);
+    assert_eq!(
+        folds(&mut server, uri),
+        [(0, 22), (1, 3), (4, 5), (6, 8), (10, 12), (13, 14), (17, 21), (18, 20)]
+    );
+    // The same file with its redundant `end`s removed folds the same bodies.
+    let stripped = petal::fmt::remove_block_ends(text).unwrap().text;
+    let uri = "file:///fold_stripped.ptl";
+    open(&mut server, uri, &stripped);
+    assert_eq!(
+        folds(&mut server, uri),
+        [(0, 20), (1, 3), (4, 5), (6, 8), (9, 11), (12, 13), (16, 20), (17, 19)]
+    );
+
+    // A document that does not parse has no answer; the editor keeps its folds.
+    let uri = "file:///fold_broken.ptl";
+    open(&mut server, uri, "fn f(\n");
+    assert!(folding(&mut server, uri).is_null());
+}
+
+/// The errors indentation brought, as diagnostics on the line they name.
+#[test]
+fn layout_errors_are_diagnostics_at_their_line() {
+    let mut server = Server::new();
+    init(&mut server);
+    let cases: [(&str, &str, u32, &str); 6] = [
+        ("indent", "fn f(c)\n  print(1)\n    print(2)\nf(1)\n", 2, "unexpected indent"),
+        ("block", "fn f(c)\n  if c then\n  print(1)\nf(1)\n", 2, "expected an indented block after `then`"),
+        ("between", "fn f(c)\n  if c then\n      print(1)\n    print(2)\nf(1)\n", 3, "indented less than its block"),
+        ("end", "fn f(c)\n  for i in [1] do\n    print(i)\n   end\nend\nf(1)\n", 3, "does not line up with the `for` block opened at line 2"),
+        ("semi", "fn f(c)\n  if c then print(1); print(2)\nf(1)\n", 1, "`;` after a one-line `then` is ambiguous"),
+        ("tab", "fn f(c)\n\tprint(1)\nf(1)\n", 1, "tab"),
+    ];
+    for (name, text, line, message) in cases {
+        let uri = format!("file:///layout_{name}.ptl");
+        let diags = get_diagnostics(&open(&mut server, &uri, text));
+        let errors: Vec<_> =
+            diags.iter().filter(|d| d.severity == Some(DiagnosticSeverity::Error)).collect();
+        assert_eq!(errors.len(), 1, "[{name}] {diags:?}");
+        assert!(errors[0].message.contains(message), "[{name}] {}", errors[0].message);
+        assert_eq!(errors[0].range.start.line, line, "[{name}] {:?}", errors[0]);
+    }
+}

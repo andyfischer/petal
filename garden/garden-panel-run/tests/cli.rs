@@ -115,6 +115,37 @@ fn example_apps_run_headlessly() {
     }
 }
 
+/// The finance dashboard hit-tests the pointer against the donut's slices
+/// from before the frame's input and then drew the focused one from the list
+/// after it: on the frame of a drill-down the hover index belonged to
+/// another list ("Index 7 out of bounds (len 5)", frame 26 of this run).
+#[test]
+fn the_finance_dashboard_survives_a_drill_down_under_the_pointer() {
+    let rel = "examples/dashboards/finance-dashboard/app.ptl";
+    let app = repo_root().join(rel);
+    assert!(app.exists(), "example app missing: {}", app.display());
+    let s = Scratch::new("finance-drill-down");
+    let out = s.path("t.jsonl");
+    let (code, _, err) = run(&[
+        app.to_str().unwrap(),
+        "--frames",
+        "60",
+        "--seed",
+        "1",
+        "--scenario",
+        "monkey:3",
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{rel} failed: {err}");
+    let recs = records(&out);
+    assert_eq!(recs.len(), 60, "{rel}");
+    assert!(
+        recs.iter().all(|r| r.get("error").is_none_or(|e| e.is_null())),
+        "{rel} raised an error on some frame"
+    );
+}
+
 // ── Garden panel-native stubs ────────────────────────────────────────────
 
 /// The driver registers `garden_script::headless`'s stubs, so a Garden panel drawer's

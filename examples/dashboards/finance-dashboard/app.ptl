@@ -865,7 +865,9 @@ let focus = if hot_slice >= 0 then hot_slice
 else if hot_leg >= 0 then hot_leg
 else if legend_sel < len(slices) then legend_sel
 else -1
-if focus >= 0 && len(slices) > 0 then
+# `hot_slice` and `hot_leg` were hit against the slices from before this
+# frame's input; on the frame of a drill-down `slices` is another list.
+if focus >= 0 && focus < len(slices) then
   let s = slices[focus]
   let p = s.value / max(total, 0.0001) * 100.0
   text_mid(pct(p), cx: dcx, y: dcy - 26, st: {size: T_HERO, color: s.color})

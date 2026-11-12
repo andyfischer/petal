@@ -291,7 +291,7 @@ fn a_dialogs_own_controls_work_and_the_page_under_it_does_not() {
          state under = 0\n\
          state inside = 0\n\
          state started = false\n\
-         if !started then dialog_open(\"d\")\n started = true end\n\
+         if !started then dialog_open(\"d\"); started = true end\n\
          if button(rect(110, 170, 80, 26), \"Under\") then under += 1 end\n\
          let d = dialog(\"d\", 200, 120, \"Title\")\n\
          if d.open && button(rect(d.content.x, d.content.y + d.content.h - 26, 80, 26), \"Inside\") then inside += 1 end\n",

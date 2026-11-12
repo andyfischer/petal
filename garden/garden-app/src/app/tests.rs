@@ -5093,7 +5093,7 @@ fn a_panel_mutation_reports_its_outcome_back_under_its_handle() {
         &dir,
         "p.ptl",
         "state h = 0\n\
-         if h == 0 then\n\
+         if h == 0 then\n  \
            h = mutate(\"apply\", {edits: []})\n\
          end\n\
          let reply = mutate_result(h)\n\

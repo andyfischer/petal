@@ -56,7 +56,7 @@ fn each_elapsed_callsite_is_its_own_timer() {
     let src = "state a = 0.0\n\
                state b = 0.0\n\
                a = elapsed()\n\
-               if time() > 11.0 then\n\
+               if time() > 11.0 then\n  \
                  b = elapsed()\n\
                end";
     let mut ui = Headless::with_ui(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
@@ -117,7 +117,7 @@ fn hovered_and_clicked_edges() {
 #[test]
 fn button_draws_and_reports_click() {
     let src = "state pressed = 0\n\
-               if button({x: 10, y: 10, w: 100, h: 30}, \"OK\") then\n\
+               if button({x: 10, y: 10, w: 100, h: 30}, \"OK\") then\n  \
                  pressed = pressed + 1\n\
                end";
     run_headless(src, |ui| {
@@ -771,8 +771,8 @@ fn drag_and_click_count_reach_scripts() {
     let src = "state dragging = false\n\
                state from_x = -1\n\
                state doubles = 0\n\
-               if drag_active() then\n\
-                 dragging = true\n\
+               if drag_active() then\n  \
+                 dragging = true\n  \
                  from_x = drag_start_x()\n\
                end\n\
                if click_count() == 2 then doubles = doubles + 1 end";
@@ -1010,7 +1010,7 @@ fn text_field_draws_caret_only_when_focused() {
 
 const GATED_LIST_SRC: &str = "state lst = list_state()\n\
                               let r = {x: 0, y: 100, w: 200, h: 100}\n\
-                              if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then\n\
+                              if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then\n  \
                                 focus_request(\"list\")\n\
                               end\n\
                               lst = list_update(lst, 20, 5, r, has_focus(\"list\"))";
@@ -1418,15 +1418,15 @@ const MENU_SRC: &str = "state menu = menu_state()\n\
                         state tag = \"\"\n\
                         state clicks = 0\n\
                         let r = {x: 0, y: 0, w: 200, h: 40}\n\
-                        if !menu.open && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then\n\
+                        if !menu.open && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then\n  \
                           clicks = clicks + 1\n\
                         end\n\
                         menu = menu_open_on_right_click(menu, r, \"row-7\")\n\
                         let res = context_menu(menu, [menu_item(\"Only this commit\"), menu_sep(), menu_item(\"Revert\", false), menu_item(\"Copy SHA\")])\n\
                         menu = res.menu\n\
-                        if res.index >= 0 then\n\
-                          chose = res.index\n\
-                          took = res.label\n\
+                        if res.index >= 0 then\n  \
+                          chose = res.index\n  \
+                          took = res.label\n  \
                           tag = res.tag\n\
                         end";
 
@@ -1710,10 +1710,10 @@ fn theme_set_merges_and_theme_reset_restores() {
                state panel_r = 0\n\
                state n = 0\n\
                n = n + 1\n\
-               if n == 1 then\n\
+               if n == 1 then\n  \
                  theme_set({panel: :ffffff})\n\
                end\n\
-               if n == 3 then\n\
+               if n == 3 then\n  \
                  theme_reset()\n\
                end\n\
                accent_r = ui_theme().accent.r\n\
@@ -1941,8 +1941,8 @@ fn insertion_index_counts_rows_above_the_drop() {
     let src = "state before = 0\n\
                state middle = 0\n\
                state after = 0\n\
-               let rows = [{x: 0, y: 0, w: 50, h: 20},\n\
-                           {x: 0, y: 20, w: 50, h: 20},\n\
+               let rows = [{x: 0, y: 0, w: 50, h: 20},\n            \
+                           {x: 0, y: 20, w: 50, h: 20},\n            \
                            {x: 0, y: 40, w: 50, h: 20}]\n\
                before = insertion_index(rows, 2)\n\
                middle = insertion_index(rows, 35)\n\
@@ -2001,7 +2001,7 @@ fn color_helpers_mix_and_measure_luma() {
 #[test]
 fn menu_geometry_stays_integral_on_the_clamp_builtin() {
     let src = "state w = 0.5\n\
-               w = menu_rect(menu_show(menu_state(), 10, 10, \"t\"),\n\
+               w = menu_rect(menu_show(menu_state(), 10, 10, \"t\"),\n              \
                              [menu_item(\"Copy\")]).w";
     run_headless(src, |ui| {
         ui.frame().unwrap();
@@ -2017,7 +2017,7 @@ fn menu_geometry_stays_integral_on_the_clamp_builtin() {
 /// keeps its own — the new prelude names are shadowed, not fought over.
 #[test]
 fn script_definitions_shadow_the_new_color_helpers() {
-    let src = "fn mix(a, b, t)\n\
+    let src = "fn mix(a, b, t)\n  \
                  {r: 7, g: 7, b: 7}\n\
                end\n\
                state m = 0\n\
@@ -2167,7 +2167,7 @@ fn axis_labels_thin_and_stagger_instead_of_rotating() {
     // or, with `stagger`, dropped to a second row instead.
     let src = "state a = 0\n\
                state b = 0\n\
-               let ticks = [{x: 0, label: \"Monday\"}, {x: 20, label: \"Tuesday\"},\n\
+               let ticks = [{x: 0, label: \"Monday\"}, {x: 20, label: \"Tuesday\"},\n             \
                             {x: 40, label: \"Wednesday\"}, {x: 200, label: \"Thursday\"}]\n\
                a = draw_axis_labels({x: 0, y: 100, w: 300, h: 20}, ticks)\n\
                b = draw_axis_labels({x: 0, y: 200, w: 300, h: 20}, ticks, {stagger: true})";

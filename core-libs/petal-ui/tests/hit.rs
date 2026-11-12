@@ -93,8 +93,8 @@ fn a_release_inside_after_a_press_outside_is_not_a_click() {
 const OPENS_A_LIST: &str = "state open = false\n\
                             state picked = 0\n\
                             if interact(rect(10, 10, 100, 30), \"open\").click then open = true end\n\
-                            if open then\n\
-                              let hit = with_layer(10, fn() interact(rect(0, 0, 200, 40), \"row\").click end)\n\
+                            if open then\n  \
+                              let hit = with_layer(10, fn() interact(rect(0, 0, 200, 40), \"row\").click end)\n  \
                               if hit then picked = picked + 1 end\n\
                             end";
 
@@ -123,7 +123,7 @@ fn a_rect_that_appears_under_a_press_is_not_clicked_by_its_release() {
 #[test]
 fn a_widget_shown_on_the_press_frame_still_takes_the_click() {
     let mut ui = ui("state clicks = 0\n\
-                     if hovered(rect(0, 0, 100, 100)) then\n\
+                     if hovered(rect(0, 0, 100, 100)) then\n  \
                        if interact(rect(10, 10, 50, 20), \"x\").click then clicks = clicks + 1 end\n\
                      end\n\
                      ui_block(rect(200, 200, 10, 10))");
@@ -146,11 +146,11 @@ const COVERED: &str = "state show = false\n\
                        let s = interact(rect(0, 0, 100, 40), \"under\")\n\
                        under_hover = s.hover\n\
                        if s.pressed then under = under + 1 end\n\
-                       if show then\n\
-                         let hit = with_layer(10, fn()\n\
-                           ui_block(rect(0, 0, 200, 200), \"panel\")\n\
-                           interact(rect(10, 10, 50, 20), \"over\").pressed\n\
-                         end)\n\
+                       if show then\n  \
+                         let hit = with_layer(10, fn()\n    \
+                           ui_block(rect(0, 0, 200, 200), \"panel\")\n    \
+                           interact(rect(10, 10, 50, 20), \"over\").pressed\n  \
+                         end)\n  \
                          if hit then over = over + 1 end\n\
                        end\n\
                        captured = pointer_captured()";
@@ -323,11 +323,11 @@ fn a_modal_layer_makes_everything_below_inert_everywhere() {
                      state captured = false\n\
                      if key_pressed(\"m\") then open = !open end\n\
                      if interact(rect(0, 0, 100, 40)).pressed then under = under + 1 end\n\
-                     if open then\n\
-                       let hit = with_layer(50, fn()\n\
-                         ui_modal()\n\
-                         interact(rect(300, 300, 80, 30)).pressed\n\
-                       end)\n\
+                     if open then\n  \
+                       let hit = with_layer(50, fn()\n    \
+                         ui_modal()\n    \
+                         interact(rect(300, 300, 80, 30)).pressed\n  \
+                       end)\n  \
                        if hit then inside = inside + 1 end\n\
                      end\n\
                      captured = pointer_captured()");
@@ -359,7 +359,7 @@ fn the_prelude_modal_blocks_the_buttons_under_it() {
                      if button(rect(0, 0, 100, 30), \"Under\") then under = under + 1 end\n\
                      let res = modal(md, 300, 200, \"Sure?\")\n\
                      md = res.modal\n\
-                     if res.open then\n\
+                     if res.open then\n  \
                        if button(rect(res.content.x, res.content.y, 80, 30), \"OK\") then ok = ok + 1 end\n\
                      end");
     ui.frame().unwrap();
@@ -426,8 +426,8 @@ fn widgets_register_ids_a_script_and_the_host_can_look_up() {
                      button(rect(40, 100, 100, 30), \"Quit\", {id: \"quit-button\"})\n\
                      ui_target(\"drop-zone\", rect(300, 300, 50, 50))\n\
                      let r = ui_target_rect(\"Save\")\n\
-                     if r != nil then\n\
-                       found = true\n\
+                     if r != nil then\n  \
+                       found = true\n  \
                        x = r.x\n\
                      end");
     ui.frame().unwrap();
@@ -517,8 +517,8 @@ fn a_layer_keeps_the_clip_it_was_drawn_under() {
 fn an_overlay_is_drawn_outside_every_clip_and_the_clip_comes_back() {
     let mut ui = ui("state hot = false\n\
                      clip_push(rect(0, 0, 50, 50))\n\
-                     hot = ui_overlay(10, fn()\n\
-                       draw_rect(1, 0, 5, 5, :ff0000)\n\
+                     hot = ui_overlay(10, fn()\n  \
+                       draw_rect(1, 0, 5, 5, :ff0000)\n  \
                        ui_hot(rect(200, 200, 50, 50))\n\
                      end)\n\
                      draw_rect(2, 0, 5, 5, :ff0000)\n\
@@ -568,10 +568,10 @@ fn a_tooltip_draws_over_what_is_drawn_after_it() {
 fn layered_widgets_are_still_replayed_by_the_memo() {
     // The rows sit inside a clip and on a layer their caller set — the usual
     // shape of a scrolled list in a panel — and read both.
-    let mut ui = ui("fn row(i)\n\
-                       let r = rect(0, i * 20, 100, 20)\n\
-                       let c = if ui_hot(r, \"row-{i}\") then :090909 else :010101 end\n\
-                       draw_rect(r, c)\n\
+    let mut ui = ui("fn row(i)\n  \
+                       let r = rect(0, i * 20, 100, 20)\n  \
+                       let c = if ui_hot(r, \"row-{i}\") then :090909 else :010101 end\n  \
+                       draw_rect(r, c)\n  \
                        draw_text(\"row {i}\", 4, i * 20, 12, :ffffff)\n\
                      end\n\
                      let prev = ui_layer(4)\n\
@@ -655,14 +655,14 @@ fn ui_measure_runs_a_panel_without_drawing_or_registering_it() {
     let mut ui = ui("state measured_h = 0\n\
                      state drawn_h = 0\n\
                      state hot_while_measuring = false\n\
-                     fn panel(r)\n\
-                       flow_begin(r, {pad: 8, gap: 4})\n\
-                       var hot = false\n\
-                       for i in range(0, 3) do\n\
-                         let row = flow_next(20)\n\
-                         draw_rect(row, :303030)\n\
-                         if ui_hot(row, \"row-{i}\") then set hot = true end\n\
-                       end\n\
+                     fn panel(r)\n  \
+                       flow_begin(r, {pad: 8, gap: 4})\n  \
+                       var hot = false\n  \
+                       for i in range(0, 3) do\n    \
+                         let row = flow_next(20)\n    \
+                         draw_rect(row, :303030)\n    \
+                         if ui_hot(row, \"row-{i}\") then set hot = true end\n  \
+                       end\n  \
                        {size: flow_end(), hot: get hot}\n\
                      end\n\
                      let m = ui_measure(fn() panel(rect(0, 0, 200, 0)) end)\n\
@@ -696,13 +696,13 @@ fn ui_measure_leaves_no_state_behind() {
                      state counted = 0\n\
                      state inside = 0\n\
                      state spec_h = 0\n\
-                     fn panel(r)\n\
-                       state renders = 0\n\
-                       renders += 1\n\
-                       set outer = get outer + 1\n\
-                       flow_begin(r, {gap: 4})\n\
-                       flow_next(20)\n\
-                       flow_next(20)\n\
+                     fn panel(r)\n  \
+                       state renders = 0\n  \
+                       renders += 1\n  \
+                       set outer = get outer + 1\n  \
+                       flow_begin(r, {gap: 4})\n  \
+                       flow_next(20)\n  \
+                       flow_next(20)\n  \
                        {size: flow_end(), renders: renders}\n\
                      end\n\
                      let m = ui_measure(fn() panel(rect(0, 0, 100, 0)) end)\n\

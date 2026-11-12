@@ -140,19 +140,23 @@ fn run_refuses_a_ui_script_at_load_and_says_which_runner_takes_it() {
     assert!(!err.contains("petal-ui"), "{err}");
 }
 
+/// Indentation closes a block, so one with no `end` is complete (these were
+/// the "… is unclosed; expected `end`" errors); a block with no body at all
+/// names the opener it follows.
 #[test]
-fn an_unclosed_block_names_its_opener() {
-    let (_, err, _) = petal(&["run", "-e", "let a = 1\nfn f()\n  print(a)\n"]);
-    assert!(
-        err.contains("the function `f` started at line 2 column 1 is unclosed; expected `end`"),
-        "{err}"
-    );
-    let (_, err, _) = petal(&["run", "-e", "for x in [1] do\n  print(x)\n"]);
-    assert!(err.contains("a `for` loop started at line 1 column 1 is unclosed"), "{err}");
-    let (_, err, _) = petal(&["run", "-e", "let x = 1\nwhile x < 2 do\n  print(x)\n"]);
-    assert!(err.contains("a `while` loop started at line 2 column 1 is unclosed"), "{err}");
-    let (_, err, _) = petal(&["run", "-e", "let g = fn(x)\n  x\n"]);
-    assert!(err.contains("a `fn` expression started at line 1 column 9 is unclosed"), "{err}");
+fn a_block_with_no_end_runs_and_one_with_no_body_names_its_opener() {
+    let (out, err, code) = petal(&["run", "-e", "let a = 1\nfn f()\n  print(a)\nf()\n"]);
+    assert_eq!((out.trim(), code), ("1", 0), "{err}");
+    let (out, err, code) = petal(&["run", "-e", "for x in [1] do\n  print(x)\n"]);
+    assert_eq!((out.trim(), code), ("1", 0), "{err}");
+    let (out, err, code) = petal(&["run", "-e", "let g = fn(x)\n  x\nprint(g(2))\n"]);
+    assert_eq!((out.trim(), code), ("2", 0), "{err}");
+
+    let (_, err, _) = petal(&["run", "-e", "let a = 1\nfn f()\nprint(a)\n"]);
+    assert!(err.contains("expected an indented block after the `fn` header"), "{err}");
+    let (_, err, _) = petal(&["run", "-e", "let x = 1\nwhile x < 2 do\nprint(x)\n"]);
+    assert!(err.contains("expected an indented block after `do`"), "{err}");
+    assert!(err.contains("line 3"), "{err}");
 }
 
 #[test]

@@ -4017,7 +4017,7 @@ edit_view_projection(1, {{
     fn a_layer_draws_at_canvas_coordinates_and_composites_at_pane_coordinates() {
         let (prims, _f) = scene_of(
             "clip_push(10, 10, 200, 200)\n\
-             layer(rect(30, 40, 50, 60), fn()\n\
+             layer(rect(30, 40, 50, 60), fn()\n    \
                  draw_rect(0, 0, 50, 60, 1, 1, 1)\n\
              end)\n\
              draw_rect(0, 0, 5, 5, 2, 2, 2)\n",

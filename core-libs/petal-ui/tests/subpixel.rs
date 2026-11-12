@@ -454,9 +454,9 @@ fn the_snapped_drain_reports_each_commands_mode() {
 #[test]
 fn a_retained_layer_moves_its_content_in_f32_and_keeps_its_mode() {
     let src = "pixel_snap(false)\n\
-               cached_layer(\"k\", rect(3, 4, 50, 50), fn()\n\
-                 draw_circle({x: 10.5, y: 7.25}, 2.5, :ff0000)\n\
-                 pixel_snap(true)\n\
+               cached_layer(\"k\", rect(3, 4, 50, 50), fn()\n  \
+                 draw_circle({x: 10.5, y: 7.25}, 2.5, :ff0000)\n  \
+                 pixel_snap(true)\n  \
                  draw_circle({x: 1.5, y: 1.5}, 1.5, :ff0000)\n\
                end)\n\
                pixel_snap(nil)\n\

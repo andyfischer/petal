@@ -3757,7 +3757,7 @@ mod tests {
     #[test]
     fn request_frame_is_reported_and_is_per_frame() {
         let f = write_script(
-            "if frame_count() == 0 then\n  request_frame()\nend\n             draw_rect(0, 0, 1, 1, 1, 2, 3)\n",
+            "if frame_count() == 0 then\n  request_frame()\nend\ndraw_rect(0, 0, 1, 1, 1, 2, 3)\n",
         );
         let mut host = PanelHost::load(f.path()).unwrap();
         host.frame(0.016, 0).unwrap();
@@ -4551,7 +4551,7 @@ mod tests {
     #[test]
     fn frame_emits_layer_commands() {
         let f = write_script(
-            "layer(rect(10, 10, 20, 20), {a: 128}, fn()\n\
+            "layer(rect(10, 10, 20, 20), {a: 128}, fn()\n    \
                  draw_rect(0, 0, 5, 5, 1, 2, 3)\n\
              end)\n\
              draw_backdrop_blur(rect(0, 0, 40, 8), 6)\n",
@@ -5123,9 +5123,9 @@ mod tests {
         let f = write_script(
             "fn list_row(i)\n\
             \x20   let sel = i * 2\n\
-            \x20   sel\n\
-             end\n\
-             let rows = [list_row(1), list_row(3)]\n\
+            \x20   sel\n \
+             end\n \
+             let rows = [list_row(1), list_row(3)]\n \
              let sel = 99\n",
         );
         let mut host = PanelHost::load(f.path()).unwrap();
@@ -5527,8 +5527,8 @@ mod tests {
         let f = write_script(
             "state d = { x: 0, label: \"\", flag: false, items: [] }\n\
              if frame_count() == 0 then d = host_data(\"commit\", \"abc\") end\n\
-             if d.flag then\n\
-               draw_rect(d.x, len(d.items), 1, 1, 0, 0, 0)\n\
+             if d.flag then\n  \
+               draw_rect(d.x, len(d.items), 1, 1, 0, 0, 0)\n  \
                draw_text(d.label, 0, 0, 14, 1, 1, 1)\n\
              end\n",
         );
@@ -5905,12 +5905,12 @@ mod tests {
         // for as long as its window is open — a few hundred KB a second at
         // 60fps, gigabytes over an afternoon.
         let f = write_script(
-            "fn box_at(i)\n\
-               let hue = i * 7\n\
-               let shade = fn(c) -> c + hue\n\
+            "fn box_at(i)\n  \
+               let hue = i * 7\n  \
+               let shade = fn(c) -> c + hue\n  \
                draw_rect(i * 3, 4, 3, 4, shade(10), shade(20), shade(30))\n\
              end\n\
-             for i in range(0, 30) do\n\
+             for i in range(0, 30) do\n  \
                box_at(i)\n\
              end\n",
         );

@@ -88,11 +88,11 @@ fn draw_canvas_takes_opacity_and_a_destination_size() {
 #[test]
 fn draw_to_returns_the_previous_target_so_layers_nest() {
     let out = cmds(
-        "layer(rect(0, 0, 40, 40), fn()\n\
-             draw_rect(0, 0, 1, 1, 1, 1, 1)\n\
-             layer(rect(5, 5, 10, 10), {a: 100}, fn()\n\
-                 draw_rect(0, 0, 1, 1, 2, 2, 2)\n\
-             end)\n\
+        "layer(rect(0, 0, 40, 40), fn()\n    \
+             draw_rect(0, 0, 1, 1, 1, 1, 1)\n    \
+             layer(rect(5, 5, 10, 10), {a: 100}, fn()\n        \
+                 draw_rect(0, 0, 1, 1, 2, 2, 2)\n    \
+             end)\n    \
              draw_rect(0, 0, 1, 1, 3, 3, 3)\n\
          end)",
     );

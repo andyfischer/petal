@@ -256,25 +256,25 @@ pub fn equivalence_source() -> String {
          var n = 0\n\
          var nbad = 0\n\
          var msg = \"\"\n\
-         for d in docs do\n\
-           for ts in styles do\n\
-             for w in widths do\n\
-               let a = text_wrap_rows(d, ts, float(w))\n\
-               let b = wrap_rows_reference(d, ts, w)\n\
-               set n = n + 1\n\
-               if a != b then\n\
-                 set nbad = nbad + 1\n\
-                 if msg == \"\" then\n\
-                   var k = 0\n\
-                   while k < len(a) && k < len(b) && a[k] == b[k] do\n\
-                     set k = k + 1\n\
-                   end\n\
-                   let ra = if k < len(a) then str(a[k]) else \"(none)\" end\n\
-                   let rb = if k < len(b) then str(b[k]) else \"(none)\" end\n\
-                   set msg = \"style \" ++ str(ts) ++ \" width \" ++ str(w) ++ \" row \" ++ str(k) ++ \" of \" ++ str(len(a)) ++ \"/\" ++ str(len(b)) ++ \" native \" ++ ra ++ \" petal \" ++ rb ++ \" doc \" ++ char_slice(d, 0, 60)\n\
-                 end\n\
-               end\n\
-             end\n\
+         for d in docs do\n  \
+           for ts in styles do\n    \
+             for w in widths do\n      \
+               let a = text_wrap_rows(d, ts, float(w))\n      \
+               let b = wrap_rows_reference(d, ts, w)\n      \
+               set n = n + 1\n      \
+               if a != b then\n        \
+                 set nbad = nbad + 1\n        \
+                 if msg == \"\" then\n          \
+                   var k = 0\n          \
+                   while k < len(a) && k < len(b) && a[k] == b[k] do\n            \
+                     set k = k + 1\n          \
+                   end\n          \
+                   let ra = if k < len(a) then str(a[k]) else \"(none)\" end\n          \
+                   let rb = if k < len(b) then str(b[k]) else \"(none)\" end\n          \
+                   set msg = \"style \" ++ str(ts) ++ \" width \" ++ str(w) ++ \" row \" ++ str(k) ++ \" of \" ++ str(len(a)) ++ \"/\" ++ str(len(b)) ++ \" native \" ++ ra ++ \" petal \" ++ rb ++ \" doc \" ++ char_slice(d, 0, 60)\n        \
+                 end\n      \
+               end\n    \
+             end\n  \
            end\n\
          end\n\
          checked = n\n\

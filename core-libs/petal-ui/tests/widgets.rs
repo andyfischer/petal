@@ -41,8 +41,8 @@ fn rectcut_slices_and_stacks() {
                let cr = cut_right(rect(0, 0, 100, 50), 30)\n\
                let ct = cut_top(rect(0, 0, 100, 50), 12)\n\
                let cb = cut_bottom(rect(0, 0, 100, 50), 12)\n\
-               s = str([cl.cut.x, cl.cut.w, cl.rest.x, cl.rest.w,\n\
-                        cr.cut.x, cr.rest.w, ct.cut.h, ct.rest.y,\n\
+               s = str([cl.cut.x, cl.cut.w, cl.rest.x, cl.rest.w,\n         \
+                        cr.cut.x, cr.rest.w, ct.cut.h, ct.rest.y,\n         \
                         cb.cut.y, cb.rest.h])";
     run_headless(src, |ui| {
         ui.frame().unwrap();
@@ -64,8 +64,8 @@ fn split_pad_and_stacks() {
                let p4 = pad(rect(0, 0, 100, 100), 1, 2, 3, 4)\n\
                let hs = hstack(rect(0, 0, 100, 20), 3, 5)\n\
                let vs = vstack(rect(0, 0, 20, 100), 3, 5)\n\
-               s = str([sh.a.w, sh.b.x, sv.a.h, sv.b.y,\n\
-                        p.x, p.w, p2.y, p2.w, p4.x, p4.w, p4.h,\n\
+               s = str([sh.a.w, sh.b.x, sv.a.h, sv.b.y,\n         \
+                        p.x, p.w, p2.y, p2.w, p4.x, p4.w, p4.h,\n         \
                         len(hs), hs[1].x, hs[2].w, len(vs), vs[1].y])";
     run_headless(src, |ui| {
         ui.frame().unwrap();
@@ -82,7 +82,7 @@ fn row_and_col_distribute_fixed_and_flex() {
     let src = "state s = \"\"\n\
                let r = row(rect(0, 0, 200, 20), [50, 0.5, 0.5], 10)\n\
                let c = col(rect(0, 0, 20, 200), [40, 1.0], 10)\n\
-               s = str([len(r), r[0].w, r[1].x, r[1].w, r[2].x, r[2].w,\n\
+               s = str([len(r), r[0].w, r[1].x, r[1].w, r[2].x, r[2].w,\n         \
                         len(c), c[0].h, c[1].y, c[1].h])";
     run_headless(src, |ui| {
         ui.frame().unwrap();
@@ -191,10 +191,10 @@ fn rects_with_color(cmds: &[DrawCommand], rgb: (u8, u8, u8)) -> bool {
 fn theme_carries_semantic_tokens_and_scales() {
     let src = "state s = \"\"\n\
                let t = ui_theme()\n\
-               s = str([t.success.r, t.danger.r, t.warn.r, t.surface.r,\n\
-                        t.border.r, t.border_strong.r, t.muted.r, t.overlay.r,\n\
-                        t.space_sm, t.space, t.space_lg,\n\
-                        t.radius_sm, t.radius, t.radius_lg,\n\
+               s = str([t.success.r, t.danger.r, t.warn.r, t.surface.r,\n         \
+                        t.border.r, t.border_strong.r, t.muted.r, t.overlay.r,\n         \
+                        t.space_sm, t.space, t.space_lg,\n         \
+                        t.radius_sm, t.radius, t.radius_lg,\n         \
                         t.font_sm, t.font_md, t.font_lg, t.font_xl])";
     run_headless(src, |ui| {
         ui.frame().unwrap();
@@ -209,7 +209,7 @@ fn theme_carries_semantic_tokens_and_scales() {
 #[test]
 fn theme_from_palette_maps_the_new_tokens_too() {
     let src = "state s = \"\"\n\
-               let t = theme_from_palette({green: :010101, red: :020202,\n\
+               let t = theme_from_palette({green: :010101, red: :020202,\n                            \
                                            orange: :030303, border_focused: :040404})\n\
                s = str([t.success.r, t.danger.r, t.warn.r, t.border_strong.r, t.font_md])";
     run_headless(src, |ui| {
@@ -447,8 +447,8 @@ fn splitter_respects_min_sizes() {
 const MODAL_SRC: &str = "state md = modal_state()\n\
                          state blocked = false\n\
                          state opens = 0\n\
-                         if !modal_blocking(md) && button({x: 0, y: 0, w: 60, h: 20}, \"open\") then\n\
-                           md = modal_open(md)\n\
+                         if !modal_blocking(md) && button({x: 0, y: 0, w: 60, h: 20}, \"open\") then\n  \
+                           md = modal_open(md)\n  \
                            opens = opens + 1\n\
                          end\n\
                          let m = modal(md, 200, 100, \"T\")\n\
@@ -576,9 +576,9 @@ fn hint_bar_draws_caps_and_labels() {
 // ── Table ──────────────────────────────────────────────────────────────────
 
 const TABLE_SRC: &str = "state tb = table_state()\n\
-                         let rows = [[\"a\", 1], [\"b\", 2], [\"c\", 3], [\"d\", 4], [\"e\", 5],\n\
+                         let rows = [[\"a\", 1], [\"b\", 2], [\"c\", 3], [\"d\", 4], [\"e\", 5],\n            \
                                      [\"f\", 6], [\"g\", 7], [\"h\", 8], [\"i\", 9], [\"j\", 10]]\n\
-                         tb = table(tb, {x: 0, y: 0, w: 300, h: 158},\n\
+                         tb = table(tb, {x: 0, y: 0, w: 300, h: 158},\n           \
                                     [{label: \"A\", w: 0.5}, {label: \"B\", w: 0.5}], rows)";
 
 fn tb_field(ui: &Headless, field: &str) -> serde_json::Value {
@@ -1145,9 +1145,9 @@ fn a_keyed_loop_keeps_a_sliders_drag_with_its_item_across_a_reorder() {
              state va = 0.0\n\
              state vb = 0.0\n\
              let order = if mouse_x() > 100 then [1, 0] else [0, 1] end\n\
-             for i in range(0, 2){key} do\n\
-               let id = order[i]\n\
-               let r = {{x: 0, y: i * 30, w: 120, h: 20}}\n\
+             for i in range(0, 2){key} do\n  \
+               let id = order[i]\n  \
+               let r = {{x: 0, y: i * 30, w: 120, h: 20}}\n  \
                vals[id] = slider(r, vals[id], 0.0, 1.0)\n\
              end\n\
              va = vals[0]\n\
@@ -1187,7 +1187,7 @@ fn a_keyed_loop_keeps_a_sliders_drag_with_its_item_across_a_reorder() {
 fn a_keyed_rows_slider_is_dropped_by_a_run_that_does_not_draw_it() {
     let script = "state v = 0.0\n\
                   let ids = if mouse_y() < 40 then [\"k\"] else [] end\n\
-                  for id in ids key id do\n\
+                  for id in ids key id do\n  \
                     v = slider({x: 0, y: 0, w: 120, h: 20}, v, 0.0, 1.0)\n\
                   end";
     run_headless(script, |ui| {

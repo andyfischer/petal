@@ -67,8 +67,8 @@ fn text_field_reports_blur_and_escape() {
 const COMMIT: &str = "state name = \"Layer\"\n\
                       state applied = 0\n\
                       let res = commit_field(\"name\", {x: 10, y: 10, w: 200, h: 24}, name)\n\
-                      if res.text != nil then\n\
-                        name = res.text\n\
+                      if res.text != nil then\n  \
+                        name = res.text\n  \
                         applied += 1\n\
                       end";
 
@@ -298,8 +298,8 @@ fn swatches_leave_out_chips_that_do_not_fit() {
 #[test]
 fn text_area_select_all_selects_everything_on_that_frame() {
     let mut ui = ui("state asked = false\n\
-                     if !asked then\n\
-                       focus_request(\"t\")\n\
+                     if !asked then\n  \
+                       focus_request(\"t\")\n  \
                        asked = true\n\
                      end\n\
                      state buf = \"Your text\"\n\

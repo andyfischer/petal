@@ -907,8 +907,8 @@ mod tests {
     fn enums_or_patterns_and_block_arms_rendered() {
         let program = compile(
             "enum Op\n  fight(place, won, tone: \"bad\"),\n  rest(tone: \"ok\"),\nend\n\
-             let r = match Op.rest\n\
-               when Op.fight(p, true | false) | Op.fight(p, _) ->\n    print(p)\n    p\n\
+             let r = match Op.rest\n  \
+               when Op.fight(p, true | false) | Op.fight(p, _) ->\n    print(p)\n    p\n  \
                when Op.rest -> Op.rest.tone\n\
              end\n\
              print(r, 3 == 3)",
@@ -933,12 +933,12 @@ mod tests {
     fn match_arms_and_guards_rendered() {
         let program = compile(
             "enum Shape\n  Circle(radius),\nend\n\
-             let msg = match 5\n\
-               when 0 -> \"zero\"\n\
-               when n if n > 10 -> \"big\"\n\
-               when [a, ...rest] -> \"list\"\n\
-               when {x: xx} -> \"rec\"\n\
-               when Shape.Circle(r) -> \"circle\"\n\
+             let msg = match 5\n  \
+               when 0 -> \"zero\"\n  \
+               when n if n > 10 -> \"big\"\n  \
+               when [a, ...rest] -> \"list\"\n  \
+               when {x: xx} -> \"rec\"\n  \
+               when Shape.Circle(r) -> \"circle\"\n  \
                when _ -> \"other\"\n\
              end\n\
              print(msg)",

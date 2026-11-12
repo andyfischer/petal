@@ -176,9 +176,9 @@ const CACHED: &str = "state runs = 0\n\
                       if key_pressed(\"m\") then x = x + 10 end\n\
                       if key_pressed(\"w\") then w = w + 10 end\n\
                       var ran = false\n\
-                      cached_layer(key, rect(x, 20, w, 30), fn()\n\
-                        set ran = true\n\
-                        draw_rect(0, 0, 10, 10, :ff0000)\n\
+                      cached_layer(key, rect(x, 20, w, 30), fn()\n  \
+                        set ran = true\n  \
+                        draw_rect(0, 0, 10, 10, :ff0000)\n  \
                         draw_line(0, 0, 5, 5, :00ff00)\n\
                       end)\n\
                       if get ran then runs = runs + 1 end";
@@ -269,10 +269,10 @@ fn a_layer_that_was_not_drawn_for_a_frame_is_recorded_again() {
                      if key_pressed(\"s\") then show = !show end\n\
                      var ran = false\n\
                      cached_layer(0, rect(0, 0, 10, 10), fn() draw_rect(0, 0, 1, 1, :ffffff) end)\n\
-                     if show then\n\
-                       cached_layer(1, rect(50, 0, 10, 10), fn()\n\
-                         set ran = true\n\
-                         draw_rect(0, 0, 2, 2, :ffffff)\n\
+                     if show then\n  \
+                       cached_layer(1, rect(50, 0, 10, 10), fn()\n    \
+                         set ran = true\n    \
+                         draw_rect(0, 0, 2, 2, :ffffff)\n  \
                        end)\n\
                      end\n\
                      if get ran then runs = runs + 1 end");
@@ -287,8 +287,8 @@ fn a_layer_that_was_not_drawn_for_a_frame_is_recorded_again() {
 #[test]
 fn layers_nest() {
     let out = cmds(
-        "cached_layer(1, rect(100, 100, 50, 50), fn()\n\
-           draw_rect(0, 0, 50, 50, :000000)\n\
+        "cached_layer(1, rect(100, 100, 50, 50), fn()\n  \
+           draw_rect(0, 0, 50, 50, :000000)\n  \
            cached_layer(1, rect(10, 10, 20, 20), fn() draw_rect(1, 1, 2, 2, :ffffff) end)\n\
          end)",
     );
@@ -315,11 +315,11 @@ fn a_nested_layer_is_kept_while_the_layer_around_it_is_replayed() {
     let mut ui = ui("state runs = 0\n\
                      var ran = false\n\
                      let tick = frame_count()\n\
-                     cached_layer(1, rect(100, 100, 50, 50), fn()\n\
-                       draw_rect(0, 0, 50, 50, :000000)\n\
-                       cached_layer(1, rect(10, 10, 20, 20), fn()\n\
-                         set ran = true\n\
-                         draw_rect(1, 1, 2, 2, :ffffff)\n\
+                     cached_layer(1, rect(100, 100, 50, 50), fn()\n  \
+                       draw_rect(0, 0, 50, 50, :000000)\n  \
+                       cached_layer(1, rect(10, 10, 20, 20), fn()\n    \
+                         set ran = true\n    \
+                         draw_rect(1, 1, 2, 2, :ffffff)\n  \
                        end)\n\
                      end)\n\
                      if get ran then runs = runs + 1 end");
@@ -336,12 +336,12 @@ fn a_nested_layer_is_kept_while_the_layer_around_it_is_replayed() {
 #[test]
 fn a_cached_batch_is_one_recording_of_one_command() {
     let mut ui = ui("state cells = []\n\
-                     if len(cells) == 0 then\n\
-                       for i in range(0, 300) do\n\
-                         cells = append(cells, [i % 20 * 4, i / 20 * 4, 4, 4, i % 3])\n\
+                     if len(cells) == 0 then\n  \
+                       for i in range(0, 300) do\n    \
+                         cells = append(cells, [i % 20 * 4, i / 20 * 4, 4, 4, i % 3])\n  \
                        end\n\
                      end\n\
-                     cached_layer(1, rect(10, 10, 80, 60), fn()\n\
+                     cached_layer(1, rect(10, 10, 80, 60), fn()\n  \
                        draw_rects(cells, [:ff0000, :00ff00, :0000ff])\n\
                      end)");
     set_host_caps(&mut ui.env, HostCaps { batch_rects: true, retained_layers: true });

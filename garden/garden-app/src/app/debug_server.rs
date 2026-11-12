@@ -1860,8 +1860,8 @@ mod tests {
         // Eases `x` to 100 over half a second of `dt()`, asking for frames
         // only while it is still moving.
         let source = "state x = 0.0\n\
-                      if x < 100.0 then\n\
-                        x = min(100.0, x + 200.0 * dt())\n\
+                      if x < 100.0 then\n  \
+                        x = min(100.0, x + 200.0 * dt())\n  \
                         request_frame()\n\
                       end\n\
                       let shown = x\n\

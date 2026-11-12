@@ -65,12 +65,12 @@ fn sketch(name: &str, src: &str) -> (std::path::PathBuf, std::path::PathBuf) {
 const ROW: &str = "import ui\n\
 let gap = tunable(40)\n\
 \n\
-fn card(i)\n\
+fn card(i)\n  \
   draw_rect(60 + i * gap, 100, 30, 30, 70, 165, 150)\n\
 end\n\
 \n\
 clear(16, 18, 26)\n\
-for i in range(0, 4) do\n\
+for i in range(0, 4) do\n  \
   card(i)\n\
 end\n";
 

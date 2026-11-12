@@ -266,7 +266,7 @@ const BLUR: &str = "state buf = \"abc\"\n\
                     if key_pressed(\"p\") then panel = !panel end\n\
                     let res = text_field(\"name\", {x: 10, y: 10, w: 200, h: 24}, buf)\n\
                     buf = res.text\n\
-                    if panel then\n\
+                    if panel then\n  \
                       with_layer(10, fn() ui_block(rect(300, 0, 100, 100)) end)\n\
                     end\n\
                     has = has_focus(\"name\")";

@@ -267,7 +267,7 @@ fn a_runtime_error_writes_its_frame_then_exits_one() {
         "state n = 0\n\
          n = n + 1\n\
          let xs = [1, 2]\n\
-         if n == 3 then\n\
+         if n == 3 then\n    \
              print(str(xs[9]))\n\
          end\n",
     );

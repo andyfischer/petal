@@ -3645,7 +3645,7 @@ print(tick, grid, log, table, frozen(table), where, odd.far, odd.none, odd.tag =
         let mut vm = Vm::new();
         vm.load(
             "enum Kind\n  road(lanes),\n  empty,\nend\n\
-             fn toll(id: string, cents: int = 25, rate: float = 0.5, note = \"-\")\n\
+             fn toll(id: string, cents: int = 25, rate: float = 0.5, note = \"-\")\n  \
                \"{id} {cents} {type(cents)} {rate} {type(rate)} {note}\"\nend\n\
              fn lanes(k)\n  match k\n    when Kind.road(n) -> n\n    when _ -> 0\n  end\nend\n\
              fn over(a)\n  \"one\"\nend\nfn over(a, b)\n  \"two\"\nend\n\
@@ -3948,7 +3948,7 @@ push_output(symbol(\"out\"), if MODE == \"a\" then STEP else -STEP end)
     }
 
     const RETAINED: &str = "import ui\n\
-        cached_layer(1, rect(10, 20, 30, 40), fn()\n\
+        cached_layer(1, rect(10, 20, 30, 40), fn()\n  \
           draw_rects([0, 0, 4, 4, 0, 4, 0, 4, 4, 1], [:ff0000, {r: 0, g: 255, b: 0, a: 128}])\n\
         end)\n\
         button(rect(100, 100, 80, 20), \"Go\")\n";
@@ -4066,20 +4066,20 @@ push_output(symbol(\"out\"), if MODE == \"a\" then STEP else -STEP end)
         state var ticks = 0\n\
         set ticks = ticks + 1\n\
         fn double(x) x * 2 end\n\
-        test \"doubling\" do\n\
-          expect_eq(double(2), 4)\n\
-          expect_eq(double(3), 7, \"three\")\n\
-          expect_small(3)\n\
+        test \"doubling\" do\n  \
+          expect_eq(double(2), 4)\n  \
+          expect_eq(double(3), 7, \"three\")\n  \
+          expect_small(3)\n  \
           expect_small(30)\n\
         end\n\
-        test \"three frames pass\" do\n\
-          let before = get ticks\n\
-          wait_frames(3)\n\
+        test \"three frames pass\" do\n  \
+          let before = get ticks\n  \
+          wait_frames(3)\n  \
           expect_eq(get ticks, before + 3)\n\
         end\n\
-        test \"raises\" do\n\
-          expect(true)\n\
-          let xs = [1]\n\
+        test \"raises\" do\n  \
+          expect(true)\n  \
+          let xs = [1]\n  \
           print(xs[5])\n\
         end\n";
 

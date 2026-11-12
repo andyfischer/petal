@@ -17,14 +17,13 @@ Implemented (2026-11-12):
   [docs/syntax/indentation.md](../syntax/indentation.md).
 - P6, in part: hint and suggestion text shows blocks with no `end`, and the
   bytecode fuzzers also run on programs with no `end`.
+- P5 tooling: tree-sitter, vim, the website highlighter and Garden's
+  indentation have landed.
+- The other projects (website, worlds-fair, petal-creative, cheesecake,
+  `~/.garden`, `~/tools`) are migrated and re-vendored, and the Markdown
+  outside `docs/` is respelled (§7.5).
 
 Remaining:
-- P5 tooling: tree-sitter, vim, the website highlighter and Garden's
-  indentation are tracked by their own work.
-- Migrating the other projects (website, worlds-fair, petal-creative,
-  cheesecake) and re-vendoring Petal where it is vendored (§7.3).
-- Markdown outside `docs/` (README files, `examples/`), and re-running the
-  website's `scripts/import-docs.ts`.
 - P6: `end-inline` for one-liners (waits on open question 1); dropping the
   transitional `#hex` error (waits on the vendored projects, open
   question 2); removing `elsif`.
@@ -986,6 +985,47 @@ their own snippets (docs/internals/lsp.md), and the guide indents by four.
 A dry run removes 379 `end`s from 43 files with no gate failure, so the
 command is ready when P5 rewrites the prose:
 `petal migrate-old-code --markdown --only end-lines docs/`.
+
+### 7.5 The other projects, and what they found (done 2026-11-12)
+
+Each project ran `petal migrate-old-code` once from fully unmigrated
+source, then its own gate. What they reported against the tool, all fixed
+with a regression test (`cli/tests/migrate_old_code_cli.rs`,
+`core/tests/all/migrate_old_code.rs`):
+
+- **`old-imports` and `[host]`.** It added `import ui` / `import color` /
+  `import wf_seam` to 17 worlds-fair files whose `petal.toml` already says
+  the host provides them. It now reads `[host]` as `petal lint` does. With
+  the fix, a default run over worlds-fair's unmigrated `ui/ptl` writes
+  byte for byte what the project had committed with `--except old-imports`.
+- **`old-imports` guessing.** A Garden config script got `import ui` for
+  `row` while `layout` and `editor` stayed unknown. A file with a name no
+  package in reach exports now gets no import, and a note about `-I`.
+- **A file that lexes but does not parse** got nothing, not even its
+  colors. It now gets the token migrations, as a Markdown fence does.
+- **`state-key-deprecated`** rewrote `state([name, g.code_hash]) x =
+  g.uniforms` to `memo` (cheesecake's petal_fx.ptl). The purity check is on
+  access paths now.
+- **`# petal-lint-ignore-file old-imports`** keeps a fixture's bare import.
+- **`<image /> // note`** in element children is text; it is listed once.
+- **stdin** keeps leading blank lines; `--except old-imports` is the
+  documented way to migrate a fragment cut from a host string.
+- **fmt** wrote `{ /* comment */}` for `{/* comment */}`.
+- **Saved playground snippets** cannot be migrated from a repository, so
+  the web runtime exports `migrate_old_code` and the playground runs the
+  removed forms' migrations on a shared snippet when it loads it.
+- **Host code that joins unindented lines into a block** breaks at run
+  time and no tool can see it (§7.3, docs/syntax/indentation.md).
+
+Checked on the result: no `.ptl` in the six corpora holds a `#f80` color,
+a `//` comment or `elsif`, counted from tokens
+(`cargo run --example old_syntax_scan -- scan <dir>`), outside build
+output and one deliberately broken fixture; a second run of the tool
+changes nothing; 25 files taken from before the first migration parse to
+the AST of their migrated selves (10 of them after their colors alone are
+respelled, since `#f80` is the error §3.3 describes); and six example apps
+produce byte-identical 60-frame traces before and after under
+`--scenario monkey:3`.
 
 ## 8. Phases
 

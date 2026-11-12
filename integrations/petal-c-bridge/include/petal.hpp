@@ -676,7 +676,8 @@ public:
     bool append(const std::string& path, const std::string& value_json) {
         return pb_source_append(s_, path.c_str(), value_json.c_str()) == PB_OK;
     }
-    // Remove the list element or record field at `path`.
+    // Remove the list element, record field, attribute or child element at
+    // `path` (see pb_source_remove).
     bool remove(const std::string& path) { return pb_source_remove(s_, path.c_str()) == PB_OK; }
     bool move(const std::string& from, const std::string& to) {
         return pb_source_move(s_, from.c_str(), to.c_str()) == PB_OK;

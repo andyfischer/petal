@@ -125,7 +125,12 @@ pub fn parse_edit_path(path: &str) -> Result<(String, Vec<PathSeg>), String> {
     // `[n]`, with `rest` just past the `[`: the index and what follows.
     fn index(after: &str) -> Option<(usize, &str)> {
         let close = after.find(']')?;
-        Some((after[..close].trim().parse().ok()?, &after[close + 1..]))
+        // Digits only: `usize::from_str` would also take `+1`.
+        let digits = after[..close].trim();
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        Some((digits.parse().ok()?, &after[close + 1..]))
     }
     while !rest.is_empty() {
         if let Some(after) = rest.strip_prefix('.') {

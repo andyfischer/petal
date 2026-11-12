@@ -34,6 +34,9 @@ A path is a binding name followed by steps:
 | `/tag` | the only child element with that tag | `card/title` |
 | `/@name` | an attribute, XPath's spelling of `.name` | `layers[2]/image[1]/@x` |
 
+An index `n` is decimal digits only (`[+1]` and `[-1]` are not paths);
+blanks around it are allowed.
+
 Every path that worked before child steps existed means what it did before.
 `.` and `[n]` are unchanged. `/` was not valid in a path until now.
 
@@ -78,26 +81,35 @@ The same formatting rules apply as for list elements
 | set | Edit the child in place. Same tag: only the attributes and children that differ change. Another tag: the child's text is replaced. A child can only be set to an element. |
 | insert | Insert before the current `image[1]`. With the index one past the last `<image>`, insert just after that `<image>`. `/*[0]` makes it the first child. Needs an index. Only an element can be inserted. |
 | append | `append_path("layers[2]", el)` on an element adds `el` as its last child element. |
-| remove | Remove that child. On its own line it takes the line with it. Comments and blank lines on other lines stay. |
-| move | `move_path(from, to)`: remove `from` and insert its text at `to`. `to` is read after `from` is taken out, and may be in another list or element. |
+| remove | Remove that child. On its own line it takes the line with it, and a `// note` after it on that line (text, though written as a comment about the element). Comments and blank lines on other lines stay. |
+| move | `move_path(from, to)`: remove `from` and insert its text at `to`. `to` is read after `from` is taken out, and may be in another list or element. A `to` that names the place `from` already is (`g/image[1]` → `g/*[1]`) changes nothing. The comment trailing a moved list element (or the note after a moved child) comes along; among children it goes on its own line above the element, since after a tag it would be text. |
 
 Layout of a new or moved child:
 
 - Its siblings each have a line: it gets a line at their indentation,
   directly below the previous child's line. A first child goes directly below
-  the open tag.
+  the open tag, or below the text there if text comes before the old first
+  child.
 - Its siblings share a line (`<a /> <b />`): it joins that line, with the
   spacing they use.
 - The element has no child elements yet: the child goes on its own line, one
   indent step in. A self-closing `<group />` gains a close tag. Comments
   already inside stay above the new child.
 - A moved multi-line child is re-indented to its new depth.
+- In a file whose lines end in CRLF, inserted lines do too (lists alike).
+- An element in a `{(<tag />)}` hole is spanned with its parentheses and
+  braces, like one in a `{<tag />}` hole.
 
 Setting a whole element whose children are all elements, before and after,
 edits the children one at a time, like a list's elements. So a host that writes
 back a whole `layers` list after moving a layer inside a group changes only
-what moved. When text is among the children, they are rewritten whole, and
-only if they differ.
+what moved. A child (or list element) that only moved takes the `//` comment
+lines directly above it along (`move_path` does not: it moves only the
+element and its trailing comment). An element with no children before counts
+as all elements: the new ones go below any comments inside. When text is
+among the children and stays the same, with each element child still an
+element in the same place, the element children are edited in place;
+otherwise the children are rewritten whole, and only if they differ.
 
 ## Errors
 

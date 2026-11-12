@@ -465,3 +465,148 @@ fn a_bad_path_says_which_step_failed_and_what_is_there() {
         .collect();
     assert_eq!(text, "520");
 }
+
+// ── Review fixes (2026-11-11) ────────────────────────────────────────────
+
+fn el(tag: &str, props: &[(&str, StaticValue)], children: Vec<StaticValue>) -> StaticValue {
+    StaticValue::element(tag, props.iter().cloned(), children)
+}
+
+#[test]
+fn an_empty_element_set_whole_keeps_the_comments_inside() {
+    let src = "let g = <group>\n  // keep this note\n</group>\n";
+    let want = "let g = <group>\n  // keep this note\n  <a />\n</group>\n";
+    let a = el("a", &[], vec![]);
+    let set = literal_edit::set_path(src, "g", &el("group", &[], vec![a.clone()])).unwrap();
+    assert_eq!(set, want);
+    assert_eq!(literal_edit::append_path(src, "g", &a).unwrap(), want);
+}
+
+#[test]
+fn a_list_element_moved_into_an_element_keeps_its_trailing_comment() {
+    let src = "let layers = [\n  <a />, // keep me\n  <g>\n    <b />\n  </g>,\n]\n";
+    let got = literal_edit::move_path(src, "layers[0]", "layers[0]/*[1]").unwrap();
+    assert_eq!(
+        got,
+        "let layers = [\n  <g>\n    <b />\n    // keep me\n    <a />\n  </g>,\n]\n"
+    );
+    // And back out again: the comment comes along.
+    let back = literal_edit::move_path(&got, "layers[0]/a", "layers[0]").unwrap();
+    assert!(back.contains("// keep me"), "{back}");
+}
+
+#[test]
+fn a_move_to_the_same_place_spelled_another_way_changes_nothing() {
+    let src = "let g = <group>\n  <image src=\"a\" />\n\n  // about b\n  <image src=\"b\" />\n  <text>t</text>\n</group>\n";
+    for (from, to) in [
+        ("g/image[1]", "g/*[1]"),
+        ("g/image[1]", "g/image[1]"),
+        ("g/*[0]", "g/image[0]"),
+        ("g/text", "g/*[2]"),
+    ] {
+        assert_eq!(literal_edit::move_path(src, from, to).unwrap(), src, "{from} -> {to}");
+    }
+    let list = "let l = [\n  1,\n  // two\n  2,\n]\n";
+    assert_eq!(literal_edit::move_path(list, "l[1]", "l[ 1]").unwrap(), list);
+}
+
+#[test]
+fn a_whole_element_set_that_swaps_children_moves_their_comments_with_them() {
+    let src = "let g = <group>\n  // A comment\n  <a n={1} />\n  // B comment\n  <b n={2} />\n</group>\n";
+    let StaticValue::Element { tag, props, mut children } = get_static_value(src, "g").unwrap() else {
+        panic!("an element");
+    };
+    children.swap(0, 1);
+    let swapped = StaticValue::Element { tag, props, children };
+    assert_eq!(
+        literal_edit::set_path(src, "g", &swapped).unwrap(),
+        "let g = <group>\n  // B comment\n  <b n={2} />\n  // A comment\n  <a n={1} />\n</group>\n"
+    );
+    // A list's elements do the same.
+    let src = "let l = [\n  // A\n  { a: 1 },\n  // B\n  { b: 2 },\n]\n";
+    let StaticValue::List(mut items) = get_static_value(src, "l").unwrap() else {
+        panic!("a list");
+    };
+    items.swap(0, 1);
+    assert_eq!(
+        literal_edit::set_path(src, "l", &StaticValue::List(items)).unwrap(),
+        "let l = [\n  // B\n  { b: 2 },\n  // A\n  { a: 1 },\n]\n"
+    );
+}
+
+#[test]
+fn a_child_in_a_parenthesised_hole_can_be_removed_moved_and_inserted_after() {
+    let src = "let g = <group>\n  {<a />}\n  { <b x={1} /> }\n  {(<c />)}\n</group>\n";
+    assert_eq!(
+        literal_edit::remove_path(src, "g/c").unwrap(),
+        "let g = <group>\n  {<a />}\n  { <b x={1} /> }\n</group>\n"
+    );
+    assert_eq!(
+        literal_edit::move_path(src, "g/c", "g/*[0]").unwrap(),
+        "let g = <group>\n  <c />\n  {<a />}\n  { <b x={1} /> }\n</group>\n"
+    );
+    assert_eq!(
+        literal_edit::insert_path(src, "g/*[3]", &el("d", &[], vec![]), &Default::default())
+            .unwrap(),
+        "let g = <group>\n  {<a />}\n  { <b x={1} /> }\n  {(<c />)}\n  <d />\n</group>\n"
+    );
+}
+
+#[test]
+fn a_first_child_goes_after_the_text_before_it() {
+    let src = "let g = <text>\n  Title\n  <b />\n</text>\n";
+    assert_eq!(
+        literal_edit::insert_path(src, "g/*[0]", &el("i", &[], vec![]), &Default::default())
+            .unwrap(),
+        "let g = <text>\n  Title\n  <i />\n  <b />\n</text>\n"
+    );
+    // Comments before the first child still stay above the new one.
+    let src = "let g = <group>\n  // the layers\n  <b />\n</group>\n";
+    assert_eq!(
+        literal_edit::insert_path(src, "g/*[0]", &el("i", &[], vec![]), &Default::default())
+            .unwrap(),
+        "let g = <group>\n  <i />\n  // the layers\n  <b />\n</group>\n"
+    );
+}
+
+#[test]
+fn inserts_into_a_crlf_file_keep_crlf() {
+    let src = "let g = <group>\r\n  <a />\r\n  <b />\r\n</group>\r\n";
+    let got = literal_edit::insert_path(src, "g/*[1]", &el("c", &[], vec![]), &Default::default())
+        .unwrap();
+    assert_eq!(got, "let g = <group>\r\n  <a />\r\n  <c />\r\n  <b />\r\n</group>\r\n");
+    let src = "let l = [\r\n  1,\r\n  2,\r\n]\r\n";
+    let got = literal_edit::insert_path(src, "l[1]", &StaticValue::int(9), &Default::default())
+        .unwrap();
+    assert_eq!(got, "let l = [\r\n  1,\r\n  9,\r\n  2,\r\n]\r\n");
+}
+
+#[test]
+fn a_note_after_a_tag_survives_a_whole_set_and_goes_with_its_element() {
+    let src = "let g = <group>\n  <a x={1} /> // first\n  <b />\n</group>\n";
+    let StaticValue::Element { tag, props, mut children } = get_static_value(src, "g").unwrap() else {
+        panic!("an element");
+    };
+    let StaticValue::Element { props: b_props, .. } = &mut children[2] else {
+        panic!("<b>: {children:?}");
+    };
+    b_props.push(("y".into(), StaticValue::int(2)));
+    assert_eq!(
+        literal_edit::set_path(src, "g", &StaticValue::Element { tag, props, children }).unwrap(),
+        "let g = <group>\n  <a x={1} /> // first\n  <b y={2} />\n</group>\n"
+    );
+    assert_eq!(
+        literal_edit::remove_path(src, "g/a").unwrap(),
+        "let g = <group>\n  <b />\n</group>\n"
+    );
+}
+
+#[test]
+fn an_index_is_digits_only() {
+    let src = "let g = <group>\n  <a />\n  <a />\n</group>\n";
+    for path in ["g/a[+1]", "g/a[-1]", "g/*[+0]"] {
+        let e = literal_edit::set_path(src, path, &StaticValue::int(1)).unwrap_err();
+        assert_eq!(e.kind, EditErrorKind::Invalid, "{path}");
+        assert!(e.message.contains("is not an edit path"), "{path}: {}", e.message);
+    }
+}

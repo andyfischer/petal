@@ -207,6 +207,25 @@ fn insert_what(
     what: What,
     placement: &Placement,
 ) -> Result<String, EditError> {
+    match plan_insert(source, path, what, placement)? {
+        Planned::Done(text) => Ok(text),
+        Planned::Op(name, op) => apply(source, &name, &[op]),
+    }
+}
+
+/// What an insert comes to: an op on a binding, or (a field that is already
+/// there being set) the finished source.
+enum Planned {
+    Done(String),
+    Op(String, Op),
+}
+
+fn plan_insert(
+    source: &str,
+    path: &str,
+    what: What,
+    placement: &Placement,
+) -> Result<Planned, EditError> {
     let (name, segs) = parse_path(path)?;
     let Some((last, parent_path)) = segs.split_last() else {
         return Err(EditError::invalid(format!(
@@ -230,7 +249,7 @@ fn insert_what(
         (PathSeg::Field(key), Shape::Record(fields)) => {
             if field_index(fields, key).is_some() {
                 return match what {
-                    What::Value(value) => set_path(source, path, &value),
+                    What::Value(value) => set_path(source, path, &value).map(Planned::Done),
                     What::Text { .. } => Err(EditError::invalid(format!(
                         "`{path}` is already there; a field cannot be moved onto another"
                     ))),
@@ -249,7 +268,7 @@ fn insert_what(
         (PathSeg::Field(key), Shape::Element(props)) => {
             if attr_index(props, key).is_some() {
                 return match what {
-                    What::Value(value) => set_path(source, path, &value),
+                    What::Value(value) => set_path(source, path, &value).map(Planned::Done),
                     What::Text { .. } => Err(EditError::invalid(format!(
                         "`{path}` is already there; an attribute cannot be moved onto another"
                     ))),
@@ -275,7 +294,7 @@ fn insert_what(
                 index,
                 what,
             };
-            return apply(source, &name, &[op]);
+            return Ok(Planned::Op(name, op));
         }
         (PathSeg::Index(i), Shape::Element(_)) => {
             return Err(EditError::invalid(format!(
@@ -301,7 +320,7 @@ fn insert_what(
         key,
         what,
     };
-    apply(source, &name, &[op])
+    Ok(Planned::Op(name, op))
 }
 
 /// Only an element can go among an element's children.
@@ -380,7 +399,7 @@ pub fn remove_path(source: &str, path: &str) -> Result<String, EditError> {
                 let Some(PathSeg::ChildAt(index)) = segs.pop() else {
                     return Err(nothing_at(path));
                 };
-                let op = Op::RemoveChild { segs, index };
+                let op = Op::RemoveChild { segs, index, lead: false };
                 return apply(&text, &name, &[op]);
             }
             (PathSeg::Index(_), _) => {
@@ -388,13 +407,14 @@ pub fn remove_path(source: &str, path: &str) -> Result<String, EditError> {
                 let Some(PathSeg::Index(index)) = segs.pop() else {
                     return Err(nothing_at(path));
                 };
-                let op = Op::Remove { segs, index };
+                let op = Op::Remove { segs, index, lead: false };
                 return apply(&text, &name, &[op]);
             }
             (PathSeg::Field(key), Shape::Record(fields)) => match field_index(fields, key) {
                 Some(index) => Op::Remove {
                     segs: parent_segs,
                     index,
+                    lead: false,
                 },
                 None => return Ok(text),
             },
@@ -402,6 +422,7 @@ pub fn remove_path(source: &str, path: &str) -> Result<String, EditError> {
                 Some(index) => Op::Remove {
                     segs: parent_segs,
                     index,
+                    lead: false,
                 },
                 None => return Ok(text),
             },
@@ -418,8 +439,10 @@ pub fn remove_path(source: &str, path: &str) -> Result<String, EditError> {
 /// so it names where the value ends up: `layers[0]` → `layers[2]` makes the
 /// first layer the third. It can be in another container, of either kind:
 /// `layers[3]` → `layers[1]/*[0]` moves a top-level layer into a group as its
-/// first child. A multi-line value is re-indented to its new depth. A path
-/// moved onto itself changes nothing.
+/// first child. A multi-line value is re-indented to its new depth. A `to`
+/// naming the place `from` already is, however it is spelled, changes
+/// nothing. The comment trailing the value on its line comes along (among an
+/// element's children, on its own line above it).
 pub fn move_path(source: &str, from: &str, to: &str) -> Result<String, EditError> {
     let (name, segs) = parse_path(from)?;
     parse_path(to)?;
@@ -443,17 +466,23 @@ pub fn move_path(source: &str, from: &str, to: &str) -> Result<String, EditError
                 text: doc.text(item.start, item.end),
                 tail: doc.tail(item),
                 indent: doc.line_indent(item.start),
+                lead: String::new(),
             };
-            (Op::Remove { segs, index }, what)
+            (Op::Remove { segs, index, lead: false }, what)
         }
-        (Some(PathSeg::ChildAt(index)), Some(_)) => {
+        (Some(PathSeg::ChildAt(index)), Some(parent)) => {
             let start = value.span.start.offset as usize;
+            let tail = doc
+                .child_items(parent)
+                .and_then(|items| items.get(index).map(|item| doc.child_tail(item)))
+                .unwrap_or_default();
             let what = What::Text {
                 text: doc.expr_text(value),
-                tail: String::new(),
+                tail,
                 indent: doc.line_indent(start),
+                lead: String::new(),
             };
-            (Op::RemoveChild { segs, index }, what)
+            (Op::RemoveChild { segs, index, lead: false }, what)
         }
         _ => {
             return Err(EditError::invalid(format!(
@@ -461,8 +490,29 @@ pub fn move_path(source: &str, from: &str, to: &str) -> Result<String, EditError
             )));
         }
     };
-    let removed = apply(source, &name, &[op])?;
-    insert_what(&removed, to, what, &Placement::End)
+    let removed = apply(source, &name, std::slice::from_ref(&op))?;
+    match plan_insert(&removed, to, what, &Placement::End)? {
+        Planned::Done(text) => Ok(text),
+        Planned::Op(to_name, to_op) => {
+            // Back where it was (`g/image[1]` → `g/*[1]`): nothing moves.
+            let same = to_name == name
+                && match (&op, &to_op) {
+                    (
+                        Op::Remove { segs, index, .. },
+                        Op::Insert { segs: to_segs, index: to_index, key: None, .. },
+                    )
+                    | (
+                        Op::RemoveChild { segs, index, .. },
+                        Op::InsertChild { segs: to_segs, index: to_index, .. },
+                    ) => segs == to_segs && index == to_index,
+                    _ => false,
+                };
+            if same {
+                return Ok(source.to_string());
+            }
+            apply(&removed, &to_name, &[to_op])
+        }
+    }
 }
 
 fn parse_path(path: &str) -> Result<(String, Vec<PathSeg>), EditError> {
@@ -679,7 +729,9 @@ fn resolve<'a>(root: &'a Expr, segs: &[PathSeg]) -> Result<&'a Expr, usize> {
 /// New content: a value to render in the surrounding style, or source text
 /// lifted from elsewhere (an element that only moved) — the element's own
 /// text, the comment trailing it on its line, if any, and the indentation of
-/// the line it started on, so a multi-line text can be re-indented.
+/// the line it started on, so a multi-line text can be re-indented. `lead`
+/// is the `//` comment lines directly above it, when they move with it (a
+/// reorder through a whole-value set), each ending in a newline.
 #[derive(Debug, Clone)]
 enum What {
     Value(StaticValue),
@@ -687,7 +739,53 @@ enum What {
         text: String,
         tail: String,
         indent: String,
+        lead: String,
     },
+}
+
+impl What {
+    /// The comments that go with a moved text, as whole lines at `indent`:
+    /// its leading comment lines, then the comment that trailed it (which
+    /// cannot trail an element's tag: there it would be text).
+    fn comment_lines(&self, indent: &str, with_tail: bool) -> String {
+        let What::Text { tail, lead, .. } = self else {
+            return String::new();
+        };
+        let mut out = String::new();
+        for line in lead.lines() {
+            out.push_str(indent);
+            out.push_str(line.trim());
+            out.push('\n');
+        }
+        if with_tail && !tail.trim().is_empty() {
+            out.push_str(indent);
+            out.push_str(tail.trim());
+            out.push('\n');
+        }
+        out
+    }
+
+    /// The same comments as `/* … */` block comments, for a place with no
+    /// line of its own (each followed by a space).
+    fn inline_comments(&self, with_tail: bool, hole: bool) -> String {
+        let What::Text { tail, lead, .. } = self else {
+            return String::new();
+        };
+        let tail = if with_tail { tail.as_str() } else { "" };
+        lead.lines()
+            .chain(std::iter::once(tail))
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                let body = line.strip_prefix("//").unwrap_or(line).trim().replace("*/", "* /");
+                if hole {
+                    format!("{{/* {body} */}} ")
+                } else {
+                    format!("/* {body} */ ")
+                }
+            })
+            .collect()
+    }
 }
 
 /// `text`, which started on a line indented by `from`, re-indented for a line
@@ -727,8 +825,13 @@ enum Op {
         key: Option<String>,
         what: What,
     },
-    /// Remove element `index` of the container at `segs`.
-    Remove { segs: Vec<PathSeg>, index: usize },
+    /// Remove element `index` of the container at `segs` (with the comment
+    /// lines directly above it when `lead`, for an element that moves).
+    Remove {
+        segs: Vec<PathSeg>,
+        index: usize,
+        lead: bool,
+    },
     /// Rewrite attribute `index` of the element at `segs` whole, for a value
     /// its current spelling cannot hold (`font="Futura"` becoming a number,
     /// a bare `muted` becoming `false`).
@@ -749,8 +852,13 @@ enum Op {
         index: usize,
         what: What,
     },
-    /// Remove child element `index` of the element at `segs`.
-    RemoveChild { segs: Vec<PathSeg>, index: usize },
+    /// Remove child element `index` of the element at `segs` (with the
+    /// comment lines directly above it when `lead`).
+    RemoveChild {
+        segs: Vec<PathSeg>,
+        index: usize,
+        lead: bool,
+    },
 }
 
 /// One step of lining an old sequence up with a new one.
@@ -758,6 +866,29 @@ enum Step {
     Keep(usize, usize),
     Insert(usize),
     Remove(usize),
+}
+
+/// The elements that only move: each `Insert(j)` paired with a `Remove(i)`
+/// of the same value (`same(i, j)`), first come first served, as
+/// `(j, i)` pairs.
+fn pair_moves(steps: &[Step], same: &dyn Fn(usize, usize) -> bool) -> Vec<(usize, usize)> {
+    let mut removed: Vec<usize> = steps
+        .iter()
+        .filter_map(|step| match step {
+            Step::Remove(i) => Some(*i),
+            _ => None,
+        })
+        .collect();
+    steps
+        .iter()
+        .filter_map(|step| match step {
+            Step::Insert(j) => {
+                let at = removed.iter().position(|&i| same(i, *j))?;
+                Some((*j, removed.swap_remove(at)))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Longest common subsequence of `0..n` and `0..m` under `same`.
@@ -1481,6 +1612,7 @@ impl Doc {
                 Step::Remove(_) => ops.push(Op::Remove {
                     segs: segs.clone(),
                     index: pos,
+                    lead: false,
                 }),
             }
         }
@@ -1496,16 +1628,45 @@ impl Doc {
         }
         // Children that are all elements, before and after, are edited one
         // child at a time, like a list's elements, so the comments and
-        // layout between the tags stay. Text among them is rewritten whole.
+        // layout between the tags stay. (No children before counts: the new
+        // ones are inserted below any comments already inside.)
         let kids = element_children(old);
-        let all_elements = !kids.is_empty()
-            && kids.len() == old_children.len()
+        let all_elements = kids.len() == old_children.len()
             && !new_children.is_empty()
             && new_children
                 .iter()
                 .all(|child| matches!(child, StaticValue::Element { .. }));
         if all_elements && let Some(items) = self.child_items(old) {
             return self.plan_children(bindings, &kids, &items, segs, new_children, ops);
+        }
+        // Text among them that stays as it is, with each element child still
+        // an element in the same place: the elements are edited in place.
+        // Otherwise the text changed, and the children are rewritten whole.
+        if let Ok(old_values) = &old_values
+            && old_values.len() == new_children.len()
+            && old_children.iter().zip(old_values).zip(new_children).all(
+                |((child, old_value), new_value)| match child {
+                    JsxChild::Expr(e) if matches!(e.kind, ExprKind::Element { .. }) => {
+                        matches!(new_value, StaticValue::Element { .. })
+                    }
+                    _ => old_value == new_value,
+                },
+            )
+        {
+            let pairs = old_children.iter().zip(new_children).filter_map(|(child, new)| {
+                match child {
+                    JsxChild::Expr(e) if matches!(e.kind, ExprKind::Element { .. }) => {
+                        Some((e, new))
+                    }
+                    _ => None,
+                }
+            });
+            for (at, (kid, new)) in pairs.enumerate() {
+                segs.push(PathSeg::ChildAt(at));
+                self.plan(bindings, kid, segs, new, ops);
+                segs.pop();
+            }
+            return;
         }
         ops.push(Op::ReplaceChildren {
             segs: segs.clone(),
@@ -1544,13 +1705,9 @@ impl Doc {
             ],
             &mut steps,
         );
-        let mut moved: Vec<usize> = steps
-            .iter()
-            .filter_map(|step| match step {
-                Step::Remove(i) => Some(*i),
-                _ => None,
-            })
-            .collect();
+        // A child that only moved keeps its text, and the comment lines
+        // directly above it go with it.
+        let moves = pair_moves(&steps, &|i, j| old_values[i].as_ref() == Some(&new[j]));
         let mut pos = 0;
         for step in steps {
             match step {
@@ -1561,16 +1718,22 @@ impl Doc {
                     pos += 1;
                 }
                 Step::Insert(j) => {
-                    let source = moved
-                        .iter()
-                        .position(|&i| old_values[i].as_ref() == Some(&new[j]))
-                        .map(|at| moved.swap_remove(at));
-                    let what = match source {
-                        Some(i) => What::Text {
-                            text: self.expr_text(kids[i]),
-                            tail: String::new(),
-                            indent: self.line_indent(items[i].start),
-                        },
+                    let what = match moves.iter().find(|&&(to, _)| to == j) {
+                        Some(&(_, i)) => {
+                            let item = &items[i];
+                            let line = self.line_start(item.start);
+                            let lead = if self.child_own_line(item) {
+                                self.text(self.lead_start(item.start), line)
+                            } else {
+                                String::new()
+                            };
+                            What::Text {
+                                text: self.expr_text(kids[i]),
+                                tail: self.child_tail(item),
+                                indent: self.line_indent(item.start),
+                                lead,
+                            }
+                        }
                         None => What::Value(new[j].clone()),
                     };
                     ops.push(Op::InsertChild {
@@ -1580,9 +1743,10 @@ impl Doc {
                     });
                     pos += 1;
                 }
-                Step::Remove(_) => ops.push(Op::RemoveChild {
+                Step::Remove(i) => ops.push(Op::RemoveChild {
                     segs: segs.clone(),
                     index: pos,
+                    lead: moves.iter().any(|&(_, from)| from == i),
                 }),
             }
         }
@@ -1603,15 +1767,24 @@ impl Doc {
                 if start >= end || end > len || self.chars[start] != '<' {
                     return None;
                 }
+                // Out through `(…)` and blanks to the hole's braces, if the
+                // element is the whole hole.
                 let (mut s, mut e) = (start, end);
-                while s > 0 && self.chars[s - 1].is_whitespace() {
-                    s -= 1;
-                }
-                while e < len && self.chars[e].is_whitespace() {
-                    e += 1;
-                }
-                if s > 0 && self.chars[s - 1] == '{' && self.chars.get(e) == Some(&'}') {
-                    (start, end) = (s - 1, e + 1);
+                loop {
+                    while s > 0 && self.chars[s - 1].is_whitespace() {
+                        s -= 1;
+                    }
+                    while e < len && self.chars[e].is_whitespace() {
+                        e += 1;
+                    }
+                    match (s.checked_sub(1).map(|i| self.chars[i]), self.chars.get(e)) {
+                        (Some('('), Some(')')) => (s, e) = (s - 1, e + 1),
+                        (Some('{'), Some('}')) => {
+                            (start, end) = (s - 1, e + 1);
+                            break;
+                        }
+                        _ => break,
+                    }
                 }
                 Some(Item {
                     start,
@@ -1624,14 +1797,42 @@ impl Doc {
             .collect()
     }
 
-    /// Whether a child element has its line(s) to itself. (A `//` after a tag
-    /// on its line is text, not a comment, so it does not count as room.)
+    /// Whether a child element has its line(s) to itself: nothing before it
+    /// on its line, and after it nothing, or a `//` note. (Such a note is
+    /// text, not a comment, but it is written as one about this element: it
+    /// goes where the element goes.)
     fn child_own_line(&self, item: &Item) -> bool {
-        self.starts_line(item.start)
-            && self.chars[item.end..]
-                .iter()
-                .take_while(|&&c| c != '\n')
-                .all(|&c| is_blank(c))
+        self.starts_line(item.start) && {
+            let rest = self.text(item.end, self.line_end_after(item.end));
+            let rest = rest.trim();
+            rest.is_empty() || rest.starts_with("//")
+        }
+    }
+
+    /// The `//` note after a child element on its line, if it has the line
+    /// otherwise to itself.
+    fn child_tail(&self, item: &Item) -> String {
+        if !self.child_own_line(item) {
+            return String::new();
+        }
+        self.text(item.end, self.line_end_after(item.end))
+            .trim_end()
+            .to_string()
+    }
+
+    /// Where the `//` comment lines directly above the line `at` is on
+    /// start (no blank line between): the start of that line when there are
+    /// none.
+    fn lead_start(&self, at: usize) -> usize {
+        let mut start = self.line_start(at);
+        while start > 0 {
+            let above = self.line_start(start - 1);
+            if !self.text(above, start).trim_start().starts_with("//") {
+                break;
+            }
+            start = above;
+        }
+        start
     }
 
     /// Splices inserting a child element into `container` so it becomes
@@ -1655,6 +1856,14 @@ impl Doc {
             What::Text { text, indent: from, .. } => reindent(text, from, indent),
             What::Value(value) => self.render(value, model, indent),
         };
+        // The element on its own line(s) at `indent`, its comments above it.
+        let block = |indent: &str, model: Option<&Expr>| {
+            format!("{}{indent}{}", what.comment_lines(indent, true), elem(indent, model))
+        };
+        // The element sharing a line, its comments as `{/* … */}` holes.
+        let inline = |indent: &str, model: Option<&Expr>| {
+            format!("{}{}", what.inline_comments(true, true), elem(indent, model))
+        };
         let at = |at: usize, text: String| Splice {
             start: at,
             end: at,
@@ -1666,7 +1875,7 @@ impl Doc {
             // No child elements yet: the first goes on a line of its own,
             // one step in, as `to_source` writes children.
             let inner = format!("{outer}{}", self.file_style().step);
-            let body = elem(&inner, None);
+            let body = block(&inner, None);
             let Some(close) = tag.close else {
                 let own_line = self.starts_line(tag.open_end.start);
                 let mut before = tag.open_end.start;
@@ -1678,7 +1887,7 @@ impl Doc {
                 return Ok(vec![Splice {
                     start: before,
                     end: container.span.end.offset as usize,
-                    text: format!(">\n{inner}{body}\n{outer}</{}>", tag.name),
+                    text: format!(">\n{body}\n{outer}</{}>", tag.name),
                 }]);
             };
             let inside = self.text(tag.open_end.end, close);
@@ -1686,26 +1895,27 @@ impl Doc {
                 Splice {
                     start: tag.open_end.end,
                     end: close,
-                    text: format!("\n{inner}{body}\n{outer}"),
+                    text: format!("\n{body}\n{outer}"),
                 }
             } else if self.starts_line(close) {
                 // Comments (or text) already inside: keep them, and add the
                 // child below them.
-                at(self.line_start(close), format!("{inner}{body}\n"))
+                at(self.line_start(close), format!("{body}\n"))
             } else {
-                at(close, body)
+                at(close, inline(&inner, None))
             }]);
         };
         let model = kids.get(index.saturating_sub(1)).copied();
         let indent = self.line_indent(near.start);
         if self.child_own_line(near) {
-            let text = format!("{indent}{}\n", elem(&indent, model));
+            let text = format!("{}\n", block(&indent, model));
             if index == 0 {
                 // Directly below the open tag (as a list's first element goes
-                // directly below its `[`).
+                // directly below its `[`), but after any text there: the new
+                // element goes between that text and the old first child.
                 let below_open = self.line_end_after(tag.open_end.end);
                 let line = self.line_start(near.start);
-                return Ok(vec![at(below_open.min(line), text)]);
+                return Ok(vec![at(self.after_text(below_open, line), text)]);
             }
             return Ok(vec![at(self.line_end_after(near.end), text)]);
         }
@@ -1715,17 +1925,51 @@ impl Doc {
             .find(|gap| gap.chars().all(is_blank))
             .unwrap_or_default();
         Ok(vec![if index > 0 {
-            at(near.end, format!("{sep}{}", elem(&indent, model)))
+            at(near.end, format!("{sep}{}", inline(&indent, model)))
         } else {
-            at(near.start, format!("{}{sep}", elem(&indent, model)))
+            at(near.start, format!("{}{sep}", inline(&indent, model)))
         }])
+    }
+
+    /// The start of the first line in `from..to` (whole lines) after the
+    /// last one holding text, skipping comment lines and blank ones: `from`
+    /// when no line holds text. `to` when `from` is past it.
+    fn after_text(&self, from: usize, to: usize) -> usize {
+        if from >= to {
+            return to;
+        }
+        let mut at = from;
+        let mut pos = from;
+        let mut in_block = false;
+        while pos < to {
+            let end = self.line_end_after(pos).min(to);
+            let line = self.text(pos, end);
+            let line = line.trim();
+            if in_block {
+                in_block = !line.contains("*/");
+            } else if line.starts_with("/*") {
+                in_block = !line.contains("*/");
+            } else if !line.is_empty()
+                && !line.starts_with("//")
+                && !(line.starts_with("{/*") && line.ends_with("*/}"))
+            {
+                at = end;
+            }
+            pos = end;
+        }
+        at
     }
 
     /// Splices removing child element `index` of `container`: its whole
     /// line(s) when it has them to itself, else the element and the spacing
     /// between it and a sibling on the same line. Comments on other lines
     /// stay.
-    fn remove_child(&self, container: &Expr, index: usize) -> Result<Vec<Splice>, EditError> {
+    fn remove_child(
+        &self,
+        container: &Expr,
+        index: usize,
+        lead: bool,
+    ) -> Result<Vec<Splice>, EditError> {
         let items = self.child_items(container).ok_or_else(|| {
             EditError::invalid("the element there could not be located in the source")
         })?;
@@ -1738,10 +1982,12 @@ impl Doc {
             text: String::new(),
         };
         if self.child_own_line(item) {
-            return Ok(vec![cut(
-                self.line_start(item.start),
-                self.line_end_after(item.end),
-            )]);
+            let start = if lead {
+                self.lead_start(item.start)
+            } else {
+                self.line_start(item.start)
+            };
+            return Ok(vec![cut(start, self.line_end_after(item.end))]);
         }
         let blank_between = |a: usize, b: usize| self.chars[a..b].iter().all(|&c| is_blank(c));
         if let Some(next) = items.get(index + 1).filter(|n| blank_between(item.end, n.start)) {
@@ -2086,6 +2332,11 @@ impl Doc {
                     text: self.text(item.start, item.end),
                     tail: self.tail(item),
                     indent: self.line_indent(item.start),
+                    lead: if self.own_line(item) {
+                        self.text(self.lead_start(item.start), self.line_start(item.start))
+                    } else {
+                        String::new()
+                    },
                 })
                 .collect(),
             None => Vec::new(),
@@ -2147,14 +2398,14 @@ impl Doc {
             );
         }
         // An element that leaves one place and arrives in another, unchanged,
-        // keeps its text.
-        let mut moved: Vec<usize> = steps
-            .iter()
-            .filter_map(|step| match step {
-                Step::Remove(i) => Some(*i),
-                _ => None,
-            })
-            .collect();
+        // keeps its text, and the comment lines directly above it go with it.
+        let moves = pair_moves(&steps, &|i, j| {
+            old_values[i].as_ref() == Some(new_values[j])
+                && keys.as_ref().is_none_or(|keys| {
+                    matches!(shape(old), Shape::Record(fields)
+                        if matches!(&fields[i], RecordField::Named(k, _) if k == keys[j]))
+                })
+        });
         let mut pos = 0;
         for step in steps {
             match step {
@@ -2171,16 +2422,10 @@ impl Doc {
                     pos += 1;
                 }
                 Step::Insert(j) => {
-                    let source = moved.iter().position(|&i| {
-                        old_values[i].as_ref() == Some(new_values[j])
-                            && keys.as_ref().is_none_or(|keys| {
-                                matches!(shape(old), Shape::Record(fields)
-                                    if matches!(&fields[i], RecordField::Named(k, _) if k == keys[j]))
-                            })
-                    });
-                    let text = source
-                        .map(|at| moved.swap_remove(at))
-                        .and_then(|i| texts.get(i).cloned());
+                    let text = moves
+                        .iter()
+                        .find(|&&(to, _)| to == j)
+                        .and_then(|&(_, i)| texts.get(i).cloned());
                     ops.push(Op::Insert {
                         segs: segs.clone(),
                         index: pos,
@@ -2189,9 +2434,10 @@ impl Doc {
                     });
                     pos += 1;
                 }
-                Step::Remove(_) => ops.push(Op::Remove {
+                Step::Remove(i) => ops.push(Op::Remove {
                     segs: segs.clone(),
                     index: pos,
+                    lead: moves.iter().any(|&(_, from)| from == i),
                 }),
             }
         }
@@ -2260,7 +2506,8 @@ impl Doc {
             let composite = matches!(what, What::Value(v) if v.is_composite());
             return Ok(vec![if gap.contains('\n') {
                 let line = self.line_end_after(seq.open_end);
-                at(line, format!("{inner}{},{tail}\n", elem(&inner)))
+                let lead = what.comment_lines(&inner, false);
+                at(line, format!("{lead}{inner}{},{tail}\n", elem(&inner)))
             } else if seq.kind == SyntaxKind::ListExpr && composite && gap.trim().is_empty() {
                 // What `to_source` does with a list of composites: one per line.
                 Splice {
@@ -2286,11 +2533,12 @@ impl Doc {
 
         if self.own_line(near) {
             let indent = self.line_indent(near.start);
+            let lead = what.comment_lines(&indent, false);
             if index == 0 {
                 let line = self.line_end_after(seq.open_end);
                 return Ok(vec![at(
                     line,
-                    format!("{indent}{},{tail}\n", elem(&indent)),
+                    format!("{lead}{indent}{},{tail}\n", elem(&indent)),
                 )]);
             }
             // Appending after an element with no comma: it gains one, and the
@@ -2305,7 +2553,7 @@ impl Doc {
             if near.comma.is_none() {
                 splices.push(at(near.end, ",".into()));
             }
-            let mut text = format!("{indent}{}{comma}{tail}\n", elem(&indent));
+            let mut text = format!("{lead}{indent}{}{comma}{tail}\n", elem(&indent));
             if self.chars.get(line - 1) != Some(&'\n') {
                 text.insert(0, '\n');
             }
@@ -2313,14 +2561,20 @@ impl Doc {
             return Ok(splices);
         }
         let sep = style.as_ref().map_or(", ", |s| s.sep.as_str());
+        let lead = what.inline_comments(false, false);
         Ok(vec![if index > 0 {
-            at(near.end, format!("{sep}{}", elem(&outer)))
+            at(near.end, format!("{sep}{lead}{}", elem(&outer)))
         } else {
-            at(near.start, format!("{}{sep}", elem(&outer)))
+            at(near.start, format!("{lead}{}{sep}", elem(&outer)))
         }])
     }
 
-    fn remove(&self, container: &Expr, index: usize) -> Result<Vec<Splice>, EditError> {
+    fn remove(
+        &self,
+        container: &Expr,
+        index: usize,
+        lead: bool,
+    ) -> Result<Vec<Splice>, EditError> {
         if matches!(shape(container), Shape::Element(..)) {
             return self.remove_attr(container, index);
         }
@@ -2339,8 +2593,13 @@ impl Doc {
         let same_line = |a: usize, b: usize| !self.chars[a..b].contains(&'\n');
 
         if self.own_line(item) {
+            let start = if lead {
+                self.lead_start(item.start)
+            } else {
+                self.line_start(item.start)
+            };
             let mut cuts = vec![cut(
-                self.line_start(item.start),
+                start,
                 self.line_end_after(item.comma.map_or(item.end, |c| c + 1)),
             )];
             // The list had no trailing comma; it still has none.
@@ -2518,6 +2777,8 @@ fn apply(source: &str, name: &str, ops: &[Op]) -> Result<String, EditError> {
     if ops.is_empty() {
         return Ok(source.to_string());
     }
+    // A file whose lines all end in CRLF gets CRLF in what is added too.
+    let crlf = source.contains("\r\n") && !source.replace("\r\n", "").contains('\n');
     let mut text = source.to_string();
     let mut next = 0;
     while next < ops.len() {
@@ -2549,8 +2810,8 @@ fn apply(source: &str, name: &str, ops: &[Op]) -> Result<String, EditError> {
                 splices = doc.insert(at(segs)?, *index, key.as_deref(), what)?;
                 next += 1;
             }
-            Op::Remove { segs, index } => {
-                splices = doc.remove(at(segs)?, *index)?;
+            Op::Remove { segs, index, lead } => {
+                splices = doc.remove(at(segs)?, *index, *lead)?;
                 next += 1;
             }
             Op::ReplaceAttr { segs, index, value } => {
@@ -2565,9 +2826,16 @@ fn apply(source: &str, name: &str, ops: &[Op]) -> Result<String, EditError> {
                 splices = doc.insert_child(at(segs)?, *index, what)?;
                 next += 1;
             }
-            Op::RemoveChild { segs, index } => {
-                splices = doc.remove_child(at(segs)?, *index)?;
+            Op::RemoveChild { segs, index, lead } => {
+                splices = doc.remove_child(at(segs)?, *index, *lead)?;
                 next += 1;
+            }
+        }
+        if crlf {
+            for splice in &mut splices {
+                if splice.text.contains('\n') {
+                    splice.text = splice.text.replace("\r\n", "\n").replace('\n', "\r\n");
+                }
             }
         }
         splices.sort_by_key(|s| s.start);

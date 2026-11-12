@@ -7,7 +7,8 @@
 use petal::env::Env;
 use petal::migrate::{
     AT_REBIND, COLOUR_LITERALS, CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED, ELSE_IF_NESTING, ELSIF_TO_ELSE_IF,
-    EXPORT_TO_PUB, HASH_COMMENTS, MIGRATIONS, MigrateOptions, MigrateOutcome, STATE_KEY_DEPRECATED, migrate_source,
+    END_LINES, EXPORT_TO_PUB, HASH_COMMENTS, MIGRATIONS, MigrateError, MigrateOptions, MigrateOutcome,
+    STATE_KEY_DEPRECATED, migrate_source, migrate_source_checked,
 };
 
 /// (migration, old source, migrated source). Each old source compiles (or,
@@ -104,14 +105,55 @@ const FIXTURES: &[(&str, &str, &str)] = &[
         "fn width(text)\n  state(text) w = text.length * 8\n  w\nend\nprint(width(\"hi\"))\n",
         "fn width(text)\n  memo(text) w = text.length * 8\n  w\nend\nprint(width(\"hi\"))\n",
     ),
+    // Every block construct, closed by its `end`: the `end` lines go, `end)`
+    // keeps its bracket, and the file is formatted first (the `fn` body
+    // was indented by four). What stays: the `end` of a one-liner, `end,`
+    // between two block lambdas, `end |> f`, and the `end` of an empty
+    // block. A comment after a removed `end` keeps a line at the block's
+    // column; the `end` text in the string and the field named `end` are
+    // not block closers.
+    (
+        END_LINES,
+        "enum Shape\n  dot,\n  box(w),\nend\nclass P\n  x: int,\nend\n\
+         fn area(s)\n    match s\n      when Shape.dot -> 0\n      when Shape.box(w) ->\n        let a = w * w\n        a\n    end\nend\n\
+         fn sign(n)\n  if n > 0 then\n    1\n  else if n < 0 then\n    0 - 1\n  else\n    0\n  end # sign\nend\n\
+         let fs = [\n  fn(x)\n    x + 1\n  end,\n  fn(y)\n    y * 2\n  end\n]\n\
+         let total = reduce([1, 2], 0, fn(acc, v)\n  acc + v\nend)\n\
+         let joined = for f in fs do\n  str(f(1))\nend |> join(\" \")\n\
+         fn nothing()\nend\n\
+         let span = {start: 1, end: 2}\nlet i = 0\nwhile i < 2 do\n  i += 1\nend\n\
+         test \"t\" do\n  expect_eq(1, 1)\nend\n\
+         print(area(Shape.box(2)), sign(0 - 3), if i > 1 then \"end\" else \"\" end, total, joined, span.end, nothing())\n",
+        "enum Shape\n  dot,\n  box(w),\nclass P\n  x: int,\n\
+         fn area(s)\n  match s\n    when Shape.dot -> 0\n    when Shape.box(w) ->\n      let a = w * w\n      a\n\
+         fn sign(n)\n  if n > 0 then\n    1\n  else if n < 0 then\n    0 - 1\n  else\n    0\n    # sign\n\
+         let fs = [\n  fn(x)\n    x + 1\n  end,\n  fn(y)\n    y * 2\n]\n\
+         let total = reduce([1, 2], 0, fn(acc, v)\n  acc + v\n)\n\
+         let joined = for f in fs do\n  str(f(1))\nend |> join(\" \")\n\
+         fn nothing()\nend\n\
+         let span = {start: 1, end: 2}\nlet i = 0\nwhile i < 2 do\n  i += 1\n\
+         test \"t\" do\n  expect_eq(1, 1)\n\
+         print(area(Shape.box(2)), sign(0 - 3), if i > 1 then \"end\" else \"\" end, total, joined, span.end, nothing())\n",
+    ),
 ];
 
+/// Run the migrations named in `only` over `src`, or, with `None`, every
+/// migration that rewrites an old form: all but `end-lines`, which lays the
+/// whole file out and has its own tests below ([`migrate_all`] runs it too).
 fn migrate_with(src: &str, only: Option<&[&str]>) -> MigrateOutcome {
     let opts = MigrateOptions {
         only: only.map(|o| o.iter().map(|s| s.to_string()).collect()),
+        except: if only.is_none() { vec![END_LINES.to_string()] } else { Vec::new() },
         ..Default::default()
     };
     migrate_source(src, &opts).unwrap_or_else(|e| panic!("migrate: {e}\n{src}"))
+}
+
+/// Every text migration, as `petal migrate-old-code` runs them.
+fn migrate_all(src: &str) -> MigrateOutcome {
+    let out = migrate_source(src, &MigrateOptions::default()).unwrap_or_else(|e| panic!("migrate: {e}\n{src}"));
+    assert_eq!(out.skipped, [], "{src}");
+    out
 }
 
 /// Whether `src` compiles; a removed form is checked as the operator's
@@ -200,8 +242,14 @@ fn each_migration_rewrites_its_fixture_on_its_own_and_with_the_rest() {
         assert_eq!(only.output, *after, "{rule} (--only)");
         assert!(only.findings.iter().all(|f| f.rule == *rule && f.fixable), "{rule}: {:?}", only.findings);
         assert!(only.rewritten() > 0, "{rule}");
-        let all = migrate_with(before, None);
-        assert_eq!(all.output, *after, "{rule} (every migration)");
+        if *rule != END_LINES {
+            let all = migrate_with(before, None);
+            assert_eq!(all.output, *after, "{rule} (every migration that rewrites an old form)");
+        }
+        // With `end-lines` too: what it makes of the migrated text.
+        let ended = migrate_with(after, Some(&[END_LINES])).output;
+        assert_eq!(migrate_all(before).output, ended, "{rule} (every migration)");
+        assert!(compiles(&ended), "{rule}: the migrated source does not compile without its `end` lines");
         assert!(compiles(after), "{rule}: the migrated source does not compile");
         // The compiler warned about the old form, and points nowhere now.
         assert_eq!(deprecation_warnings(after), Vec::<String>::new(), "{rule}");
@@ -216,13 +264,19 @@ fn migrating_twice_changes_nothing() {
         assert_eq!(twice.output, once, "{rule}");
         assert!(twice.findings.is_empty(), "{rule}: {:?}", twice.findings);
         assert_eq!(migrate_with(after, None).output, *after, "{rule}");
+        let once = migrate_all(before).output;
+        let twice = migrate_all(&once);
+        assert_eq!(twice.output, once, "{rule}");
+        assert!(twice.findings.is_empty(), "{rule}: {:?}", twice.findings);
     }
 }
 
 #[test]
 fn another_migration_leaves_a_fixture_alone() {
     for (rule, before, _) in FIXTURES {
-        for (other, _, _) in FIXTURES.iter().filter(|(o, _, _)| o != rule) {
+        // (`end-lines` is not "another migration" of an old form: it lays
+        // out any file that has an `end` line.)
+        for (other, _, _) in FIXTURES.iter().filter(|(o, _, _)| o != rule && *o != END_LINES) {
             if *rule == AT_REBIND || *rule == COLOUR_LITERALS || *rule == ELSE_IF_NESTING {
                 // Without its own migration, an `@` file and an
                 // `else if … end end` file do not parse, and a `#f80` file
@@ -689,4 +743,274 @@ fn else_if_text_outside_code_is_untouched() {
     let out = migrate_with(src, None);
     assert!(out.findings.is_empty(), "{:?}", out.findings);
     assert_eq!(out.output, src);
+}
+
+// ---------------------------------------------------------------------------
+// `end-lines`: indentation closes the block
+// ---------------------------------------------------------------------------
+
+fn end_lines(src: &str) -> MigrateOutcome {
+    migrate_with(src, Some(&[END_LINES]))
+}
+
+/// The whole legacy surface of a downstream project in one unmigrated file:
+/// `#f80` colors, `//` comments, `elsif`, an `else if … end end` nesting,
+/// an `@` rebind, deprecated declarations, and `end`s with the rest of a
+/// block left flush under an `else` (indentation was cosmetic). One run of
+/// every migration gives the current syntax, and a second changes nothing.
+#[test]
+fn a_fully_legacy_file_migrates_to_the_end_less_form_in_one_run() {
+    let src = "// theme\nexport const INK = #102030 //ink\n\
+               fn grade(n)\n  if n > 8 then\n    \"a\"\n  elsif n > 5 then\n    \"b\"\n  else if n > 3 then\n    \"c\"\n  else\n    \"d\"\n  end\n  end\nend\n\
+               fn dim(c)\n  if c.r > 200 then\n    return c\n  else\n  // was #fff\n  let d = {...c, r: 0}\n  d\n  end\nend\n\
+               let tint = #f80\ndim(@tint)\nprint(INK.r + tint.r + tint.g, grade(4)) // 407 c\n";
+    assert!(!compiles(src));
+    let out = migrate_all(src);
+    assert_eq!(
+        out.output,
+        "# theme\npub let INK = const(:102030) # ink\n\
+         fn grade(n)\n  if n > 8 then\n    \"a\"\n  else if n > 5 then\n    \"b\"\n  else if n > 3 then\n    \"c\"\n  else\n    \"d\"\n\
+         fn dim(c)\n  if c.r > 200 then\n    return c\n  else\n    # was #fff\n    let d = {...c, r: 0}\n    d\n\
+         let tint = :f80\ntint = dim(tint)\nprint(INK.r + tint.r + tint.g, grade(4)) # 407 c\n"
+    );
+    assert_eq!(run_out(&out.output), ["407 c"]);
+    assert_eq!(deprecation_warnings(&out.output), Vec::<String>::new());
+    assert_eq!((out.ends_removed, out.ends_kept), (4, 0));
+    let rules: Vec<&str> = out.findings.iter().map(|f| f.rule).collect();
+    for rule in [COLOUR_LITERALS, HASH_COMMENTS, ELSE_IF_NESTING, ELSIF_TO_ELSE_IF, AT_REBIND, EXPORT_TO_PUB, END_LINES] {
+        assert!(rules.contains(&rule), "{rule}: {rules:?}");
+    }
+    let again = migrate_all(&out.output);
+    assert_eq!(again.output, out.output);
+    assert!(again.findings.is_empty(), "{:?}", again.findings);
+}
+
+#[test]
+fn end_lines_is_the_same_program_and_runs_the_same() {
+    for (_, _, after) in FIXTURES {
+        let out = end_lines(after);
+        let shape = |s: &str| petal::rewrite::ast_shape(&petal::rewrite::parse_ast(s).unwrap().1).unwrap();
+        assert_eq!(shape(after), shape(&out.output), "{after}");
+        assert_eq!(run_out(after), run_out(&out.output), "{after}");
+        // A fixed point, of the migration and of the formatter.
+        assert_eq!(end_lines(&out.output).output, out.output);
+        if out.output != *after {
+            assert_eq!(petal::fmt::format_source(&out.output).unwrap(), out.output);
+        }
+    }
+}
+
+/// Plan §6.5: deleting the `end` lines reloads as a layout-only change, so
+/// `state` survives the migration of a running program.
+#[test]
+fn a_migrated_file_reloads_as_a_layout_only_change() {
+    let (_, before, after) = FIXTURES.iter().find(|(rule, _, _)| *rule == END_LINES).unwrap();
+    let diff = petal::source_diff::diff_source(before, after, petal::source_map::FileId(0));
+    assert_eq!(diff.change.label(), "none");
+    let src = "fn tick()\n  state n = 0\n  n += 1\n  if n > 1 then\n    print(n)\n  end\nend\ntick()\n";
+    let out = end_lines(src);
+    assert_eq!(out.output, "fn tick()\n  state n = 0\n  n += 1\n  if n > 1 then\n    print(n)\ntick()\n");
+    assert_eq!(petal::source_diff::diff_source(src, &out.output, petal::source_map::FileId(0)).change.label(), "none");
+}
+
+#[test]
+fn a_file_with_no_end_line_is_not_reformatted() {
+    // Unformatted, with a one-liner's `end` and nothing else: nothing to do.
+    let src = "let  a = if true then 1 else 2 end\nfn f(x)   x * 2\nprint( a , f(2) )\n";
+    let out = migrate_all(src);
+    assert_eq!(out.output, src);
+    assert!(out.findings.is_empty(), "{:?}", out.findings);
+}
+
+#[test]
+fn the_ends_the_program_needs_are_kept_and_counted() {
+    // `;` after a one-line `then` needs its `end` (B3); a line that starts
+    // with an operator would continue the block's last statement (B13); an
+    // empty block has nothing for indentation to close; `end,` and
+    // `end.f()` have code after them.
+    let src = "fn f(c)\n  if c then print(1); print(2)\n  end\n  let s = for x in [1, 2] do\n    x\n  end\n  ++ [3]\n  s\nend\n\
+               fn g()\nend\n\
+               let n = [1, 2].map(fn(x)\n  x + 1\nend).length\n\
+               f(true)\nprint(n)\n";
+    let out = end_lines(src);
+    assert_eq!(
+        out.output,
+        "fn f(c)\n  if c then print(1); print(2)\n  end\n  let s = for x in [1, 2] do\n    x\n  end\n  ++ [3]\n  s\n\
+         fn g()\nend\n\
+         let n = [1, 2].map(fn(x)\n  x + 1\n).length\n\
+         f(true)\nprint(n)\n"
+    );
+    assert_eq!((out.ends_removed, out.ends_kept), (2, 3));
+    assert_eq!(run_out(src), run_out(&out.output));
+    assert_eq!(end_lines(&out.output).output, out.output);
+}
+
+#[test]
+fn a_block_in_a_bracket_keeps_the_bracket_at_the_statement_column() {
+    let src = "fn show(items)\n  each_item(items, fn(it)\n    print(it)\n  end)\n  let v = [\n    for i in items do\n      i * 2\n    end\n  ]\n  v\nend\n\
+               fn each_item(xs, f)\n  for x in xs do\n    f(x)\n  end\nend\nprint(show([1, 2]))\n";
+    let out = end_lines(src);
+    assert_eq!(
+        out.output,
+        "fn show(items)\n  each_item(items, fn(it)\n    print(it)\n  )\n  let v = [\n    for i in items do\n      i * 2\n  ]\n  v\n\
+         fn each_item(xs, f)\n  for x in xs do\n    f(x)\nprint(show([1, 2]))\n"
+    );
+    assert_eq!(run_out(src), run_out(&out.output));
+}
+
+#[test]
+fn an_ignore_file_comment_keeps_the_ends() {
+    let src = "# petal-lint-ignore-file end-lines -- generated\nfn f()\n    1\nend\nprint(f())\n";
+    let out = migrate_all(src);
+    assert_eq!(out.output, src);
+    assert!(out.findings.is_empty(), "{:?}", out.findings);
+}
+
+/// A file `end-lines` cannot convert keeps what the migrations before it
+/// wrote, and is reported as skipped: here the formatter may not touch the
+/// file, whose indentation disagrees with its `end`s.
+#[test]
+fn a_file_that_fails_the_end_lines_gate_keeps_the_other_migrations_and_is_reported() {
+    let src = "# petal-fmt-ignore-file\nexport fn f(c)\n  if c then\n  1\n  else\n  2\n  end\nend\nprint(f(true))\n";
+    let out = migrate_source(src, &MigrateOptions::default()).unwrap();
+    assert_eq!(
+        out.output,
+        "# petal-fmt-ignore-file\npub fn f(c)\n  if c then\n  1\n  else\n  2\n  end\nend\nprint(f(true))\n"
+    );
+    assert_eq!(out.skipped.len(), 1, "{:?}", out.skipped);
+    assert_eq!(out.skipped[0].migration, END_LINES);
+    assert_eq!(out.ends_removed, 0);
+    assert!(out.findings.iter().all(|f| f.rule == EXPORT_TO_PUB), "{:?}", out.findings);
+}
+
+#[test]
+fn errors_say_whether_the_source_was_unreadable_or_a_gate_failed() {
+    let err = migrate_source_checked("const = \n", &MigrateOptions::default()).err().unwrap();
+    assert!(matches!(err, MigrateError::Unreadable(_)), "{err:?}");
+}
+
+// ---------------------------------------------------------------------------
+// Fragments and Markdown (`--markdown`)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_fragment_that_does_not_parse_gets_the_token_migrations() {
+    let src = "// elided\nfn f(x)\n  if x then ... \n  elsif y then #f80\n";
+    assert!(migrate_source(src, &MigrateOptions::default()).is_err());
+    let opts = MigrateOptions { fragment: true, ..Default::default() };
+    let out = migrate_source(src, &opts).unwrap();
+    assert!(out.fragment);
+    assert_eq!(out.output, "# elided\nfn f(x)\n  if x then ... \n  else if y then :f80\n");
+    // One that parses is migrated in full, fragment or not.
+    let whole = migrate_source("fn f()\n  1\nend\n", &opts).unwrap();
+    assert!(!whole.fragment);
+    assert_eq!(whole.output, "fn f()\n  1\n");
+    // One that does not lex is unreadable either way.
+    assert!(matches!(
+        migrate_source_checked("let s = \"open\n", &opts),
+        Err(MigrateError::Unreadable(_))
+    ));
+}
+
+const MARKDOWN_OLD: &str = "\
+# Guide
+
+Write `// expected` after a print. An `end` closes a block:
+
+```petal
+let tint = #f80 // warm
+fn double(x)
+  x * 2
+end
+print(double(2)) // 4
+```
+
+- In a list, the fence is indented:
+
+  ```petal ignore
+  fn step(input)
+    ... // elided
+    if a then b elsif c then d end
+  end
+  ```
+
+```petal no-migrate
+print(1) // the old comment marker, on purpose
+```
+
+```petal ignore
+rule ::= \"an open string
+```
+
+```rust
+// not Petal: fn f() { end }
+```
+
+````md
+```petal
+print(1) // inside a longer fence: not a fence of this file
+```
+````
+";
+
+const MARKDOWN_NEW: &str = "\
+# Guide
+
+Write `// expected` after a print. An `end` closes a block:
+
+```petal
+let tint = :f80 # warm
+fn double(x)
+  x * 2
+print(double(2)) # 4
+```
+
+- In a list, the fence is indented:
+
+  ```petal ignore
+  fn step(input)
+    ... # elided
+    if a then b else if c then d end
+  end
+  ```
+
+```petal no-migrate
+print(1) // the old comment marker, on purpose
+```
+
+```petal ignore
+rule ::= \"an open string
+```
+
+```rust
+// not Petal: fn f() { end }
+```
+
+````md
+```petal
+print(1) // inside a longer fence: not a fence of this file
+```
+````
+";
+
+#[test]
+fn markdown_fences_are_migrated_and_everything_else_is_copied() {
+    use petal::migrate::markdown::migrate_markdown;
+    let out = migrate_markdown(MARKDOWN_OLD, &MigrateOptions::default());
+    assert_eq!(out.output, MARKDOWN_NEW);
+    assert_eq!((out.fences, out.rewritten, out.fragments), (4, 2, 1));
+    assert_eq!(out.unreadable.len(), 1, "{:?}", out.unreadable);
+    assert!(out.skipped.is_empty(), "{:?}", out.skipped);
+    assert_eq!(out.ends_removed, 1);
+    // Findings carry the line of the Markdown file.
+    let colour = out.findings.iter().find(|f| f.rule == COLOUR_LITERALS).unwrap();
+    assert_eq!((colour.line, colour.column), (6, 12));
+    // Idempotent.
+    let again = migrate_markdown(MARKDOWN_NEW, &MigrateOptions::default());
+    assert_eq!(again.output, MARKDOWN_NEW);
+    assert_eq!(again.rewritten, 0);
+    // `--only` selects, as for a file.
+    let opts = MigrateOptions { only: Some(vec![HASH_COMMENTS.to_string()]), ..Default::default() };
+    let only = migrate_markdown("```petal\nif a then\n  print(1) // 1\nend\n```\n", &opts);
+    assert_eq!(only.output, "```petal\nif a then\n  print(1) # 1\nend\n```\n");
 }

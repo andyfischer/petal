@@ -200,3 +200,8 @@ dedented inside a block) is now an error, never a different program.
 block with no `end` keeps its extent while every level moves to two columns.
 It converts tabs in indentation to spaces, and it neither adds nor removes an
 `end`.
+
+`petal migrate-old-code` removes them: its `end-lines` migration formats a
+file and deletes each `end` that is alone on its line (and the `end` of
+`end)`), keeping every `end` the program needs. See
+[CLI.md](../CLI.md#migrate-old-code--rewrite-old-syntax).

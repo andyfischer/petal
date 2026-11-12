@@ -71,16 +71,16 @@ end
 print(double(N) + SPEED + width(1))
 ";
 
+/// `OLD` in the current syntax: its old forms rewritten, and its `end`
+/// lines gone (`end-lines`).
 const NEW: &str = "\
 pub fn double(x)
   x * 2
-end
 let N = const(4)       # four
 let SPEED = tunable(2.5)
 fn width(t)
   memo(t) w = t * 8
   w
-end
 print(double(N) + SPEED + width(1))
 ";
 
@@ -115,9 +115,14 @@ fn it_rewrites_in_place_and_a_second_run_changes_nothing() {
     assert_eq!(t.read("a.ptl"), NEW);
     // It says what it did, file by file.
     assert!(out.starts_with("a.ptl\n"), "{out}");
-    for rule in ["export-to-pub", "const-decl-deprecated", "config-let-deprecated", "state-key-deprecated"] {
+    for rule in ["export-to-pub", "const-decl-deprecated", "config-let-deprecated", "state-key-deprecated", "end-lines"]
+    {
         assert!(out.contains(rule), "{rule} missing from:\n{out}");
+        // The summary: per migration, how many sites in how many files.
+        let line = err.lines().find(|l| l.trim_start().starts_with(rule)).unwrap_or_else(|| panic!("{rule}: {err}"));
+        assert!(line.contains("in 1 file(s)"), "{line}");
     }
+    assert!(err.contains("end-lines              2 `end`(s) in 1 file(s)"), "{err}");
     assert!(err.contains("migrated 1 of 1 file(s)"), "{err}");
 
     let (after, warn, code) = petal_in(&t.root, &["run", "a.ptl"]);
@@ -132,13 +137,16 @@ fn it_rewrites_in_place_and_a_second_run_changes_nothing() {
 }
 
 #[test]
-fn the_walk_skips_target_and_node_modules() {
+fn the_walk_skips_dependencies_build_output_and_dot_directories() {
     let t = Tree::new("walk");
     t.write("src/a.ptl", OLD);
     t.write("src/deep/b.ptl", OLD);
     t.write("target/debug/c.ptl", OLD);
     t.write("node_modules/pkg/d.ptl", OLD);
     t.write(".hidden/e.ptl", OLD);
+    for skipped in ["temp", ".temp", "out", "dist", ".git", "src/deep/dist"] {
+        t.write(&format!("{skipped}/x.ptl"), OLD);
+    }
     let (out, err, code) = petal_in(&t.root, &["migrate-old-code"]);
     assert_eq!(code, 0, "{out}\n{err}");
     assert_eq!(t.read("src/a.ptl"), NEW);
@@ -146,7 +154,14 @@ fn the_walk_skips_target_and_node_modules() {
     assert_eq!(t.read("target/debug/c.ptl"), OLD);
     assert_eq!(t.read("node_modules/pkg/d.ptl"), OLD);
     assert_eq!(t.read(".hidden/e.ptl"), OLD);
+    for skipped in ["temp", ".temp", "out", "dist", ".git", "src/deep/dist"] {
+        assert_eq!(t.read(&format!("{skipped}/x.ptl")), OLD, "{skipped}");
+    }
     assert!(err.contains("migrated 2 of 2 file(s)"), "{err}");
+    // A skipped directory named on the command line is walked.
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "dist"]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert_eq!(t.read("dist/x.ptl"), NEW);
 }
 
 #[test]
@@ -198,7 +213,7 @@ fn inline_code_prints_the_migration() {
 #[test]
 fn a_site_left_for_a_hand_edit_is_reported_and_does_not_fail() {
     let t = Tree::new("hand");
-    let src = "fn hp(id, d)\n  state(id) h = 100\n  h -= d\n  h\nend\nprint(hp(1, 2))\n";
+    let src = "fn hp(id, d)\n  state(id) h = 100\n  h -= d\n  h\nprint(hp(1, 2))\n";
     t.write("a.ptl", src);
     let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--check", "."]);
     assert_eq!(code, 0, "{out}\n{err}");
@@ -219,7 +234,7 @@ fn an_at_rebind_is_rewritten_and_one_it_cannot_lift_is_listed() {
     let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "."]);
     assert_eq!(code, 0, "{out}\n{err}");
     assert!(out.contains("5:8: at-rebind:"), "{out}");
-    assert_eq!(t.read("a.ptl"), src.replace("double(@a)", "a = double(a)"));
+    assert_eq!(t.read("a.ptl"), src.replace("double(@a)", "a = double(a)").replace("end\n", ""));
     let (out, _, code) = petal_in(&t.root, &["run", "a.ptl"]);
     assert_eq!((out.trim(), code), ("2", 0));
 
@@ -298,7 +313,6 @@ pub let GRAVITY = tunable(9.5)
 pub let JUMP = tunable(4.0, 0, 10)          # already a tunable
 pub fn scale(x)
   x * 2
-end
 "
     );
     assert_eq!(
@@ -310,10 +324,8 @@ let SPEED = tunable(2.5)  # px/frame
 fn width(t)
   memo(t) w = t * 8
   w
-end
 fn double(x)
   x * 2
-end
 let a = 5
 a = double(a)
 let b = 3
@@ -409,4 +421,217 @@ fn help_lists_the_command() {
     let (out, _, code) = petal_in(&t.root, &["help", "migrate-old-code"]);
     assert_eq!(code, 0);
     assert!(out.starts_with("NAME\n       petal-migrate-old-code"), "{out}");
+}
+
+/// A project that has run no migration of the indentation change: `#f80`
+/// colors, `//` comments, `elsif`, an `else if … end end` nesting, `end`
+/// lines, and a file whose indentation disagrees with its `end`s. One run
+/// over the directory migrates all of it; the second finds nothing.
+#[test]
+fn a_fully_legacy_tree_migrates_in_one_run() {
+    let t = Tree::new("legacy");
+    let theme = "\
+// theme
+export fn ink(dark)
+  if dark then
+    #f0f0f0 // light on dark
+  elsif dark == nil then
+    #808080
+  else
+    #101010
+  end
+end
+";
+    let main = "\
+import ./theme
+fn grade(n)
+  if n > 8 then
+    \"a\"
+  else if n > 5 then
+    \"b\"
+  else
+  // flush under the else: indentation was cosmetic
+  \"c\"
+  end
+  end
+end
+let glsl = \"\"\"
+#define K 1 // GLSL, not Petal
+if (a) {} else if (b) {}
+\"\"\"
+print(ink(true).r, grade(6), glsl.length) // 240 b
+";
+    t.write("theme.ptl", theme);
+    t.write("main.ptl", main);
+    t.write("node_modules/dep/x.ptl", theme);
+    let (_, err, code) = petal_in(&t.root, &["run", "main.ptl"]);
+    assert_ne!(code, 0, "{err}");
+
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "."]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert_eq!(
+        t.read("theme.ptl"),
+        "\
+# theme
+pub fn ink(dark)
+  if dark then
+    :f0f0f0 # light on dark
+  else if dark == nil then
+    :808080
+  else
+    :101010
+"
+    );
+    assert_eq!(
+        t.read("main.ptl"),
+        "\
+import ./theme
+fn grade(n)
+  if n > 8 then
+    \"a\"
+  else if n > 5 then
+    \"b\"
+  else
+    # flush under the else: indentation was cosmetic
+    \"c\"
+let glsl = \"\"\"
+#define K 1 // GLSL, not Petal
+if (a) {} else if (b) {}
+\"\"\"
+print(ink(true).r, grade(6), glsl.length) # 240 b
+"
+    );
+    assert_eq!(t.read("node_modules/dep/x.ptl"), theme);
+    assert!(err.contains("migrated 2 of 2 file(s)"), "{err}");
+    for line in [
+        "colour-literals        3 site(s) in 1 file(s)",
+        "else-if-nesting        1 site(s) in 1 file(s)",
+        "elsif-to-else-if       1 site(s) in 1 file(s)",
+        "export-to-pub          1 site(s) in 1 file(s)",
+        "end-lines              4 `end`(s) in 2 file(s)",
+    ] {
+        assert!(err.contains(line), "{line}: {err}");
+    }
+    assert!(err.lines().any(|l| l.trim_start().starts_with("hash-comments") && l.contains("in 2 file(s)")), "{err}");
+    let (out, err, code) = petal_in(&t.root, &["run", "main.ptl"]);
+    assert_eq!((out.trim(), code), ("240 b 57", 0), "{err}");
+    assert_eq!(err, "");
+
+    let migrated = (t.read("theme.ptl"), t.read("main.ptl"));
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "."]);
+    assert_eq!((out.as_str(), code), ("", 0), "{err}");
+    assert_eq!((t.read("theme.ptl"), t.read("main.ptl")), migrated);
+    assert_eq!(petal_in(&t.root, &["migrate-old-code", "--check", "."]).2, 0);
+}
+
+#[test]
+fn except_runs_every_migration_but_the_ones_named() {
+    let t = Tree::new("except");
+    t.write("a.ptl", OLD);
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--except", "end-lines,export-to-pub", "a.ptl"]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    let a = t.read("a.ptl");
+    assert!(a.starts_with("export fn double(x)\n  x * 2\nend\nlet N = const(4)"), "{a}");
+    assert!(!err.contains("end-lines"), "{err}");
+    let (_, err, code) = petal_in(&t.root, &["migrate-old-code", "--except", "no-such", "a.ptl"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("Unknown migration 'no-such'"), "{err}");
+}
+
+/// A file a gate keeps a migration from is listed at the end and fails the
+/// run; the migrations before it are written, and the other files are done.
+#[test]
+fn a_file_skipped_by_a_gate_is_listed_and_fails_the_run() {
+    let t = Tree::new("gate");
+    t.write("a.ptl", OLD);
+    // The formatter may not touch this file, and its indentation disagrees
+    // with its `end`s: `end-lines` cannot convert it.
+    let odd = "# petal-fmt-ignore-file\nexport fn f(c)\n  if c then\n  1\n  else\n  2\n  end\nend\nprint(f(true))\n";
+    t.write("odd.ptl", odd);
+    for check in [true, false] {
+        let args: &[&str] = if check { &["migrate-old-code", "--check", "."] } else { &["migrate-old-code", "."] };
+        let (out, err, code) = petal_in(&t.root, args);
+        assert_eq!(code, 1, "{out}\n{err}");
+        assert!(err.contains("1 skipped by a gate"), "{err}");
+        assert!(err.lines().any(|l| l.starts_with("  ./odd.ptl: end-lines: ")), "{err}");
+    }
+    assert_eq!(t.read("a.ptl"), NEW);
+    assert_eq!(t.read("odd.ptl"), odd.replace("export fn", "pub fn"));
+}
+
+#[test]
+fn markdown_mode_migrates_the_petal_fences_of_md_files() {
+    let t = Tree::new("markdown");
+    let doc = "\
+# Doc
+
+```petal
+let tint = #f80 // warm
+fn double(x)
+  x * 2
+end
+print(double(2)) // 4
+```
+
+```petal ignore
+fn step(input)
+  ... // elided
+end
+```
+
+```petal no-migrate
+print(1) // kept
+```
+
+```text
+// not Petal
+```
+";
+    t.write("docs/guide.md", doc);
+    t.write("docs/a.ptl", OLD);
+    t.write("node_modules/pkg/README.md", doc);
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--markdown", "--check", "."]);
+    assert_eq!(code, 1, "{out}\n{err}");
+    assert!(out.contains("-print(double(2)) // 4\n+print(double(2)) # 4"), "{out}");
+    assert!(err.contains("1 of 1 file(s) need migrating"), "{err}");
+    assert_eq!(t.read("docs/guide.md"), doc);
+
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--markdown", "."]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert_eq!(
+        t.read("docs/guide.md"),
+        "\
+# Doc
+
+```petal
+let tint = :f80 # warm
+fn double(x)
+  x * 2
+print(double(2)) # 4
+```
+
+```petal ignore
+fn step(input)
+  ... # elided
+end
+```
+
+```petal no-migrate
+print(1) // kept
+```
+
+```text
+// not Petal
+```
+"
+    );
+    assert!(out.contains("docs/guide.md\n  4:12: colour-literals:"), "{out}");
+    assert!(err.contains("1 fence(s) do not parse"), "{err}");
+    // Only Markdown files were walked.
+    assert_eq!(t.read("docs/a.ptl"), OLD);
+    assert_eq!(t.read("node_modules/pkg/README.md"), doc);
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--markdown", "."]);
+    assert_eq!((out.as_str(), code), ("", 0), "{err}");
+    // A Markdown file named without the flag is read as Markdown too.
+    assert_eq!(petal_in(&t.root, &["migrate-old-code", "--check", "docs/guide.md"]).2, 0);
 }

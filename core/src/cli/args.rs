@@ -639,21 +639,26 @@ fn rule_list(value: &str) -> Vec<String> {
 /// `migrate-old-code [--check] [--only <name>]… [--list] [<path>…]` — shaped
 /// like `fmt`.
 fn parse_migrate_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal migrate-old-code [--check] [--only <migration>[,...]]... \
-                 [-I <dir>]... [<path>...]  |  petal migrate-old-code -e <code>  |  \
-                 petal migrate-old-code --list";
+    let usage = "Usage: petal migrate-old-code [--check] [--markdown] [--only <migration>[,...]]... \
+                 [--except <migration>[,...]]... [-I <dir>]... [<path>...]  |  \
+                 petal migrate-old-code -e <code>  |  petal migrate-old-code --list";
     let mut opts = super::MigrateArgs::default();
     let mut only: Vec<String> = Vec::new();
     let mut only_given = false;
+    let mut except: Vec<String> = Vec::new();
     let p = parse_path_args(args, usage, |args, i| {
         let arg = args[*i].as_str();
-        let value = if arg == "--only" {
-            Some(take(args, i, "Expected a migration after --only").to_string())
+        let (flag, value) = if arg == "--only" || arg == "--except" {
+            let message = format!("Expected a migration after {arg}");
+            (arg.to_string(), Some(take(args, i, &message).to_string()))
+        } else if let Some(v) = arg.strip_prefix("--only=") {
+            ("--only".to_string(), Some(v.to_string()))
+        } else if let Some(v) = arg.strip_prefix("--except=") {
+            ("--except".to_string(), Some(v.to_string()))
         } else {
-            arg.strip_prefix("--only=").map(str::to_string)
+            (String::new(), None)
         };
         if let Some(value) = value {
-            only_given = true;
             for name in value.split(',').map(str::trim).filter(|n| !n.is_empty()) {
                 if !crate::migrate::is_migration(name) {
                     eprintln!(
@@ -661,17 +666,24 @@ fn parse_migrate_args(args: &[String]) -> CliArgs {
                     );
                     process::exit(1);
                 }
-                only.push(name.to_string());
+                if flag == "--only" {
+                    only.push(name.to_string());
+                } else {
+                    except.push(name.to_string());
+                }
             }
+            only_given |= flag == "--only";
             return true;
         }
         match arg {
             "--check" | "--dry-run" => opts.check = true,
             "--list" => opts.list = true,
+            "--markdown" => opts.markdown = true,
             _ => return false,
         }
         true
     });
+    opts.except = except;
     opts.paths = p.paths;
     opts.inline = p.inline;
     if only_given {

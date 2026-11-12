@@ -211,7 +211,12 @@ fn the_lsp_does_not_flag_export() {
 // ── `petal migrate-old-code`: the `export-to-pub` migration ──────
 
 fn migrate(src: &str) -> MigrateOutcome {
-    migrate_source(src, &MigrateOptions::default()).expect("migrate_source should succeed")
+    // Not `end-lines`, which lays the file out; these are about the keyword.
+    let opts = MigrateOptions {
+        except: vec![petal::migrate::END_LINES.to_string()],
+        ..Default::default()
+    };
+    migrate_source(src, &opts).expect("migrate_source should succeed")
 }
 
 fn lint(src: &str) -> petal::lint::LintOutcome {

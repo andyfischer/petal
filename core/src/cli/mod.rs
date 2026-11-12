@@ -339,6 +339,11 @@ pub struct MigrateArgs {
     pub list: bool,
     /// `--only <name>` (repeatable, or comma-separated): run just these.
     pub only: Option<Vec<String>>,
+    /// `--except <name>` (repeatable, or comma-separated): do not run these.
+    pub except: Vec<String>,
+    /// `--markdown`: the inputs are Markdown files (directories are searched
+    /// for `.md`), and the migrations run over their `petal` fences.
+    pub markdown: bool,
 }
 
 /// Every flag `petal lint` accepts.

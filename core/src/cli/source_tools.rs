@@ -4,7 +4,8 @@
 //! `fmt`, `lint` and `migrate-old-code` take paths the way `gofmt` and `deno fmt` do — files, or directories
 //! searched recursively for `.ptl` (skipping dot-directories, `node_modules`
 //! and `target`), `.` when none is given, `-` for stdin — or inline code with
-//! `-e`. A file that fails is reported and skipped; the others still run.
+//! `-e`. `migrate-old-code` also skips `temp`, `out` and `dist`, and
+//! walks for `.md` files under `--markdown`. A file that fails is reported and skipped; the others still run.
 
 use std::collections::HashSet;
 use std::fs;
@@ -345,15 +346,166 @@ pub(super) fn handle_fix_imports(
 // migrate-old-code
 // ---------------------------------------------------------------------------
 
+/// Directories a `petal migrate-old-code` walk does not enter, besides
+/// dot-directories: dependencies and build output, which a project does not
+/// own or regenerates.
+const MIGRATE_SKIP_DIRS: &[&str] = &["node_modules", "target", "temp", "out", "dist"];
+
+/// The files under `dir` with extension `ext`, sorted, skipping
+/// dot-directories and [`MIGRATE_SKIP_DIRS`].
+fn migrate_files_under(dir: &Path, ext: &str, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut entries: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    entries.sort();
+    for path in entries {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if path.is_dir() {
+            if !name.starts_with('.') && !MIGRATE_SKIP_DIRS.contains(&name) {
+                migrate_files_under(&path, ext, out);
+            }
+        } else if path.extension().and_then(|e| e.to_str()) == Some(ext) {
+            out.push(path);
+        }
+    }
+}
+
+/// The inputs of `petal migrate-old-code`: like [`collect_inputs`], with
+/// the migration walk's skip list, and `.md` files instead of `.ptl` under
+/// `--markdown`. A file named on the command line is taken whatever its
+/// extension.
+fn collect_migrate_inputs(opts: &super::MigrateArgs, errors: &mut usize) -> Vec<Input> {
+    if opts.inline.is_some() || opts.paths.iter().any(|p| p == "-") {
+        return collect_inputs(&opts.paths, opts.inline.as_deref(), errors);
+    }
+    let ext = if opts.markdown { "md" } else { "ptl" };
+    let default = [".".to_string()];
+    let paths = if opts.paths.is_empty() { &default[..] } else { &opts.paths[..] };
+    let mut files: Vec<PathBuf> = Vec::new();
+    for p in paths {
+        let path = Path::new(p);
+        if path.is_dir() {
+            migrate_files_under(path, ext, &mut files);
+        } else if path.exists() {
+            files.push(path.to_path_buf());
+        } else {
+            eprintln!("error: {p}: no such file or directory");
+            *errors += 1;
+        }
+    }
+    let mut inputs = Vec::new();
+    for file in files {
+        match fs::read_to_string(&file) {
+            Ok(source) => inputs.push(Input {
+                name: file.display().to_string(),
+                path: Some(file),
+                source,
+            }),
+            Err(e) => {
+                eprintln!("error: {}: {e}", file.display());
+                *errors += 1;
+            }
+        }
+    }
+    inputs
+}
+
+/// What `petal migrate-old-code` did, for the summary it ends with.
+#[derive(Default)]
+struct MigrateSummary {
+    /// Per migration: (sites rewritten, files they were in).
+    counts: std::collections::BTreeMap<&'static str, (usize, usize)>,
+    ends_kept: usize,
+    /// Files (or fences) a gate kept a migration from: nothing was written
+    /// for that migration there.
+    gated: Vec<String>,
+    /// Files that could not be read at all.
+    unreadable: Vec<String>,
+    /// Markdown: fences migrated by their tokens alone, and fences left as
+    /// written because they do not lex.
+    fragments: usize,
+    fences_left: usize,
+}
+
+impl MigrateSummary {
+    fn count(&mut self, findings: &[crate::migrate::Finding], ends_removed: usize, ends_kept: usize) {
+        let mut per_file: std::collections::BTreeMap<&'static str, usize> = Default::default();
+        for f in findings.iter().filter(|f| f.fixable) {
+            *per_file.entry(f.rule).or_default() += 1;
+        }
+        if let Some(n) = per_file.get_mut(crate::migrate::END_LINES) {
+            *n = ends_removed;
+        }
+        for (rule, n) in per_file {
+            let entry = self.counts.entry(rule).or_default();
+            entry.0 += n;
+            entry.1 += 1;
+        }
+        self.ends_kept += ends_kept;
+    }
+
+    fn print(&self, check: bool) {
+        use crate::migrate::{END_LINES, MIGRATIONS};
+        let width = MIGRATIONS.iter().map(|m| m.name.len()).max().unwrap_or(0);
+        for m in MIGRATIONS {
+            let Some((sites, files)) = self.counts.get(m.name) else {
+                continue;
+            };
+            let what = match m.name {
+                END_LINES => "`end`(s)",
+                // Reported once per file, however many comments it has.
+                crate::migrate::HASH_COMMENTS => "report(s)",
+                _ => "site(s)",
+            };
+            let kept = if m.name == END_LINES && self.ends_kept > 0 {
+                format!("; {} kept (the program needs them)", self.ends_kept)
+            } else {
+                String::new()
+            };
+            eprintln!("  {:width$}  {sites} {what} in {files} file(s){kept}", m.name);
+        }
+        if self.fragments > 0 {
+            eprintln!(
+                "{} fence(s) do not parse: only the migrations that read tokens ran on them",
+                self.fragments
+            );
+        }
+        if self.fences_left > 0 {
+            eprintln!("{} fence(s) do not lex as Petal and are left as written", self.fences_left);
+        }
+        if !self.unreadable.is_empty() {
+            eprintln!("{} file(s) could not be read and are left as they were:", self.unreadable.len());
+            for line in &self.unreadable {
+                eprintln!("  {line}");
+            }
+        }
+        if !self.gated.is_empty() {
+            eprintln!(
+                "{} skipped by a gate ({} for the migration named):",
+                self.gated.len(),
+                if check { "nothing would be written" } else { "nothing was written" }
+            );
+            for line in &self.gated {
+                eprintln!("  {line}");
+            }
+        }
+    }
+}
+
 /// `petal migrate-old-code`: every selected migration ([`crate::migrate`])
 /// over the inputs, the text migrations per file and then `old-imports` over
 /// the batch (and the text migrations once more over a file whose imports
 /// it changed, for the rewrites that need the file to compile). Rewrites
 /// files in place; `--check` prints the diff instead and
 /// exits 1 if anything would change. Sites a migration leaves for a hand
-/// edit are reported on stderr either way.
+/// edit are reported on stderr either way. With `--markdown` the inputs are
+/// Markdown files and the migrations run over their `petal` fences
+/// ([`crate::migrate::markdown`]). It ends with a summary: per migration,
+/// how many sites in how many files, and every file a gate kept a migration
+/// from (which fails the run).
 pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]) {
-    use crate::migrate::{MIGRATIONS, MigrateOptions, OLD_IMPORTS};
+    use crate::migrate::{MIGRATIONS, MigrateError, MigrateOptions, OLD_IMPORTS};
     if opts.list {
         let width = MIGRATIONS.iter().map(|m| m.name.len()).max().unwrap_or(0);
         for m in MIGRATIONS {
@@ -365,44 +517,85 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
     }
 
     let mut errors = 0usize;
-    let inputs = collect_inputs(&opts.paths, opts.inline.as_deref(), &mut errors);
+    let mut summary = MigrateSummary::default();
+    let inputs = collect_migrate_inputs(opts, &mut errors);
+    let is_markdown = |input: &Input| match &input.path {
+        Some(path) => path.extension().and_then(|e| e.to_str()) == Some("md"),
+        None => opts.markdown,
+    };
+    let options = |input: &Input| MigrateOptions {
+        include_dirs: include_dirs.to_vec(),
+        origin: input.path.clone(),
+        only: opts.only.clone(),
+        except: opts.except.clone(),
+        fragment: false,
+    };
 
     // The text migrations, file by file.
     let mut texts: Vec<Option<String>> = Vec::with_capacity(inputs.len());
     let mut findings: Vec<Vec<crate::migrate::Finding>> = Vec::with_capacity(inputs.len());
+    let mut ends: Vec<(usize, usize)> = Vec::with_capacity(inputs.len());
     for input in &inputs {
-        let mopts = MigrateOptions {
-            include_dirs: include_dirs.to_vec(),
-            origin: input.path.clone(),
-            only: opts.only.clone(),
-        };
-        match crate::migrate::migrate_source(&input.source, &mopts) {
+        if is_markdown(input) {
+            let out = crate::migrate::markdown::migrate_markdown(&input.source, &options(input));
+            for (line, skipped) in &out.skipped {
+                eprintln!("error: {}:{line}: {}: {}", input.name, skipped.migration, skipped.reason);
+                summary.gated.push(format!("{}:{line}: {}: {}", input.name, skipped.migration, skipped.reason));
+                errors += 1;
+            }
+            summary.fragments += out.fragments;
+            summary.fences_left += out.unreadable.len();
+            texts.push(Some(out.output));
+            findings.push(out.findings);
+            ends.push((out.ends_removed, out.ends_kept));
+            continue;
+        }
+        match crate::migrate::migrate_source_checked(&input.source, &options(input)) {
             Ok(out) => {
+                for skipped in &out.skipped {
+                    eprintln!("error: {}: {}: {}", input.name, skipped.migration, skipped.reason);
+                    summary.gated.push(format!("{}: {}: {}", input.name, skipped.migration, skipped.reason));
+                    errors += 1;
+                }
                 texts.push(Some(out.output));
                 findings.push(out.findings);
+                ends.push((out.ends_removed, out.ends_kept));
             }
             Err(e) => {
                 eprintln!("error: {}: {}", input.name, e);
+                match &e {
+                    MigrateError::Unreadable(reason) => {
+                        let first = reason.lines().next().unwrap_or("");
+                        summary.unreadable.push(format!("{}: {first}", input.name));
+                    }
+                    MigrateError::Gate { migration, reason } => {
+                        summary.gated.push(format!("{}: {migration}: {reason}", input.name));
+                    }
+                }
                 errors += 1;
                 texts.push(None);
                 findings.push(Vec::new());
+                ends.push((0, 0));
             }
         }
     }
 
     // `old-imports`, over the whole batch as the text migrations left it.
-    let imports_on = opts.only.as_ref().is_none_or(|o| o.iter().any(|r| r == OLD_IMPORTS));
+    let imports_on = opts.only.as_ref().is_none_or(|o| o.iter().any(|r| r == OLD_IMPORTS))
+        && !opts.except.iter().any(|r| r == OLD_IMPORTS);
     let imports: Vec<Option<crate::fix_imports::Fixed>> = if imports_on {
         // A file with an `@` rebind left for a hand edit does not parse yet;
         // its sites are listed below, and its imports wait for the next run.
+        // A Markdown file has no imports to resolve.
         let parseable: Vec<Option<String>> = texts
             .iter()
             .zip(&findings)
-            .map(|(text, found)| {
+            .zip(&inputs)
+            .map(|((text, found), input)| {
                 let stuck = found
                     .iter()
                     .any(|f| f.rule == crate::migrate::AT_REBIND && !f.fixable);
-                if stuck { None } else { text.clone() }
+                if stuck || is_markdown(input) { None } else { text.clone() }
             })
             .collect();
         fix_imports_batch(&inputs, &parseable, &opts.paths, include_dirs, &mut errors)
@@ -413,7 +606,9 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
     let mut changed = 0usize;
     let mut written = 0usize;
     let mut left = 0usize;
-    for ((input, text), (found, fixed)) in inputs.iter().zip(&texts).zip(findings.iter().zip(imports)) {
+    for (((input, text), (found, fixed)), (mut ends_removed, mut ends_kept)) in
+        inputs.iter().zip(&texts).zip(findings.iter().zip(imports)).zip(ends)
+    {
         let Some(text) = text else {
             continue;
         };
@@ -428,12 +623,7 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
         // and the next is a no-op.
         let mut found = found.clone();
         if output != *text && found.iter().any(|f| !f.fixable) {
-            let mopts = MigrateOptions {
-                include_dirs: include_dirs.to_vec(),
-                origin: input.path.clone(),
-                only: opts.only.clone(),
-            };
-            if let Ok(again) = crate::migrate::migrate_source(&output, &mopts)
+            if let Ok(again) = crate::migrate::migrate_source(&output, &options(input))
                 && again.output != output
             {
                 // The second pass reports every site still in an old form;
@@ -441,6 +631,8 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
                 found.retain(|f| f.fixable);
                 found.extend(again.findings);
                 found.sort_by_key(|f| (f.line, f.column));
+                ends_removed += again.ends_removed;
+                ends_kept = again.ends_kept;
                 output = again.output;
             }
         }
@@ -452,6 +644,14 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
             );
         }
         let touched = output != input.source;
+        if touched {
+            summary.count(&found, ends_removed, ends_kept);
+            if !import_changes.is_empty() {
+                let entry = summary.counts.entry(OLD_IMPORTS).or_default();
+                entry.0 += import_changes.len();
+                entry.1 += 1;
+            }
+        }
         let Some(path) = &input.path else {
             if opts.check {
                 if touched {
@@ -496,12 +696,14 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
                 "{changed} of {files} file(s) need migrating{}",
                 if changed > 0 { " (run `petal migrate-old-code`)" } else { "" }
             );
+            summary.print(true);
         }
         if changed > 0 || errors > 0 {
             process::exit(1);
         }
     } else if files > 0 {
         eprintln!("migrated {written} of {files} file(s)");
+        summary.print(false);
     }
     if errors > 0 {
         process::exit(1);

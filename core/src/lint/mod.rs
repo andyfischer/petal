@@ -451,6 +451,15 @@ impl<'a> Pipeline<'a> {
         self.findings.iter().filter(|f| f.rule == rule && !f.fixable).count()
     }
 
+    /// Whether a `petal-lint-ignore-file` comment silences `rule` for the
+    /// whole file.
+    pub(crate) fn ignores_file(&self, rule: &str) -> bool {
+        self.ignores
+            .file
+            .as_ref()
+            .is_some_and(|rules| rules.is_empty() || rules.iter().any(|r| r == rule))
+    }
+
     pub(crate) fn new(source: &'a str, rules: &'a RuleFilter) -> Result<Self, String> {
         Self::with_ignores(source, rules, Ignores::scan(source)?)
     }

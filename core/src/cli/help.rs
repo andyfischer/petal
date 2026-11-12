@@ -550,7 +550,9 @@ NAME
        petal-migrate-old-code - Rewrite old syntax into the current one
 
 SYNOPSIS
-       petal migrate-old-code [--check] [--only <migration>[,...]]...
+       petal migrate-old-code [--check] [--markdown]
+                              [--only <migration>[,...]]...
+                              [--except <migration>[,...]]...
                               [-I <dir>]... [<path>...]
        petal migrate-old-code -e <code>
        petal migrate-old-code -
@@ -564,12 +566,18 @@ DESCRIPTION
        error for a removed one, say to run this command.
 
        Migrates every .ptl file under the given paths (directories are
-       searched recursively, skipping dot-directories, node_modules and
-       target; the default is the current directory) and rewrites them in
-       place, printing each file it changed and what it did there. Each
-       migration rewrites only its old form and leaves everything else as
-       written (re-padding a trailing comment it would push out of its
-       column); the result is not reformatted.
+       searched recursively, skipping dot-directories, node_modules, target,
+       temp, out and dist; the default is the current directory) and
+       rewrites them in place, printing each file it changed and what it did
+       there, then a summary: per migration, how many sites in how many
+       files. Each migration rewrites only its old form and leaves
+       everything else as written (re-padding a trailing comment it would
+       push out of its column); the result is not reformatted, except by
+       end-lines, which formats the file first.
+
+       One run at the root of a project migrates code that has run none of
+       the migrations (old #f80 colors, // comments, elsif, end lines): the
+       old forms are read with a lexer and a parser of their own.
 
        The migrations run in this order ('petal migrate-old-code --list'
        shows each with the date it was added and what it replaces):
@@ -620,6 +628,20 @@ DESCRIPTION
               and e is built from its key alone (no calls). Any other
               state(key) is reported and left for a hand edit: a top-level
               state var holding a Map, or plain state (kept per call path)
+       end-lines
+              indentation closes a block, so the 'end' on a line of its own
+              goes. The file is formatted first (as 'petal fmt' does: a file
+              whose indentation disagrees with its ends is indented by
+              them), then each 'end' alone on its line is deleted, and
+              'end)', 'end]' and 'end}' keep the bracket. A comment after a
+              deleted 'end' stays, on its own line. Kept: an 'end' on the
+              line of its block (if c then a else b end), 'end,' between two
+              arguments, 'end |> f', the 'end' of an empty block, an 'end'
+              before a line that starts with an operator, and any other
+              'end' the parse needs. The result must parse to the same AST,
+              or the file keeps its ends and is listed as skipped. 'end'
+              is still the language: this migration is a change of layout,
+              and '--except end-lines' leaves it out
        old-imports
               imports for the current module system: what 'petal
               fix-imports' does (see 'petal help fix-imports'). It runs last,
@@ -629,6 +651,19 @@ DESCRIPTION
        migrated, it must compile after, or nothing is written for it and the
        error is reported (a migration bug). A file that does not parse is
        reported and skipped.
+
+       A file that a gate keeps a migration from is listed after the
+       summary, with the migration and the reason, and the command exits 1.
+       Nothing is written for such a file, except that a file only
+       end-lines could not convert is written as the other migrations left
+       it.
+
+       With --markdown the migrations run over the ```petal fences of
+       Markdown files. A fence that parses gets every selected migration;
+       one that only lexes (it elides code) gets colour-literals,
+       hash-comments and elsif-to-else-if; one that does not lex is left as
+       written. 'print(x) // expected' becomes 'print(x) # expected'. A
+       fence tagged no-migrate ('```petal ignore no-migrate') is left alone.
 
        To keep one site in its old form, put
        '# petal-lint-ignore <migration>' on the line before it or at the
@@ -643,6 +678,14 @@ OPTIONS
        --only <migration>[,<migration>...]
               Run only the named migrations. Repeatable.
 
+       --except <migration>[,<migration>...]
+              Run every migration but the named ones. Repeatable.
+
+       --markdown
+              Migrate the ```petal fences of Markdown files: directories are
+              searched for .md files instead of .ptl. A .md file named on
+              the command line is read as Markdown without the flag.
+
        --list List the migrations and exit.
 
        -I <dir>
@@ -654,14 +697,17 @@ OPTIONS
               diff).
 
 EXIT STATUS
-       0 on success; 1 when a file could not be read, parsed or migrated,
-       or, with --check, when a file would change. Sites left for a hand
+       0 on success; 1 when a file could not be read, parsed or migrated
+       (a gate kept a migration from it), or, with --check, when a file
+       would change. Sites left for a hand
        edit are listed on stderr and do not change the status.
 
 EXAMPLES
        petal migrate-old-code .
        petal migrate-old-code --check src/
        petal migrate-old-code --only const-decl-deprecated,config-let-deprecated game/
+       petal migrate-old-code --except end-lines .
+       petal migrate-old-code --markdown docs/
        petal migrate-old-code -e 'const N = 4'
 
 SEE ALSO

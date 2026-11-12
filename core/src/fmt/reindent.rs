@@ -189,6 +189,17 @@ fn is_continuation_op(t: &Token) -> bool {
     )
 }
 
+/// Does a line that ends with `t` run on into the line below (`a ||` /
+/// `b`)? The operators that can only be binary there: not `<` / `>` (a tag
+/// ends with one), `|` (an or-pattern) or `.`.
+fn is_trailing_continuation_op(t: &Token) -> bool {
+    use Token::*;
+    matches!(
+        t,
+        Plus | Minus | Star | Slash | Percent | PlusPlus | And | Or | DoubleQuestion | Pipe | Eq | Ne | Le | Ge | Assign
+    )
+}
+
 /// Re-indent `source` to 2-space indentation, trim trailing whitespace, and
 /// end with exactly one newline. Only whitespace outside tokens is touched;
 /// lines that start inside a multi-line token (raw string, JSX text) are
@@ -241,6 +252,12 @@ pub fn reindent_protected(
     // The most recent line that did not open with an operator: what a
     // leading-operator continuation line hangs from.
     let mut stmt = Hang { shift: 0, floor: 0 };
+    // The line above ended with a binary operator (or, in an `import` list,
+    // a comma) outside any bracket it opened: this line continues it, and
+    // hangs from the same statement as a leading-operator line does.
+    let mut continues_above = false;
+    // The statement the line above belongs to began with `import`.
+    let mut in_import = false;
     // A `for`/`while` header's `do` belongs to the construct already opened at
     // the keyword; only a `do` with no pending header opens a block itself
     // (a `when … do` match arm).
@@ -406,6 +423,9 @@ pub fn reindent_protected(
         let visual_cols = match governing {
             Some(Open { hang: Some(h), .. }) => keep(h.shift, h.floor),
             _ if leads_with_op && dedent == 0 => keep(stmt.shift, stmt.floor.saturating_sub(1)),
+            _ if continues_above && dedent == 0 && !leads_with_else && !in_jsx_text => {
+                keep(stmt.shift, stmt.floor.saturating_sub(1))
+            }
             _ => None,
         };
         let new_cols = visual_cols.unwrap_or(block_cols);
@@ -417,8 +437,20 @@ pub fn reindent_protected(
             shift: shown_cols as isize - old_cols as isize,
             floor: shown_cols,
         };
-        if !sig.is_empty() && !leads_with_op {
+        if !sig.is_empty() && !leads_with_op && !continues_above {
             stmt = this_line;
+            in_import = matches!(tokens[sig[0]], Token::Import)
+                || (matches!(tokens[sig[0]], Token::Pub | Token::Export)
+                    && sig.get(1).is_some_and(|&k| matches!(tokens[k], Token::Import)));
+        }
+        if let Some(&last) = sig.last() {
+            // (An `import m: *` of the old module system ends with a `*`.)
+            continues_above = sig.len() > 1
+                && if in_import {
+                    matches!(tokens[last], Token::Comma)
+                } else {
+                    is_trailing_continuation_op(&tokens[last])
+                };
         }
 
         // Render the line.
@@ -725,6 +757,21 @@ mod tests {
             out,
             "let xs = [\n  1,\n  2\n]\nlet r = {\n  a: 1,\n  b: 2\n}\n"
         );
+    }
+
+    #[test]
+    fn a_line_continued_by_a_trailing_operator_keeps_its_column() {
+        // Hung from the statement, like a line that starts with an operator;
+        // an `import` list continues after a comma. Moved with the
+        // statement's line, and never left of it.
+        let src = "import ui: a, b,\n           c, d\nfn f()\n    let busy = a || b ||\n        c ||\n        d\n    let n =\n  1\n    busy\nend\n";
+        let want = "import ui: a, b,\n           c, d\nfn f()\n  let busy = a || b ||\n      c ||\n      d\n  let n =\n  1\n  busy\nend\n";
+        assert_eq!(reindent(src).unwrap(), want);
+        assert_eq!(reindent(want).unwrap(), want);
+        // An enum's variants and a class's fields end with a comma and are
+        // not continuations; nor is the line after `import m: *`.
+        let items = "enum E\n  a,\n      b,\nend\n";
+        assert_eq!(reindent(items).unwrap(), "enum E\n  a,\n  b,\nend\n");
     }
 
     #[test]

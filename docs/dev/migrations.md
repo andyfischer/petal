@@ -61,6 +61,23 @@ first, then everything else works on it.
    the `migrate-old-code` page in `core/src/cli/help.rs`, and a CHANGELOG
    entry that tells users to run `petal migrate-old-code`.
 
+## The layout migration and Markdown
+
+`end-lines` (`end_lines.rs`) is not a rewrite of an old form: `end` is still
+the language (`OldForm::Optional`: no warning, no lint report). It formats
+the file and removes the `end`s indentation makes redundant
+(`fmt::remove_block_ends`), so it runs last of the text migrations, after
+`run()`'s compile gate, and has its own gate (the same AST). A file that
+fails it keeps what the other migrations wrote and comes back in
+`MigrateOutcome::skipped`; any other gate failure is
+`MigrateError::Gate` and nothing is produced for the file. A new migration of
+an old form goes before it in `MIGRATIONS` and in `run()`.
+
+`petal migrate-old-code --markdown` (`markdown.rs`) runs `migrate_source`
+over each `petal` fence with `MigrateOptions::fragment` on: a fence that does
+not parse still gets the migrations that only read tokens. A migration that
+needs no parse should be added to that path (`tokens_only` in `run()`).
+
 ## Rules of thumb
 
 - **Idempotent.** A migration rewrites only the old form, so its output has

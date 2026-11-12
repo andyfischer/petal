@@ -23,7 +23,9 @@
 //! `else-if-nesting` (which reads `else if` the old way, as an `if` nested in
 //! an `else`), `elsif-to-else-if`, `at-rebind` (which reads the old `@`
 //! itself, since the parser no longer does), `export-to-pub`, `const-decl-deprecated`, `config-let-deprecated`,
-//! `state-key-deprecated`. **`old-imports`** rewrites imports for the current
+//! `state-key-deprecated`; and last `end-lines`, which is no rewrite of an
+//! old form but of the layout (it formats the file and removes the `end`s
+//! indentation makes redundant, see [`end_lines`]). **`old-imports`** rewrites imports for the current
 //! module system and needs every file of the batch and a module resolver; it
 //! is [`crate::fix_imports`], which the CLI runs after the text migrations
 //! (and which `petal fix-imports` still runs on its own).
@@ -34,6 +36,13 @@
 //! that exactly the counted modifiers were respelled. The output is not run
 //! through `petal fmt`: a migration edits what it rewrites and nothing else
 //! (re-padding a trailing comment it pushed or pulled out of its column).
+//! `end-lines` is the exception on both counts: it formats the file, and a
+//! file that fails its gate (the same AST) keeps the output of the others
+//! and is reported in [`MigrateOutcome::skipped`].
+//!
+//! **Markdown.** [`markdown::migrate_markdown`] runs the text migrations
+//! over the `petal` fences of a Markdown text, each as a fragment
+//! ([`MigrateOptions::fragment`]).
 //!
 //! **Opting out.** `# petal-lint-ignore <migration>` on the line before a
 //! site, or trailing on its line (`petal-lint-ignore-file <migration>` for the
@@ -52,10 +61,12 @@ use std::path::PathBuf;
 mod at_rebind;
 mod colour_literals;
 mod else_if;
+mod end_lines;
 pub mod export_keyword;
 mod export_to_pub;
 mod hash_comments;
 mod lifecycle_keywords;
+pub mod markdown;
 mod state_key;
 
 pub use crate::lint::Finding;
@@ -101,6 +112,7 @@ pub const EXPORT_TO_PUB: &str = "export-to-pub";
 pub const CONST_DECL_DEPRECATED: &str = "const-decl-deprecated";
 pub const CONFIG_LET_DEPRECATED: &str = "config-let-deprecated";
 pub const STATE_KEY_DEPRECATED: &str = crate::compiler::keyed_state::RULE;
+pub const END_LINES: &str = "end-lines";
 pub const OLD_IMPORTS: &str = "old-imports";
 
 /// What the compiler does with a migration's old form today.
@@ -113,6 +125,10 @@ pub enum OldForm {
     Warns,
     /// Rejected: the form was removed, and the error names the tool.
     Removed,
+    /// Still the language, with no diagnostic and no lint report: the
+    /// migration converts a file from one spelling the language keeps to
+    /// the one written since (`end-lines`: an `end` is optional).
+    Optional,
 }
 
 /// One migration, as `petal migrate-old-code --list` shows it.
@@ -237,6 +253,21 @@ pub const MIGRATIONS: &[Migration] = &[
         partial: true,
         batch: false,
     },
+    // Last of the text migrations: it formats the file, and every one
+    // before it leaves the layout as written.
+    Migration {
+        name: END_LINES,
+        summary: "indentation closes a block: the file is formatted (`petal fmt`), then each \
+                  `end` alone on its line is removed, and `end)` / `end]` / `end}` keep the \
+                  bracket. An `end` on the line of its block, `end,` and any `end` the parse \
+                  needs stay",
+        added: "2026-11-12",
+        replaces: "the `end` that closed every multi-line block, optional since 2026-11-12 \
+                   (docs/syntax/indentation.md, docs/tasks/pythonic-syntax.md)",
+        old_form: OldForm::Optional,
+        partial: false,
+        batch: false,
+    },
     Migration {
         name: OLD_IMPORTS,
         summary: "imports for the current module system: a sibling file is `import ./x`, \
@@ -267,12 +298,60 @@ pub struct MigrateOptions {
     pub origin: Option<PathBuf>,
     /// `--only`: when set, just these migrations run.
     pub only: Option<Vec<String>>,
+    /// `--except`: these migrations do not run.
+    pub except: Vec<String>,
+    /// The source is a fragment that may not parse (a Markdown fence that
+    /// elides code): when it does not, the migrations that need only tokens
+    /// (`colour-literals`, `hash-comments`, `elsif-to-else-if`) still run,
+    /// and the rest are skipped for it.
+    pub fragment: bool,
 }
 
 impl MigrateOptions {
     pub fn enabled(&self, name: &str) -> bool {
         self.only.as_ref().is_none_or(|only| only.iter().any(|r| r == name))
+            && !self.except.iter().any(|r| r == name)
     }
+}
+
+/// Why a source was not migrated.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MigrateError {
+    /// The source could not be read: it does not lex or parse, in the
+    /// current syntax or in any old form a migration reads.
+    Unreadable(String),
+    /// A migration's rewrite failed its gate: nothing is produced for the
+    /// file, and the case is a migration bug or a source oddity to look at.
+    Gate { migration: &'static str, reason: String },
+}
+
+impl MigrateError {
+    fn gate(migration: &'static str) -> impl Fn(String) -> MigrateError {
+        move |reason| MigrateError::Gate { migration, reason }
+    }
+}
+
+impl From<String> for MigrateError {
+    fn from(e: String) -> Self {
+        MigrateError::Unreadable(e)
+    }
+}
+
+impl std::fmt::Display for MigrateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MigrateError::Unreadable(e) => f.write_str(e),
+            MigrateError::Gate { reason, .. } => f.write_str(reason),
+        }
+    }
+}
+
+/// A migration that was skipped for a file because its gate failed, while
+/// the output of the ones before it stands.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Skipped {
+    pub migration: &'static str,
+    pub reason: String,
 }
 
 /// The result of migrating one source text.
@@ -282,6 +361,18 @@ pub struct MigrateOutcome {
     pub findings: Vec<Finding>,
     /// The migrated source. Equal to the input when nothing was rewritten.
     pub output: String,
+    /// `end-lines`: how many `end`s were removed, and how many at the start
+    /// of a line were kept (reported once per file in `findings`).
+    pub ends_removed: usize,
+    pub ends_kept: usize,
+    /// A migration whose gate failed for this file: `output` is the text
+    /// without it. Only `end-lines` is skipped this way (it runs last, over
+    /// text the other gates have passed); any other gate failure is an
+    /// error for the whole file.
+    pub skipped: Vec<Skipped>,
+    /// The source did not parse and was migrated as a fragment
+    /// ([`MigrateOptions::fragment`]): token migrations only.
+    pub fragment: bool,
 }
 
 impl MigrateOutcome {
@@ -308,7 +399,20 @@ impl MigrateOutcome {
 /// not parse, or if a migration fails a gate (a migration bug: nothing is
 /// produced for the file).
 pub fn migrate_source(source: &str, opts: &MigrateOptions) -> Result<MigrateOutcome, String> {
-    run(source, opts, true)
+    migrate_source_checked(source, opts).map_err(|e| e.to_string())
+}
+
+/// [`migrate_source`], with the error saying whether the source could not
+/// be read or a gate failed.
+pub fn migrate_source_checked(source: &str, opts: &MigrateOptions) -> Result<MigrateOutcome, MigrateError> {
+    match run(source, opts, true, false) {
+        Err(MigrateError::Unreadable(_)) if opts.fragment => {
+            let mut out = run(source, opts, true, true)?;
+            out.fragment = true;
+            Ok(out)
+        }
+        other => other,
+    }
 }
 
 /// The sites of the migrations whose old form the compiler accepts without a
@@ -325,7 +429,7 @@ pub(crate) fn silent_old_forms(source: &str) -> Result<Vec<(usize, Finding)>, St
         only: Some(only),
         ..Default::default()
     };
-    let out = run(source, &opts, false)?;
+    let out = run(source, &opts, false, false).map_err(|e| e.to_string())?;
     let mut line_starts = vec![0usize];
     for (i, c) in source.chars().enumerate() {
         if c == '\n' {
@@ -339,7 +443,20 @@ pub(crate) fn silent_old_forms(source: &str) -> Result<Vec<(usize, Finding)>, St
         .collect())
 }
 
-fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome, String> {
+/// `tokens_only`: stop after the migrations that need no parse (the source
+/// is a fragment that does not parse).
+fn run(source: &str, opts: &MigrateOptions, gate: bool, tokens_only: bool) -> Result<MigrateOutcome, MigrateError> {
+    let done = |output: String, mut findings: Vec<Finding>| {
+        findings.sort_by_key(|f| (f.line, f.column));
+        MigrateOutcome {
+            findings,
+            output,
+            ends_removed: 0,
+            ends_kept: 0,
+            skipped: Vec::new(),
+            fragment: false,
+        }
+    };
     // Lint's pipeline: findings mapped back to the original text, and
     // `petal-lint-ignore` honoured under each migration's name.
     let filter = RuleFilter {
@@ -369,7 +486,7 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         let before = p.text.clone();
         colours = p.apply(COLOUR_LITERALS, colour_literals::plan_colour_fixes(&before)?);
         if colours > 0 {
-            colour_literals::same_tokens(&before, &p.text)?;
+            colour_literals::same_tokens(&before, &p.text).map_err(MigrateError::gate(COLOUR_LITERALS))?;
         }
     }
 
@@ -379,7 +496,7 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         let before = p.text.clone();
         comments = p.apply(HASH_COMMENTS, hash_comments::plan_comment_fixes(&before)?);
         if comments > 0 {
-            hash_comments::same_tokens_but_comments(&before, &p.text)?;
+            hash_comments::same_tokens_but_comments(&before, &p.text).map_err(MigrateError::gate(HASH_COMMENTS))?;
         }
     }
 
@@ -394,9 +511,19 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         if colours + comments == 0 && p.unfixed(COLOUR_LITERALS) == 0 {
             reparse(&p.text)?;
         }
-        let (output, mut findings) = p.finish();
-        findings.sort_by_key(|f| (f.line, f.column));
-        return Ok(MigrateOutcome { findings, output });
+        let (output, findings) = p.finish();
+        return Ok(done(output, findings));
+    }
+
+    if tokens_only {
+        if opts.enabled(ELSIF_TO_ELSE_IF) {
+            let before = p.text.clone();
+            if p.apply(ELSIF_TO_ELSE_IF, else_if::plan_elsif_fixes(&before)?) > 0 {
+                else_if::check_elsif(&before, &p.text, false).map_err(MigrateError::gate(ELSIF_TO_ELSE_IF))?;
+            }
+        }
+        let (output, findings) = p.finish();
+        return Ok(done(output, findings));
     }
 
     // `else if … end end`: until the nested `if`s are chains (or on lines
@@ -407,7 +534,7 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         let before = p.text.clone();
         nestings = p.apply(ELSE_IF_NESTING, else_if::plan_nesting_fixes(&before)?);
         if nestings > 0 && !else_if::has_nesting(&p.text) {
-            else_if::check_nesting(&before, &p.text, &lint_opts)?;
+            else_if::check_nesting(&before, &p.text, &lint_opts).map_err(MigrateError::gate(ELSE_IF_NESTING))?;
         }
     }
 
@@ -417,7 +544,7 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         let before = p.text.clone();
         elsifs = p.apply(ELSIF_TO_ELSE_IF, else_if::plan_elsif_fixes(&before)?);
         if elsifs > 0 {
-            else_if::check_elsif(&before, &p.text, gate)?;
+            else_if::check_elsif(&before, &p.text, gate).map_err(MigrateError::gate(ELSIF_TO_ELSE_IF))?;
         }
     }
 
@@ -434,11 +561,10 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         // An `@` left for a hand edit keeps the file from parsing: report
         // what was done and stop.
         Err(_) if rebinds_left > 0 => {
-            let (output, mut findings) = p.finish();
-            findings.sort_by_key(|f| (f.line, f.column));
-            return Ok(MigrateOutcome { findings, output });
+            let (output, findings) = p.finish();
+            return Ok(done(output, findings));
         }
-        Err(e) => return Err(e),
+        Err(e) => return Err(e.into()),
     };
 
     let exports = p.apply(EXPORT_TO_PUB, export_to_pub::plan_export_fixes(&stmts, &chars)?);
@@ -465,15 +591,10 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         rewrites += p.apply(STATE_KEY_DEPRECATED, fixes);
     }
 
-    let (output, mut findings) = p.finish();
-    findings.sort_by_key(|f| (f.line, f.column));
-    if rewrites == 0 {
-        return Ok(MigrateOutcome {
-            findings,
-            output: source.to_string(),
-        });
-    }
-    if gate {
+    let ends_on = opts.enabled(END_LINES) && !p.ignores_file(END_LINES);
+    let (output, findings) = p.finish();
+    let mut out = done(if rewrites == 0 { source.to_string() } else { output }, findings);
+    if rewrites > 0 && gate {
         // Only meaningful when the original compiles here at all; a file
         // whose imports don't resolve outside its app is migrated ungated.
         //
@@ -493,25 +614,67 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool) -> Result<MigrateOutcome
         let original = indented_by_end(&original);
         let compiled = compiles(&original, &lint_opts).is_ok();
         if compiled
-            && let Err(e) = compiles(&indented_by_end(&output), &lint_opts)
+            && let Err(e) = compiles(&indented_by_end(&out.output), &lint_opts)
         {
-            return Err(format!(
-                "migrate bug: a rewrite broke compilation — refusing to produce output ({e})"
-            ));
+            return Err(MigrateError::Gate {
+                migration: "compile",
+                reason: format!("migrate bug: a rewrite broke compilation — refusing to produce output ({e})"),
+            });
         }
         if exports > 0 {
             let before = count_exports(&original)?;
-            let after = count_exports(&output)?;
+            let after = count_exports(&out.output)?;
             if before.0 != after.0 || before.1 != after.1 + exports {
-                return Err(format!(
-                    "migrate bug: rewriting {exports} `export`(s) to `pub` left {} of {} — \
-                     refusing to produce output",
-                    after.1, before.1
-                ));
+                return Err(MigrateError::Gate {
+                    migration: EXPORT_TO_PUB,
+                    reason: format!(
+                        "migrate bug: rewriting {exports} `export`(s) to `pub` left {} of {} — \
+                         refusing to produce output",
+                        after.1, before.1
+                    ),
+                });
             }
         }
     }
-    Ok(MigrateOutcome { findings, output })
+
+    // `end` lines, last: over text every other gate has passed. It has its
+    // own gate (the same AST), and a file that fails it keeps what the
+    // migrations before it wrote.
+    if ends_on {
+        match end_lines::migrate(&out.output) {
+            Ok(None) => {}
+            Ok(Some(ends)) => {
+                // Lines moved under the earlier findings' feet only below
+                // the first `end`; this one is anchored where the text it
+                // was given has that `end`.
+                out.findings.push(Finding {
+                    rule: END_LINES,
+                    line: ends.first_line,
+                    column: 1,
+                    message: if ends.removed > 0 {
+                        format!(
+                            "{} `end` line(s) removed: indentation closes the block{}",
+                            ends.removed,
+                            if ends.kept > 0 {
+                                format!(" ({} kept: the program needs them)", ends.kept)
+                            } else {
+                                String::new()
+                            }
+                        )
+                    } else {
+                        "indented by its `end`s, which the program needs".to_string()
+                    },
+                    fixable: true,
+                });
+                out.findings.sort_by_key(|f| (f.line, f.column));
+                out.output = ends.text;
+                out.ends_removed = ends.removed;
+                out.ends_kept = ends.kept;
+            }
+            Err(reason) => out.skipped.push(Skipped { migration: END_LINES, reason }),
+        }
+    }
+    Ok(out)
 }
 
 /// (exported declarations, how many of them are spelled `export`) in

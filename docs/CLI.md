@@ -1039,6 +1039,8 @@ Opt out with `# petal-fmt-ignore` (the next line stays as written),
 petal migrate-old-code [-I <dir>]... [<path>...]     # rewrite in place; directories recurse; default "."
 petal migrate-old-code --check [<path>...]           # write nothing; print a unified diff; exit 1 if anything would change (also --dry-run)
 petal migrate-old-code --only <name>[,<name>] ...    # run just these migrations (repeatable)
+petal migrate-old-code --except <name>[,<name>] ...  # run every migration but these (repeatable)
+petal migrate-old-code --markdown [<path>...]        # the ```petal fences of Markdown files instead of .ptl files
 petal migrate-old-code --list                        # the migrations, with the date each was added
 petal migrate-old-code -e '<code>'                   # print the migrated code
 petal migrate-old-code -                             # stdin to stdout
@@ -1063,6 +1065,7 @@ one is an error that names the command.
 | `const-decl-deprecated` | `const X = e` → `let X = const(e)`, literals included, with a closing `)` after a multi-line initializer and trailing comments kept in their column ([plan](tasks/lifecycle-annotation-functions-refactor.md)) | warns (Phase 5); removed in Phase 6 |
 | `config-let-deprecated` | `config let X = v` → `let X = tunable(v)`, or only `config` dropped when `v` is already a `tunable(…)` call | warns (Phase 5); removed in Phase 6 |
 | `state-key-deprecated` | `state(k) x = e` → `memo(k) x = e` where the slot is never written and `e` is plainly a pure function of the key (no calls, no `get`, no name the key does not read): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Any other `state(key)` is listed for a hand edit ([Deprecated: `state(key)`](features/inline-state.md#deprecated-statekey)): a top-level `state var` Map for state shared on purpose, plain `state` for per-instance state | warns |
+| `end-lines` | the `end` on a line of its own: [indentation closes the block](syntax/indentation.md). The file is formatted first (`petal fmt`: a file whose indentation disagrees with its `end`s is indented by them), then each `end` alone on its line is deleted and `end)` / `end]` / `end}` keep the bracket, at the same column. A comment after a deleted `end` stays, on a line of its own at the block's column. What stays: an `end` on the line of the block it closes (`if c then a else b end`); `end,` (the next argument follows: two block lambdas in one call); `end \|> f` and `end.len()`; the `end` of a block with no statement; an `end` before a line that starts with an operator, which would otherwise continue the block's last statement; and any other `end` the parse needs (`if c then a; b` / `end`). The migrated text must parse to the same AST as the original, or the file keeps what the other migrations wrote and is listed as skipped. A file with no `end` at the start of a line is not reformatted. `# petal-lint-ignore-file end-lines` keeps a file's `end`s | still the language: `end` is optional, with no warning and no lint report |
 | `old-imports` | import lines for the current module system: everything [`fix-imports`](#fix-imports--migrate-imports) does | removed: an error |
 
 They run in that order, each over the text the one before left; `old-imports`
@@ -1071,21 +1074,61 @@ A file whose imports it changed gets a second pass of the text migrations,
 because `state-key-deprecated` only rewrites a file that compiles, and an old
 import (an error now) kept it from compiling the first time.
 Each migration edits its old form and nothing else, and the output is not
-reformatted. Running the command again changes nothing. If a file compiles
-before, it must compile after, or nothing is written for it and the error is
-reported (a migration bug). It prints each file it rewrote, with one line per
-site:
+reformatted; `end-lines` is the exception, since it formats the file before
+it removes the `end`s. Running the command again changes nothing. If a file
+compiles before, it must compile after, or nothing is written for it and the
+error is reported (a migration bug). It prints each file it rewrote, with one
+line per site, and ends with a summary: per migration, how many sites in how
+many files.
 
 ```
 $ petal migrate-old-code game/
 game/main.ptl
   1:1: export-to-pub: `export` is deprecated; write `pub`
   4:1: const-decl-deprecated: `const N = e` is deprecated; write `let N = const(e)`
+  9:1: end-lines: 3 `end` line(s) removed: indentation closes the block
   old-imports: line 2: `import level` -> `import ./level`
 game/hp.ptl:2:3: state-key-deprecated: `state(…) h` is deprecated: … (left for a hand edit)
 1 site(s) in an old form are left for a hand edit
 migrated 1 of 2 file(s)
+  export-to-pub          1 site(s) in 1 file(s)
+  const-decl-deprecated  1 site(s) in 1 file(s)
+  end-lines              3 `end`(s) in 1 file(s)
+  old-imports            1 site(s) in 1 file(s)
 ```
+
+**A whole project in one run.** `petal migrate-old-code .` at the project
+root migrates code that has run none of the migrations: old `#f80` colors,
+`//` comments, `elsif`, `else if … end end` and `end` lines are read with a
+lexer and a parser for the old forms, in the order of the table. Directories
+are searched recursively for `.ptl` files, skipping dot-directories (`.git`,
+`.temp`) and `node_modules`, `target`, `temp`, `out` and `dist`; a skipped
+directory named on the command line is searched. `--check` (or `--dry-run`)
+shows the diff and the summary and writes nothing. `--only` and `--except`
+select migrations, so `--except end-lines` rewrites the old forms and leaves
+the layout alone.
+
+**Gates.** A file that a gate keeps a migration from is listed again after
+the summary, under "skipped by a gate", with the migration and the reason,
+and the run exits 1. For every migration but `end-lines` nothing is written
+for that file; for `end-lines` the file is written as the other migrations
+left it, with its `end`s. A file that does not parse is listed under "could
+not be read" and exits 1 too. The other files are migrated either way.
+
+**Markdown.** `--markdown` walks the same directories for `.md` files (a
+`.md` file named on the command line is read as Markdown without the flag)
+and runs the migrations over each ```` ```petal ```` fence, as a source of
+its own. A fence that parses gets every selected migration. A fence that
+only lexes (it elides code with `...`, or shows half a construct) gets the
+migrations that read tokens: `colour-literals`, `hash-comments` and
+`elsif-to-else-if`. A fence that does not lex (pseudo-code) is left as
+written and counted. The `ignore` tag does not decide this: an `ignore`
+fence that lexes is migrated like any other. Since the `print(x) // expected`
+convention of the documentation tests is a trailing comment, `hash-comments`
+respells it `print(x) # expected`. Tag a fence `no-migrate`
+(```` ```petal ignore no-migrate ````) to keep an example of an old form as
+written. A fence indented with its list item keeps that indentation.
+`old-imports` does not run on Markdown.
 
 A site left for a hand edit goes to stderr and does not change the exit
 status. To keep one site in its old form (a fixture of the deprecated form,

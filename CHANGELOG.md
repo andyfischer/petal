@@ -46,6 +46,33 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   - "… is unclosed; expected `end`" is gone: a block with no `end` is closed
     by its indentation.
 
+  **Run `petal migrate-old-code`** to drop the `end` lines: its new
+  `end-lines` migration formats a file (indenting it by its `end`s where the
+  two disagree), then deletes each `end` that is alone on its line, and turns
+  `end)` into `)`. It keeps an `end` on the line of its block, `end,`,
+  `end |> f`, and any `end` the program needs, and writes only a file that
+  parses to the same AST. `--except end-lines` keeps the `end`s.
+- **`petal migrate-old-code` migrates a whole project in one run.** A tree
+  that has run none of the recent migrations (`#f80` colors, `//` comments,
+  `elsif`, `else if … end end`, `end` lines) is migrated by one
+  `petal migrate-old-code .`. New: `--except <migration>` (every migration
+  but these); a summary at the end with, per migration, how many sites in
+  how many files; a list of the files a gate kept a migration from, which
+  now fails the run (exit 1); and `--markdown`, which runs the migrations
+  over the ```` ```petal ```` fences of `.md` files (`print(x) // expected`
+  becomes `print(x) # expected`; a fence tagged `no-migrate` is left alone).
+  The directory walk also skips `temp`, `out` and `dist`. Library API:
+  `migrate::migrate_source_checked` returns `MigrateError::Unreadable` or
+  `MigrateError::Gate`, `MigrateOptions` gained `except` and `fragment`,
+  `MigrateOutcome` gained `ends_removed`, `ends_kept`, `skipped` and
+  `fragment`, and `migrate::markdown::migrate_markdown` is the Markdown
+  mode.
+- **`petal fmt` keeps a line continued by a trailing operator where it
+  hangs.** The second line of `let busy = a || b ||` / `    c || d`, and of
+  an `import m: a, b,` list, used to move to the block's own column; it now
+  keeps its offset from the statement, as a line that starts with an
+  operator already did.
+
   The tools read and write both spellings, and any mix of them:
   - `petal fmt` takes the blocks from the parse, so a block with no `end`
     keeps its extent while every level moves to two columns. It converts

@@ -79,6 +79,10 @@ name = "layout_corpus"
 path = "../test/benchmarks/harness/layout_corpus.rs"
 
 [[example]]
+name = "old_syntax_scan"
+path = "../test/benchmarks/harness/old_syntax_scan.rs"
+
+[[example]]
 name = "lower_passes"
 path = "../test/benchmarks/harness/lower_passes.rs"
 

@@ -1,0 +1,5 @@
+# Commits `git blame` should look through: mechanical rewrites of the whole tree.
+# Use: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# chore(migrate): drop `end` lines across the repo's .ptl; respell the docs' fences
+14da971613e2aa13baa6452e7ae35c957f65124f

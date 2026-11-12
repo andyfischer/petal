@@ -1,14 +1,14 @@
-// Benchmark: Game of Life — nested loops, 2D lists rebuilt per generation via
-// loop-carried append, helper called per cell. Mirrors the hot shape of the
-// creative-coding sketches (per-frame grid rebuild).
-// Prints a checksum so backends can be diffed.
+# Benchmark: Game of Life — nested loops, 2D lists rebuilt per generation via
+# loop-carried append, helper called per cell. Mirrors the hot shape of the
+# creative-coding sketches (per-frame grid rebuild).
+# Prints a checksum so backends can be diffed.
 
 fn count_neighbors(grid, x, y, width, height)
   let count = 0
   for dy in range(-1, 2) do
     for dx in range(-1, 2) do
       if dx == 0 && dy == 0 then
-        // skip self
+        # skip self
       else
         let nx = x + dx
         let ny = y + dy
@@ -44,8 +44,8 @@ end
 let width = 16
 let height = 16
 
-// Seed: deterministic ~1/3-density arithmetic fill (settles to a small
-// stable population by gen 40 — checksum must stay nonzero)
+# Seed: deterministic ~1/3-density arithmetic fill (settles to a small
+# stable population by gen 40 — checksum must stay nonzero)
 let grid = []
 for y in range(0, height) do
   let row = []

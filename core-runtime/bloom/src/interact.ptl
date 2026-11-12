@@ -1,67 +1,67 @@
-// bloom/interact — the interaction layer: pointer probes, focus, hotkeys, and
-// the input capture that lets an overlay drawn *last* still swallow the click.
-//
-// A probe is the unit every bloom component is built on. It answers the
-// pointer questions for one rect (hovering? held? clicked?) and, in the same
-// record, the *animated* versions of those answers (`hot`, `active`), because
-// a component that has to ask twice — once for the logic, once for the fade —
-// is where hand-rolled UIs start to drift.
-//
-// Click means press-and-release inside, not press. Pressing a button and
-// sliding off it cancels, which is what every real toolkit does and what
-// makes a drag out of a menu item work.
+# bloom/interact — the interaction layer: pointer probes, focus, hotkeys, and
+# the input capture that lets an overlay drawn *last* still swallow the click.
+#
+# A probe is the unit every bloom component is built on. It answers the
+# pointer questions for one rect (hovering? held? clicked?) and, in the same
+# record, the *animated* versions of those answers (`hot`, `active`), because
+# a component that has to ask twice — once for the logic, once for the fade —
+# is where hand-rolled UIs start to drift.
+#
+# Click means press-and-release inside, not press. Pressing a button and
+# sliding off it cancels, which is what every real toolkit does and what
+# makes a drag out of a menu item work.
 
-// The drawing and input names used below (`rect`, `draw_rect_rounded`,
-// `mix` and friends) come from the `ui` package. This module imports it
-// itself: an import reaches only the file it is written in.
+# The drawing and input names used below (`rect`, `draw_rect_rounded`,
+# `mix` and friends) come from the `ui` package. This module imports it
+# itself: an import reaches only the file it is written in.
 import bloom/motion: ease_flag, ease_to
 import ui
 
-// ── Input capture ─────────────────────────────────────────────────────────
-// Immediate mode draws overlays last, so an open menu's rect is not known
-// until after the controls beneath it have already run their probes. The fix
-// is a one-frame claim: an overlay calls `capture` every frame it is open, and
-// probes go inert while a claim is live. The one-frame lag is invisible (the
-// menu opened on the frame before) and it costs no ordering discipline in the
-// app.
+# ── Input capture ─────────────────────────────────────────────────────────
+# Immediate mode draws overlays last, so an open menu's rect is not known
+# until after the controls beneath it have already run their probes. The fix
+# is a one-frame claim: an overlay calls `capture` every frame it is open, and
+# probes go inert while a claim is live. The one-frame lag is invisible (the
+# menu opened on the frame before) and it costs no ordering discipline in the
+# app.
 
 state var _owner = ""
 state var _owner_frame = -2
-// The box an overlay the app draws *into* (a dialog, a popover) claimed this
-// run, inside which probes stay live. A plain module `var` starts over every
-// run, so it is set only for the calls made after the overlay's own call in
-// this frame: the app's content inside the box. The controls painted
-// underneath, earlier in the frame, see nil and stay inert even where they
-// sit under the box.
+# The box an overlay the app draws *into* (a dialog, a popover) claimed this
+# run, inside which probes stay live. A plain module `var` starts over every
+# run, so it is set only for the calls made after the overlay's own call in
+# this frame: the app's content inside the box. The controls painted
+# underneath, earlier in the frame, see nil and stay inert even where they
+# sit under the box.
 var _owner_area = nil
 
-// Claim the pointer for `owner` (any stable string). Call it every frame the
-// overlay is open.
+# Claim the pointer for `owner` (any stable string). Call it every frame the
+# overlay is open.
 pub fn capture(owner: string)
   set _owner = owner
   set _owner_frame = frame_count()
   set _owner_area = nil
 end
 
-// The same claim, for an overlay whose contents the app draws after it:
-// probes made later this frame that lie inside `area` stay live, so the
-// buttons and fields inside a dialog work while everything else is inert.
+# The same claim, for an overlay whose contents the app draws after it:
+# probes made later this frame that lie inside `area` stay live, so the
+# buttons and fields inside a dialog work while everything else is inert.
 pub fn capture(owner: string, area: record)
   set _owner = owner
   set _owner_frame = frame_count()
   set _owner_area = area
 end
 
-// Whether the pointer is free for a control at `r`: no claim is live, or
-// `r` lies inside the box an overlay claimed earlier this frame. `probe`
-// asks this; a control that reads the mouse itself asks it too.
+# Whether the pointer is free for a control at `r`: no claim is live, or
+# `r` lies inside the box an overlay claimed earlier this frame. `probe`
+# asks this; a control that reads the mouse itself asks it too.
 pub fn pointer_free(r: record) -> bool
   let a = get _owner_area
   !is_captured() || (a != nil && r.x >= a.x && r.y >= a.y &&
     r.x + r.w <= a.x + a.w && r.y + r.h <= a.y + a.h)
 end
 
-// Whether some overlay is holding input right now.
+# Whether some overlay is holding input right now.
 pub fn is_captured()
   (get _owner) != "" && frame_count() - (get _owner_frame) <= 1
 end
@@ -70,29 +70,29 @@ pub fn capture_owner()
   if is_captured() then get _owner else "" end
 end
 
-// Drop a claim early (a menu closing mid-frame).
+# Drop a claim early (a menu closing mid-frame).
 pub fn capture_release()
   set _owner = ""
   set _owner_frame = -2
   set _owner_area = nil
 end
 
-// ── Probes ────────────────────────────────────────────────────────────────
+# ── Probes ────────────────────────────────────────────────────────────────
 
-// The full interaction record for `r`:
-//
-//   rect     the rect probed
-//   hover    pointer inside, and not blocked by an overlay
-//   down     pressed inside and still held (even if the pointer left)
-//   press    went down inside on this frame
-//   click    released inside after pressing inside — the one to act on
-//   hot      0→1 eased hover, for a fade
-//   active   0→1 eased press, for a squash
-//   enabled  what was passed in
-//
-// `enabled: false` returns a record that is inert *and* still animates its way
-// back to rest, so disabling a hovered button fades it out rather than
-// snapping.
+# The full interaction record for `r`:
+#
+#   rect     the rect probed
+#   hover    pointer inside, and not blocked by an overlay
+#   down     pressed inside and still held (even if the pointer left)
+#   press    went down inside on this frame
+#   click    released inside after pressing inside — the one to act on
+#   hot      0→1 eased hover, for a fade
+#   active   0→1 eased press, for a squash
+#   enabled  what was passed in
+#
+# `enabled: false` returns a record that is inert *and* still animates its way
+# back to rest, so disabling a hovered button fades it out rather than
+# snapping.
 pub fn probe(r: record, enabled: bool) -> record
   probe_at(r, enabled, pointer_free(r))
 end
@@ -101,8 +101,8 @@ pub fn probe(r: record) -> record
   probe(r, true)
 end
 
-// The overlay's own probe: identical, but it ignores the capture claim (an
-// open menu is the thing holding the pointer, so its items must still see it).
+# The overlay's own probe: identical, but it ignores the capture claim (an
+# open menu is the thing holding the pointer, so its items must still see it).
 pub fn probe_over(r: record) -> record
   probe_at(r, true, true)
 end
@@ -124,7 +124,7 @@ fn probe_at(r: record, enabled: bool, allowed: bool) -> record
     hot: ease_flag(over && !down, 18.0), active: ease_flag(down, 34.0)}
 end
 
-// The two shorthands, for the many places that want one bool.
+# The two shorthands, for the many places that want one bool.
 pub fn hovering(r: record)
   pointer_free(r) && point_in(mouse_x(), mouse_y(), r)
 end
@@ -133,11 +133,11 @@ pub fn clicked(r: record)
   probe(r).click
 end
 
-// ── Dragging ──────────────────────────────────────────────────────────────
+# ── Dragging ──────────────────────────────────────────────────────────────
 
-// A drag that starts inside `r` and keeps tracking once the pointer leaves it
-// (the slider that keeps following your hand off the end of its track).
-// Returns {active, x, y, dx, dy, start_x, start_y}.
+# A drag that starts inside `r` and keeps tracking once the pointer leaves it
+# (the slider that keeps following your hand off the end of its track).
+# Returns {active, x, y, dx, dy, start_x, start_y}.
 pub fn drag(r: record) -> record
   state on = false
   state sx = 0
@@ -154,30 +154,30 @@ pub fn drag(r: record) -> record
     start_x: sx, start_y: sy}
 end
 
-// ── Focus ─────────────────────────────────────────────────────────────────
-// The keyboard owner is `ui`'s: the runtime focus (`has_focus`,
-// `focus_request`, `focus_owner`), so a bloom control and a field built on
-// `ui.text_field_update` share one owner, and a press elsewhere takes the
-// keyboard away for both. What bloom adds is the Tab ring: focusable
-// components announce themselves each frame in draw order, which is exactly
-// the tab order. The ring is therefore rebuilt every frame and needs no
-// registration, no ids list held by the app, and no stale entries when a
-// control disappears.
+# ── Focus ─────────────────────────────────────────────────────────────────
+# The keyboard owner is `ui`'s: the runtime focus (`has_focus`,
+# `focus_request`, `focus_owner`), so a bloom control and a field built on
+# `ui.text_field_update` share one owner, and a press elsewhere takes the
+# keyboard away for both. What bloom adds is the Tab ring: focusable
+# components announce themselves each frame in draw order, which is exactly
+# the tab order. The ring is therefore rebuilt every frame and needs no
+# registration, no ids list held by the app, and no stale entries when a
+# control disappears.
 
-// The last complete ring: it is rewritten as this frame's ring grows, so at
-// the top of a frame it still holds what the previous frame built.
+# The last complete ring: it is rewritten as this frame's ring grows, so at
+# the top of a frame it still holds what the previous frame built.
 state var _ring = []
 state var _pending = 0
-// This frame's ring so far. A plain module `var` starts over on every run, so
-// "empty" is how the first `focusable` of a frame knows it is first. It used
-// to compare a stored `frame_count()`, which wrote a `state` slot every frame
-// and read a binding that moves every frame, so no panel with a focusable
-// control in it could ever be skipped by the frame gate.
+# This frame's ring so far. A plain module `var` starts over on every run, so
+# "empty" is how the first `focusable` of a frame knows it is first. It used
+# to compare a stored `frame_count()`, which wrote a `state` slot every frame
+# and read a binding that moves every frame, so no panel with a focusable
+# control in it could ever be skipped by the frame gate.
 var _building = []
 
-// Announce `id` as focusable this frame and report whether it has focus.
-// Every focusable bloom component calls this; an app only calls it when it
-// builds a focusable control of its own.
+# Announce `id` as focusable this frame and report whether it has focus.
+# Every focusable bloom component calls this; an app only calls it when it
+# builds a focusable control of its own.
 pub fn focusable(id: string) -> bool
   if len(get _building) == 0 then
     _begin_frame()
@@ -187,8 +187,8 @@ pub fn focusable(id: string) -> bool
   has_focus(id)
 end
 
-// Tab / Shift+Tab are applied at the top of the next frame, against the ring
-// the *last* frame built — the only complete ring that exists at that moment.
+# Tab / Shift+Tab are applied at the top of the next frame, against the ring
+# the *last* frame built — the only complete ring that exists at that moment.
 fn _begin_frame()
   let ring = get _ring
   let step = get _pending
@@ -224,16 +224,16 @@ pub fn focus_id()
   focus_owner()
 end
 
-// ── Keys ──────────────────────────────────────────────────────────────────
+# ── Keys ──────────────────────────────────────────────────────────────────
 
-// A plain key press, ignored while an overlay holds input.
+# A plain key press, ignored while an overlay holds input.
 pub fn key(k: string) -> bool
   !is_captured() && key_pressed(k)
 end
 
-// A modified chord: `chord("k", "cmd")`, `chord("p", "ctrl")`. `mods` is one
-// of "cmd", "ctrl", "alt", "shift", or "cmdctrl" for the accelerator that is
-// Cmd on macOS and Ctrl elsewhere — which is what an app almost always means.
+# A modified chord: `chord("k", "cmd")`, `chord("p", "ctrl")`. `mods` is one
+# of "cmd", "ctrl", "alt", "shift", or "cmdctrl" for the accelerator that is
+# Cmd on macOS and Ctrl elsewhere — which is what an app almost always means.
 pub fn chord(k: string, mods: string) -> bool
   if !key_pressed(k) then
     false

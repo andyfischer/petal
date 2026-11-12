@@ -1,21 +1,21 @@
-// Projection (Program Slicing)
-// Extract the subset of code relevant to a particular value.
-// See ../../PETAL_GOALS.md for the motivation behind this API.
-//
-// Key methods used here:
-//   program.slice(target)                -- backward slice: what influences target?
-//   program.impact(source)               -- forward slice: what does source affect?
-//   program.dynamic_slice(stack, target) -- execution-based slice
-//   projection.source()                  -- render slice as simplified source
-//   projection.intersect(other)          -- terms common to both slices
-//   projection.extract()                 -- extract slice as standalone Program
+# Projection (Program Slicing)
+# Extract the subset of code relevant to a particular value.
+# See ../../PETAL_GOALS.md for the motivation behind this API.
+#
+# Key methods used here:
+#   program.slice(target)                -- backward slice: what influences target?
+#   program.impact(source)               -- forward slice: what does source affect?
+#   program.dynamic_slice(stack, target) -- execution-based slice
+#   projection.source()                  -- render slice as simplified source
+#   projection.intersect(other)          -- terms common to both slices
+#   projection.extract()                 -- extract slice as standalone Program
 
-// --- Example 1: Backward slice ---
+# --- Example 1: Backward slice ---
 
 fn compute(a, b, c)
   let x = a + b
   let y = b * c
-  let unused = 999     // not related to output
+  let unused = 999     # not related to output
   let z = x + y
   z
 end
@@ -25,21 +25,21 @@ let deps = prog.slice("z")
 print("=== Backward Slice ===")
 print("What influences 'z' in compute(a, b, c)?")
 print(deps.source())
-// Shows: a, b, c, x, y, z -- but NOT 'unused'
+# Shows: a, b, c, x, y, z -- but NOT 'unused'
 print("Terms in slice:", deps.size())
 print("")
 
-// --- Example 2: Forward slice (impact analysis) ---
+# --- Example 2: Forward slice (impact analysis) ---
 
 let effects = prog.impact("b")
 print("=== Forward Slice ===")
 print("What does 'b' influence?")
 print(effects.source())
-// Shows: x, y, z -- since b flows into both x and y
+# Shows: x, y, z -- since b flows into both x and y
 print("")
 
-// --- Example 3: Dynamic slice ---
-// Only shows what actually executed for specific inputs.
+# --- Example 3: Dynamic slice ---
+# Only shows what actually executed for specific inputs.
 
 fn classify(n)
   let abs_n = abs(n)
@@ -77,10 +77,10 @@ let dyn = classify_prog.dynamic_slice(stack, "return")
 print("=== Dynamic Slice ===")
 print("classify(5) actually used:")
 print(dyn.source())
-// Only shows the n > 0 branch, not the other two
+# Only shows the n > 0 branch, not the other two
 print("")
 
-// --- Example 4: Finding shared dependencies ---
+# --- Example 4: Finding shared dependencies ---
 
 fn pipeline(input)
   let parsed = parse_input(input)
@@ -94,24 +94,24 @@ let pipe_prog = Program.current()
 let output_deps = pipe_prog.slice("formatted")
 let log_deps = pipe_prog.slice("logged")
 
-// Projection algebra: intersect, union, subtract
+# Projection algebra: intersect, union, subtract
 let shared = output_deps.intersect(log_deps)
 let unique_to_output = output_deps.subtract(log_deps)
 
 print("=== Shared Dependencies ===")
 print("Both 'formatted' and 'logged' depend on:")
 print(shared.source())
-// Shows: parsed, validated
+# Shows: parsed, validated
 
 print("Only 'formatted' depends on:")
 print(unique_to_output.source())
-// Shows: format_output, formatted
+# Shows: format_output, formatted
 print("")
 
-// --- Example 5: Extracting a sub-program ---
+# --- Example 5: Extracting a sub-program ---
 
 let sub = output_deps.extract()
 print("=== Extracted Sub-Program ===")
 print("Standalone program for computing 'formatted':")
 print(sub.source())
-// The extracted program has parameters for the slice's external inputs
+# The extracted program has parameters for the slice's external inputs

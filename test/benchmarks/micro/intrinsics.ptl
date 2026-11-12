@@ -1,22 +1,22 @@
-// Micro-benchmark: what a call of a trivial builtin costs. Each function
-// runs N iterations of one call, so a call's time over N, less
-// `empty_loop`'s, is the cost of that call. `sqrt_call` is the control: a
-// builtin of the same shape that is still a full native call.
-//
-//   petal bench --iters 30 test/benchmarks/micro/intrinsics.ptl \
-//     --fn empty_loop --fn float_call --fn int_call --fn min_call \
-//     --fn max_call --fn clamp_call --fn abs_call --fn floor_call \
-//     --fn len_call --fn type_call --fn sqrt_call
-//
-// The arguments come from parameters, so that no call is a value the static
-// cache keeps across iterations. For a whole run on the same binary with the
-// inline forms off: `petal run --policy fast-intrinsics <file>`.
-//
-// Figures are in docs/dev/performance.md (Inline builtins).
+# Micro-benchmark: what a call of a trivial builtin costs. Each function
+# runs N iterations of one call, so a call's time over N, less
+# `empty_loop`'s, is the cost of that call. `sqrt_call` is the control: a
+# builtin of the same shape that is still a full native call.
+#
+#   petal bench --iters 30 test/benchmarks/micro/intrinsics.ptl \
+#     --fn empty_loop --fn float_call --fn int_call --fn min_call \
+#     --fn max_call --fn clamp_call --fn abs_call --fn floor_call \
+#     --fn len_call --fn type_call --fn sqrt_call
+#
+# The arguments come from parameters, so that no call is a value the static
+# cache keeps across iterations. For a whole run on the same binary with the
+# inline forms off: `petal run --policy fast-intrinsics <file>`.
+#
+# Figures are in docs/dev/performance.md (Inline builtins).
 
 let N = 200000
 
-// The loop and the accumulator on their own.
+# The loop and the accumulator on their own.
 fn empty_loop()
   var sum = 0.0
   for i in range(0, N) do
@@ -89,7 +89,7 @@ fn len_call(xs)
   sum
 end
 
-// A test on the answer, as `if type(c) == "record"` is written.
+# A test on the answer, as `if type(c) == "record"` is written.
 fn type_call(r)
   var sum = 0
   for i in range(0, N) do
@@ -100,7 +100,7 @@ fn type_call(r)
   sum
 end
 
-// Control: still a native call.
+# Control: still a native call.
 fn sqrt_call(x)
   var sum = 0.0
   for i in range(0, N) do

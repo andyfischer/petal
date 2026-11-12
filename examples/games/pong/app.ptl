@@ -1,17 +1,17 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  PONG — a Garden panel app written in Petal.
-//
-//  Exercises: a real-time game loop over dt(), sub-stepped continuous
-//  collision, keyboard + mouse control, a small opponent AI with prediction,
-//  a particle system, and a multi-phase UI (title / serve / play / paused /
-//  over) drawn entirely with the petal-ui draw surface.
-//
-//  Designed for a 1040x720 viewport.  See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  PONG — a Garden panel app written in Petal.
+#
+#  Exercises: a real-time game loop over dt(), sub-stepped continuous
+#  collision, keyboard + mouse control, a small opponent AI with prediction,
+#  a particle system, and a multi-phase UI (title / serve / play / paused /
+#  over) drawn entirely with the petal-ui draw surface.
+#
+#  Designed for a 1040x720 viewport.  See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import ui
 
-// ── Palette ──────────────────────────────────────────────────────────────
+# ── Palette ──────────────────────────────────────────────────────────────
 
 let C_BG      = :0a0c12
 let C_COURT   = :171b27
@@ -26,9 +26,9 @@ let C_YOU     = :ffb454
 let C_CPU     = :56c8ff
 let C_BALL    = :f6f8fd
 
-// ── Type scale ───────────────────────────────────────────────────────────
+# ── Type scale ───────────────────────────────────────────────────────────
 
-// Only five type sizes in the whole app: 10 / 12 / 20 / 30 / 44.
+# Only five type sizes in the whole app: 10 / 12 / 20 / 30 / 44.
 let S_TITLE = {size: 30, color: C_TEXT, spacing: 10}
 let S_KICK  = {size: 10, color: C_MUTE, spacing: 4}
 let S_LABEL = {size: 10, color: C_DIM,  spacing: 3}
@@ -40,7 +40,7 @@ let S_BIG   = {size: 30, color: C_TEXT, spacing: 7}
 let S_SUB   = {size: 12, color: C_DIM}
 let S_SCORE = {size: 44, color: C_TEXT}
 
-// ── Tunables ─────────────────────────────────────────────────────────────
+# ── Tunables ─────────────────────────────────────────────────────────────
 
 let win_score      = tunable(7)
 let paddle_speed   = tunable(620.0)
@@ -56,11 +56,11 @@ let PAD  = 28
 let HEAD = 118
 let FOOT = 64
 
-// ── Persistent simulation state ──────────────────────────────────────────
-// Declared before the helper functions so closures see the live cells.
+# ── Persistent simulation state ──────────────────────────────────────────
+# Declared before the helper functions so closures see the live cells.
 
 state var ready      = false
-state var phase      = "title"      // title | play | paused | scored | serve | over
+state var phase      = "title"      # title | play | paused | scored | serve | over
 state var bx         = 0.0
 state var by         = 0.0
 state var vx         = 0.0
@@ -89,11 +89,11 @@ state var flash_t    = 0.0
 state var flash_b    = 0.0
 state var goal_l     = 0.0
 state var goal_r     = 0.0
-state var bits       = []           // particles
+state var bits       = []           # particles
 state var trail      = []
 state var pulse      = 0.0
 
-// ── Small pure helpers ───────────────────────────────────────────────────
+# ── Small pure helpers ───────────────────────────────────────────────────
 
 fn tx(s: string, x: num, y: num, style: record)
   draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
@@ -107,8 +107,8 @@ fn tx_center(s: string, cx: num, y: num, style: record)
   draw_text(s, pos: {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style: style)
 end
 
-// Where a ball travelling (vx, vy) from (x, y) crosses the vertical line
-// `target_x`, reflected between `top` and `bot`.
+# Where a ball travelling (vx, vy) from (x, y) crosses the vertical line
+# `target_x`, reflected between `top` and `bot`.
 fn predict_y(x: num, y: num, dx: num, dy: num, target_x: num, top: num, bot: num) -> num
   if dx == 0.0 then return (top + bot) / 2.0 end
   let tt = (target_x - x) / dx
@@ -126,7 +126,7 @@ fn predict_y(x: num, y: num, dx: num, dy: num, target_x: num, top: num, bot: num
   yy
 end
 
-// Append `n` sparks at (x, y) flying mostly along `dirx`.
+# Append `n` sparks at (x, y) flying mostly along `dirx`.
 fn burst(list, x: num, y: num, n: num, col: record, dirx: num, spread: num)
   var out = list
   for i in range(0, n) do
@@ -168,16 +168,16 @@ fn chip(x: num, y: num, cap: string, desc: string) -> int
   cw + 10 + text_width(desc, S_HINT) + 26
 end
 
-// ── Frame ────────────────────────────────────────────────────────────────
+# ── Frame ────────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
 let court = rect(PAD, HEAD, W - PAD * 2, H - HEAD - FOOT - PAD)
 let cx = court.x + court.w / 2
 let cy = court.y + court.h / 2
-let ct = float(court.y + 12)          // play-field top
-let cb = float(court.y + court.h - 12) // play-field bottom
-let plx = float(court.x + 26)          // player paddle x
+let ct = float(court.y + 12)          # play-field top
+let cb = float(court.y + court.h - 12) # play-field bottom
+let plx = float(court.x + 26)          # player paddle x
 let prx = float(court.x + court.w - 26 - PW)
 
 if !ready then
@@ -194,7 +194,7 @@ let raw_dt = dt()
 let sdt = min(raw_dt, 0.06)
 set pulse = pulse + sdt
 
-// ── Input ────────────────────────────────────────────────────────────────
+# ── Input ────────────────────────────────────────────────────────────────
 
 if key_pressed("up") || key_pressed("w") then set hold_up = tap_hold end
 if key_pressed("down") || key_pressed("s") then set hold_dn = tap_hold end
@@ -245,7 +245,7 @@ if key_pressed("space") then
   end
 end
 
-// Paddle: held keys, tap impulses, or the mouse when it is over the court.
+# Paddle: held keys, tap impulses, or the mouse when it is over the court.
 let k_up = key_down("up") || key_down("w") || hold_up > 0.0
 let k_dn = key_down("down") || key_down("s") || hold_dn > 0.0
 let mdir = (if k_up then -1.0 else 0.0 end) + (if k_dn then 1.0 else 0.0 end)
@@ -265,7 +265,7 @@ end
 set last_mx = mx
 set last_my = my
 
-// ── Simulation ───────────────────────────────────────────────────────────
+# ── Simulation ───────────────────────────────────────────────────────────
 
 if phase == "play" then
   var left_t = sdt
@@ -289,7 +289,7 @@ if phase == "play" then
       set bits = burst(bits, x: bx, y: cb, n: 8, col: C_EDGE, dirx: 0.0, spread: 3.14)
     end
 
-    // Player paddle
+    # Player paddle
     if vx < 0.0 && bx - float(BR) <= plx + float(PW) && bx - float(BR) > plx - 14.0 then
       if by >= py - float(BR) && by <= py + float(PH) + float(BR) then
         set bx = plx + float(PW) + float(BR)
@@ -306,7 +306,7 @@ if phase == "play" then
       end
     end
 
-    // CPU paddle
+    # CPU paddle
     if vx > 0.0 && bx + float(BR) >= prx && bx + float(BR) < prx + float(PW) + 14.0 then
       if by >= ay - float(BR) && by <= ay + float(PH) + float(BR) then
         set bx = prx - float(BR)
@@ -366,7 +366,7 @@ if phase == "scored" then
   end
 end
 
-// Opponent
+# Opponent
 if phase == "play" then
   set ai_timer = ai_timer - sdt
   if ai_timer <= 0.0 then
@@ -386,7 +386,7 @@ if phase == "play" then
   end
 end
 
-// Trail + particles + flash decay
+# Trail + particles + flash decay
 if phase == "play" then
   set trail = append(trail, {x: bx, y: by})
   if len(trail) > 16 then
@@ -408,14 +408,14 @@ set flash_b = flash_b - flash_b * decay
 set goal_l = goal_l - goal_l * decay
 set goal_r = goal_r - goal_r * decay
 
-// ── Draw: chrome ─────────────────────────────────────────────────────────
+# ── Draw: chrome ─────────────────────────────────────────────────────────
 
 clear(C_BG.r, C_BG.g, C_BG.b)
 
 tx("PONG", x: PAD, y: 26, style: S_TITLE)
 tx("PETAL / GARDEN TESTBED 01", x: PAD + 3, y: 64, style: S_KICK)
 
-// Scoreboard
+# Scoreboard
 let s_you_txt = str(s_you)
 let s_cpu_txt = str(s_cpu)
 let you_style = {...S_SCORE, color: if s_you >= s_cpu then C_YOU else C_MUTE end}
@@ -426,7 +426,7 @@ draw_rect(rect(cx - 1, 32, 2, 40), C_LINE)
 tx_right("YOU", right_x: cx - 26, y: 76, style: {...S_LABEL, color: C_YOU})
 tx("CPU", x: cx + 26, y: 76, style: {...S_LABEL, color: C_CPU})
 
-// Match pips — one per point needed to win.
+# Match pips — one per point needed to win.
 for i in range(0, win_score) do
   let lit_you = i < s_you
   let lit_cpu = i < s_cpu
@@ -436,7 +436,7 @@ for i in range(0, win_score) do
   draw_rect_rounded(rect(px_cpu, 96, 8, 3), radius: 1, c: if lit_cpu then C_CPU else C_LINE end)
 end
 
-// Stats, right-aligned
+# Stats, right-aligned
 let cell3 = W - PAD
 let cell2 = cell3 - 104
 let cell1 = cell2 - 104
@@ -444,23 +444,23 @@ stat_cell(right_x: cell1, y: 32, label: "RALLY", value: str(rally), style: if ra
 stat_cell(right_x: cell2, y: 32, label: "BEST RALLY", value: str(best), style: if best > 0 then S_STAT else S_STATD end)
 stat_cell(right_x: cell3, y: 32, label: "BALL SPEED", value: str(int(speed)), style: if speed > 0.0 then S_STAT else S_STATD end)
 
-// ── Draw: court ──────────────────────────────────────────────────────────
+# ── Draw: court ──────────────────────────────────────────────────────────
 
 draw_rect_rounded(court, radius: 16, c: C_COURT)
 draw_rect_rounded(court.inset(1), radius: 15, c: C_FIELD)
 draw_rect_outline(court, c: C_EDGE, a: 255, width: 1)
 
-// Goal edges — they light up when a point lands there.
+# Goal edges — they light up when a point lands there.
 draw_rect_rounded(rect(court.x + 4, int(ct), 3, int(cb - ct)), radius: 2, c: C_CPU, a: int(14.0 + goal_l * 210.0))
 draw_rect_rounded(rect(court.x + court.w - 7, int(ct), 3, int(cb - ct)), radius: 2, c: C_YOU, a: int(14.0 + goal_r * 210.0))
 
-// The rails the ball bounces off — always faintly present, lit on impact.
+# The rails the ball bounces off — always faintly present, lit on impact.
 draw_rect(rect(court.x + 14, int(ct) - 2, court.w - 28, 2), C_LINE)
 draw_rect(rect(court.x + 14, int(cb), court.w - 28, 2), C_LINE)
 draw_rect(rect(court.x + 14, int(ct) - 2, court.w - 28, 2), c: C_TEXT, a: int(flash_t * 200.0))
 draw_rect(rect(court.x + 14, int(cb), court.w - 28, 2), c: C_TEXT, a: int(flash_b * 200.0))
 
-// Dashed centre line
+# Dashed centre line
 let dash_n = (int(cb - ct) + 10) / 26
 for i in range(0, dash_n) do
   let dy = int(ct) + 6 + i * 26
@@ -469,13 +469,13 @@ end
 
 clip(x: court.x, y: court.y, w: court.w, h: court.h)
 
-// Particles
+# Particles
 for p in bits do
   let f = p.life / p.max
   draw_circle({x: int(p.x), y: int(p.y)}, max(1, int(p.sz * f + 0.5)), p.c, int(230.0 * f))
 end
 
-// Ball trail
+# Ball trail
 let tn = len(trail)
 for i in range(0, tn) do
   let f = float(i + 1) / float(tn)
@@ -485,11 +485,11 @@ for i in range(0, tn) do
   end
 end
 
-// Paddles
+# Paddles
 draw_paddle(rect(int(plx), int(py), PW, PH), col: C_YOU, glow: flash_l)
 draw_paddle(rect(int(prx), int(ay), PW, PH), col: C_CPU, glow: flash_r)
 
-// Ball
+# Ball
 if phase != "over" then
   let bob = if phase == "play" then 0.0 else sin(pulse * 2.6) * 3.0 end
   draw_circle({x: int(bx), y: int(by + bob)}, BR + 15, C_BALL, 12)
@@ -500,7 +500,7 @@ end
 
 clip_none()
 
-// ── Draw: overlay ────────────────────────────────────────────────────────
+# ── Draw: overlay ────────────────────────────────────────────────────────
 
 if phase != "play" then
   draw_rect_rounded(court.inset(1), radius: 15, c: C_BG, a: 168)
@@ -515,7 +515,7 @@ if phase != "play" then
   tx_center(banner, cx: cx + 8, y: cy - 34, style: {...S_BIG, color: accent})
   tx_center(subbanner, cx: cx + 8, y: cy + 14, style: S_SUB)
 
-  // Which way the next ball goes.
+  # Which way the next ball goes.
   if phase == "serve" || phase == "title" then
     let col = if serve_dir > 0.0 then C_CPU else C_YOU end
     let lab = "SERVE"
@@ -529,7 +529,7 @@ if phase != "play" then
   end
 end
 
-// ── Draw: footer ─────────────────────────────────────────────────────────
+# ── Draw: footer ─────────────────────────────────────────────────────────
 
 let fy = court.y + court.h + 20
 var fx = PAD
@@ -547,7 +547,7 @@ let status = match phase
 end
 tx_right("first to {win_score}   ·   {status}", right_x: W - PAD, y: fy + 7, style: S_HINT)
 
-// ── Observation mirrors (readable in /state panel.values) ────────────────
+# ── Observation mirrors (readable in /state panel.values) ────────────────
 
 let obs_phase = phase
 let obs_ball = [int(bx), int(by)]

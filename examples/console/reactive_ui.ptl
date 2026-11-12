@@ -1,28 +1,28 @@
-// Reactive UI Sketch
-// Inline state gives Petal a React-like component model: a component is a
-// function, its state sits next to its view logic, and that state outlives the
-// frame that drew it.
-//
-// Two kinds of state show up in any real UI, and they are declared differently:
-//
-//   - The app model — one copy, written by event handlers. That is a top-level
-//     `state var`: one cell for the program, read with `get`, written with
-//     `set` from wherever the event lands.
-//   - A widget's own memory — one copy *per widget instance*. In a frame-loop
-//     host that can be a plain `state` inside the widget function: it is keyed
-//     by call path, so each callsite of `button` gets its own cell, as each
-//     React component instance gets its own `useState`.
-//
-// A frame-loop host that draws widgets from a list would key that loop,
-// `for b in buttons key b.id do`, so each widget's `state` stays with its
-// button when the list reorders. This is React's `key` prop.
-//
-// This demo keys its button memory by the button's id instead, in a top-level
-// `state var` holding a map, because its "frames" are passes of a `for` loop
-// inside one run. Each pass is a different call path, so a call-path `state`
-// would start every frame over, and the memory has to be shared across the
-// passes, which no loop key can do: a key names one iteration of one run of
-// a loop.
+# Reactive UI Sketch
+# Inline state gives Petal a React-like component model: a component is a
+# function, its state sits next to its view logic, and that state outlives the
+# frame that drew it.
+#
+# Two kinds of state show up in any real UI, and they are declared differently:
+#
+#   - The app model — one copy, written by event handlers. That is a top-level
+#     `state var`: one cell for the program, read with `get`, written with
+#     `set` from wherever the event lands.
+#   - A widget's own memory — one copy *per widget instance*. In a frame-loop
+#     host that can be a plain `state` inside the widget function: it is keyed
+#     by call path, so each callsite of `button` gets its own cell, as each
+#     React component instance gets its own `useState`.
+#
+# A frame-loop host that draws widgets from a list would key that loop,
+# `for b in buttons key b.id do`, so each widget's `state` stays with its
+# button when the list reorders. This is React's `key` prop.
+#
+# This demo keys its button memory by the button's id instead, in a top-level
+# `state var` holding a map, because its "frames" are passes of a `for` loop
+# inside one run. Each pass is a different call path, so a call-path `state`
+# would start every frame over, and the memory has to be shared across the
+# passes, which no loop key can do: a key names one iteration of one run of
+# a loop.
 
 enum Event
   None,
@@ -30,16 +30,16 @@ enum Event
   Clear,
 end
 
-// The app model: one cell, shared by every function that touches it.
+# The app model: one cell, shared by every function that touches it.
 state var items = ["Buy groceries", "Write code", "Read a book"]
 
-// Per-button memory, one entry per button id. The set of buttons is fixed, so
-// nothing is ever removed; a UI whose widgets come and go would `remove` the
-// entries of the ones it stopped drawing.
+# Per-button memory, one entry per button id. The set of buttons is fixed, so
+# nothing is ever removed; a UI whose widgets come and go would `remove` the
+# entries of the ones it stopped drawing.
 state var click_counts = Map()
 
-// A widget. `id` names this button instance; its click count is the entry
-// under that name, not something the `button` function holds as a whole.
+# A widget. `id` names this button instance; its click count is the entry
+# under that name, not something the `button` function holds as a whole.
 fn button(id: string, label: string, clicked: bool) -> record
   let click_count = (get click_counts[id] ?? 0) + (if clicked then 1 else 0 end)
   set click_counts[id] = click_count
@@ -51,7 +51,7 @@ fn button(id: string, label: string, clicked: bool) -> record
 end
 
 fn todo_app(event)
-  // Handle this frame's event (a real UI runtime would feed these from input).
+  # Handle this frame's event (a real UI runtime would feed these from input).
   let pressed = match event
     when Event.Add(text) ->
       set items = append(get items, text)
@@ -79,7 +79,7 @@ print("Reactive UI Demo")
 print("=================")
 print("")
 
-// Simulate render frames, one event each.
+# Simulate render frames, one event each.
 let events = [
   Event.None,
   Event.Add("Water plants"),

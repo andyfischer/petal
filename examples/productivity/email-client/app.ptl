@@ -1,18 +1,18 @@
-// ─────────────────────────────────────────────────────────────────────────
-// Plume — a three-pane mail client, drawn as a Garden panel.
-//
-// Exercises: master/detail (a mailbox rail, a conversation list and a reading
-// pane that follow one selection), long scrolling lists with pixel scrolling,
-// a small query language with live match highlighting, single and multiple
-// selection (cursor, checkboxes, shift ranges, select all), bulk actions with
-// undo, an inline reply editor, a compose dialog with recipient completion,
-// and a draggable divider between master and detail.
-//
-// The data model, the query language and every transform on the mail store
-// live in mailbox.ptl; the glyphs in icons.ptl. This file is input and paint.
-//
-// Run:  tools/run-example.ts email-client   (or garden --headless --debug-port 0 --init layout.ptl)
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# Plume — a three-pane mail client, drawn as a Garden panel.
+#
+# Exercises: master/detail (a mailbox rail, a conversation list and a reading
+# pane that follow one selection), long scrolling lists with pixel scrolling,
+# a small query language with live match highlighting, single and multiple
+# selection (cursor, checkboxes, shift ranges, select all), bulk actions with
+# undo, an inline reply editor, a compose dialog with recipient completion,
+# and a draggable divider between master and detail.
+#
+# The data model, the query language and every transform on the mail store
+# live in mailbox.ptl; the glyphs in icons.ptl. This file is input and paint.
+#
+# Run:  tools/run-example.ts email-client   (or garden --headless --debug-port 0 --init layout.ptl)
+# ─────────────────────────────────────────────────────────────────────────
 
 import text_layout
 import ./mailbox as mb
@@ -20,12 +20,12 @@ import ./icons
 import ui
 import garden
 
-// ── Palette ──────────────────────────────────────────────────────────────
-// A dark rail against light paper: navigation recedes, mail reads like print.
+# ── Palette ──────────────────────────────────────────────────────────────
+# A dark rail against light paper: navigation recedes, mail reads like print.
 
 let RAIL      = :141826
-let RAIL_HOT  = :1e2435      // hover
-let RAIL_ON   = :283150      // the current mailbox
+let RAIL_HOT  = :1e2435      # hover
+let RAIL_ON   = :283150      # the current mailbox
 let RAIL_RULE = :232a3c
 let RAIL_TEXT = :d4d9e6
 let RAIL_DIM  = :8d95aa
@@ -42,12 +42,12 @@ let RULE_SOFT = :eceef3
 let ACCENT    = :4b5bd6
 let ACCENT_HI = :5f6fe6
 let ACCENT_SOFT = :e8ebfc
-let MARK      = :ffe27a      // a search hit
-let GOLD      = :e9a514      // a star
+let MARK      = :ffe27a      # a search hit
+let GOLD      = :e9a514      # a star
 let DANGER    = :d4445c
 let WHITE     = :ffffff
 
-// ── Type ─────────────────────────────────────────────────────────────────
+# ── Type ─────────────────────────────────────────────────────────────────
 
 fn st(size: num, color: record) -> record
   {size: size, color: color, font: "ui"}
@@ -68,59 +68,59 @@ let BODY_SIZE   = 15
 let BODY_STEP   = 24
 let AREA_STEP   = 21
 
-// ── Metrics ──────────────────────────────────────────────────────────────
+# ── Metrics ──────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
 
 let RAIL_W = 224
-let HEAD_H = 104      // search + title row above the list
+let HEAD_H = 104      # search + title row above the list
 let ROW_H  = 90
-let TOOL_H = 56       // the reading pane's toolbar
+let TOOL_H = 56       # the reading pane's toolbar
 let SPLIT_DEFAULT = 396
 let MODAL_W = 640
 let MODAL_H = 476
 let NO_SUBJECT = "(no subject)"
 
-// ── State ────────────────────────────────────────────────────────────────
+# ── State ────────────────────────────────────────────────────────────────
 
 state threads = mb.seed_threads()
-state view = "inbox"            // a mailbox key, or "label:<key>"
-state sel = 1                   // the open conversation's id, 0 for none
-state shown = 1                 // the id the reading pane was last laid out for
-state checked = []              // ids ticked for a bulk action
-state anchor = 0                // where a shift-click range starts
-state keep_unread = 0           // a thread just marked unread stays that way while open
-state open_msgs = []            // earlier messages expanded in the open thread
+state view = "inbox"            # a mailbox key, or "label:<key>"
+state sel = 1                   # the open conversation's id, 0 for none
+state shown = 1                 # the id the reading pane was last laid out for
+state checked = []              # ids ticked for a bulk action
+state anchor = 0                # where a shift-click range starts
+state keep_unread = 0           # a thread just marked unread stays that way while open
+state open_msgs = []            # earlier messages expanded in the open thread
 
-state q = ""                    // the search field
-state focus = ""                // "", q, reply, to, subj, body
+state q = ""                    # the search field
+state focus = ""                # "", q, reply, to, subj, body
 state reply = ""
 state reply_c = 0
 
 state compose = false
-state c_draft = 0               // the draft being continued, 0 for a new message
+state c_draft = 0               # the draft being continued, 0 for a new message
 state c_to = ""
 state c_subj = ""
 state c_body = ""
 state c_body_c = 0
-state modal_a = 0.0             // the dialog's fade, 0..1
+state modal_a = 0.0             # the dialog's fade, 0..1
 
-state list_w = 396             // list width
+state list_w = 396             # list width
 state split_drag = false
 state list_scroll = 0.0
 state detail_scroll = 0.0
-state detail_h = 0.0            // the open thread's laid-out height, from last frame
-state to_bottom = 0             // frames left to pin the reading pane to its end
+state detail_h = 0.0            # the open thread's laid-out height, from last frame
+state to_bottom = 0             # frames left to pin the reading pane to its end
 
-state undo = []                 // entries: {was, sel, note}, see push_undo
-state toast = {msg: "", left: 0.0, can_undo: false}   // `left` is seconds still to show
-state tip_key = ""              // the tooltip the pointer is resting on
-state tip_rest = 0.0             // how long the pointer has rested on it
-state seq = 0                   // messages written this session (their negative age)
+state undo = []                 # entries: {was, sel, note}, see push_undo
+state toast = {msg: "", left: 0.0, can_undo: false}   # `left` is seconds still to show
+state tip_key = ""              # the tooltip the pointer is resting on
+state tip_rest = 0.0             # how long the pointer has rested on it
+state seq = 0                   # messages written this session (their negative age)
 state sent_n = 0
 
-// ── Small pure helpers ───────────────────────────────────────────────────
+# ── Small pure helpers ───────────────────────────────────────────────────
 
 fn hit(r: record, ok: bool) -> bool
   ok && point_in(mouse_x(), mouse_y(), r)
@@ -145,12 +145,12 @@ fn clean_typed(s: string) -> string
   out
 end
 
-// One frame of keyboard editing applied to a wrapped area's buffer and caret:
-// Return inserts a newline, and up/down/home/end move by row, which needs the
-// wrap width the area is drawn at. Rows come from `text_wrap_rows`, which
-// keeps each row's character range — the caret goes on the right row and
-// moves between rows without measuring anything a character at a time. (The
-// one-line fields — search, To, Subject — are the prelude's `text_field_update`.)
+# One frame of keyboard editing applied to a wrapped area's buffer and caret:
+# Return inserts a newline, and up/down/home/end move by row, which needs the
+# wrap width the area is drawn at. Rows come from `text_wrap_rows`, which
+# keeps each row's character range — the caret goes on the right row and
+# moves between rows without measuring anything a character at a time. (The
+# one-line fields — search, To, Subject — are the prelude's `text_field_update`.)
 fn edit_area(t0: string, c0: int, ev: record, style: record, w: num) -> record
   let t = t0
   let c = clamp(c0, 0, char_len(t))
@@ -181,7 +181,7 @@ fn edit_area(t0: string, c0: int, ev: record, style: record, w: num) -> record
   {t: t, c: c}
 end
 
-// Where a click at (px, py) puts the caret in a wrapped area drawn at (x, y).
+# Where a click at (px, py) puts the caret in a wrapped area drawn at (x, y).
 fn area_caret_at(t: string, style: record, w: num, x: num, y: num, step: num, px: num, py: num) -> int
   let rows = text_wrap_rows(t, style, float(w))
   let ri = clamp(int((py - y) / step), 0, len(rows) - 1)
@@ -189,8 +189,8 @@ fn area_caret_at(t: string, style: record, w: num, x: num, y: num, step: num, px
   row.start + text_layout.caret_index(row.text, style, px - x)
 end
 
-// The conversation to land on once `ids` have left the list: the open one if
-// it is still here, otherwise its nearest surviving neighbour.
+# The conversation to land on once `ids` have left the list: the open one if
+# it is still here, otherwise its nearest surviving neighbour.
 fn reselect(ts: list, rows: list, ids: list, cur: int, v: string) -> int
   let t = mb.find_thread(ts, cur)
   if t != nil && mb.in_view(t, v) then return cur end
@@ -209,16 +209,16 @@ fn reselect(ts: list, rows: list, ids: list, cur: int, v: string) -> int
   pick
 end
 
-// An undo entry holds the threads a move touched, as they were, rather than
-// the whole store: undoing an archive must not also take back a reply sent or
-// a star set since.
+# An undo entry holds the threads a move touched, as they were, rather than
+# the whole store: undoing an archive must not also take back a reply sent or
+# a star set since.
 fn push_undo(stack: list, ts: list, ids: list, cur: int, note: string) -> list
   let grown = append(stack, {was: mb.pick(ts, ids), sel: cur, note: note})
   if len(grown) > 20 then slice(grown, len(grown) - 20) else grown end
 end
 
-// What was typed, as a message body: a blank line ends a paragraph, and a
-// single Return stays a line break inside one.
+# What was typed, as a message body: a blank line ends a paragraph, and a
+# single Return stays a line break inside one.
 fn paragraphs(text: string) -> list
   let out = []
   let cur = ""
@@ -246,17 +246,17 @@ fn kind_color(kind: string) -> record
   end
 end
 
-// ── Paint helpers ────────────────────────────────────────────────────────
+# ── Paint helpers ────────────────────────────────────────────────────────
 
-// Two runs of different sizes read as one line only when they share a
-// baseline. `draw_text` takes the top of a run's line box, and in the
-// interface face the baseline falls 1.05 x the size below that, so that is
-// the one number these two need.
+# Two runs of different sizes read as one line only when they share a
+# baseline. `draw_text` takes the top of a run's line box, and in the
+# interface face the baseline falls 1.05 x the size below that, so that is
+# the one number these two need.
 fn base_of(y: num, style: record) -> num
   y + style.size * 1.05
 end
 
-// Draw `s` sitting on `baseline`, its left or right edge at `x`.
+# Draw `s` sitting on `baseline`, its left or right edge at `x`.
 fn text_on(s: string, x: num, baseline: num, style: record, align: string)
   let left = if align == "right" then x - text_width(s, style) else x end
   draw_text(s, {x: left, y: int(baseline - style.size * 1.05 + 0.5)}, style)
@@ -268,7 +268,7 @@ fn label_line(s: string, r: record, style: record, align: string)
   nil
 end
 
-// Text with every occurrence of each search term washed in highlighter.
+# Text with every occurrence of each search term washed in highlighter.
 fn draw_marked(s: string, x: num, y: num, style: record, terms: list)
   if len(terms) > 0 then
     let low = lower(s)
@@ -339,15 +339,15 @@ fn icon_button(r: record, name: string, hot: bool, tone: record, wash: record)
   nil
 end
 
-// The rect a one-line field edits in: its text rect, less room for the caret
-// at the right edge.
+# The rect a one-line field edits in: its text rect, less room for the caret
+# at the right edge.
 fn field_rect(r: record) -> Rect
   rect(r.x, r.y, r.w - 6, r.h)
 end
 
-// A single-line editable run, clipped to `r`. `ed` is what `text_field_update`
-// returned for it: the caret, the selection, and how far the text is scrolled
-// to keep the caret in sight. Returns nothing; the caller owns the buffer.
+# A single-line editable run, clipped to `r`. `ed` is what `text_field_update`
+# returned for it: the caret, the selection, and how far the text is scrolled
+# to keep the caret in sight. Returns nothing; the caller owns the buffer.
 fn draw_field(r: record, text: string, ed: record, style: record, focused: bool, hint: string)
   clip_push(r)
   let m = text_metrics(style)
@@ -370,8 +370,8 @@ fn draw_field(r: record, text: string, ed: record, style: record, focused: bool,
   nil
 end
 
-// A wrapped editable block. Draws the rows and the caret; returns the row
-// count so the caller can size around it.
+# A wrapped editable block. Draws the rows and the caret; returns the row
+# count so the caller can size around it.
 fn draw_area(x: num, y: num, w: num, text: string, caret: int, style: record, step: num, focused: bool, hint: string) -> int
   let rows = text_wrap_rows(text, style, float(w))
   let m = text_metrics(style)
@@ -404,14 +404,14 @@ fn button_quiet(r: record, label: string, hot: bool, tone: record)
   nil
 end
 
-// ── One conversation row ─────────────────────────────────────────────────
+# ── One conversation row ─────────────────────────────────────────────────
 
 fn row_check_rect(r: record) -> Rect
   rect(r.x + 18, r.y + 14, 42, 42)
 end
 
-// The quick actions that replace the timestamp on hover: 0 archive, 1 trash,
-// 2 star, right to left from the row's edge.
+# The quick actions that replace the timestamp on hover: 0 archive, 1 trash,
+# 2 star, right to left from the row's edge.
 fn row_action_rect(r: record, k: int) -> Rect
   rect(r.x + r.w - 50 - (2 - k) * 32, r.y + 8, 30, 30)
 end
@@ -444,7 +444,7 @@ fn draw_row(t: record, r: record, v: string, is_sel: bool, is_checked: bool, hot
   let tx = r.x + 70
   let right = r.x + r.w - 22
 
-  // Line 1: who, how many, when.
+  # Line 1: who, how many, when.
   let when_s = mb.when_short(last.age)
   let when_st = if t.unread then sb(12, ACCENT) else st(12, MUTED) end
   let when_w = if hot then 96 else text_width(when_s, when_st) end
@@ -460,7 +460,7 @@ fn draw_row(t: record, r: record, v: string, is_sel: bool, is_checked: bool, hot
     text_on(when_s, right, line1, when_st, "right")
   end
 
-  // Line 2: the subject, with the star and the paperclip at its end.
+  # Line 2: the subject, with the star and the paperclip at its end.
   let marks = right
   if t.starred && !hot then
     icons.star(rect(marks - 14, r.y + 38, 14, 14), GOLD, true)
@@ -473,8 +473,8 @@ fn draw_row(t: record, r: record, v: string, is_sel: bool, is_checked: bool, hot
   let subj_st = if t.unread then sb(13, INK) else st(13, INK_2) end
   draw_marked(ellipsize(t.subject, marks - tx - 6, subj_st), tx, r.y + 36, subj_st, terms)
 
-  // Line 3: a line of the body, then the labels as dots (and where the
-  // conversation lives, when the list mixes mailboxes).
+  # Line 3: a line of the body, then the labels as dots (and where the
+  # conversation lives, when the list mixes mailboxes).
   let dots = right
   for l in reverse(t.labels) do
     draw_circle({x: dots - 4, y: r.y + 68}, 4, mb.label_of(l).color)
@@ -510,9 +510,9 @@ fn draw_row(t: record, r: record, v: string, is_sel: bool, is_checked: bool, hot
   nil
 end
 
-// ── One message in the reading pane ──────────────────────────────────────
+# ── One message in the reading pane ──────────────────────────────────────
 
-// A collapsed earlier message: one line, 56 px.
+# A collapsed earlier message: one line, 56 px.
 fn draw_msg_shut(m: record, x: num, y: num, w: num, hot: bool)
   if hot then draw_rect_rounded(x - 12, y + 4, w + 24, 48, 10, tint(PAPER, INK, 3)) end
   avatar(m.from, x + 16, y + 28, 15, PAPER)
@@ -528,8 +528,8 @@ fn draw_msg_shut(m: record, x: num, y: num, w: num, hot: bool)
   nil
 end
 
-// An expanded message. Draws it and returns its height, so the caller can
-// stack the next one and size the scroll range from the same pass.
+# An expanded message. Draws it and returns its height, so the caller can
+# stack the next one and size the scroll range from the same pass.
 fn draw_msg_open(m: record, x: num, y: num, w: num, terms: list, ok: bool) -> num
   let p = mb.person(m.from)
   avatar(m.from, x + 19, y + 22, 19, PAPER)
@@ -549,7 +549,7 @@ fn draw_msg_open(m: record, x: num, y: num, w: num, terms: list, ok: bool) -> nu
   let to_line = if len(names) == 0 then "no recipient yet" else "to " ++ join(names, ", ") end
   draw_text(ellipsize(to_line, w - 52, st(12, MUTED)), {x: x + 52, y: y + 24}, st(12, MUTED))
 
-  // The body sets in a measure that stays readable when the pane is wide.
+  # The body sets in a measure that stays readable when the pane is wide.
   let bx = x + 52
   let bw = min(w - 52, 620)
   let body_st = st(BODY_SIZE, INK_2)
@@ -564,7 +564,7 @@ fn draw_msg_open(m: record, x: num, y: num, w: num, terms: list, ok: bool) -> nu
     cy = cy + 12
   end
 
-  // Attachments flow left to right and wrap.
+  # Attachments flow left to right and wrap.
   if len(m.atts) > 0 then
     cy = cy + 4
     let fx = bx
@@ -593,15 +593,15 @@ fn draw_msg_open(m: record, x: num, y: num, w: num, terms: list, ok: bool) -> nu
   cy + 12 - y
 end
 
-// ═════════════════════════════════════════════════════════════════════════
-// Frame
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+# Frame
+# ═════════════════════════════════════════════════════════════════════════
 
-claim_key("a", "cmd")           // select all
-claim_key("return", "cmd")      // send
-// While a one-line field has the keyboard, its editing chords are the field's
-// (see `text_field_update`): cut, copy, paste, undo and redo. Elsewhere they
-// stay Garden's.
+claim_key("a", "cmd")           # select all
+claim_key("return", "cmd")      # send
+# While a one-line field has the keyboard, its editing chords are the field's
+# (see `text_field_update`): cut, copy, paste, undo and redo. Elsewhere they
+# stay Garden's.
 if focus == "q" || focus == "to" || focus == "subj" then
   for k in ["c", "x", "v", "z", "y"] do claim_key(k, "cmd") end
   claim_key("z", "cmd+shift")
@@ -612,7 +612,7 @@ if focus == "q" || focus == "to" || focus == "subj" then
   claim_key("backspace", "cmd")
 end
 
-// A new selection starts the reading pane from the top with nothing expanded.
+# A new selection starts the reading pane from the top with nothing expanded.
 if sel != shown then
   shown = sel
   detail_scroll = 0.0
@@ -623,13 +623,13 @@ if sel != shown then
 end
 if keep_unread != 0 && keep_unread != sel then keep_unread = 0 end
 
-// Opening a conversation reads it.
+# Opening a conversation reads it.
 let opened = mb.find_thread(threads, sel)
 if opened != nil && opened.unread && keep_unread != sel then
   threads = mb.set_unread(threads, [sel], false)
 end
 
-// ── Layout ───────────────────────────────────────────────────────────────
+# ── Layout ───────────────────────────────────────────────────────────────
 
 let split_max = max(340, min(560, W - RAIL_W - 430))
 if split_drag then
@@ -648,16 +648,16 @@ let DW = W - DX
 let list_view = rect(LX, HEAD_H, LW, H - HEAD_H)
 let split_r = rect(DX - 4, 0, 8, H)
 let modal_r = rect((W - MODAL_W) / 2, (H - MODAL_H) / 2, MODAL_W, MODAL_H)
-let reply_w = DW - 112          // the reply area's wrap width
-let body_w = MODAL_W - 64       // the compose body's wrap width
+let reply_w = DW - 112          # the reply area's wrap width
+let body_w = MODAL_W - 64       # the compose body's wrap width
 
-// The dialog rises into place as it fades in. Its fields take input before
-// anything is drawn, so where it sits this frame is settled here.
+# The dialog rises into place as it fades in. Its fields take input before
+# anything is drawn, so where it sits this frame is settled here.
 modal_a = approach(modal_a, if compose then 1.0 else 0.0 end, 18.0)
 if modal_a > 0.0 && modal_a < 1.0 then request_frame() end
 let mr = rect(modal_r.x, modal_r.y + int((1.0 - modal_a) * 14.0), MODAL_W, MODAL_H)
 
-// The one-line fields: the row that takes the click, and the text inside it.
+# The one-line fields: the row that takes the click, and the text inside it.
 let search_r = rect(LX + 16, 14, LW - 32, 40)
 let q_text_r = rect(search_r.x + 38, search_r.y, search_r.w - 38 - 40, search_r.h)
 let to_row = rect(mr.x + 32, mr.y + 66, mr.w - 64, 44)
@@ -665,20 +665,20 @@ let to_r = rect(to_row.x + 76, to_row.y, to_row.w - 76, to_row.h)
 let subj_row = rect(mr.x + 32, mr.y + 111, mr.w - 64, 44)
 let subj_r = rect(subj_row.x + 76, subj_row.y, subj_row.w - 76, subj_row.h)
 
-// Lifetimes count down in dt() rather than against time(), so a toast expires
-// on schedule whether frames come from a display, an idle poll or POST /tick.
+# Lifetimes count down in dt() rather than against time(), so a toast expires
+# on schedule whether frames come from a display, an idle poll or POST /tick.
 if toast.left > 0.0 then toast.left = max(0.0, toast.left - dt()) end
 let toast_on = toast.left > 0.0
 let toast_r = rect(LX + (LW - 300) / 2, H - 62, 300, 44)
 
-// Which layer the pointer belongs to this frame.
+# Which layer the pointer belongs to this frame.
 let m_main = !compose && !split_drag && !(toast_on && point_in(mouse_x(), mouse_y(), toast_r))
 let m_modal = compose
 let press = mouse_pressed(0)
 
-// ── Text entry ───────────────────────────────────────────────────────────
-// Edits land in the focused buffer before anything is derived from it, so the
-// list below is already filtered by the character typed this frame.
+# ── Text entry ───────────────────────────────────────────────────────────
+# Edits land in the focused buffer before anything is derived from it, so the
+# list below is already filtered by the character typed this frame.
 
 let ev = {
   typed: text_input(), back: key_pressed("backspace"), del: key_pressed("delete"),
@@ -687,13 +687,13 @@ let ev = {
   enter: key_pressed("return"), word: mod_alt() || mod_ctrl(), cmd: mod_cmd(),
 }
 
-// Search, To and Subject are the prelude's field: it owns the caret, the
-// selection, the clipboard shortcuts and undo, and this file only draws what
-// it reports. Focus stays the app's own string; a click on the row outside the
-// text gives focus further down, and the field then starts at its end.
-// The fields read the runtime's focus, so a move the app makes itself (`/`,
-// Tab, opening the composer) is handed to the runtime on the next frame,
-// before they run. A press on a field is already the runtime's.
+# Search, To and Subject are the prelude's field: it owns the caret, the
+# selection, the clipboard shortcuts and undo, and this file only draws what
+# it reports. Focus stays the app's own string; a click on the row outside the
+# text gives focus further down, and the field then starts at its end.
+# The fields read the runtime's focus, so a move the app makes itself (`/`,
+# Tab, opening the composer) is handed to the runtime on the next frame,
+# before they run. A press on a field is already the runtime's.
 state synced_focus = ""
 if focus != synced_focus then
   focus_request(if focus == "q" || focus == "to" || focus == "subj" then focus else nil end)
@@ -720,16 +720,16 @@ elsif focus == "body" then
   c_body_c = e.c
 end
 
-// The recipient being typed, and the contact it would complete to.
+# The recipient being typed, and the contact it would complete to.
 let to_parts = split(c_to, ",")
 let to_frag = mb.trim_spaces(to_parts[len(to_parts) - 1])
 let to_cand = if focus == "to" && to_ed.caret == char_len(c_to) then mb.complete_contact(to_frag) else "" end
-// Nothing to offer once the address is already whole: Tab then moves on.
+# Nothing to offer once the address is already whole: Tab then moves on.
 let to_guess = if to_cand != "" && lower(mb.person(to_cand).email) == lower(to_frag) then "" else to_cand end
 let to_keys = mb.parse_recipients(c_to)
 let to_ready = mb.deliverable(to_keys)
 
-// ── Derived: the list ────────────────────────────────────────────────────
+# ── Derived: the list ────────────────────────────────────────────────────
 
 let pq = mb.parse_query(q)
 let terms = pq.terms
@@ -741,7 +741,7 @@ end
 let rows = sort(in_box, fn(a, b) -> mb.stamp(b) - mb.stamp(a))
 let n = len(rows)
 
-// A search that is narrower than the mail it could find says so.
+# A search that is narrower than the mail it could find says so.
 let elsewhere = 0
 if pq.active && view != "all" && view != "trash" then
   for t in threads do
@@ -771,15 +771,15 @@ list_scroll = clamp(list_scroll, 0.0, list_max)
 let can_reply = sel_t != nil && sel_t.box != "drafts" && sel_t.box != "trash"
 let reply_open = can_reply && (focus == "reply" || char_len(reply) > 0)
 let reply_lines = if reply_open then text_wrap_rows(reply, REPLY_STYLE, float(reply_w)) else [] end
-let reply_vis = clamp(len(reply_lines), 3, 7)      // rows the editor shows before it scrolls
+let reply_vis = clamp(len(reply_lines), 3, 7)      # rows the editor shows before it scrolls
 let reply_h = if !can_reply then 0 elsif reply_open then 132 + reply_vis * AREA_STEP else 76 end
 let detail_view = rect(DX, TOOL_H, DW, H - TOOL_H - reply_h)
 let detail_max = max(0.0, detail_h - float(detail_view.h))
 if hit(detail_view, m_main) then detail_scroll = detail_scroll + scroll_y() * 56.0 end
 
-// ── Keys ─────────────────────────────────────────────────────────────────
-// Every key and click below only *names* what should happen; the store is
-// changed once, at the bottom of the frame.
+# ── Keys ─────────────────────────────────────────────────────────────────
+# Every key and click below only *names* what should happen; the store is
+# changed once, at the bottom of the frame.
 
 let act = ""
 let act_ids = targets
@@ -822,7 +822,7 @@ if compose then
 elsif focus == "reply" then
   if key_pressed("return") && mod_cmd() then act = "send_reply" end
 elsif focus == "q" then
-  // Return or Down hands the keyboard back to the list, on the first result.
+  # Return or Down hands the keyboard back to the list, on the first result.
   if key_pressed("return") || key_pressed("down") then
     focus = ""
     if n > 0 && sel_ix < 0 then
@@ -877,8 +877,8 @@ else
   end
 end
 
-// A reply just sent should be in sight. Its height is only known once it has
-// been laid out, a frame after it joins the thread, so the pin holds for two.
+# A reply just sent should be in sight. Its height is only known once it has
+# been laid out, a frame after it joins the thread, so the pin holds for two.
 if to_bottom > 0 then
   detail_scroll = detail_max
   to_bottom = to_bottom - 1
@@ -886,17 +886,17 @@ if to_bottom > 0 then
 end
 detail_scroll = clamp(detail_scroll, 0.0, detail_max)
 
-// A click lands in at most one field; anywhere else gives the keyboard back.
+# A click lands in at most one field; anywhere else gives the keyboard back.
 let focus_hit = ""
 let tip = ""
 
-// ═════════════════════════════════════════════════════════════════════════
-// Paint
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+# Paint
+# ═════════════════════════════════════════════════════════════════════════
 
 clear(LIST_BG.r, LIST_BG.g, LIST_BG.b)
 
-// ── Rail ─────────────────────────────────────────────────────────────────
+# ── Rail ─────────────────────────────────────────────────────────────────
 
 draw_rect(0, 0, RAIL_W, H, RAIL)
 
@@ -975,9 +975,9 @@ for i in range(0, len(mb.LABELS)) do
   end
 end
 
-// The account, pinned to the foot of the rail.
-// It paints its own ground, so on a short pane the labels pass under it
-// rather than through it.
+# The account, pinned to the foot of the rail.
+# It paints its own ground, so on a short pane the labels pass under it
+# rather than through it.
 draw_rect(0, H - 71, RAIL_W, 71, RAIL)
 draw_rect(16, H - 70, RAIL_W - 32, 1, RAIL_RULE)
 let me = mb.person(mb.ME)
@@ -985,7 +985,7 @@ avatar(mb.ME, 34, H - 35, 16, RAIL)
 draw_text(me.name, {x: 60, y: H - 53}, sb(13, RAIL_TEXT))
 draw_text(ellipsize(me.email, RAIL_W - 76, st(11, RAIL_DIM)), {x: 60, y: H - 34}, st(11, RAIL_DIM))
 
-// ── List: the rows ───────────────────────────────────────────────────────
+# ── List: the rows ───────────────────────────────────────────────────────
 
 let tagged = view != "inbox" && view != "trash" && view != "drafts" && view != "archive"
 clip_push(list_view)
@@ -1027,7 +1027,7 @@ if n == 0 then
   let hint = if pq.active then "Try fewer words, or one of these:" else "Conversations you move here will show up in this list." end
   draw_text_center(hint, mid, HEAD_H + 174, st(13, MUTED))
   if pq.active then
-    // Two rows of two, each pair centred, so they fit the narrowest list.
+    # Two rows of two, each pair centred, so they fit the narrowest list.
     let ops = [["from:maya", "is:unread"], ["has:attachment", "label:design"]]
     let ts = {size: 12, color: INK_2, font: "mono"}
     for k in range(0, 2) do
@@ -1064,7 +1064,7 @@ if list_max > 0.0 then
   draw_rect_rounded(LX + LW - 7, thumb_y, 4, thumb_h, 2, tint(LIST_BG, INK, 16))
 end
 
-// ── List: the header, drawn over the rows it hides ───────────────────────
+# ── List: the header, drawn over the rows it hides ───────────────────────
 
 draw_rect(LX, 0, LW, HEAD_H, LIST_BG)
 draw_scroll_shadow(rect(LX, 0, LW, HEAD_H), min(1.0, list_scroll / 24.0), {a: 34, height: 10})
@@ -1091,7 +1091,7 @@ end
 
 let title_r = rect(LX + 18, 64, LW - 36, 28)
 if picking then
-  // The bulk bar: what is ticked, and what can be done to all of it at once.
+  # The bulk bar: what is ticked, and what can be done to all of it at once.
   let all_r = rect(title_r.x + 11, title_r.y + 4, 20, 20)
   checkbox(all_r, true, false)
   draw_text(plural(len(checked), "selected", "selected"), {x: all_r.x + 30, y: text_layout.text_line_y(title_r, sb(14, INK))}, sb(14, INK))
@@ -1118,8 +1118,8 @@ else
   let tally = if pq.active then plural(n, "match", "matches") else str(n) end
   text_on(tally, title_r.x + text_width(heading, name_st) + 9, base_of(text_layout.text_line_y(title_r, name_st), name_st), st(13, MUTED), "left")
 
-  // Filter chips are the query language with a mouse: each one adds or
-  // removes its own token in the search field.
+  # Filter chips are the query language with a mouse: each one adds or
+  # removes its own token in the search field.
   let chips = [
     {name: "Files", tok: "has:attachment"},
     {name: "Starred", tok: "is:starred"},
@@ -1144,7 +1144,7 @@ else
   end
 end
 
-// ── Reading pane ─────────────────────────────────────────────────────────
+# ── Reading pane ─────────────────────────────────────────────────────────
 
 draw_rect(DX, 0, DW, H, PAPER)
 
@@ -1178,7 +1178,7 @@ else
   clip_push(detail_view)
   let y = float(TOOL_H + 28) - detail_scroll
 
-  // The subject, at reading size, wrapped rather than cut.
+  # The subject, at reading size, wrapped rather than cut.
   let subj_st = {size: 23, color: INK, font: "ui", weight: 700}
   for line in text_layout.wrap_text(sel_t.subject, subj_st, col_w) do
     draw_marked(line, col_x, y, subj_st, terms)
@@ -1244,7 +1244,7 @@ else
     draw_rect_rounded(W - 8, thumb_y, 4, thumb_h, 2, tint(PAPER, INK, 14))
   end
 
-  // The toolbar, over the scrolled thread.
+  # The toolbar, over the scrolled thread.
   draw_rect(DX, 0, DW, TOOL_H, PAPER)
   draw_scroll_shadow(rect(DX, 0, DW, TOOL_H), min(1.0, detail_scroll / 24.0), {a: 30, height: 10})
   draw_rect(DX, TOOL_H - 1, DW, 1, RULE)
@@ -1271,7 +1271,7 @@ else
     end
   end
 
-  // Where this conversation sits in the list, and a way to step through it.
+  # Where this conversation sits in the list, and a way to step through it.
   let step_dn = rect(W - 28 - 30, 13, 30, 30)
   let step_up = rect(W - 28 - 62, 13, 30, 30)
   if sel_ix >= 0 then
@@ -1289,7 +1289,7 @@ else
     end
   end
 
-  // The reply bar, pinned to the foot of the pane.
+  # The reply bar, pinned to the foot of the pane.
   if can_reply then
     let ry = H - reply_h
     draw_rect(DX, ry, DW, reply_h, PAPER)
@@ -1306,7 +1306,7 @@ else
       draw_text(to_name, {x: box.x + 38 + text_width("Reply to ", st(12, MUTED)), y: box.y + 11}, sb(12, INK_2))
       let ax = box.x + 20
       let ay = box.y + 42
-      // Past seven rows the editor scrolls, keeping the caret's row in sight.
+      # Past seven rows the editor scrolls, keeping the caret's row in sight.
       let reply_shift = max(0, text_row_of(reply_lines, reply_c) - reply_vis + 1) * AREA_STEP
       clip_push(rect(ax - 2, ay - 2, reply_w + 6, reply_vis * AREA_STEP + 4))
       draw_area(ax, ay - reply_shift, reply_w, reply, reply_c, REPLY_STYLE, AREA_STEP, focus == "reply", "Write your reply")
@@ -1340,7 +1340,7 @@ else
 end
 detail_h = laid_h
 
-// ── The divider between master and detail ────────────────────────────────
+# ── The divider between master and detail ────────────────────────────────
 
 let split_hot = hit(split_r, !compose) || split_drag
 draw_rect(DX, 0, 1, H, RULE)
@@ -1354,7 +1354,7 @@ if press && hit(split_r, !compose) then
   act = ""
 end
 
-// ── Toast ────────────────────────────────────────────────────────────────
+# ── Toast ────────────────────────────────────────────────────────────────
 
 if toast_on then
   request_frame()
@@ -1374,7 +1374,7 @@ if toast_on then
   end
 end
 
-// ── Compose ──────────────────────────────────────────────────────────────
+# ── Compose ──────────────────────────────────────────────────────────────
 
 if compose then
   draw_rect(0, 0, W, H, :0e1220, int(120.0 * modal_a))
@@ -1387,18 +1387,18 @@ if compose then
   icon_button(close_r, "close", hit(close_r, m_modal), MUTED, RULE_SOFT)
   if press && hit(close_r, m_modal) then act = "close_compose" end
 
-  // To
+  # To
   draw_text("To", {x: to_row.x, y: text_layout.text_line_y(to_row, st(13, MUTED))}, st(13, MUTED))
   draw_field(to_r, c_to, to_ed, FIELD_STYLE, focus == "to", "name or address")
   if to_guess != "" then
-    // The completion, as ghost text after the caret: the rest of the address
-    // when the address is what was being typed, the whole contact otherwise.
+    # The completion, as ghost text after the caret: the rest of the address
+    # when the address is what was being typed, the whole contact otherwise.
     let p = mb.person(to_guess)
     let typed_w = text_width(c_to, FIELD_STYLE)
     let rest = if index_of(lower(p.email), lower(to_frag)) == 0 then char_slice(p.email, char_len(to_frag)) else "  {p.name}  ·  {p.email}" end
     let gy = text_layout.text_line_y(to_r, FIELD_STYLE)
     let rest_w = text_width(rest, st(14, FAINT))
-    // Only while it fits: a To line long enough to scroll has no room for it.
+    # Only while it fits: a To line long enough to scroll has no room for it.
     if typed_w + rest_w + 56 <= to_r.w then
       draw_text(rest, {x: to_r.x + typed_w + 3, y: gy}, st(14, FAINT))
       keycap(to_r.x + typed_w + rest_w + 14, to_r.y + 12, "Tab", RULE_SOFT, MUTED)
@@ -1409,7 +1409,7 @@ if compose then
     focus_hit = "to"
   end
 
-  // Subject
+  # Subject
   draw_text("Subject", {x: subj_row.x, y: text_layout.text_line_y(subj_row, st(13, MUTED))}, st(13, MUTED))
   draw_field(subj_r, c_subj, subj_ed, FIELD_STYLE, focus == "subj", "what is this about?")
   draw_rect(subj_row.x, subj_row.y + subj_row.h, subj_row.w, 1, if focus == "subj" then ACCENT else RULE end)
@@ -1417,7 +1417,7 @@ if compose then
     focus_hit = "subj"
   end
 
-  // Body
+  # Body
   let body_r = rect(mr.x + 32, mr.y + 172, body_w, MODAL_H - 172 - 76)
   clip_push(body_r)
   let body_rows = text_wrap_rows(c_body, FIELD_STYLE, float(body_w))
@@ -1431,7 +1431,7 @@ if compose then
     c_body_c = area_caret_at(c_body, FIELD_STYLE, body_w, body_r.x, body_r.y - body_shift, AREA_STEP, mouse_x(), mouse_y())
   end
 
-  // Footer
+  # Footer
   draw_rect(mr.x, mr.y + mr.h - 68, mr.w, 1, RULE)
   let send_r = rect(mr.x + 32, mr.y + mr.h - 52, 96, 36)
   let send_hot = hit(send_r, m_modal)
@@ -1448,9 +1448,9 @@ if compose then
   if press && !hit(mr, true) then act = "close_compose" end
 end
 
-// ── Tooltip ──────────────────────────────────────────────────────────────
-// One for the whole panel: whichever control named itself this frame, shown
-// once the pointer has rested on it for a beat.
+# ── Tooltip ──────────────────────────────────────────────────────────────
+# One for the whole panel: whichever control named itself this frame, shown
+# once the pointer has rested on it for a beat.
 
 if tip != tip_key then
   tip_key = tip
@@ -1470,9 +1470,9 @@ if tip != "" then
   end
 end
 
-// ═════════════════════════════════════════════════════════════════════════
-// Apply
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+# Apply
+# ═════════════════════════════════════════════════════════════════════════
 
 if press && !split_drag then focus = focus_hit end
 
@@ -1527,8 +1527,8 @@ elsif act == "fold" then
     append(open_msgs, i)
   end
 elsif act == "archive" && len(act_ids) > 0 then
-  // A draft has nowhere to be archived to, so a mixed selection (a label can
-  // hold both) leaves its drafts where they are.
+  # A draft has nowhere to be archived to, so a mixed selection (a label can
+  # hold both) leaves its drafts where they are.
   let movable = for id in act_ids do
     let t = mb.find_thread(threads, id)
     if t == nil || t.box == "drafts" then continue end
@@ -1547,8 +1547,8 @@ elsif act == "archive" && len(act_ids) > 0 then
     toast = {msg: if dest == "inbox" then "{moved} moved to Inbox" else "{moved} archived" end, left: 6.0, can_undo: true}
   end
 elsif act == "trash" && len(act_ids) > 0 then
-  // Each conversation goes by where it is: a draft, or one already in Trash,
-  // is deleted; anything else moves to Trash.
+  # Each conversation goes by where it is: a draft, or one already in Trash,
+  # is deleted; anything else moves to Trash.
   let dead = for id in act_ids do
     let t = mb.find_thread(threads, id)
     if t == nil || (t.box != "trash" && t.box != "drafts") then continue end
@@ -1564,7 +1564,7 @@ elsif act == "star" && len(act_ids) > 0 then
   let first = mb.find_thread(threads, act_ids[0])
   threads = mb.set_starred(threads, act_ids, !first.starred)
 elsif act == "read" && len(act_ids) > 0 then
-  // Anything read among them means "mark these unread"; otherwise read them.
+  # Anything read among them means "mark these unread"; otherwise read them.
   let any_read = false
   for id in act_ids do
     let t = mb.find_thread(threads, id)
@@ -1603,7 +1603,7 @@ elsif act == "edit_draft" && sel_t != nil then
   c_body_c = char_len(c_body)
   focus = "body"
 elsif act == "complete" then
-  // Swap the fragment being typed for the contact's address.
+  # Swap the fragment being typed for the contact's address.
   let kept = for i in range(0, len(to_parts) - 1) do mb.trim_spaces(to_parts[i]) end
   c_to = join(append(kept, mb.person(to_guess).email), ", ")
   focus = "subj"
@@ -1626,7 +1626,7 @@ elsif act == "send" then
     toast = {msg: "Sent to {mb.person(to[0]).name}", left: 4.0, can_undo: false}
   end
 elsif act == "close_compose" then
-  // Closing never loses words: anything written is kept as a draft.
+  # Closing never loses words: anything written is kept as a draft.
   let wrote = char_len(mb.trim_spaces(c_to ++ c_subj ++ c_body)) > 0
   if wrote then
     seq = seq + 1
@@ -1666,7 +1666,7 @@ elsif act == "send_reply" && sel_t != nil then
   end
 end
 
-// ── What a test can read (GET /state → panes[0].panel.values) ────────────
+# ── What a test can read (GET /state → panes[0].panel.values) ────────────
 
 let obs_view = view
 let obs_query = q

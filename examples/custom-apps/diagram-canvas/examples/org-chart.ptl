@@ -1,7 +1,7 @@
-// Org Chart — a hierarchy drawn as boxes and elbow connectors.
-//
-// Demonstrates nested data (each person names its children by index) and
-// rendering a tree from it.
+# Org Chart — a hierarchy drawn as boxes and elbow connectors.
+#
+# Demonstrates nested data (each person names its children by index) and
+# rendering a tree from it.
 
 import ui
 
@@ -11,7 +11,7 @@ fn mouse_over(rect: record) -> bool
   mx >= rect.x && mx <= rect.x + rect.w && my >= rect.y && my <= rect.y + rect.h
 end
 
-// Tree structure: each person has name, title, and child indices
+# Tree structure: each person has name, title, and child indices
 let people = [
   {name: "Alice Chen",    title: "CEO",           children: [1, 2, 3]},
   {name: "Bob Park",      title: "CTO",           children: [4, 5]},
@@ -24,7 +24,7 @@ let people = [
   {name: "Ivy Moore",     title: "Research",      children: []}
 ]
 
-// Pre-computed positions (x, y) for a balanced layout
+# Pre-computed positions (x, y) for a balanced layout
 let positions = [
   {x: 380, y: 30},
   {x: 140, y: 150},
@@ -40,7 +40,7 @@ let positions = [
 let node_w = 150
 let node_h = 55
 
-// Color palette
+# Color palette
 let bg = :191c26
 let title_color = :a0a0c8
 let conn_color = :50506e
@@ -48,7 +48,7 @@ let shadow_color = :0f0f19
 let name_color = :e6e6f5
 let role_color = :8c96b4
 
-// Node colors by level
+# Node colors by level
 let ceo_bg = :463264
 let ceo_border = :7850b4
 let vp_bg = :324155
@@ -56,7 +56,7 @@ let vp_border = :506e96
 let default_bg = :32374b
 let default_border = :5a5f82
 
-// Overloaded draw functions: accept point/color records
+# Overloaded draw functions: accept point/color records
 let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
@@ -76,7 +76,7 @@ clear(bg.r, bg.g, bg.b)
 
 draw_text("Organization Chart", {x: 20, y: 10}, 18, title_color)
 
-// Draw connection lines
+# Draw connection lines
 for i in range(0, len(people)) do
   let person = people[i]
   let pos = positions[i]
@@ -88,7 +88,7 @@ for i in range(0, len(people)) do
     let cx = cpos.x + node_w / 2
     let cy = cpos.y
 
-    // Draw vertical-then-horizontal connector
+    # Draw vertical-then-horizontal connector
     let mid_y = (py + cy) / 2
     draw_line({x: px, y: py}, {x: px, y: mid_y}, conn_color)
     draw_line({x: px, y: mid_y}, {x: cx, y: mid_y}, conn_color)
@@ -96,7 +96,7 @@ for i in range(0, len(people)) do
   end
 end
 
-// Draw nodes
+# Draw nodes
 for i in range(0, len(people)) do
   let person = people[i]
   let pos = positions[i]
@@ -106,7 +106,7 @@ for i in range(0, len(people)) do
   let node_rect = {x: x, y: y, w: node_w, h: node_h}
   let hover = mouse_over(node_rect)
 
-  // Color by level
+  # Color by level
   let node_color = default_bg
   let border_color = default_border
 
@@ -134,12 +134,12 @@ for i in range(0, len(people)) do
     border_b = 255
   end
 
-  // Drop shadow: the same box, offset two pixels.
+  # Drop shadow: the same box, offset two pixels.
   draw_rect(x: x + 2, y: y + 2, w: node_w, h: node_h, r: shadow_color.r, g: shadow_color.g, b: shadow_color.b)
   draw_rect(x, y, w: node_w, h: node_h, r: bg_r, g: bg_g, b: bg_b)
   draw_rect_outline(x, y, node_w, node_h, border_r, border_g, border_b)
 
-  // No bold in this host, so the name is simply drawn a size larger.
+  # No bold in this host, so the name is simply drawn a size larger.
   draw_text(person.name, {x: x + 10, y: y + 10}, 15, name_color)
   draw_text(person.title, {x: x + 10, y: y + 30}, 13, role_color)
 end

@@ -1,8 +1,8 @@
-// Metaprogramming
-// Programs as first-class values: inspect, build, transform, and compose.
-// See ../../PETAL_GOALS.md for the motivation behind this API.
+# Metaprogramming
+# Programs as first-class values: inspect, build, transform, and compose.
+# See ../../PETAL_GOALS.md for the motivation behind this API.
 
-// --- Example 1: Self-inspection ---
+# --- Example 1: Self-inspection ---
 
 fn add(a, b)
   a + b
@@ -21,7 +21,7 @@ for func in me.functions() do
 end
 print("")
 
-// --- Example 2: Building programs from code ---
+# --- Example 2: Building programs from code ---
 
 let doubler = Program.build(fn(b)
   let x = b.param("x")
@@ -34,8 +34,8 @@ print(doubler.source())
 print("doubler(21) =", doubler.run(21))
 print("")
 
-// --- Example 3: Generating specialized functions ---
-// Build a polynomial evaluator from coefficients at runtime.
+# --- Example 3: Generating specialized functions ---
+# Build a polynomial evaluator from coefficients at runtime.
 
 fn make_polynomial(coefficients)
   Program.build(fn(b)
@@ -52,22 +52,22 @@ fn make_polynomial(coefficients)
   end)
 end
 
-// p(x) = 1 + 2x + 3x^2
+# p(x) = 1 + 2x + 3x^2
 let p = make_polynomial([1.0, 2.0, 3.0])
 print("=== Generated Polynomial ===")
 print("p(x) = 1 + 2x + 3x^2")
-print("p(0) =", p.run(0.0))     // 1
-print("p(1) =", p.run(1.0))     // 6
-print("p(2) =", p.run(2.0))     // 17
+print("p(0) =", p.run(0.0))     # 1
+print("p(1) =", p.run(1.0))     # 6
+print("p(2) =", p.run(2.0))     # 17
 
-// We can differentiate the generated program
+# We can differentiate the generated program
 let p_prime = grad(p.run)
 print("p'(x) = 2 + 6x")
-print("p'(2) =", p_prime(2.0))  // 14
+print("p'(2) =", p_prime(2.0))  # 14
 print("")
 
-// --- Example 4: Program transformation ---
-// Swap all additions for multiplications.
+# --- Example 4: Program transformation ---
+# Swap all additions for multiplications.
 
 let original = Program.parse("""
     let a = 2
@@ -76,7 +76,7 @@ let original = Program.parse("""
     c
 """)
 print("=== Program Transform ===")
-print("Original:", original.run())  // 5
+print("Original:", original.run())  # 5
 
 let swapped = original.clone()
 swapped.transform(fn(term)
@@ -85,11 +85,11 @@ swapped.transform(fn(term)
     when _ -> term
   end
 end)
-print("After Add->Mul:", swapped.run())  // 6
+print("After Add->Mul:", swapped.run())  # 6
 print("")
 
-// --- Example 5: Program composition ---
-// Pipe one program's output into another.
+# --- Example 5: Program composition ---
+# Pipe one program's output into another.
 
 let parse_step = Program.parse("""
     fn step(input)
@@ -106,10 +106,10 @@ let format_step = Program.parse("""
 
 let pipeline = parse_step.pipe(format_step)
 print("=== Composition ===")
-print("Pipeline(5):", pipeline.run(5))  // "10!"
+print("Pipeline(5):", pipeline.run(5))  # "10!"
 print("")
 
-// --- Example 6: Inspecting a term's dataflow ---
+# --- Example 6: Inspecting a term's dataflow ---
 
 let prog = Program.parse("""
     fn f(x, y)

@@ -1,13 +1,13 @@
-// tetris.ptl — a headless Tetris core.
-//
-// A 10x20 well, the seven tetrominoes, SRS rotation with the standard wall-kick
-// tables, gravity on a tick clock, hard drop, line clears with guideline
-// scoring, levels, and game over. Pieces come from a 7-bag fed by a fixed-seed
-// LCG, and a deterministic placement heuristic plays the game, so two runs are
-// byte-identical.
-//
-//   ./tools/run-petal.ts check --strict examples/games/tetris/tetris.ptl
-//   ./tools/run-petal.ts run examples/games/tetris/tetris.ptl
+# tetris.ptl — a headless Tetris core.
+#
+# A 10x20 well, the seven tetrominoes, SRS rotation with the standard wall-kick
+# tables, gravity on a tick clock, hard drop, line clears with guideline
+# scoring, levels, and game over. Pieces come from a 7-bag fed by a fixed-seed
+# LCG, and a deterministic placement heuristic plays the game, so two runs are
+# byte-identical.
+#
+#   ./tools/run-petal.ts check --strict examples/games/tetris/tetris.ptl
+#   ./tools/run-petal.ts run examples/games/tetris/tetris.ptl
 
 let WIDTH = tunable(10)
 let HEIGHT = tunable(20)
@@ -15,15 +15,15 @@ let SEED = tunable(20260830)
 let MAX_PIECES = tunable(45)
 let TICK_LIMIT_PER_PIECE = tunable(40)
 
-// ---------------------------------------------------------------- randomness
+# ---------------------------------------------------------------- randomness
 
-// A small LCG, so the piece order does not depend on the host RNG at all.
+# A small LCG, so the piece order does not depend on the host RNG at all.
 fn lcg_next(s: int) -> int
   (s * 1103515245 + 12345) % 2147483648
 end
 
-// Fisher-Yates over the seven pieces; returns the shuffled bag and the advanced
-// seed.
+# Fisher-Yates over the seven pieces; returns the shuffled bag and the advanced
+# seed.
 fn shuffled_bag(seed: int) -> record
   let bag = Piece.all
   let s = seed
@@ -39,16 +39,16 @@ fn shuffled_bag(seed: int) -> record
   {bag: bag, seed: s}
 end
 
-// ------------------------------------------------------------------- pieces
+# ------------------------------------------------------------------- pieces
 
-// The seven tetrominoes, in bag order. Each carries its own table row:
-//   cells      spawn-orientation cells, as [x, y] inside the rotation box (y
-//              grows down)
-//   box        side of the box the piece turns inside of: SRS uses 4x4 for I
-//              and 3x3 for everything else (O is written into a 3x3 box but
-//              never rotates)
-//   rotations  how many orientations differ, which is all the planner tries
-// A cell of the well holds the Piece that filled it, or nil.
+# The seven tetrominoes, in bag order. Each carries its own table row:
+#   cells      spawn-orientation cells, as [x, y] inside the rotation box (y
+#              grows down)
+#   box        side of the box the piece turns inside of: SRS uses 4x4 for I
+#              and 3x3 for everything else (O is written into a 3x3 box but
+#              never rotates)
+#   rotations  how many orientations differ, which is all the planner tries
+# A cell of the well holds the Piece that filled it, or nil.
 enum Piece
   I(cells: [[0, 1], [1, 1], [2, 1], [3, 1]], box: 4, rotations: 2),
   J(cells: [[0, 0], [0, 1], [1, 1], [2, 1]], box: 3, rotations: 4),
@@ -59,8 +59,8 @@ enum Piece
   Z(cells: [[0, 0], [1, 0], [1, 1], [2, 1]], box: 3, rotations: 2),
 end
 
-// Cells of `kind` in rotation state `rot` (0..3), still box-relative.
-// Clockwise rotation inside an n-box sends (x, y) to (n - 1 - y, x).
+# Cells of `kind` in rotation state `rot` (0..3), still box-relative.
+# Clockwise rotation inside an n-box sends (x, y) to (n - 1 - y, x).
 fn piece_cells(kind: Piece, rot: int) -> list
   let n = kind.box
   let cells = kind.cells
@@ -77,20 +77,20 @@ fn piece_cells(kind: Piece, rot: int) -> list
   end
 end
 
-// ---------------------------------------------------------------- wall kicks
+# ---------------------------------------------------------------- wall kicks
 
-// The SRS kick tables, transcribed with y growing DOWNWARD (the published
-// tables use y up, so every y here is negated). Key is from*4 + to.
+# The SRS kick tables, transcribed with y growing DOWNWARD (the published
+# tables use y up, so every y here is negated). Key is from*4 + to.
 fn kicks_jlstz(key: int) -> list
   match key
-    when 1 -> [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]]     // 0 -> R
-    when 4 -> [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]]       // R -> 0
-    when 6 -> [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]]       // R -> 2
-    when 9 -> [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]]     // 2 -> R
-    when 11 -> [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]]       // 2 -> L
-    when 14 -> [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]]   // L -> 2
-    when 12 -> [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]]   // L -> 0
-    when 3 -> [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]]        // 0 -> L
+    when 1 -> [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]]     # 0 -> R
+    when 4 -> [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]]       # R -> 0
+    when 6 -> [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]]       # R -> 2
+    when 9 -> [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]]     # 2 -> R
+    when 11 -> [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]]       # 2 -> L
+    when 14 -> [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]]   # L -> 2
+    when 12 -> [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]]   # L -> 0
+    when 3 -> [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]]        # 0 -> L
     when _ -> [[0, 0]]
   end
 end
@@ -118,7 +118,7 @@ fn kick_offsets(kind: Piece, from_rot: int, to_rot: int) -> list
   end
 end
 
-// -------------------------------------------------------------------- board
+# -------------------------------------------------------------------- board
 
 fn new_board() -> list
   for y in range(HEIGHT) do
@@ -126,16 +126,16 @@ fn new_board() -> list
   end
 end
 
-// True if `cells`, placed with its box origin at (px, py), overlaps a wall,
-// the floor or a filled cell.
+# True if `cells`, placed with its box origin at (px, py), overlaps a wall,
+# the floor or a filled cell.
 fn collides(board: list, cells: list, px: int, py: int) -> bool
   let hit = false
   for c in cells do
     let x = px + c[0]
     let y = py + c[1]
-    // `y < 0` counts as a collision, not as free space: `merge_piece` writes
-    // only cells inside the well, so a lock above the ceiling would silently
-    // drop those minoes. A kick that lifts the piece out of the well is refused.
+    # `y < 0` counts as a collision, not as free space: `merge_piece` writes
+    # only cells inside the well, so a lock above the ceiling would silently
+    # drop those minoes. A kick that lifts the piece out of the well is refused.
     if x < 0 || x >= WIDTH || y >= HEIGHT || y < 0 then
       hit = true
     elsif board[y][x] != nil then
@@ -165,8 +165,8 @@ fn row_full(row: list) -> bool
   full
 end
 
-// Drop every surviving row down and refill the top. Returns the new board and
-// how many rows went away.
+# Drop every surviving row down and refill the top. Returns the new board and
+# how many rows went away.
 fn clear_lines(board: list) -> record
   let kept = for row in board do
     if row_full(row) then continue end
@@ -181,7 +181,7 @@ fn clear_lines(board: list) -> record
   {board: out, cleared: cleared}
 end
 
-// Lowest py at which the piece still fits, starting from py.
+# Lowest py at which the piece still fits, starting from py.
 fn drop_to(board: list, cells: list, px: int, py: int) -> int
   let y = py
   while !collides(board, cells, px, py: y + 1) do
@@ -190,14 +190,14 @@ fn drop_to(board: list, cells: list, px: int, py: int) -> int
   y
 end
 
-// -------------------------------------------------------- placement heuristic
+# -------------------------------------------------------- placement heuristic
 
-// The four board features El-Tetris looks at, gathered in two passes:
-//
-//   row_t  — filled/empty flips along each row, both walls counted as filled
-//   col_t  — flips down each column, ceiling empty and floor filled
-//   holes  — empty cells with something stacked above them
-//   wells  — for every one-wide notch, 1 + 2 + … + depth
+# The four board features El-Tetris looks at, gathered in two passes:
+#
+#   row_t  — filled/empty flips along each row, both walls counted as filled
+#   col_t  — flips down each column, ceiling empty and floor filled
+#   holes  — empty cells with something stacked above them
+#   wells  — for every one-wide notch, 1 + 2 + … + depth
 fn board_features(board: list) -> record
   let row_t = 0
   for y in range(HEIGHT) do
@@ -244,11 +244,11 @@ fn board_features(board: list) -> record
   {row_t: row_t, col_t: col_t, holes: holes, wells: wells}
 end
 
-// The El-Tetris evaluation function, with its published weights.
+# The El-Tetris evaluation function, with its published weights.
 fn score_board(board: list, cleared: int, landing_height: num) -> num
   let f = board_features(board)
-  // Every continuation line must END with its operator: a line that *starts*
-  // with `-` parses as a fresh statement instead.
+  # Every continuation line must END with its operator: a line that *starts*
+  # with `-` parses as a fresh statement instead.
   -4.500158825082766 * landing_height +
   3.4181268101392694 * cleared -
   3.2178882868487753 * f.row_t -
@@ -257,7 +257,7 @@ fn score_board(board: list, cleared: int, landing_height: num) -> num
   3.3855972247263626 * f.wells
 end
 
-// Try every rotation at every column; return the best {rot, x} to aim for.
+# Try every rotation at every column; return the best {rot, x} to aim for.
 fn best_placement(board: list, kind: Piece) -> record
   let best_rot = 0
   let best_x = 3
@@ -268,7 +268,7 @@ fn best_placement(board: list, kind: Piece) -> record
     for px in range(-2, WIDTH + 1) do
       if collides(board, cells, px, py: 0) then continue end
       let py = drop_to(board, cells, px, py: 0)
-      // Landing height = midpoint of the piece, measured up from the floor.
+      # Landing height = midpoint of the piece, measured up from the floor.
       let lo = HEIGHT
       let hi = 0
       for c in cells do
@@ -290,7 +290,7 @@ fn best_placement(board: list, kind: Piece) -> record
   {rot: best_rot, x: best_x}
 end
 
-// ------------------------------------------------------------------ printing
+# ------------------------------------------------------------------ printing
 
 fn render(board: list, header: string) -> nil
   print(header)
@@ -326,7 +326,7 @@ fn gravity_period(level: int) -> int
   if p < 2 then 2 else p end
 end
 
-// ---------------------------------------------------------------- game loop
+# ---------------------------------------------------------------- game loop
 
 let board = new_board()
 let score = 0
@@ -344,7 +344,7 @@ print("Tetris — {WIDTH}x{HEIGHT} well, seed {SEED}, at most {MAX_PIECES} piece
 print("")
 
 while running do
-  // 7-bag refill
+  # 7-bag refill
   if len(queue) == 0 then
     let drawn = shuffled_bag(seed)
     queue = drawn.bag
@@ -371,8 +371,8 @@ while running do
       ticks = ticks + 1
       piece_ticks = piece_ticks + 1
 
-      // One input per tick: first turn the piece, then walk it sideways, then
-      // hard drop once it is where the planner wants it.
+      # One input per tick: first turn the piece, then walk it sideways, then
+      # hard drop once it is where the planner wants it.
       if rot != plan.rot then
         let to_rot = (rot + 1) % 4
         let want = piece_cells(kind, to_rot)
@@ -388,7 +388,7 @@ while running do
           end
         end
         if !placed then
-          // Every kick was blocked; give up on turning and drop as we are.
+          # Every kick was blocked; give up on turning and drop as we are.
           plan = {rot: rot, x: plan.x}
         end
       elsif px != plan.x then

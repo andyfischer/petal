@@ -1,4 +1,4 @@
-// A nested module reaches across the package by its full path.
+# A nested module reaches across the package by its full path.
 import bloom/motion
 
 pub fn label()

@@ -1,5 +1,5 @@
-// Lists
-// Creation, indexing, iteration, and manipulation.
+# Lists
+# Creation, indexing, iteration, and manipulation.
 
 let numbers = [1, 2, 3, 4, 5]
 print("numbers:", numbers)
@@ -7,20 +7,20 @@ print("length:", len(numbers))
 print("first:", numbers[0])
 print("last:", numbers[4])
 
-// Iteration
+# Iteration
 print("doubled:")
 for n in numbers do
   print(" ", n * 2)
 end
 
-// Building a list with append
+# Building a list with append
 let squares = []
 for i in range(1, 6) do
   squares = append(squares, i * i)
 end
 print("squares:", squares)
 
-// Nested lists (2D grid)
+# Nested lists (2D grid)
 let grid = [
   [1, 2, 3],
   [4, 5, 6],
@@ -28,14 +28,14 @@ let grid = [
 ]
 print("center element:", grid[1][1])
 
-// List destructuring with pattern matching
+# List destructuring with pattern matching
 let coords = [10, 20, 30]
 match coords
   when [x, y, z] -> print("x:", x, "y:", y, "z:", z)
   when _ -> print("unexpected shape")
 end
 
-// Head/tail destructuring
+# Head/tail destructuring
 let items = [1, 2, 3, 4]
 match items
   when [] -> print("empty")

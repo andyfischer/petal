@@ -1,7 +1,7 @@
-// Spreadsheet formula engine, lifted verbatim from
-// examples/productivity/spreadsheet/app.ptl (the formula engine + sheet seed),
-// with a driver that recomputes the whole 26x8 grid. Mirrors the work that
-// example's panel does whenever a cell is edited.
+# Spreadsheet formula engine, lifted verbatim from
+# examples/productivity/spreadsheet/app.ptl (the formula engine + sheet seed),
+# with a driver that recomputes the whole 26x8 grid. Mirrors the work that
+# example's panel does whenever a cell is edited.
 
 
 let DIGITS = "0123456789"
@@ -35,9 +35,9 @@ fn is_alpha(c)
   letter_val(upper(c)) >= 0
 end
 
-// ── values ────────────────────────────────────────────────────────────────
-// One record shape for every result a cell can hold, so nothing downstream
-// has to ask what kind of thing it is holding before it can pass it on.
+# ── values ────────────────────────────────────────────────────────────────
+# One record shape for every result a cell can hold, so nothing downstream
+# has to ask what kind of thing it is holding before it can pass it on.
 
 fn vnum(x)
   {k: "num", n: float(x), s: ""}
@@ -52,8 +52,8 @@ fn verr(s)
   {k: "err", n: 0.0, s: s}
 end
 
-// Numeric coercion for arithmetic: a blank cell reads as 0 (so =SUM over a
-// half-filled column works), text does not read as anything.
+# Numeric coercion for arithmetic: a blank cell reads as 0 (so =SUM over a
+# half-filled column works), text does not read as anything.
 fn as_num(v)
   match v.k
     when "num" -> v
@@ -63,11 +63,11 @@ fn as_num(v)
   end
 end
 
-// ── scanning a number out of a string ─────────────────────────────────────
-// `float("3.5")` rejects strings ("Expected float at arg 1, got string"), so
-// literals are scanned by hand. Returns {ok, v}: an optional leading "-",
-// digits, an optional fraction, and nothing else — a trailing character makes
-// the whole thing text, which is what tells "41200" from "Q1".
+# ── scanning a number out of a string ─────────────────────────────────────
+# `float("3.5")` rejects strings ("Expected float at arg 1, got string"), so
+# literals are scanned by hand. Returns {ok, v}: an optional leading "-",
+# digits, an optional fraction, and nothing else — a trailing character makes
+# the whole thing text, which is what tells "41200" from "Q1".
 
 fn str_num(s)
   let n = len(s)
@@ -101,8 +101,8 @@ fn str_num(s)
   end
 end
 
-// ── tokenizer ─────────────────────────────────────────────────────────────
-// Tokens are {t, s, n}, where t is "num" | "name" | "str" | "op".
+# ── tokenizer ─────────────────────────────────────────────────────────────
+# Tokens are {t, s, n}, where t is "num" | "name" | "str" | "op".
 
 fn tokenize(src)
   let s = src
@@ -161,8 +161,8 @@ fn is_op(toks, i, s)
   t.t == "op" && t.s == s
 end
 
-// ── cell references ───────────────────────────────────────────────────────
-// "B12" -> {ok, r, c}, zero-based; one or more column letters.
+# ── cell references ───────────────────────────────────────────────────────
+# "B12" -> {ok, r, c}, zero-based; one or more column letters.
 
 fn parse_ref(name)
   let n = len(name)
@@ -195,13 +195,13 @@ fn ref_name(r, c)
   col ++ str(r + 1)
 end
 
-// ── evaluator ─────────────────────────────────────────────────────────────
-// Petal binds a `fn` when its declaration *runs*, so a name used above its
-// declaration reads as nil at call time ("Cannot call nil"). This grammar is
-// mutually recursive twice over — a primary contains a whole expression, and a
-// cell reference re-enters the sheet — so the two back-edges travel through
-// `var` cells, which a closure captures as a box and so can be filled in once
-// everything below is declared.
+# ── evaluator ─────────────────────────────────────────────────────────────
+# Petal binds a `fn` when its declaration *runs*, so a name used above its
+# declaration reads as nil at call time ("Cannot call nil"). This grammar is
+# mutually recursive twice over — a primary contains a whole expression, and a
+# cell reference re-enters the sheet — so the two back-edges travel through
+# `var` cells, which a closure captures as a box and so can be filled in once
+# everything below is declared.
 
 var _expr = nil
 var _eval_at = nil
@@ -266,9 +266,9 @@ fn call_fn(name, vals)
   end
 end
 
-// Every argument of a call, with `B2:E4` expanded in place into one value per
-// cell. Ranges are legal only here, which is why the argument list resolves
-// them rather than the expression grammar.
+# Every argument of a call, with `B2:E4` expanded in place into one value per
+# cell. Ranges are legal only here, which is why the argument list resolves
+# them rather than the expression grammar.
 fn parse_args(cx, toks, i0)
   let i = i0
   let vals = []
@@ -443,10 +443,10 @@ fn raw_at(cells, r, c)
   end
 end
 
-// `cx` is {cells, depth}. There is no dependency graph and no memo table: the
-// sheet is 208 cells and a reference simply re-evaluates its target, with the
-// depth budget standing in for cycle detection (=A1 in A1 bottoms out at
-// #CYCLE rather than hanging the frame).
+# `cx` is {cells, depth}. There is no dependency graph and no memo table: the
+# sheet is 208 cells and a reference simply re-evaluates its target, with the
+# depth budget standing in for cycle detection (=A1 in A1 bottoms out at
+# #CYCLE rather than hanging the frame).
 fn eval_at(cx, r, c)
   if r < 0 || r >= len(cx.cells) || c < 0 || c >= len(cx.cells[0]) then
     verr("#REF!")
@@ -487,9 +487,9 @@ fn evaluate(cells)
   grid
 end
 
-// ── display formatting ────────────────────────────────────────────────────
+# ── display formatting ────────────────────────────────────────────────────
 
-// Group an integer's digits in threes: "1234567" -> "1,234,567".
+# Group an integer's digits in threes: "1234567" -> "1,234,567".
 fn group3(digits)
   let n = len(digits)
   let out = ""
@@ -502,7 +502,7 @@ fn group3(digits)
   out
 end
 
-// At most two decimals, trailing zeros dropped, thousands grouped.
+# At most two decimals, trailing zeros dropped, thousands grouped.
 fn fmt_num(x)
   let neg = x < 0.0
   let scaled = round(abs(x) * 100.0)
@@ -537,7 +537,7 @@ fn kind_label(raw, v)
   end
 end
 
-// ══ 2. the sheet ══════════════════════════════════════════════════════════
+# ══ 2. the sheet ══════════════════════════════════════════════════════════
 
 let COLS = 8
 let ROWS = 26
@@ -572,7 +572,7 @@ fn seed()
   g
 end
 
-// ── driver ────────────────────────────────────────────────────────────────
+# ── driver ────────────────────────────────────────────────────────────────
 
 let sheet = seed()
 let total = 0.0

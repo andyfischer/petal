@@ -1,17 +1,17 @@
-// ── Burrow ──────────────────────────────────────────────────────────────────
-// Testbed 19: a file browser over a virtual filesystem. A folder tree in the
-// sidebar, a list or icon view of the open folder, an info pane and Quick
-// Look for the selection, and the usual verbs (open, rename, duplicate, new
-// folder, move, trash, undo) reached by keys, a context menu and drag and
-// drop. Nothing here reads or writes a disk: the tree is a list of records.
-//
-// The file reads top to bottom as one frame:
-//   state → metrics → model → actions → input → draw → overlays
-//
-// The seed tree and the pure helpers over it are in fsdata.ptl, the icons in
-// icons.ptl and the file previews in peek.ptl.
-//
-// Designed for a 1280x850 window (a 1268x778 pane).
+# ── Burrow ──────────────────────────────────────────────────────────────────
+# Testbed 19: a file browser over a virtual filesystem. A folder tree in the
+# sidebar, a list or icon view of the open folder, an info pane and Quick
+# Look for the selection, and the usual verbs (open, rename, duplicate, new
+# folder, move, trash, undo) reached by keys, a context menu and drag and
+# drop. Nothing here reads or writes a disk: the tree is a list of records.
+#
+# The file reads top to bottom as one frame:
+#   state → metrics → model → actions → input → draw → overlays
+#
+# The seed tree and the pure helpers over it are in fsdata.ptl, the icons in
+# icons.ptl and the file previews in peek.ptl.
+#
+# Designed for a 1280x850 window (a 1268x778 pane).
 
 import text_layout as tl
 import ./fsdata as fs
@@ -21,7 +21,7 @@ import ui
 import bloom
 import garden
 
-// ── palette and type ────────────────────────────────────────────────────────
+# ── palette and type ────────────────────────────────────────────────────────
 
 let C = {
   bg: :1b1d22, side: :15171b, bar: :1f2228, well: :131519, raised: :2a2d36,
@@ -44,58 +44,58 @@ let FIELD_STYLE = ts(13, C.text)
 let CRUMB_STYLE = tsb(13, C.text)
 let CAPS = {size: 10.5, font: "ui", color: C.dim, weight: 600, spacing: 0.8}
 
-// ── state ───────────────────────────────────────────────────────────────────
-// Everything a function writes is a `state var`.
+# ── state ───────────────────────────────────────────────────────────────────
+# Everything a function writes is a `state var`.
 
-state var nodes = fs.seed()     // the filesystem; a node's id is its index
-state var rev = 0               // bumped on every change to `nodes`
-state var fsx = {rev: -1}       // the index derived from `nodes` (see build_index)
+state var nodes = fs.seed()     # the filesystem; a node's id is its index
+state var rev = 0               # bumped on every change to `nodes`
+state var fsx = {rev: -1}       # the index derived from `nodes` (see build_index)
 state var cwd = fs.find(nodes, "Documents")
-state var hist = [fs.find(nodes, "Documents")]   // folders visited, for back and forward
+state var hist = [fs.find(nodes, "Documents")]   # folders visited, for back and forward
 state var hpos = 0
-state var sel = []              // selected node ids, all in the open folder
-state var lead = -1             // the one the keyboard moves
-state var anchor = -1           // where a shift-range starts
+state var sel = []              # selected node ids, all in the open folder
+state var lead = -1             # the one the keyboard moves
+state var anchor = -1           # where a shift-range starts
 state var expanded = [fs.HOME, fs.find(nodes, "Documents"), fs.find(nodes, "Documents/Projects")]
-state var view = "list"         // "list" | "grid"
-state var sort_key = "name"     // "name" | "date" | "size" | "kind"
+state var view = "list"         # "list" | "grid"
+state var sort_key = "name"     # "name" | "date" | "size" | "kind"
 state var sort_desc = false
-state var query = ""            // the filter box
-state var focus = "main"        // "main" | "tree" | "filter" | "rename"
-state var renaming = -1         // the node being renamed in place
+state var query = ""            # the filter box
+state var focus = "main"        # "main" | "tree" | "filter" | "rename"
+state var renaming = -1         # the node being renamed in place
 state var rename_buf = ""
 state var scroll = 0.0
 state var tree_scroll = 0.0
-state var undo = []             // {nodes, label}: the tree is a value, so a step is a snapshot
+state var undo = []             # {nodes, label}: the tree is a value, so a step is a snapshot
 state var redo = []
 state var menu_ctx = {kind: "", id: -1}
 state var press = {id: -1, x: 0, y: 0, moved: false, collapse: false, twice: false}
 state var band = {on: false, x: 0.0, y: 0.0, base: []}
-state var typed = ""            // the type-ahead buffer
+state var typed = ""            # the type-ahead buffer
 state var typed_at = -10.0
 state var clock = 0.0
 state var notice = {text: "", at: -10.0, bad: false}
-state var ql = -1               // the node open in Quick Look
-state var ql_t = 0.0            // how far Quick Look has eased in, 0 to 1
+state var ql = -1               # the node open in Quick Look
+state var ql_t = 0.0            # how far Quick Look has eased in, 0 to 1
 state var show_info = true
-state var n_ops = 0             // filesystem changes so far, for tests
+state var n_ops = 0             # filesystem changes so far, for tests
 state favs = [fs.find(nodes, "Desktop"), fs.find(nodes, "Documents"), fs.find(nodes, "Downloads"),
   fs.find(nodes, "Pictures"), fs.find(nodes, "Music"), fs.find(nodes, "Code")]
 
-// Per-frame scratch, written by `derive` and the actions.
-var items = []                  // ids shown in the main view, in display order
-var side = []                   // sidebar rows: {id, r, kind, depth, kids, open}
-var crumbs = []                 // breadcrumb cells: {id, label, r}
+# Per-frame scratch, written by `derive` and the actions.
+var items = []                  # ids shown in the main view, in display order
+var side = []                   # sidebar rows: {id, r, kind, depth, kids, open}
+var crumbs = []                 # breadcrumb cells: {id, label, r}
 var tree_len = 0
 var tree_top = 0.0
-var want_reveal = -1            // scroll this item into view once it is laid out
-let want_first = false          // select the first item once the list is rebuilt
-var want_tree = false           // scroll the open folder's tree row into view
-var did_type = false            // a type-ahead letter arrived this frame
+var want_reveal = -1            # scroll this item into view once it is laid out
+let want_first = false          # select the first item once the list is rebuilt
+var want_tree = false           # scroll the open folder's tree row into view
+var did_type = false            # a type-ahead letter arrived this frame
 
 set clock += min(dt(), 0.05)
 
-// ── metrics ─────────────────────────────────────────────────────────────────
+# ── metrics ─────────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
@@ -113,7 +113,7 @@ let main = Rect(SIDE_W, TOP_H, W - SIDE_W - INFO_W, H - TOP_H - STATUS_H)
 let body = if view == "list" then Rect(main.x, main.y + HDR_H, main.w, main.h - HDR_H) else main end
 let tree_bottom = H - 50.0
 
-// Toolbar cells, right to left from the window edge.
+# Toolbar cells, right to left from the window edge.
 let back_r = Rect(SIDE_W + 12, 11, 30, 30)
 let fwd_r = Rect(SIDE_W + 44, 11, 30, 30)
 let up_r = Rect(SIDE_W + 82, 11, 30, 30)
@@ -125,8 +125,8 @@ let seg_r = Rect(filter_r.x - 12 - 68, 11, 68, 30)
 let crumb_x = SIDE_W + 126
 let crumb_avail = seg_r.x - 18 - crumb_x
 
-// List columns: the name takes what the others leave, and a narrow pane
-// gives up Kind, then Date Modified, before the name.
+# List columns: the name takes what the others leave, and a narrow pane
+# gives up Kind, then Date Modified, before the name.
 let COL_DATE = 164
 let COL_SIZE = 86
 let COL_KIND = 138
@@ -143,11 +143,11 @@ let COLS = filter([
   {key: "kind", label: "Kind", x: KIND_X, w: COL_KIND, align: "left", on: SHOW_KIND},
 ], fn(c) -> c.on)
 
-// ── model ───────────────────────────────────────────────────────────────────
+# ── model ───────────────────────────────────────────────────────────────────
 
-// Everything about the tree that is a walk to compute: who is in each folder,
-// which of those are folders (sorted, for the sidebar), and what each folder
-// holds in total. Rebuilt only when `rev` moves.
+# Everything about the tree that is a walk to compute: who is in each folder,
+# which of those are folders (sorted, for the sidebar), and what each folder
+# holds in total. Rebuilt only when `rev` moves.
 fn build_index(ns: list, at_rev: int) -> record
   let n = len(ns)
   let kids = for i in range(0, n) do
@@ -158,7 +158,7 @@ fn build_index(ns: list, at_rev: int) -> record
       kids[node.parent] = append(kids[node.parent], node.id)
     end
   end
-  // Breadth-first from the two roots, then totals from the leaves back up.
+  # Breadth-first from the two roots, then totals from the leaves back up.
   let order = [fs.HOME, fs.TRASH]
   let i = 0
   while i < len(order) do
@@ -191,8 +191,8 @@ fn refresh() -> nil
   end
 end
 
-// The root a node hangs from: HOME, TRASH, or -1 once it (or a folder above
-// it) has been deleted for good.
+# The root a node hangs from: HOME, TRASH, or -1 once it (or a folder above
+# it) has been deleted for good.
 fn root_of(id: int) -> int
   let ns = get nodes
   let at = id
@@ -210,7 +210,7 @@ fn in_trash(id: int) -> bool
   root_of(id) == fs.TRASH
 end
 
-// Whether `id` is `top` or somewhere inside it.
+# Whether `id` is `top` or somewhere inside it.
 fn under(id: int, top: int) -> bool
   let ns = get nodes
   let at = id
@@ -223,7 +223,7 @@ fn under(id: int, top: int) -> bool
   false
 end
 
-// Root first, `id` last.
+# Root first, `id` last.
 fn path_ids(id: int) -> list
   let ns = get nodes
   let out = []
@@ -244,8 +244,8 @@ fn count_label(n: int, one: string, many: string) -> string
   if n == 1 then "1 {one}" else "{n} {many}" end
 end
 
-// What the main view lists: the open folder's children that pass the filter,
-// folders first, then by the chosen column.
+# What the main view lists: the open folder's children that pass the filter,
+# folders first, then by the chosen column.
 fn compute_items() -> list
   let ns = get nodes
   let ix = get fsx
@@ -263,7 +263,7 @@ fn compute_items() -> list
   sort_by(sorted, fn(k) -> if ns[k].dir then 0 else 1 end)
 end
 
-// The folder tree as the rows that are showing, depth first.
+# The folder tree as the rows that are showing, depth first.
 fn tree_walk(id: int, depth: int) -> list
   let fk = get fsx.fkids[id]
   let open = contains(get expanded, id)
@@ -276,13 +276,13 @@ fn tree_walk(id: int, depth: int) -> list
   rows
 end
 
-// ── geometry ────────────────────────────────────────────────────────────────
+# ── geometry ────────────────────────────────────────────────────────────────
 
 fn grid_cols() -> int
   max(1, int((body.w - 2 * GPAD) / TILE_W))
 end
 
-// Where item `i` sits on screen, in list or grid mode, at scroll offset `sc`.
+# Where item `i` sits on screen, in list or grid mode, at scroll offset `sc`.
 fn item_rect(i: int, mode: string, sc: num) -> Rect
   if mode == "list" then
     Rect(body.x, body.y + 4 + i * ROW_H - sc, body.w, ROW_H)
@@ -301,7 +301,7 @@ fn content_h(n: int, mode: string) -> num
   end
 end
 
-// The part of an item's rect its name is written in (and renamed in).
+# The part of an item's rect its name is written in (and renamed in).
 fn name_rect(r: record, mode: string) -> Rect
   if mode == "list" then
     Rect(r.x + 42, r.y + 3, COL_NAME - 50, r.h - 6)
@@ -310,9 +310,9 @@ fn name_rect(r: record, mode: string) -> Rect
   end
 end
 
-// The part of an item's rect that counts as the item: all of a list row, but
-// only the icon and label of a tile, so the gaps between tiles are background
-// (somewhere to start a rubber band, or to right-click for the folder's menu).
+# The part of an item's rect that counts as the item: all of a list row, but
+# only the icon and label of a tile, so the gaps between tiles are background
+# (somewhere to start a rubber band, or to right-click for the folder's menu).
 fn hit_rect(i: int, mode: string, sc: num) -> Rect
   let r = item_rect(i, mode, sc)
   if mode == "list" then r else Rect(r.x + 14, r.y, r.w - 28, r.h - 8) end
@@ -335,8 +335,8 @@ fn rects_touch(a: record, b: record) -> bool
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 end
 
-// Rebuild the frame's lists from the state: the main view's items, the
-// sidebar's rows and the breadcrumb cells.
+# Rebuild the frame's lists from the state: the main view's items, the
+# sidebar's rows and the breadcrumb cells.
 fn derive() -> nil
   set items = compute_items()
 
@@ -359,7 +359,7 @@ fn derive() -> nil
   rows = append(rows, {id: fs.TRASH, r: Rect(8, H - 40, SIDE_W - 16, 30), kind: "trash", depth: 0, kids: false, open: false})
   set side = rows
 
-  // Breadcrumbs: drop folders from the front until the rest fits.
+  # Breadcrumbs: drop folders from the front until the rest fits.
   let ns = get nodes
   let parts = for id in path_ids(get cwd) do
     {id: id, label: ns[id].name, w: text_width(ns[id].name, CRUMB_STYLE) + 16}
@@ -386,7 +386,7 @@ fn derive() -> nil
   set crumbs = cells
 end
 
-// ── actions: selection and navigation ───────────────────────────────────────
+# ── actions: selection and navigation ───────────────────────────────────────
 
 fn say(text: string, bad: bool = false) -> nil
   set notice = {text: text, at: get clock, bad: bad}
@@ -414,7 +414,7 @@ fn toggle_sel(id: int) -> nil
   set anchor = id
 end
 
-// Everything between the anchor and `to`, in display order.
+# Everything between the anchor and `to`, in display order.
 fn select_range(to: int) -> nil
   let its = get items
   let a = index_of(its, get anchor)
@@ -447,8 +447,8 @@ fn begin_rename(id: int) -> nil
   set focus = "rename"
 end
 
-// Make `id` the open folder. `push` records it in the history; back and
-// forward pass false.
+# Make `id` the open folder. `push` records it in the history; back and
+# forward pass false.
 fn enter(id: int, push: bool) -> nil
   let from = get cwd
   set cwd = id
@@ -463,7 +463,7 @@ fn enter(id: int, push: bool) -> nil
   if get focus == "rename" || get focus == "filter" then
     set focus = "main"
   end
-  // Open the tree down to it.
+  # Open the tree down to it.
   let ex = get expanded
   for p in path_ids(id) do
     if p != id && !contains(ex, p) then
@@ -471,7 +471,7 @@ fn enter(id: int, push: bool) -> nil
     end
   end
   set expanded = ex
-  // Coming back up leaves the folder you were in selected.
+  # Coming back up leaves the folder you were in selected.
   if get nodes[from].parent == id then
     select_only(from)
     set want_reveal = from
@@ -520,8 +520,8 @@ fn open_node(id: int) -> nil
   end
 end
 
-// Type-ahead: letters typed in quick succession select the first name that
-// starts with them.
+# Type-ahead: letters typed in quick succession select the first name that
+# starts with them.
 fn type_ahead(ch: string) -> nil
   let buf = if get clock - get typed_at > 0.9 then ch else get typed ++ ch end
   set did_type = true
@@ -537,9 +537,9 @@ fn type_ahead(ch: string) -> nil
   end
 end
 
-// ── actions: the filesystem ─────────────────────────────────────────────────
-// Each one builds the next `nodes` list and hands it to `commit`, which is
-// the only place the tree changes and so the only place undo is recorded.
+# ── actions: the filesystem ─────────────────────────────────────────────────
+# Each one builds the next `nodes` list and hands it to `commit`, which is
+# the only place the tree changes and so the only place undo is recorded.
 
 fn commit(label: string, ns: list) -> nil
   let u = append(get undo, {nodes: get nodes, label: label})
@@ -552,8 +552,8 @@ fn commit(label: string, ns: list) -> nil
   refresh()
 end
 
-// A name nothing else in `parent` is using: "notes 2.txt", or for a copy
-// "notes copy.txt". Names are compared without regard to case.
+# A name nothing else in `parent` is using: "notes 2.txt", or for a copy
+# "notes copy.txt". Names are compared without regard to case.
 fn uniq(ns: list, parent: int, name: string, skip: int, copy: bool) -> string
   let taken = for n in ns do
     if n.parent != parent || n.id == skip then
@@ -581,7 +581,7 @@ fn quoted(ns: list, ids: list) -> string
   if len(ids) == 1 then "“{ns[ids[0]].name}”" else "{len(ids)} items" end
 end
 
-// A new folder in `parent`. With `take`, those nodes move into it.
+# A new folder in `parent`. With `take`, those nodes move into it.
 fn op_new_folder(parent: int, take: list) -> nil
   let ns = get nodes
   let id = len(ns)
@@ -601,7 +601,7 @@ fn op_new_folder(parent: int, take: list) -> nil
   set want_reveal = id
 end
 
-// Returns whether the name was taken; a refused name leaves the editor open.
+# Returns whether the name was taken; a refused name leaves the editor open.
 fn op_rename(id: int, to: string) -> bool
   let ns = get nodes
   let name = trim(to)
@@ -634,8 +634,8 @@ fn end_rename(keep: bool) -> nil
   end
 end
 
-// Copies of `ids` beside the originals; a folder is copied with everything
-// in it.
+# Copies of `ids` beside the originals; a folder is copied with everything
+# in it.
 fn op_duplicate(ids: list) -> nil
   let ns = get nodes
   let kids = get fsx.kids
@@ -666,8 +666,8 @@ fn op_duplicate(ids: list) -> nil
   set want_reveal = last(made)
 end
 
-// Move `ids` into folder `dest`. Moving into the Trash remembers where each
-// one came from; a folder cannot go inside itself.
+# Move `ids` into folder `dest`. Moving into the Trash remembers where each
+# one came from; a folder cannot go inside itself.
 fn op_move(ids: list, dest: int) -> bool
   let ns = get nodes
   let to_trash = in_trash(dest)
@@ -691,8 +691,8 @@ fn op_move(ids: list, dest: int) -> bool
   true
 end
 
-// Trash the selection and leave the next item selected, so Delete can be
-// pressed again.
+# Trash the selection and leave the next item selected, so Delete can be
+# pressed again.
 fn op_trash(ids: list) -> nil
   let its = get items
   let at = -1
@@ -768,7 +768,7 @@ fn op_undo(forward: bool) -> nil
   say("{if forward then "Redid" else "Undid" end}: {top.label}")
 end
 
-// ── the context menu's entries ──────────────────────────────────────────────
+# ── the context menu's entries ──────────────────────────────────────────────
 
 fn mi(label: string, act: string, on: bool = true) -> record
   {label: label, disabled: !on, sep: false, act: act}
@@ -826,7 +826,7 @@ fn sort_by_key(key: string) -> nil
     set sort_desc = !get sort_desc
   else
     set sort_key = key
-    // Dates and sizes are most useful largest first.
+    # Dates and sizes are most useful largest first.
     set sort_desc = key == "date" || key == "size"
   end
   set want_reveal = get lead
@@ -881,7 +881,7 @@ fn run_menu(act: string) -> nil
       set want_reveal = ctx.id
     end
     when "side_trash" do
-      // Step out of a folder before it goes.
+      # Step out of a folder before it goes.
       if under(get cwd, ctx.id) then
         go(ns[ctx.id].parent)
       end
@@ -892,7 +892,7 @@ fn run_menu(act: string) -> nil
   end
 end
 
-// ── this frame ──────────────────────────────────────────────────────────────
+# ── this frame ──────────────────────────────────────────────────────────────
 
 refresh()
 if !alive(cwd) then
@@ -910,7 +910,7 @@ let blocked = bloom.menu_any_open()
 let modal = ql >= 0
 let free = !blocked && !modal
 
-// Garden keeps Cmd chords unless a panel claims them, every frame.
+# Garden keeps Cmd chords unless a panel claims them, every frame.
 for k in ["a", "c", "x", "v", "z", "y", "d", "f", "i", "o", "1", "2", "up", "down", "left", "right", "backspace",
   "delete"] do
   claim_key(k, "cmd")
@@ -918,10 +918,10 @@ end
 claim_key("z", "cmd+shift")
 claim_key("n", "cmd+shift")
 
-// ── the two text fields ─────────────────────────────────────────────────────
-// Both are the prelude's field (caret, selection, clipboard, undo); this file
-// only draws what it reports. They run every frame so each one sees its focus
-// come and go.
+# ── the two text fields ─────────────────────────────────────────────────────
+# Both are the prelude's field (caret, selection, clipboard, undo); this file
+# only draws what it reports. They run every frame so each one sees its focus
+# come and go.
 
 let ren_i = index_of(items, renaming)
 let ren_r = if ren_i >= 0 then name_rect(item_rect(ren_i, view, scroll), view) else Rect(-50, -50, 10, 10) end
@@ -938,7 +938,7 @@ if renaming >= 0 then
       end_rename(false)
     elsif (mouse_pressed(0) || mouse_pressed(1)) && !point_in(mx, my, ren_r) then
       end_rename(true)
-      // A refused name still gives way to a click elsewhere.
+      # A refused name still gives way to a click elsewhere.
       if renaming >= 0 then
         end_rename(false)
       end
@@ -965,14 +965,14 @@ if focus0 == "filter" && focus == "filter" then
   end
 end
 
-// ── keyboard ────────────────────────────────────────────────────────────────
+# ── keyboard ────────────────────────────────────────────────────────────────
 
 let cols_now = if view == "list" then 1 else grid_cols() end
 let lead_i = index_of(items, lead)
 let page_rows = max(1, int(body.h / (if view == "list" then ROW_H else TILE_H end)) - 1) * cols_now
 
 if modal && !blocked then
-  // Quick Look: arrows walk the folder, Space or Escape closes.
+  # Quick Look: arrows walk the folder, Space or Escape closes.
   if key_pressed("escape") || key_pressed("space") then
     set ql = -1
   else
@@ -1017,8 +1017,8 @@ elsif free && (focus0 == "main" || focus0 == "tree") && focus == focus0 then
       op_new_folder(cwd, [])
     end
   elsif focus == "tree" then
-    // The tree: Up and Down walk the visible rows, Right opens, Left closes
-    // (or steps out to the parent).
+    # The tree: Up and Down walk the visible rows, Right opens, Left closes
+    # (or steps out to the parent).
     let rows = filter(side, fn(s) -> s.kind == "tree")
     let at = -1
     for i in range(0, len(rows)) do
@@ -1047,7 +1047,7 @@ elsif free && (focus0 == "main" || focus0 == "tree") && focus == focus0 then
       want_first = len(sel) == 0
     end
   else
-    // The main view.
+    # The main view.
     if cmd && key_pressed("a") then
       set sel = items
       set lead = last(items) ?? -1
@@ -1106,16 +1106,16 @@ elsif free && (focus0 == "main" || focus0 == "tree") && focus == focus0 then
   end
 end
 
-// Anything else that happens ends a run of type-ahead letters.
+# Anything else that happens ends a run of type-ahead letters.
 if !did_type && (mouse_pressed(0) || mouse_pressed(1) || cmd || key_pressed("return") || key_pressed("escape") ||
   key_pressed("up") || key_pressed("down") || key_pressed("left") || key_pressed("right") || key_pressed("tab")) then
   set typed = ""
 end
 
-// ── mouse ───────────────────────────────────────────────────────────────────
+# ── mouse ───────────────────────────────────────────────────────────────────
 
-// The folder under the pointer that would take a drop: a folder in the main
-// view, a sidebar row, or a breadcrumb.
+# The folder under the pointer that would take a drop: a folder in the main
+# view, a sidebar row, or a breadcrumb.
 fn drop_at(x: num, y: num, carried: list) -> int
   let ns = get nodes
   let found = -1
@@ -1136,7 +1136,7 @@ fn drop_at(x: num, y: num, carried: list) -> int
   if found < 0 then
     return -1
   end
-  // It has to be somewhere at least one carried item can actually go.
+  # It has to be somewhere at least one carried item can actually go.
   for id in carried do
     if ns[id].parent != found && !under(found, id) then
       return found
@@ -1205,14 +1205,14 @@ if free && mouse_pressed(0) && !on_field then
         elsif shift then
           select_range(id)
         else
-          // A press on a selected item waits for the release, so a drag can
-          // carry the whole selection.
+          # A press on a selected item waits for the release, so a drag can
+          # carry the whole selection.
           let held = contains(sel, id) && len(sel) > 1
           if !held then
             select_only(id)
           end
-          // The second press of a double click opens on release, unless it
-          // turned into a drag.
+          # The second press of a double click opens on release, unless it
+          # turned into a drag.
           set press = {id: id, x: mx, y: my, moved: false, collapse: held, twice: click_count() == 2}
         end
       end
@@ -1220,7 +1220,7 @@ if free && mouse_pressed(0) && !on_field then
   end
 end
 
-// Right click: pick what the menu is about, then show it.
+# Right click: pick what the menu is about, then show it.
 if free && mouse_pressed(1) then
   let hit_side = -1
   for s in side do
@@ -1248,7 +1248,7 @@ if free && mouse_pressed(1) then
   end
 end
 
-// A press on an item becomes a drag once the pointer has travelled.
+# A press on an item becomes a drag once the pointer has travelled.
 if press.id >= 0 then
   if abs(mx - press.x) + abs(my - press.y) > 6 then
     set press.moved = true
@@ -1271,8 +1271,8 @@ if press.id >= 0 then
   end
 end
 
-// Rubber band: everything the rectangle touches, added to what was selected
-// when it started.
+# Rubber band: everything the rectangle touches, added to what was selected
+# when it started.
 let band_r = Rect(min(band.x, mx), min(band.y, my + scroll) - scroll, abs(mx - band.x), abs(my + scroll - band.y))
 if band.on then
   if band_r.w + band_r.h > 6 then
@@ -1293,7 +1293,7 @@ if band.on then
   end
 end
 
-// Wheel.
+# Wheel.
 if free && scroll_y() != 0 then
   if point_in(mx, my, body) then
     set scroll += scroll_y() * 40.0
@@ -1302,7 +1302,7 @@ if free && scroll_y() != 0 then
   end
 end
 
-// Quick Look closes on a click outside its card.
+# Quick Look closes on a click outside its card.
 let ql_w = min(780.0, W - SIDE_W - 60.0)
 let ql_h = min(580.0, H - 80.0)
 let ql_r = Rect(SIDE_W + (W - SIDE_W - ql_w) / 2.0, (H - ql_h) / 2.0, ql_w, ql_h)
@@ -1310,7 +1310,7 @@ if modal && !blocked && mouse_pressed(0) && (!point_in(mx, my, ql_r) || point_in
   set ql = -1
 end
 
-// ── settle: the model again, now that input has had its say ─────────────────
+# ── settle: the model again, now that input has had its say ─────────────────
 
 refresh()
 if !alive(cwd) then
@@ -1318,7 +1318,7 @@ if !alive(cwd) then
 end
 derive()
 
-// What a drag in flight is carrying, and the folder it is over.
+# What a drag in flight is carrying, and the folder it is over.
 let drag_ids = if press.id >= 0 && press.moved then (if contains(sel, press.id) then sel else [press.id] end) else [] end
 let drop_id = if len(drag_ids) > 0 then drop_at(mx, my, drag_ids) else -1 end
 
@@ -1374,12 +1374,12 @@ if tree_scroll != tree_scroll_was then
   derive()
 end
 
-// ── drawing helpers ─────────────────────────────────────────────────────────
+# ── drawing helpers ─────────────────────────────────────────────────────────
 
 let main_active = focus == "main" || focus == "rename"
 let SEL = if main_active then C.accent else C.idle end
 
-// The in-place editor: the box, the selection, the text and the caret.
+# The in-place editor: the box, the selection, the text and the caret.
 fn draw_editor(r: record, text: string, ed: record, style: record, centered: bool, refused: bool) -> nil
   let box = Rect(r.x, r.y, r.w, r.h)
   draw_rect_rounded(box, 5, C.well)
@@ -1398,9 +1398,9 @@ fn draw_editor(r: record, text: string, ed: record, style: record, centered: boo
   clip_pop()
 end
 
-// One row of the list. `o` is how the row stands this frame:
-// {on, hov, drop, ghost, above, below, zebra, editing, kind, key, size, date,
-// mark (the filter text, to highlight)}.
+# One row of the list. `o` is how the row stands this frame:
+# {on, hov, drop, ghost, above, below, zebra, editing, kind, key, size, date,
+# mark (the filter text, to highlight)}.
 fn draw_row(n: record, r: record, o: record) -> nil
   if o.zebra && !o.on then
     draw_rect(r, C.zebra)
@@ -1408,7 +1408,7 @@ fn draw_row(n: record, r: record, o: record) -> nil
   let pill = Rect(r.x + 6, r.y, r.w - 12, r.h)
   if o.on then
     draw_rect_rounded(pill, 6, SEL)
-    // Neighbouring selected rows join into one block.
+    # Neighbouring selected rows join into one block.
     if o.above then
       draw_rect(Rect(pill.x, pill.y, pill.w, 7), SEL)
     end
@@ -1440,7 +1440,7 @@ fn draw_row(n: record, r: record, o: record) -> nil
     let shown = tl.elide(n.name, ns, nr.w - 6)
     let hit = if o.mark == "" then -1 else index_of(lower(shown), o.mark) end
     if hit >= 0 then
-      // The part of the name the filter matched.
+      # The part of the name the filter matched.
       let x0 = text_width(slice(shown, 0, hit), ns)
       let x1 = text_width(slice(shown, 0, hit + len(o.mark)), ns)
       draw_rect_rounded(Rect(nr.x + 6 + x0 - 2, r.y + 5, x1 - x0 + 4, r.h - 10), 3,
@@ -1458,8 +1458,8 @@ fn draw_row(n: record, r: record, o: record) -> nil
   end
 end
 
-// A file name on at most two lines: broken after a space, hyphen or
-// underscore, or before a dot, with the second line cut short if it must be.
+# A file name on at most two lines: broken after a space, hyphen or
+# underscore, or before a dot, with the second line cut short if it must be.
 fn wrap_name(name: string, style: record, w: num) -> list
   if text_width(name, style) <= w then
     return [name]
@@ -1477,7 +1477,7 @@ fn wrap_name(name: string, style: record, w: num) -> list
   [trim(slice(name, 0, cut)), tl.elide(trim(slice(name, cut)), style, w)]
 end
 
-// One tile of the icon grid.
+# One tile of the icon grid.
 fn draw_tile(n: record, r: record, o: record) -> nil
   let art = Rect(r.x + (r.w - 72) / 2.0, r.y + 4, 72, 72)
   if o.on then
@@ -1490,7 +1490,7 @@ fn draw_tile(n: record, r: record, o: record) -> nil
     draw_rect_rounded_outline(Rect(art.x - 6, art.y - 2, art.w + 12, art.h + 4), 9, C.accent_hi, 255, 1.5)
   end
   if o.key == "image" || o.key == "video" then
-    // An image is its own icon, and a movie is its first frame.
+    # An image is its own icon, and a movie is its first frame.
     let wide = o.h % 4 != 0 || o.key == "video"
     let tw = if wide then 68.0 else 54.0 end
     let th = if wide then 46.0 else 54.0 end
@@ -1535,7 +1535,7 @@ fn tool_button(r: record, name: string, enabled: bool, lit: bool) -> nil
   ic.glyph(name, Rect(r.x + 7, r.y + 7, 16, 16), if !enabled then mix(C.bar, C.dim, 0.6) elsif lit || hov then C.text else C.muted end, 1.7)
 end
 
-// ── the main view ───────────────────────────────────────────────────────────
+# ── the main view ───────────────────────────────────────────────────────────
 
 clear(C.bg.r, C.bg.g, C.bg.b)
 
@@ -1592,7 +1592,7 @@ if max_scroll > 0.0 then
   draw_rect_rounded(Rect(body.x + body.w - 8, body.y + 4 + (track_h - th) * scroll / max_scroll, 5, th), 2.5, mix(C.bg, C.muted, 0.35))
 end
 
-// Column headers.
+# Column headers.
 if view == "list" then
   let hr = Rect(main.x, main.y, main.w, HDR_H)
   draw_rect(hr, C.bg)
@@ -1612,7 +1612,7 @@ if view == "list" then
   draw_line({x: hr.x, y: hr.y + HDR_H - 0.5}, {x: hr.x + hr.w, y: hr.y + HDR_H - 0.5}, C.line)
 end
 
-// ── status bar ──────────────────────────────────────────────────────────────
+# ── status bar ──────────────────────────────────────────────────────────────
 
 let status_r = Rect(main.x, H - STATUS_H, main.w, STATUS_H)
 draw_rect(status_r, C.bar)
@@ -1648,7 +1648,7 @@ elsif notice.text != "" && note_age < 5.0 then
   tl.draw_text_line(tl.elide(notice.text, style, status_r.w * 0.5 - 20), Rect(status_r.x + status_r.w * 0.5, status_r.y, status_r.w * 0.5 - 14, STATUS_H), style, "right")
 end
 
-// ── toolbar ─────────────────────────────────────────────────────────────────
+# ── toolbar ─────────────────────────────────────────────────────────────────
 
 let bar_r = Rect(SIDE_W, 0, W - SIDE_W, TOP_H)
 draw_rect(bar_r, C.bar)
@@ -1675,7 +1675,7 @@ for i in range(0, len(crumbs)) do
   end
 end
 
-// List / icons.
+# List / icons.
 draw_rect_rounded(seg_r, 7, C.well)
 draw_rect_rounded_outline(seg_r, 7, C.line)
 let seg_on = if view == "list" then Rect(seg_r.x + 2, seg_r.y + 2, 32, 26) else Rect(seg_r.x + 34, seg_r.y + 2, 32, 26) end
@@ -1683,7 +1683,7 @@ draw_rect_rounded(seg_on, 5, C.raised)
 ic.glyph("list", Rect(seg_r.x + 10, seg_r.y + 7, 16, 16), if view == "list" then C.text else C.muted end, 1.6)
 ic.glyph("grid", Rect(seg_r.x + 42, seg_r.y + 7, 16, 16), if view == "grid" then C.text else C.muted end, 1.6)
 
-// The filter box.
+# The filter box.
 let filtering = focus == "filter"
 draw_rect_rounded(filter_r, 7, C.well)
 draw_rect_rounded_outline(filter_r, 7, if filtering then C.accent_hi else C.line end, 255, if filtering then 1.5 else 1 end)
@@ -1712,7 +1712,7 @@ if query != "" then
 end
 tool_button(info_r, "info", free, show_info)
 
-// ── sidebar ─────────────────────────────────────────────────────────────────
+# ── sidebar ─────────────────────────────────────────────────────────────────
 
 let side_r = Rect(0, 0, SIDE_W, H)
 draw_rect(side_r, C.side)
@@ -1786,8 +1786,8 @@ for pass in ["fav", "trash", "tree"] do
       continue
     end
     let hov = free && press.id < 0 && point_in(mx, my, s.r) && (pass != "tree" || (my >= tree_top && my < tree_bottom))
-    // The tree owns the "you are here" highlight; a favourite only wears it
-    // when the tree cannot (the folder's row is folded away).
+    # The tree owns the "you are here" highlight; a favourite only wears it
+    # when the tree cannot (the folder's row is folded away).
     let cur = s.id == cwd && (pass != "fav" || !has_tree_cur)
     let glyph_name = if pass == "fav" then FAV_GLYPHS[index_of(favs, s.id)] else "" end
     draw_side_row(s, nodes[s.id].name, glyph_name, {cur: cur, strong: tree_active, hov: hov, drop: s.id == drop_id,
@@ -1804,9 +1804,9 @@ if max_tree > 0.0 then
   draw_rect_rounded(Rect(SIDE_W - 7, tree_top + 4 + (track_h - th) * tree_scroll / max_tree, 4, th), 2, mix(C.side, C.muted, 0.3))
 end
 
-// ── info pane ───────────────────────────────────────────────────────────────
+# ── info pane ───────────────────────────────────────────────────────────────
 
-// The peek options for a node: what peek.ptl cannot work out for itself.
+# The peek options for a node: what peek.ptl cannot work out for itself.
 fn peek_opts(n: record, big: bool) -> record
   let ns = get nodes
   let k = fs.kind_of(n)
@@ -1814,7 +1814,7 @@ fn peek_opts(n: record, big: bool) -> record
     kids: map(get fsx.kids[n.id], fn(c) -> fs.kind_of(ns[c]).key)}
 end
 
-// One "Label  value" line. A path keeps its end, the part that differs.
+# One "Label  value" line. A path keeps its end, the part that differs.
 fn info_line(x: num, y: num, w: num, label: string, value: string, keep: string = "head") -> nil
   tl.draw_text_line(label, Rect(x, y, 76, 22), ts(12, C.dim))
   let vs = ts(12, C.text)
@@ -1834,7 +1834,7 @@ if show_info then
     let n = nodes[subject]
     let k = fs.kind_of(n)
     if n.dir then
-      // A folder: itself, large, with a shelf of what it holds below.
+      # A folder: itself, large, with a shelf of what it holds below.
       if subject == fs.TRASH then
         ic.trash(Rect(art.x + art.w / 2 - 44, art.y + 10, 88, 88), len(fsx.kids[subject]) > 0)
       else
@@ -1876,7 +1876,7 @@ if show_info then
       tl.draw_text_line("Space for Quick Look", Rect(x, H - 40, w, 20), ts(11.5, C.dim))
     end
   else
-    // Several things: a fan of their icons and what they add up to.
+    # Several things: a fan of their icons and what they add up to.
     let shown = min(len(sel), 4)
     for i in range(shown - 1, -1, -1) do
       let n = nodes[sel[i]]
@@ -1907,9 +1907,9 @@ if show_info then
   end
 end
 
-// ── overlays ────────────────────────────────────────────────────────────────
+# ── overlays ────────────────────────────────────────────────────────────────
 
-// What a drag is carrying, beside the pointer.
+# What a drag is carrying, beside the pointer.
 if len(drag_ids) > 0 then
   let n = nodes[press.id]
   let label = if len(drag_ids) == 1 then n.name else "{len(drag_ids)} items" end
@@ -1922,8 +1922,8 @@ if len(drag_ids) > 0 then
   tl.draw_text_line(tl.elide(label, style, tw), Rect(chip.x + 32, chip.y, tw + 4, chip.h), style)
 end
 
-// Quick Look. It arrives already readable (a capture of its first frame is
-// the finished card, a few pixels low) and settles in a tenth of a second.
+# Quick Look. It arrives already readable (a capture of its first frame is
+# the finished card, a few pixels low) and settles in a tenth of a second.
 set ql_t = if ql < 0 then 0.0 else min(1.0, ql_t + min(dt(), 0.05) / 0.14) end
 if ql >= 0 then
   let n = nodes[ql]
@@ -1949,7 +1949,7 @@ if ql >= 0 then
   tl.draw_text_line("{at + 1} of {len(items)}  ·  ← → to browse  ·  Space to close", Rect(ql_r.x, ql_r.y + ql_r.h - 42, ql_r.w, 30), ts(11.5, C.dim), "center")
 end
 
-// The context menu is the last thing drawn.
+# The context menu is the last thing drawn.
 let entries = menu_entries()
 let picked = bloom.menu("ctx", rect(mx, my, 0, 0), entries, {at: "point", size: 13})
 if picked >= 0 then
@@ -1960,7 +1960,7 @@ if typing_now || (notice.text != "" && note_age < 5.2) || press.id >= 0 || band.
   request_frame()
 end
 
-// ── what a test can read ────────────────────────────────────────────────────
+# ── what a test can read ────────────────────────────────────────────────────
 
 let obs_cwd = path_text(cwd)
 let obs_items = map(items, fn(k) -> get nodes[k].name)
@@ -1993,7 +1993,7 @@ let obs_scroll = round(scroll, 1)
 let obs_max_scroll = round(max_scroll, 1)
 let obs_nodes = len(filter(nodes, fn(n) -> alive(n.id)))
 let obs_home_bytes = fsx.total[fs.HOME]
-// Where to click: the centre of every item, sidebar row and toolbar cell.
+# Where to click: the centre of every item, sidebar row and toolbar cell.
 let obs_item_pts = for i in range(0, len(items)) do
   let r = item_rect(i, view, scroll)
   {name: nodes[items[i]].name, x: if view == "list" then r.x + 120 else r.x + r.w / 2 end, y: r.y + if view == "list" then r.h / 2 else 40 end}

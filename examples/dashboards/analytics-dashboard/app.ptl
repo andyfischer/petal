@@ -1,20 +1,20 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// MERIDIAN — product analytics dashboard
-//
-// A Garden panel app: KPI cards with sparklines, an animated main chart with a
-// hover crosshair, a donut, a stacked column chart, a ranked bar list and a
-// table — laid out on a responsive card grid that reflows with the pane width.
-//
-//   Run:  garden --headless --debug-port 0 --init layout.ptl
-//   Keys: 1-4 / up / down  pick metric     left / right  change range
-//         t  area <-> bars                 h  hide/show the hover readout
-// ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# MERIDIAN — product analytics dashboard
+#
+# A Garden panel app: KPI cards with sparklines, an animated main chart with a
+# hover crosshair, a donut, a stacked column chart, a ranked bar list and a
+# table — laid out on a responsive card grid that reflows with the pane width.
+#
+#   Run:  garden --headless --debug-port 0 --init layout.ptl
+#   Keys: 1-4 / up / down  pick metric     left / right  change range
+#         t  area <-> bars                 h  hide/show the hover readout
+# ─────────────────────────────────────────────────────────────────────────────
 
 import ui
 
-// ── Palette ──────────────────────────────────────────────────────────────────
-// One ink-blue ground, three surface steps above it, and a hairline that is
-// just visible enough to separate cards without drawing a box around them.
+# ── Palette ──────────────────────────────────────────────────────────────────
+# One ink-blue ground, three surface steps above it, and a hairline that is
+# just visible enough to separate cards without drawing a box around them.
 let BG        = :0d1015
 let SURFACE   = :151a22
 let RAISED    = :1b212b
@@ -36,20 +36,20 @@ let CH_A      = :6ea8ff
 let CH_B      = :4fcb8f
 let CH_C      = :f5b356
 
-// Spacing scale: everything in the layout is one of these.
+# Spacing scale: everything in the layout is one of these.
 let S1 = 6
 let S2 = 12
 let S3 = 18
 let S4 = 24
 let S5 = 32
 
-// The type scale. Five sizes, and not only for design: the host rasterizes one
-// glyph per (character, size) into a fixed atlas, and a page spread across many
-// sizes overflows it — after which whole runs silently fall back to a
-// proportional face at the wrong size.
+# The type scale. Five sizes, and not only for design: the host rasterizes one
+# glyph per (character, size) into a fixed atlas, and a page spread across many
+# sizes overflows it — after which whole runs silently fall back to a
+# proportional face at the wrong size.
 let TYPE_SIZES = [10, 12, 15, 21, 28]
 
-// ── Small text helpers ───────────────────────────────────────────────────────
+# ── Small text helpers ───────────────────────────────────────────────────────
 
 fn text_w(s: string, style: record) -> int
   text_width(s, style)
@@ -67,7 +67,7 @@ fn text_center(s: string, cx: num, y: num, style: record)
   draw_text(s, pos: {x: cx - text_w(s, style) / 2.0, y: y}, style: style)
 end
 
-// ── Number formatting ────────────────────────────────────────────────────────
+# ── Number formatting ────────────────────────────────────────────────────────
 
 fn commas(n: num) -> string
   let s = str(n)
@@ -85,8 +85,8 @@ fn commas(n: num) -> string
   out
 end
 
-// Fixed-point decimal without a printf: scale, round, then split the integer
-// back apart. `str(float)` would give us 12.300000000000001.
+# Fixed-point decimal without a printf: scale, round, then split the integer
+# back apart. `str(float)` would give us 12.300000000000001.
 fn dec(x: num, places: num) -> string
   let mul = 1
   for i in range(0, places) do
@@ -107,7 +107,7 @@ fn dec(x: num, places: num) -> string
   if neg then "-" ++ s else s end
 end
 
-// Compact axis/label form: 18,204 -> 18.2k
+# Compact axis/label form: 18,204 -> 18.2k
 fn compact(x: num) -> string
   let a = abs(x)
   if a >= 1000000.0 then
@@ -121,9 +121,9 @@ fn compact(x: num) -> string
   end
 end
 
-// ── Deterministic pseudo-random ──────────────────────────────────────────────
-// Seeded so the dashboard shows the same "real" numbers on every launch and
-// every reload — a chart that reshuffles on hot reload is unreadable.
+# ── Deterministic pseudo-random ──────────────────────────────────────────────
+# Seeded so the dashboard shows the same "real" numbers on every launch and
+# every reload — a chart that reshuffles on hot reload is unreadable.
 
 fn hashi(n: num) -> num
   let x = (n * 374761393 + 668265263) % 2147483647
@@ -135,8 +135,8 @@ fn rand01(n: num) -> float
   float(hashi(n) % 100000) / 100000.0
 end
 
-// ── Calendar ─────────────────────────────────────────────────────────────────
-// Day 1..90 of a 2025 that starts on a Wednesday: Jan(31) Feb(28) Mar(31).
+# ── Calendar ─────────────────────────────────────────────────────────────────
+# Day 1..90 of a 2025 that starts on a Wednesday: Jan(31) Feb(28) Mar(31).
 
 fn day_label(d: num) -> string
   if d <= 31 then
@@ -152,7 +152,7 @@ fn weekday(i: num) -> num
   (i + 2) % 7
 end
 
-// ── Series ───────────────────────────────────────────────────────────────────
+# ── Series ───────────────────────────────────────────────────────────────────
 
 let SPAN = 90
 
@@ -265,7 +265,7 @@ fn fmt_headline(v: num, unit: string) -> string
   end
 end
 
-// ── Static supporting datasets ───────────────────────────────────────────────
+# ── Static supporting datasets ───────────────────────────────────────────────
 
 let SOURCES = [
   {name: "Organic search", v: 34210, d: 8.4},
@@ -305,7 +305,7 @@ fn channel_matrix() -> list
   out
 end
 
-// ── Card chrome ──────────────────────────────────────────────────────────────
+# ── Card chrome ──────────────────────────────────────────────────────────────
 
 fn card_bg(r: record, raised: bool)
   let fill = if raised then RAISED else SURFACE end
@@ -314,7 +314,7 @@ fn card_bg(r: record, raised: bool)
   draw_rect_outline(r, c: HAIRLINE, a: 255, width: 1)
 end
 
-// Draws the card's title row; the rect returned is the content area below it.
+# Draws the card's title row; the rect returned is the content area below it.
 fn card_head(r: record, title: string, right_note: string) -> Rect
   let pad = S3
   let ts = {size: 10, color: DIM, spacing: 1.4}
@@ -337,7 +337,7 @@ fn delta_chip(x: num, y: num, d: num, invert: bool) -> int
   w
 end
 
-// ── Chart geometry ───────────────────────────────────────────────────────────
+# ── Chart geometry ───────────────────────────────────────────────────────────
 
 fn nice_step(span: num, target: num) -> float
   let raw = span / float(target)
@@ -364,14 +364,14 @@ fn x_of(i: num, n: num, plot: record)
   end
 end
 
-// A filled area under a polyline. fill_poly is convex-only, so the region is
-// emitted one vertical trapezoid per segment; the vertical gradient comes from
-// re-drawing the whole band inside a series of clip strips with falling alpha.
+# A filled area under a polyline. fill_poly is convex-only, so the region is
+# emitted one vertical trapezoid per segment; the vertical gradient comes from
+# re-drawing the whole band inside a series of clip strips with falling alpha.
 fn area_band(ys: list, plot: record, color: record, a_top: num, a_bot: num, bands: num)
   let n = len(ys)
-  // Band boundaries are snapped to whole pixels and shared between neighbours:
-  // overlapping clips would double-composite the seam and draw a bright rule
-  // across the fill at every step.
+  # Band boundaries are snapped to whole pixels and shared between neighbours:
+  # overlapping clips would double-composite the seam and draw a bright rule
+  # across the fill at every step.
   for b in range(0, bands) do
     let y0 = int(plot.y + plot.h * float(b) / float(bands))
     let y1 = int(plot.y + plot.h * float(b + 1) / float(bands))
@@ -400,7 +400,7 @@ fn polyline(ys: list, plot: record, color: record, width: num)
   end
 end
 
-// ── Sparkline (KPI cards) ────────────────────────────────────────────────────
+# ── Sparkline (KPI cards) ────────────────────────────────────────────────────
 
 fn sparkline(r: record, xs: list, color: record, alpha: num)
   let lo = series_min(xs)
@@ -427,12 +427,12 @@ fn sparkline(r: record, xs: list, color: record, alpha: num)
     a: int(255.0 * alpha))
 end
 
-// ── Responsive grid ──────────────────────────────────────────────────────────
-// Columns are chosen from the available width, so the same call lays four KPI
-// cards out 4-up on a wide pane and 2-up on a narrow one.
+# ── Responsive grid ──────────────────────────────────────────────────────────
+# Columns are chosen from the available width, so the same call lays four KPI
+# cards out 4-up on a wide pane and 2-up on a narrow one.
 
-// NB: the `clamp` builtin returns a float, which silently turns `i / cols` into
-// float division and staircases the whole grid. Column counts have to stay int.
+# NB: the `clamp` builtin returns a float, which silently turns `i / cols` into
+# float division and staircases the whole grid. Column counts have to stay int.
 fn iclamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
 end
@@ -461,24 +461,24 @@ fn grid_cells(x: num, y: num, w: num, count: num, cols: num, gap: num, row_h: nu
   cells
 end
 
-// ═════════════════════════════════════════════════════════════════════════════
-// State
-// ═════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
+# State
+# ═════════════════════════════════════════════════════════════════════════════
 
 state metrics = build_metrics()
 state channels = channel_matrix()
-state sel = 0              // selected metric index
-state range_i = 1          // selected range index
-state chart_mode = "area"  // "area" | "bars"
+state sel = 0              # selected metric index
+state range_i = 1          # selected range index
+state chart_mode = "area"  # "area" | "bars"
 state show_readout = true
 
-// Tween between the previously-shown normalised series and the current one, so
-// switching metric or range morphs instead of jumping.
+# Tween between the previously-shown normalised series and the current one, so
+# switching metric or range morphs instead of jumping.
 state tween = 1.0
 state prev_norm = []
 state prev_lo = 0.0
 state prev_hi = 1.0
-// Headline number counts up rather than snapping.
+# Headline number counts up rather than snapping.
 state shown_head = 0.0
 
 let w = screen_width()
@@ -486,7 +486,7 @@ let h = screen_height()
 
 clear(BG.r, BG.g, BG.b)
 
-// ── Input ────────────────────────────────────────────────────────────────────
+# ── Input ────────────────────────────────────────────────────────────────────
 
 let prev_sel = sel
 let prev_range = range_i
@@ -504,9 +504,9 @@ if key_pressed("t") then
 end
 if key_pressed("h") then show_readout = !show_readout end
 
-// ── Header ───────────────────────────────────────────────────────────────────
+# ── Header ───────────────────────────────────────────────────────────────────
 
-let M = S5                        // page margin
+let M = S5                        # page margin
 let head_y = S4
 let content_x = M
 let content_w = w - M * 2
@@ -518,7 +518,7 @@ text_at("Analytics", x: content_x + brand_w + 10, y: head_y + 6, style: {size: 1
 text_at("Northwind Labs  ·  production  ·  all regions",
   x: content_x, y: head_y + 30, style: {size: 10, color: FAINT, spacing: 0.4})
 
-// Range pills, right-aligned in the header.
+# Range pills, right-aligned in the header.
 let pill_h = 28
 let pill_y = head_y + 2
 let pill_pad = 15
@@ -543,11 +543,11 @@ text_right("updated 2 min ago", right_x: live_x, y: head_y + 34, style: live_s)
 let live_w = text_w("updated 2 min ago", live_s)
 draw_circle(cx: live_x - live_w - 11, cy: head_y + 39, radius: 3.0, r: POS.r, g: POS.g, b: POS.b, a: 190)
 
-// header rule
+# header rule
 draw_line(x1: content_x, y1: head_y + 56, x2: content_x + content_w, y2: head_y + 56,
   r: HAIRLINE.r, g: HAIRLINE.g, b: HAIRLINE.b, a: 255, width: 1)
 
-// ── Selected metric / range ──────────────────────────────────────────────────
+# ── Selected metric / range ──────────────────────────────────────────────────
 
 let rng = RANGES[range_i]
 let metric = metrics[sel]
@@ -567,19 +567,19 @@ if prev_sel != sel || prev_range != range_i then
 end
 tween = min(1.0, tween + dt() * 3.4)
 
-// Headline easing (frame-rate independent).
+# Headline easing (frame-rate independent).
 let ease = min(1.0, dt() * 9.0)
 shown_head = lerp(shown_head, head_val, t: ease)
 if abs(shown_head - head_val) < abs(head_val) * 0.004 then
   shown_head = head_val
 end
 
-// ── Layout solve ─────────────────────────────────────────────────────────────
-// Everything under the header divides the height that is actually left, so the
-// dashboard fills the pane exactly instead of running off the bottom of it. The
-// column counts come from the width, so the same solve reflows a narrow pane:
-// the KPI row folds 4 -> 2 -> 1 and the donut leaves the chart row for the
-// bottom grid.
+# ── Layout solve ─────────────────────────────────────────────────────────────
+# Everything under the header divides the height that is actually left, so the
+# dashboard fills the pane exactly instead of running off the bottom of it. The
+# column counts come from the width, so the same solve reflows a narrow pane:
+# the KPI row folds 4 -> 2 -> 1 and the donut leaves the chart row for the
+# bottom grid.
 
 let grid_top = head_y + 56 + S4
 let foot_h = 30
@@ -617,7 +617,7 @@ else
   r3_cells[3]
 end
 
-// ── KPI card row ─────────────────────────────────────────────────────────────
+# ── KPI card row ─────────────────────────────────────────────────────────────
 
 for i in range(0, 4) do
   let m = metrics[i]
@@ -649,20 +649,20 @@ for i in range(0, 4) do
     style: {size: 28, color: if is_sel then TEXT else :cdd5e1 end})
   delta_chip(x: r.x + pad, y: r.y + r.h - pad - 20, d: mdelta, invert: m.key == "chn")
 
-  // Sparkline occupies the lower-right quadrant of the card.
+  # Sparkline occupies the lower-right quadrant of the card.
   let sp_w = min(r.w * 0.44, 150.0)
   let sp = rect(r.x + r.w - pad - sp_w, r.y + r.h - pad - 46, sp_w, 44)
   sparkline(sp, xs: resample(mw, min(len(mw), 46)), color: m.color,
     alpha: if is_sel then 1.0 else 0.55 end)
 end
 
-// ── Main chart + donut row ───────────────────────────────────────────────────
+# ── Main chart + donut row ───────────────────────────────────────────────────
 
 card_bg(chart_r, false)
 let chart_note = "{rng.days} days  ·  {metric.note}"
 let chart_body = card_head(chart_r, title: metric.label ++ "  /  DAILY", right_note: chart_note)
 
-// Headline inside the chart card.
+# Headline inside the chart card.
 text_at(fmt_value(cur, metric.unit), x: chart_body.x, y: chart_body.y - 4,
   style: {size: 28, color: TEXT})
 let hv_w = text_w(fmt_value(cur, metric.unit), {size: 28, color: TEXT})
@@ -672,12 +672,12 @@ let agg = if metric.unit == "pct" then "avg" else "Σ" end
 text_right("{agg} {fmt_headline(shown_head, metric.unit)} over range",
   right_x: chart_body.x + chart_body.w, y: chart_body.y + 8, style: {size: 10, color: FAINT})
 
-// Plot area
+# Plot area
 let gutter = 54
 let plot = rect(chart_body.x + gutter, chart_body.y + 44,
   chart_body.w - gutter, chart_body.h - 44 - 24)
 
-// Sample count: enough to read, few enough to draw fast.
+# Sample count: enough to read, few enough to draw fast.
 let nsamp = min(rng.days, 90)
 let cur_s = resample(win, nsamp)
 let lo_raw = series_min(cur_s)
@@ -686,14 +686,14 @@ let pad_v = (hi_raw - lo_raw) * 0.22 + 0.0001
 let lo = max(0.0, lo_raw - pad_v)
 let hi = hi_raw + pad_v
 
-// Tween source: the previous frame's normalised shape, resampled to match.
+# Tween source: the previous frame's normalised shape, resampled to match.
 let zeros = for i in range(0, nsamp) do 0.0 end
 let src = if len(prev_norm) == 0 then zeros else resample(prev_norm, nsamp) end
 let cur_norm = for v in cur_s do (v - lo) / max(hi - lo, 0.000001) end
 let et = tween * tween * (3.0 - 2.0 * tween)
 let shown_norm = for i in range(0, nsamp) do lerp(src[i], cur_norm[i], t: et) end
 
-// Grid + y labels
+# Grid + y labels
 let step = nice_step(hi - lo, 5)
 let g0 = ceil(lo / step) * step
 let gv = g0
@@ -704,7 +704,7 @@ while gv <= hi do
   gv = gv + step
 end
 
-// The series
+# The series
 let ys = for t in shown_norm do plot.y + plot.h * (1.0 - t) end
 
 if chart_mode == "area" then
@@ -723,11 +723,11 @@ else
   end
 end
 
-// baseline
+# baseline
 draw_line(x1: plot.x, y1: plot.y + plot.h, x2: plot.x + plot.w, y2: plot.y + plot.h,
   r: HAIRLINE.r, g: HAIRLINE.g, b: HAIRLINE.b, a: 255, width: 1)
 
-// X labels
+# X labels
 let day0 = SPAN - rng.days + 1
 let xt = 0
 while xt < nsamp do
@@ -737,7 +737,7 @@ while xt < nsamp do
   xt = xt + max(1, int(float(nsamp) / 6.0))
 end
 
-// Hover crosshair + readout
+# Hover crosshair + readout
 let over_plot = point_in(px: mouse_x(), py: mouse_y(), r: plot)
 state hover_i = -1
 if over_plot then
@@ -776,7 +776,7 @@ prev_norm = shown_norm
 prev_lo = lo
 prev_hi = hi
 
-// ── Donut: plan mix ──────────────────────────────────────────────────────────
+# ── Donut: plan mix ──────────────────────────────────────────────────────────
 
 card_bg(donut_r, false)
 let donut_body = card_head(donut_r, title: "PLAN MIX", right_note: "8,412 accounts")
@@ -794,7 +794,7 @@ for pi_ in range(0, len(PLANS)) do
   let sweep = p.pct / 100.0 * pi() * 2.0
   let segs = max(3, int(sweep * 18.0))
   let mid = ang + sweep / 2.0
-  // hit test on the ring
+  # hit test on the ring
   let mdx = float(mouse_x()) - dcx
   let mdy = float(mouse_y()) - dcy
   let mdist = mag(mdx, mdy)
@@ -821,13 +821,13 @@ for pi_ in range(0, len(PLANS)) do
   ang = ang + sweep
 end
 
-// donut center label
+# donut center label
 let center_top = if plan_hover >= 0 then PLANS[plan_hover].name else "PAID" end
 let center_val = if plan_hover >= 0 then dec(PLANS[plan_hover].pct, 0) ++ "%" else "48%" end
 text_center(center_val, cx: dcx, y: dcy - 14.0, style: {size: 21, color: TEXT})
 text_center(center_top, cx: dcx, y: dcy + 10.0, style: {size: 10, color: DIM, spacing: 1.2})
 
-// legend
+# legend
 let lg_x = dcx + dr_out + 30.0
 let lg_step = min(34.0, (donut_body.h - 62.0) / 4.0)
 let lg_y = dcy - lg_step * 1.5 - 6.0
@@ -857,9 +857,9 @@ text_at("NET RETENTION", x: donut_body.x + donut_body.w / 2.0, y: stat_y,
   style: {size: 10, color: FAINT, spacing: 1.0})
 text_at("118%", x: donut_body.x + donut_body.w / 2.0, y: stat_y + 14, style: {size: 15, color: POS})
 
-// ── Row 3: stacked columns · sources · pages ─────────────────────────────────
+# ── Row 3: stacked columns · sources · pages ─────────────────────────────────
 
-// (a) stacked columns — sessions by weekday and channel
+# (a) stacked columns — sessions by weekday and channel
 let sc = r3_cells[0]
 card_bg(sc, false)
 let sc_body = card_head(sc, title: "SESSIONS BY DAY", right_note: "channel split")
@@ -908,7 +908,7 @@ for d in range(0, 7) do
       style: {size: 10, color: TEXT})
   end
 end
-// legend strip
+# legend strip
 let lgy = sc.y + sc.h - S3 - 11
 let lgx = sc_body.x
 for k in range(0, 3) do
@@ -917,7 +917,7 @@ for k in range(0, 3) do
   lgx = lgx + 14 + text_w(ch_names[k], {size: 10, color: DIM}) + S3
 end
 
-// (b) ranked horizontal bars — traffic sources
+# (b) ranked horizontal bars — traffic sources
 let src_c = r3_cells[1]
 card_bg(src_c, false)
 let src_body = card_head(src_c, title: "TRAFFIC SOURCES", right_note: "sessions")
@@ -943,7 +943,7 @@ for i in range(0, src_n) do
     r: c.r, g: c.g, b: c.b, a: if hot then 255 else 205 end)
 end
 
-// (c) table — top pages
+# (c) table — top pages
 let pg = r3_cells[2]
 card_bg(pg, false)
 let pg_body = card_head(pg, title: "TOP PAGES", right_note: "views  ·  Δ 7d")
@@ -973,7 +973,7 @@ for i in range(0, pg_n) do
   end
 end
 
-// ── Footer ───────────────────────────────────────────────────────────────────
+# ── Footer ───────────────────────────────────────────────────────────────────
 
 let foot_y = row3_y + row3_block_h + S2
 draw_line(x1: content_x, y1: foot_y, x2: content_x + content_w, y2: foot_y,
@@ -984,7 +984,7 @@ text_at(hints, x: content_x, y: foot_y + 11, style: {size: 10, color: FAINT, spa
 text_right("{nsamp} points  ·  {chart_mode}  ·  {w}×{h}", right_x: content_x + content_w,
   y: foot_y + 11, style: {size: 10, color: FAINT})
 
-// ── Range pills drawn last so their hover sits above the header rule ─────────
+# ── Range pills drawn last so their hover sits above the header rule ─────────
 
 for p in pills do
   let on = p.i == range_i

@@ -1,8 +1,8 @@
-// Flappy Bird clone — visually enhanced
+# Flappy Bird clone — visually enhanced
 
 import ui
 
-// Game constants
+# Game constants
 let GRAVITY = 800.0
 let FLAP_STRENGTH = -300.0
 let PIPE_SPEED = 180.0
@@ -16,7 +16,7 @@ let SW = screen_width()
 let SH = screen_height()
 let GROUND_H = 60
 
-// Overloaded draw functions
+# Overloaded draw functions
 let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
@@ -32,7 +32,7 @@ fn draw_text(text, pos, size, color)
   _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
-// Colors
+# Colors
 let white = { r: 255, g: 255, b: 255 }
 let black = { r: 0, g: 0, b: 0 }
 let dark_gray = { r: 50, g: 50, b: 50 }
@@ -41,7 +41,7 @@ let dark_red = { r: 80, g: 0, b: 0 }
 let red = { r: 255, g: 60, b: 60 }
 let grass_green = { r: 60, g: 140, b: 35 }
 
-// Game state
+# Game state
 state bird_y = 300.0
 state bird_vy = 0.0
 state pipes = []
@@ -53,7 +53,7 @@ state frame = 0
 state clouds = []
 state clouds_init = false
 
-// Initialize clouds once
+# Initialize clouds once
 if !clouds_init then
   clouds_init = true
   clouds = [
@@ -68,7 +68,7 @@ end
 frame += 1
 let delta = dt()
 
-// Handle input
+# Handle input
 let flap = key_pressed("space")
 
 if game_over then
@@ -130,7 +130,7 @@ if !game_over then
   end
 end
 
-// Move clouds slowly (parallax)
+# Move clouds slowly (parallax)
 clouds = map(clouds, fn(c)
   let nx = c.x - 30.0 * delta
   if nx < -80.0 then
@@ -139,24 +139,24 @@ clouds = map(clouds, fn(c)
   { x: nx, y: c.y, size: c.size }
 end)
 
-// ====== DRAWING ======
+# ====== DRAWING ======
 
-// Sky gradient (sunset-ish gradient from top to bottom)
-// Top: deep blue-sky, middle: lighter blue, bottom near ground: warm orange tint
+# Sky gradient (sunset-ish gradient from top to bottom)
+# Top: deep blue-sky, middle: lighter blue, bottom near ground: warm orange tint
 clear(70, 140, 220)
-// Draw gradient bands for sky
+# Draw gradient bands for sky
 for i in range(0, 12) do
   let band_y = i * 45
   let band_h = 46
-  // Transition from deep blue at top to warm peachy near ground
+  # Transition from deep blue at top to warm peachy near ground
   let r = 70 + i * 12
   let g = 140 + i * 5
   let b = 220 - i * 8
   draw_rect(x: 0, y: band_y, w: SW, h: band_h, r: r, g: g, b: b)
 end
 
-// Distant hills (background layer)
-// Hill 1
+# Distant hills (background layer)
+# Hill 1
 let hill_offset = frame % 2400
 for hx in range(0, 20) do
   let hx_pos = hx * 50 - 30
@@ -165,96 +165,96 @@ for hx in range(0, 20) do
   draw_rect(x: hx_pos, y: hy, w: 52, h: hill_h + 10, r: 120, g: 180, b: 100)
 end
 
-// Clouds
+# Clouds
 for c in clouds do
   let cx = int(c.x)
   let cy = c.y
   let sz = c.size
-  // Cloud body (overlapping circles for puffy look)
+  # Cloud body (overlapping circles for puffy look)
   draw_circle(cx, cy, radius: sz, r: 255, g: 255, b: 255)
   draw_circle(cx: cx - sz + 8, cy: cy + 5, radius: sz - 10, r: 255, g: 255, b: 255)
   draw_circle(cx: cx + sz - 8, cy: cy + 5, radius: sz - 10, r: 255, g: 255, b: 255)
   draw_circle(cx: cx - 5, cy: cy - 8, radius: sz - 8, r: 255, g: 255, b: 255)
   draw_circle(cx: cx + 8, cy: cy - 5, radius: sz - 5, r: 255, g: 255, b: 255)
-  // Slight shadow underneath
+  # Slight shadow underneath
   draw_circle(cx, cy: cy + 8, radius: sz - 5, r: 230, g: 240, b: 250)
 end
 
-// Pipes with caps and gradient shading
+# Pipes with caps and gradient shading
 for p in pipes do
   let px = int(p.x)
   let cap_x = px - (PIPE_CAP_W - PIPE_WIDTH) / 2
 
-  // --- Top pipe ---
+  # --- Top pipe ---
   let top_h = p.gap_y
-  // Main body - darker green
+  # Main body - darker green
   draw_rect(x: px, y: 0, w: PIPE_WIDTH, h: top_h, r: 70, g: 170, b: 45)
-  // Light highlight strip on left
+  # Light highlight strip on left
   draw_rect(x: px + 4, y: 0, w: 10, h: top_h, r: 100, g: 210, b: 75)
-  // Dark shadow strip on right
+  # Dark shadow strip on right
   draw_rect(x: px + PIPE_WIDTH - 10, y: 0, w: 10, h: top_h, r: 45, g: 120, b: 30)
-  // Cap at bottom of top pipe
+  # Cap at bottom of top pipe
   draw_rect(x: cap_x, y: top_h - PIPE_CAP_H, w: PIPE_CAP_W, h: PIPE_CAP_H, r: 80, g: 190, b: 55)
   draw_rect(x: cap_x + 3, y: top_h - PIPE_CAP_H + 3, w: PIPE_CAP_W - 6, h: 6, r: 110, g: 220, b: 90)
   draw_rect_outline(cap_x, top_h - PIPE_CAP_H, PIPE_CAP_W, PIPE_CAP_H, 40, 110, 25)
-  // Outline for body
+  # Outline for body
   draw_rect_outline(px, 0, PIPE_WIDTH, top_h - PIPE_CAP_H, 40, 110, 25)
 
-  // --- Bottom pipe ---
+  # --- Bottom pipe ---
   let bottom_y = p.gap_y + PIPE_GAP
   let bottom_h = SH - GROUND_H - bottom_y
-  // Main body
+  # Main body
   draw_rect(x: px, y: bottom_y, w: PIPE_WIDTH, h: bottom_h, r: 70, g: 170, b: 45)
-  // Light highlight
+  # Light highlight
   draw_rect(x: px + 4, y: bottom_y, w: 10, h: bottom_h, r: 100, g: 210, b: 75)
-  // Dark shadow
+  # Dark shadow
   draw_rect(x: px + PIPE_WIDTH - 10, y: bottom_y, w: 10, h: bottom_h, r: 45, g: 120, b: 30)
-  // Cap at top of bottom pipe
+  # Cap at top of bottom pipe
   draw_rect(x: cap_x, y: bottom_y, w: PIPE_CAP_W, h: PIPE_CAP_H, r: 80, g: 190, b: 55)
   draw_rect(x: cap_x + 3, y: bottom_y + 3, w: PIPE_CAP_W - 6, h: 6, r: 110, g: 220, b: 90)
   draw_rect_outline(cap_x, bottom_y, PIPE_CAP_W, PIPE_CAP_H, 40, 110, 25)
-  // Outline for body
+  # Outline for body
   draw_rect_outline(px, bottom_y + PIPE_CAP_H, PIPE_WIDTH, bottom_h - PIPE_CAP_H, 40, 110, 25)
 end
 
-// Ground with grass and dirt layers
-// Dirt base
+# Ground with grass and dirt layers
+# Dirt base
 draw_rect(x: 0, y: SH - GROUND_H, w: SW, h: GROUND_H, r: 160, g: 120, b: 60)
-// Darker dirt bottom
+# Darker dirt bottom
 draw_rect(x: 0, y: SH - 25, w: SW, h: 25, r: 130, g: 95, b: 45)
-// Grass top layer
+# Grass top layer
 draw_rect(x: 0, y: SH - GROUND_H, w: SW, h: 14, r: 80, g: 190, b: 50)
-// Grass highlight
+# Grass highlight
 draw_rect(x: 0, y: SH - GROUND_H, w: SW, h: 5, r: 110, g: 220, b: 70)
-// Grass tufts
+# Grass tufts
 for gx in range(0, 40) do
   let gx_pos = gx * 20 + 5
   let tuft_h = 6 + (gx % 3) * 3
   draw_rect(x: gx_pos, y: SH - GROUND_H - tuft_h, w: 4, h: tuft_h + 2, r: 70, g: 180, b: 45)
 end
-// Ground line
+# Ground line
 draw_line({x: 0, y: SH - GROUND_H}, {x: SW, y: SH - GROUND_H}, grass_green)
-// Dirt texture dots
+# Dirt texture dots
 for dx in range(0, 16) do
   let dx_pos = dx * 50 + 20
   draw_circle(cx: dx_pos, cy: SH - 35, radius: 3, r: 140, g: 105, b: 50)
   draw_circle(cx: dx_pos + 25, cy: SH - 20, radius: 2, r: 140, g: 105, b: 50)
 end
 
-// Bird with wing animation and more detail
+# Bird with wing animation and more detail
 let bird_yi = int(bird_y)
 
-// Bird body (orange outline for depth)
+# Bird body (orange outline for depth)
 draw_circle(cx: BIRD_X, cy: bird_yi, radius: BIRD_RADIUS + 2, r: 230, g: 150, b: 20)
-// Main body
+# Main body
 draw_circle(cx: BIRD_X, cy: bird_yi, radius: BIRD_RADIUS, r: 255, g: 220, b: 50)
-// Belly highlight
+# Belly highlight
 draw_circle(cx: BIRD_X - 2, cy: bird_yi + 4, radius: 9, r: 255, g: 240, b: 130)
 
-// Wing (animated flap)
+# Wing (animated flap)
 let wing_offset = 0
 if started && !game_over then
-  // Wing flaps based on frame
+  # Wing flaps based on frame
   if frame % 12 < 4 then
     wing_offset = -8
   elsif frame % 12 < 8 then
@@ -263,41 +263,41 @@ if started && !game_over then
     wing_offset = 6
   end
 end
-// Wing shape (small ellipse approximation)
+# Wing shape (small ellipse approximation)
 draw_circle(cx: BIRD_X - 8, cy: bird_yi + wing_offset, radius: 8, r: 230, g: 190, b: 30)
 draw_circle(cx: BIRD_X - 12, cy: bird_yi + wing_offset - 1, radius: 5, r: 240, g: 200, b: 50)
 
-// Eye white
+# Eye white
 draw_circle(cx: BIRD_X + 6, cy: bird_yi - 5, radius: 6, r: 255, g: 255, b: 255)
-// Eye pupil
+# Eye pupil
 draw_circle(cx: BIRD_X + 8, cy: bird_yi - 5, radius: 3, r: 0, g: 0, b: 0)
-// Eye glint
+# Eye glint
 draw_circle(cx: BIRD_X + 9, cy: bird_yi - 7, radius: 1, r: 255, g: 255, b: 255)
 
-// Beak
+# Beak
 draw_rect(x: BIRD_X + 12, y: bird_yi - 3, w: 10, h: 4, r: 255, g: 120, b: 30)
 draw_rect(x: BIRD_X + 12, y: bird_yi + 1, w: 10, h: 3, r: 230, g: 90, b: 20)
 
-// Score display with shadow/outline effect
+# Score display with shadow/outline effect
 let score_str = str(score)
 let score_x = SW / 2 - 10
-// Shadow
+# Shadow
 draw_text(score_str, {x: score_x + 2, y: 42}, 52, black)
-// Main score
+# Main score
 draw_text(score_str, {x: score_x, y: 40}, 52, white)
 
-// Game over overlay
+# Game over overlay
 if game_over then
-  // Dim overlay
+  # Dim overlay
   draw_rect(x: 0, y: SH / 2 - 70, w: SW, h: 140, r: 0, g: 0, b: 0)
-  // Semi-transparent effect (lighter inner box)
+  # Semi-transparent effect (lighter inner box)
   draw_rect(x: 4, y: SH / 2 - 66, w: SW - 8, h: 132, r: 30, g: 30, b: 30)
 
-  // Game over text with shadow
+  # Game over text with shadow
   draw_text("GAME OVER", {x: SW / 2 - 102, y: SH / 2 - 42}, 40, dark_red)
   draw_text("GAME OVER", {x: SW / 2 - 100, y: SH / 2 - 40}, 40, red)
 
-  // Score
+  # Score
   draw_text("Score: " ++ score_str, {x: SW / 2 - 60, y: SH / 2}, 28, white)
 
   if frame % 60 < 40 then
@@ -305,9 +305,9 @@ if game_over then
   end
 end
 
-// Start screen
+# Start screen
 if !started && !game_over then
-  // Title (shadow first, then main text on top)
+  # Title (shadow first, then main text on top)
   draw_text("FLAPPY BIRD", {x: SW / 2 - 118, y: SH / 4 - 8}, 40, dark_gray)
   draw_text("FLAPPY BIRD", {x: SW / 2 - 120, y: SH / 4 - 10}, 40, white)
 

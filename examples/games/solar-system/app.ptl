@@ -1,25 +1,25 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  SOLAR SYSTEM — a Garden panel app written in Petal.
-//
-//  An orrery: the Sun, eight planets and thirteen moons as a body table with
-//  parent links, resolved every frame into world positions by walking the
-//  hierarchy (a moon orbits its planet, which orbits the Sun), then pushed
-//  through one view transform (pan, zoom about the cursor, an optional tilt)
-//  onto the screen. Time runs at an adjustable rate; the camera can follow
-//  any body; labels place themselves greedily so they never overlap; hover
-//  shows a fact card and an inspector lists what you have selected.
-//
-//  Exercises: hierarchical transforms, dt()-driven animation, zoom and pan,
-//  and label layout.
-//
-//  Designed for a 1200x800 viewport.  See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  SOLAR SYSTEM — a Garden panel app written in Petal.
+#
+#  An orrery: the Sun, eight planets and thirteen moons as a body table with
+#  parent links, resolved every frame into world positions by walking the
+#  hierarchy (a moon orbits its planet, which orbits the Sun), then pushed
+#  through one view transform (pan, zoom about the cursor, an optional tilt)
+#  onto the screen. Time runs at an adjustable rate; the camera can follow
+#  any body; labels place themselves greedily so they never overlap; hover
+#  shows a fact card and an inspector lists what you have selected.
+#
+#  Exercises: hierarchical transforms, dt()-driven animation, zoom and pan,
+#  and label layout.
+#
+#  Designed for a 1200x800 viewport.  See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import ui
 import garden
 import vec2
 
-// ── Palette ──────────────────────────────────────────────────────────────
+# ── Palette ──────────────────────────────────────────────────────────────
 
 let C_BG     = :05060d
 let C_SPACE  = :080a14
@@ -36,8 +36,8 @@ let C_GOLD   = :ffd166
 let C_SUN    = :ffb347
 let C_SUN_C  = :fff1c9
 
-// ── Type scale ───────────────────────────────────────────────────────────
-// Five sizes: 10 / 12 / 14 / 20 / 30.
+# ── Type scale ───────────────────────────────────────────────────────────
+# Five sizes: 10 / 12 / 14 / 20 / 30.
 
 let S_TITLE = {size: 30, color: C_TEXT, spacing: 10}
 let S_KICK  = {size: 10, color: C_MUTE, spacing: 4}
@@ -52,23 +52,23 @@ let S_UI_M  = {size: 13, font: "ui", color: C_DIM}
 let S_UI_B  = {size: 14, font: "ui", color: C_TEXT, weight: 700}
 let S_H     = {size: 20, font: "ui", color: C_TEXT, weight: 700}
 
-// ── Tunables ─────────────────────────────────────────────────────────────
+# ── Tunables ─────────────────────────────────────────────────────────────
 
-let speed_start   = tunable(4.0)    // simulated days per real second
+let speed_start   = tunable(4.0)    # simulated days per real second
 let zoom_min      = tunable(0.35)
 let zoom_max      = tunable(40.0)
-let tilt_amount   = tunable(0.42)   // y scale in the three-quarter view
-let follow_rate   = tunable(6.0)    // camera easing, 1/s
+let tilt_amount   = tunable(0.42)   # y scale in the three-quarter view
+let follow_rate   = tunable(6.0)    # camera easing, 1/s
 
 let PAD  = 28
 let HEAD = 104
 let FOOT = 60
 let SIDE_W = 268
 
-// ── The bodies ───────────────────────────────────────────────────────────
-// Orbit radii are display units at zoom 1 (not to scale); periods are real
-// days (negative = retrograde); `au` is the real semi-major axis in AU for a
-// planet and in thousands of km for a moon; `km` is the real radius.
+# ── The bodies ───────────────────────────────────────────────────────────
+# Orbit radii are display units at zoom 1 (not to scale); periods are real
+# days (negative = retrograde); `au` is the real semi-major axis in AU for a
+# planet and in thousands of km for a moon; `km` is the real radius.
 
 class Body
   name: string,
@@ -110,19 +110,19 @@ let BODIES = [
 
 let N = len(BODIES)
 
-// ── Persistent state ─────────────────────────────────────────────────────
+# ── Persistent state ─────────────────────────────────────────────────────
 
 state var ready = false
-state var day_base = 0.0            // simulated days at the last mark
-state var t_mark  = 0.0             // panel clock at the last mark
+state var day_base = 0.0            # simulated days at the last mark
+state var t_mark  = 0.0             # panel clock at the last mark
 state var speed   = speed_start
 state var playing = true
 state var zoom    = 1.0
-state var pan     = vec2(0.0, 0.0)   // world point at the viewport centre
+state var pan     = vec2(0.0, 0.0)   # world point at the viewport centre
 state var tilt    = true
 state var labels  = true
 state var orbits  = true
-state var sel     = -1               // selected body index
+state var sel     = -1               # selected body index
 state var follow  = false
 state var drag_last = vec2(0.0, 0.0)
 state var dragging = false
@@ -132,7 +132,7 @@ state var pulse   = 0.0
 state var zooms   = 0
 state var clicks  = 0
 
-// ── Pure helpers ─────────────────────────────────────────────────────────
+# ── Pure helpers ─────────────────────────────────────────────────────────
 
 fn tx(s: string, x: num, y: num, style: record)
   draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
@@ -157,7 +157,7 @@ fn fmt_days(d: num) -> string
 end
 
 fn fmt_int(n: num) -> string
-  // 69911 -> "69,911"
+  # 69911 -> "69,911"
   let s = str(int(n))
   let cs = chars(s)
   let out = ""
@@ -175,8 +175,8 @@ fn children_of(i: int) -> list
   end
 end
 
-// The hierarchy walk: every body's world position from its parent's. The
-// table is ordered parents-first, so one pass resolves the whole tree.
+# The hierarchy walk: every body's world position from its parent's. The
+# table is ordered parents-first, so one pass resolves the whole tree.
 fn resolve(t: num) -> list
   let pos = []
   for i in range(0, N) do
@@ -191,7 +191,7 @@ fn resolve(t: num) -> list
   pos
 end
 
-// ── Boot ─────────────────────────────────────────────────────────────────
+# ── Boot ─────────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
@@ -215,13 +215,13 @@ end
 let sdt = min(dt(), 0.1)
 set pulse += sdt
 
-// Simulated time is read off the panel clock rather than accumulated from
-// dt(): `time()` is virtual under POST /tick, so a scripted run is exact.
+# Simulated time is read off the panel clock rather than accumulated from
+# dt(): `time()` is virtual under POST /tick, so a scripted run is exact.
 fn days_now() -> num
   if get playing then get day_base + (time() - get t_mark) * get speed else get day_base end
 end
 
-// Fold the elapsed time into the base before anything changes the rate.
+# Fold the elapsed time into the base before anything changes the rate.
 fn mark()
   set day_base = days_now()
   set t_mark = time()
@@ -229,7 +229,7 @@ end
 
 if playing then request_frame() end
 
-// ── View transform ───────────────────────────────────────────────────────
+# ── View transform ───────────────────────────────────────────────────────
 
 let ty = if tilt then tilt_amount else 1.0 end
 
@@ -245,7 +245,7 @@ fn to_world(sx: num, sy: num) -> vec2
   vec2((sx - vcx) / z + p.x, (sy - vcy) / (z * ty) + p.y)
 end
 
-// ── Input ────────────────────────────────────────────────────────────────
+# ── Input ────────────────────────────────────────────────────────────────
 
 let mx = mouse_x()
 let my = mouse_y()
@@ -277,14 +277,14 @@ if key_pressed("0") then
   set follow = false
 end
 if key_pressed("tab") then
-  // Cycle the planets (and the Sun); shift goes backwards.
+  # Cycle the planets (and the Sun); shift goes backwards.
   let dir = if mod_shift() then -1 else 1 end
   let nxt = (sel + dir + 9) % 9
   set sel = nxt
   set follow = true
 end
 
-// Zoom about the cursor: keep the world point under the pointer fixed.
+# Zoom about the cursor: keep the world point under the pointer fixed.
 fn zoom_at(sx: num, sy: num, factor: num)
   let before = to_world(sx, sy)
   set zoom = clamp(get zoom * factor, lo: zoom_min, hi: zoom_max)
@@ -299,19 +299,19 @@ if in_view && scroll_y() != 0.0 then
   zoom_at(sx: float(mx), sy: float(my), factor: pow(1.18, -scroll_y()))
 end
 
-// Positions for this frame (after time advanced, before the camera moves).
+# Positions for this frame (after time advanced, before the camera moves).
 let days = days_now()
 let pos = resolve(days)
 
-// Follow: ease the pan onto the followed body.
+# Follow: ease the pan onto the followed body.
 if follow && sel >= 0 then
   let target = pos[sel]
   set pan = vec2(approach(cur: pan.x, target: target.x, rate: follow_rate), approach(cur: pan.y, target: target.y, rate: follow_rate))
   if mag(pan - target) > 0.01 then request_frame() end
 end
 
-// Hit-test bodies under the pointer (nearest wins, small bodies get a
-// minimum radius so moons are clickable).
+# Hit-test bodies under the pointer (nearest wins, small bodies get a
+# minimum radius so moons are clickable).
 let hover = -1
 let hover_d = 1.0e9
 if in_view then
@@ -329,8 +329,8 @@ if in_view then
   end
 end
 
-// Drag to pan; a click (no movement) on a body selects and follows it, a
-// click on empty space just deselects.
+# Drag to pan; a click (no movement) on a body selects and follows it, a
+# click on empty space just deselects.
 if in_view && mouse_pressed(0) then
   set dragging = true
   set drag_last = vec2(float(mx), float(my))
@@ -360,11 +360,11 @@ if dragging && mouse_released(0) then
   end
 end
 
-// Sidebar list clicks (rows are laid out again in the draw pass with the
-// same geometry).
+# Sidebar list clicks (rows are laid out again in the draw pass with the
+# same geometry).
 fn side_rows() -> list
-  // The Sun and the planets, each followed by its moons when it is selected
-  // or a moon of it is selected.
+  # The Sun and the planets, each followed by its moons when it is selected
+  # or a moon of it is selected.
   let rows = []
   let s = get sel
   let open_parent = if s < 0 then -1 elsif BODIES[s].kind == "moon" then BODIES[s].parent else s end
@@ -388,9 +388,9 @@ if mouse_pressed(0) && point_in(px: mx, py: my, r: side) then
     end
   end
 end
-let rows2 = side_rows()   // may have changed by the click
+let rows2 = side_rows()   # may have changed by the click
 
-// ── Draw: chrome ─────────────────────────────────────────────────────────
+# ── Draw: chrome ─────────────────────────────────────────────────────────
 
 clear(C_BG.r, C_BG.g, C_BG.b)
 
@@ -413,12 +413,12 @@ tx_right(if tilt then "3/4" else "top" end, right_x: cell3, y: 46, style: S_STAT
 let following = if follow && sel >= 0 then "following {BODIES[sel].name}" else "free camera" end
 tx_right("{following}   ·   {N} bodies", right_x: cell3, y: 76, style: S_HINT)
 
-// ── Draw: space ──────────────────────────────────────────────────────────
+# ── Draw: space ──────────────────────────────────────────────────────────
 
 draw_rect_rounded(view, radius: 14, c: C_SPACE)
 clip_push(view, 14)
 
-// Stars drift very slightly with the pan so the background reads as far.
+# Stars drift very slightly with the pan so the background reads as far.
 for s in stars do
   let sx = view.x + int((s.x * float(view.w) - pan.x * 0.02) % float(view.w) + float(view.w)) % view.w
   let sy = view.y + int((s.y * float(view.h) - pan.y * 0.02) % float(view.h) + float(view.h)) % view.h
@@ -426,7 +426,7 @@ for s in stars do
   draw_rect(rect(sx, sy, s.sz, s.sz), c: C_TEXT, a: int(s.a * 120.0 * tw))
 end
 
-// Orbits: an ellipse per body around its parent, screen-space.
+# Orbits: an ellipse per body around its parent, screen-space.
 fn draw_orbit(i: int, col: record, a: int)
   let b = BODIES[i]
   let c = to_screen(pos[b.parent])
@@ -450,16 +450,16 @@ if orbits then
   end
 end
 
-// Bodies, parents first so moons draw over their planet's glow.
+# Bodies, parents first so moons draw over their planet's glow.
 let scr = for i in range(0, N) do to_screen(pos[i]) end
 fn body_radius(i: int) -> num
   let b = BODIES[i]
-  // Radii grow with the square root of the zoom so a planet never fills the
-  // view, but a moon still becomes visible as you zoom in.
+  # Radii grow with the square root of the zoom so a planet never fills the
+  # view, but a moon still becomes visible as you zoom in.
   max(1.5, b.r * sqrt(get zoom))
 end
 
-// Sun
+# Sun
 let sun = scr[0]
 let sr = body_radius(0)
 draw_circle_gradient({x: int(sun.x), y: int(sun.y)}, int(sr * 3.2), C_SUN, C_SUN, 70, 0)
@@ -481,7 +481,7 @@ for i in range(1, N) do
   if b.name == "Saturn" then
     draw_ellipse_outline(p, int(r * 2.2), int(r * 2.2 * ty * 0.9), :cbb58a, 150, max(1, int(r * 0.35)))
   end
-  // A lit side: the body colour, then a dark crescent on the far side.
+  # A lit side: the body colour, then a dark crescent on the far side.
   draw_circle(center: p, radius: int(r), c: b.color)
   let away = normalize(s - sun)
   draw_circle({x: int(s.x + away.x * r * 0.55), y: int(s.y + away.y * r * 0.55 * ty)}, int(r * 0.9), C_BG, 70)
@@ -490,8 +490,8 @@ for i in range(1, N) do
   end
 end
 
-// Labels: greedy placement, never overlapping. The selected and hovered
-// bodies go first so they always keep their label.
+# Labels: greedy placement, never overlapping. The selected and hovered
+# bodies go first so they always keep their label.
 var placed = []
 var labels_drawn = 0
 fn try_label(i: int, force: bool) -> bool
@@ -521,8 +521,8 @@ if labels then
   for i in range(0, 9) do
     if i != sel && i != hover then try_label(i, false) end
   end
-  // Moons only once they are separated from their planet, or when their
-  // planet is selected.
+  # Moons only once they are separated from their planet, or when their
+  # planet is selected.
   for i in range(9, N) do
     let b = BODIES[i]
     if i == sel || i == hover then continue end
@@ -531,7 +531,7 @@ if labels then
   end
 end
 
-// Hover card.
+# Hover card.
 if hover >= 0 then
   let b = BODIES[hover]
   let parent = if b.parent >= 0 then BODIES[b.parent].name else "" end
@@ -554,7 +554,7 @@ end
 clip_pop()
 draw_rect_rounded_outline(view, radius: 14, c: C_EDGE, a: 255, width: 1)
 
-// ── Draw: inspector ──────────────────────────────────────────────────────
+# ── Draw: inspector ──────────────────────────────────────────────────────
 
 draw_rect_rounded(side, radius: 14, c: C_PANEL)
 draw_rect_rounded_outline(side, radius: 14, c: C_EDGE, a: 255, width: 1)
@@ -583,7 +583,7 @@ else
 end
 draw_rect(rect(side.x + 12, list_y - 12, side.w - 24, 1), C_LINE)
 
-// The body list.
+# The body list.
 for k in range(0, len(rows2)) do
   let i = rows2[k]
   let b = BODIES[i]
@@ -607,13 +607,13 @@ for k in range(0, len(rows2)) do
   end
 end
 
-// Cursor world position, at the bottom of the inspector.
+# Cursor world position, at the bottom of the inspector.
 if in_view then
   let wpos = to_world(float(mx), float(my))
   tx_right("cursor {int(wpos.x)}, {int(wpos.y)}", right_x: side.x + side.w - 14, y: side.y + side.h - 20, style: S_HINT)
 end
 
-// ── Draw: footer ─────────────────────────────────────────────────────────
+# ── Draw: footer ─────────────────────────────────────────────────────────
 
 fn chip(x: num, y: num, cap: string, desc: string) -> int
   let cw = text_width(cap, S_CAP) + 20
@@ -638,7 +638,7 @@ fx2 += chip(x: fx2, y: fy2, cap: "L", desc: "labels")
 fx2 += chip(x: fx2, y: fy2, cap: "O", desc: "orbits")
 fx2 += chip(x: fx2, y: fy2, cap: "0", desc: "reset")
 
-// ── Observation mirrors (readable in /state → panel.values) ──────────────
+# ── Observation mirrors (readable in /state → panel.values) ──────────────
 
 let obs_days = round(days, 2)
 let obs_speed = speed

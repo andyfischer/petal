@@ -1,17 +1,17 @@
-// ─────────────────────────────────────────────────────────────────────────
-// icons — Plume's glyphs, drawn as strokes.
-//
-// No font and no image: each icon is a few polylines in a unit box, where
-// (-0.5, -0.5) is the top-left and (0.5, 0.5) the bottom-right, scaled into
-// the rect it is asked to fill. `draw_polyline` strokes each path as one mesh
-// with round joins, so a corner never shows the double-blended knuckle that a
-// run of `draw_line`s leaves behind.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# icons — Plume's glyphs, drawn as strokes.
+#
+# No font and no image: each icon is a few polylines in a unit box, where
+# (-0.5, -0.5) is the top-left and (0.5, 0.5) the bottom-right, scaled into
+# the rect it is asked to fill. `draw_polyline` strokes each path as one mesh
+# with round joins, so a corner never shows the double-blended knuckle that a
+# run of `draw_line`s leaves behind.
+# ─────────────────────────────────────────────────────────────────────────
 
 import ui
 
-// Unit points, given flat as [x0, y0, x1, y1, …], placed in the box at
-// (cx, cy) with side s.
+# Unit points, given flat as [x0, y0, x1, y1, …], placed in the box at
+# (cx, cy) with side s.
 fn pts(cx: num, cy: num, s: num, flat: list) -> list
   for i in range(0, len(flat) / 2) do
     {x: cx + flat[i * 2] * s, y: cy + flat[i * 2 + 1] * s}
@@ -29,8 +29,8 @@ end
 let STAR = [0.0, -0.46, 0.13, -0.15, 0.46, -0.12, 0.21, 0.1, 0.29, 0.43, 0.0, 0.25,
   -0.29, 0.43, -0.21, 0.1, -0.46, -0.12, -0.13, -0.15]
 
-// A five-pointed star, filled or outlined. `fill_polygon` ear-clips, so the
-// reflex corners between the points fill correctly.
+# A five-pointed star, filled or outlined. `fill_polygon` ear-clips, so the
+# reflex corners between the points fill correctly.
 pub fn star(r: record, c: record, filled: bool)
   let cx = r.x + r.w / 2.0
   let cy = r.y + r.h / 2.0
@@ -42,8 +42,8 @@ pub fn star(r: record, c: record, filled: bool)
   nil
 end
 
-// One of the named glyphs, centred in `r`. An unknown name draws a small dot
-// so a typo shows up where it was made.
+# One of the named glyphs, centred in `r`. An unknown name draws a small dot
+# so a typo shows up where it was made.
 pub fn icon(name: string, r: record, c: record, w: num)
   let cx = r.x + r.w / 2.0
   let cy = r.y + r.h / 2.0
@@ -122,7 +122,7 @@ pub fn icon(name: string, r: record, c: record, w: num)
   nil
 end
 
-// The same glyph at the weight the chrome uses everywhere.
+# The same glyph at the weight the chrome uses everywhere.
 pub fn icon(name: string, r: record, c: record)
   icon(name, r, c, 1.5)
 end

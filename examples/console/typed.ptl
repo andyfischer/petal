@@ -1,19 +1,19 @@
-// Typed
-// Optional type annotations on bindings, parameters, and return types.
-// Types are checked at compile time (warnings only) and ignored at runtime —
-// run `petal lint typed.ptl` to see any mismatches reported.
+# Typed
+# Optional type annotations on bindings, parameters, and return types.
+# Types are checked at compile time (warnings only) and ignored at runtime —
+# run `petal lint typed.ptl` to see any mismatches reported.
 
-// Annotated let bindings.
+# Annotated let bindings.
 let count: int = 3
 let name: string = "Petal"
 
-// `var` cells and `state` bindings take the same `: type` slot. There it does
-// real work: it types every read *and* constrains every write, wherever the
-// write is. Un-annotated, both read as `any` and are never checked.
+# `var` cells and `state` bindings take the same `: type` slot. There it does
+# real work: it types every read *and* constrains every write, wherever the
+# write is. Un-annotated, both read as `any` and are never checked.
 var total: float = 0.0
 state hits: int = 0
 
-// Parameter and return-type annotations. `str` is accepted for `string`.
+# Parameter and return-type annotations. `str` is accepted for `string`.
 fn greet(who: string) -> string
   "Hello, {who}!"
 end
@@ -22,13 +22,13 @@ fn area(r: float) -> float
   3.14159 * r * r
 end
 
-// Typed and un-annotated code mix freely; an int promotes to a float slot.
+# Typed and un-annotated code mix freely; an int promotes to a float slot.
 fn scale(v, factor: float) -> float
   v * factor
 end
 
-// Lambda parameters annotate too. A lambda's `->` introduces its body, so a
-// lambda has no return-type annotation.
+# Lambda parameters annotate too. A lambda's `->` introduces its body, so a
+# lambda has no return-type annotation.
 let double = fn(n: int) -> n * 2
 
 set total = area(2.0)

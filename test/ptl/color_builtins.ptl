@@ -1,5 +1,5 @@
-// The color constructors: `hsv` / `hsl` take a hue in [0, 1), and the `_deg`
-// forms take it in degrees. Run with `petal test test/ptl`.
+# The color constructors: `hsv` / `hsl` take a hue in [0, 1), and the `_deg`
+# forms take it in degrees. Run with `petal test test/ptl`.
 
 import color
 

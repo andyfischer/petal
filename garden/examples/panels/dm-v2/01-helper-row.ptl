@@ -1,24 +1,24 @@
-// ── Drag mode 1: a row placed by a helper ────────────────
-//   garden petal-ide examples/panels/dm-v2/01-helper-row.ptl
-//
-// Turn on drag mode first: the toolbar's Drag button, or
-// Cmd+Shift+D, or :DragMode. Then plain-drag the cards.
-//
-// What to drag, and what to expect:
-// - The LAST card, sideways. Ambiguous: widening `gap` or
-//   sliding the whole row by `x0` both put it under your
-//   pointer. `gap` is a `tunable` knob, so it wins; the
-//   result panel lists `x0` as alternative 2. Click it.
-// - The FIRST card, sideways. Only `x0` moves it (i = 0).
-// - Any card, up or down: `y0`, shared by every card.
-// - Then click `gap`'s gutter square twice (tunable, then
-//   rigid) and drag the last card again: `x0` or `card_w`
-//   does it now, and the panel shows `gap` as rigid. Its
-//   "never" chips rule numbers out for the session only.
-//
-// Nothing below names a card's position: it exists only
-// when `card_x` runs. Petal re-runs the frame with each
-// number nudged and solves for the drag.
+# ── Drag mode 1: a row placed by a helper ────────────────
+#   garden petal-ide examples/panels/dm-v2/01-helper-row.ptl
+#
+# Turn on drag mode first: the toolbar's Drag button, or
+# Cmd+Shift+D, or :DragMode. Then plain-drag the cards.
+#
+# What to drag, and what to expect:
+# - The LAST card, sideways. Ambiguous: widening `gap` or
+#   sliding the whole row by `x0` both put it under your
+#   pointer. `gap` is a `tunable` knob, so it wins; the
+#   result panel lists `x0` as alternative 2. Click it.
+# - The FIRST card, sideways. Only `x0` moves it (i = 0).
+# - Any card, up or down: `y0`, shared by every card.
+# - Then click `gap`'s gutter square twice (tunable, then
+#   rigid) and drag the last card again: `x0` or `card_w`
+#   does it now, and the panel shows `gap` as rigid. Its
+#   "never" chips rule numbers out for the session only.
+#
+# Nothing below names a card's position: it exists only
+# when `card_x` runs. Petal re-runs the frame with each
+# number nudged and solves for the drag.
 
 import ui
 

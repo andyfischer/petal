@@ -1,6 +1,6 @@
-// Benchmark: call overhead — a tiny helper invoked in a tight loop.
-// Compare against arith.ptl (the same arithmetic inlined) to isolate the
-// per-call frame cost (activation-record allocation + call/return machinery).
+# Benchmark: call overhead — a tiny helper invoked in a tight loop.
+# Compare against arith.ptl (the same arithmetic inlined) to isolate the
+# per-call frame cost (activation-record allocation + call/return machinery).
 
 fn mix(a, b, c)
   a * 2 + b - c

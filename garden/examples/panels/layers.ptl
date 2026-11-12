@@ -1,9 +1,9 @@
-// Layers: the offscreen-canvas vocabulary on one screen — a translucent
-// material bar the content scrolls under, a group drawn at one opacity, and a
-// blurred glow. The visual reference for "Layers and blur" in
-// docs/petal-graphical-panels.md.
-//
-// Use it from a layout script:   panel("examples/panels/layers.ptl")
+# Layers: the offscreen-canvas vocabulary on one screen — a translucent
+# material bar the content scrolls under, a group drawn at one opacity, and a
+# blurred glow. The visual reference for "Layers and blur" in
+# docs/petal-graphical-panels.md.
+#
+# Use it from a layout script:   panel("examples/panels/layers.ptl")
 
 import ui
 
@@ -17,8 +17,8 @@ fn label(text, x, y)
   draw_text(text, x, y, size: 12, r: 150, g: 160, b: 180)
 end
 
-// ── The content: stripes that scroll under the bar ────────────────────────
-// Drawn first, because the material *samples* what is already there.
+# ── The content: stripes that scroll under the bar ────────────────────────
+# Drawn first, because the material *samples* what is already there.
 let offset = (t * 40) % 48
 for i in range(0, 14) do
   let y = i * 48 - offset
@@ -27,17 +27,17 @@ for i in range(0, 14) do
   draw_text("row " ++ str(i), x: 16, y: y + 16, size: 14, r: 230, g: 235, b: 245)
 end
 
-// ── The material bar ──────────────────────────────────────────────────────
-// What is behind it, blurred, under a tint — the iOS navigation bar. The
-// hairline sits on the content-facing edge.
+# ── The material bar ──────────────────────────────────────────────────────
+# What is behind it, blurred, under a tint — the iOS navigation bar. The
+# hairline sits on the content-facing edge.
 draw_material(rect(0, 0, w, 56), {kind: "regular", tint: :1c1f28, hairline: "bottom"})
 draw_text("Layers", x: 16, y: 20, size: 18, r: 240, g: 242, b: 248)
 draw_material(rect(w - 150, 12, 136, 32), {kind: "thin", radius: 16, tint: :ffffff, a: 60})
 label("search", x: w - 130, y: 22)
 
-// ── Group opacity ─────────────────────────────────────────────────────────
-// Two overlapping discs as one object at 45%: the overlap is no darker than
-// the rest, which drawing each disc at 45% cannot achieve.
+# ── Group opacity ─────────────────────────────────────────────────────────
+# Two overlapping discs as one object at 45%: the overlap is no darker than
+# the rest, which drawing each disc at 45% cannot achieve.
 let card = rect(24, 90, 180, 110)
 label("layer at a = 115", x: card.x, y: card.y - 18)
 layer(card, opts: {a: 115}, body: fn()
@@ -49,9 +49,9 @@ label("same shapes at a=115 each", x: 230, y: 72)
 draw_circle(cx: 280, cy: 145, radius: 45, r: 255, g: 120, b: 80, a: 115)
 draw_circle(cx: 350, cy: 145, radius: 45, r: 90, g: 200, b: 255, a: 115)
 
-// ── A glow ────────────────────────────────────────────────────────────────
-// The shape drawn into a layer and the layer blurred; then the crisp shape
-// on top.
+# ── A glow ────────────────────────────────────────────────────────────────
+# The shape drawn into a layer and the layer blurred; then the crisp shape
+# on top.
 let halo = rect(440, 80, 140, 140)
 label("layer with blur 14", x: halo.x, y: halo.y - 18)
 layer(halo, opts: {blur: 14}, body: fn()
@@ -59,7 +59,7 @@ layer(halo, opts: {blur: 14}, body: fn()
 end)
 draw_circle(cx: halo.x + 70, cy: halo.y + 70, radius: 28, r: 120, g: 255, b: 170)
 
-// ── A frosted sheet over everything drawn so far ──────────────────────────
+# ── A frosted sheet over everything drawn so far ──────────────────────────
 let sheet = rect(24, h - 120, w - 48, 96)
 draw_material(sheet, {kind: "thick", radius: 16, tint: :ffffff, a: 200})
 draw_text("thick material, radius 16", x: sheet.x + 16, y: sheet.y + 16, size: 14, r: 30, g: 34, b: 44)

@@ -1,13 +1,13 @@
-// Micro-benchmark: `speculate(f)` against a plain call of the same `f`.
-// `view` is a small immediate-mode view: it reads state, keeps a slot of its
-// own, writes a cell and records a place per card. `plain` calls it, `spec`
-// speculates it, 200 times each, so the difference per call is the cost of
-// the overlay (entering, logging the writes, putting them back, taking the
-// places out).
-//
-//   petal bench --fn plain --fn spec test/benchmarks/micro/speculate.ptl
-//
-// Numbers are in docs/features/speculate.md (Performance).
+# Micro-benchmark: `speculate(f)` against a plain call of the same `f`.
+# `view` is a small immediate-mode view: it reads state, keeps a slot of its
+# own, writes a cell and records a place per card. `plain` calls it, `spec`
+# speculates it, 200 times each, so the difference per call is the cost of
+# the overlay (entering, logging the writes, putting them back, taking the
+# places out).
+#
+#   petal bench --fn plain --fn spec test/benchmarks/micro/speculate.ptl
+#
+# Numbers are in docs/features/speculate.md (Performance).
 
 var hits = 0
 

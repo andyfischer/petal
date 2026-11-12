@@ -1,21 +1,21 @@
-// dm-title: a bloom settings card built from the layout helpers
-// dm-level: L10
-//
-// A card made with `ui`'s `pad`, `cut_top` and `vstack` and bloom's `card`,
-// `button` and `progress`: every rectangle is computed by library code (the
-// bundled libraries, never editable), so every edit has to land in this
-// file's few numbers. The widgets are stateful (hover easing) and read the
-// mouse; at the checkpoint nothing is hovered.
-//
-// dm-goal card-right: rect#1.0 += 20 | expect=lit:20
-// The goals address the rounded rects bloom paints: `rect#4` and `rect#6`
-// are the two buttons' hairlines, `rect#5` the first button's face.
-// `vstack` divides with ints, so row heights move in whole pixels.
-//
-// dm-goal taller-header: rect#4.1 += 10 | expect=header_h
-// dm-goal more-padding: rect#4.0 += 6, rect#1.0 += 0 | expect=inset
-// dm-goal row-gap: rect#6.1 += 8, rect#4.1 += 0 | expect=row_gap,lit:240
-// dm-goal face-x: rect#5.0 += 10 | expect=lit:20,inset
+# dm-title: a bloom settings card built from the layout helpers
+# dm-level: L10
+#
+# A card made with `ui`'s `pad`, `cut_top` and `vstack` and bloom's `card`,
+# `button` and `progress`: every rectangle is computed by library code (the
+# bundled libraries, never editable), so every edit has to land in this
+# file's few numbers. The widgets are stateful (hover easing) and read the
+# mouse; at the checkpoint nothing is hovered.
+#
+# dm-goal card-right: rect#1.0 += 20 | expect=lit:20
+# The goals address the rounded rects bloom paints: `rect#4` and `rect#6`
+# are the two buttons' hairlines, `rect#5` the first button's face.
+# `vstack` divides with ints, so row heights move in whole pixels.
+#
+# dm-goal taller-header: rect#4.1 += 10 | expect=header_h
+# dm-goal more-padding: rect#4.0 += 6, rect#1.0 += 0 | expect=inset
+# dm-goal row-gap: rect#6.1 += 8, rect#4.1 += 0 | expect=row_gap,lit:240
+# dm-goal face-x: rect#5.0 += 10 | expect=lit:20,inset
 
 import ui
 import bloom

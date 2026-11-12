@@ -1,6 +1,6 @@
-// Nature of Code - Autonomous Agents
-// Inspired by Chapter 6: Autonomous Agents
-// Vehicles that seek, flee, and wander
+# Nature of Code - Autonomous Agents
+# Inspired by Chapter 6: Autonomous Agents
+# Vehicles that seek, flee, and wander
 
 import ui
 
@@ -16,7 +16,7 @@ let sh = float(screen_height())
 let PI = pi()
 time += delta
 
-// Initialize vehicles
+# Initialize vehicles
 if len(vehicles) == 0 then
   for i in range(0, 12) do
     let t = float(i)
@@ -36,11 +36,11 @@ if len(vehicles) == 0 then
   end
 end
 
-// Update target to mouse position
+# Update target to mouse position
 target_x = float(mouse_x())
 target_y = float(mouse_y())
 
-// Helper: limit vector magnitude
+# Helper: limit vector magnitude
 fn limit_vec(vx, vy, max_val)
   let mag = sqrt(vx * vx + vy * vy)
   if mag > max_val then
@@ -50,19 +50,19 @@ fn limit_vec(vx, vy, max_val)
   end
 end
 
-// Update vehicles
+# Update vehicles
 let new_vehicles = []
 for v in vehicles do
   let steer_x = 0.0
   let steer_y = 0.0
 
   if v.mode == 0 then
-    // SEEK: steer toward target
+    # SEEK: steer toward target
     let dx = target_x - v.x
     let dy = target_y - v.y
     let dist = sqrt(dx * dx + dy * dy) + 0.1
 
-    // Desired velocity (arrive behavior: slow down near target)
+    # Desired velocity (arrive behavior: slow down near target)
     let desired_speed = v.max_speed
     if dist < 100.0 then
       desired_speed = v.max_speed * dist / 100.0
@@ -73,7 +73,7 @@ for v in vehicles do
     steer_x = desired_vx - v.vx
     steer_y = desired_vy - v.vy
   elsif v.mode == 1 then
-    // FLEE: steer away from target
+    # FLEE: steer away from target
     let dx = v.x - target_x
     let dy = v.y - target_y
     let dist = sqrt(dx * dx + dy * dy) + 0.1
@@ -85,16 +85,16 @@ for v in vehicles do
       steer_y = desired_vy - v.vy
     end
   else
-    // WANDER: random steering
+    # WANDER: random steering
     let wander_r = 50.0
     let wander_d = 80.0
     let speed = sqrt(v.vx * v.vx + v.vy * v.vy) + 0.1
 
-    // Project a circle in front of the vehicle
+    # Project a circle in front of the vehicle
     let cx = v.x + v.vx / speed * wander_d
     let cy = v.y + v.vy / speed * wander_d
 
-    // Pick a point on the circle
+    # Pick a point on the circle
     let wx = cx + cos(v.wander_angle) * wander_r
     let wy = cy + sin(v.wander_angle) * wander_r
 
@@ -102,32 +102,32 @@ for v in vehicles do
     steer_y = wy - v.y - v.vy
   end
 
-  // Limit steering force
+  # Limit steering force
   let steer = limit_vec(vx: steer_x, vy: steer_y, max_val: v.max_force)
 
-  // Apply steering
+  # Apply steering
   let nvx = v.vx + steer.x * delta
   let nvy = v.vy + steer.y * delta
 
-  // Limit speed
+  # Limit speed
   let vel = limit_vec(vx: nvx, vy: nvy, max_val: v.max_speed)
   nvx = vel.x
   nvy = vel.y
 
-  // Update position
+  # Update position
   let nx = v.x + nvx * delta
   let ny = v.y + nvy * delta
 
-  // Wrap around edges
+  # Wrap around edges
   if nx < 0.0 then nx = sw end
   if nx > sw then nx = 0.0 end
   if ny < 0.0 then ny = sh end
   if ny > sh then ny = 0.0 end
 
-  // Wander angle drifts
+  # Wander angle drifts
   let new_wander = v.wander_angle + random(-0.5, 0.5)
 
-  // Trail
+  # Trail
   if frame_count() % 2 == 0 then
     trails = append(trails, { x: nx, y: ny, r: v.r, g: v.g, b: v.b, life: 1.0 })
   end
@@ -141,7 +141,7 @@ for v in vehicles do
 end
 vehicles = new_vehicles
 
-// Age trails
+# Age trails
 let new_trails = []
 for t in trails do
   let nt = { x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, life: t.life - delta * 0.8 }
@@ -152,29 +152,29 @@ if len(trails) > 2000 then
   trails = slice(trails, start: len(trails) - 1500, end: len(trails))
 end
 
-// === Drawing ===
+# === Drawing ===
 clear(10, 12, 20)
 
-// Draw trails
+# Draw trails
 for t in trails do
   let alpha = t.life * 0.5
   draw_circle(cx: int(t.x), cy: int(t.y), radius: 2,
     r: int(float(t.r) * alpha), g: int(float(t.g) * alpha), b: int(float(t.b) * alpha))
 end
 
-// Draw target
+# Draw target
 draw_circle(cx: int(target_x), cy: int(target_y), radius: 15, r: 40, g: 15, b: 15)
 draw_circle(cx: int(target_x), cy: int(target_y), radius: 10, r: 60, g: 20, b: 20)
 draw_circle(cx: int(target_x), cy: int(target_y), radius: 5, r: 200, g: 50, b: 50)
 draw_circle(cx: int(target_x), cy: int(target_y), radius: 2, r: 255, g: 100, b: 100)
 
-// Draw vehicles as triangles (using lines)
+# Draw vehicles as triangles (using lines)
 for v in vehicles do
   let speed = sqrt(v.vx * v.vx + v.vy * v.vy) + 0.1
   let heading_x = v.vx / speed
   let heading_y = v.vy / speed
 
-  // Triangle points
+  # Triangle points
   let size = 12.0
   let nose_x = v.x + heading_x * size
   let nose_y = v.y + heading_y * size
@@ -183,25 +183,25 @@ for v in vehicles do
   let right_x = v.x - heading_x * size * 0.6 - heading_y * size * 0.5
   let right_y = v.y - heading_y * size * 0.6 + heading_x * size * 0.5
 
-  // Fill body
+  # Fill body
   draw_circle(cx: int(v.x), cy: int(v.y), radius: 6, r: v.r / 2, g: v.g / 2, b: v.b / 2)
 
-  // Triangle outline
+  # Triangle outline
   draw_line(int(nose_x), int(nose_y), int(left_x), int(left_y), v.r, v.g, v.b)
   draw_line(int(left_x), int(left_y), int(right_x), int(right_y), v.r, v.g, v.b)
   draw_line(int(right_x), int(right_y), int(nose_x), int(nose_y), v.r, v.g, v.b)
 
-  // Mode indicator
+  # Mode indicator
   if v.mode == 0 then
-    // Seeker - dot at nose
+    # Seeker - dot at nose
     draw_circle(cx: int(nose_x), cy: int(nose_y), radius: 3, r: 100, g: 255, b: 100)
   elsif v.mode == 1 then
-    // Fleer - red warning
+    # Fleer - red warning
     draw_circle(cx: int(nose_x), cy: int(nose_y), radius: 3, r: 255, g: 100, b: 100)
   end
 end
 
-// Legend
+# Legend
 draw_text("Autonomous Agents", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
 draw_text("Move mouse to steer", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)
 draw_circle(cx: 10, cy: 55, radius: 4, r: 100, g: 255, b: 100)

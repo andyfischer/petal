@@ -1,10 +1,10 @@
-// Package `core` — Lists, records and strings (core/src/builtins/collections.rs), and the
-// higher-order functions the VM drives itself.
-//
-// Native interface declarations: each `native fn` binds a name to the host
-// native of the same name and gives the checker its parameter names, arity
-// and types. Several declarations of one name are that native's call forms.
-// See docs/usage/ffi.md (Native interfaces).
+# Package `core` — Lists, records and strings (core/src/builtins/collections.rs), and the
+# higher-order functions the VM drives itself.
+#
+# Native interface declarations: each `native fn` binds a name to the host
+# native of the same name and gives the checker its parameter names, arity
+# and types. Several declarations of one name are that native's call forms.
+# See docs/usage/ffi.md (Native interfaces).
 
 pub native fn range(end: num) -> list
 pub native fn range(start: num, end: num, step?: num) -> list
@@ -57,33 +57,33 @@ pub native fn top_indices(list, k: num) -> list
 pub native fn group_by_keys(list: list, keys: list) -> record
 pub native fn ord(string: string) -> int
 pub native fn chr(code: num) -> string
-// `{[key]: value}` is parsed as a spread of this one-field record.
+# `{[key]: value}` is parsed as a spread of this one-field record.
 pub native fn __record_of(...args)
 
-// A map: entries keyed by any hashable value. `Map()` is empty; `Map(pairs)`
-// takes a list of `[key, value]` pairs. Read and write with `m[k]`; `len`,
-// `keys`, `values`, `entries`, `contains` and `remove` take a map too.
+# A map: entries keyed by any hashable value. `Map()` is empty; `Map(pairs)`
+# takes a list of `[key, value]` pairs. Read and write with `m[k]`; `len`,
+# `keys`, `values`, `entries`, `contains` and `remove` take a map too.
 pub native fn Map() -> map
 pub native fn Map(pairs: list) -> map
 
-// Higher-order: these call back into script code, so the VM runs them itself.
+# Higher-order: these call back into script code, so the VM runs them itself.
 pub native fn map(list, f)
 pub native fn filter(list, pred)
 pub native fn reduce(list, initial, f)
 pub native fn forEach(list, f)
 pub native fn sort_by(list: list, key: function, descending?) -> list
 
-// True when at least one element satisfies `pred` (false for the empty list).
-// Stops at the first element that does: `pred` is not called on the rest.
+# True when at least one element satisfies `pred` (false for the empty list).
+# Stops at the first element that does: `pred` is not called on the rest.
 pub native fn any(xs, pred) -> bool
-// True when every element satisfies `pred` (vacuously true for the empty list).
-// Stops at the first element that does not: `pred` is not called on the rest.
+# True when every element satisfies `pred` (vacuously true for the empty list).
+# Stops at the first element that does not: `pred` is not called on the rest.
 pub native fn all(xs, pred) -> bool
-// The first element satisfying `pred`, or nil when none does.
+# The first element satisfying `pred`, or nil when none does.
 pub native fn find(xs, pred)
 
-// Frozen (permanent) heap objects: `freeze` returns its argument, which the
-// collector then neither traces nor frees; `frozen` asks whether a value is.
-// One-way, for data that lives as long as the program. docs/Builtins.md.
+# Frozen (permanent) heap objects: `freeze` returns its argument, which the
+# collector then neither traces nor frees; `frozen` asks whether a value is.
+# One-way, for data that lives as long as the program. docs/Builtins.md.
 pub native fn freeze(value)
 pub native fn frozen(value) -> bool

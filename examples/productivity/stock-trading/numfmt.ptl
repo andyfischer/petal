@@ -1,8 +1,8 @@
-// Meridian: number and clock formatting.
-//
-// Prices and cash are integer cents; these turn them into the strings a
-// trading screen shows. Nothing here goes through `str(float)`, which would
-// hand back 142.30000000000001.
+# Meridian: number and clock formatting.
+#
+# Prices and cash are integer cents; these turn them into the strings a
+# trading screen shows. Nothing here goes through `str(float)`, which would
+# hand back 142.30000000000001.
 
 pub fn commas(n: num) -> string
   let s = str(abs(int(n)))
@@ -15,33 +15,33 @@ pub fn commas(n: num) -> string
   join([slice(s, 0, i)] ++ parts, ",")
 end
 
-// 14230 -> "142.30"
+# 14230 -> "142.30"
 pub fn px(cents: num) -> string
   let c = abs(int(round(cents)))
   let sign = if cents < 0 then "-" else "" end
   "{sign}{commas(c / 100)}.{pad_start(str(c % 100), 2, "0")}"
 end
 
-// 14230 -> "$142.30", -500 -> "-$5.00"
+# 14230 -> "$142.30", -500 -> "-$5.00"
 pub fn usd(cents: num) -> string
   let c = int(round(cents))
   if c < 0 then "-$" ++ px(-c) else "$" ++ px(c) end
 end
 
-// A signed dollar amount: "+$12.40", "-$3.10".
+# A signed dollar amount: "+$12.40", "-$3.10".
 pub fn usd_signed(cents: num) -> string
   let c = int(round(cents))
   if c < 0 then "-$" ++ px(-c) else "+$" ++ px(c) end
 end
 
-// A fraction as a signed percentage with two decimals: 0.0123 -> "+1.23%".
+# A fraction as a signed percentage with two decimals: 0.0123 -> "+1.23%".
 pub fn pct(frac: num) -> string
   let bp = int(round(abs(frac) * 10000.0))
   let sign = if frac < 0.0 && bp > 0 then "-" else "+" end
   "{sign}{bp / 100}.{pad_start(str(bp % 100), 2, "0")}%"
 end
 
-// A share count for an axis or a tape: 950, 12.4K, 3.21M.
+# A share count for an axis or a tape: 950, 12.4K, 3.21M.
 pub fn compact(n: num) -> string
   let v = int(n)
   if v >= 1000000 then
@@ -53,8 +53,8 @@ pub fn compact(n: num) -> string
   end
 end
 
-// ── The market clock ────────────────────────────────────────────────────────
-// Market time is seconds from midnight on Thursday 1 October.
+# ── The market clock ────────────────────────────────────────────────────────
+# Market time is seconds from midnight on Thursday 1 October.
 
 let MONTHS = ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"]
 let MONTH_DAYS = [31, 30, 31, 31, 28, 31, 30, 31, 30, 31, 31, 30]
@@ -74,7 +74,7 @@ pub fn hhmmss(t: num) -> string
   "{two(s / 3600)}:{two(s % 3600 / 60)}:{two(s % 60)}"
 end
 
-// "Oct 9"
+# "Oct 9"
 pub fn day(t: num) -> string
   let d = int(t) / 86400 % 365
   let m = 0
@@ -89,10 +89,10 @@ pub fn weekday(t: num) -> string
   WEEKDAYS[int(t) / 86400 % 7]
 end
 
-// ── Parsing what was typed ──────────────────────────────────────────────────
+# ── Parsing what was typed ──────────────────────────────────────────────────
 
-// Keep only the characters a number field accepts: digits, and one decimal
-// point with at most two digits after it when `decimal` is set.
+# Keep only the characters a number field accepts: digits, and one decimal
+# point with at most two digits after it when `decimal` is set.
 pub fn digits_only(s: string, decimal: bool) -> string
   let out = []
   let seen_dot = false
@@ -111,7 +111,7 @@ pub fn digits_only(s: string, decimal: bool) -> string
   join(out, "")
 end
 
-// "142.3" -> 14230 cents; nil when it is not a price.
+# "142.3" -> 14230 cents; nil when it is not a price.
 pub fn parse_cents(s: string)
   let v = parse_float(if starts_with(s, ".") then "0" ++ s else s end)
   if v == nil then nil else int(round(v * 100.0)) end

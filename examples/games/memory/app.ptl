@@ -1,16 +1,16 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  PAIRS — a memory matching game as a Garden panel app, written in Petal.
-//
-//  Exercises: card components drawn from vector primitives (sixteen glyphs,
-//  a patterned back), a 3D-style flip done by squashing every primitive
-//  about the card's centre line, delayed state changes (a missed pair stays
-//  up for a beat and turns back; a match lands, pops and settles; the win
-//  screen arrives after the last pair has finished its flip), a staggered
-//  deal, a timed peek, confetti, keyboard + mouse play, and best scores kept
-//  per difficulty in the panel store.
-//
-//  Designed for a 1280x850 viewport.  See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  PAIRS — a memory matching game as a Garden panel app, written in Petal.
+#
+#  Exercises: card components drawn from vector primitives (sixteen glyphs,
+#  a patterned back), a 3D-style flip done by squashing every primitive
+#  about the card's centre line, delayed state changes (a missed pair stays
+#  up for a beat and turns back; a match lands, pops and settles; the win
+#  screen arrives after the last pair has finished its flip), a staggered
+#  deal, a timed peek, confetti, keyboard + mouse play, and best scores kept
+#  per difficulty in the panel store.
+#
+#  Designed for a 1280x850 viewport.  See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import bloom
 import text_layout
@@ -18,7 +18,7 @@ import ui
 import garden
 import json
 
-// ── Palette ──────────────────────────────────────────────────────────────
+# ── Palette ──────────────────────────────────────────────────────────────
 
 let C_BG      = :0d0f15
 let C_TABLE   = :141824
@@ -40,8 +40,8 @@ let C_FACE    = :f6f1e7
 let C_FACE_ED = :e2d8c6
 let C_INK     = :1d2030
 
-// ── Type scale ───────────────────────────────────────────────────────────
-// Everything is Inter (`ui`). Six sizes: 11 / 12 / 13 / 16 / 24 / 28.
+# ── Type scale ───────────────────────────────────────────────────────────
+# Everything is Inter (`ui`). Six sizes: 11 / 12 / 13 / 16 / 24 / 28.
 
 let F = "ui"
 let S_TITLE = {size: 28, weight: 700, font: F, color: C_TEXT}
@@ -55,7 +55,7 @@ let S_SMALL = {size: 12, font: F, color: C_MUTE}
 let S_CAP   = {size: 11, weight: 700, font: F, color: C_TEXT}
 let S_FLOAT = {size: 16, weight: 700, font: F, color: C_GOLD_L}
 
-// ── Rules and timings ────────────────────────────────────────────────────
+# ── Rules and timings ────────────────────────────────────────────────────
 
 let LEVELS = [
   {name: "Easy",    cols: 4, rows: 3},
@@ -63,23 +63,23 @@ let LEVELS = [
   {name: "Expert",  cols: 8, rows: 4},
 ]
 
-let FLIP_T     = tunable(0.30)  // one half-turn of a card, seconds
-let MISS_VIEW  = tunable(0.85)  // how long a missed pair stays up once it has landed
-let DEAL_T     = tunable(0.45)  // one card's flight from the deck
-let DEAL_STEP  = tunable(0.035) // stagger between cards in the deal
-let PEEK_T     = tunable(1.6)   // how long a peek shows the board
-let PEEK_COST  = tunable(2)     // moves a peek costs
-let WIN_DELAY  = tunable(0.75)  // pause between the last match landing and the result
+let FLIP_T     = tunable(0.30)  # one half-turn of a card, seconds
+let MISS_VIEW  = tunable(0.85)  # how long a missed pair stays up once it has landed
+let DEAL_T     = tunable(0.45)  # one card's flight from the deck
+let DEAL_STEP  = tunable(0.035) # stagger between cards in the deal
+let PEEK_T     = tunable(1.6)   # how long a peek shows the board
+let PEEK_COST  = tunable(2)     # moves a peek costs
+let WIN_DELAY  = tunable(0.75)  # pause between the last match landing and the result
 
-// ── Glyph geometry ───────────────────────────────────────────────────────
-// Every face is drawn from these unit shapes (y down, roughly -1..1), placed
-// through a transform that squashes x during a flip.
+# ── Glyph geometry ───────────────────────────────────────────────────────
+# Every face is drawn from these unit shapes (y down, roughly -1..1), placed
+# through a transform that squashes x during a flip.
 
 fn rot(p: list, a: num) -> list
   [p[0] * cos(a) - p[1] * sin(a), p[0] * sin(a) + p[1] * cos(a)]
 end
 
-// A pointed almond from x = -1 to 1, `hh` tall at its widest.
+# A pointed almond from x = -1 to 1, `hh` tall at its widest.
 fn almond(hh: num) -> list
   let top = for k in range(0, 21) do
     let x = -1.0 + float(k) * 0.1
@@ -143,8 +143,8 @@ let U_FLAKE = flat(for k in range(0, 6) do
   ]
 end)
 
-// Three bands, each a filled ribbon: a stroked polyline this thick frays at
-// its joins, a polygon does not.
+# Three bands, each a filled ribbon: a stroked polyline this thick frays at
+# its joins, a polygon does not.
 let U_WAVES = for row in [-0.4, 0.0, 0.4] do
   let top = for k in range(0, 25) do
     let x = -0.9 + float(k) * 0.075
@@ -157,8 +157,8 @@ let U_WAVES = for row in [-0.4, 0.0, 0.4] do
   flat([top, bot])
 end
 
-// Half of a tilted elliptical band, from angle t0 to t1: the outer edge out,
-// the inner edge back. The planet sits between the back half and the front.
+# Half of a tilted elliptical band, from angle t0 to t1: the outer edge out,
+# the inner edge back. The planet sits between the back half and the front.
 fn ring_band(t0: num, t1: num) -> list
   let outer = for k in range(0, 25) do
     let t = t0 + (t1 - t0) * float(k) / 24.0
@@ -183,7 +183,7 @@ let U_HEX_IN = for k in range(0, 6) do
   [cos(a) * 0.5, sin(a) * 0.5]
 end
 
-// Four-pointed star on the card back.
+# Four-pointed star on the card back.
 let U_SPARK = for k in range(0, 8) do
   let a = -pi() / 2.0 + float(k) * pi() / 4.0
   let r = if k % 2 == 0 then 1.0 else 0.3 end
@@ -209,9 +209,9 @@ let DESIGNS = [
   {g: "planet",   c: :a24fd0, name: "Ringed"},
 ]
 
-// ── Glyph drawing ────────────────────────────────────────────────────────
-// `T` is {cx, cy, s, sx, bg}: the centre, the unit size in px, the flip's x
-// squash, and the face colour (the moon's bite is painted in it).
+# ── Glyph drawing ────────────────────────────────────────────────────────
+# `T` is {cx, cy, s, sx, bg}: the centre, the unit size in px, the flip's x
+# squash, and the face colour (the moon's bite is painted in it).
 
 fn gx(T: record, x: num) -> float
   T.cx + x * T.s * T.sx
@@ -339,7 +339,7 @@ fn glyph(D: record, T: record)
   nil
 end
 
-// ── Small helpers ────────────────────────────────────────────────────────
+# ── Small helpers ────────────────────────────────────────────────────────
 
 fn tx(s: string, x: num, y: num, style: record)
   draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
@@ -396,7 +396,7 @@ fn draw_star(cx: num, cy: num, r: num, lit: bool)
   end
 end
 
-// A rotated quad, for confetti.
+# A rotated quad, for confetti.
 fn quad(x: num, y: num, w: num, h: num, a: num) -> list
   let c = cos(a)
   let s = sin(a)
@@ -446,33 +446,33 @@ fn load_records() -> list
   end
 end
 
-// ── Persistent state ─────────────────────────────────────────────────────
+# ── Persistent state ─────────────────────────────────────────────────────
 
 state var ready    = false
 state var level    = clamp(parse_int(panel_store_get("level") ?? "1") ?? 1, lo: 0, hi: 2)
-state var cards    = []     // {d, up, flip, matched, t_match, t_miss, t_deal, hv, sparked}
-state var open     = []     // indices face up and not yet resolved (0..2)
-state var hold     = 0.0    // countdown until a missed pair turns back
+state var cards    = []     # {d, up, flip, matched, t_match, t_miss, t_deal, hv, sparked}
+state var open     = []     # indices face up and not yet resolved (0..2)
+state var hold     = 0.0    # countdown until a missed pair turns back
 state var moves    = 0
 state var found    = 0
 state var misses   = 0
 state var streak   = 0
 state var best_streak = 0
-state var clock    = 0.0    // animation clock, seconds
-state var elapsed  = 0.0    // the round's timer
+state var clock    = 0.0    # animation clock, seconds
+state var elapsed  = 0.0    # the round's timer
 state var timing   = false
-state var phase    = "deal" // deal | play | won
+state var phase    = "deal" # deal | play | won
 state var won_at   = 0.0
-state var won_t    = 0.0    // clock when the result screen opened
+state var won_t    = 0.0    # clock when the result screen opened
 state var peeks    = 1
 state var peek_t   = 0.0
 state var cursor   = 0
 state var kbd      = false
 state var last_mx  = -1
 state var last_my  = -1
-state var bits     = []     // sparks + confetti
-state var floaters = []     // {x, y, text, t0}
-state var order    = []     // pairs in the order found: {d, t}
+state var bits     = []     # sparks + confetti
+state var floaters = []     # {x, y, text, t0}
+state var order    = []     # pairs in the order found: {d, t}
 state var note     = "Deal in progress"
 state var note_c   = C_DIM
 state var result   = {stars: 0, record: false}
@@ -519,7 +519,7 @@ fn new_game(lv: int)
   set note_c = C_DIM
 end
 
-// Turn an unresolved (missed) pair back over.
+# Turn an unresolved (missed) pair back over.
 fn turn_back()
   let cs = get cards
   for i in get open do
@@ -533,8 +533,8 @@ end
 fn flip_card(i: int, anchor: record)
   let c = (get cards)[i]
   if c.matched || c.up then return nil end
-  // A third pick while a miss is still showing turns that pair back first,
-  // so a fast player never waits on the animation.
+  # A third pick while a miss is still showing turns that pair back first,
+  # so a fast player never waits on the animation.
   if len(get open) == 2 then turn_back() end
   set cards = put(get cards, i, v: {...c, up: true})
   set open = append(get open, i)
@@ -607,7 +607,7 @@ fn finish_game()
   set note_c = C_GOLD
 end
 
-// ── Frame setup ──────────────────────────────────────────────────────────
+# ── Frame setup ──────────────────────────────────────────────────────────
 
 bloom.theme_set({
   bg: C_BG, panel: C_RAIL, surface: C_RAIL, overlay: C_TABLE_H,
@@ -655,7 +655,7 @@ let sdt = min(dt(), 0.05)
 set clock += sdt
 if timing && phase == "play" then set elapsed += min(dt(), 1.0) end
 
-// ── Input ────────────────────────────────────────────────────────────────
+# ── Input ────────────────────────────────────────────────────────────────
 
 let mx = mouse_x()
 let my = mouse_y()
@@ -712,7 +712,7 @@ if key_pressed("2") then new_game(1) end
 if key_pressed("3") then new_game(2) end
 if key_pressed("p") && phase == "play" && peeks > 0 && peek_t <= 0.0 then start_peek() end
 
-// ── Delayed state changes ────────────────────────────────────────────────
+# ── Delayed state changes ────────────────────────────────────────────────
 
 if hold > 0.0 then
   set hold -= sdt
@@ -742,7 +742,7 @@ if phase == "play" && found == PAIRS && clock >= won_at then
   set bits = confetti(bits, float(table.x + 40), float(table.x + table.w - 40), y: float(table.y), n: 150)
 end
 
-// ── Card animation ───────────────────────────────────────────────────────
+# ── Card animation ───────────────────────────────────────────────────────
 
 let peeking = peek_t > 0.0
 set cards = for i in range(0, len(cards)) do
@@ -776,7 +776,7 @@ set floaters = filter(floaters, fn(f) -> now - f.t0 < 1.1)
 let target_prog = float(found) / float(max(1, PAIRS))
 set prog_vis = approach(cur: prog_vis, target: target_prog, rate: 10.0)
 
-// ── Draw: backdrop and header ────────────────────────────────────────────
+# ── Draw: backdrop and header ────────────────────────────────────────────
 
 clear(C_BG.r, C_BG.g, C_BG.b)
 
@@ -797,7 +797,7 @@ let peek_label = if peeks > 0 then "Peek (+{PEEK_COST})" else "Peek used" end
 if bloom.button(btn_peek, label: peek_label, opts: {icon: "search", disabled: !peek_ok, size: 13}) then start_peek() end
 if bloom.button(btn_new, label: "New game", opts: {variant: "primary", icon: "plus", size: 13}) then new_game(level) end
 
-// ── Draw: table ──────────────────────────────────────────────────────────
+# ── Draw: table ──────────────────────────────────────────────────────────
 
 draw_shadow(table, {radius: 18, blur: 30, dy: 10, a: 110})
 draw_rect_rounded(table, radius: 18, c: C_TABLE)
@@ -806,7 +806,7 @@ draw_circle_gradient({x: table.center_x(), y: table.center_y()}, int(float(table
 clip_pop()
 draw_rect_rounded_outline(table, radius: 18, c: C_LINE, a: 255, width: 1)
 
-// The deck the deal flies out of, drawn until the last card leaves it.
+# The deck the deal flies out of, drawn until the last card leaves it.
 let in_deck = len(filter(cards, fn(c) -> now < c.t_deal))
 if in_deck > 0 then
   for k in range(0, min(in_deck, 6)) do
@@ -855,7 +855,7 @@ fn draw_face(fr: Rect, sx: float, rad: num, full_w: float, D: record)
   nil
 end
 
-// One card, at its slot `r`, given its animation parameters.
+# One card, at its slot `r`, given its animation parameters.
 fn draw_card(c: record, r: Rect, k: record)
   let e = ease_in_out(c.flip)
   let sx = max(0.03, abs(cos(pi() * e)))
@@ -876,7 +876,7 @@ fn draw_card(c: record, r: Rect, k: record)
       draw_rect_rounded(fr, radius: rad, c: C_TABLE, a: int(34.0 * k.settle))
       draw_rect_rounded_outline(fr, radius: rad, c: C_GOLD, a: int(230.0 * k.settle), width: 2)
       if sx > 0.9 then
-        // The check badge, sitting on the top-right corner.
+        # The check badge, sitting on the top-right corner.
         let br = 9.0 * k.settle
         let bx = fr.x + fr.w - 13.0
         let by = fr.y + 13.0
@@ -922,7 +922,7 @@ for i in range(0, len(cards)) do
   end
 end
 
-// Sparks over the cards; confetti goes on top of everything, below.
+# Sparks over the cards; confetti goes on top of everything, below.
 for p in bits do
   if p.kind == "spark" then
     let f = p.life / p.max
@@ -942,7 +942,7 @@ for f in floaters do
   draw_text(f.text, pos: {x: int(f.x) - tw / 2, y: int(y)}, style: {...st, color: {...C_GOLD_L, a: a}})
 end
 
-// Peek banner across the top of the table.
+# Peek banner across the top of the table.
 if peeking then
   let pk_w = 280
   let pr = rect(table.center_x() - pk_w / 2, table.y + 8, pk_w, 34)
@@ -955,7 +955,7 @@ if peeking then
   text_layout.draw_text_line("Peeking. Memorize the board", r: rect(pr.x, pr.y - 1, pr.w, pr.h - 2), style: {...S_BODYB, color: C_GOLD_L}, align: "center")
 end
 
-// ── Draw: sidebar ────────────────────────────────────────────────────────
+# ── Draw: sidebar ────────────────────────────────────────────────────────
 
 fn side_card(r: Rect, title: string)
   draw_shadow(r, {radius: 14, blur: 18, dy: 6, a: 90})
@@ -987,7 +987,7 @@ if prog_vis > 0.001 then
   draw_rect_gradient_rounded(rect(bar.x, bar.y, max(6.0, float(bar.w) * prog_vis), bar.h), 3, C_GOLD, C_GOLD_L, angle: 0.0)
 end
 
-// The collection: one tile per pair on the board, filled in as they're found.
+# The collection: one tile per pair on the board, filled in as they're found.
 let col_n = 6
 let tile_gap = 8.0
 let tile_w = (float(side.w) - 36.0 - tile_gap * float(col_n - 1)) / float(col_n)
@@ -1017,7 +1017,7 @@ for i in range(0, PAIRS) do
   end
 end
 
-// Records, one row per difficulty.
+# Records, one row per difficulty.
 let rec_r = rect(side.x, coll_r.y + coll_r.h + 16, side.w, 58 + 46 * len(LEVELS))
 side_card(rec_r, "PERSONAL BESTS")
 let any_played = len(filter(records, fn(r) -> r.played > 0)) > 0
@@ -1056,7 +1056,7 @@ for i in range(0, len(LEVELS)) do
   end
 end
 
-// ── Draw: footer ─────────────────────────────────────────────────────────
+# ── Draw: footer ─────────────────────────────────────────────────────────
 
 fn key_chip(x: num, y: num, cap: string, desc: string) -> num
   let cw2 = text_width(cap, S_CAP) + 16
@@ -1081,7 +1081,7 @@ let note_s = ellipsize(note, avail_px: table.x + table.w - 8 - fx - 20, size: S_
 draw_circle(center: {x: table.x + table.w - 8 - text_width(note_s, S_BODY) - 14, y: fy + 11}, radius: 4, c: note_c)
 tx_right(note_s, right_x: table.x + table.w - 8, y: fy + 3, style: S_BODY)
 
-// ── Draw: result ─────────────────────────────────────────────────────────
+# ── Draw: result ─────────────────────────────────────────────────────────
 
 if phase == "won" then
   let k = clamp((clock - won_t) / 0.35, lo: 0.0, hi: 1.0)
@@ -1129,7 +1129,7 @@ if phase == "won" then
   end
 end
 
-// Confetti stays on the table, as if it were falling onto it.
+# Confetti stays on the table, as if it were falling onto it.
 clip_push(table, 18)
 for p in bits do
   if p.kind == "paper" then
@@ -1142,13 +1142,13 @@ clip_pop()
 
 bloom.overlays()
 
-// Keep ticking while anything is moving or the clock is running.
+# Keep ticking while anything is moving or the clock is running.
 let settling = len(filter(cards, fn(c) -> c.flip != (if c.up || c.matched || peeking then 1.0 else 0.0 end))) > 0
 if phase == "deal" || hold > 0.0 || peeking || len(bits) > 0 || len(floaters) > 0 || settling || timing || (phase == "won" && clock - won_t < 2.0) then
   request_frame()
 end
 
-// ── Observation mirrors (readable in /state panel.values) ────────────────
+# ── Observation mirrors (readable in /state panel.values) ────────────────
 
 let obs_phase = phase
 let obs_level = L.name

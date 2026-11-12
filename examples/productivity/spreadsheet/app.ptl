@@ -1,20 +1,20 @@
-// ── LEDGER ────────────────────────────────────────────────────────────────
-// A spreadsheet mini-clone, drawn entirely by Petal in a Garden panel.
-//
-//   • an editable A1-style grid (26 rows x 8 columns, 18 rows visible)
-//   • a real formula language: + - * / ^, parentheses, comparisons, string
-//     literals, A1 references, A1:E4 ranges, and SUM / AVG / MIN / MAX /
-//     COUNT / ROUND / ABS / IF
-//   • keyboard-first editing (type to replace, ⏎/⇥ to commit and advance,
-//     esc to cancel, shift+arrows to select a range) with mouse parity
-//   • a live cell inspector and a selection aggregate readout
-//
-// Designed for a 1200x800 pane. See README.md.
+# ── LEDGER ────────────────────────────────────────────────────────────────
+# A spreadsheet mini-clone, drawn entirely by Petal in a Garden panel.
+#
+#   • an editable A1-style grid (26 rows x 8 columns, 18 rows visible)
+#   • a real formula language: + - * / ^, parentheses, comparisons, string
+#     literals, A1 references, A1:E4 ranges, and SUM / AVG / MIN / MAX /
+#     COUNT / ROUND / ABS / IF
+#   • keyboard-first editing (type to replace, ⏎/⇥ to commit and advance,
+#     esc to cancel, shift+arrows to select a range) with mouse parity
+#   • a live cell inspector and a selection aggregate readout
+#
+# Designed for a 1200x800 pane. See README.md.
 
 import ui
 import bloom
 
-// ══ 1. formula engine ═════════════════════════════════════════════════════
+# ══ 1. formula engine ═════════════════════════════════════════════════════
 
 let DIGITS = "0123456789"
 let LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -47,9 +47,9 @@ fn is_alpha(c: string) -> bool
   letter_val(upper(c)) >= 0
 end
 
-// ── values ────────────────────────────────────────────────────────────────
-// One record shape for every result a cell can hold, so nothing downstream
-// has to ask what kind of thing it is holding before it can pass it on.
+# ── values ────────────────────────────────────────────────────────────────
+# One record shape for every result a cell can hold, so nothing downstream
+# has to ask what kind of thing it is holding before it can pass it on.
 
 fn vnum(x: num) -> record
   {k: "num", n: float(x), s: ""}
@@ -64,8 +64,8 @@ fn verr(s: string) -> record
   {k: "err", n: 0.0, s: s}
 end
 
-// Numeric coercion for arithmetic: a blank cell reads as 0 (so =SUM over a
-// half-filled column works), text does not read as anything.
+# Numeric coercion for arithmetic: a blank cell reads as 0 (so =SUM over a
+# half-filled column works), text does not read as anything.
 fn as_num(v: record) -> record
   match v.k
     when "num" -> v
@@ -75,11 +75,11 @@ fn as_num(v: record) -> record
   end
 end
 
-// ── scanning a number out of a string ─────────────────────────────────────
-// `float("3.5")` rejects strings ("Expected float at arg 1, got string"), so
-// literals are scanned by hand. Returns {ok, v}: an optional leading "-",
-// digits, an optional fraction, and nothing else — a trailing character makes
-// the whole thing text, which is what tells "41200" from "Q1".
+# ── scanning a number out of a string ─────────────────────────────────────
+# `float("3.5")` rejects strings ("Expected float at arg 1, got string"), so
+# literals are scanned by hand. Returns {ok, v}: an optional leading "-",
+# digits, an optional fraction, and nothing else — a trailing character makes
+# the whole thing text, which is what tells "41200" from "Q1".
 
 fn str_num(s: string) -> record
   let n = len(s)
@@ -113,8 +113,8 @@ fn str_num(s: string) -> record
   end
 end
 
-// ── tokenizer ─────────────────────────────────────────────────────────────
-// Tokens are {t, s, n}, where t is "num" | "name" | "str" | "op".
+# ── tokenizer ─────────────────────────────────────────────────────────────
+# Tokens are {t, s, n}, where t is "num" | "name" | "str" | "op".
 
 fn tokenize(src: string) -> list
   let s = src
@@ -173,8 +173,8 @@ fn is_op(toks: list, i: num, s: string) -> bool
   t.t == "op" && t.s == s
 end
 
-// ── cell references ───────────────────────────────────────────────────────
-// "B12" -> {ok, r, c}, zero-based; one or more column letters.
+# ── cell references ───────────────────────────────────────────────────────
+# "B12" -> {ok, r, c}, zero-based; one or more column letters.
 
 fn parse_ref(name: string) -> record
   let n = len(name)
@@ -207,13 +207,13 @@ fn ref_name(r: num, c: num) -> string
   col ++ str(r + 1)
 end
 
-// ── evaluator ─────────────────────────────────────────────────────────────
-// Petal binds a `fn` when its declaration *runs*, so a name used above its
-// declaration reads as nil at call time ("Cannot call nil"). This grammar is
-// mutually recursive twice over — a primary contains a whole expression, and a
-// cell reference re-enters the sheet — so the two back-edges travel through
-// `var` cells, which a closure captures as a box and so can be filled in once
-// everything below is declared.
+# ── evaluator ─────────────────────────────────────────────────────────────
+# Petal binds a `fn` when its declaration *runs*, so a name used above its
+# declaration reads as nil at call time ("Cannot call nil"). This grammar is
+# mutually recursive twice over — a primary contains a whole expression, and a
+# cell reference re-enters the sheet — so the two back-edges travel through
+# `var` cells, which a closure captures as a box and so can be filled in once
+# everything below is declared.
 
 var _expr = nil
 var _eval_at = nil
@@ -278,9 +278,9 @@ fn call_fn(name: string, vals: list) -> record
   end
 end
 
-// Every argument of a call, with `B2:E4` expanded in place into one value per
-// cell. Ranges are legal only here, which is why the argument list resolves
-// them rather than the expression grammar.
+# Every argument of a call, with `B2:E4` expanded in place into one value per
+# cell. Ranges are legal only here, which is why the argument list resolves
+# them rather than the expression grammar.
 fn parse_args(cx: record, toks: list, i0: num) -> record
   let i = i0
   let vals = []
@@ -455,10 +455,10 @@ fn raw_at(cells: list, r: num, c: num) -> string
   end
 end
 
-// `cx` is {cells, depth}. There is no dependency graph and no memo table: the
-// sheet is 208 cells and a reference simply re-evaluates its target, with the
-// depth budget standing in for cycle detection (=A1 in A1 bottoms out at
-// #CYCLE rather than hanging the frame).
+# `cx` is {cells, depth}. There is no dependency graph and no memo table: the
+# sheet is 208 cells and a reference simply re-evaluates its target, with the
+# depth budget standing in for cycle detection (=A1 in A1 bottoms out at
+# #CYCLE rather than hanging the frame).
 fn eval_at(cx: record, r: num, c: num) -> record
   if r < 0 || r >= len(cx.cells) || c < 0 || c >= len(cx.cells[0]) then
     verr("#REF!")
@@ -499,9 +499,9 @@ fn evaluate(cells: list) -> list
   grid
 end
 
-// ── display formatting ────────────────────────────────────────────────────
+# ── display formatting ────────────────────────────────────────────────────
 
-// Group an integer's digits in threes: "1234567" -> "1,234,567".
+# Group an integer's digits in threes: "1234567" -> "1,234,567".
 fn group3(digits: string) -> string
   let n = len(digits)
   let out = ""
@@ -514,7 +514,7 @@ fn group3(digits: string) -> string
   out
 end
 
-// At most two decimals, trailing zeros dropped, thousands grouped.
+# At most two decimals, trailing zeros dropped, thousands grouped.
 fn fmt_num(x: num) -> string
   let neg = x < 0.0
   let scaled = round(abs(x) * 100.0)
@@ -549,7 +549,7 @@ fn kind_label(raw: string, v: record) -> string
   end
 end
 
-// ══ 2. the sheet ══════════════════════════════════════════════════════════
+# ══ 2. the sheet ══════════════════════════════════════════════════════════
 
 let COLS = 8
 let ROWS = 26
@@ -584,25 +584,25 @@ fn seed() -> list
   g
 end
 
-// ══ 3. state ══════════════════════════════════════════════════════════════
+# ══ 3. state ══════════════════════════════════════════════════════════════
 
 state cells = seed()
-state rev = 0            // bumped on every edit; the recompute key
+state rev = 0            # bumped on every edit; the recompute key
 state values = []
 state vrev = -1
 
-state sel_r = 1          // the active cell
+state sel_r = 1          # the active cell
 state sel_c = 1
-state anch_r = 1         // the other corner of the selection range
+state anch_r = 1         # the other corner of the selection range
 state anch_c = 1
-state scroll = 0         // first visible sheet row
+state scroll = 0         # first visible sheet row
 state editing = false
-state buf = ""           // the in-progress edit
-state edits = 0          // committed edits, counted so a test can observe them
-state undo = []          // snapshots of `cells`, newest last
-state armed = false      // esc pressed, waiting for the `z` that undoes
+state buf = ""           # the in-progress edit
+state edits = 0          # committed edits, counted so a test can observe them
+state undo = []          # snapshots of `cells`, newest last
+state armed = false      # esc pressed, waiting for the `z` that undoes
 
-// ══ 4. palette + metrics ══════════════════════════════════════════════════
+# ══ 4. palette + metrics ══════════════════════════════════════════════════
 
 let BG = :0e1015
 let SURFACE = :161a23
@@ -625,8 +625,8 @@ let H = screen_height()
 let PAD = 24
 
 let COLW = [168, 96, 96, 96, 96, 108, 104, 100]
-let RHW = 46             // row-number gutter
-let SBW = 12             // the scrollbar's own lane, so no column runs under it
+let RHW = 46             # row-number gutter
+let SBW = 12             # the scrollbar's own lane, so no column runs under it
 let ROW_H = 30
 let HEAD_H = 32
 
@@ -653,9 +653,9 @@ end
 let GRID_Y = 152
 let STATUS_H = 32
 let STATUS_GAP = 18
-// How many rows fit between the grid's top and the status bar. Derived rather
-// than fixed: a Garden pane is the window minus its chrome, so the pane a
-// `GARDEN_HEADLESS_SIZE` produces is never quite the size you asked for.
+# How many rows fit between the grid's top and the status bar. Derived rather
+# than fixed: a Garden pane is the window minus its chrome, so the pane a
+# `GARDEN_HEADLESS_SIZE` produces is never quite the size you asked for.
 let VIS = max(6, min(ROWS, (H - GRID_Y - HEAD_H - STATUS_GAP - STATUS_H - PAD) / ROW_H))
 let SW = sheet_w()
 let GRID_H = HEAD_H + VIS * ROW_H
@@ -665,8 +665,8 @@ let BAR_Y = 96
 let BAR_H = 40
 let STATUS_Y = GRID_Y + GRID_H + STATUS_GAP
 
-// The two masthead chips. Their widths are fixed rather than measured so the
-// undo pill does not shuffle sideways when the mode label changes.
+# The two masthead chips. Their widths are fixed rather than measured so the
+# undo pill does not shuffle sideways when the mode label changes.
 let CHIP_W = 76
 let chip_r = rect(W - PAD - CHIP_W, 34, CHIP_W, 22)
 let undo_r = rect(chip_r.x - 10 - 86, 34, 86, 22)
@@ -678,7 +678,7 @@ fn cell_rect(r: num, c: num) -> Rect
   rect(col_x(c), GRID_Y + HEAD_H + (r - scroll) * ROW_H, col_w(c), ROW_H)
 end
 
-// The cell under a pane-local point, or {ok: false}.
+# The cell under a pane-local point, or {ok: false}.
 fn cell_at(px: num, py: num) -> record
   if !point_in(px, py, r: body_rect) || px < PAD + RHW || px >= PAD + SW - SBW then
     {ok: false, r: 0, c: 0}
@@ -696,7 +696,7 @@ fn cell_at(px: num, py: num) -> record
   end
 end
 
-// ══ 5. recompute ══════════════════════════════════════════════════════════
+# ══ 5. recompute ══════════════════════════════════════════════════════════
 
 if vrev != rev then
   values = evaluate(cells)
@@ -716,8 +716,8 @@ fn is_formula(r: num, c: num) -> bool
   len(raw) > 0 && slice(raw, start: 0, end: 1) == "="
 end
 
-// ══ 6. input ══════════════════════════════════════════════════════════════
-// Handled before anything is drawn, so the frame paints the post-input state.
+# ══ 6. input ══════════════════════════════════════════════════════════════
+# Handled before anything is drawn, so the frame paints the post-input state.
 
 fn clamp_i(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
@@ -726,11 +726,11 @@ end
 let shift = mod_shift()
 let typed = text_input()
 
-// --- mouse ---------------------------------------------------------------
+# --- mouse ---------------------------------------------------------------
 let hit = cell_at(mouse_x(), mouse_y())
 let bar_rect = rect(PAD, BAR_Y, SW, BAR_H)
 
-// The undo pill takes the press before anything else looks at it.
+# The undo pill takes the press before anything else looks at it.
 let undo_click = mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: undo_r) && len(undo) > 0
 if undo_click then
   cells = last(undo)
@@ -765,7 +765,7 @@ elsif mouse_down(0) && drag_active() && hit.ok && !editing then
   sel_c = hit.c
 end
 
-// Column / row headers jump the selection to that column / row.
+# Column / row headers jump the selection to that column / row.
 if mouse_pressed(0) && !editing then
   for c in range(0, COLS) do
     if point_in(px: mouse_x(), py: mouse_y(), r: rect(col_x(c), GRID_Y, col_w(c), HEAD_H)) then
@@ -781,7 +781,7 @@ if hovered(grid_rect) then
   scroll = clamp_i(scroll - scroll_y(), lo: 0, hi: ROWS - VIS)
 end
 
-// --- keyboard ------------------------------------------------------------
+# --- keyboard ------------------------------------------------------------
 let moved = false
 let dr = 0
 let dc = 0
@@ -871,11 +871,11 @@ else
     rev = rev + 1
     edits = edits + 1
   end
-  // Undo is `esc` then `z`, a two-key chord, because a panel cannot see any
-  // other kind: Cmd/Ctrl chords are swallowed by the host before the script
-  // runs, `Mods` carries no alt bit at all, and a bare letter already means
-  // "start typing into this cell". Escape arms; the next keystroke either
-  // takes the undo or disarms.
+  # Undo is `esc` then `z`, a two-key chord, because a panel cannot see any
+  # other kind: Cmd/Ctrl chords are swallowed by the host before the script
+  # runs, `Mods` carries no alt bit at all, and a bare letter already means
+  # "start typing into this cell". Escape arms; the next keystroke either
+  # takes the undo or disarms.
   if key_pressed("escape") then
     armed = true
   elsif armed && len(typed) > 0 then
@@ -894,8 +894,8 @@ else
   end
 end
 
-// A bounded history: 40 snapshots of a 26x8 sheet is cheap, an unbounded one
-// grows for as long as the panel is open.
+# A bounded history: 40 snapshots of a 26x8 sheet is cheap, an unbounded one
+# grows for as long as the panel is open.
 while len(undo) > 40 do
   undo = slice(undo, start: 1, end: len(undo))
 end
@@ -910,24 +910,24 @@ if moved then
   scroll = clamp_i(ensure_visible(scroll, selected: sel_r, visible_rows: VIS), lo: 0, hi: ROWS - VIS)
 end
 
-// The selection rectangle, normalised; `multi` is true for more than one cell.
+# The selection rectangle, normalised; `multi` is true for more than one cell.
 let selr0 = min(sel_r, anch_r)
 let selr1 = max(sel_r, anch_r)
 let selc0 = min(sel_c, anch_c)
 let selc1 = max(sel_c, anch_c)
 let multi = selr1 > selr0 || selc1 > selc0
 
-// ══ 7. drawing ════════════════════════════════════════════════════════════
+# ══ 7. drawing ════════════════════════════════════════════════════════════
 
 clear(BG.r, BG.g, BG.b)
 
-// --- masthead ------------------------------------------------------------
+# --- masthead ------------------------------------------------------------
 draw_text("LEDGER", pos: {x: PAD, y: 26}, style: {size: 11, color: ACCENT, spacing: 3.2})
 draw_text("fy26-plan", pos: {x: PAD, y: 44}, style: {size: 24, color: TEXT})
 let sub = "quarterly model  ·  " ++ str(ROWS) ++ " x " ++ str(COLS) ++ " cells"
 draw_text(sub, pos: {x: PAD + text_width("fy26-plan", 24) + 16, y: 53}, style: {size: 12, color: FAINT})
 
-// The mode chip.
+# The mode chip.
 let mode_label = if armed then "UNDO?" elsif editing then "EDIT" else "READY" end
 let mode_col = if armed then :8ab4ff elsif editing then AMBER else ACCENT end
 draw_rect_rounded(chip_r, radius: 11, c: PANEL)
@@ -935,7 +935,7 @@ draw_rect_outline(chip_r, c: mode_col, a: 90)
 draw_circle(cx: chip_r.x + 13, cy: chip_r.y + 11, radius: 3, r: mode_col.r, g: mode_col.g, b: mode_col.b)
 draw_text(mode_label, pos: {x: chip_r.x + 22, y: chip_r.y + 6}, style: {size: 11, color: mode_col, spacing: 1.2})
 
-// The undo pill — the mouse half of `esc z`, dimmed when there is no history.
+# The undo pill — the mouse half of `esc z`, dimmed when there is no history.
 let can_undo = len(undo) > 0
 let undo_hot = can_undo && hovered(undo_r)
 draw_rect_rounded(undo_r, radius: 11, c: if undo_hot then :232b39 else PANEL end)
@@ -944,7 +944,7 @@ let undo_txt = if can_undo then "undo " ++ str(len(undo)) else "undo" end
 draw_text_center(undo_txt, cx: undo_r.center_x(), y: undo_r.y + 6, size: 11,
   c: if can_undo then (if undo_hot then TEXT else DIM end) else FAINT end)
 
-// --- formula bar ---------------------------------------------------------
+# --- formula bar ---------------------------------------------------------
 let addr = ref_name(sel_r, sel_c)
 let addr_w = 66
 draw_rect_rounded(rect(PAD, BAR_Y, SW, BAR_H), radius: 6, c: SURFACE)
@@ -971,10 +971,10 @@ else
     pos: {x: bar_text_x, y: BAR_Y + 13}, style: {size: 13, color: FAINT})
 end
 
-// --- grid ----------------------------------------------------------------
+# --- grid ----------------------------------------------------------------
 draw_rect_rounded(rect(PAD, GRID_Y, SW, GRID_H), radius: 6, c: SURFACE)
 
-// column header band
+# column header band
 draw_rect(rect(PAD, GRID_Y, SW, HEAD_H), BAND)
 draw_text_center("#", cx: PAD + RHW / 2, y: GRID_Y + 11, size: 11, c: FAINT)
 for c in range(0, COLS) do
@@ -988,7 +988,7 @@ for c in range(0, COLS) do
     c: if on then ACCENT else DIM end)
 end
 
-// rows
+# rows
 let hover_cell = if hit.ok then hit else {ok: false, r: -1, c: -1} end
 for i in range(0, VIS) do
   let r = scroll + i
@@ -1010,9 +1010,9 @@ for i in range(0, VIS) do
       if inrange then
         draw_rect(cr, c: ACCENT, a: 26)
       elsif hover_cell.ok && hover_cell.r == r && hover_cell.c == c then
-        // A flat tint, not white-at-low-alpha: the renderer composites in
-        // linear space, so even `a: 10` white over this background lands
-        // around #383838 — far brighter than the 4% it reads as.
+        # A flat tint, not white-at-low-alpha: the renderer composites in
+        # linear space, so even `a: 10` white over this background lands
+        # around #383838 — far brighter than the 4% it reads as.
         draw_rect(cr, :1d2431)
       end
 
@@ -1029,9 +1029,9 @@ for i in range(0, VIS) do
       else TEXT
       end
       let txt = display(v)
-      // Garden draws every text run above every mesh, whatever order the
-      // script emitted them in, so the in-place editor's own background can
-      // not cover this cell's committed text — the row has to leave it out.
+      # Garden draws every text run above every mesh, whatever order the
+      # script emitted them in, so the in-place editor's own background can
+      # not cover this cell's committed text — the row has to leave it out.
       if editing && r == sel_r && c == sel_c then
         txt = ""
       end
@@ -1044,8 +1044,8 @@ for i in range(0, VIS) do
           draw_text_right(shown, right_x: cr.x + col_w(c) - 10, y: y + 8, size: 13, c: col)
         end
       end
-      // The formula tick: a 4px corner flag, the classic "this cell is
-      // computed" affordance, kept out of the text's way.
+      # The formula tick: a 4px corner flag, the classic "this cell is
+      # computed" affordance, kept out of the text's way.
       if fml then
         fill_triangle(x1: cr.x + col_w(c) - 5, y1: y + 1, x2: cr.x + col_w(c) - 1, y2: y + 1,
           x3: cr.x + col_w(c) - 1, y3: y + 5, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b, a: 150)
@@ -1054,7 +1054,7 @@ for i in range(0, VIS) do
   end
 end
 
-// column rules, drawn over the rows so they read as one ruled sheet
+# column rules, drawn over the rows so they read as one ruled sheet
 for c in range(1, COLS) do
   draw_rect(rect(col_x(c), GRID_Y + HEAD_H, 1, VIS * ROW_H), LINE_SOFT)
 end
@@ -1063,7 +1063,7 @@ draw_rect(rect(PAD + SW - SBW, GRID_Y, 1, GRID_H), LINE_SOFT)
 draw_rect(rect(PAD, GRID_Y + HEAD_H, SW, 1), LINE)
 draw_rect_outline(rect(PAD, GRID_Y, SW, GRID_H), LINE)
 
-// the active cell ring, and the in-place editor
+# the active cell ring, and the in-place editor
 if sel_r >= scroll && sel_r < scroll + VIS then
   let ar = cell_rect(sel_r, sel_c)
   if editing then
@@ -1084,7 +1084,7 @@ end
 
 bloom.scrollbar(rect(PAD + SW - SBW, GRID_Y + HEAD_H, SBW - 3, VIS * ROW_H), count: ROWS, rows: VIS, scroll: scroll)
 
-// ══ 8. the inspector rail ═════════════════════════════════════════════════
+# ══ 8. the inspector rail ═════════════════════════════════════════════════
 
 fn rail_label(text: string, y: num) -> num
   draw_text(text, pos: {x: RAIL_X + 16, y: y}, style: {size: 10, color: FAINT, spacing: 2.4})
@@ -1124,9 +1124,9 @@ draw_text(ellipsize(shown_val, avail_px: RAIL_W - 32, size: 17), pos: {x: RAIL_X
   color: if sel_val.k == "err" then ERRC elsif sel_val.k == "empty" then FAINT else TEXT end})
 ry = ry + 32
 
-// A four-quarter profile of the selected row (columns B..E), the numbers the
-// sheet is actually about. Bars grow from a shared baseline so a negative
-// quarter reads as one.
+# A four-quarter profile of the selected row (columns B..E), the numbers the
+# sheet is actually about. Bars grow from a shared baseline so a negative
+# quarter reads as one.
 let series = for c in range(1, 5) do val_at(sel_r, c) end
 let any_num = false
 let peak = 0.0
@@ -1166,7 +1166,7 @@ if any_num && peak > 0.0 && !multi then
   ry = ry + ch + 26
 end
 
-// The selection aggregate — what the status bar of a real sheet shows.
+# The selection aggregate — what the status bar of a real sheet shows.
 if multi then
   let picked = []
   for r in range(selr0, selr1 + 1) do
@@ -1189,9 +1189,9 @@ if multi then
   ry = ry + 12
 end
 
-// The reference blocks are pinned to the foot of the rail and stack upward, so
-// the live sections above them can grow — a range selection swaps the row
-// profile for four aggregate rows — without either drifting.
+# The reference blocks are pinned to the foot of the rail and stack upward, so
+# the live sections above them can grow — a range selection swaps the row
+# profile for four aggregate rows — without either drifting.
 let keyrows = [
   ["arrows", "move"],
   ["shift+arr", "extend"],
@@ -1223,7 +1223,7 @@ for kr in keyrows do
   ky = ky + 17
 end
 
-// ══ 9. status bar ═════════════════════════════════════════════════════════
+# ══ 9. status bar ═════════════════════════════════════════════════════════
 
 let n_formula = 0
 let n_err = 0

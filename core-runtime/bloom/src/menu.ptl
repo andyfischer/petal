@@ -1,22 +1,22 @@
-// bloom/menu — dropdowns, menu bars, context menus and the command palette.
-//
-// One menu is open at a time, program-wide, and the library holds that fact,
-// not the app: `menu(id, anchor, items)` returns the index of the item chosen
-// on the frame it is chosen and -1 otherwise. There is no menu state record to
-// thread, and a second menu opening closes the first because they are asking
-// the same cell.
-//
-// While a menu is open it *captures* input (see bloom/interact), so the panel
-// underneath goes inert for exactly as long as the menu is up — no ordering
-// discipline, no `if !m.open` around every other control.
-//
-// An item is a string, or a record:
-//   {label, hint, icon, disabled, sep, danger}
-// `sep: true` draws a divider and cannot be chosen.
+# bloom/menu — dropdowns, menu bars, context menus and the command palette.
+#
+# One menu is open at a time, program-wide, and the library holds that fact,
+# not the app: `menu(id, anchor, items)` returns the index of the item chosen
+# on the frame it is chosen and -1 otherwise. There is no menu state record to
+# thread, and a second menu opening closes the first because they are asking
+# the same cell.
+#
+# While a menu is open it *captures* input (see bloom/interact), so the panel
+# underneath goes inert for exactly as long as the menu is up — no ordering
+# discipline, no `if !m.open` around every other control.
+#
+# An item is a string, or a record:
+#   {label, hint, icon, disabled, sep, danger}
+# `sep: true` draws a divider and cannot be chosen.
 
-// The drawing and input names used below (`rect`, `draw_rect_rounded`,
-// `mix` and friends) come from the `ui` package. This module imports it
-// itself: an import reaches only the file it is written in.
+# The drawing and input names used below (`rect`, `draw_rect_rounded`,
+# `mix` and friends) come from the `ui` package. This module imports it
+# itself: an import reaches only the file it is written in.
 import bloom/theme: theme, ts, ts_a, tone, hair, stroke, surface, wash,
                     dur, rate, text_in, divider, defer_paint
 import bloom/motion: ease_to, ease_flag, enter, ease_out, ease_back,
@@ -28,7 +28,7 @@ import text_layout: draw_text_line
 import bloom/button: button, chip
 import ui
 
-// ── Which menu is open ────────────────────────────────────────────────────
+# ── Which menu is open ────────────────────────────────────────────────────
 
 state var _open = ""
 state var _open_frame = -1
@@ -41,7 +41,7 @@ pub fn menu_open(id: string)
   set _hl = 0
 end
 
-// Open at an explicit point rather than under an anchor (a context menu).
+# Open at an explicit point rather than under an anchor (a context menu).
 pub fn menu_open_at(id: string, x: num, y: num)
   menu_open(id)
   set _origin = {x: x, y: y}
@@ -60,11 +60,11 @@ pub fn menu_any_open() -> bool
   (get _open) != ""
 end
 
-// ── The popup ─────────────────────────────────────────────────────────────
+# ── The popup ─────────────────────────────────────────────────────────────
 
-// Normalize an item to a record. `it` is deliberately un-annotated: a menu
-// item is a bare string *or* an options record, which is the whole point of
-// this function, and the type vocabulary has no union to say so.
+# Normalize an item to a record. `it` is deliberately un-annotated: a menu
+# item is a bare string *or* an options record, which is the whole point of
+# this function, and the type vocabulary has no union to say so.
 fn _item(it) -> record
   if type(it) == "string" then
     {label: it, hint: "", icon: "", disabled: false, sep: false, danger: false}
@@ -83,7 +83,7 @@ fn _sep_h(t: record) -> int
   9
 end
 
-// The popup's own size, measured from its items.
+# The popup's own size, measured from its items.
 pub fn menu_size(items: list, opts: record) -> record
   let t = theme()
   let size = field(opts, "size", t.font_md)
@@ -111,16 +111,16 @@ pub fn menu_size(items: list, opts: record) -> record
   {w: w, h: h + t.space}
 end
 
-// Draw the open menu `id` anchored under `anchor` and report the chosen index
-// (-1 for none). Safe to call every frame: it does nothing while closed.
+# Draw the open menu `id` anchored under `anchor` and report the chosen index
+# (-1 for none). Safe to call every frame: it does nothing while closed.
 pub fn menu(id: string, anchor: record, items: list)
   menu(id, anchor, items, {})
 end
 
 pub fn menu(id: string, anchor: record, items: list, opts: record)
   let t = theme()
-  // `enter` runs in both directions, so the popup is still drawn for the two
-  // frames it takes to fade out after being closed.
+  # `enter` runs in both directions, so the popup is still drawn for the two
+  # frames it takes to fade out after being closed.
   let open = menu_is_open(id)
   let k = enter(open, dur(t, t.open_dur))
   if !open && k <= 0.0 then
@@ -130,11 +130,11 @@ pub fn menu(id: string, anchor: record, items: list, opts: record)
   end
 end
 
-// The `ui` layer an open menu raises the modal floor on. bloom's own
-// controls go inert through `capture`; the floor does the same for every
-// control built on `ui.interact` (list rows, fields, an app's own hit
-// rects), which bloom's claim does not reach. It is what `ui`'s popover
-// runtime used to do for its menus.
+# The `ui` layer an open menu raises the modal floor on. bloom's own
+# controls go inert through `capture`; the floor does the same for every
+# control built on `ui.interact` (list rows, fields, an app's own hit
+# rects), which bloom's claim does not reach. It is what `ui`'s popover
+# runtime used to do for its menus.
 let _MENU_LAYER = 1000
 
 fn _draw_menu(t: record, id: string, anchor: record, items: list, opts: record, open: bool, k: num)
@@ -149,7 +149,7 @@ fn _draw_menu(t: record, id: string, anchor: record, items: list, opts: record, 
   let place = field(opts, "at", "below")
   let ox = if place == "point" then float((get _origin).x) else anchor.x end
   let oy = if place == "point" then float((get _origin).y) else anchor.y + anchor.h + 4.0 end
-  // Flip up / pull left rather than draw off the edge.
+  # Flip up / pull left rather than draw off the edge.
   let x = min(ox, max(0.0, float(screen_width()) - box.w - 6.0))
   let y = if oy + box.h > float(screen_height()) - 6.0 then
     max(6.0, anchor.y - box.h - 4.0)
@@ -159,15 +159,15 @@ fn _draw_menu(t: record, id: string, anchor: record, items: list, opts: record, 
   let e = ease_out(k)
   let r = Rect(x, y - 6.0 * (1.0 - e), box.w, box.h)
 
-  // Scale-in about the top edge: a menu grows out of its anchor, so the pop
-  // has to keep its top still.
+  # Scale-in about the top edge: a menu grows out of its anchor, so the pop
+  # has to keep its top still.
   let s = 0.97 + 0.03 * e
   let grown = Rect(r.x + r.w * (1.0 - s) / 2.0, r.y, r.w * s, r.h * s)
 
-  // The rows are *measured and probed* here and *painted* later: this pass
-  // decides what the menu does, the deferred closure draws what it looks like.
-  // Splitting the two is what lets a dropdown be written inline with its
-  // button and still land on top of everything drawn after it.
+  # The rows are *measured and probed* here and *painted* later: this pass
+  # decides what the menu does, the deferred closure draws what it looks like.
+  # Splitting the two is what lets a dropdown be written inline with its
+  # button and still land on top of everything drawn after it.
   var chosen = -1
   var rows = []
   var yy = grown.y + t.space
@@ -184,8 +184,8 @@ fn _draw_menu(t: record, id: string, anchor: record, items: list, opts: record, 
       if p.hover && open then
         set _hl = index
       end
-      // The highlight fades rather than snapping, and every row's entrance is
-      // staggered off the menu's own age.
+      # The highlight fades rather than snapping, and every row's entrance is
+      # staggered off the menu's own age.
       let sel = ease_to(if hot && !m.disabled then 1.0 else 0.0 end, rate(t, 26.0))
       let stag = ease_out(stagger(index, 0.012, dur(t, 0.12)))
       set rows = append(rows, {sep: false, r: row, item: m, sel: sel,
@@ -198,8 +198,8 @@ fn _draw_menu(t: record, id: string, anchor: record, items: list, opts: record, 
     set index = index + 1
   end
 
-  // Captured as a `let`: a closure over the `var` would have to read the cell
-  // with `get` at paint time, and the cell is this call's, not this frame's.
+  # Captured as a `let`: a closure over the `var` would have to read the cell
+  # with `get` at paint time, and the cell is this call's, not this frame's.
   let painted = get rows
   defer_paint(fn()
     _paint_menu(t, grown, painted, e, size)
@@ -222,8 +222,8 @@ fn _draw_menu(t: record, id: string, anchor: record, items: list, opts: record, 
     if key_pressed("escape") then
       menu_close()
     end
-    // A click anywhere else closes — but never the click that opened it, which
-    // is still on this frame's edge.
+    # A click anywhere else closes — but never the click that opened it, which
+    # is still on this frame's edge.
     if mouse_pressed(0) && frame_count() != (get _open_frame) &&
       !(mouse_x() >= grown.x && mouse_x() < grown.x + grown.w &&
         mouse_y() >= grown.y && mouse_y() < grown.y + grown.h) then
@@ -236,7 +236,7 @@ fn _draw_menu(t: record, id: string, anchor: record, items: list, opts: record, 
   chosen
 end
 
-// The paint half: pure drawing from values the input pass already decided.
+# The paint half: pure drawing from values the input pass already decided.
 fn _paint_menu(t: record, grown: record, rows: list, e: num, size: num)
   let a = int(255.0 * e)
   draw_shadow(grown, {radius: t.radius_lg, blur: 26, spread: 0, dx: 0, dy: 10,
@@ -288,9 +288,9 @@ fn _next_enabled(items: list, from: num, dir: num)
   i
 end
 
-// ── Dropdown button ───────────────────────────────────────────────────────
+# ── Dropdown button ───────────────────────────────────────────────────────
 
-// A button that opens a menu under itself. Returns the chosen index, or -1.
+# A button that opens a menu under itself. Returns the chosen index, or -1.
 pub fn dropdown(r: record, label: string, items: list)
   dropdown(r, label, items, {})
 end
@@ -307,7 +307,7 @@ pub fn dropdown(r: record, label: string, items: list, opts: record)
   menu(id, r, items, opts)
 end
 
-// A dropdown bound to a value: shows the current option, returns the new index.
+# A dropdown bound to a value: shows the current option, returns the new index.
 pub fn select(r: record, options: list, index: num)
   select(r, options, index, {})
 end
@@ -319,11 +319,11 @@ pub fn select(r: record, options: list, index: num, opts: record)
   if picked >= 0 then picked else index end
 end
 
-// ── Menu bar ──────────────────────────────────────────────────────────────
+# ── Menu bar ──────────────────────────────────────────────────────────────
 
-// `menus` is a list of {label, items}. Returns {menu, item}, both -1 when
-// nothing was chosen. Once one menu is open, hovering along the bar opens the
-// next — the behavior every desktop menu bar has and nobody implements twice.
+# `menus` is a list of {label, items}. Returns {menu, item}, both -1 when
+# nothing was chosen. Once one menu is open, hovering along the bar opens the
+# next — the behavior every desktop menu bar has and nobody implements twice.
 pub fn menu_bar(r: record, menus: list)
   menu_bar(r, menus, {})
 end
@@ -340,8 +340,8 @@ pub fn menu_bar(r: record, menus: list, opts: record)
     let br = Rect(x, r.y, w, r.h)
     let id = "menubar:" ++ label
     let open = menu_is_open(id)
-    // The bar's own probe must ignore the capture its menu holds, or the bar
-    // would go inert the moment one of its menus opened.
+    # The bar's own probe must ignore the capture its menu holds, or the bar
+    # would go inert the moment one of its menus opened.
     let p = probe_over(br)
     if p.click then
       if open then menu_close() else menu_open(id) end
@@ -374,10 +374,10 @@ fn _bar_owns(menus: list, owner: string) -> bool
   yes
 end
 
-// ── Context menu ──────────────────────────────────────────────────────────
+# ── Context menu ──────────────────────────────────────────────────────────
 
-// Right-click anywhere in `area` to open `items` at the pointer. Returns the
-// chosen index, or -1.
+# Right-click anywhere in `area` to open `items` at the pointer. Returns the
+# chosen index, or -1.
 pub fn context_menu(area: record, items: list)
   context_menu_impl(area, items, {})
 end
@@ -386,11 +386,11 @@ pub fn context_menu(area: record, items: list, opts: record)
   context_menu_impl(area, items, opts)
 end
 
-// `context_menu` is also a name in the `ui` package, which this module imports plainly
-// (`import ui`). Inside one variant's own body the name means only that
-// variant, so the short form cannot reach the long one directly — it would
-// escape outward to `ui`'s set. Both forms go through this private
-// implementation instead, which no other module can shadow.
+# `context_menu` is also a name in the `ui` package, which this module imports plainly
+# (`import ui`). Inside one variant's own body the name means only that
+# variant, so the short form cannot reach the long one directly — it would
+# escape outward to `ui`'s set. Both forms go through this private
+# implementation instead, which no other module can shadow.
 fn context_menu_impl(area: record, items: list, opts: record)
   let id = field(opts, "id", "context")
   if !is_captured() && mouse_pressed(1) &&

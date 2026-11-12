@@ -1,5 +1,5 @@
-// Computed record keys: `{[key]: value}`. docs/language-guide.md (Records).
-// Run with `petal test test/ptl`.
+# Computed record keys: `{[key]: value}`. docs/language-guide.md (Records).
+# Run with `petal test test/ptl`.
 
 let K = "speed"
 

@@ -1,8 +1,8 @@
-// Iterate a list read-only, accumulating into a scalar.
-//
-// No element is mutated, so NOTHING should be duplicated — this is the strict
-// regression guard: if any future change starts copying the list to iterate it,
-// the zero ceilings below will catch it.
+# Iterate a list read-only, accumulating into a scalar.
+#
+# No element is mutated, so NOTHING should be duplicated — this is the strict
+# regression guard: if any future change starts copying the list to iterate it,
+# the zero ceilings below will catch it.
 let xs = [10, 20, 30, 40, 50]
 let total = 0
 for x in xs do

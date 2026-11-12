@@ -1,24 +1,24 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// LEDGER — a personal finance dashboard with drill-down
-//
-// A Garden panel app. Four KPI tiles, a donut of spending by category, a
-// twelve-month column chart, a cumulative line chart and a transaction table —
-// all scoped to the same drill path. Click a donut slice (or a legend row, or
-// a table row) to descend: all spending → a category → a merchant. Escape
-// climbs back out; the breadcrumb jumps straight to a level.
-//
-//   Run:  garden --headless --debug-port 0 --init layout.ptl
-//   Keys: up/down pick a slice   enter/right drill in   esc/left drill out
-//         n / p  step the month filter    a  clear it    t  re-sort the table
-// ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# LEDGER — a personal finance dashboard with drill-down
+#
+# A Garden panel app. Four KPI tiles, a donut of spending by category, a
+# twelve-month column chart, a cumulative line chart and a transaction table —
+# all scoped to the same drill path. Click a donut slice (or a legend row, or
+# a table row) to descend: all spending → a category → a merchant. Escape
+# climbs back out; the breadcrumb jumps straight to a level.
+#
+#   Run:  garden --headless --debug-port 0 --init layout.ptl
+#   Keys: up/down pick a slice   enter/right drill in   esc/left drill out
+#         n / p  step the month filter    a  clear it    t  re-sort the table
+# ─────────────────────────────────────────────────────────────────────────────
 
 import ui
 import bloom
 import color
 
-// ── Palette ──────────────────────────────────────────────────────────────────
-// One near-black ground, two surface steps, a hairline that separates cards
-// without boxing them in, and eight categorical hues for the breakdown.
+# ── Palette ──────────────────────────────────────────────────────────────────
+# One near-black ground, two surface steps, a hairline that separates cards
+# without boxing them in, and eight categorical hues for the breakdown.
 
 let BG       = :0c0e13
 let SURFACE  = :14171e
@@ -35,22 +35,22 @@ let AMBER    = :f2b661
 let STEEL    = :7e93b8
 let WHITE    = :ffffff
 
-// Spacing scale.
+# Spacing scale.
 let S1 = 6
 let S2 = 12
 let S3 = 18
 let S4 = 24
 
-// Five text sizes, and no more: the host rasterizes one glyph per
-// (character, size) into a fixed atlas, and a page spread over many sizes
-// overflows it.
+# Five text sizes, and no more: the host rasterizes one glyph per
+# (character, size) into a fixed atlas, and a page spread over many sizes
+# overflows it.
 let T_MICRO = 10
 let T_SMALL = 12
 let T_BODY  = 14
 let T_HEAD  = 18
 let T_HERO  = 26
 
-// ── Text helpers ─────────────────────────────────────────────────────────────
+# ── Text helpers ─────────────────────────────────────────────────────────────
 
 fn text_w(s: string, st: record) -> int
   text_width(s, st)
@@ -64,8 +64,8 @@ fn text_right(s: string, right_x: num, y: num, st: record)
   draw_text(s, pos: {x: right_x - text_w(s, st), y: y}, style: st)
 end
 
-// The prelude's `ellipsize` measures with a bare font size, which under-counts
-// a style carrying `spacing` — this one measures the exact record it draws.
+# The prelude's `ellipsize` measures with a bare font size, which under-counts
+# a style carrying `spacing` — this one measures the exact record it draws.
 fn fit_style(s: string, avail: num, st: record) -> string
   if text_width(s, st) <= avail then
     return s
@@ -81,7 +81,7 @@ fn text_mid(s: string, cx: num, y: num, st: record)
   draw_text(s, pos: {x: cx - text_w(s, st) / 2.0, y: y}, style: st)
 end
 
-// ── Numbers ──────────────────────────────────────────────────────────────────
+# ── Numbers ──────────────────────────────────────────────────────────────────
 
 fn commas(n: num) -> string
   let s = str(n)
@@ -99,8 +99,8 @@ fn commas(n: num) -> string
   out
 end
 
-// Fixed-point without a printf: scale, round, split the integer back apart.
-// str(float) would hand us 12.300000000000001.
+# Fixed-point without a printf: scale, round, split the integer back apart.
+# str(float) would hand us 12.300000000000001.
 fn dec(x: num, places: num) -> string
   let mul = 1
   for i in range(0, places) do
@@ -133,8 +133,8 @@ fn money_cents(v: num) -> string
   "$" ++ dec(v, 2)
 end
 
-// One format per axis: a $250 step stays in dollars, a $10,000 step goes to k.
-// Mixing them inside a single axis ("$750" above "$1.0k") reads as a mistake.
+# One format per axis: a $250 step stays in dollars, a $10,000 step goes to k.
+# Mixing them inside a single axis ("$750" above "$1.0k") reads as a mistake.
 fn axis_label(v: num, step: num) -> string
   if abs(v) < 0.5 then
     "$0"
@@ -149,9 +149,9 @@ fn pct(v: num) -> string
   dec(v, 1) ++ "%"
 end
 
-// ── Deterministic pseudo-random ──────────────────────────────────────────────
-// Seeded, so the ledger holds the same numbers across every launch and every
-// hot reload. A dashboard that reshuffles on reload cannot be read.
+# ── Deterministic pseudo-random ──────────────────────────────────────────────
+# Seeded, so the ledger holds the same numbers across every launch and every
+# hot reload. A dashboard that reshuffles on reload cannot be read.
 
 fn hashi(n: num) -> num
   let x = (n * 374761393 + 668265263) % 2147483647
@@ -159,23 +159,23 @@ fn hashi(n: num) -> num
   (x * 1103515245 + 12345) % 2147483647
 end
 
-// Hashed twice: a single LCG pass over an arithmetic seed walk (which is what
-// the generator below produces) comes back as an arithmetic sequence mod 1, and
-// every "does this merchant bill this month?" coin flip lands the same way.
+# Hashed twice: a single LCG pass over an arithmetic seed walk (which is what
+# the generator below produces) comes back as an arithmetic sequence mod 1, and
+# every "does this merchant bill this month?" coin flip lands the same way.
 fn rand01(n: num) -> float
   float(hashi(hashi(n) % 65521) % 100000) / 100000.0
 end
 
-// ── Calendar ─────────────────────────────────────────────────────────────────
+# ── Calendar ─────────────────────────────────────────────────────────────────
 
 let MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 let MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 let YEAR = "2025"
 
-// ── The chart of accounts ────────────────────────────────────────────────────
-// `avg` is a typical charge, `freq` the expected number of charges a month
-// (fractional means "only some months"), `jit` the spread around `avg`.
+# ── The chart of accounts ────────────────────────────────────────────────────
+# `avg` is a typical charge, `freq` the expected number of charges a month
+# (fractional means "only some months"), `jit` the spread around `avg`.
 
 let CATS = [
   {name: "Housing", color: :6ea8ff, merchants: [
@@ -228,8 +228,8 @@ let CATS = [
   ]},
 ]
 
-// Seasonality: heating peaks in winter, gifts in December, patios in summer.
-// Keeps the column chart from being twelve identical bars.
+# Seasonality: heating peaks in winter, gifts in December, patios in summer.
+# Keeps the column chart from being twelve identical bars.
 fn season(ci: num, m: num) -> float
   let ph = float(m) / 12.0 * 2.0 * pi()
   if ci == 2 then
@@ -280,7 +280,7 @@ fn build_income() -> list
   end
 end
 
-// ── Aggregation ──────────────────────────────────────────────────────────────
+# ── Aggregation ──────────────────────────────────────────────────────────────
 
 fn shade(c: record, i: num, n: num) -> record
   if n <= 1 then
@@ -340,10 +340,10 @@ fn zeros12() -> list
   zeros(12)
 end
 
-// Everything one drill scope needs, computed once and cached against its key.
+# Everything one drill scope needs, computed once and cached against its key.
 fn build_view(txns: list, income: list, ci: num, mi: num, mo: num, sort_mode: num) -> record
-  // The monthly series always spans the full year: the month filter
-  // highlights a column rather than collapsing the chart to one.
+  # The monthly series always spans the full year: the month filter
+  # highlights a column rather than collapsing the chart to one.
   let months = zeros12()
   let all_months = zeros12()
   let cat_totals = zeros(len(CATS))
@@ -394,11 +394,11 @@ fn build_view(txns: list, income: list, ci: num, mi: num, mo: num, sort_mode: nu
     ]
   end
 
-  // Big slices first, so the donut reads clockwise by weight.
+  # Big slices first, so the donut reads clockwise by weight.
   slices = sort_by(slices, fn(s) -> s.value, "desc")
 
-  // Newest first, or largest first. `sort_by` is stable, so rows that tie
-  // keep the order the ledger had them in.
+  # Newest first, or largest first. `sort_by` is stable, so rows that tie
+  # keep the order the ledger had them in.
   rows = if sort_mode == 0 then
     sort_by(rows, fn(t) -> t.m * 64 + t.day, "desc")
   else
@@ -410,7 +410,7 @@ fn build_view(txns: list, income: list, ci: num, mi: num, mo: num, sort_mode: nu
     income: income, inc_total: sum_of(income), spend_total: sum_of(all_months)}
 end
 
-// ── Card chrome ──────────────────────────────────────────────────────────────
+# ── Card chrome ──────────────────────────────────────────────────────────────
 
 fn card(r: record)
   draw_rect_rounded(x: r.x, y: r.y + 2, w: r.w, h: r.h, radius: 14, r: 0, g: 0, b: 0, a: 70)
@@ -418,7 +418,7 @@ fn card(r: record)
   draw_rect_outline(r, c: HAIRLINE, a: 255, width: 1)
 end
 
-// The content rect under a card's title row.
+# The content rect under a card's title row.
 fn card_body(r: record) -> Rect
   rect(r.x + S3, r.y + S3 + 24, r.w - S3 * 2, r.h - S3 * 2 - 24)
 end
@@ -431,7 +431,7 @@ fn card_head(r: record, title: string, note: string) -> Rect
   card_body(r)
 end
 
-// ── Donut ────────────────────────────────────────────────────────────────────
+# ── Donut ────────────────────────────────────────────────────────────────────
 
 fn ring_pt(cx: num, cy: num, a: num, r: num) -> list
   [cx + sin(a) * r, cy - cos(a) * r]
@@ -451,7 +451,7 @@ fn ring_arc(cx: num, cy: num, r_in: num, r_out: num, a0: num, a1: num, c: record
   end
 end
 
-// Index of the slice under the pointer, or -1.
+# Index of the slice under the pointer, or -1.
 fn donut_hit(cx: num, cy: num, r_in: num, r_out: num, slices: list, total: num) -> int
   let dx = float(mouse_x()) - cx
   let dy = float(mouse_y()) - cy
@@ -481,7 +481,7 @@ fn draw_donut(cx: num, cy: num, r_in: num, r_out: num, slices: list, total: num,
     let sweep = if total > 0.0 then s.value / total * 2.0 * pi() * t else 0.0 end
     let lift = if i == hot then 8.0 elsif i == sel then 3.5 else 0.0 end
     let alpha = if hot >= 0 && i != hot then 140 else 255 end
-    // A hair of padding between wedges reads as separation without a stroke.
+    # A hair of padding between wedges reads as separation without a stroke.
     let gap = if sweep > 0.07 then 0.013 else 0.0 end
     ring_arc(cx, cy, r_in, r_out + lift, acc + gap, acc + sweep - gap, c: s.color, alpha: alpha)
     acc = acc + sweep
@@ -489,10 +489,10 @@ fn draw_donut(cx: num, cy: num, r_in: num, r_out: num, slices: list, total: num,
   draw_circle(center: {x: cx, y: cy}, radius: r_in, c: SURFACE)
 end
 
-// ── Column chart ─────────────────────────────────────────────────────────────
+# ── Column chart ─────────────────────────────────────────────────────────────
 
-// A round gridline step, so the axis reads $1.0k / $2.0k rather than the
-// quarters of whatever the maximum happens to be.
+# A round gridline step, so the axis reads $1.0k / $2.0k rather than the
+# quarters of whatever the maximum happens to be.
 fn axis_scale(maxv: num, target: num) -> record
   let raw = max(maxv, 0.000001) / float(target)
   let mag = pow(10.0, floor(log(raw) / log(10.0)))
@@ -553,7 +553,7 @@ fn draw_columns(plot: record, vals: list, base_c: record, hot: num, marked: num,
         y2: plot.y + plot.h + 3.0, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b, a: 255, width: 2)
     end
   end
-  // Mean line last, so it sits over the columns.
+  # Mean line last, so it sits over the columns.
   let avg = sum_of(vals) / float(len(vals))
   let ay = plot.y + plot.h * (1.0 - avg / top)
   let x = plot.x
@@ -571,7 +571,7 @@ fn draw_columns(plot: record, vals: list, base_c: record, hot: num, marked: num,
   top
 end
 
-// ── Line chart ───────────────────────────────────────────────────────────────
+# ── Line chart ───────────────────────────────────────────────────────────────
 
 fn cum(vals: list) -> list
   let out = []
@@ -591,9 +591,9 @@ fn ly(plot: record, v: num, lo: num, hi: num)
   plot.y + plot.h * (1.0 - (v - lo) / max(hi - lo, 0.0001))
 end
 
-// fill_poly is convex-only, so the band under a polyline is emitted one
-// vertical trapezoid per segment; the gradient comes from redrawing the whole
-// band inside clip strips of falling alpha.
+# fill_poly is convex-only, so the band under a polyline is emitted one
+# vertical trapezoid per segment; the gradient comes from redrawing the whole
+# band inside clip strips of falling alpha.
 fn area_under(plot: record, pts: list, c: record, a_top: num)
   let bands = 12
   for b in range(0, bands) do
@@ -631,7 +631,7 @@ fn dashed(x0: num, y0: num, x1: num, y1: num, c: record, a: num)
   end
 end
 
-// ── Breadcrumb ───────────────────────────────────────────────────────────────
+# ── Breadcrumb ───────────────────────────────────────────────────────────────
 
 let CRUMB = {size: T_SMALL, color: DIM}
 
@@ -665,7 +665,7 @@ fn hit_list(rs: list) -> int
   hit
 end
 
-// ── Legend ───────────────────────────────────────────────────────────────────
+# ── Legend ───────────────────────────────────────────────────────────────────
 
 let LEG_H = 26
 
@@ -681,17 +681,17 @@ fn leg_hit(x: num, y0: num, w: num, n: num) -> int
   hit
 end
 
-// ── KPI tiles ────────────────────────────────────────────────────────────────
+# ── KPI tiles ────────────────────────────────────────────────────────────────
 
 fn kpi_tile(r: record, label: string, value: string, sub: string, sub_c: record, series: list, c: record, t: num)
   card(r)
-  // The histogram owns the right side of the tile, so a long scope name is
-  // clipped rather than allowed to run under it.
+  # The histogram owns the right side of the tile, so a long scope name is
+  # clipped rather than allowed to run under it.
   let label_st = {size: T_MICRO, color: DIM, spacing: 1.4}
   text_at(fit_style(label, avail: r.w - S3 - 122, st: label_st), x: r.x + S3, y: r.y + 14, st: label_st)
   text_at(value, x: r.x + S3, y: r.y + 30, st: {size: T_HERO, color: TEXT})
   text_at(sub, x: r.x + S3, y: r.y + 64, st: {size: T_MICRO, color: sub_c})
-  // A twelve-column micro-histogram, right-aligned in the tile.
+  # A twelve-column micro-histogram, right-aligned in the tile.
   let bw = 5
   let gap = 3
   let bx = r.x + r.w - S3 - 12 * (bw + gap) + gap
@@ -708,7 +708,7 @@ fn kpi_rect(r: record, i: num, kw: num) -> Rect
   rect(r.x + i * (kw + 16), r.y, kw, r.h)
 end
 
-// ── Table ────────────────────────────────────────────────────────────────────
+# ── Table ────────────────────────────────────────────────────────────────────
 
 let TROW = 24
 
@@ -723,7 +723,7 @@ fn table_hit(view: record, scroll: num, count: num, visible: num) -> int
   hit
 end
 
-// ── Layout ───────────────────────────────────────────────────────────────────
+# ── Layout ───────────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
@@ -740,30 +740,30 @@ let r_bars  = rect(PAD + COL_L + GAP, ROW2, COL_R, ROW3 - ROW2 - GAP)
 let r_line  = rect(PAD, ROW3, COL_L, H - ROW3 - PAD)
 let r_table = rect(PAD + COL_L + GAP, ROW3, COL_R, H - ROW3 - PAD)
 
-// ── Persistent state ─────────────────────────────────────────────────────────
-// `_`-prefixed names are filtered out of the debug server's `panel.values`,
-// which is where the 700-row ledger and the derived view belong.
+# ── Persistent state ─────────────────────────────────────────────────────────
+# `_`-prefixed names are filtered out of the debug server's `panel.values`,
+# which is where the 700-row ledger and the derived view belong.
 
 state _txns = build_txns()
 state _income = build_income()
 state _cache = nil
 state _cache_key = ""
 
-state level = 0        // 0 all spending · 1 one category · 2 one merchant
+state level = 0        # 0 all spending · 1 one category · 2 one merchant
 state sel_cat = -1
 state sel_mer = -1
-state month = -1       // -1 = the whole year
+state month = -1       # -1 = the whole year
 state legend_sel = 0
-state sort_mode = 0    // 0 by date · 1 by amount
+state sort_mode = 0    # 0 by date · 1 by amount
 state table_scroll = 0
 state anim = 0.0
-state drills = 0       // counted, so a drill is observable in /state
+state drills = 0       # counted, so a drill is observable in /state
 
 fn scope_key(ci: num, mi: num, mo: num, sm: num) -> string
   "{ci}|{mi}|{mo}|{sm}"
 end
 
-// ── Frame ────────────────────────────────────────────────────────────────────
+# ── Frame ────────────────────────────────────────────────────────────────────
 
 clear(BG.r, BG.g, BG.b)
 
@@ -774,7 +774,7 @@ _cache_key = key0
 let pre = _cache
 let total_pre = sum_of(for s in pre.slices do s.value end)
 
-// ── Hit testing, before drawing, so a click lands on the same frame ──────────
+# ── Hit testing, before drawing, so a click lands on the same frame ──────────
 
 let dcx = r_donut.x + S3 + 106.0
 let dcy = r_donut.y + 42.0 + 122.0
@@ -801,7 +801,7 @@ let t_rows_visible = int(t_view.h) / TROW
 table_scroll = scroll_update(offset: table_scroll, total_lines: len(pre.rows), visible_lines: t_rows_visible, r: t_view)
 let hot_row = table_hit(view: t_view, scroll: table_scroll, count: len(pre.rows), visible: t_rows_visible)
 
-// ── Input ────────────────────────────────────────────────────────────────────
+# ── Input ────────────────────────────────────────────────────────────────────
 
 let n_slices = len(pre.slices)
 let want_cat = sel_cat
@@ -816,7 +816,7 @@ if key_pressed("up") || key_pressed("k") then
   want_sel = max(0, legend_sel - 1)
 end
 
-// Which slice the pointer or the keyboard is asking to descend into.
+# Which slice the pointer or the keyboard is asking to descend into.
 let pick = if mouse_pressed(0) && hot_slice >= 0 then hot_slice
 elsif mouse_pressed(0) && hot_leg >= 0 then hot_leg
 elsif key_pressed("return") || key_pressed("right") then want_sel
@@ -836,7 +836,7 @@ if pick >= 0 && pick < n_slices && level < 2 then
   end
 end
 
-// A table row drills straight to its merchant.
+# A table row drills straight to its merchant.
 if mouse_pressed(0) && hot_row >= 0 then
   let t = pre.rows[hot_row]
   want_cat = t.cat
@@ -898,12 +898,12 @@ let scope_name = if level == 0 then "All spending"
 elsif level == 1 then CATS[sel_cat].name
 else CATS[sel_cat].merchants[sel_mer].name
 end
-// Low-chroma steel means "all of it"; a drill picks up the category's own hue.
+# Low-chroma steel means "all of it"; a drill picks up the category's own hue.
 let scope_color = if level == 0 then STEEL else CATS[sel_cat].color end
 let line_color = if level == 0 then POS else CATS[sel_cat].color end
 let month_label = if month < 0 then "Full year {YEAR}" else "{MONTHS[month]} {YEAR}" end
 
-// ── Header ───────────────────────────────────────────────────────────────────
+# ── Header ───────────────────────────────────────────────────────────────────
 
 draw_circle(center: {x: PAD + 5, y: 27}, radius: 5.0, c: scope_color)
 let mark_st = {size: T_HEAD, color: TEXT, spacing: 2.0}
@@ -935,7 +935,7 @@ let mp_c = if month < 0 then DIM else ACCENT end
 draw_rect_rounded(rect(W - PAD - mp_w, 16, mp_w, 22), radius: 11, c: mp_c, a: 32)
 text_at(month_label, x: W - PAD - mp_w + 9, y: 21, st: {size: T_MICRO, color: mp_c})
 
-// ── KPI tiles ────────────────────────────────────────────────────────────────
+# ── KPI tiles ────────────────────────────────────────────────────────────────
 
 let kw = (r_kpis.w - GAP * 3) / 4
 
@@ -980,7 +980,7 @@ else
     end, c: scope_color, t: ease)
 end
 
-// ── Donut card ───────────────────────────────────────────────────────────────
+# ── Donut card ───────────────────────────────────────────────────────────────
 
 card(r_donut)
 let d_title = if level == 0 then "SPENDING BY CATEGORY"
@@ -1025,7 +1025,7 @@ for i in range(0, len(slices)) do
     st: {size: T_SMALL, color: if on then TEXT else FAINT end})
 end
 
-// ── Column chart card ────────────────────────────────────────────────────────
+# ── Column chart card ────────────────────────────────────────────────────────
 
 card(r_bars)
 let b_title = if level == 0 then "MONTHLY SPENDING"
@@ -1033,7 +1033,7 @@ else upper(scope_name) ++ " BY MONTH" end
 card_head(r_bars, title: b_title, note: "click a column to filter that month")
 draw_columns(plot: bplot, vals: view.months, base_c: scope_color, hot: hot_col, marked: month, t: ease)
 
-// ── Line chart card ──────────────────────────────────────────────────────────
+# ── Line chart card ──────────────────────────────────────────────────────────
 
 card(r_line)
 let l_body = card_head(r_line,
@@ -1062,8 +1062,8 @@ let pts = for i in range(0, 12) do
 end
 area_under(plot: lplot, pts: pts, c: line_color, a_top: 80)
 
-// The reference line: the opening balance at the top level, an even pace to
-// the year's total once drilled in.
+# The reference line: the opening balance at the top level, an even pace to
+# the year's total once drilled in.
 if level == 0 then
   let by = ly(plot: lplot, v: base, lo: lo_n, hi: hi)
   dashed(x0: lplot.x, y0: by, x1: lplot.x + lplot.w, y1: by, c: DIM, a: 110)
@@ -1085,7 +1085,7 @@ text_at(if level == 0 then "closing " ++ money(vals[11])
 else "year to date " ++ money(vals[11]) end,
   x: lplot.x + 4, y: lplot.y - 12, st: {size: T_MICRO, color: DIM})
 
-// ── Transactions card ────────────────────────────────────────────────────────
+# ── Transactions card ────────────────────────────────────────────────────────
 
 card(r_table)
 let sort_note = if sort_mode == 0 then "newest first  ·  t sorts by amount"

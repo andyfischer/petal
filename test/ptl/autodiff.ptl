@@ -1,7 +1,7 @@
-// The `autodiff` package's finite-difference functions: `deriv`,
-// `jacobian`, `solve_step` and `solve` (docs/features/differentiation.md).
-// Run with `petal test test/ptl`. That probes leave no emits in the host's
-// buffers is checked in core/tests/all/autodiff.rs.
+# The `autodiff` package's finite-difference functions: `deriv`,
+# `jacobian`, `solve_step` and `solve` (docs/features/differentiation.md).
+# Run with `petal test test/ptl`. That probes leave no emits in the host's
+# buffers is checked in core/tests/all/autodiff.rs.
 
 import autodiff
 import io
@@ -90,8 +90,8 @@ test "a function that does not return a number is errored" do
 end
 
 test "forward mode takes one probe per input, central two" do
-  // Inside speculate the probes run directly, so the outer call sees one
-  // emit per run of `counted`: the base point, then the probes.
+  # Inside speculate the probes run directly, so the outer call sees one
+  # emit per run of `counted`: the base point, then the probes.
   let fwd = speculate(fn() deriv(counted, 1.0, {mode: "forward"}) end)
   near(fwd.value.value, 2.0)
   expect_eq(fwd.value.quality, "smooth")
@@ -108,7 +108,7 @@ test "jacobian: one row per output, one column per input" do
   near(j.rows[1][1], 2.0)
   expect_eq(j.quality, ["smooth", "smooth"])
   expect_eq(len(j.step), 2)
-  // A number out is one row.
+  # A number out is one row.
   let s = jacobian(fn(p) p[0] * 2.0 + p[1] end, [1, 1])
   expect_eq(len(s.rows), 1)
   near(s.rows[0][0], 2.0)
@@ -166,7 +166,7 @@ test "an f that writes state and cells and emits leaves nothing behind" do
   set calls = 0
   near(deriv(counted, 1.0).value, 2.0)
   expect_eq(get calls, 0)
-  // Each probe starts the slot from its initializer: n is 1 in every run.
+  # Each probe starts the slot from its initializer: n is 1 in every run.
   let d = deriv(stateful, 3.0)
   near(d.value, 1.0)
   expect_eq(d.quality, "smooth")
@@ -179,7 +179,7 @@ end
 test "deriv inside speculate runs its probes directly" do
   let r = speculate(fn() deriv(counted, 2.0).value end)
   near(r.value, 2.0)
-  // The outer call captured every probe's emit, the base point first.
+  # The outer call captured every probe's emit, the base point first.
   expect(len(r.emits) >= 3, "{len(r.emits)} emits")
   expect_eq(r.emits[0].value, 2.0)
   expect_eq(get calls, 0)

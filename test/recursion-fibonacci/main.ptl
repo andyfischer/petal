@@ -1,4 +1,4 @@
-// Tree recursion with elsif chains.
+# Tree recursion with elsif chains.
 fn fib(n)
   if n <= 0 then 0
   elsif n == 1 then 1

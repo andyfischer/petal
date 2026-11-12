@@ -1,6 +1,6 @@
-// Benchmark: pure list-accumulator — the COW worst case. Every append clones
-// the whole backing Vec, so cost is quadratic in list length until in-place
-// mutation (M4) lands. The DupStats before/after target.
+# Benchmark: pure list-accumulator — the COW worst case. Every append clones
+# the whole backing Vec, so cost is quadratic in list length until in-place
+# mutation (M4) lands. The DupStats before/after target.
 
 let total = 0
 for round in range(0, 40) do

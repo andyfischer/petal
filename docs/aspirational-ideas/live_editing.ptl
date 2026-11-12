@@ -1,14 +1,14 @@
-// Live Editing
-// Modifying a running program while preserving its state.
-// See ../../PETAL_GOALS.md for the motivation behind this API.
-//
-// Key methods used here:
-//   Program.parse(source)              -- parse source into a Program
-//   program.run()                      -- execute (state persists across calls)
-//   program.edit(old_text, new_text)   -- apply edit, returns Reconciliation
-//   program.source()                   -- current source code as string
+# Live Editing
+# Modifying a running program while preserving its state.
+# See ../../PETAL_GOALS.md for the motivation behind this API.
+#
+# Key methods used here:
+#   Program.parse(source)              -- parse source into a Program
+#   program.run()                      -- execute (state persists across calls)
+#   program.edit(old_text, new_text)   -- apply edit, returns Reconciliation
+#   program.source()                   -- current source code as string
 
-// --- Example 1: Edit a counter's increment ---
+# --- Example 1: Edit a counter's increment ---
 
 let prog = Program.parse("""
     fn counter()
@@ -24,12 +24,12 @@ print("")
 print("Original program:")
 print(prog.source())
 
-// Run three times to build up state
+# Run three times to build up state
 for i in range(1, 4) do
   print("Call", i, ":", prog.run())
 end
 
-// Now edit: change "count + 1" to "count + 10"
+# Now edit: change "count + 1" to "count + 10"
 print("")
 let recon = prog.edit("count + 1", "count + 10")
 print("--- Edit applied ---")
@@ -42,7 +42,7 @@ print("  Initialized:", recon.initialized)
 print("  Removed:", recon.removed)
 print("")
 
-// Continue running -- state picks up where it left off
+# Continue running -- state picks up where it left off
 for i in range(4, 7) do
   print("Call", i, ":", prog.run())
 end
@@ -50,7 +50,7 @@ print("")
 print("The count continued from 3, now incrementing by 10!")
 print("")
 
-// --- Example 2: Adding new state to a running program ---
+# --- Example 2: Adding new state to a running program ---
 
 let anim = Program.parse("""
     state x = 0
@@ -62,7 +62,7 @@ print("=== Adding State ===")
 anim.run()
 anim.run()
 
-// Add a new state variable
+# Add a new state variable
 let recon2 = anim.edit(
   "state x = 0",
   "state x = 0\n    state y = 100"

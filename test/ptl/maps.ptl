@@ -1,5 +1,5 @@
-// Maps: `Map()` / `Map(pairs)`, keyed by any hashable value compared by
-// content. docs/language-guide.md (Maps). Run with `petal test test/ptl`.
+# Maps: `Map()` / `Map(pairs)`, keyed by any hashable value compared by
+# content. docs/language-guide.md (Maps). Run with `petal test test/ptl`.
 
 test "a map is built empty or from [key, value] pairs" do
   expect_eq(type(Map()), "map")

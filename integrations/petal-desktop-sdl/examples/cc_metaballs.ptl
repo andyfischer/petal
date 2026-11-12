@@ -1,16 +1,16 @@
-// Metaballs — implicit surfaces sampled on a coarse grid.
-//
-// We define a scalar field f(x, y) = sum_i (r_i^2 / ((x - cx_i)^2 + (y - cy_i)^2))
-// and color each grid cell by the field value, with an iso-surface highlight.
-//
-// Without a per-pixel framebuffer this is too slow at full resolution, so we
-// render at low res (cell_size pixels per sample) and let the chunky look
-// become part of the aesthetic.
-//
-// Controls:
-//   click   add a permanent ball at the cursor
-//   c       clear extra balls
-//   space   pause/resume motion
+# Metaballs — implicit surfaces sampled on a coarse grid.
+#
+# We define a scalar field f(x, y) = sum_i (r_i^2 / ((x - cx_i)^2 + (y - cy_i)^2))
+# and color each grid cell by the field value, with an iso-surface highlight.
+#
+# Without a per-pixel framebuffer this is too slow at full resolution, so we
+# render at low res (cell_size pixels per sample) and let the chunky look
+# become part of the aesthetic.
+#
+# Controls:
+#   click   add a permanent ball at the cursor
+#   c       clear extra balls
+#   space   pause/resume motion
 
 import ui
 import color
@@ -35,7 +35,7 @@ if mouse_pressed(0) then
   })
 end
 
-// Initialize moving balls
+# Initialize moving balls
 if len(balls) == 0 then
   for i in range(0, 5) do
     let angle = random(0.0, pi() * 2.0)
@@ -50,7 +50,7 @@ if len(balls) == 0 then
   end
 end
 
-// Update moving balls (bounce off walls)
+# Update moving balls (bounce off walls)
 let new_balls = []
 for b in balls do
   let nx = b.cx + b.vx * delta
@@ -65,14 +65,14 @@ for b in balls do
 end
 balls = new_balls
 
-// Sample the field on a coarse grid. Larger cells = chunkier + much faster.
+# Sample the field on a coarse grid. Larger cells = chunkier + much faster.
 let cell = 10
 let cols = int(sw) / cell
 let rows = int(sh) / cell
 
 clear(8, 6, 18)
 
-// Pre-extract ball arrays for the inner loop (fewer field accesses)
+# Pre-extract ball arrays for the inner loop (fewer field accesses)
 let bx = []
 let by = []
 let br2 = []
@@ -100,10 +100,10 @@ for j in range(0, rows) do
       f += br2[k] / d2
     end
 
-    // Ignore weak field — keeps background dark
+    # Ignore weak field — keeps background dark
     if f > 0.4 then
-      // Iso-surface highlight near f ~= 1.
-      // hue here is in degrees, so use hsv_deg() (hsv() takes hue in 0..1).
+      # Iso-surface highlight near f ~= 1.
+      # hue here is in degrees, so use hsv_deg() (hsv() takes hue in 0..1).
       let iso = abs(f - 1.0)
       let h = (220.0 - clamp(f * 50.0, lo: 0.0, hi: 180.0) + t * 18.0) % 360.0
       let s = 0.85
@@ -120,7 +120,7 @@ for j in range(0, rows) do
   end
 end
 
-// Tiny markers at ball centers
+# Tiny markers at ball centers
 for b in balls do
   draw_circle(cx: int(b.cx), cy: int(b.cy), radius: 2, r: 255, g: 240, b: 230)
 end

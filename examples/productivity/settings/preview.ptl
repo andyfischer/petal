@@ -1,9 +1,9 @@
-// Fern preferences: the live preview.
-//
-// A small mock of the editor the settings are for, drawn from the same values
-// record the page edits. Nothing here is stored: change a setting and the
-// next frame is simply drawn from the new value. It is the proof that the
-// controls are wired to something.
+# Fern preferences: the live preview.
+#
+# A small mock of the editor the settings are for, drawn from the same values
+# record the page edits. Nothing here is stored: change a setting and the
+# next frame is simply drawn from the new value. It is the proof that the
+# controls are wired to something.
 
 import ./widgets as wd
 import text_layout as tl
@@ -11,8 +11,8 @@ import ./schema as sc
 import ./icons: glyph
 import ui
 
-// The buffer on show. `ind` is the indent depth, so Tab size has something to
-// act on; each token is [kind, text].
+# The buffer on show. `ind` is the indent depth, so Tab size has something to
+# act on; each token is [kind, text].
 let CODE = [
   {ind: 0, toks: [["com", "// Water each bed once."]]},
   {ind: 0, toks: [["kw", "fn "], ["fn", "water"], ["id", "(bed, n)"]]},
@@ -29,7 +29,7 @@ let CODE = [
   {ind: 0, toks: [["kw", "end"]]},
 ]
 let CURSOR_LINE = 4
-let CURSOR_COL = 11          // columns past the indent
+let CURSOR_COL = 11          # columns past the indent
 
 let WORDS = [
   {files: "FILES", line: "Ln", col: "Col", spaces: "Spaces", tab: "Tab size", built: "Build finished", held: "Held until"},
@@ -58,9 +58,9 @@ fn ink_of(t: record, kind: string) -> record
   end
 end
 
-// Lay a line out as rows of [kind, text, column] runs, breaking at `cols`
-// when wrapping is on. A break lands between tokens where it can, and inside
-// one only when the token alone is wider than the row.
+# Lay a line out as rows of [kind, text, column] runs, breaking at `cols`
+# when wrapping is on. A break lands between tokens where it can, and inside
+# one only when the token alone is wider than the row.
 fn rows_of(line: record, lead: num, cols: num, wrap: bool, hang: num) -> list
   let rows = []
   let cur = []
@@ -71,14 +71,14 @@ fn rows_of(line: record, lead: num, cols: num, wrap: bool, hang: num) -> list
       rows = append(rows, cur)
       cur = []
       col = hang
-      // A row never starts with the space that used to separate two words.
+      # A row never starts with the space that used to separate two words.
       if starts_with(text, " ") then
         text = slice(text, 1)
       end
     end
     while wrap && col + len(text) > cols && cols - col > 0 do
       let room = cols - col
-      // Prefer the last space that fits.
+      # Prefer the last space that fits.
       let cut = room
       for i in range(room, 0, -1) do
         if char_at(text, i) == " " && cut == room then
@@ -115,7 +115,7 @@ fn draw_editor(r: record, t: record, v: record, x: record) -> nil
   let lh = round(size * v.ed_leading)
   let tab = v.fm_tab
 
-  // Gutter and minimap take their columns first.
+  # Gutter and minimap take their columns first.
   let gutter_w = if v.ed_numbers == 0 then 10.0 else cw * 2.0 + 18.0 end
   let map_w = wd.anim(if v.ed_minimap then v.ed_minimap_w * 0.72 else 0.0 end, 20.0)
   let map_left = v.ed_minimap_side == 0
@@ -135,7 +135,7 @@ fn draw_editor(r: record, t: record, v: record, x: record) -> nil
     if i == CURSOR_LINE && v.ed_current then
       draw_rect(Rect(r.x, y, r.w, lh * len(rows)), mix(t.paper, t.text, 0.055))
     end
-    // Line number, on the first row only.
+    # Line number, on the first row only.
     if v.ed_numbers != 0 then
       let n = if v.ed_numbers == 2 && i != CURSOR_LINE then abs(i - CURSOR_LINE) else i + 1 end
       let ns = {...base_style, color: if i == CURSOR_LINE then t.muted else mix(t.dim, t.paper, 0.25) end}
@@ -145,7 +145,7 @@ fn draw_editor(r: record, t: record, v: record, x: record) -> nil
       let ry = y + k * lh
       let band = Rect(text_x, ry, text_w, lh)
       if v.fm_whitespace && len(line.toks) > 0 then
-        // Indentation made visible: a dot per space, an arrow per tab.
+        # Indentation made visible: a dot per space, an arrow per tab.
         let ws = {...base_style, color: mix(t.dim, t.paper, 0.35)}
         let depth_cols = if k == 0 then lead else 0 end
         if v.fm_spaces then
@@ -176,7 +176,7 @@ fn draw_editor(r: record, t: record, v: record, x: record) -> nil
     y += lh * len(rows)
   end
 
-  // Minimap: every run as a bar a few px long.
+  # Minimap: every run as a bar a few px long.
   if map_w > 1.0 then
     let mr = Rect(if map_left then r.x + gutter_w - 4.0 else r.x + r.w - map_w end, r.y, map_w, r.h)
     clip_push(mr)
@@ -196,7 +196,7 @@ fn draw_editor(r: record, t: record, v: record, x: record) -> nil
   clip_pop()
 end
 
-// The alert, parked in whichever corner Notifications asks for.
+# The alert, parked in whichever corner Notifications asks for.
 fn draw_alert(area: record, t: record, v: record, words: record) -> nil
   let show = wd.anim(if v.nt_on then 1.0 else 0.0 end, 16.0)
   if show < 0.01 then
@@ -221,7 +221,7 @@ fn draw_alert(area: record, t: record, v: record, words: record) -> nil
   draw_shadow(r, {radius: t.radius, blur: 16, spread: 0, dx: 0, dy: 5, color: :000000, a: int(t.shadow * 0.7 * show)})
   draw_rect_rounded(r, t.radius, t.raised, a)
   draw_rect_rounded_outline(r, t.radius, t.line, a)
-  // Held alerts go grey: still there, not asking for attention.
+  # Held alerts go grey: still there, not asking for attention.
   let live_c = if event == nil then t.dim elsif event.id == "ev_tests" then t.danger else t.accent end
   let tone_c = mix(live_c, t.dim, quiet)
   glyph("bell", Rect(r.x + 10, r.y + 9, 14, 14), tone_c, 1.4)
@@ -237,7 +237,7 @@ fn draw_alert(area: record, t: record, v: record, words: record) -> nil
   let ts_b = {size: 10.5, font: "ui", color: {...mix(t.muted, t.dim, quiet), a: a}}
   tl.draw_text_line(tl.elide(title, ts_t, w - 62), Rect(r.x + 32, r.y + 6, w - 62, 16), ts_t)
   tl.draw_text_line(tl.elide(body, ts_b, w - 42), Rect(r.x + 32, r.y + 22, w - 42, 15), ts_b)
-  // Sound: three bars, lit to the volume.
+  # Sound: three bars, lit to the volume.
   if v.nt_sound then
     for i in range(0, 3) do
       let lit = v.nt_volume > i * 34
@@ -246,15 +246,15 @@ fn draw_alert(area: record, t: record, v: record, words: record) -> nil
         if lit then tone_c else t.track end, a)
     end
   end
-  // How long it stays: a bar draining along the bottom edge.
+  # How long it stays: a bar draining along the bottom edge.
   let life = (v.nt_duration - 2.0) / 10.0
   draw_rect_rounded(Rect(r.x + 10, r.y + h - 5, (w - 20) * (0.18 + 0.82 * life), 2), 1, tone_c, int(a * 0.8))
 end
 
 pub fn draw(r: record, t0: record, v: record, x: record) -> nil
-  // The mock has two surfaces, the page the code sits on and the chrome
-  // around it. Dark themes put the code on the darker one, light themes on
-  // the lighter one, so the roles swap rather than the names.
+  # The mock has two surfaces, the page the code sits on and the chrome
+  # around it. Dark themes put the code on the darker one, light themes on
+  # the lighter one, so the roles swap rather than the names.
   let t = {...t0, paper: if t0.dark then t0.well else t0.card end, chrome: if t0.dark then t0.card else t0.well end}
   let words = WORDS[v.start_lang]
   let radius = t.radius + 2
@@ -262,7 +262,7 @@ pub fn draw(r: record, t0: record, v: record, x: record) -> nil
   draw_rect_rounded(r, radius, t.paper)
   clip_push(r, radius)
 
-  // Title bar.
+  # Title bar.
   let bar_h = 30.0
   let bar = Rect(r.x, r.y, r.w, bar_h)
   draw_rect(bar, t.chrome)
@@ -271,7 +271,7 @@ pub fn draw(r: record, t0: record, v: record, x: record) -> nil
     draw_circle({x: r.x + 16.0 + i * 15.0, y: r.y + bar_h / 2.0}, 4.5, [:ee6a5f, :f5bd4f, :61c454][i], if t.dark then 215 else 255 end)
   end
   tl.draw_text_line("garden.ptl", bar, {size: 11.5, font: "ui", color: t.muted}, "center")
-  // Whoever the Profile page says you are.
+  # Whoever the Profile page says you are.
   let who = initials(v.me_name)
   let av = {x: r.x + r.w - 18.0, y: r.y + bar_h / 2.0}
   draw_circle(av, 9, t.accent)
@@ -279,7 +279,7 @@ pub fn draw(r: record, t0: record, v: record, x: record) -> nil
   let name_s = {size: 10.5, font: "ui", color: t.dim}
   tl.draw_text_line(tl.elide(trim(v.me_name), name_s, 96), Rect(av.x - 112, r.y, 96, bar_h), name_s, "right")
 
-  // Status bar.
+  # Status bar.
   let st_h = 22.0
   let st = Rect(r.x, r.y + r.h - st_h, r.w, st_h)
   draw_rect(st, t.accent)
@@ -293,7 +293,7 @@ pub fn draw(r: record, t0: record, v: record, x: record) -> nil
     draw_circle({x: st.x + 54.5, y: st.y + st_h / 2.0 - 1.5}, 3.6, t.accent)
   end
 
-  // File tree, on whichever side Appearance puts it.
+  # File tree, on whichever side Appearance puts it.
   let body = Rect(r.x, r.y + bar_h + 1, r.w, r.h - bar_h - st_h - 1)
   let tree_w = 96.0
   let side = wd.anim(if v.ui_sidebar == 0 then 0.0 else 1.0 end, 14.0)

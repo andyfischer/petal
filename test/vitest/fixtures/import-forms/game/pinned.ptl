@@ -1,4 +1,4 @@
-// A selective import settles which `draw` the bare name means.
+# A selective import settles which `draw` the bare name means.
 import ./hud
 import ./level
 import ./level: draw

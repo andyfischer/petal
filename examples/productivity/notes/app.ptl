@@ -1,21 +1,21 @@
-// ── Vellum ──────────────────────────────────────────────────────────────────
-// A notes app on paper. A notebook rail on the left, a searchable note list in
-// the middle, and a real multi-line text editor on the right: soft-wrapped
-// lines, a placed caret, click-and-drag selection, shift-arrow selection,
-// double-click word select, and live search highlighting inside the body.
-//
-// Exercises: text editing (a full line/column edit model built in Petal —
-// insert, delete, split, join, word wrap with a display-row index), selection
-// (mouse drag, shift+arrows, double-click), persistence (a saved snapshot
-// separate from the working copy, dirty tracking, idle autosave, explicit
-// save, and an undo history that can resurrect a deleted note), and search
-// (case-insensitive across titles and bodies, with in-body highlighting).
-//
-// Designed for a 1280x850 panel.
+# ── Vellum ──────────────────────────────────────────────────────────────────
+# A notes app on paper. A notebook rail on the left, a searchable note list in
+# the middle, and a real multi-line text editor on the right: soft-wrapped
+# lines, a placed caret, click-and-drag selection, shift-arrow selection,
+# double-click word select, and live search highlighting inside the body.
+#
+# Exercises: text editing (a full line/column edit model built in Petal —
+# insert, delete, split, join, word wrap with a display-row index), selection
+# (mouse drag, shift+arrows, double-click), persistence (a saved snapshot
+# separate from the working copy, dirty tracking, idle autosave, explicit
+# save, and an undo history that can resurrect a deleted note), and search
+# (case-insensitive across titles and bodies, with in-body highlighting).
+#
+# Designed for a 1280x850 panel.
 
 import ui
 
-// ── palette ─────────────────────────────────────────────────────────────────
+# ── palette ─────────────────────────────────────────────────────────────────
 let RAIL_BG   = :e7e1d5
 let LIST_BG   = :f1ece2
 let PAPER     = :fbf8f2
@@ -35,7 +35,7 @@ let SELBG     = :d2dbe6
 let MATCH     = :f3dfa4
 let WHITE     = :ffffff
 
-// ── metrics ─────────────────────────────────────────────────────────────────
+# ── metrics ─────────────────────────────────────────────────────────────────
 let W = screen_width()
 let H = screen_height()
 
@@ -57,20 +57,20 @@ let FS_BODY  = 14
 let FS_TITLE = 22
 let FS_MARK  = 21
 
-let LH  = 23                          // body line height
-let CW  = text_width("m", FS_BODY)    // monospace advance
+let LH  = 23                          # body line height
+let CW  = text_width("m", FS_BODY)    # monospace advance
 
 let BODY_X = EDX + EPAD
 let BODY_W = EDW - EPAD - 36
 let BODY_Y = 158
 let FOOT_H = 44
 let BODY_H = H - BODY_Y - FOOT_H - 14
-let MAXC   = BODY_W / CW         // wrap width, in characters
+let MAXC   = BODY_W / CW         # wrap width, in characters
 
-// ── the store ───────────────────────────────────────────────────────────────
-// `saved` is the persisted document; `notes` is the working copy. Values are
-// immutable, so `saved = notes` really is a snapshot — nothing later written
-// through `notes` can reach into it.
+# ── the store ───────────────────────────────────────────────────────────────
+# `saved` is the persisted document; `notes` is the working copy. Values are
+# immutable, so `saved = notes` really is a snapshot — nothing later written
+# through `notes` can reach into it.
 state notes = [
   {id: 1, book: "Journal", pinned: true, mins: 14,
     title: "Morning, the long table",
@@ -203,28 +203,28 @@ state notes = [
     ]},
 ]
 state saved   = notes
-state history = []                    // undo snapshots, oldest first
+state history = []                    # undo snapshots, oldest first
 state next_id = 10
 
-// ── view + edit state ───────────────────────────────────────────────────────
-state book    = "All"          // notebook filter
-state q       = ""             // search query
-state sel_id  = 1              // open note
-state focus   = "list"         // "list" | "search" | "title" | "body"
+# ── view + edit state ───────────────────────────────────────────────────────
+state book    = "All"          # notebook filter
+state q       = ""             # search query
+state sel_id  = 1              # open note
+state focus   = "list"         # "list" | "search" | "title" | "body"
 state cur     = {line: 0, col: 0}
 state anchor  = {line: 0, col: 0}
-state goal    = 0              // remembered visual column for up/down
-state bscroll = 0              // body scroll, pixels
-state lscroll = 0              // note-list scroll, pixels
+state goal    = 0              # remembered visual column for up/down
+state bscroll = 0              # body scroll, pixels
+state lscroll = 0              # note-list scroll, pixels
 state dragging = false
 state dirty   = false
 state last_edit = 0.0
-state saves   = 0              // completed saves (observable in panel.values)
-state edits   = 0              // applied edit operations
-state flash   = -99.0          // time() of the last save, for the toast
-state acts_id = 0              // note whose inline action row is open
-// `click_count()` stays 1 for a panel even when the host is told a press is a
-// double-click, so the double-click gesture is timed here instead.
+state saves   = 0              # completed saves (observable in panel.values)
+state edits   = 0              # applied edit operations
+state flash   = -99.0          # time() of the last save, for the toast
+state acts_id = 0              # note whose inline action row is open
+# `click_count()` stays 1 for a panel even when the host is told a press is a
+# double-click, so the double-click gesture is timed here instead.
 state click_t = -9.0
 state click_x = 0
 state click_y = 0
@@ -242,9 +242,9 @@ fn book_color(b: string) -> record
   end
 end
 
-// ── small drawing helpers ───────────────────────────────────────────────────
-// The `clamp` builtin yields a float; indices and pixel geometry stay integral,
-// so this is the one used below.
+# ── small drawing helpers ───────────────────────────────────────────────────
+# The `clamp` builtin yields a float; indices and pixel geometry stay integral,
+# so this is the one used below.
 fn iclamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
 end
@@ -265,7 +265,7 @@ fn dot(cx: num, cy: num, r: num, c: record)
   draw_circle(center: {x: cx, y: cy}, radius: r, c: c)
 end
 
-// ── text utilities ──────────────────────────────────────────────────────────
+# ── text utilities ──────────────────────────────────────────────────────────
 fn words_in(lines: list) -> int
   let n = 0
   for ln in lines do
@@ -286,7 +286,7 @@ fn chars_in(lines: list) -> int
   max(0, n - 1)
 end
 
-// Character offsets of every case-insensitive occurrence of `needle` in `hay`.
+# Character offsets of every case-insensitive occurrence of `needle` in `hay`.
 fn find_all(hay: string, needle: string) -> list
   let out = []
   if len(needle) > 0 && len(needle) <= len(hay) then
@@ -330,11 +330,11 @@ fn ago(m: num) -> string
   end
 end
 
-// ── the wrap model ──────────────────────────────────────────────────────────
-// A logical line becomes one or more display rows. `wrap_starts` returns the
-// character offset each row begins at; rows are contiguous, so the space a break
-// consumes stays at the tail of the row above it (invisible, and it keeps the
-// column arithmetic a straight subtraction).
+# ── the wrap model ──────────────────────────────────────────────────────────
+# A logical line becomes one or more display rows. `wrap_starts` returns the
+# character offset each row begins at; rows are contiguous, so the space a break
+# consumes stays at the tail of the row above it (invisible, and it keeps the
+# column arithmetic a straight subtraction).
 fn wrap_starts(s: string, maxc: num) -> list
   let starts = [0]
   let n = len(s)
@@ -371,8 +371,8 @@ fn build_rows(lines: list, maxc: num) -> list
   rows
 end
 
-// Display row holding `p`; the row that *ends* at a wrap point wins, so the
-// caret sits at the end of the visual line rather than jumping to the next.
+# Display row holding `p`; the row that *ends* at a wrap point wins, so the
+# caret sits at the end of the visual line rather than jumping to the next.
 fn row_of(rows: list, p: record) -> int
   let found = -1
   for i in range(0, len(rows)) do
@@ -384,7 +384,7 @@ fn row_of(rows: list, p: record) -> int
   if found < 0 then max(0, len(rows) - 1) else found end
 end
 
-// ── positions and selection ─────────────────────────────────────────────────
+# ── positions and selection ─────────────────────────────────────────────────
 fn pos_before(a: record, b: record) -> bool
   a.line < b.line || (a.line == b.line && a.col < b.col)
 end
@@ -406,7 +406,7 @@ fn clamp_pos(lines: list, p: record) -> record
   {line: l, col: iclamp(p.col, lo: 0, hi: len(lines[l]))}
 end
 
-// ── edit primitives (pure: they return new documents) ───────────────────────
+# ── edit primitives (pure: they return new documents) ───────────────────────
 fn delete_range(lines: list, s: record, e: record) -> list
   let out = []
   for i in range(0, len(lines)) do
@@ -449,9 +449,9 @@ fn insert_text(lines: list, p: record, txt: string) -> record
   {lines: out, cur: np}
 end
 
-// Tab produces no text, but Ctrl+S *does* arrive with its character attached
-// (the host forwards the chord and its text together), so a save would type an
-// "s" into the document without this guard.
+# Tab produces no text, but Ctrl+S *does* arrive with its character attached
+# (the host forwards the chord and its text together), so a save would type an
+# "s" into the document without this guard.
 fn typing_ok() -> bool
   !key_pressed("tab") && !mod_ctrl() && !mod_cmd()
 end
@@ -488,7 +488,7 @@ fn word_end(s: string, col: num) -> num
   i
 end
 
-// ── store helpers ───────────────────────────────────────────────────────────
+# ── store helpers ───────────────────────────────────────────────────────────
 fn note_by_id(list: list, id: num)
   let found = nil
   for n in list do
@@ -545,7 +545,7 @@ fn drop_note(list: list, id: num) -> list
   out
 end
 
-// Notebook filter + query filter, pinned first, then most-recent first.
+# Notebook filter + query filter, pinned first, then most-recent first.
 fn visible_notes(list: list, bk: string, query: string) -> list
   let hits = []
   for n in list do
@@ -595,13 +595,13 @@ fn preview_text(lines: list) -> string
   out
 end
 
-// ════════════════════════════════════════════════════════════════════════════
-//  frame
-// ════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════
+#  frame
+# ════════════════════════════════════════════════════════════════════════════
 let now = time()
 let shown = visible_notes(notes, bk: book, query: q)
 
-// Keep the selection pointing at something that exists and is visible.
+# Keep the selection pointing at something that exists and is visible.
 if len(shown) > 0 && note_by_id(shown, sel_id) == nil then
   sel_id = shown[0].id
 end
@@ -616,16 +616,16 @@ let mx = mouse_x()
 let my = mouse_y()
 let click = mouse_pressed(0)
 
-// ── background plates ───────────────────────────────────────────────────────
+# ── background plates ───────────────────────────────────────────────────────
 clear(LIST_BG.r, LIST_BG.g, LIST_BG.b)
 draw_rect(rect(0, 0, RAIL_W, H), RAIL_BG)
 draw_rect(rect(EDX, 0, EDW, H), PAPER)
 hairline(x1: RAIL_W + 0.5, y1: 0, x2: RAIL_W + 0.5, y2: H, c: RULE)
 hairline(x1: EDX + 0.5, y1: 0, x2: EDX + 0.5, y2: H, c: RULE)
 
-// ════════════════════════════════════════════════════════════════════════════
-//  rail
-// ════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════
+#  rail
+# ════════════════════════════════════════════════════════════════════════════
 draw_text("Vellum", pos: {x: PAD, y: 26}, style: {size: FS_MARK, color: INK, spacing: 0.4})
 draw_text("notes & scraps", pos: {x: PAD, y: 54}, style: {size: FS_TINY, color: FAINT})
 hairline(x1: PAD, y1: 82.5, x2: RAIL_W - PAD, y2: 82.5, c: RULE)
@@ -667,7 +667,7 @@ let tag_y = rail_y + len(rail_rows) * 30 + 20
 hairline(x1: PAD, y1: tag_y - 12.5, x2: RAIL_W - PAD, y2: tag_y - 12.5, c: RULE)
 label("LIBRARY", x: PAD, y: tag_y, c: FAINT)
 
-// A stacked bar of the collection: one segment per notebook, in its own colour.
+# A stacked bar of the collection: one segment per notebook, in its own colour.
 let bar_w = RAIL_W - PAD * 2
 let bar_x = PAD
 let bar_y = tag_y + 22
@@ -700,7 +700,7 @@ for i in range(0, len(stats)) do
   draw_text_right(stats[i][1], right_x: RAIL_W - PAD, y: sy, size: FS_SM, c: INK)
 end
 
-// rail footer: the persistence indicator
+# rail footer: the persistence indicator
 let foot_y = H - 84
 hairline(x1: PAD, y1: foot_y - 0.5, x2: RAIL_W - PAD, y2: foot_y - 0.5, c: RULE)
 let save_c = if dirty then GOLD else SAGE end
@@ -725,13 +725,13 @@ draw_text("undo last edit", pos: {x: undo_r.x + 12, y: undo_r.y + 7}, style: {si
 draw_text_right(if can_undo then str(len(history)) else "0" end,
   right_x: undo_r.x + undo_r.w - 12, y: undo_r.y + 7, size: FS_TINY, c: undo_fg)
 
-// ════════════════════════════════════════════════════════════════════════════
-//  note list
-// ════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════
+#  note list
+# ════════════════════════════════════════════════════════════════════════════
 let sf = rect(RAIL_W + LPAD, 22, LIST_W - LPAD * 2 - 34, 32)
 let newr = rect(sf.x + sf.w + 8, sf.y, 26, 32)
 
-// search field
+# search field
 let sfocus = focus == "search"
 draw_rect_rounded(sf, radius: 8, c: if sfocus then WHITE else PAPER end)
 draw_rect_outline(sf, if sfocus then ACCENT else RULE end)
@@ -757,7 +757,7 @@ if len(q) > 0 then
   end
 end
 
-// new-note button
+# new-note button
 let new_hot = hovered(newr)
 draw_rect_rounded(newr, radius: 8, c: if new_hot then ACCENT else PAPER end)
 if !new_hot then
@@ -767,7 +767,7 @@ let plus_c = if new_hot then WHITE else INK_SOFT end
 stroke(x1: newr.x + 8, y1: newr.y + 16, x2: newr.x + 18, y2: newr.y + 16, c: plus_c, a: 255, w: 1.6)
 stroke(x1: newr.x + 13, y1: newr.y + 11, x2: newr.x + 13, y2: newr.y + 21, c: plus_c, a: 255, w: 1.6)
 
-// header row
+# header row
 let hdr_y = 68
 let count_txt = if len(q) > 0 then "{len(shown)} of {len(notes)} notes" elsif len(shown) == 1 then "1 note" else "{len(shown)} notes" end
 label(upper(count_txt), x: RAIL_W + LPAD, y: hdr_y, c: FAINT)
@@ -780,8 +780,8 @@ let CARD_H  = 82
 let ACT_H   = 36
 let CARD_GAP = 5
 
-// Card heights vary: the one showing its action row is taller, and the list
-// scrolls in pixels, so the run of cards is walked rather than indexed.
+# Card heights vary: the one showing its action row is taller, and the list
+# scrolls in pixels, so the run of cards is walked rather than indexed.
 let content_h = 0
 for n in shown do
   content_h = content_h + CARD_H + CARD_GAP + if n.id == acts_id then ACT_H else 0 end
@@ -837,10 +837,10 @@ for i in range(0, len(shown)) do
     draw_text(n.book, pos: {x: tx + 12, y: cr.y + 65}, style: {size: FS_MICRO, color: FAINT})
     draw_text_right(ago(n.mins), right_x: cr.x + cr.w - 14, y: cr.y + 65, size: FS_MICRO, c: GHOST)
 
-    // The action row lives *inside* the card rather than in a floating menu:
-    // a panel's shapes never paint over its text (every rect in a frame is one
-    // mesh, drawn under every text run), so a popup would show the list
-    // straight through it. Expanding the row keeps everything legible.
+    # The action row lives *inside* the card rather than in a floating menu:
+    # a panel's shapes never paint over its text (every rect in a frame is one
+    # mesh, drawn under every text run), so a popup would show the list
+    # straight through it. Expanding the row keeps everything legible.
     if opened then
       hairline(x1: cr.x + 14, y1: cr.y + CARD_H - 3.5, x2: cr.x + cr.w - 14, y2: cr.y + CARD_H - 3.5, c: RULE_SOFT)
       let acts = [
@@ -888,7 +888,7 @@ if len(shown) == 0 then
 end
 clip_none()
 
-// selection changed: reset the caret into the new document
+# selection changed: reset the caret into the new document
 if want_sel != sel_id then
   sel_id = want_sel
   focus = want_focus
@@ -903,9 +903,9 @@ if content_h > list_h then
   draw_rect_rounded(rect(RAIL_W + LIST_W - 6, bar_y, 3, bar_h), radius: 1.5, c: GHOST, a: 140)
 end
 
-// ════════════════════════════════════════════════════════════════════════════
-//  editor — header
-// ════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════
+#  editor — header
+# ════════════════════════════════════════════════════════════════════════════
 let title_txt = if note == nil then "" else note.title end
 let tr = rect(EDX + EPAD - 10, 34, EDW - EPAD - 40, 38)
 let tfocus = focus == "title"
@@ -935,13 +935,13 @@ if note != nil then
 end
 hairline(x1: EDX + EPAD, y1: 122.5, x2: W - 36, y2: 122.5, c: RULE_SOFT)
 
-// ════════════════════════════════════════════════════════════════════════════
-//  editor — body
-// ════════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════
+#  editor — body
+# ════════════════════════════════════════════════════════════════════════════
 let body_r = rect(EDX, BODY_Y - 8, EDW, BODY_H + 16)
 let bfocus = focus == "body"
 
-// -- input: pointer ---------------------------------------------------------
+# -- input: pointer ---------------------------------------------------------
 fn hit_pos(rows: list, px: num, py: num, scroll: num) -> record
   let ri = iclamp(int((py - BODY_Y + scroll) / LH), lo: 0, hi: max(0, len(rows) - 1))
   let r = rows[ri]
@@ -981,9 +981,9 @@ if hovered(body_r) then
   bscroll = bscroll - scroll_y() * 3 * LH
 end
 
-// -- input: keyboard --------------------------------------------------------
-// Cmd/Ctrl chords never reach a panel (the host keeps them) except Ctrl+S, so
-// the vocabulary here is arrows, Home/End, Page, Escape, Tab and typing.
+# -- input: keyboard --------------------------------------------------------
+# Cmd/Ctrl chords never reach a panel (the host keeps them) except Ctrl+S, so
+# the vocabulary here is arrows, Home/End, Page, Escape, Tab and typing.
 let new_lines = doc
 let did_edit = false
 let moved = false
@@ -1093,7 +1093,7 @@ if bfocus && note != nil then
   end
 end
 
-// list-focused keyboard: move the selection between notes
+# list-focused keyboard: move the selection between notes
 if focus == "list" && len(shown) > 0 then
   let idx = 0
   for i in range(0, len(shown)) do
@@ -1118,7 +1118,7 @@ if focus == "list" && len(shown) > 0 then
   end
 end
 
-// search-field keyboard
+# search-field keyboard
 if focus == "search" then
   if key_pressed("backspace") && len(q) > 0 then
     q = slice(q, start: 0, end: len(q) - 1)
@@ -1136,7 +1136,7 @@ if focus == "search" then
   end
 end
 
-// title-field keyboard
+# title-field keyboard
 let new_title = title_txt
 if focus == "title" && note != nil then
   if key_pressed("backspace") && len(new_title) > 0 then
@@ -1153,7 +1153,7 @@ if focus == "title" && note != nil then
   end
 end
 
-// focus by click, and Tab to cycle
+# focus by click, and Tab to cycle
 if click && point_in(px: mx, py: my, r: sf) then
   focus = "search"
 end
@@ -1174,10 +1174,10 @@ if key_pressed("tab") then
   focus = ring[(at + if mod_shift() then 3 else 1 end) % 4]
 end
 
-// ── commit edits into the store ─────────────────────────────────────────────
+# ── commit edits into the store ─────────────────────────────────────────────
 if did_edit && note != nil then
-  // One snapshot per burst of typing: `dirty` going false (a save) is what ends
-  // a burst. Values are immutable, so the snapshot is just the old record.
+  # One snapshot per burst of typing: `dirty` going false (a save) is what ends
+  # a burst. Values are immutable, so the snapshot is just the old record.
   if !dirty then
     history = append(history, {id: sel_id, note: note, at: index_of_note(notes, sel_id)})
     if len(history) > 30 then
@@ -1190,7 +1190,7 @@ if did_edit && note != nil then
   edits = edits + 1
 end
 
-// new note
+# new note
 if new_hot && click then
   let fresh = {id: next_id, book: if book == "All" then "Journal" else book end,
     pinned: false, mins: 0, title: "", lines: [""]}
@@ -1200,7 +1200,7 @@ if new_hot && click then
   cur = {line: 0, col: 0}
   anchor = cur
   bscroll = 0
-  lscroll = 99999          // clamped to the bottom next frame: reveal the new card
+  lscroll = 99999          # clamped to the bottom next frame: reveal the new card
   q = ""
   acts_id = 0
   focus = "title"
@@ -1208,12 +1208,12 @@ if new_hot && click then
   last_edit = now
 end
 
-// undo: pop the snapshot pushed at the start of the last edit burst
+# undo: pop the snapshot pushed at the start of the last edit burst
 if undo_hot && click then
   let last = history[len(history) - 1]
   history = slice(history, start: 0, end: len(history) - 1)
-  // A snapshot restores whether the note was edited or deleted: put it back if
-  // it is still there, re-insert it if it is not.
+  # A snapshot restores whether the note was edited or deleted: put it back if
+  # it is still there, re-insert it if it is not.
   if note_by_id(notes, last.id) == nil then
     notes = insert_note(notes, at: last.at, item: last.note)
   else
@@ -1227,7 +1227,7 @@ if undo_hot && click then
   last_edit = now
 end
 
-// save: Ctrl+S, or 3s after the last keystroke
+# save: Ctrl+S, or 3s after the last keystroke
 if dirty && (now - last_edit > 3.0 || key_pressed("s") && mod_ctrl()) then
   saved = notes
   dirty = false
@@ -1235,7 +1235,7 @@ if dirty && (now - last_edit > 3.0 || key_pressed("s") && mod_ctrl()) then
   flash = now
 end
 
-// ── recompute after edits, then draw the body ───────────────────────────────
+# ── recompute after edits, then draw the body ───────────────────────────────
 let note2 = note_by_id(notes, sel_id)
 let doc2 = if note2 == nil then [""] else note2.lines end
 let rows2 = build_rows(doc2, MAXC)
@@ -1246,7 +1246,7 @@ if !keep_goal then
   goal = cur.col - rows2[cri].a
 end
 
-// keep the caret on screen
+# keep the caret on screen
 if moved || did_edit then
   bscroll = min(bscroll, cri * LH)
   bscroll = max(bscroll, (cri + 1) * LH - BODY_H)
@@ -1267,7 +1267,7 @@ for i in range(first_row, last_row) do
   let txt = slice(s, start: r.a, end: r.b)
   let ry = BODY_Y + i * LH - bscroll
 
-  // selection band
+  # selection band
   if hassel2 then
     let s0 = if lo2.line < r.li then r.a elsif lo2.line == r.li then max(r.a, lo2.col) else r.b + 1 end
     let s1 = if hi2.line > r.li then r.b elsif hi2.line == r.li then min(r.b, hi2.col) else r.a - 1 end
@@ -1278,7 +1278,7 @@ for i in range(first_row, last_row) do
     end
   end
 
-  // search matches
+  # search matches
   if len(q) > 0 then
     for off in find_all(txt, q) do
       draw_rect_rounded(rect(BODY_X + off * CW - 1, ry - 2, len(q) * CW + 2, LH - 3), radius: 3, c: MATCH)
@@ -1288,7 +1288,7 @@ for i in range(first_row, last_row) do
   draw_text(txt, pos: {x: BODY_X, y: ry}, style: {size: FS_BODY, color: INK})
 end
 
-// caret
+# caret
 if bfocus && !hassel2 then
   let ry = BODY_Y + cri * LH - bscroll
   let cx = BODY_X + (cur.col - rows2[cri].a) * CW
@@ -1296,14 +1296,14 @@ if bfocus && !hassel2 then
 end
 clip_none()
 
-// body scrollbar
+# body scrollbar
 if doc_h > BODY_H then
   let bh = max(36, BODY_H * BODY_H / doc_h)
   let by = BODY_Y + (BODY_H - bh) * bscroll / max(1, doc_h - BODY_H + 8)
   draw_rect_rounded(rect(W - 20, by, 3, bh), radius: 1.5, c: GHOST, a: 150)
 end
 
-// ── editor footer ───────────────────────────────────────────────────────────
+# ── editor footer ───────────────────────────────────────────────────────────
 let fy = H - FOOT_H
 draw_rect(rect(EDX + 1, fy, EDW - 1, FOOT_H), PAPER)
 hairline(x1: EDX + EPAD, y1: fy + 0.5, x2: W - 36, y2: fy + 0.5, c: RULE_SOFT)
@@ -1321,7 +1321,7 @@ draw_text_center(focus_txt, cx: EDX + EDW / 2, y: fy + 15, size: FS_TINY, c: INK
 let hint = if now - flash < 2.2 then "saved" else "tab moves focus  ·  ctrl+s saves" end
 draw_text_right(hint, right_x: W - 36, y: fy + 15, size: FS_TINY, c: if now - flash < 2.2 then SAGE else GHOST end)
 
-// ── card actions ────────────────────────────────────────────────────────────
+# ── card actions ────────────────────────────────────────────────────────────
 let anote = note_by_id(notes, act_id)
 if len(act) > 0 && anote != nil then
   if act != "dup" then

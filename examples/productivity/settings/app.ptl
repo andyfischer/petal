@@ -1,17 +1,17 @@
-// ── Fern preferences ────────────────────────────────────────────────────────
-// Testbed 20: a settings screen. A section sidebar with nested sub-sections,
-// a scrolling page of grouped rows, and a live preview that follows every
-// change. The window restyles itself from its own Appearance page.
-//
-// The file reads top to bottom as one frame:
-//   state → theme → layout pass → keyboard → page → sidebar → preview → overlays
-//
-// The schema (schema.ptl) is the single source of rows; this file names a
-// setting only where its value drives the window itself (the theme, the
-// version line) or where a button does something. Controls are in
-// widgets.ptl, the editor mock in preview.ptl, glyphs in icons.ptl.
-//
-// Designed for a 1280x850 window (a 1268x778 pane).
+# ── Fern preferences ────────────────────────────────────────────────────────
+# Testbed 20: a settings screen. A section sidebar with nested sub-sections,
+# a scrolling page of grouped rows, and a live preview that follows every
+# change. The window restyles itself from its own Appearance page.
+#
+# The file reads top to bottom as one frame:
+#   state → theme → layout pass → keyboard → page → sidebar → preview → overlays
+#
+# The schema (schema.ptl) is the single source of rows; this file names a
+# setting only where its value drives the window itself (the theme, the
+# version line) or where a button does something. Controls are in
+# widgets.ptl, the editor mock in preview.ptl, glyphs in icons.ptl.
+#
+# Designed for a 1280x850 window (a 1268x778 pane).
 
 import bloom
 import text_layout as tl
@@ -29,51 +29,51 @@ let SETTINGS = sc.SETTINGS
 let IDX = sc.build_index()
 let STORE_KEY = "settings"
 
-// ── state ───────────────────────────────────────────────────────────────────
-// Everything a function has to write is a `state var`; module scope writes it
-// with `set` like everyone else.
+# ── state ───────────────────────────────────────────────────────────────────
+# Everything a function has to write is a `state var`; module scope writes it
+# with `set` like everyone else.
 
-// The values, by setting id. Loaded once from the panel store, where only the
-// settings that differ from their defaults are kept.
+# The values, by setting id. Loaded once from the panel store, where only the
+# settings that differ from their defaults are kept.
 state var vals = sc.merged(json_parse(panel_store_get(STORE_KEY) ?? "") ?? {})
-state var undo = []            // {id, was, now}; id "*" is a whole-record step
+state var undo = []            # {id, was, now}; id "*" is a whole-record step
 state var redo = []
-state var sec = 1              // the open section
-state var query = ""           // the search box
-state var focus = ""           // the row wearing the keyboard ring
-state var edit = ""            // the text field holding the caret ("search" or a setting id)
-state var scroll = 0.0         // where the page wants to be, in px
-state var jump = ""            // a row to bring into view once layout has placed it
-state var jump_group = -1      // likewise, a group heading
-state var clock = 0.0          // seconds of dt() so far
+state var sec = 1              # the open section
+state var query = ""           # the search box
+state var focus = ""           # the row wearing the keyboard ring
+state var edit = ""            # the text field holding the caret ("search" or a setting id)
+state var scroll = 0.0         # where the page wants to be, in px
+state var jump = ""            # a row to bring into view once layout has placed it
+state var jump_group = -1      # likewise, a group heading
+state var clock = 0.0          # seconds of dt() so far
 state var last_commit = {id: "", at: -10.0}
-state var saves = 0            // writes to the panel store
+state var saves = 0            # writes to the panel store
 state var since_save = 60.0
 state var cache_mb = 184.0
 state var clearing = false
-state var want_search = false  // "/" was pressed: focus the search box next frame
-state var want_menu = ""       // Return on a select: open its menu next frame
-state var grab = -1.0          // scrollbar drag: pointer offset inside the thumb
-state var idle = 0.0           // seconds since the pointer or a key last did anything
+state var want_search = false  # "/" was pressed: focus the search box next frame
+state var want_menu = ""       # Return on a select: open its menu next frame
+state var grab = -1.0          # scrollbar drag: pointer offset inside the thumb
+state var idle = 0.0           # seconds since the pointer or a key last did anything
 state var last_mouse = {x: -1, y: -1}
-// The palette cross-fade: from, to, and how far along.
+# The palette cross-fade: from, to, and how far along.
 state var pal_from = {}
 state var pal_to = {}
 state var pal_t = 1.0
 
-// Per-frame scratch, written from inside functions.
-var dirty = false              // a value changed: write the store
-var act = ""                   // an action row or shortcut fired
-var hits = {}                  // id → the pane-local point a test clicks to operate it
-let woke = false               // something changed that needs another frame
+# Per-frame scratch, written from inside functions.
+var dirty = false              # a value changed: write the store
+var act = ""                   # an action row or shortcut fired
+var hits = {}                  # id → the pane-local point a test clicks to operate it
+let woke = false               # something changed that needs another frame
 
 set clock += min(dt(), 0.05)
 set since_save += min(dt(), 0.05)
 
-// ── values: every write goes through here ───────────────────────────────────
+# ── values: every write goes through here ───────────────────────────────────
 
-// Store `v` under `id` and record the undo step. A slider drag, a held
-// stepper or a run of typing is one step, not one per frame.
+# Store `v` under `id` and record the undo step. A slider drag, a held
+# stepper or a run of typing is one step, not one per frame.
 fn commit(id: string, v) -> nil
   let was = get vals[id]
   if was == v then
@@ -85,7 +85,7 @@ fn commit(id: string, v) -> nil
   let continues = top != nil && top.id == id && lc.id == id && get clock - lc.at < 0.9 &&
   (kind == "slider" || kind == "text" || kind == "stepper")
   if continues && top.was == v then
-    // The gesture ended where it began: there is nothing to undo.
+    # The gesture ended where it began: there is nothing to undo.
     set undo = drop_last(get undo)
   elsif continues then
     set undo[len(get undo) - 1] = {id: id, was: top.was, now: v}
@@ -98,16 +98,16 @@ fn commit(id: string, v) -> nil
   set dirty = true
 end
 
-// Back to the default, as a step of its own: a reset is a decision, not the
-// tail of whatever drag came before it.
+# Back to the default, as a step of its own: a reset is a decision, not the
+# tail of whatever drag came before it.
 fn reset_one(id: string) -> nil
   set last_commit = {id: "", at: -10.0}
   commit(id, SETTINGS[IDX[id]].def)
   set last_commit = {id: "", at: -10.0}
 end
 
-// Replace many values at once (reset a section, restore everything) as one
-// undo step.
+# Replace many values at once (reset a section, restore everything) as one
+# undo step.
 fn commit_all(next: record) -> nil
   if next == get vals then
     return nil
@@ -119,7 +119,7 @@ fn commit_all(next: record) -> nil
   set dirty = true
 end
 
-// What an undo or redo step did, for the toast: "Font size back to 13 px".
+# What an undo or redo step did, for the toast: "Font size back to 13 px".
 fn describe(step: record, v, back: bool) -> string
   if step.id == "*" then
     if back then "Brought the changed settings back" else "Reset them again" end
@@ -129,7 +129,7 @@ fn describe(step: record, v, back: bool) -> string
   end
 end
 
-// Both return what happened, or "" when there was nothing to do.
+# Both return what happened, or "" when there was nothing to do.
 fn undo_step() -> string
   let top = last(get undo)
   if top == nil then
@@ -164,7 +164,7 @@ fn redo_step() -> string
   describe(top, top.now, false)
 end
 
-// The values with one section (or, for -1, all of them) back at its defaults.
+# The values with one section (or, for -1, all of them) back at its defaults.
 fn with_defaults(section: num) -> record
   let next = {}
   for s in SETTINGS do
@@ -186,7 +186,7 @@ fn go_section(i: num) -> nil
   set jump_group = -1
 end
 
-// Open the page a setting lives on and bring its row into view.
+# Open the page a setting lives on and bring its row into view.
 fn reveal(id: string) -> nil
   set sec = GROUPS[SETTINGS[IDX[id]].g].sec
   set query = ""
@@ -195,9 +195,9 @@ fn reveal(id: string) -> nil
   set jump = id
 end
 
-// ── theme ───────────────────────────────────────────────────────────────────
-// The Appearance page is live: these few lines are where its values turn
-// into the palette, radius, type scale and motion speed everything else uses.
+# ── theme ───────────────────────────────────────────────────────────────────
+# The Appearance page is live: these few lines are where its values turn
+# into the palette, radius, type scale and motion speed everything else uses.
 
 fn palette(dark: bool, accent: record, contrast: bool) -> record
   let base = if dark then
@@ -237,9 +237,9 @@ let dark = if vals.th_mode == 2 then host_dark else vals.th_mode == 1 end
 let motion = if vals.mo_reduce then 0.0 else float(vals.mo_speed) end
 let target_pal = palette(dark, sc.ACCENTS[vals.th_accent].c, vals.th_contrast)
 
-// When the target palette changes, cross-fade to it from whatever is on
-// screen now. (Easing each channel toward its target would stall on integer
-// rounding a few counts short.)
+# When the target palette changes, cross-fade to it from whatever is on
+# screen now. (Easing each channel toward its target would stall on integer
+# rounding a few counts short.)
 if len(keys(pal_to)) == 0 then
   set pal_from = target_pal
   set pal_to = target_pal
@@ -261,10 +261,10 @@ let T = {...colors, dark: dark, scale: SCALE, radius: RADIUS, speed: motion,
   shadow: if dark then 120 else 30 end}
 wd.begin(T)
 
-// bloom's own components (buttons, menus, the dialog, toasts, tooltips) take
-// the same tokens, so they restyle with everything else. Its `speed` scales
-// durations, so it is the inverse of ours; and it is never exactly 0, because
-// bloom's toasts divide by a duration.
+# bloom's own components (buttons, menus, the dialog, toasts, tooltips) take
+# the same tokens, so they restyle with everything else. Its `speed` scales
+# durations, so it is the inverse of ours; and it is never exactly 0, because
+# bloom's toasts divide by a duration.
 bloom.theme_set({bg: T.bg, panel: T.card, surface: T.card, overlay: T.raised, text: T.text,
   muted: T.muted, dim: T.dim, accent: T.accent, success: T.success, warn: T.warn, danger: T.danger,
   outline: T.line, border: T.line, hover: T.card_hi, selection: T.accent_soft,
@@ -272,7 +272,7 @@ bloom.theme_set({bg: T.bg, panel: T.card, surface: T.card, overlay: T.raised, te
   font_sm: round(12 * SCALE, 1), font_md: round(13 * SCALE, 1), font_lg: round(16 * SCALE, 1),
   speed: if motion <= 0.0 then 0.001 else 1.0 / motion end})
 
-// ── metrics ─────────────────────────────────────────────────────────────────
+# ── metrics ─────────────────────────────────────────────────────────────────
 let W = screen_width()
 let H = screen_height()
 let SIDE_W = 224
@@ -290,9 +290,9 @@ let ROW = [42, 52, 62][vals.ui_density] * (0.35 + 0.65 * SCALE)
 let mx = mouse_x()
 let my = mouse_y()
 
-// The preview's cursor blinks for a few seconds after you stop, then rests
-// lit. It never asks for a frame of its own, so an untouched window still
-// goes to sleep.
+# The preview's cursor blinks for a few seconds after you stop, then rests
+# lit. It never asks for a frame of its own, so an untouched window still
+# goes to sleep.
 let busy_input = mx != last_mouse.x || my != last_mouse.y || mouse_down(0) || text_input() != "" ||
   scroll_y() != 0 || key_pressed("tab") || key_pressed("up") || key_pressed("down") ||
   key_pressed("left") || key_pressed("right") || key_pressed("space") || key_pressed("return")
@@ -300,16 +300,16 @@ set idle = if busy_input then 0.0 else idle + min(dt(), 0.05) end
 set last_mouse = {x: mx, y: my}
 let cursor_on = !vals.ed_blink || idle > 7.0 || fract(idle * 1.15) < 0.56
 
-// Garden keeps Cmd chords unless a panel claims them, every frame.
+# Garden keeps Cmd chords unless a panel claims them, every frame.
 for k in ["a", "c", "x", "v", "z", "y", "f", "1", "2", "3", "4", "5"] do
   claim_key(k, "cmd")
 end
 claim_key("z", "cmd+shift")
 
-// ── layout pass ─────────────────────────────────────────────────────────────
-// No pixels yet: which rows are on the page, which are live, how tall each
-// one is and where it sits. The keyboard handling below needs the answer
-// before anything is drawn.
+# ── layout pass ─────────────────────────────────────────────────────────────
+# No pixels yet: which rows are on the page, which are live, how tall each
+# one is and where it sits. The keyboard handling below needs the answer
+# before anything is drawn.
 
 let words = filter(split(lower(trim(query)), " "), fn(s) -> s != "")
 let searching = len(words) > 0
@@ -326,11 +326,11 @@ fn row_height(s: record) -> num
   end
 end
 
-let live = []          // per setting: its parent chain is satisfied
-let depth = []         // per setting: how many parents deep
-let row_y = []         // per setting: top in page coordinates, or -1 when not shown
-let row_hh = []        // per setting: height right now (folding rows animate it)
-let cards = []         // {g, title_y, y, h}
+let live = []          # per setting: its parent chain is satisfied
+let depth = []         # per setting: how many parents deep
+let row_y = []         # per setting: top in page coordinates, or -1 when not shown
+let row_hh = []        # per setting: height right now (folding rows animate it)
+let cards = []         # {g, title_y, y, h}
 let mod_by_sec = [0, 0, 0, 0, 0]
 let hit_by_sec = [0, 0, 0, 0, 0]
 let page_y = 14.0
@@ -343,8 +343,8 @@ for i in range(0, len(SETTINGS)) key SETTINGS[i].id do
   let p = if s.parent == "" then -1 else IDX[s.parent] end
   let ok = p < 0 || (live[p] && vals[s.parent] == s.need)
   live = append(live, ok)
-  // Indent under the parent only where the parent is the row's neighbour: a
-  // card whose rows all answer to a switch on another card stays flush.
+  # Indent under the parent only where the parent is the row's neighbour: a
+  # card whose rows all answer to a switch on another card stays flush.
   depth = append(depth, if p < 0 || SETTINGS[p].g != s.g then 0 else depth[p] + 1 end)
   let s_sec = GROUPS[s.g].sec
   if s.kind != "action" && vals[s.id] != s.def then
@@ -355,8 +355,8 @@ for i in range(0, len(SETTINGS)) key SETTINGS[i].id do
     hit_by_sec[s_sec] = hit_by_sec[s_sec] + 1
   end
   let on_page = if searching then hit else s_sec == sec end
-  // A folding row eases open and shut with its parent. A search shows it
-  // whole, since the query asked for it by name.
+  # A folding row eases open and shut with its parent. A search shows it
+  # whole, since the query asked for it by name.
   let open = if !on_page then 0.0
     elsif s.reveal && !searching then wd.anim(flag(ok), 20.0)
     else 1.0
@@ -388,7 +388,7 @@ let max_scroll = max(0.0, page_h - view.h)
 let n_shown = len(filter(row_y, fn(y) -> y >= 0.0))
 let n_modified = mod_by_sec[0] + mod_by_sec[1] + mod_by_sec[2] + mod_by_sec[3] + mod_by_sec[4]
 
-// The rows the arrow keys visit: shown, live and fully open.
+# The rows the arrow keys visit: shown, live and fully open.
 let nav = for i in range(0, len(SETTINGS)) do
   if row_y[i] < 0.0 || !live[i] || row_hh[i] < row_height(SETTINGS[i]) - 0.5 then
     continue
@@ -396,9 +396,9 @@ let nav = for i in range(0, len(SETTINGS)) do
   SETTINGS[i].id
 end
 
-// ── keyboard ────────────────────────────────────────────────────────────────
+# ── keyboard ────────────────────────────────────────────────────────────────
 
-let blocked = bloom.is_captured()      // a menu or the dialog owns input
+let blocked = bloom.is_captured()      # a menu or the dialog owns input
 let in_view = !blocked && point_in(mx, my, view)
 
 if want_search then
@@ -409,8 +409,8 @@ if want_menu != "" then
   bloom.menu_open(wd.select_id(want_menu))
   set want_menu = ""
 end
-// A press anywhere takes the caret away; the field under it, if there is
-// one, takes it straight back when it runs.
+# A press anywhere takes the caret away; the field under it, if there is
+# one, takes it straight back when it runs.
 if mouse_pressed(0) && !blocked then
   set edit = ""
 end
@@ -431,7 +431,7 @@ fn step_focus(dir: num) -> nil
   set edit = if SETTINGS[IDX[id]].kind == "text" then id else "" end
 end
 
-// Left / Right on the focused row.
+# Left / Right on the focused row.
 fn nudge(s: record, dir: num) -> nil
   let v = get vals[s.id]
   match s.kind
@@ -443,14 +443,14 @@ fn nudge(s: record, dir: num) -> nil
   end
 end
 
-// Space / Return on the focused row.
+# Space / Return on the focused row.
 fn activate(s: record) -> nil
   let v = get vals[s.id]
   match s.kind
     when "toggle" -> commit(s.id, !v)
     when "check" -> commit(s.id, !v)
     when "select" do
-      // Not this frame: the menu would read the same Return as "choose".
+      # Not this frame: the menu would read the same Return as "choose".
       set want_menu = s.id
     end
     when "seg" -> commit(s.id, (v + 1) % len(s.opts))
@@ -472,7 +472,7 @@ if !blocked then
     step_focus(1)
   elsif key_pressed("up") then
     if edit == "search" || focus_at == 0 then
-      // Up from the first row goes back to the search box.
+      # Up from the first row goes back to the search box.
       set focus = ""
       set edit = "search"
     else
@@ -535,7 +535,7 @@ if !blocked then
   end
 end
 
-// ── scrolling ───────────────────────────────────────────────────────────────
+# ── scrolling ───────────────────────────────────────────────────────────────
 
 if in_view then
   set scroll += scroll_y() * 52.0
@@ -562,8 +562,8 @@ end
 set scroll = clamp(scroll, 0.0, max_scroll)
 let scroll_now = wd.anim(scroll, 22.0)
 
-// The group the page is showing: the last heading at or above the top edge,
-// or the last group once the page is scrolled to its end.
+# The group the page is showing: the last heading at or above the top edge,
+# or the last group once the page is scrolled to its end.
 let spy = -1
 for c in cards do
   if spy < 0 || c.title_y - 60.0 <= scroll_now then
@@ -574,11 +574,11 @@ if len(cards) > 0 && max_scroll > 0.0 && scroll_now >= max_scroll - 2.0 then
   spy = cards[len(cards) - 1].g
 end
 
-// ── the page ────────────────────────────────────────────────────────────────
+# ── the page ────────────────────────────────────────────────────────────────
 
-// The fields read the runtime's focus. This app moves its own focus id
-// itself ("/", Tab, arrows), so a move is handed to the runtime
-// before the fields run. A press on a field is already the runtime's.
+# The fields read the runtime's focus. This app moves its own focus id
+# itself ("/", Tab, arrows), so a move is handed to the runtime
+# before the fields run. A press on a field is already the runtime's.
 state synced_edit = ""
 if get edit != synced_edit then
   focus_request(if get edit == "" then nil else get edit end)
@@ -587,8 +587,8 @@ end
 
 clear(T.bg.r, T.bg.g, T.bg.b)
 
-// The first matching word of the query inside `label`, underlined in the
-// accent: {x, w} relative to the label's left edge, or nil.
+# The first matching word of the query inside `label`, underlined in the
+# accent: {x, w} relative to the label's left edge, or nil.
 fn mark_of(label: string, style: record)
   if len(words) == 0 then
     return nil
@@ -617,8 +617,8 @@ fn draw_row(s: record, r: record, o: record) -> nil
   let x0 = r.x + 20 + o.depth * 24
   let x1 = r.x + r.w - 16
   let cy = r.y + r.h / 2.0
-  // Where the row's own line of text sits: its middle, except for a radio
-  // list, whose label is a heading above the options.
+  # Where the row's own line of text sits: its middle, except for a radio
+  # list, whose label is a heading above the options.
   let my_y = if s.kind == "radio" then r.y + 6 + 15 * SCALE else cy end
   let ink = mix(mix(T.text, T.card, 0.55), T.text, e)
   let soft = mix(mix(T.muted, T.card, 0.55), T.muted, e)
@@ -630,7 +630,7 @@ fn draw_row(s: record, r: record, o: record) -> nil
   if lit > 0.01 then
     draw_rect_rounded_outline(Rect(r.x + 4, r.y + 3, r.w - 8, r.h - 6), max(0, RADIUS - 3), T.accent, int(255 * lit), 1.5)
   end
-  // A dependent row hangs off its parent on an elbow.
+  # A dependent row hangs off its parent on an elbow.
   if o.depth > 0 then
     let gx = x0 - 13.0
     draw_polyline([{x: gx, y: r.y}, {x: gx, y: my_y}, {x: gx + 8.0, y: my_y}], T.line, 255, 1)
@@ -639,8 +639,8 @@ fn draw_row(s: record, r: record, o: record) -> nil
     draw_circle({x: r.x + 10.0, y: my_y}, 2.5, mix(T.card, T.accent, 0.35 + 0.65 * e))
   end
 
-  // ── the control, on the right ──
-  let ctl_x = x1          // left edge of the control, for fitting the label
+  # ── the control, on the right ──
+  let ctl_x = x1          # left edge of the control, for fitting the label
   let h32 = 32.0
   if s.kind == "toggle" then
     let cr = Rect(x1 - 40, cy - 11, 40, 22)
@@ -708,7 +708,7 @@ fn draw_row(s: record, r: record, o: record) -> nil
     end
   end
 
-  // ── label and description, on the left ──
+  # ── label and description, on the left ──
   let lead = if s.kind == "check" then 30 else 0 end
   let label_style = wd.ts(13.5, ink)
   let has_desc = s.desc != "" || s.kind == "text"
@@ -745,7 +745,7 @@ fn draw_row(s: record, r: record, o: record) -> nil
     tl.draw_text_line(tl.elide(desc, ds, label_r.w), Rect(label_r.x, label_r.y + lh, label_r.w, dh), ds)
   end
 
-  // Back to the default, offered on the row you are pointing at.
+  # Back to the default, offered on the row you are pointing at.
   if changed && on && (hov || o.focused) then
     let br = Rect(label_r.x + label_w + 6, label_r.y + label_r.h / 2.0 - 11.0, 22, 22)
     if br.x + 22 < ctl_x - 4 then
@@ -758,7 +758,7 @@ fn draw_row(s: record, r: record, o: record) -> nil
   clip_pop()
 end
 
-// Page heading.
+# Page heading.
 let head = Rect(MAIN_X, 0, MAIN_W, HEAD_H)
 let mods_here = if searching then 0 else mod_by_sec[sec] end
 if searching then
@@ -783,7 +783,7 @@ else
   end
 end
 
-// The scrolling page.
+# The scrolling page.
 clip_push(view)
 for c in cards do
   let g = GROUPS[c.g]
@@ -800,9 +800,9 @@ for c in cards do
   draw_rect_rounded_outline(cr, RADIUS + 2, T.line_soft)
 end
 
-// Rows under the header or the hint bar are clipped away but still there, so
-// while the pointer is outside the viewport every control in it stands down:
-// one input claim around the loop, the same one an open menu makes.
+# Rows under the header or the hint bar are clipped away but still there, so
+# while the pointer is outside the viewport every control in it stands down:
+# one input claim around the loop, the same one an open menu makes.
 let fence = !blocked && !in_view
 if fence then
   bloom.capture("fern:offscreen")
@@ -816,7 +816,7 @@ for i in range(0, len(SETTINGS)) key SETTINGS[i].id do
   if r.y + r.h < view.y || r.y > view.y + view.h then
     continue
   end
-  // A hairline between neighbours in the same card.
+  # A hairline between neighbours in the same card.
   if i > 0 && row_y[i - 1] >= 0.0 && SETTINGS[i - 1].g == s.g then
     draw_line({x: r.x + 20 + depth[i] * 24, y: r.y}, {x: r.x + r.w - 16, y: r.y}, T.line_soft)
   end
@@ -835,7 +835,7 @@ if n_shown == 0 then
 end
 clip_pop()
 
-// A soft edge where the page slides under the heading, and the scrollbar.
+# A soft edge where the page slides under the heading, and the scrollbar.
 if scroll_now > 0.5 then
   let a = int(min(1.0, scroll_now / 24.0) * (if dark then 70 else 26 end))
   draw_rect_gradient(Rect(view.x, view.y, view.w, 12), :000000, :000000, pi() / 2.0, a, 0)
@@ -859,13 +859,13 @@ if max_scroll > 0.0 then
   draw_rect_rounded(Rect(thumb.x + 1 - k, thumb.y, 4 + 2 * k, thumb.h), 3, mix(T.track, T.muted, 0.3 + 0.5 * k))
 end
 
-// Key hints along the bottom of the page.
+# Key hints along the bottom of the page.
 let foot = Rect(MAIN_X, H - FOOT_H, MAIN_W, FOOT_H)
 draw_line({x: foot.x, y: foot.y}, {x: foot.x + foot.w, y: foot.y}, T.line_soft)
 let hx = card_x + 0.0
 for pair in [["↑", ""], ["↓", "Move"], ["←", ""], ["→", "Adjust"], ["Space", "Toggle"], ["⌫", "Reset"], ["/", "Search"], ["⌘Z", "Undo"]] do
-  // At a large interface scale the strip runs out of room: stop cleanly
-  // before a hint would be cut in half.
+  # At a large interface scale the strip runs out of room: stop cleanly
+  # before a hint would be cut in half.
   let hs = wd.ts(11.5, T.dim)
   if hx + 30 + text_width(pair[1], hs) > foot.x + foot.w - 12 then
     break
@@ -876,20 +876,20 @@ for pair in [["↑", ""], ["↓", "Move"], ["←", ""], ["→", "Adjust"], ["Spa
   end
 end
 
-// ── sidebar ─────────────────────────────────────────────────────────────────
+# ── sidebar ─────────────────────────────────────────────────────────────────
 
 let side = Rect(0, 0, SIDE_W, H)
 draw_rect(side, T.rail)
 draw_line({x: SIDE_W, y: 0}, {x: SIDE_W, y: H}, T.line_soft)
 
-// The mark.
+# The mark.
 let logo = Rect(18, 20, 30, 30)
 draw_rect_rounded(logo, min(RADIUS, 9), T.accent)
 glyph("leaf", Rect(logo.x + 6, logo.y + 6, 18, 18), T.accent_ink)
 tl.draw_text_line("Fern", Rect(58, 18, 120, 20), wd.tsb(15, T.text))
 tl.draw_text_line("Preferences", Rect(58, 36, 140, 16), wd.ts(11.5, T.muted))
 
-// Search.
+# Search.
 let sr = Rect(14, 68, SIDE_W - 28, 34)
 set hits["search"] = {x: sr.x + 80, y: sr.y + 17}
 let sres = wd.input("search", sr, query, edit, {hint: "Search settings", lead: 22, trail: 26, pointer: !blocked})
@@ -904,7 +904,7 @@ if sres.text != query then
   set focus = ""
 end
 if sres.submitted && len(nav) > 0 then
-  // Return drops into the results.
+  # Return drops into the results.
   step_focus(1)
 end
 if query != "" then
@@ -916,7 +916,7 @@ elsif !sres.has then
   wd.keycap(sr.x + sr.w - 28, sr.y + 7, "/")
 end
 
-// Sections, with the open one's groups nested under it.
+# Sections, with the open one's groups nested under it.
 let ny = 118.0
 let NAV_H = 36.0 * (0.5 + 0.5 * SCALE)
 let SUB_H = 27.0 * (0.5 + 0.5 * SCALE)
@@ -938,10 +938,10 @@ for i in range(0, len(SECTIONS)) do
   let ls = if on then wd.tsb(13.5, ink) else wd.ts(13.5, ink) end
   tl.draw_text_line(s.label, Rect(r.x + 40, r.y, r.w - 80, r.h), ls)
   set hits["nav_{s.key}"] = {x: r.x + 80, y: r.y + r.h / 2.0}
-  // The badge counts changed settings, or matches while searching.
+  # The badge counts changed settings, or matches while searching.
   let count = if searching then hit_by_sec[i] else mod_by_sec[i] end
   if count == 0 && p.hot > 0.01 then
-    // No badge to show: offer the shortcut instead, while pointed at.
+    # No badge to show: offer the shortcut instead, while pointed at.
     tl.draw_text_line("⌘{i + 1}", Rect(r.x, r.y, r.w - 12, r.h), wd.ts(11.5, mix(T.rail, T.dim, p.hot)), "right")
   end
   if count > 0 then
@@ -952,7 +952,7 @@ for i in range(0, len(SECTIONS)) do
     tl.draw_text_line(str(count), cr, cs, "center")
   end
   ny += NAV_H
-  // Sub-sections fold open under the current page.
+  # Sub-sections fold open under the current page.
   let open = wd.anim(flag(on), 18.0)
   if open > 0.01 then
     let subs = filter(range(0, len(GROUPS)), fn(g) -> GROUPS[g].sec == i)
@@ -979,7 +979,7 @@ for i in range(0, len(SECTIONS)) do
   end
 end
 
-// Save status, pinned to the bottom of the rail.
+# Save status, pinned to the bottom of the rail.
 let sy = H - 58
 draw_line({x: 14, y: sy}, {x: SIDE_W - 14, y: sy}, T.line_soft)
 let fresh = wd.anim(flag(since_save < 2.5), 8.0)
@@ -989,7 +989,7 @@ tl.draw_text_line(if since_save < 2.5 then "Saved just now" else "All changes sa
 let channel = ["2.4.1", "2.5.0-beta.3", "nightly 10-09"][vals.up_channel]
 tl.draw_text_line("Fern {channel}", Rect(18, sy + 31, SIDE_W - 30, 18), wd.ts(11, T.dim))
 
-// ── preview ─────────────────────────────────────────────────────────────────
+# ── preview ─────────────────────────────────────────────────────────────────
 
 let prev = Rect(W - PREV_W, 0, PREV_W, H)
 draw_rect(prev, T.rail)
@@ -1001,8 +1001,8 @@ tl.draw_text_line("Follows every change", Rect(px, 22, pw - 2, 20), wd.ts(11.5, 
 let mock = Rect(px, 52, pw, 332)
 pv.draw(mock, T, vals, {cursor_on: cursor_on})
 
-// Everything that differs from its default, newest change first. Each line
-// is a way back: click it to go to the setting, or revert it in place.
+# Everything that differs from its default, newest change first. Each line
+# is a way back: click it to go to the setting, or revert it in place.
 let changed_ids = for s in SETTINGS do
   if s.kind == "action" || vals[s.id] == s.def then
     continue
@@ -1045,8 +1045,8 @@ else
   let box = Rect(px, list_y, pw, shown_n * CH + (if shown_n < len(changed_ids) then 30 else 0 end))
   draw_rect_rounded(box, RADIUS + 2, T.card)
   draw_rect_rounded_outline(box, RADIUS + 2, T.line_soft)
-  // A loop over every setting, so each line keeps its own hover state as the
-  // list grows and shrinks around it.
+  # A loop over every setting, so each line keeps its own hover state as the
+  # list grows and shrinks around it.
   let slot = 0
   for i in range(0, len(SETTINGS)) do
     let s = SETTINGS[i]
@@ -1069,7 +1069,7 @@ else
     let path = "{SECTIONS[GROUPS[s.g].sec].label} › {GROUPS[s.g].name}"
     let lw = tl.draw_text_line(tl.elide(s.label, ls, pw * 0.5), Rect(r.x + 16, r.y + CH / 2.0 - 18 * SCALE, pw * 0.5, 18 * SCALE), ls)
     tl.draw_text_line(path, Rect(r.x + 16, r.y + CH / 2.0, pw * 0.55, 16 * SCALE), wd.ts(11, T.dim))
-    // default → current
+    # default → current
     let vs = wd.ts(12, T.text)
     let now = tl.elide(sc.show_value(s, vals[s.id]), vs, 110)
     let was = tl.elide(sc.show_value(s, s.def), vs, 84)
@@ -1093,11 +1093,11 @@ else
   end
 end
 
-// ── actions ─────────────────────────────────────────────────────────────────
-// Buttons and shortcuts only name what should happen; it happens here, once.
+# ── actions ─────────────────────────────────────────────────────────────────
+# Buttons and shortcuts only name what should happen; it happens here, once.
 
 if act == "undo" || act == "redo" then
-  // One line of feedback at a time: a run of Cmd+Z replaces it, not stacks it.
+  # One line of feedback at a time: a run of Cmd+Z replaces it, not stacks it.
   let did = if act == "undo" then undo_step() else redo_step() end
   bloom.toasts_clear()
   if did == "" then
@@ -1132,7 +1132,7 @@ if clearing then
   end
 end
 
-// ── overlays ────────────────────────────────────────────────────────────────
+# ── overlays ────────────────────────────────────────────────────────────────
 
 let dlg = bloom.dialog("restore", 420, 196, "Restore all defaults?")
 if dlg.open then
@@ -1142,8 +1142,8 @@ if dlg.open then
     end
   bloom.text_block_in(body, Rect(dlg.content.x, dlg.content.y + 4, dlg.content.w, 50),
     wd.ts(13.5, T.muted), {lead: 1.25})
-  // bloom's dialog claims the pointer for itself, which also silences the
-  // buttons drawn into it. Drop the claim around them and take it back after.
+  # bloom's dialog claims the pointer for itself, which also silences the
+  # buttons drawn into it. Drop the claim around them and take it back after.
   bloom.capture_release()
   let by = dlg.content.y + dlg.content.h - 36
   if bloom.button(Rect(dlg.content.x + dlg.content.w - 258, by, 96, 32), "Cancel", {variant: "quiet"}) then
@@ -1163,9 +1163,9 @@ end
 bloom.toasts(Rect(MAIN_X, 0, MAIN_W, H - FOOT_H - 4), {width: 300})
 bloom.overlays()
 
-// ── persistence ─────────────────────────────────────────────────────────────
-// Only what differs from the defaults is stored, so a new default reaches
-// everyone who never touched the setting.
+# ── persistence ─────────────────────────────────────────────────────────────
+# Only what differs from the defaults is stored, so a new default reaches
+# everyone who never touched the setting.
 
 if dirty then
   let out = {}
@@ -1184,7 +1184,7 @@ if woke || wd.busy() || bloom.toast_count() > 0 || since_save < 3.0 then
   request_frame()
 end
 
-// ── what a test can read ────────────────────────────────────────────────────
+# ── what a test can read ────────────────────────────────────────────────────
 let obs_section = SECTIONS[sec].key
 let obs_query = query
 let obs_searching = searching

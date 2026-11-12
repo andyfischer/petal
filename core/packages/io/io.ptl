@@ -1,13 +1,13 @@
-// Package `io` — Host I/O: symbols, output buffers and host bindings (core/src/builtins/output.rs).
-//
-// A bundled builtin package: the petal runtime registers these natives in
-// every Env, and `import io` puts them in scope — bare (`symbol(…)`), qualified
-// (`io.symbol(…)`) and as methods (`x.symbol(…)`).
-//
-// Native interface declarations: each `native fn` binds a name to the host
-// native of the same name and gives the checker its parameter names, arity
-// and types. Several declarations of one name are that native's call forms.
-// See docs/usage/ffi.md (Native interfaces).
+# Package `io` — Host I/O: symbols, output buffers and host bindings (core/src/builtins/output.rs).
+#
+# A bundled builtin package: the petal runtime registers these natives in
+# every Env, and `import io` puts them in scope — bare (`symbol(…)`), qualified
+# (`io.symbol(…)`) and as methods (`x.symbol(…)`).
+#
+# Native interface declarations: each `native fn` binds a name to the host
+# native of the same name and gives the checker its parameter names, arity
+# and types. Several declarations of one name are that native's call forms.
+# See docs/usage/ffi.md (Native interfaces).
 
 pub native fn symbol(name) -> symbol
 pub native fn push_output(buffer, value)

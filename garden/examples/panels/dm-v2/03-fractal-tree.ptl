@@ -1,27 +1,27 @@
-// ── Drag mode 3: a recursive fractal tree ────────────────
-//   garden petal-ide examples/panels/dm-v2/03-fractal-tree.ptl
-//
-// Every leaf is drawn by the same `draw_circle` call, five
-// recursive calls deep. Its position depends on `trunk`,
-// `shrink`, `spread` and the root's (200, 380).
-//
-// What to drag (drag mode on: Cmd+Shift+D):
-// - The rightmost LEAF, sideways. Unhinted, the cheapest
-//   one-number answer is the root's `200`: it slides the
-//   whole tree (the panel says "moves 94 others"). The
-//   panel lists `shrink` + `spread` and `spread` + `trunk`
-//   as alternatives 2 and 3; click one.
-// - Now steer it by mouse: Alt-click the `200` below twice
-//   (free > tunable > rigid) so it reads `rigid(200)`, and
-//   drag the leaf again. The root stays; `spread` (the
-//   knob) and `shrink` open the tree instead.
-// - Click `trunk`'s gutter square twice (`rigid(80.0)`) and
-//   drag a top leaf up: the trunk keeps its length, and
-//   `shrink` (or the root's `380`) does the work.
-//   Edit the hint to `tunable(0.7, 0.5, 0.8)` by hand and a
-//   long drag stops at the bound.
-// - The trunk's LINE: dragging a line moves both ends, so
-//   only the root moves it.
+# ── Drag mode 3: a recursive fractal tree ────────────────
+#   garden petal-ide examples/panels/dm-v2/03-fractal-tree.ptl
+#
+# Every leaf is drawn by the same `draw_circle` call, five
+# recursive calls deep. Its position depends on `trunk`,
+# `shrink`, `spread` and the root's (200, 380).
+#
+# What to drag (drag mode on: Cmd+Shift+D):
+# - The rightmost LEAF, sideways. Unhinted, the cheapest
+#   one-number answer is the root's `200`: it slides the
+#   whole tree (the panel says "moves 94 others"). The
+#   panel lists `shrink` + `spread` and `spread` + `trunk`
+#   as alternatives 2 and 3; click one.
+# - Now steer it by mouse: Alt-click the `200` below twice
+#   (free > tunable > rigid) so it reads `rigid(200)`, and
+#   drag the leaf again. The root stays; `spread` (the
+#   knob) and `shrink` open the tree instead.
+# - Click `trunk`'s gutter square twice (`rigid(80.0)`) and
+#   drag a top leaf up: the trunk keeps its length, and
+#   `shrink` (or the root's `380`) does the work.
+#   Edit the hint to `tunable(0.7, 0.5, 0.8)` by hand and a
+#   long drag stops at the bound.
+# - The trunk's LINE: dragging a line moves both ends, so
+#   only the root moves it.
 
 import ui
 

@@ -1,14 +1,14 @@
-// Meridian: palette, type and the small controls.
-//
-// One dark ground with two surface steps, a single hairline, and two data
-// hues (up, down) that are never used for anything but direction. Controls
-// are functions from the current value to the new one; none of them holds
-// the app's data.
+# Meridian: palette, type and the small controls.
+#
+# One dark ground with two surface steps, a single hairline, and two data
+# hues (up, down) that are never used for anything but direction. Controls
+# are functions from the current value to the new one; none of them holds
+# the app's data.
 
 import text_layout as tl
 import ui
 
-// ── Palette ─────────────────────────────────────────────────────────────────
+# ── Palette ─────────────────────────────────────────────────────────────────
 
 pub let BG      = :090c12
 pub let PANEL   = :10141c
@@ -25,17 +25,17 @@ pub let DOWN    = :f2606f
 pub let ACCENT  = :5b9dff
 pub let AMBER   = :f1b455
 pub let VIOLET  = :a98ff5
-pub let INK     = :06110c      // text on a filled up/down face
+pub let INK     = :06110c      # text on a filled up/down face
 
-// One hue per listing, for the allocation bar. Neither the up green nor the
-// down red is among them.
+# One hue per listing, for the allocation bar. Neither the up green nor the
+# down red is among them.
 pub let HUES = [:5b9dff, :a98ff5, :f1b455, :4fc3d9, :f08fc4, :8fd0a8, :c9a27a, :7f8cf0, :e0d06a, :58b7a6, :d38be0,
   :9aa7bd]
 
-// ── Type ────────────────────────────────────────────────────────────────────
-// Labels are set in the interface face, every number in the monospace one, so
-// a ticking price never shifts the digits beside it. Six sizes in all: the
-// host rasterizes one glyph per (character, size, face) into a fixed atlas.
+# ── Type ────────────────────────────────────────────────────────────────────
+# Labels are set in the interface face, every number in the monospace one, so
+# a ticking price never shifts the digits beside it. Six sizes in all: the
+# host rasterizes one glyph per (character, size, face) into a fixed atlas.
 
 pub fn ui(size: num, color: record) -> record
   {size: size, font: "ui", color: color}
@@ -49,7 +49,7 @@ pub fn mono(size: num, color: record) -> record
   {size: size, font: "mono", color: color}
 end
 
-// A small-caps section label: 10 px, tracked out.
+# A small-caps section label: 10 px, tracked out.
 pub fn caps(color: record) -> record
   {size: 10, font: "ui", color: color, weight: 600, spacing: 1.1}
 end
@@ -58,8 +58,8 @@ pub fn dir_color(v: num) -> record
   if v > 0 then UP elsif v < 0 then DOWN else MUTED end
 end
 
-// ── Frame bookkeeping ───────────────────────────────────────────────────────
-// Whether any control is still easing, so the app knows to ask for a frame.
+# ── Frame bookkeeping ───────────────────────────────────────────────────────
+# Whether any control is still easing, so the app knows to ask for a frame.
 
 var _busy = false
 
@@ -71,10 +71,10 @@ pub fn busy() -> bool
   get _busy
 end
 
-// `cur` eased toward `goal`. A frame with no time in it (one the debug server
-// ran for an injected click, on a ticked panel) lands on the goal outright, so
-// a screenshot taken straight after an input shows the control where it is
-// going, not where it was.
+# `cur` eased toward `goal`. A frame with no time in it (one the debug server
+# ran for an injected click, on a ticked panel) lands on the goal outright, so
+# a screenshot taken straight after an input shows the control where it is
+# going, not where it was.
 pub fn glide(cur: num, goal: num, rate: num) -> float
   let next = if dt() <= 0.0 then float(goal) else approach(float(cur), float(goal), rate) end
   if next != float(goal) then
@@ -83,7 +83,7 @@ pub fn glide(cur: num, goal: num, rate: num) -> float
   next
 end
 
-// A 0..1 value easing toward `on`, one per callsite (and per loop iteration).
+# A 0..1 value easing toward `on`, one per callsite (and per loop iteration).
 pub fn ease_flag(on: bool, rate: num = 18.0) -> float
   let goal = if on then 1.0 else 0.0 end
   state v = goal
@@ -95,7 +95,7 @@ pub fn press(r: record) -> bool
   mouse_pressed(0) && hovered(r)
 end
 
-// ── Chrome ──────────────────────────────────────────────────────────────────
+# ── Chrome ──────────────────────────────────────────────────────────────────
 
 pub fn card(r: record) -> nil
   draw_shadow(r, {radius: 10, blur: 14, dy: 3, a: 70})
@@ -103,7 +103,7 @@ pub fn card(r: record) -> nil
   draw_rect_rounded_outline(r, 10, LINE)
 end
 
-// A card's title row. Returns the rect under it.
+# A card's title row. Returns the rect under it.
 pub fn card_head(r: record, title: string) -> Rect
   tl.draw_text_line(title, Rect(r.x + 14, r.y, r.w - 28, 38), caps(MUTED))
   Rect(r.x, r.y + 38, r.w, r.h - 38)
@@ -113,7 +113,7 @@ pub fn hline(x: num, y: num, w: num, c: record) -> nil
   draw_rect(x, y, w, 1, c)
 end
 
-// A horizontal dashed rule, drawn as short rects so it stays crisp.
+# A horizontal dashed rule, drawn as short rects so it stays crisp.
 pub fn dashed(x0: num, x1: num, y: num, c: record, a: num, on: num = 4, off: num = 4) -> nil
   let x = float(x0)
   while x < x1 do
@@ -130,11 +130,11 @@ pub fn vdashed(x: num, y0: num, y1: num, c: record, a: num) -> nil
   end
 end
 
-// ── Controls ────────────────────────────────────────────────────────────────
+# ── Controls ────────────────────────────────────────────────────────────────
 
-// A segmented control with a sliding thumb. `tones` optionally gives each
-// cell the color its thumb takes (the Buy / Sell switch); `enabled: false`
-// dims it and ignores the pointer.
+# A segmented control with a sliding thumb. `tones` optionally gives each
+# cell the color its thumb takes (the Buy / Sell switch); `enabled: false`
+# dims it and ignores the pointer.
 pub fn segmented(r: record, labels: list, index: num, o: record = {}) -> int
   let n = max(1, len(labels))
   let tones = field(o, "tones", [])
@@ -167,7 +167,7 @@ pub fn segmented(r: record, labels: list, index: num, o: record = {}) -> int
   chosen
 end
 
-// A filled button. Returns true on the frame it is pressed.
+# A filled button. Returns true on the frame it is pressed.
 pub fn button(r: record, label: string, tone: record, enabled: bool) -> bool
   let hot = ease_flag(enabled && hovered(r))
   let down = enabled && hovered(r) && mouse_down(0)
@@ -184,7 +184,7 @@ pub fn button(r: record, label: string, tone: record, enabled: bool) -> bool
   enabled && press(r)
 end
 
-// A quiet outlined button: chips, Cancel, Close.
+# A quiet outlined button: chips, Cancel, Close.
 pub fn ghost(r: record, label: string, tone: record, enabled: bool = true) -> bool
   let hot = ease_flag(enabled && hovered(r))
   draw_rect_rounded(r, 6, mix(WELL, tone, 0.06 + 0.16 * hot))
@@ -193,7 +193,7 @@ pub fn ghost(r: record, label: string, tone: record, enabled: bool = true) -> bo
   enabled && press(r)
 end
 
-// A square − / + stepper cell inside a field.
+# A square − / + stepper cell inside a field.
 pub fn step_cell(r: record, plus: bool, enabled: bool) -> bool
   let hot = ease_flag(enabled && hovered(r))
   if hot > 0.01 then
@@ -209,9 +209,9 @@ pub fn step_cell(r: record, plus: bool, enabled: bool) -> bool
   enabled && press(r)
 end
 
-// Who holds the keyboard after a prelude field ran, as the app's own `focus`
-// id: a press inside the field takes it (`has_focus` says so afterwards), a
-// press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
+# Who holds the keyboard after a prelude field ran, as the app's own `focus`
+# id: a press inside the field takes it (`has_focus` says so afterwards), a
+# press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
 fn field_focus(key: string, focus: string, had: bool, pointer: bool) -> string
   if !pointer || !mouse_pressed(0) then focus
   elsif has_focus(key) then key
@@ -220,11 +220,11 @@ fn field_focus(key: string, focus: string, had: bool, pointer: bool) -> string
   end
 end
 
-// A one-line number field. The editing (caret, selection, clipboard, undo)
-// is the `ui` prelude's `text_field_update`; the paint is ours. `focus` is
-// the id of the field holding the keyboard ("" for none). `o` carries
-// `prefix` (drawn dim before the text), `hint`, `bad`, `enabled` and `trail`
-// (px reserved on the right for the stepper cells).
+# A one-line number field. The editing (caret, selection, clipboard, undo)
+# is the `ui` prelude's `text_field_update`; the paint is ours. `focus` is
+# the id of the field holding the keyboard ("" for none). `o` carries
+# `prefix` (drawn dim before the text), `hint`, `bad`, `enabled` and `trail`
+# (px reserved on the right for the stepper cells).
 pub fn num_field(key: string, r: record, buf: string, focus: string, o: record) -> record
   let enabled = field(o, "enabled", true)
   let bad = field(o, "bad", false)
@@ -269,7 +269,7 @@ pub fn num_field(key: string, r: record, buf: string, focus: string, o: record) 
     draw_text(res.text, {x: tx, y: ty}, style)
   end
   if has then
-    // The caret holds steady while typing and blinks once the keys stop.
+    # The caret holds steady while typing and blinks once the keys stop.
     state rest = 0.0
     rest = if res.changed || text_input() != "" then 0.0 else rest + min(dt(), 0.05) end
     if fract(rest * 0.9) < 0.58 then

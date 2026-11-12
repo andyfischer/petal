@@ -1,11 +1,11 @@
-// Enum methods
-// A method declared on an enum, called on any of its variants.
-//
-// `fn <Enum>.<name>(receiver, ...)` works exactly like a method on a class:
-// the receiver is the first parameter and the call site supplies it. Use a
-// method for an answer *computed* from the variant (often from its payload),
-// and constant data (`key: value` on each variant) for a fixed value per
-// variant.
+# Enum methods
+# A method declared on an enum, called on any of its variants.
+#
+# `fn <Enum>.<name>(receiver, ...)` works exactly like a method on a class:
+# the receiver is the first parameter and the call site supplies it. Use a
+# method for an answer *computed* from the variant (often from its payload),
+# and constant data (`key: value` on each variant) for a fixed value per
+# variant.
 
 enum Shape
   circle(r, sides: 0),
@@ -13,8 +13,8 @@ enum Shape
   triangle(b, h, sides: 3),
 end
 
-// A question asked of the variant: the answer depends on the payload, which
-// constant data cannot express.
+# A question asked of the variant: the answer depends on the payload, which
+# constant data cannot express.
 fn Shape.area(s: Shape) -> float
   match s
     when Shape.circle(r) -> 3.14159 * r * r
@@ -23,8 +23,8 @@ fn Shape.area(s: Shape) -> float
   end
 end
 
-// Methods overload by arity, take arguments after the receiver, and call
-// each other. A fixed per-variant value stays data: `s.sides`.
+# Methods overload by arity, take arguments after the receiver, and call
+# each other. A fixed per-variant value stays data: `s.sides`.
 fn Shape.area(s: Shape, scale: float) -> float
   s.area() * scale * scale
 end
@@ -39,12 +39,12 @@ for s in shapes do
 end
 print("doubled rect:", Shape.rect(4.0, 6.0).area(2.0))
 
-// Chaining reads left to right.
+# Chaining reads left to right.
 fn largest(xs)
   xs.sort(fn(a, b) -> b.area() - a.area())[0]
 end
 print("largest:", largest(shapes).name)
 
-// A method may not take a name its variants already answer to: a variant
-// (`circle`), a payload field (`r`), a data key (`sides`), or `name`, `all`
-// and `from`. `fn Shape.sides(s)` would be a compile error.
+# A method may not take a name its variants already answer to: a variant
+# (`circle`), a payload field (`r`), a data key (`sides`), or `name`, `all`
+# and `from`. `fn Shape.sides(s)` would be a compile error.

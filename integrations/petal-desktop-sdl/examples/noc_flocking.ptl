@@ -1,6 +1,6 @@
-// Nature of Code - Flocking (Boids)
-// Inspired by Chapter 6: Autonomous Agents - Flocking
-// Craig Reynolds' boids algorithm: separation, alignment, cohesion
+# Nature of Code - Flocking (Boids)
+# Inspired by Chapter 6: Autonomous Agents - Flocking
+# Craig Reynolds' boids algorithm: separation, alignment, cohesion
 
 import ui
 
@@ -18,7 +18,7 @@ let max_speed = 150.0
 let max_force = 300.0
 let perception = 50.0
 
-// Initialize boids
+# Initialize boids
 if len(boids) == 0 then
   for i in range(0, num_boids) do
     let angle = random(0.0, PI * 2.0)
@@ -32,12 +32,12 @@ if len(boids) == 0 then
   end
 end
 
-// Update boids
+# Update boids
 let new_boids = []
 for i in range(0, len(boids)) do
   let b = boids[i]
 
-  // Accumulate flocking forces
+  # Accumulate flocking forces
   let sep_x = 0.0
   let sep_y = 0.0
   let sep_count = 0
@@ -56,7 +56,7 @@ for i in range(0, len(boids)) do
       let dx = other.x - b.x
       let dy = other.y - b.y
 
-      // Wrap-aware distance
+      # Wrap-aware distance
       if dx > sw / 2.0 then dx -= sw end
       if dx < -sw / 2.0 then dx += sw end
       if dy > sh / 2.0 then dy -= sh end
@@ -65,17 +65,17 @@ for i in range(0, len(boids)) do
       let dist = sqrt(dx * dx + dy * dy)
 
       if dist < perception then
-        // Alignment: average velocity of neighbors
+        # Alignment: average velocity of neighbors
         ali_vx += other.vx
         ali_vy += other.vy
         ali_count += 1
 
-        // Cohesion: steer toward center of neighbors
+        # Cohesion: steer toward center of neighbors
         coh_x += dx
         coh_y += dy
         coh_count += 1
 
-        // Separation: steer away from close neighbors
+        # Separation: steer away from close neighbors
         if dist < perception * 0.5 && dist > 0.1 then
           sep_x -= dx / dist
           sep_y -= dy / dist
@@ -88,14 +88,14 @@ for i in range(0, len(boids)) do
   let steer_x = 0.0
   let steer_y = 0.0
 
-  // Separation force (strongest)
+  # Separation force (strongest)
   if sep_count > 0 then
     let mag = sqrt(sep_x * sep_x + sep_y * sep_y) + 0.1
     steer_x += sep_x / mag * max_force * 1.8
     steer_y += sep_y / mag * max_force * 1.8
   end
 
-  // Alignment force
+  # Alignment force
   if ali_count > 0 then
     let avg_vx = ali_vx / float(ali_count)
     let avg_vy = ali_vy / float(ali_count)
@@ -106,7 +106,7 @@ for i in range(0, len(boids)) do
     steer_y += (desired_vy - b.vy) * 1.0
   end
 
-  // Cohesion force
+  # Cohesion force
   if coh_count > 0 then
     let avg_x = coh_x / float(coh_count)
     let avg_y = coh_y / float(coh_count)
@@ -117,7 +117,7 @@ for i in range(0, len(boids)) do
     steer_y += (desired_vy - b.vy) * 0.8
   end
 
-  // Mouse avoidance
+  # Mouse avoidance
   let mx = float(mouse_x())
   let my = float(mouse_y())
   let mdx = b.x - mx
@@ -128,27 +128,27 @@ for i in range(0, len(boids)) do
     steer_y += mdy / mdist * max_force * 3.0
   end
 
-  // Apply forces
+  # Apply forces
   let nvx = b.vx + steer_x * delta
   let nvy = b.vy + steer_y * delta
 
-  // Limit speed
+  # Limit speed
   let speed = sqrt(nvx * nvx + nvy * nvy)
   if speed > max_speed then
     nvx = nvx / speed * max_speed
     nvy = nvy / speed * max_speed
   end
-  // Ensure minimum speed
+  # Ensure minimum speed
   if speed < 40.0 && speed > 0.1 then
     nvx = nvx / speed * 40.0
     nvy = nvy / speed * 40.0
   end
 
-  // Update position
+  # Update position
   let nx = b.x + nvx * delta
   let ny = b.y + nvy * delta
 
-  // Wrap around
+  # Wrap around
   if nx < 0.0 then nx += sw end
   if nx > sw then nx -= sw end
   if ny < 0.0 then ny += sh end
@@ -158,10 +158,10 @@ for i in range(0, len(boids)) do
 end
 boids = new_boids
 
-// === Drawing ===
+# === Drawing ===
 clear(8, 12, 25)
 
-// Draw connections between close boids (subtle)
+# Draw connections between close boids (subtle)
 for i in range(0, len(boids)) do
   let a = boids[i]
   for j in range(i + 1, len(boids)) do
@@ -178,13 +178,13 @@ for i in range(0, len(boids)) do
   end
 end
 
-// Draw boids as triangles
+# Draw boids as triangles
 for b in boids do
   let speed = sqrt(b.vx * b.vx + b.vy * b.vy) + 0.1
   let hx = b.vx / speed
   let hy = b.vy / speed
 
-  // Triangle vertices
+  # Triangle vertices
   let size = 8.0
   let nx_pt = b.x + hx * size
   let ny_pt = b.y + hy * size
@@ -193,22 +193,22 @@ for b in boids do
   let rx = b.x - hx * size * 0.5 - hy * size * 0.4
   let ry = b.y - hy * size * 0.5 + hx * size * 0.4
 
-  // Color based on heading
+  # Color based on heading
   let angle_approx = hx * 0.5 + 0.5
   let cr = int(80.0 + angle_approx * 100.0)
   let cg = int(160.0 + hy * 50.0)
   let cb = int(200.0 + (1.0 - angle_approx) * 55.0)
 
-  // Body
+  # Body
   draw_circle(cx: int(b.x), cy: int(b.y), radius: 4, r: cr / 2, g: cg / 2, b: cb / 2)
 
-  // Triangle outline
+  # Triangle outline
   draw_line(int(nx_pt), int(ny_pt), int(lx), int(ly), cr, cg, cb)
   draw_line(int(lx), int(ly), int(rx), int(ry), cr, cg, cb)
   draw_line(int(rx), int(ry), int(nx_pt), int(ny_pt), cr, cg, cb)
 end
 
-// Mouse indicator
+# Mouse indicator
 draw_circle(cx: int(float(mouse_x())), cy: int(float(mouse_y())), radius: 12, r: 40, g: 15, b: 15)
 draw_circle(cx: int(float(mouse_x())), cy: int(float(mouse_y())), radius: 8, r: 60, g: 20, b: 20)
 

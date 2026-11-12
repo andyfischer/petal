@@ -1,8 +1,8 @@
-// `memo(key) name = init`: a result cached per key value, shared by every
-// caller (docs/features/memo.md). Run with `petal test test/ptl`.
-//
-// `calls` counts how often an initializer ran. Each test compares it before
-// and after, so the tests do not depend on running in any order.
+# `memo(key) name = init`: a result cached per key value, shared by every
+# caller (docs/features/memo.md). Run with `petal test test/ptl`.
+#
+# `calls` counts how often an initializer ran. Each test compares it before
+# and after, so the tests do not depend on running in any order.
 
 var calls = 0
 

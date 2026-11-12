@@ -1,19 +1,19 @@
-// Minesweeper — a headless, fully deterministic game of Minesweeper.
-//
-// A 9x9 board with 10 mines placed by a self-contained LCG (fixed seed, so no
-// dependence on `--seed` or the host RNG), neighbour counts, flagging, and the
-// recursive flood-fill reveal of contiguous zero-count cells plus their
-// numbered border. A scripted sequence of moves drives it to a mine hit.
-//
-// Run:
-//   ./tools/run-petal.ts run examples/games/minesweeper/minesweeper.ptl
+# Minesweeper — a headless, fully deterministic game of Minesweeper.
+#
+# A 9x9 board with 10 mines placed by a self-contained LCG (fixed seed, so no
+# dependence on `--seed` or the host RNG), neighbour counts, flagging, and the
+# recursive flood-fill reveal of contiguous zero-count cells plus their
+# numbered border. A scripted sequence of moves drives it to a mine hit.
+#
+# Run:
+#   ./tools/run-petal.ts run examples/games/minesweeper/minesweeper.ptl
 
 let width = tunable(9)
 let height = tunable(9)
 let mine_count = tunable(10)
 let rng_seed = tunable(20260830)
 
-// ---------------------------------------------------------------- board state
+# ---------------------------------------------------------------- board state
 
 var rng_state = rng_seed
 var mines = for r in range(0, height) do for c in range(0, width) do false end end
@@ -23,7 +23,7 @@ var flagged = for r in range(0, height) do for c in range(0, width) do false end
 var exploded = false
 var moves_made = 0
 
-// ------------------------------------------------------------------- rng
+# ------------------------------------------------------------------- rng
 
 fn next_rand() -> int
   set rng_state = (get rng_state * 1103515245 + 12345) % 2147483648
@@ -34,13 +34,13 @@ fn rand_below(n: int) -> int
   next_rand() % n
 end
 
-// ------------------------------------------------------------------ geometry
+# ------------------------------------------------------------------ geometry
 
 fn in_bounds(r: int, c: int) -> bool
   r >= 0 && r < height && c >= 0 && c < width
 end
 
-// The up-to-8 neighbours of (r, c), as [row, col] pairs.
+# The up-to-8 neighbours of (r, c), as [row, col] pairs.
 fn neighbors(r: int, c: int) -> list
   for d in range(0, 9) do
     let dr = d / 3 - 1
@@ -53,7 +53,7 @@ fn neighbors(r: int, c: int) -> list
   end
 end
 
-// ------------------------------------------------------------------- setup
+# ------------------------------------------------------------------- setup
 
 fn place_mines() -> nil
   var placed = 0
@@ -84,11 +84,11 @@ fn compute_counts() -> nil
   nil
 end
 
-// ------------------------------------------------------------------- moves
+# ------------------------------------------------------------------- moves
 
-// Recursive flood fill: a zero-count cell opens all its neighbours, and each
-// numbered neighbour is revealed but does not recurse further. Flagged cells
-// are protected, exactly as in the real game.
+# Recursive flood fill: a zero-count cell opens all its neighbours, and each
+# numbered neighbour is revealed but does not recurse further. Flagged cells
+# are protected, exactly as in the real game.
 fn reveal(r: int, c: int) -> nil
   if get revealed[r][c] || get flagged[r][c] then return nil end
   set revealed[r][c] = true
@@ -134,7 +134,7 @@ fn is_won() -> bool
   !get exploded && hidden_safe_count() == 0
 end
 
-// ------------------------------------------------------------------ rendering
+# ------------------------------------------------------------------ rendering
 
 fn count_char(n: int) -> string
   match n
@@ -174,7 +174,7 @@ fn repeat_str(s: string, n: int) -> string
   parts.join("")
 end
 
-// -------------------------------------------------------------- driver
+# -------------------------------------------------------------- driver
 
 fn do_reveal(r: int, c: int) -> nil
   set moves_made = get moves_made + 1
@@ -203,14 +203,14 @@ print("")
 print("initial board")
 print_board()
 
-// Scripted game. The coordinates below were chosen against this exact seed.
-do_reveal(0, 0)   // a lone numbered cell: one mine touches the corner
-do_reveal(8, 0)   // flood fill opens the bottom-left zero region + its border
-do_flag(8, 2)     // deduced from the 1s along column 1 — really is a mine
-do_reveal(4, 4)   // the big flood fill down the middle
-do_flag(5, 2)     // deduced from the 2 at (4,2)
-do_reveal(5, 2)   // a flagged cell is protected: this move does nothing
-do_reveal(2, 6)   // ...and this one is a mine
+# Scripted game. The coordinates below were chosen against this exact seed.
+do_reveal(0, 0)   # a lone numbered cell: one mine touches the corner
+do_reveal(8, 0)   # flood fill opens the bottom-left zero region + its border
+do_flag(8, 2)     # deduced from the 1s along column 1 — really is a mine
+do_reveal(4, 4)   # the big flood fill down the middle
+do_flag(5, 2)     # deduced from the 2 at (4,2)
+do_reveal(5, 2)   # a flagged cell is protected: this move does nothing
+do_reveal(2, 6)   # ...and this one is a mine
 
 print("")
 if get exploded then

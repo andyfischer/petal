@@ -1,7 +1,7 @@
-// Closures and Higher-Order Functions
-// Functions that capture their environment and accept functions as arguments.
+# Closures and Higher-Order Functions
+# Functions that capture their environment and accept functions as arguments.
 
-// A closure: `adder` captures `n` from the call that made it.
+# A closure: `adder` captures `n` from the call that made it.
 fn make_adder(n: num) -> function
   fn adder(x)
     x + n
@@ -14,11 +14,11 @@ let add10 = make_adder(10)
 print("add5(3) =", add5(3))
 print("add10(3) =", add10(3))
 
-// Lambda (anonymous function)
+# Lambda (anonymous function)
 let double = fn(x) -> x * 2
 print("double(7) =", double(7))
 
-// Apply a function to each element
+# Apply a function to each element
 fn map(list: list, f: function) -> list
   let result = []
   for item in list do
@@ -34,7 +34,7 @@ print("numbers:", numbers)
 print("doubled:", doubled)
 print("squared:", squared)
 
-// Filter
+# Filter
 fn filter(list: list, pred: function) -> list
   let result = []
   for item in list do
@@ -48,7 +48,7 @@ end
 let evens = filter(numbers, fn(x) -> x % 2 == 0)
 print("evens:", evens)
 
-// Reduce
+# Reduce
 fn reduce(list: list, init, f: function)
   let acc = init
   for item in list do

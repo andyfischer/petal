@@ -1,7 +1,7 @@
-// Pattern Matching
-// Match expressions with destructuring, guards, and nested patterns.
+# Pattern Matching
+# Match expressions with destructuring, guards, and nested patterns.
 
-// Basic matching
+# Basic matching
 fn classify(n: num) -> string
   match n
     when 0 -> "zero"
@@ -11,7 +11,7 @@ fn classify(n: num) -> string
 end
 print(classify(0), classify(1), classify(42))
 
-// Guards
+# Guards
 fn temperature_label(temp: num) -> string
   match temp
     when t if t < 0 -> "freezing"
@@ -24,7 +24,7 @@ end
 print("20 degrees is {temperature_label(20)}")
 print("-5 degrees is {temperature_label(-5)}")
 
-// List destructuring
+# List destructuring
 fn describe_list(list: list) -> string
   match list
     when [] -> "empty list"
@@ -38,7 +38,7 @@ print(describe_list([42]))
 print(describe_list([1, 2]))
 print(describe_list([1, 2, 3, 4, 5]))
 
-// Nested destructuring
+# Nested destructuring
 enum Expr
   Num(value),
   Add(left, right),
@@ -53,11 +53,11 @@ fn eval(expr)
   end
 end
 
-// (2 + 3) * 4 = 20
+# (2 + 3) * 4 = 20
 let expression = Expr.Mul(Expr.Add(Expr.Num(2), Expr.Num(3)), Expr.Num(4))
 print("(2 + 3) * 4 = {eval(expression)}")
 
-// Or-patterns, and arms whose body is several statements
+# Or-patterns, and arms whose body is several statements
 enum Command
   left,
   right,
@@ -93,7 +93,7 @@ print(run_commands([
   Command.say("hi"), Command.left, Command.quit, Command.right,
 ]))
 
-// Many literal arms cost one lookup, not one comparison per arm
+# Many literal arms cost one lookup, not one comparison per arm
 fn key_action(key: string) -> string
   match key
     when "w" | "up" -> "north"

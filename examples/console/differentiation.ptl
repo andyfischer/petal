@@ -1,26 +1,26 @@
-// Derivatives + Gradient Descent
-// `deriv(f, x)` from `import autodiff` measures how `f`'s output moves when
-// its input moves: it runs `f` a little either side of `x` (a central
-// difference) and returns a record, `{value, quality, step}`. `value` is the
-// slope, `quality` says whether to trust it ("smooth" here; "kink", "step"
-// and the rest flag functions that bend or jump), and `step` is how far
-// either side it looked. The slope is an approximation, so print it rounded.
+# Derivatives + Gradient Descent
+# `deriv(f, x)` from `import autodiff` measures how `f`'s output moves when
+# its input moves: it runs `f` a little either side of `x` (a central
+# difference) and returns a record, `{value, quality, step}`. `value` is the
+# slope, `quality` says whether to trust it ("smooth" here; "kink", "step"
+# and the rest flag functions that bend or jump), and `step` is how far
+# either side it looked. The slope is an approximation, so print it rounded.
 
 import autodiff
 
-// f(x) = (x - 3)^2 — minimum at x = 3, minimum value 0.
+# f(x) = (x - 3)^2 — minimum at x = 3, minimum value 0.
 fn f(x)
   (x - 3.0) * (x - 3.0)
 end
 
-// --- Part 1: check the derivative at a point ------------------------------
-// At x = 5, f'(x) = 2*(x-3) = 4.
+# --- Part 1: check the derivative at a point ------------------------------
+# At x = 5, f'(x) = 2*(x-3) = 4.
 let d = deriv(f, 5.0)
 print("f(5)  = {f(5.0)}")
 print("f'(5) = {round(d.value, 6)}   (expected 4.0, {d.quality})")
 print("")
 
-// --- Part 2: gradient descent using the derivative ------------------------
+# --- Part 2: gradient descent using the derivative ------------------------
 let x = 10.0
 let lr = 0.1
 print("Gradient descent on f(x) = (x - 3)^2, start x=10")

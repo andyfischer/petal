@@ -1,4 +1,4 @@
-// Two arities of one name: the overload set a facade must carry whole.
+# Two arities of one name: the overload set a facade must carry whole.
 pub fn button(label)
   "[" ++ label ++ "]"
 end

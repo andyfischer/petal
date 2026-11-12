@@ -1,19 +1,19 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Calculator — a Garden panel app.
-//
-// A full infix expression calculator: the keypad and the keyboard both build an
-// expression string, which is tokenized, converted to RPN by a shunting-yard
-// pass, and evaluated — live, every frame, so the readout previews the answer
-// while you are still typing it. Committed results land on a scrolling tape
-// that you can click to reuse.
-//
-// Run:  garden --headless --debug-port 0 --init layout.ptl
-// See README.md for controls.
-// ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Calculator — a Garden panel app.
+#
+# A full infix expression calculator: the keypad and the keyboard both build an
+# expression string, which is tokenized, converted to RPN by a shunting-yard
+# pass, and evaluated — live, every frame, so the readout previews the answer
+# while you are still typing it. Committed results land on a scrolling tape
+# that you can click to reuse.
+#
+# Run:  garden --headless --debug-port 0 --init layout.ptl
+# See README.md for controls.
+# ─────────────────────────────────────────────────────────────────────────────
 
 import ui
 
-// ── Palette ──────────────────────────────────────────────────────────────────
+# ── Palette ──────────────────────────────────────────────────────────────────
 let BG        = :0e1014
 let CARD      = :171a21
 let CARD_EDGE = :232833
@@ -32,19 +32,19 @@ let RED       = :e0776b
 let INK       = :14161b
 let SCROLL    = :3b4351
 
-// ── Type scale ───────────────────────────────────────────────────────────────
-// Four sizes, and only four. Bold degrades to regular in a Garden panel, so the
-// hierarchy is carried by size, color and spacing — and a tight scale also dodges
-// a host glyph-atlas bug (see README) that mis-renders newly-seen glyphs once one
-// frame mixes many distinct font sizes.
+# ── Type scale ───────────────────────────────────────────────────────────────
+# Four sizes, and only four. Bold degrades to regular in a Garden panel, so the
+# hierarchy is carried by size, color and spacing — and a tight scale also dodges
+# a host glyph-atlas bug (see README) that mis-renders newly-seen glyphs once one
+# frame mixes many distinct font sizes.
 let T_MICRO = 11
 let T_SMALL = 15
 let T_BODY  = 22
 let T_HERO  = 40
 
-// ── Number parsing ───────────────────────────────────────────────────────────
-// `float("3.5")` rejects strings (only `int()` parses one), so decimals are
-// assembled by hand from the two sides of the dot.
+# ── Number parsing ───────────────────────────────────────────────────────────
+# `float("3.5")` rejects strings (only `int()` parses one), so decimals are
+# assembled by hand from the two sides of the dot.
 
 fn parse_num(s: string) -> float
   let parts = split(s, ".")
@@ -67,7 +67,7 @@ fn parse_num(s: string) -> float
   v
 end
 
-// ── Number formatting ────────────────────────────────────────────────────────
+# ── Number formatting ────────────────────────────────────────────────────────
 
 fn fmt(v: num) -> string
   let a = abs(v)
@@ -89,7 +89,7 @@ fn fmt(v: num) -> string
   s
 end
 
-// Thousands separators, for display only — the grouped form is never parsed back.
+# Thousands separators, for display only — the grouped form is never parsed back.
 fn group(s: string) -> string
   let neg = false
   let t = s
@@ -116,10 +116,10 @@ fn group(s: string) -> string
   out
 end
 
-// ── Tokenizer ────────────────────────────────────────────────────────────────
-// Emits {t: "num"|"op"|"lp"|"rp", s, v}. A leading `-`/`+` — at the start of the
-// expression, after another operator, or after `(` — is unary; `u+` is dropped
-// outright and `u-` becomes a right-associative prefix operator.
+# ── Tokenizer ────────────────────────────────────────────────────────────────
+# Emits {t: "num"|"op"|"lp"|"rp", s, v}. A leading `-`/`+` — at the start of the
+# expression, after another operator, or after `(` — is unary; `u+` is dropped
+# outright and `u-` becomes a right-associative prefix operator.
 
 let DIGITS = "0123456789."
 let OPS = "+-*/%"
@@ -175,7 +175,7 @@ fn tokenize(src: string) -> record
   {toks: toks, err: err}
 end
 
-// ── Shunting yard ────────────────────────────────────────────────────────────
+# ── Shunting yard ────────────────────────────────────────────────────────────
 
 fn prec(op: string) -> int
   if op == "u-" then 3
@@ -307,7 +307,7 @@ fn eval_str(src: string) -> record
   eval_rpn(rp.rpn)
 end
 
-// Drop trailing operators so a half-typed "12 * " can still preview 12.
+# Drop trailing operators so a half-typed "12 * " can still preview 12.
 fn trim_ops(src: string) -> string
   let out = src
   while len(out) > 0 && contains(OPS, slice(out, start: len(out) - 1, end: len(out))) do
@@ -316,13 +316,13 @@ fn trim_ops(src: string) -> string
   out
 end
 
-// ── Expression editing helpers ───────────────────────────────────────────────
+# ── Expression editing helpers ───────────────────────────────────────────────
 
 fn last_char(s: string) -> string
   if len(s) == 0 then "" else slice(s, start: len(s) - 1, end: len(s)) end
 end
 
-// Toggle the sign of the number literal the caret is sitting on.
+# Toggle the sign of the number literal the caret is sitting on.
 fn toggle_sign(src: string) -> string
   if len(src) == 0 then
     return "-"
@@ -337,7 +337,7 @@ fn toggle_sign(src: string) -> string
   let head = slice(src, start: 0, end: i)
   let tail = slice(src, start: i, end: len(src))
   if i > 0 && slice(src, start: i - 1, end: i) == "-" then
-    // Strip the minus, unless it is a binary subtraction between two operands.
+    # Strip the minus, unless it is a binary subtraction between two operands.
     let before = if i >= 2 then slice(src, start: i - 2, end: i - 1) else "" end
     if i == 1 || contains(OPS ++ "(", before) then
       return slice(src, start: 0, end: i - 1) ++ tail
@@ -346,8 +346,8 @@ fn toggle_sign(src: string) -> string
   head ++ "-" ++ tail
 end
 
-// ── Keypad model ─────────────────────────────────────────────────────────────
-// kind: digit | op | fn | mem | eq. `a` is the action id applied below.
+# ── Keypad model ─────────────────────────────────────────────────────────────
+# kind: digit | op | fn | mem | eq. `a` is the action id applied below.
 
 let KEYS = [
   {l: "AC",   k: "clr", a: "clear"},
@@ -381,7 +381,7 @@ let KEYS = [
   {l: "=",    k: "eq",    a: "eq"},
 ]
 
-// ── Persistent state ─────────────────────────────────────────────────────────
+# ── Persistent state ─────────────────────────────────────────────────────────
 
 state expr = "1920 / 1080"
 state err = ""
@@ -401,13 +401,13 @@ state tape_scroll = 0
 state flash_key = ""
 state flash_t = 0.0
 state presses = 0
-// Set the moment `=` lands: `src_line` is the expression that produced the
-// answer (shown above it), and `fresh` makes the next digit start a new entry
-// while an operator keeps building on the answer — the usual calculator feel.
+# Set the moment `=` lands: `src_line` is the expression that produced the
+# answer (shown above it), and `fresh` makes the next digit start a new entry
+# while an operator keeps building on the answer — the usual calculator feel.
 state src_line = ""
 state fresh = false
 
-// ── Layout ───────────────────────────────────────────────────────────────────
+# ── Layout ───────────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
@@ -433,7 +433,7 @@ fn key_rect(i: num) -> Rect
   rect(PAD + col * (KW + KGAP), PADY + row * (KH + KGAP), KW, KH)
 end
 
-// ── Phase 1: hit-testing (before any state is applied) ───────────────────────
+# ── Phase 1: hit-testing (before any state is applied) ───────────────────────
 
 let act = ""
 let act_label = ""
@@ -445,7 +445,7 @@ for i in range(0, len(KEYS)) do
   end
 end
 
-// Keyboard: typed characters map straight onto keypad actions.
+# Keyboard: typed characters map straight onto keypad actions.
 let typed = text_input()
 if len(typed) > 0 then
   let c = slice(typed, start: len(typed) - 1, end: len(typed))
@@ -470,7 +470,7 @@ if key_pressed("escape") then
   act = "clear"
 end
 
-// Give the keyboard its matching key highlight.
+# Give the keyboard its matching key highlight.
 if act != "" && act_label == "" then
   for i in range(0, len(KEYS)) do
     if KEYS[i].a == act then
@@ -479,14 +479,14 @@ if act != "" && act_label == "" then
   end
 end
 
-// Memory chip in the display clears the store.
+# Memory chip in the display clears the store.
 let mem_chip = rect(disp_r.x + 18, disp_r.y + 16, 96, 22)
 if mem_set && clicked(mem_chip) then
   memory = 0.0
   mem_set = false
 end
 
-// Tape rows: click to append that result to the expression.
+# Tape rows: click to append that result to the expression.
 let ROW_H = 46
 let tape_body = rect(tape_r.x, tape_r.y + 44, tape_r.w, tape_r.h - 44)
 let tape_rows = tape_body.h / ROW_H
@@ -499,7 +499,7 @@ for i in range(0, min(tape_rows, len(tape) - tape_scroll)) do
   end
 end
 
-// ── Phase 2: apply the action ────────────────────────────────────────────────
+# ── Phase 2: apply the action ────────────────────────────────────────────────
 
 if act != "" then
   presses = presses + 1
@@ -507,8 +507,8 @@ if act != "" then
   flash_t = 1.0
   err = ""
 
-  // A digit typed straight after `=` begins a new entry; an operator continues
-  // from the answer that is already sitting in `expr`.
+  # A digit typed straight after `=` begins a new entry; an operator continues
+  # from the answer that is already sitting in `expr`.
   if fresh && len(act) == 1 && contains(DIGITS ++ "(", act) then
     expr = ""
   end
@@ -544,7 +544,7 @@ if act != "" then
       ans = ""
     elsif r.ok then
       let out = fmt(r.v)
-      // `append` only pushes onto the tail, so a prepend is a flatten.
+      # `append` only pushes onto the tail, so a prepend is a flatten.
       tape = flat([[{e: expr, v: out}], tape])
       if len(tape) > 60 then
         tape = slice(tape, start: 0, end: 60)
@@ -560,8 +560,8 @@ if act != "" then
   elsif len(act) > 6 && slice(act, start: 0, end: 6) == "paste:" then
     expr = expr ++ slice(act, start: 6, end: len(act))
   else
-    // A digit, a dot, an operator or a paren: plain append, except that an
-    // operator typed straight after another replaces it (`-` stays, as a sign).
+    # A digit, a dot, an operator or a paren: plain append, except that an
+    # operator typed straight after another replaces it (`-` stays, as a sign).
     let c = act
     if contains(OPS, c) && contains(OPS, last_char(expr)) && c != "-" then
       expr = slice(expr, start: 0, end: len(expr) - 1) ++ c
@@ -571,8 +571,8 @@ if act != "" then
   end
 end
 
-// Live evaluation: the exact expression first, then the trailing-operator-free
-// prefix, so a half-typed "12 *" still previews 12 instead of shouting.
+# Live evaluation: the exact expression first, then the trailing-operator-free
+# prefix, so a half-typed "12 *" still previews 12 instead of shouting.
 let live = eval_str(expr)
 let partial = false
 if !live.ok && live.err == "incomplete" then
@@ -585,24 +585,24 @@ end
 
 flash_t = max(0.0, flash_t - dt() * 4.0)
 
-// ── Phase 3: draw ────────────────────────────────────────────────────────────
+# ── Phase 3: draw ────────────────────────────────────────────────────────────
 
 clear(BG.r, BG.g, BG.b)
 
-// Header
+# Header
 draw_text("CALCULATOR", pos: {x: PAD, y: 26}, style: {size: T_SMALL, color: TEXT, spacing: 2.2})
 draw_text_right("infix · shunting-yard · petal", right_x: W - PAD, y: 29, size: T_MICRO, c: FAINT)
 draw_line({x: PAD, y: 56}, {x: W - PAD, y: 56}, c: RULE)
 
-// ── Display card ─────────────────────────────────────────────────────────────
+# ── Display card ─────────────────────────────────────────────────────────────
 draw_rect_rounded(disp_r, radius: 12, c: CARD)
 draw_rect_rounded(rect(disp_r.x, disp_r.y, disp_r.w, 1), radius: 0, c: CARD_EDGE)
 
-// A status rail down the card's left edge: the readout's health at a glance.
+# A status rail down the card's left edge: the readout's health at a glance.
 let rail = if len(expr) == 0 then FAINT elsif live.ok then AMBER else RED end
 draw_rect_rounded(rect(disp_r.x, disp_r.y + 16, 3, DISP_H - 32), radius: 2, c: rail)
 
-// Top row of the card: the memory chip on the left, the last answer on the right.
+# Top row of the card: the memory chip on the left, the last answer on the right.
 let mem_hot = mem_set && hovered(mem_chip)
 draw_rect_rounded(mem_chip, radius: 6, c: if mem_hot then KEY_HOVER else KEY end)
 draw_rect_outline(mem_chip, CARD_EDGE)
@@ -620,13 +620,13 @@ if len(ans) > 0 then
   draw_text_right("ans  " ++ ellipsize_tail(group(ans), avail_px: 150, size: T_MICRO), right_x: disp_r.x + disp_r.w - 18, y: disp_r.y + 21, size: T_MICRO, c: FAINT)
 end
 
-// The expression being built — or, right after `=`, the one that produced the
-// answer below, so the card reads as a two-line statement instead of an echo.
+# The expression being built — or, right after `=`, the one that produced the
+# answer below, so the card reads as a two-line statement instead of an echo.
 let expr_shown = if len(src_line) > 0 then src_line elsif len(expr) == 0 then "0" else expr end
 let expr_col = if len(expr) == 0 && len(src_line) == 0 then FAINT else DIM end
 draw_text_right(ellipsize_tail(expr_shown, avail_px: disp_r.w - 36, size: T_BODY), right_x: disp_r.x + disp_r.w - 18, y: disp_r.y + 44, size: T_BODY, c: expr_col)
 
-// The live readout.
+# The live readout.
 let read_txt = "0"
 let read_col = FAINT
 if len(expr) > 0 then
@@ -644,7 +644,7 @@ if text_width(read_txt, read_size) > disp_r.w - 36 then
 end
 draw_text_right(ellipsize_tail(read_txt, avail_px: disp_r.w - 36, size: read_size), right_x: disp_r.x + disp_r.w - 18, y: disp_r.y + 74, size: read_size, c: read_col)
 
-// ── Keypad ───────────────────────────────────────────────────────────────────
+# ── Keypad ───────────────────────────────────────────────────────────────────
 for i in range(0, len(KEYS)) do
   let k = KEYS[i]
   let r = key_rect(i)
@@ -682,8 +682,8 @@ for i in range(0, len(KEYS)) do
   if k.k != "eq" then
     draw_rect_rounded(rect(r.x, r.y, r.w, 1), radius: 0, c: CARD_EDGE)
   end
-  // Press flash: a ring that fades out, so a key struck from the keyboard reads
-  // the same as one clicked. A wash would muddy the palette; an outline does not.
+  # Press flash: a ring that fades out, so a key struck from the keyboard reads
+  # the same as one clicked. A wash would muddy the palette; an outline does not.
   if flash_key == k.l && flash_t > 0.0 then
     let ring = if k.k == "eq" then INK else AMBER end
     draw_rect_rounded(x: r.x, y: r.y, w: r.w, h: r.h, radius: 10, r: ring.r, g: ring.g, b: ring.b, a: int(flash_t * 26.0))
@@ -694,7 +694,7 @@ for i in range(0, len(KEYS)) do
   draw_text(k.l, {x: tx, y: ty}, size, fg)
 end
 
-// ── Tape ─────────────────────────────────────────────────────────────────────
+# ── Tape ─────────────────────────────────────────────────────────────────────
 draw_rect_rounded(tape_r, radius: 12, c: CARD)
 draw_text("TAPE", pos: {x: tape_r.x + 16, y: tape_r.y + 16}, style: {size: T_MICRO, color: DIM, spacing: 2.2})
 draw_text_right(str(len(tape)), right_x: tape_r.x + tape_r.w - 16, y: tape_r.y + 16, size: T_MICRO, c: FAINT)
@@ -716,8 +716,8 @@ for i in range(0, min(tape_rows, len(tape) - tape_scroll)) do
   end
 end
 clip_none()
-// The prelude's draw_scrollbar paints in its own (light) theme colors, so the
-// tape draws its own in this palette.
+# The prelude's draw_scrollbar paints in its own (light) theme colors, so the
+# tape draws its own in this palette.
 if len(tape) > tape_rows then
   let track = rect(tape_r.x + tape_r.w - 9, tape_body.y + 4, 3, tape_body.h - 8)
   draw_rect_rounded(track, radius: 2, c: KEY)
@@ -726,6 +726,6 @@ if len(tape) > tape_rows then
   draw_rect_rounded(rect(track.x, ty, track.w, th), radius: 2, c: SCROLL)
 end
 
-// ── Footer ───────────────────────────────────────────────────────────────────
+# ── Footer ───────────────────────────────────────────────────────────────────
 let hints = fit_parts(parts: ["0-9 . ( )  and  + − × ÷ %", "Enter =", "Esc clears", "click a tape row to reuse it"], avail_px: W - PAD * 2, size: T_MICRO)
 draw_text(hints, pos: {x: PAD, y: FOOT + 14}, style: {size: T_MICRO, color: FAINT})

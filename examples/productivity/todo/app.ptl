@@ -1,22 +1,22 @@
-// ── Thicket ─────────────────────────────────────────────────────────────────
-// A todo app. A rail of lists on the left, a date-grouped task feed in the
-// middle with an inline composer, and an inspector on the right with notes and
-// a subtask checklist.
-//
-// Exercises: full CRUD over a record store (create through a parsed composer
-// line, read/filter/group, update title / priority / due / done / subtasks,
-// delete with undo), multi-axis filtering (list + status + text search),
-// pixel-scrolled variable-height rows, three focusable text fields, and a
-// revision counter standing in for autosave.
-//
-// Designed for a 1280x850 panel.
+# ── Thicket ─────────────────────────────────────────────────────────────────
+# A todo app. A rail of lists on the left, a date-grouped task feed in the
+# middle with an inline composer, and an inspector on the right with notes and
+# a subtask checklist.
+#
+# Exercises: full CRUD over a record store (create through a parsed composer
+# line, read/filter/group, update title / priority / due / done / subtasks,
+# delete with undo), multi-axis filtering (list + status + text search),
+# pixel-scrolled variable-height rows, three focusable text fields, and a
+# revision counter standing in for autosave.
+#
+# Designed for a 1280x850 panel.
 
 import ui
 
-// ── palette ─────────────────────────────────────────────────────────────────
-let BG      = :10131a   // feed ground
-let RAIL    = :0b0e14   // left rail, one step darker
-let SURFACE = :151922   // right inspector
+# ── palette ─────────────────────────────────────────────────────────────────
+let BG      = :10131a   # feed ground
+let RAIL    = :0b0e14   # left rail, one step darker
+let SURFACE = :151922   # right inspector
 let CARD    = :1a1f2a
 let CARD_HI = :222836
 let LINE    = :262d3a
@@ -25,7 +25,7 @@ let TEXT    = :e9edf4
 let DIM     = :98a3b4
 let FAINT   = :5f6b7c
 let GHOST   = :414c5c
-let AMBER   = :f0a44b   // accent
+let AMBER   = :f0a44b   # accent
 let GREEN   = :56c08d
 let RED     = :e8637d
 let BLUE    = :6ba7f5
@@ -33,13 +33,13 @@ let VIOLET  = :a98cf0
 let TEAL    = :3fc2bd
 let INK     = :0b0e14
 
-// ── metrics ─────────────────────────────────────────────────────────────────
+# ── metrics ─────────────────────────────────────────────────────────────────
 let W = screen_width()
 let H = screen_height()
 
 let RAIL_W   = 234
 let DETAIL_W = 354
-let MX       = RAIL_W                  // main column left edge
+let MX       = RAIL_W                  # main column left edge
 let MAIN_W   = W - RAIL_W - DETAIL_W
 let DX0      = W - DETAIL_W
 let TOP_H    = 66
@@ -58,9 +58,9 @@ let FS_XL    = 22
 
 let SOMEDAY = 9000
 
-// ── seed data ───────────────────────────────────────────────────────────────
-// `due` is whole days from today; SOMEDAY means unscheduled.
-// `prio` is 0 none / 1 low / 2 medium / 3 high.
+# ── seed data ───────────────────────────────────────────────────────────────
+# `due` is whole days from today; SOMEDAY means unscheduled.
+# `prio` is 0 none / 1 low / 2 medium / 3 high.
 state tasks = [
   {id: 1,  title: "Send the Q3 roadmap deck to Priya", list: "Product", done: false, prio: 3, due: -2,
     notes: "She only needs the three headline bets, not the appendix. Cut slides 9-14 before sending.",
@@ -130,18 +130,18 @@ state tasks = [
     subs: [], age: 3},
 ]
 
-// ── view state ──────────────────────────────────────────────────────────────
-state lst      = "All"        // list filter: "All" or a project name
-state status   = "Active"     // Active | Done | All
-state q        = ""           // search query
-state sel_id   = 1            // selected task id
-state scroll   = 0            // pixel scroll offset of the feed
-state focus    = ""           // "" | compose | search | title
-state compose  = ""           // composer buffer
-state ed_title = ""           // inline title editor buffer
+# ── view state ──────────────────────────────────────────────────────────────
+state lst      = "All"        # list filter: "All" or a project name
+state status   = "Active"     # Active | Done | All
+state q        = ""           # search query
+state sel_id   = 1            # selected task id
+state scroll   = 0            # pixel scroll offset of the feed
+state focus    = ""           # "" | compose | search | title
+state compose  = ""           # composer buffer
+state ed_title = ""           # inline title editor buffer
 state next_id  = 23
-state rev      = 0            // "autosave" revision — every mutation bumps it
-state trash    = []           // deleted tasks, newest last (undo stack)
+state rev      = 0            # "autosave" revision — every mutation bumps it
+state trash    = []           # deleted tasks, newest last (undo stack)
 state completed_today = 2
 
 let PROJECTS = ["Product", "Home", "Errands", "Reading"]
@@ -156,7 +156,7 @@ fn list_color(name: string) -> record
   end
 end
 
-// ── small helpers ───────────────────────────────────────────────────────────
+# ── small helpers ───────────────────────────────────────────────────────────
 fn prio_color(p: num) -> record
   if p == 3 then RED
   elsif p == 2 then AMBER
@@ -248,7 +248,7 @@ fn stroke(a: record, b: record, c: record, alpha: num, width: num)
   draw_line(x1: a.x, y1: a.y, x2: b.x, y2: b.y, r: c.r, g: c.g, b: c.b, a: alpha, width: width)
 end
 
-// A rounded panel with a hairline border (draw_rect_outline is square-cornered).
+# A rounded panel with a hairline border (draw_rect_outline is square-cornered).
 fn rr(r: record, radius: num, fill: record, border: record)
   draw_rect_rounded(r, radius, c: border)
   draw_rect_rounded(rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2), radius: radius - 1, c: fill)
@@ -278,7 +278,7 @@ fn checkbox(cx: num, cy: num, done: bool, hot: bool)
   end
 end
 
-// A capsule button. kind 0 = quiet, 1 = primary, 2 = danger-quiet.
+# A capsule button. kind 0 = quiet, 1 = primary, 2 = danger-quiet.
 fn btn(r: record, label: string, kind: num, enabled: bool) -> bool
   let hov = hovered(r) && enabled
   if kind == 1 then
@@ -294,8 +294,8 @@ fn btn(r: record, label: string, kind: num, enabled: bool) -> bool
   hov && mouse_pressed(0)
 end
 
-// ── composer parsing ────────────────────────────────────────────────────────
-// "!! Ring the vet @tomorrow" -> {title: "Ring the vet", prio: 3, due: 1}
+# ── composer parsing ────────────────────────────────────────────────────────
+# "!! Ring the vet @tomorrow" -> {title: "Ring the vet", prio: 3, due: 1}
 fn parse_line(s: string, dflt_list: string) -> record
   var prio = 1
   var due = 0
@@ -332,7 +332,7 @@ fn parse_line(s: string, dflt_list: string) -> record
   {title: join(kept, " "), prio: prio, due: due, list: target}
 end
 
-// ── sorting ─────────────────────────────────────────────────────────────────
+# ── sorting ─────────────────────────────────────────────────────────────────
 fn task_less(a: record, b: record) -> bool
   if a.prio != b.prio then
     a.prio > b.prio
@@ -367,7 +367,7 @@ fn find_by_id(ts: list, id: num) -> int
   found
 end
 
-// ── derived: filter, group, lay out ─────────────────────────────────────────
+# ── derived: filter, group, lay out ─────────────────────────────────────────
 let needle = lower(q)
 let scoped = for t in tasks do
   if lst != "All" && t.list != lst then continue end
@@ -379,8 +379,8 @@ end
 
 let GROUPS = ["over", "today", "soon", "later", "someday", "done"]
 
-// The feed is a flat list of display items with pixel offsets, so header rows
-// and task rows can have different heights and one scroll offset covers both.
+# The feed is a flat list of display items with pixel offsets, so header rows
+# and task rows can have different heights and one scroll offset covers both.
 let items = []
 let feed_h = 0
 for gk in GROUPS do
@@ -399,14 +399,14 @@ for gk in GROUPS do
 end
 feed_h = feed_h + 16
 
-// Task ids in display order — the keyboard walks this.
+# Task ids in display order — the keyboard walks this.
 let order = for it in items do
   if it.kind != "t" then continue end
   it.task.id
 end
 let n_shown = len(order)
 
-// ── geometry ────────────────────────────────────────────────────────────────
+# ── geometry ────────────────────────────────────────────────────────────────
 let mx = mouse_x()
 let my = mouse_y()
 
@@ -446,15 +446,15 @@ fn sub_rect(i: num, x: num, y: num, w: num) -> Rect
   rect(x, y + i * 26, w, 24)
 end
 
-// ── input ───────────────────────────────────────────────────────────────────
-// `grabbed` suppresses this frame's text so the keystroke that moved focus is
-// not also typed into the field it just landed on.
+# ── input ───────────────────────────────────────────────────────────────────
+# `grabbed` suppresses this frame's text so the keystroke that moved focus is
+# not also typed into the field it just landed on.
 let grabbed = false
 let sel_ix = find_by_id(tasks, sel_id)
 let selected = if sel_ix >= 0 then tasks[sel_ix] else nil end
 let has_sel = sel_ix >= 0
 
-// Focus by click.
+# Focus by click.
 if mouse_pressed(0) then
   if point_in(px: mx, py: my, r: search_r) then
     focus = "search"
@@ -467,7 +467,7 @@ if mouse_pressed(0) then
   end
 end
 
-// Keyboard shortcuts, only while no text field owns the keyboard.
+# Keyboard shortcuts, only while no text field owns the keyboard.
 let typing = len(focus) > 0
 if !typing then
   if key_pressed("n") then
@@ -480,7 +480,7 @@ if !typing then
   end
 end
 
-// Rail: switch list.
+# Rail: switch list.
 if mouse_pressed(0) then
   for i in range(0, len(PROJECTS) + 1) do
     let name = if i == 0 then "All" else PROJECTS[i - 1] end
@@ -491,7 +491,7 @@ if mouse_pressed(0) then
   end
 end
 
-// Status segments.
+# Status segments.
 if mouse_pressed(0) then
   for i in range(0, len(SEGS)) do
     if point_in(px: mx, py: my, r: seg_rect(i)) then
@@ -501,7 +501,7 @@ if mouse_pressed(0) then
   end
 end
 
-// Feed: click a row to select, click its checkbox to toggle done.
+# Feed: click a row to select, click its checkbox to toggle done.
 let toggled = -1
 if mouse_pressed(0) && point_in(px: mx, py: my, r: feed_r) then
   for it in items do
@@ -518,12 +518,12 @@ if mouse_pressed(0) && point_in(px: mx, py: my, r: feed_r) then
   end
 end
 
-// Wheel over the feed.
+# Wheel over the feed.
 if point_in(px: mx, py: my, r: feed_r) then
   scroll = scroll - scroll_y() * 44
 end
 
-// Keyboard navigation over the display order.
+# Keyboard navigation over the display order.
 let want_ix = -1
 state last_ix = 0
 if !typing && n_shown > 0 then
@@ -533,9 +533,9 @@ if !typing && n_shown > 0 then
   end
   var w2 = cur
   if cur < 0 then
-    // The selected task just left this view (completed, or filtered out), so
-    // the selection lands on whichever row took its place rather than on the
-    // top of the feed — and this frame's keys are spent doing only that.
+    # The selected task just left this view (completed, or filtered out), so
+    # the selection lands on whichever row took its place rather than on the
+    # top of the feed — and this frame's keys are spent doing only that.
     set w2 = int(clamp(last_ix, lo: 0, hi: n_shown - 1))
   else
     if key_pressed("down") || key_pressed("j") then set w2 = w2 + 1 end
@@ -555,7 +555,7 @@ for i in range(0, n_shown) do
   if order[i] == sel_id then last_ix = i end
 end
 
-// Keep the keyboard selection inside the viewport.
+# Keep the keyboard selection inside the viewport.
 if want_ix >= 0 then
   for it in items do
     if it.kind == "t" && it.task.id == sel_id then
@@ -565,12 +565,12 @@ if want_ix >= 0 then
 end
 scroll = int(clamp(scroll, lo: 0, hi: max(0, feed_h - FEED_H)))
 
-// ── mutations ───────────────────────────────────────────────────────────────
-// Every write to `tasks` bumps `rev`, which the rail reports as the autosave
-// revision — the app's stand-in for a store commit.
+# ── mutations ───────────────────────────────────────────────────────────────
+# Every write to `tasks` bumps `rev`, which the rail reports as the autosave
+# revision — the app's stand-in for a store commit.
 let space_toggle = !typing && (key_pressed("space") || key_pressed("x"))
-// The inspector's primary button is the third way to flip `done`; all three
-// land in the one mutation below so the "done today" tally stays honest.
+# The inspector's primary button is the third way to flip `done`; all three
+# land in the one mutation below so the "done today" tally stays honest.
 let act_click = has_sel && mouse_pressed(0) && point_in(px: mx, py: my, r: act1)
 let do_toggle = toggled >= 0 || ((space_toggle || act_click) && has_sel)
 let toggle_id = if toggled >= 0 then toggled else sel_id end
@@ -588,7 +588,7 @@ if do_toggle then
   rev = rev + 1
 end
 
-// Priority: keys 0-3, or the four chips in the inspector.
+# Priority: keys 0-3, or the four chips in the inspector.
 let set_prio = -1
 if !typing && has_sel then
   if key_pressed("0") then set_prio = 0 end
@@ -611,7 +611,7 @@ if set_prio >= 0 then
   rev = rev + 1
 end
 
-// Due date nudging: "," pulls a task a day earlier, "." pushes it a day later.
+# Due date nudging: "," pulls a task a day earlier, "." pushes it a day later.
 let nudge = if !typing && has_sel && key_pressed("comma") then -1
 elsif !typing && has_sel && key_pressed("period") then 1
 else 0
@@ -629,7 +629,7 @@ if nudge != 0 then
   rev = rev + 1
 end
 
-// Subtask toggling.
+# Subtask toggling.
 state sub_row_y = 0
 let sub_hit = -1
 if has_sel && mouse_pressed(0) then
@@ -652,7 +652,7 @@ if sub_hit >= 0 then
   rev = rev + 1
 end
 
-// ── text fields ─────────────────────────────────────────────────────────────
+# ── text fields ─────────────────────────────────────────────────────────────
 let typed = if grabbed then "" else text_input() end
 let backsp = key_pressed("backspace")
 let submitted = key_pressed("return")
@@ -668,7 +668,7 @@ if focus == "compose" then compose = edited(cur: compose, t: typed, bs: backsp) 
 if focus == "search" then q = edited(cur: q, t: typed, bs: backsp) end
 if focus == "title" then ed_title = edited(cur: ed_title, t: typed, bs: backsp) end
 
-// Create.
+# Create.
 let parsed = parse_line(compose, if lst == "All" then "Product" else lst end)
 if focus == "compose" && submitted && len(parsed.title) > 0 then
   tasks = append(tasks, {id: next_id, title: parsed.title, list: parsed.list, done: false,
@@ -679,7 +679,7 @@ if focus == "compose" && submitted && len(parsed.title) > 0 then
   rev = rev + 1
 end
 
-// Rename (commit the inline title editor).
+# Rename (commit the inline title editor).
 if focus == "title" && submitted then
   if len(ed_title) > 0 then
     tasks = for t in tasks do
@@ -690,7 +690,7 @@ if focus == "title" && submitted then
   focus = ""
 end
 
-// Start renaming: "e", or a click on the inspector's title block.
+# Start renaming: "e", or a click on the inspector's title block.
 let title_r = rect(dx, 96, dw, 58)
 if !typing && has_sel && key_pressed("e") then
   focus = "title"
@@ -703,7 +703,7 @@ if has_sel && focus != "title" && mouse_pressed(0) && point_in(px: mx, py: my, r
   grabbed = true
 end
 
-// ── delete + undo ───────────────────────────────────────────────────────────
+# ── delete + undo ───────────────────────────────────────────────────────────
 let del_click = has_sel && mouse_pressed(0) && point_in(px: mx, py: my, r: act2)
 let do_delete = has_sel && (del_click || (!typing && (key_pressed("d") || key_pressed("delete"))))
 if do_delete then
@@ -713,7 +713,7 @@ if do_delete then
     if t.id == sel_id then continue end
     t
   end
-  // Hand the selection to the neighbour that took the deleted row's place.
+  # Hand the selection to the neighbour that took the deleted row's place.
   if len(tasks) > 0 then
     sel_id = tasks[clamp(gone_ix, lo: 0, hi: len(tasks) - 1)].id
   end
@@ -729,7 +729,7 @@ if undo_key then
   rev = rev + 1
 end
 
-// Escape unwinds: focus, then the search box, then nothing.
+# Escape unwinds: focus, then the search box, then nothing.
 if key_pressed("escape") then
   if len(focus) > 0 then
     focus = ""
@@ -738,7 +738,7 @@ if key_pressed("escape") then
   end
 end
 
-// Tab cycles the two persistent fields.
+# Tab cycles the two persistent fields.
 if key_pressed("tab") then
   focus = if focus == "compose" then "search" else "compose" end
   grabbed = true
@@ -748,16 +748,16 @@ let sel2 = find_by_id(tasks, sel_id)
 let cur = if sel2 >= 0 then tasks[sel2] else nil end
 let have = sel2 >= 0
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Draw
-// ═════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
+# Draw
+# ═════════════════════════════════════════════════════════════════════════════
 clear(BG.r, BG.g, BG.b)
 
-// ── left rail ───────────────────────────────────────────────────────────────
+# ── left rail ───────────────────────────────────────────────────────────────
 draw_rect(rect(0, 0, RAIL_W, H), RAIL)
 draw_rect(rect(RAIL_W, 0, 1, H), LINE)
 
-// brand mark
+# brand mark
 draw_rect_rounded(rect(24, 20, 24, 24), radius: 7, c: AMBER)
 draw_circle(center: {x: 36, y: 29}, radius: 4.5, c: INK)
 stroke({x: 36, y: 29}, {x: 36, y: 38}, INK, alpha: 255, width: 2)
@@ -786,7 +786,7 @@ for i in range(0, len(PROJECTS) + 1) do
   end
 end
 
-// today card
+# today card
 let card_y = H - 196
 rr(rect(12, card_y, RAIL_W - 24, 108), radius: 12, fill: CARD, border: LINE)
 draw_text("DONE TODAY", pos: {x: 26, y: card_y + 16}, style: {size: FS_MICRO, color: FAINT, spacing: 1.4})
@@ -804,18 +804,18 @@ if total_now > 0 then
 end
 draw_text("in {if lst == "All" then "every list" else lst end}", pos: {x: 26, y: card_y + 88}, style: {size: FS_MICRO, color: GHOST})
 
-// autosave line
+# autosave line
 draw_circle({x: 27, y: H - 60}, 3.5, GREEN, 220)
 draw_text("autosaved · rev {rev}", pos: {x: 38, y: H - 66}, style: {size: FS_MICRO, color: FAINT})
 let trash_note = if len(trash) > 0 then "{len(trash)} in trash · u to undo" else "trash empty" end
 draw_text(trash_note, pos: {x: 38, y: H - 50}, style: {size: FS_MICRO, color: GHOST})
 
-// ── top bar ─────────────────────────────────────────────────────────────────
+# ── top bar ─────────────────────────────────────────────────────────────────
 let head = if lst == "All" then "All tasks" else lst end
 draw_text(head, pos: {x: MX + 22, y: 21}, style: {size: FS_XL, color: TEXT})
 draw_text("{n_shown}", pos: {x: MX + 26 + text_width(head, FS_XL), y: 27}, style: {size: FS, color: GHOST})
 
-// search box
+# search box
 let q_on = focus == "search"
 rr(search_r, radius: 9, fill: if q_on then :0d1118 else CARD end, border: if q_on then AMBER else LINE end)
 let sc = if q_on then AMBER else FAINT end
@@ -836,7 +836,7 @@ end
 
 draw_rect(rect(MX, TOP_H, MAIN_W, 1), LINE)
 
-// ── composer ────────────────────────────────────────────────────────────────
+# ── composer ────────────────────────────────────────────────────────────────
 let c_on = focus == "compose"
 rr(comp_r, radius: 12, fill: if c_on then :0d1118 else SOFT end, border: if c_on then AMBER else LINE end)
 let plus_c = if c_on then AMBER else FAINT end
@@ -857,7 +857,7 @@ if c_on then
     let ccx = cx0 + text_width(compose, FS_ROW) + 2
     stroke({x: ccx, y: comp_r.y + 12}, {x: ccx, y: comp_r.y + 32}, AMBER, alpha: 255, width: 1.5)
   end
-  // Live read-out of what the line will actually create.
+  # Live read-out of what the line will actually create.
   let hx = comp_r.x + comp_r.w - 14
   let dl = due_label(parsed.due)
   let hw = text_width(dl, FS_MICRO) + 16
@@ -870,7 +870,7 @@ if c_on then
   end
 end
 
-// ── status segments ─────────────────────────────────────────────────────────
+# ── status segments ─────────────────────────────────────────────────────────
 for i in range(0, len(SEGS)) do
   let r = seg_rect(i)
   let on = status == SEGS[i]
@@ -886,7 +886,7 @@ end
 draw_text_right("!  !!  ·  @today @tomorrow @week @someday  ·  #product #home",
   right_x: MX + MAIN_W - 22, y: seg_y + 8, size: FS_MICRO, c: GHOST)
 
-// ── feed ────────────────────────────────────────────────────────────────────
+# ── feed ────────────────────────────────────────────────────────────────────
 clip(x: MX, y: FEED_TOP, w: MAIN_W, h: FEED_H)
 for it in items do
   let iy = FEED_TOP + it.y - scroll
@@ -927,7 +927,7 @@ for it in items do
       stroke({x: tx, y: sy}, {x: tx + text_width(title, FS_ROW), y: sy}, FAINT, alpha: 190, width: 1)
     end
 
-    // second line: list, subtask progress, note hint
+    # second line: list, subtask progress, note hint
     var meta = [t.list]
     if len(t.subs) > 0 then
       set meta = append(meta, "{subs_done(t)}/{len(t.subs)} steps")
@@ -939,7 +939,7 @@ for it in items do
     draw_text(fit_parts(parts: meta, avail_px: avail - 16, size: FS_SM), pos: {x: tx + 14, y: iy + 32},
       style: {size: FS_SM, color: if t.done then GHOST else FAINT end})
 
-    // right edge: priority pip + due phrase
+    # right edge: priority pip + due phrase
     let dcol = due_color(t.due, t.done)
     let dlbl = due_label(t.due)
     draw_text_right(dlbl, right_x: feed_x + feed_w - 8, y: iy + 20, size: FS_SM, c: dcol)
@@ -955,7 +955,7 @@ for it in items do
 end
 clip_none()
 
-// feed scrollbar
+# feed scrollbar
 if feed_h > FEED_H then
   let track = rect(MX + MAIN_W - 8, FEED_TOP + 4, 4, FEED_H - 8)
   draw_rect_rounded(track, radius: 2, c: SOFT)
@@ -964,14 +964,14 @@ if feed_h > FEED_H then
   draw_rect_rounded(rect(track.x, ty2, track.w, th), radius: 2, c: GHOST, a: 200)
 end
 
-// empty state
+# empty state
 if n_shown == 0 then
   draw_text_center("Nothing here", cx: MX + MAIN_W / 2, y: FEED_TOP + 92, size: FS_H, c: DIM)
   let hint = if len(q) > 0 then "No task matches “{q}”." else "This view is clear. Add one above." end
   draw_text_center(hint, cx: MX + MAIN_W / 2, y: FEED_TOP + 120, size: FS, c: GHOST)
 end
 
-// ── inspector ───────────────────────────────────────────────────────────────
+# ── inspector ───────────────────────────────────────────────────────────────
 draw_rect(rect(DX0, 0, DETAIL_W, H), SURFACE)
 draw_rect(rect(DX0, 0, 1, H), LINE)
 
@@ -981,7 +981,7 @@ else
   draw_text("TASK", pos: {x: dx, y: 26}, style: {size: FS_MICRO, color: FAINT, spacing: 1.6})
   draw_text_right(ago(cur.age), right_x: DX0 + DETAIL_W - dpad, y: 25, size: FS_MICRO, c: GHOST)
 
-  // title block, editable in place
+  # title block, editable in place
   let editing_title = focus == "title"
   if editing_title then
     rr(rect(dx - 8, 92, dw + 16, 66), radius: 10, fill: :0d1118, border: AMBER)
@@ -1005,7 +1005,7 @@ else
     draw_text("click or press e to rename", pos: {x: dx, y: 162}, style: {size: FS_MICRO, color: GHOST})
   end
 
-  // status + list + due chips
+  # status + list + due chips
   let chip_y = 188
   let sx = chip(x: dx, y: chip_y, label: if cur.done then "Completed" else "Open" end,
     c: if cur.done then GREEN else AMBER end, strong: true)
@@ -1014,7 +1014,7 @@ else
 
   draw_line({x: dx, y: chip_y + 42}, {x: dx + dw, y: chip_y + 42}, c: LINE)
 
-  // priority picker
+  # priority picker
   let py = chip_y + 62
   prio_row_y = py + 20
   draw_text("PRIORITY", pos: {x: dx, y: py}, style: {size: FS_MICRO, color: FAINT, spacing: 1.4})
@@ -1034,13 +1034,13 @@ else
     draw_text_center(prio_name(i), cx: r.x + r.w / 2, y: r.y + 7, size: FS_MICRO, c: if on then c else FAINT end)
   end
 
-  // due nudge hint
+  # due nudge hint
   let dy2 = prio_row_y + 46
   draw_text("SCHEDULE", pos: {x: dx, y: dy2}, style: {size: FS_MICRO, color: FAINT, spacing: 1.4})
   draw_text_right("keys , and .", right_x: dx + dw, y: dy2, size: FS_MICRO, c: GHOST)
   draw_text(due_label(cur.due), pos: {x: dx, y: dy2 + 18}, style: {size: FS, color: due_color(cur.due, cur.done)})
 
-  // notes
+  # notes
   let ny = dy2 + 56
   draw_text("NOTES", pos: {x: dx, y: ny}, style: {size: FS_MICRO, color: FAINT, spacing: 1.4})
   if len(cur.notes) == 0 then
@@ -1053,7 +1053,7 @@ else
     end
   end
 
-  // checklist
+  # checklist
   let sy2 = ny + 132
   draw_line({x: dx, y: sy2 - 18}, {x: dx + dw, y: sy2 - 18}, c: LINE)
   draw_text("CHECKLIST", pos: {x: dx, y: sy2}, style: {size: FS_MICRO, color: FAINT, spacing: 1.4})
@@ -1090,7 +1090,7 @@ else
     end
   end
 
-  // actions
+  # actions
   draw_line({x: dx, y: act_y - 26}, {x: dx + dw, y: act_y - 26}, c: LINE)
   draw_text("task #{cur.id}", pos: {x: dx, y: act_y - 46}, style: {size: FS_MICRO, color: GHOST})
   draw_text_right("added {ago(cur.age)} · in {cur.list}", right_x: dx + dw, y: act_y - 46, size: FS_MICRO, c: GHOST)
@@ -1098,7 +1098,7 @@ else
   if btn(act2, label: "Delete", kind: 2, enabled: true) then end
 end
 
-// ── observable summary (read from /state → panes[0].panel.values) ───────────
+# ── observable summary (read from /state → panes[0].panel.values) ───────────
 let visible_count = n_shown
 let selection = if have then cur.title else "" end
 let focus_id = focus

@@ -1,26 +1,26 @@
-// =====================================================================
-// HOPPER — a tiny side-scroller built to be manipulated while it runs.
-// =====================================================================
-//
-//   ./examples/games/hopper/run.sh
-//
-// Everything that tunes the feel is a `tunable` knob: the direct-
-// manipulation tools prefer to rewrite those, and hot reload keeps the
-// player exactly where they were when you change one. The level is plain
-// data in this file, so moving a platform is editing a number.
-//
-// Controls: arrows / A D to run, space / up / W to jump (hold for height),
-// R to restart. The host adds time travel: F5 freeze, , and . scrub,
-// F6 trail overlay, F7 track the shape under the mouse.
-// =====================================================================
+# =====================================================================
+# HOPPER — a tiny side-scroller built to be manipulated while it runs.
+# =====================================================================
+#
+#   ./examples/games/hopper/run.sh
+#
+# Everything that tunes the feel is a `tunable` knob: the direct-
+# manipulation tools prefer to rewrite those, and hot reload keeps the
+# player exactly where they were when you change one. The level is plain
+# data in this file, so moving a platform is editing a number.
+#
+# Controls: arrows / A D to run, space / up / W to jump (hold for height),
+# R to restart. The host adds time travel: F5 freeze, , and . scrub,
+# F6 trail overlay, F7 track the shape under the mouse.
+# =====================================================================
 
 import ui
 
-// ------------------------------ KNOBS --------------------------------
+# ------------------------------ KNOBS --------------------------------
 
 let GRAVITY    = tunable(1800.0)
 let JUMP_VY    = tunable(-620.0)
-let JUMP_CUT   = tunable(0.45)    // vy multiplier when jump is released early
+let JUMP_CUT   = tunable(0.45)    # vy multiplier when jump is released early
 let RUN_SPEED  = tunable(260.0)
 let ACCEL      = tunable(2400.0)
 let FRICTION   = tunable(2600.0)
@@ -34,7 +34,7 @@ let PH         = tunable(30)
 let W = screen_width()
 let H = screen_height()
 
-// ------------------------------ LEVEL --------------------------------
+# ------------------------------ LEVEL --------------------------------
 
 let plats = [
   {x: 0,    y: 520, w: 620,  h: 80},
@@ -62,7 +62,7 @@ let coin_spots = [
 let goal = {x: 3120, y: 520}
 let level_w = 3200
 
-// ------------------------------ STATE --------------------------------
+# ------------------------------ STATE --------------------------------
 
 state var px        = 80.0
 state var py        = 400.0
@@ -71,7 +71,7 @@ state var vy        = 0.0
 state var grounded  = false
 state var coyote    = 0.0
 state var cam       = 0.0
-state var got       = []       // indexes of collected coins
+state var got       = []       # indexes of collected coins
 state var won       = false
 state var clock     = 0.0
 state var falls     = 0
@@ -96,7 +96,7 @@ fn overlaps(ax: num, ay: num, aw: num, ah: num, b: record) -> bool
   ay < float(b.y + b.h) && ay + ah > float(b.y)
 end
 
-// ------------------------------ UPDATE -------------------------------
+# ------------------------------ UPDATE -------------------------------
 
 let dts = min(dt(), 1.0 / 30.0)
 if key_pressed("r") then respawn() end
@@ -108,7 +108,7 @@ if !won then
   let jump_now  = key_pressed("space") || key_pressed("up") || key_pressed("w")
   let jump_held = key_down("space") || key_down("up") || key_down("w")
 
-  // run
+  # run
   let target = 0.0
   if left  then target = target - RUN_SPEED end
   if right then target = target + RUN_SPEED end
@@ -119,7 +119,7 @@ if !won then
     set vx = approach(cur: vx, target: target, step: ACCEL * dts)
   end
 
-  // jump, with a little coyote time
+  # jump, with a little coyote time
   if grounded then set coyote = COYOTE else set coyote = max(0.0, coyote - dts) end
   if jump_now && coyote > 0.0 then
     set vy = JUMP_VY
@@ -129,7 +129,7 @@ if !won then
   if !jump_held && vy < 0.0 then set vy = vy * JUMP_CUT end
   set vy = min(MAX_FALL, vy + GRAVITY * dts)
 
-  // move x, then y, resolving against platforms
+  # move x, then y, resolving against platforms
   let pw = float(PW)
   let ph = float(PH)
   let nx = px + vx * dts
@@ -156,7 +156,7 @@ if !won then
   end
   set py = ny
 
-  // coins
+  # coins
   let i = 0
   for c in coin_spots do
     if !contains(got, i) then
@@ -167,30 +167,30 @@ if !won then
     i = i + 1
   end
 
-  // goal
+  # goal
   if px + pw > float(goal.x) && py + ph > float(goal.y) - 60.0 then
     set won = true
   end
 
-  // fell off the world
+  # fell off the world
   if py > float(H) + 60.0 then
     set falls = falls + 1
     respawn()
   end
 end
 
-// camera eases toward the player
+# camera eases toward the player
 let want = clamp(px + float(PW) / 2.0 - float(W) / 2.0, lo: 0.0, hi: float(level_w - W))
 set cam = cam + (want - cam) * min(1.0, CAM_LAG * dts)
 
-// ------------------------------ DRAW ---------------------------------
+# ------------------------------ DRAW ---------------------------------
 
-fn sx(x: num) -> int int(x - get cam) end      // world -> screen x
+fn sx(x: num) -> int int(x - get cam) end      # world -> screen x
 
 fn draw_backdrop()
   clear(118, 186, 240)
   draw_rect(x: 0, y: 360, w: W, h: 200, r: 150, g: 205, b: 245)
-  // far hills, slow parallax
+  # far hills, slow parallax
   let off = int(get cam * 0.25)
   let k = 0
   while k < 8 do
@@ -198,7 +198,7 @@ fn draw_backdrop()
     draw_circle(cx: hx + 130, cy: 560, radius: 150, r: 96, g: 150, b: 120)
     k = k + 1
   end
-  // near hills
+  # near hills
   let off2 = int(get cam * 0.5)
   let j = 0
   while j < 9 do

@@ -1,4 +1,4 @@
-// Closures capturing their defining environment.
+# Closures capturing their defining environment.
 fn make_adder(n)
   fn adder(x) x + n end
   adder

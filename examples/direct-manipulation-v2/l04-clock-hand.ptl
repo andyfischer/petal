@@ -1,19 +1,19 @@
-// dm-title: trig, a clock hand at a fixed hour
-// dm-level: L4
-//
-// (circle 0 is the dial, circle 1 the tip.)
-// The hand's tip is `cx + cos(a) * len`, with `a` computed from `hours`.
-// Dragging the tip around the dial should edit `hours`; dragging it
-// outward along the hand should edit `len`. Both goals are nonlinear in
-// `hours`, so the solver iterates (re-running to verify each step).
-//
-// At hours = 2 the tip is at (269.3, 160). 4 o'clock is (269.3, 240).
-//
-// dm-goal to-4-oclock: circle#1.0 = 269.28, circle#1.1 = 240 | expect=hours
-// dm-goal to-5-oclock: circle#1.0 = 240, circle#1.1 = 269.28 | expect=hours
-// dm-goal longer: circle#1.0 += 17.3, circle#1.1 -= 10 | expect=len
-// dm-goal tip-x-only: circle#1.0 += 8 | expect=hours,len
-// dm-goal to-3-oclock-client: circle#1.0 = 280, circle#1.1 = 200 | allow=var:hours expect=hours
+# dm-title: trig, a clock hand at a fixed hour
+# dm-level: L4
+#
+# (circle 0 is the dial, circle 1 the tip.)
+# The hand's tip is `cx + cos(a) * len`, with `a` computed from `hours`.
+# Dragging the tip around the dial should edit `hours`; dragging it
+# outward along the hand should edit `len`. Both goals are nonlinear in
+# `hours`, so the solver iterates (re-running to verify each step).
+#
+# At hours = 2 the tip is at (269.3, 160). 4 o'clock is (269.3, 240).
+#
+# dm-goal to-4-oclock: circle#1.0 = 269.28, circle#1.1 = 240 | expect=hours
+# dm-goal to-5-oclock: circle#1.0 = 240, circle#1.1 = 269.28 | expect=hours
+# dm-goal longer: circle#1.0 += 17.3, circle#1.1 -= 10 | expect=len
+# dm-goal tip-x-only: circle#1.0 += 8 | expect=hours,len
+# dm-goal to-3-oclock-client: circle#1.0 = 280, circle#1.1 = 200 | allow=var:hours expect=hours
 
 import ui
 

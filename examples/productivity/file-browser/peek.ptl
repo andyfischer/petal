@@ -1,10 +1,10 @@
-// Burrow: what a file looks like inside.
-//
-// There are no real files, so every preview is drawn from what the node does
-// have: its kind, its name (hashed into a few stable numbers) and, for the
-// files with text behind them, that text. `draw` fills a rect with the
-// preview; the info pane calls it small and Quick Look calls it large. Image
-// thumbnails in the icon grid are `picture` on its own.
+# Burrow: what a file looks like inside.
+#
+# There are no real files, so every preview is drawn from what the node does
+# have: its kind, its name (hashed into a few stable numbers) and, for the
+# files with text behind them, that text. `draw` fills a rect with the
+# preview; the info pane calls it small and Quick Look calls it large. Image
+# thumbnails in the icon grid are `picture` on its own.
 
 import text_layout as tl
 import ./icons as ic
@@ -14,7 +14,7 @@ fn frac(h: int, salt: int) -> float
   ((h / salt) % 1000) / 1000.0
 end
 
-// ── Pictures ────────────────────────────────────────────────────────────────
+# ── Pictures ────────────────────────────────────────────────────────────────
 
 let SKIES = [
   [:f6b26b, :f9dcc4, :7d5a7a, :3d3554, :fff3d6],
@@ -27,7 +27,7 @@ let SKIES = [
   [:e9c46a, :f6e7b4, :c08552, :5e3023, :ffffff],
 ]
 
-// A procedural photograph: a sky, a sun and two ridgelines, chosen by `h`.
+# A procedural photograph: a sky, a sun and two ridgelines, chosen by `h`.
 fn landscape(h: int, r: record) -> nil
   let p = SKIES[(h / 11 + h / 1009) % len(SKIES)]
   draw_rect_gradient(r, p[0], p[1], pi() / 2.0)
@@ -46,7 +46,7 @@ fn landscape(h: int, r: record) -> nil
   end
 end
 
-// A screenshot: somebody's window.
+# A screenshot: somebody's window.
 fn screenshot(h: int, r: record) -> nil
   draw_rect(r, :dfe5ee)
   let win = Rect(r.x + r.w * 0.10, r.y + r.h * 0.14, r.w * 0.80, r.h * 0.74)
@@ -64,7 +64,7 @@ fn screenshot(h: int, r: record) -> nil
   end
 end
 
-// A logo on a flat ground: two waves.
+# A logo on a flat ground: two waves.
 fn logo(h: int, r: record, name: string) -> nil
   let dark = contains(name, "dark") || h % 3 == 0
   let bg = if dark then :14201c else :e8dcc0 end
@@ -79,7 +79,7 @@ fn logo(h: int, r: record, name: string) -> nil
   end
 end
 
-// The picture a file's name stands for, clipped to a rounded rect.
+# The picture a file's name stands for, clipped to a rounded rect.
 pub fn picture(name: string, h: int, r: record, radius: num) -> nil
   let low = lower(name)
   clip_push(r, radius)
@@ -93,13 +93,13 @@ pub fn picture(name: string, h: int, r: record, radius: num) -> nil
   clip_pop()
 end
 
-// ── Text ────────────────────────────────────────────────────────────────────
+# ── Text ────────────────────────────────────────────────────────────────────
 
 let CODE_WORDS = ["import", "let", "fn", "pub", "state", "for", "if", "else", "elsif", "end", "match", "when",
   "return", "def", "with", "alias", "set", "link", "yield", "in", "do", "then", "from"]
 
-// `text` as lines of monospace, clipped to `r`. Code is dark with its
-// comments and first keywords tinted; prose is ink on paper.
+# `text` as lines of monospace, clipped to `r`. Code is dark with its
+# comments and first keywords tinted; prose is ink on paper.
 fn text_card(text: string, r: record, code: bool, big: bool) -> nil
   let bg = if code then :14161b else :f4f1ea end
   let ink = if code then :cfd5e1 else :33363d end
@@ -125,7 +125,7 @@ fn text_card(text: string, r: record, code: bool, big: bool) -> nil
     end
     draw_text(line, {x: r.x + pad, y: y}, style)
     if code then
-      // Tint the leading keyword, in place over the line.
+      # Tint the leading keyword, in place over the line.
       let word = split(t, " ")[0]
       if contains(CODE_WORDS, word) then
         let indent = slice(line, 0, index_of(line, word))
@@ -137,14 +137,14 @@ fn text_card(text: string, r: record, code: bool, big: bool) -> nil
   clip_pop()
 end
 
-// A CSV as a small table.
+# A CSV as a small table.
 fn table_card(text: string, r: record, big: bool) -> nil
   draw_rect_rounded(r, 8, :f7f8fa)
   clip_push(Rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2), 8)
   let rows = split(text, "\n")
   let step = if big then 26.0 else 19.0 end
   let size = if big then 12.5 else 10.5 end
-  // The small card keeps the first column and the last two.
+  # The small card keeps the first column and the last two.
   let all = len(split(rows[0], ","))
   let cols = if big then all else min(all, 3) end
   let first_w = r.w * (if big then 0.34 else 0.50 end)
@@ -169,7 +169,7 @@ fn table_card(text: string, r: record, big: bool) -> nil
   clip_pop()
 end
 
-// A page of something we cannot read: a title and grey paragraphs.
+# A page of something we cannot read: a title and grey paragraphs.
 fn page_card(h: int, r: record, accent: record) -> nil
   let pw = min(r.w, r.h * 0.77)
   let p = Rect(r.x + (r.w - pw) / 2.0, r.y, pw, r.h)
@@ -207,16 +207,16 @@ fn duration(seconds: int) -> string
   "{seconds / 60}:{pad_start(str(seconds % 60), 2, "0")}"
 end
 
-// ── The preview ─────────────────────────────────────────────────────────────
+# ── The preview ─────────────────────────────────────────────────────────────
 
-// Fill `r` with a preview of node `n`. `o` carries what the node cannot say
-// for itself: {key (its kind), h (name hash), text, big, kids (for a folder:
-// the kinds of what is in it)}. `T` is the app's palette.
+# Fill `r` with a preview of node `n`. `o` carries what the node cannot say
+# for itself: {key (its kind), h (name hash), text, big, kids (for a folder:
+# the kinds of what is in it)}. `T` is the app's palette.
 pub fn draw(n: record, r: record, T: record, o: record) -> nil
   let key = o.key
   let c = ic.kind_color(key)
   if key == "image" then
-    // Fit a 3:2 or 4:3 frame inside the rect, like a photo would sit.
+    # Fit a 3:2 or 4:3 frame inside the rect, like a photo would sit.
     let ar = if o.h % 4 == 0 then 1.0 else 1.5 end
     let w = min(r.w, r.h * ar)
     let f = Rect(r.x + (r.w - w) / 2.0, r.y + (r.h - w / ar) / 2.0, w, w / ar)
@@ -229,7 +229,7 @@ pub fn draw(n: record, r: record, T: record, o: record) -> nil
   elsif key == "pdf" || key == "doc" || key == "text" || key == "sheet" || key == "code" then
     page_card(o.h, r, c)
   elsif key == "audio" then
-    // About a megabyte a minute compressed, ten uncompressed.
+    # About a megabyte a minute compressed, ten uncompressed.
     let rate = if ends_with(lower(n.name), ".wav") then 176000 else 24000 end
     wave_card(o.h, r, c, duration(n.size / rate), T)
   elsif key == "video" then
@@ -246,7 +246,7 @@ pub fn draw(n: record, r: record, T: record, o: record) -> nil
     tl.draw_text_line(duration(n.size / 1900000), Rect(f.x, f.y + f.h - 24, f.w - 10, 16),
       {size: 11, font: "ui", color: :ffffff, weight: 600}, "right")
   elsif key == "folder" && len(o.kids) > 0 then
-    // What is inside, as a shelf of small icons.
+    # What is inside, as a shelf of small icons.
     let cell = if o.big then 72.0 else 40.0 end
     let cols = max(1, int(r.w / cell))
     let shown = min(len(o.kids), cols * max(1, int(r.h / cell)))

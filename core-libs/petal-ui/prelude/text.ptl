@@ -1,7 +1,7 @@
-// petal-ui text — module `ui/text`
-//
-// Text helpers (truncation, wrapping, alignment, ellipsizing), text on a path,
-// text ranges and the clipboard. `ui` re-exports every name here.
+# petal-ui text — module `ui/text`
+#
+# Text helpers (truncation, wrapping, alignment, ellipsizing), text on a path,
+# text ranges and the clipboard. `ui` re-exports every name here.
 
 import ./_native
 import ./_style
@@ -9,10 +9,10 @@ import ./draw
 import ./layout
 import io
 
-// ── Text helpers ──────────────────────────────────────────────────────────
+# ── Text helpers ──────────────────────────────────────────────────────────
 
-// Keep the tail of `s` (rightmost chars, e.g. a file path), "…"-prefixed
-// when clipped to `max_chars`.
+# Keep the tail of `s` (rightmost chars, e.g. a file path), "…"-prefixed
+# when clipped to `max_chars`.
 pub fn truncate_tail(s, max_chars)
   if len(s) <= max_chars then
     s
@@ -21,7 +21,7 @@ pub fn truncate_tail(s, max_chars)
   end
 end
 
-// Keep the head of `s`, "…"-suffixed when clipped to `max_chars`.
+# Keep the head of `s`, "…"-suffixed when clipped to `max_chars`.
 pub fn truncate_head(s, max_chars)
   if len(s) <= max_chars then
     s
@@ -35,7 +35,7 @@ fn _wrap_segment(seg, max_chars)
   let cur = ""
   for word in split(seg, " ") do
     let w = word
-    // A token that can never fit gets its own hard-broken lines.
+    # A token that can never fit gets its own hard-broken lines.
     while len(w) > max_chars do
       if len(cur) > 0 then
         lines = append(lines, cur)
@@ -44,8 +44,8 @@ fn _wrap_segment(seg, max_chars)
       let take = max_chars
       let piece = slice(w, 0, take)
       while len(piece) == 0 do
-        // max_chars landed inside w's first char and boundary snapping
-        // emptied the slice: widen until the char fits.
+        # max_chars landed inside w's first char and boundary snapping
+        # emptied the slice: widen until the char fits.
         take = take + 1
         piece = slice(w, 0, take)
       end
@@ -61,20 +61,20 @@ fn _wrap_segment(seg, max_chars)
       cur = w
     end
   end
-  // Flush the line under construction; skip a leftover "" (the tail of a
-  // fully hard-broken final word) unless it is the segment's only line.
+  # Flush the line under construction; skip a leftover "" (the tail of a
+  # fully hard-broken final word) unless it is the segment's only line.
   if len(cur) > 0 || len(lines) == 0 then
     lines = append(lines, cur)
   end
   lines
 end
 
-// Greedy word wrap: split `s` into a list of lines at most `max_chars` wide.
-// Explicit "\n"s split first (each segment wraps independently), words break
-// on single spaces, and a token longer than max_chars is hard-broken into
-// max_chars-sized pieces. Widths are characters (code points), like the
-// truncate_* helpers and like len and slice themselves, so multibyte text
-// wraps at the same column as ASCII. max_chars <= 0 returns [s].
+# Greedy word wrap: split `s` into a list of lines at most `max_chars` wide.
+# Explicit "\n"s split first (each segment wraps independently), words break
+# on single spaces, and a token longer than max_chars is hard-broken into
+# max_chars-sized pieces. Widths are characters (code points), like the
+# truncate_* helpers and like len and slice themselves, so multibyte text
+# wraps at the same column as ASCII. max_chars <= 0 returns [s].
 pub fn wrap(s, max_chars)
   if max_chars <= 0 then
     [s]
@@ -89,13 +89,13 @@ pub fn wrap(s, max_chars)
   end
 end
 
-// Bounded-cost N-line preview: wrap `text` into at most `max_lines` lines of
-// `max_chars`, ending the last kept line with an explicit "…" when content was
-// clipped. The wrap input is pre-clipped to (max_lines+1)*max_chars characters
-// first, so a huge string costs no more than a short one to preview (slice
-// counts code points, so multibyte text never breaks). Widths are characters,
-// like wrap / truncate_*. Returns {lines: [..], truncated: bool} — `truncated` is
-// true when the last kept line carries the "…" (content was dropped).
+# Bounded-cost N-line preview: wrap `text` into at most `max_lines` lines of
+# `max_chars`, ending the last kept line with an explicit "…" when content was
+# clipped. The wrap input is pre-clipped to (max_lines+1)*max_chars characters
+# first, so a huge string costs no more than a short one to preview (slice
+# counts code points, so multibyte text never breaks). Widths are characters,
+# like wrap / truncate_*. Returns {lines: [..], truncated: bool} — `truncated` is
+# true when the last kept line carries the "…" (content was dropped).
 pub fn preview(text, max_chars, max_lines)
   let t = text
   let over = false
@@ -112,8 +112,8 @@ pub fn preview(text, max_chars, max_lines)
   for j in range(0, keep) do
     let line = ls[j]
     if over && j == keep - 1 then
-      // Keep the head, explicit trailing "…" (truncate_head keeps the head;
-      // truncate_tail would keep the tail and prefix the ellipsis).
+      # Keep the head, explicit trailing "…" (truncate_head keeps the head;
+      # truncate_tail would keep the tail and prefix the ellipsis).
       line = truncate_head(line ++ "…", max_chars)
     end
     kept = append(kept, line)
@@ -121,19 +121,19 @@ pub fn preview(text, max_chars, max_lines)
   {lines: kept, truncated: over}
 end
 
-// Right-aligned text: the right edge sits at `right_x`.
+# Right-aligned text: the right edge sits at `right_x`.
 pub fn draw_text_right(text, right_x, y, size, c)
   _native_text(text, right_x - text_width(text, size), y, size, c.r, c.g, c.b)
 end
 
-// Style-record form — `{size, color, font, weight, italic, spacing}`, the same
-// record `draw_text` and `text_width` take. Measuring and drawing then agree
-// even for bold or spaced text, which the bare-`size` form cannot do.
+# Style-record form — `{size, color, font, weight, italic, spacing}`, the same
+# record `draw_text` and `text_width` take. Measuring and drawing then agree
+# even for bold or spaced text, which the bare-`size` form cannot do.
 pub fn draw_text_right(text, right_x, y, style)
   _native_text(text, right_x - text_width(text, style), y, style)
 end
 
-// Centered text: the run's midpoint sits at `cx`.
+# Centered text: the run's midpoint sits at `cx`.
 pub fn draw_text_center(text, cx, y, size, c)
   _native_text(text, cx - text_width(text, size) / 2, y, size, c.r, c.g, c.b)
 end
@@ -142,52 +142,52 @@ pub fn draw_text_center(text, cx, y, style)
   _native_text(text, cx - text_width(text, style) / 2, y, style)
 end
 
-// Shorten `s` until it fits `avail_px` at font `size`, with a trailing "…".
-//
-// `size` is either a bare pixel size or a full style record — the same
-// `{size, weight, font, spacing, …}` record `draw_text` and `text_width` take.
-// Pass the style you are going to *draw* with and what you measure is what you
-// get; measuring a bare 14 and drawing 14-bold overflows the box.
-//
-// The pixel-measured counterpart to truncate_head, for anything carrying text
-// of unknown length into a fixed box. Returns `s` untouched when it already
-// fits.
-//
-// One walk of the host's advance table, in `text_ellipsize`. This was a
-// `text_width` call per character — a native call and a fresh string per step,
-// for something a list redraws on every row of every frame — and it had to be
-// careful about a hazard the native does not have: len and slice were then
-// byte-indexed while text_width counts characters, and "…" is three bytes,
-// so a loop that trimmed bytes off a string *already ending* in an ellipsis
-// got them snapped back to the character boundary, dropping the whole ellipsis
-// and re-adding it. (len and slice count code points now; the walk stays.)
+# Shorten `s` until it fits `avail_px` at font `size`, with a trailing "…".
+#
+# `size` is either a bare pixel size or a full style record — the same
+# `{size, weight, font, spacing, …}` record `draw_text` and `text_width` take.
+# Pass the style you are going to *draw* with and what you measure is what you
+# get; measuring a bare 14 and drawing 14-bold overflows the box.
+#
+# The pixel-measured counterpart to truncate_head, for anything carrying text
+# of unknown length into a fixed box. Returns `s` untouched when it already
+# fits.
+#
+# One walk of the host's advance table, in `text_ellipsize`. This was a
+# `text_width` call per character — a native call and a fresh string per step,
+# for something a list redraws on every row of every frame — and it had to be
+# careful about a hazard the native does not have: len and slice were then
+# byte-indexed while text_width counts characters, and "…" is three bytes,
+# so a loop that trimmed bytes off a string *already ending* in an ellipsis
+# got them snapped back to the character boundary, dropping the whole ellipsis
+# and re-adding it. (len and slice count code points now; the walk stays.)
 pub fn ellipsize(s, avail_px, size)
   text_ellipsize(s, size, float(avail_px), "tail")
 end
 
-// Shorten `s` until it fits `avail_px` at font `size`, with a *leading* "…":
-// the mirror of ellipsize, keeping the rightmost text instead of the leftmost.
-//
-// `size` may be a bare pixel size or a style record, exactly as in `ellipsize`.
-//
-// The pixel-measured counterpart to truncate_tail, and what a file path wants:
-// "…/panel/src/git_panel.ptl" says which file this is, while the head-keeping
-// ellipsize would spend the whole box on the directories it shares with every
-// other row. Returns `s` untouched when it already fits.
-//
-// `text_ellipsize`'s "head" end, for the same reason ellipsize above uses it:
-// one walk of the advance table rather than a measurement per character.
+# Shorten `s` until it fits `avail_px` at font `size`, with a *leading* "…":
+# the mirror of ellipsize, keeping the rightmost text instead of the leftmost.
+#
+# `size` may be a bare pixel size or a style record, exactly as in `ellipsize`.
+#
+# The pixel-measured counterpart to truncate_tail, and what a file path wants:
+# "…/panel/src/git_panel.ptl" says which file this is, while the head-keeping
+# ellipsize would spend the whole box on the directories it shares with every
+# other row. Returns `s` untouched when it already fits.
+#
+# `text_ellipsize`'s "head" end, for the same reason ellipsize above uses it:
+# one walk of the advance table rather than a measurement per character.
 pub fn ellipsize_tail(s, avail_px, size)
   text_ellipsize(s, size, float(avail_px), "head")
 end
 
-// Join `parts` left to right with "   ·   " separators, keeping only the leading
-// run that fits `avail_px` (measured with text_width at font `size`): it stops
-// at the first part whose addition would overflow and drops that part and every
-// part after it. Lets header / metadata lines degrade by shedding their rightmost
-// segments instead of clipping mid-glyph at the pane edge. `size` may be a bare
-// pixel size or a style record, exactly as in `ellipsize`. Returns {text, count}
-// — `count` is how many segments survived (0 when even the first overflows).
+# Join `parts` left to right with "   ·   " separators, keeping only the leading
+# run that fits `avail_px` (measured with text_width at font `size`): it stops
+# at the first part whose addition would overflow and drops that part and every
+# part after it. Lets header / metadata lines degrade by shedding their rightmost
+# segments instead of clipping mid-glyph at the pane edge. `size` may be a bare
+# pixel size or a style record, exactly as in `ellipsize`. Returns {text, count}
+# — `count` is how many segments survived (0 when even the first overflows).
 pub fn fit_parts_n(parts, avail_px, size)
   let out = ""
   let cnt = 0
@@ -209,20 +209,20 @@ pub fn fit_parts_n(parts, avail_px, size)
   {text: out, count: cnt}
 end
 
-// The plain-text convenience over fit_parts_n: just the joined string.
+# The plain-text convenience over fit_parts_n: just the joined string.
 pub fn fit_parts(parts, avail_px, size)
   fit_parts_n(parts, avail_px, size).text
 end
 
-// ── Text on a path, and labels that would rather be rotated ───────────────
-// **Rotated text is not available.** No host in this ecosystem can rotate a
-// text run — the rasterizers place a run by its left/top and scale, and that
-// is the whole of the transform they expose. Rather than let every panel
-// rediscover that halfway through drawing a chart, the two honest workarounds
-// live here.
+# ── Text on a path, and labels that would rather be rotated ───────────────
+# **Rotated text is not available.** No host in this ecosystem can rotate a
+# text run — the rasterizers place a run by its left/top and scale, and that
+# is the whole of the transform they expose. Rather than let every panel
+# rediscover that halfway through drawing a chart, the two honest workarounds
+# live here.
 
-// The point `d` px along the polyline `points`, and the segment index it fell
-// on. Past either end it clamps to the end point.
+# The point `d` px along the polyline `points`, and the segment index it fell
+# on. Past either end it clamps to the end point.
 fn _path_point(points, lens, d)
   let i = 0
   let rest = float(d)
@@ -239,19 +239,19 @@ fn _path_point(points, lens, d)
    seg: i}
 end
 
-// Set `s` character by character along the polyline `points` ({x, y} records,
-// in order), each glyph *upright* and centred on the path. The workaround for
-// the rotated run no host can draw: an arc of text around a dial, a label
-// following a route, a curved chart annotation.
-//
-// The glyphs step along the path but never turn, so this reads well on a
-// gentle curve and badly on a tight one — which is the real constraint, stated
-// plainly, rather than a promise the renderer cannot keep. `style` is the same
-// record `draw_text` and `text_width` take, and it is the record used for both
-// here, so what is measured is what is drawn.
-//
-// By default the run is centred on the path; `style.start` places its first
-// glyph that many px along instead.
+# Set `s` character by character along the polyline `points` ({x, y} records,
+# in order), each glyph *upright* and centred on the path. The workaround for
+# the rotated run no host can draw: an arc of text around a dial, a label
+# following a route, a curved chart annotation.
+#
+# The glyphs step along the path but never turn, so this reads well on a
+# gentle curve and badly on a tight one — which is the real constraint, stated
+# plainly, rather than a promise the renderer cannot keep. `style` is the same
+# record `draw_text` and `text_width` take, and it is the record used for both
+# here, so what is measured is what is drawn.
+#
+# By default the run is centred on the path; `style.start` places its first
+# glyph that many px along instead.
 pub fn draw_text_along(points, s, style)
   let n = char_len(s)
   if n > 0 && len(points) >= 2 then
@@ -268,8 +268,8 @@ pub fn draw_text_along(points, s, style)
     for i in range(0, n) do
       let ch = char_slice(s, i, i + 1)
       let cw = float(text_width(ch, style))
-      // Placed by the glyph's own midpoint, so a proportional face keeps its
-      // spacing along the curve instead of bunching at the wide letters.
+      # Placed by the glyph's own midpoint, so a proportional face keeps its
+      # spacing along the curve instead of bunching at the wide letters.
       let p = _path_point(points, lens, at + cw / 2.0)
       draw_text(ch, {x: p.x - cw / 2.0, y: p.y - float(size) / 2.0}, style)
       at = at + cw
@@ -278,23 +278,23 @@ pub fn draw_text_along(points, s, style)
   nil
 end
 
-// Upright labels under the ticks of a horizontal axis — the other half of the
-// no-rotation answer, and the one charts actually need. Long category labels
-// are conventionally rotated 45°; since they cannot be, they are instead kept
-// upright and *thinned*: a label is drawn only when it clears the previous one
-// it drew, and with `stagger` it drops to a second row rather than being
-// dropped entirely. Both are more legible than rotation, and neither lies
-// about the tick a label belongs to.
-//
-// `r` is the label strip (the band below the plot), `ticks` a list of
-// {x, label} — `x` in the same coordinates as `r`. Returns the number drawn.
+# Upright labels under the ticks of a horizontal axis — the other half of the
+# no-rotation answer, and the one charts actually need. Long category labels
+# are conventionally rotated 45°; since they cannot be, they are instead kept
+# upright and *thinned*: a label is drawn only when it clears the previous one
+# it drew, and with `stagger` it drops to a second row rather than being
+# dropped entirely. Both are more legible than rotation, and neither lies
+# about the tick a label belongs to.
+#
+# `r` is the label strip (the band below the plot), `ticks` a list of
+# {x, label} — `x` in the same coordinates as `r`. Returns the number drawn.
 pub fn draw_axis_labels(r, ticks)
   draw_axis_labels(r, ticks, {})
 end
 
-// `style` overrides {size, fg, font, gap, stagger} — `gap` is the minimum
-// clear space between neighbours (default 8px), `stagger` alternates rows for
-// labels that would otherwise be dropped.
+# `style` overrides {size, fg, font, gap, stagger} — `gap` is the minimum
+# clear space between neighbours (default 8px), `stagger` alternates rows for
+# labels that would otherwise be dropped.
 pub fn draw_axis_labels(r, ticks, style)
   let t = _palette()
   let size = _get(style, "size", t.font_sm)
@@ -302,9 +302,9 @@ pub fn draw_axis_labels(r, ticks, style)
   let gap = _get(style, "gap", 8)
   let stagger = _get(style, "stagger", false)
   let rows = if stagger then 2 else 1 end
-  // The rightmost x each row has committed to, so a row only has to clear its
-  // own neighbours. Two rows is the whole stagger, so two cells is the whole
-  // bookkeeping.
+  # The rightmost x each row has committed to, so a row only has to clear its
+  # own neighbours. Two rows is the whole stagger, so two cells is the whole
+  # bookkeeping.
   let taken_0 = r.x - gap
   let taken_1 = r.x - gap
   let drawn = 0
@@ -312,8 +312,8 @@ pub fn draw_axis_labels(r, ticks, style)
   for tick in ticks do
     let label = str(tick.label)
     let w = text_width(label, ts)
-    // Centred on the tick, but never hanging outside the strip: the first and
-    // last label of an axis otherwise run off the plot.
+    # Centred on the tick, but never hanging outside the strip: the first and
+    # last label of an axis otherwise run off the plot.
     let x = clamp(tick.x - w / 2, r.x, max(r.x, r.x + r.w - w))
     let taken = if row == 0 then taken_0 else taken_1 end
     if x >= taken + gap then
@@ -330,13 +330,13 @@ pub fn draw_axis_labels(r, ticks, style)
   drawn
 end
 
-// The vertical counterpart: labels right-aligned against `r`'s right edge and
-// centred on their tick, for a y axis. `ticks` is a list of {y, label}.
+# The vertical counterpart: labels right-aligned against `r`'s right edge and
+# centred on their tick, for a y axis. `ticks` is a list of {y, label}.
 pub fn draw_axis_labels_y(r, ticks)
   draw_axis_labels_y(r, ticks, {})
 end
 
-// `style` overrides {size, fg, font, gap}.
+# `style` overrides {size, fg, font, gap}.
 pub fn draw_axis_labels_y(r, ticks, style)
   let t = _palette()
   let size = _get(style, "size", t.font_sm)
@@ -356,12 +356,12 @@ pub fn draw_axis_labels_y(r, ticks, style)
   drawn
 end
 
-// ── Clipboard ───────────────────────────────────────────────────────────────
-// Plain text to and from the host's clipboard. `clipboard_set` takes effect
-// when the frame ends, so the text reads back from the next frame on. A host
-// with no system clipboard keeps the text in memory, which still carries a
-// copy from one field to another. `text_field` calls both; an app only needs
-// them for its own copy/paste commands.
+# ── Clipboard ───────────────────────────────────────────────────────────────
+# Plain text to and from the host's clipboard. `clipboard_set` takes effect
+# when the frame ends, so the text reads back from the next frame on. A host
+# with no system clipboard keeps the text in memory, which still carries a
+# copy from one field to another. `text_field` calls both; an app only needs
+# them for its own copy/paste commands.
 
 pub fn clipboard_get()
   binding(symbol("clipboard")) ?? ""
@@ -371,23 +371,23 @@ pub fn clipboard_set(text)
   push_output(symbol("clipboard_write"), text)
 end
 
-// ── Text ranges ─────────────────────────────────────────────────────────────
-// Every offset here is a character (code point) offset, the unit `char_slice`
-// and `char_len` use, so non-ASCII text needs no special care.
+# ── Text ranges ─────────────────────────────────────────────────────────────
+# Every offset here is a character (code point) offset, the unit `char_slice`
+# and `char_len` use, so non-ASCII text needs no special care.
 
-// `text_wrap` with each row's place in the source: a list of
-// {text, start, end}, where `char_slice(s, start, end) == text`. What the wrap
-// drops (the space a soft break lands on, the newline of a hard one) lies
-// between one row's `end` and the next row's `start`, so an offset in such a
-// gap belongs to the end of the earlier row. One walk of the advance table,
-// like `text_wrap`; a wrapped editable area needs no per-character measuring.
+# `text_wrap` with each row's place in the source: a list of
+# {text, start, end}, where `char_slice(s, start, end) == text`. What the wrap
+# drops (the space a soft break lands on, the newline of a hard one) lies
+# between one row's `end` and the next row's `start`, so an offset in such a
+# gap belongs to the end of the earlier row. One walk of the advance table,
+# like `text_wrap`; a wrapped editable area needs no per-character measuring.
 pub fn text_wrap_rows(s, style, max_width)
   let st = if type(style) == "record" then {...style, offsets: true} else {size: style, offsets: true} end
   text_wrap(s, st, max_width)
 end
 
-// The rows of unwrapped text: one per hard newline, in the shape
-// `text_wrap_rows` returns.
+# The rows of unwrapped text: one per hard newline, in the shape
+# `text_wrap_rows` returns.
 fn _line_rows(s)
   let rows = []
   let at = 0
@@ -399,10 +399,10 @@ fn _line_rows(s)
   rows
 end
 
-// The index of the row a caret at character `at` sits on: the last row that
-// starts at or before it. A caret in the gap after a soft break (on the
-// trailing space that was dropped) stays on the row it was typed on, and one
-// at a hard break belongs to the row that starts there.
+# The index of the row a caret at character `at` sits on: the last row that
+# starts at or before it. A caret in the gap after a soft break (on the
+# trailing space that was dropped) stays on the row it was typed on, and one
+# at a hard break belongs to the row that starts there.
 pub fn text_row_of(rows, at)
   let idx = 0
   for i in range(0, len(rows)) do
@@ -411,14 +411,14 @@ pub fn text_row_of(rows, at)
   idx
 end
 
-// The rectangles covering characters [a, b) of `s` drawn in `style`: one
-// {x, y, w, h} per row the range touches, relative to the text's top-left
-// (add the position you draw at). `s` is a string, laid out one row per hard
-// newline, or the rows from `text_wrap_rows` for wrapped text. A selection, a
-// search hit or a spelling underline is then two `text_width` calls per row
-// instead of one per character. Rows are `line_height` apart unless `line_h`
-// says otherwise; a range that runs past a row's end covers a sliver for the
-// line break, so a selected empty line still shows.
+# The rectangles covering characters [a, b) of `s` drawn in `style`: one
+# {x, y, w, h} per row the range touches, relative to the text's top-left
+# (add the position you draw at). `s` is a string, laid out one row per hard
+# newline, or the rows from `text_wrap_rows` for wrapped text. A selection, a
+# search hit or a spelling underline is then two `text_width` calls per row
+# instead of one per character. Rows are `line_height` apart unless `line_h`
+# says otherwise; a range that runs past a row's end covers a sliver for the
+# line break, so a selected empty line still shows.
 pub fn text_range_rects(s, style, a, b)
   text_range_rects(s, style, a, b, text_metrics(style).line_height)
 end

@@ -1,58 +1,58 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  physics.ptl — the solver behind the Physics playground.
-//
-//  A world is one immutable record of parallel lists (structure-of-arrays):
-//  every body is a disc with a position, a velocity, a spin and an inverse
-//  mass, and index i means the same body in every list. Nothing here draws
-//  or reads input, so the whole module runs under a bare `petal run`.
-//
-//  The step is a sequential-impulse solver with small sub-steps:
-//
-//    1. find the pairs that could touch this frame            (broadphase)
-//    2. per sub-step:
-//       a. un-overlap what the last sub-step left overlapping (positions)
-//          and remember each touching pair with its normal    (contacts)
-//       b. gravity, drag, spring forces, the mouse's pull     (velocities)
-//       c. rods, then contacts with restitution and Coulomb
-//          friction against the discs' spin                   (impulses)
-//       d. move, then pull every rod back to its length       (positions)
-//
-//  `step` keeps the lists it writes in local `var` cells and shares them
-//  with nested helpers (kick, shift, touch_pair, touch_static, solve_pair,
-//  solve_static), so each kind of contact is written once and `step` is
-//  still a pure function of its arguments.
-//
-//  Units are pixels, seconds and "one 14 px disc" of mass.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  physics.ptl — the solver behind the Physics playground.
+#
+#  A world is one immutable record of parallel lists (structure-of-arrays):
+#  every body is a disc with a position, a velocity, a spin and an inverse
+#  mass, and index i means the same body in every list. Nothing here draws
+#  or reads input, so the whole module runs under a bare `petal run`.
+#
+#  The step is a sequential-impulse solver with small sub-steps:
+#
+#    1. find the pairs that could touch this frame            (broadphase)
+#    2. per sub-step:
+#       a. un-overlap what the last sub-step left overlapping (positions)
+#          and remember each touching pair with its normal    (contacts)
+#       b. gravity, drag, spring forces, the mouse's pull     (velocities)
+#       c. rods, then contacts with restitution and Coulomb
+#          friction against the discs' spin                   (impulses)
+#       d. move, then pull every rod back to its length       (positions)
+#
+#  `step` keeps the lists it writes in local `var` cells and shares them
+#  with nested helpers (kick, shift, touch_pair, touch_static, solve_pair,
+#  solve_static), so each kind of contact is written once and `step` is
+#  still a pure function of its arguments.
+#
+#  Units are pixels, seconds and "one 14 px disc" of mass.
+# ─────────────────────────────────────────────────────────────────────────
 
-let SUB_H    = 1.0 / 180.0   // longest sub-step, seconds
-let ITERS    = 2             // impulse passes per sub-step
-let ROD_PASSES = 4           // rod passes per impulse pass
-let SLOP     = 0.3           // overlap left alone, px
-let TOUCH    = 0.25          // gap still treated as touching, px
-let PUSH     = 0.8           // fraction of an overlap removed per sub-step
-let REST_V   = 34.0          // closing speed below which nothing bounces
-let SEG_R    = 3.0           // half-thickness of a static bar
-let SPRING_Z = 0.12          // damping ratio of a spring
-let MAX_V    = 4200.0        // speed limit, px/s
+let SUB_H    = 1.0 / 180.0   # longest sub-step, seconds
+let ITERS    = 2             # impulse passes per sub-step
+let ROD_PASSES = 4           # rod passes per impulse pass
+let SLOP     = 0.3           # overlap left alone, px
+let TOUCH    = 0.25          # gap still treated as touching, px
+let PUSH     = 0.8           # fraction of an overlap removed per sub-step
+let REST_V   = 34.0          # closing speed below which nothing bounces
+let SEG_R    = 3.0           # half-thickness of a static bar
+let SPRING_Z = 0.12          # damping ratio of a spring
+let MAX_V    = 4200.0        # speed limit, px/s
 
 pub let ROD = 0
 pub let SPRING = 1
 pub let BAR_R = 3.0
 
-// Length of the vector (dx, dy).
+# Length of the vector (dx, dy).
 pub fn norm(dx: num, dy: num) -> num
   sqrt(dx * dx + dy * dy)
 end
 
-// ── Building a world ─────────────────────────────────────────────────────
+# ── Building a world ─────────────────────────────────────────────────────
 
 pub fn empty_world() -> record
   {n: 0, x: [], y: [], vx: [], vy: [], r: [], m: [], w: [], ang: [], om: [],
     c: [], id: [], pin: [], links: [], segs: [], order: [], tension: [], next_id: 1}
 end
 
-// Mass grows with area; `dens` scales it (a wrecking ball is 6).
+# Mass grows with area; `dens` scales it (a wrecking ball is 6).
 pub fn mass_of(r: num, dens: num) -> num
   dens * (r * r) / 196.0
 end
@@ -70,7 +70,7 @@ pub fn add_body(wd: record, x: num, y: num, r: num, c: int, pin: bool, dens: num
     order: [], next_id: wd.next_id + 1}
 end
 
-// The two common cases: a free disc at rest, and a pinned one.
+# The two common cases: a free disc at rest, and a pinned one.
 pub fn add_ball(wd: record, x: num, y: num, r: num, c: int) -> record
   add_body(wd, x, y, r, c, false, 1.0, 0.0, 0.0)
 end
@@ -79,10 +79,10 @@ pub fn add_pin(wd: record, x: num, y: num, r: num, c: int) -> record
   add_body(wd, x, y, r, c, true, 1.0, 0.0, 0.0)
 end
 
-// Join bodies a and b at their current distance. A rod is never shorter
-// than the two radii, so it cannot fight the contact between its own ends.
-// `hz` is a spring's natural frequency; a negative `rest_len` means "as far
-// apart as they are now".
+# Join bodies a and b at their current distance. A rod is never shorter
+# than the two radii, so it cannot fight the contact between its own ends.
+# `hz` is a spring's natural frequency; a negative `rest_len` means "as far
+# apart as they are now".
 pub fn add_link(wd: record, a: int, b: int, kind: int, hz: num, rest_len: num) -> record
   let d = norm(wd.x[b] - wd.x[a], wd.y[b] - wd.y[a])
   let rest = if rest_len >= 0.0 then float(rest_len) else d end
@@ -102,7 +102,7 @@ fn without(xs: list, i: int) -> list
   end
 end
 
-// Drop body i, and every link that touched it; later bodies shift down one.
+# Drop body i, and every link that touched it; later bodies shift down one.
 pub fn remove_body(wd: record, i: int) -> record
   let links = for L in wd.links do
     if L.a == i || L.b == i then continue end
@@ -153,10 +153,10 @@ pub fn links_on(wd: record, i: int) -> int
   k
 end
 
-// ── Picking ──────────────────────────────────────────────────────────────
+# ── Picking ──────────────────────────────────────────────────────────────
 
-// The body under (px, py), allowing `slack` px beyond its rim; the one whose
-// centre is nearest wins. -1 when there is none.
+# The body under (px, py), allowing `slack` px beyond its rim; the one whose
+# centre is nearest wins. -1 when there is none.
 pub fn pick_body(wd: record, px: num, py: num, slack: num) -> int
   let best = -1
   let best_d = 0.0
@@ -171,7 +171,7 @@ pub fn pick_body(wd: record, px: num, py: num, slack: num) -> int
   best
 end
 
-// Distance from point p to segment a-b.
+# Distance from point p to segment a-b.
 pub fn seg_dist(px: num, py: num, ax: num, ay: num, bx: num, by: num) -> num
   let ex = bx - ax
   let ey = by - ay
@@ -198,8 +198,8 @@ fn orient(ax: num, ay: num, bx: num, by: num, cx: num, cy: num) -> num
   (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
 end
 
-// Indices of the links the stroke p-q crosses, highest first so they can be
-// removed in order.
+# Indices of the links the stroke p-q crosses, highest first so they can be
+# removed in order.
 pub fn links_crossing(wd: record, px: num, py: num, qx: num, qy: num) -> list
   let out = []
   for k in range(len(wd.links) - 1, -1, -1) do
@@ -217,10 +217,10 @@ pub fn links_crossing(wd: record, px: num, py: num, qx: num, qy: num) -> list
   out
 end
 
-// ── Measuring ────────────────────────────────────────────────────────────
+# ── Measuring ────────────────────────────────────────────────────────────
 
-// Kinetic energy (linear + spin), potential energy against the far wall in
-// the direction of gravity, and the energy stored in stretched springs.
+# Kinetic energy (linear + spin), potential energy against the far wall in
+# the direction of gravity, and the energy stored in stretched springs.
 pub fn energy(wd: record, env: record) -> record
   let ke = 0.0
   let pe = 0.0
@@ -245,7 +245,7 @@ pub fn energy(wd: record, env: record) -> record
   {ke: ke, pe: pe, se: se}
 end
 
-// Worst rod error and worst disc overlap, in px: how honest the solver is.
+# Worst rod error and worst disc overlap, in px: how honest the solver is.
 pub fn audit(wd: record) -> record
   let stretch = 0.0
   for L in wd.links do
@@ -266,24 +266,24 @@ pub fn audit(wd: record) -> record
   {stretch: stretch, overlap: overlap}
 end
 
-// ── The step ─────────────────────────────────────────────────────────────
+# ── The step ─────────────────────────────────────────────────────────────
 
-// Advance `wd` by `dt` seconds. `env` carries gravity (gx, gy), `bounce`
-// (restitution 0..1), `fric` (Coulomb mu), `drag` (fraction of velocity lost
-// per second), the stage size (w, h) and the mouse grab (`grab` is a body
-// index or -1, pulled toward tx, ty).
-//
-// Returns {world, contacts, pts, subs}: the new world, how many contacts the
-// last sub-step solved, their positions as a flat [x, y, x, y, …] list, and
-// the number of sub-steps taken.
+# Advance `wd` by `dt` seconds. `env` carries gravity (gx, gy), `bounce`
+# (restitution 0..1), `fric` (Coulomb mu), `drag` (fraction of velocity lost
+# per second), the stage size (w, h) and the mouse grab (`grab` is a body
+# index or -1, pulled toward tx, ty).
+#
+# Returns {world, contacts, pts, subs}: the new world, how many contacts the
+# last sub-step solved, their positions as a flat [x, y, x, y, …] list, and
+# the number of sub-steps taken.
 pub fn step(wd: record, dt: num, env: record) -> record
   let n = wd.n
   if n == 0 || dt <= 0.0 then
     return {world: wd, contacts: 0, pts: [], subs: 0}
   end
-  // What the solver writes lives in cells, so the helpers below can write it
-  // (`set vx[i] = …`, in place) and read it (`get vx[i]`). The code of `step`
-  // itself reads a cell by its bare name.
+  # What the solver writes lives in cells, so the helpers below can write it
+  # (`set vx[i] = …`, in place) and read it (`get vx[i]`). The code of `step`
+  # itself reads a cell by its bare name.
   var x = wd.x
   var y = wd.y
   var vx = wd.vx
@@ -307,18 +307,18 @@ pub fn step(wd: record, dt: num, env: record) -> record
   let damp = max(0.0, 1.0 - env.drag * h)
   let spin_damp = max(0.0, 1.0 - (0.25 + env.drag) * h)
 
-  // This sub-step's contacts, body/body as [i, j, nx, ny] with n pointing
-  // from i to j, body/static as [i, nx, ny] with n pointing from the body
-  // into the wall; and the contact points of the last sub-step.
+  # This sub-step's contacts, body/body as [i, j, nx, ny] with n pointing
+  # from i to j, body/static as [i, nx, ny] with n pointing from the body
+  # into the wall; and the contact points of the last sub-step.
   var bc = []
   var sc = []
   var pts = []
   var keep = false
 
-  // ── Helpers ──────────────────────────────────────────────────────────
+  # ── Helpers ──────────────────────────────────────────────────────────
 
-  // Change the velocities of a and b by s along (dx, dy), each in
-  // proportion to its inverse mass: toward each other for s > 0.
+  # Change the velocities of a and b by s along (dx, dy), each in
+  # proportion to its inverse mass: toward each other for s > 0.
   let kick = fn(a, b, dx, dy, s)
     set vx[a] = get vx[a] + dx * s * w[a]
     set vy[a] = get vy[a] + dy * s * w[a]
@@ -326,7 +326,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
     set vy[b] = get vy[b] - dy * s * w[b]
   end
 
-  // The same for their positions.
+  # The same for their positions.
   let shift = fn(a, b, dx, dy, s)
     set x[a] = get x[a] + dx * s * w[a]
     set y[a] = get y[a] + dy * s * w[a]
@@ -334,7 +334,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
     set y[b] = get y[b] - dy * s * w[b]
   end
 
-  // Remember that i and j touch, for the impulse passes.
+  # Remember that i and j touch, for the impulse passes.
   let touch_pair = fn(i, j, nx, ny)
     set bc = append(get bc, i)
     set bc = append(get bc, j)
@@ -346,7 +346,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
     end
   end
 
-  // Remember that i touches something fixed at (px, py).
+  # Remember that i touches something fixed at (px, py).
   let touch_static = fn(i, nx, ny, px, py)
     set sc = append(get sc, i)
     set sc = append(get sc, nx)
@@ -357,9 +357,9 @@ pub fn step(wd: record, dt: num, env: record) -> record
     end
   end
 
-  // One impulse between two bodies: stop them closing along n, with
-  // restitution, then Coulomb friction on the sliding speed of the two
-  // rims, which spins the discs as well as slowing them.
+  # One impulse between two bodies: stop them closing along n, with
+  # restitution, then Coulomb friction on the sliding speed of the two
+  # rims, which spins the discs as well as slowing them.
   let solve_pair = fn(i, j, nx, ny)
     let vn = (get vx[j] - get vx[i]) * nx + (get vy[j] - get vy[i]) * ny
     if vn >= 0.0 then return nil end
@@ -384,7 +384,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
     set om[j] = get om[j] - jt * 2.0 * wj / r[j]
   end
 
-  // The same against something fixed.
+  # The same against something fixed.
   let solve_static = fn(i, nx, ny)
     let vn = get vx[i] * nx + get vy[i] * ny
     if vn <= 0.0 then return nil end
@@ -401,10 +401,10 @@ pub fn step(wd: record, dt: num, env: record) -> record
     set om[i] = get om[i] + 2.0 * dt_v / r[i]
   end
 
-  // Broadphase, once per frame: sweep the bodies in x order and keep every
-  // pair whose boxes could meet before the frame is over. `reach` is a
-  // body's radius plus the distance it can cover; a body at rest reaches no
-  // further than its own rim, so a settled pile costs almost nothing here.
+  # Broadphase, once per frame: sweep the bodies in x order and keep every
+  # pair whose boxes could meet before the frame is over. `reach` is a
+  # body's radius plus the distance it can cover; a body at rest reaches no
+  # further than its own rim, so a settled pile costs almost nothing here.
   let reach = for i in range(0, n) do
     let sp = abs(vx[i]) + abs(vy[i])
     r[i] + 2.5 + (if i == grab then max(sp, 1500.0) else sp end) * dt
@@ -464,7 +464,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
   end
   let nsp = len(spairs)
 
-  // Rods as flat lists, so the passes below index instead of reading fields.
+  # Rods as flat lists, so the passes below index instead of reading fields.
   let ra = []
   let rb = []
   let rl = []
@@ -475,9 +475,9 @@ pub fn step(wd: record, dt: num, env: record) -> record
     rl = append(rl, L.len)
   end
   let nr = len(rl)
-  // Each rod remembers the force it carried last sub-step and starts from
-  // it (a warm start), so a loaded bridge or a hanging chain holds its
-  // length instead of re-deriving its tension from nothing every step.
+  # Each rod remembers the force it carried last sub-step and starts from
+  # it (a warm start), so a loaded bridge or a hanging chain holds its
+  # length instead of re-deriving its tension from nothing every step.
   let rf = if len(wd.tension) == nr then wd.tension else for q in range(0, nr) do 0.0 end end
 
   let contacts = 0
@@ -485,7 +485,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
   for sub in range(0, subs) do
     set keep = sub == subs - 1
 
-    // a. Contacts: un-overlap, and remember who touches whom.
+    # a. Contacts: un-overlap, and remember who touches whom.
     set bc = []
     set sc = []
     let k = 0
@@ -562,7 +562,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
     let nsc = len(sc)
     if keep then contacts = nbc / 4 + nsc / 3 end
 
-    // b. Forces.
+    # b. Forces.
     for i in range(0, n) do
       if w[i] > 0.0 then
         set vx[i] = (vx[i] + gx * h) * damp
@@ -584,13 +584,13 @@ pub fn step(wd: record, dt: num, env: record) -> record
       let ny = dy / d
       let omega = 6.2832 * L.hz
       let vrel = (vx[b] - vx[a]) * nx + (vy[b] - vy[a]) * ny
-      // Force over the pair's reduced mass, so every spring rings at `hz`
-      // whatever it carries.
+      # Force over the pair's reduced mass, so every spring rings at `hz`
+      # whatever it carries.
       kick(a, b, nx, ny, (omega * omega * (d - L.len) + 2.0 * SPRING_Z * omega * vrel) * h / ws)
     end
     if grab >= 0 then
-      // The mouse is a velocity servo: the grabbed disc closes most of the
-      // distance each frame, but rods and contacts still get their say.
+      # The mouse is a velocity servo: the grabbed disc closes most of the
+      # distance each frame, but rods and contacts still get their say.
       let pvx = (env.tx - x[grab]) * 22.0
       let pvy = (env.ty - y[grab]) * 22.0
       let sp = sqrt(pvx * pvx + pvy * pvy)
@@ -599,7 +599,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
       set vy[grab] = pvy * cap
     end
 
-    // c. Impulses.
+    # c. Impulses.
     for q in range(0, nr) do
       let a = ra[q]
       let b = rb[q]
@@ -612,8 +612,8 @@ pub fn step(wd: record, dt: num, env: record) -> record
       kick(a, b, dx, dy, p)
     end
     for it in range(0, ITERS) do
-      // Rods get extra passes, alternating direction: a chain converges
-      // from both ends, which a heavy ball on a light chain needs.
+      # Rods get extra passes, alternating direction: a chain converges
+      # from both ends, which a heavy ball on a light chain needs.
       for pass in range(0, ROD_PASSES) do
         for q in range(0, nr) do
           let ri = if pass % 2 == 0 then q else nr - 1 - q end
@@ -644,7 +644,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
       rf[q] = rf[q] / h
     end
 
-    // d. Move, then put every rod back to its length.
+    # d. Move, then put every rod back to its length.
     for i in range(0, n) do
       if w[i] == 0.0 && i != grab then
         set vx[i] = 0.0
@@ -679,18 +679,18 @@ pub fn step(wd: record, dt: num, env: record) -> record
     contacts: contacts, pts: pts, subs: subs}
 end
 
-// ── Tests ────────────────────────────────────────────────────────────────
-//
-// `petal test examples/games/physics-playground/physics.ptl` runs these; a
-// run of the app never does. Each starts from the module as it loads.
+# ── Tests ────────────────────────────────────────────────────────────────
+#
+# `petal test examples/games/physics-playground/physics.ptl` runs these; a
+# run of the app never does. Each starts from the module as it loads.
 
-// A stage 800 x 600 with gravity down and nothing grabbed.
+# A stage 800 x 600 with gravity down and nothing grabbed.
 fn test_env(gy: num) -> record
   {gx: 0.0, gy: gy, bounce: 0.3, fric: 0.5, drag: 0.0, w: 800.0, h: 600.0,
     grab: -1, tx: 0.0, ty: 0.0}
 end
 
-// `wd` after `frames` steps of 1/60 s.
+# `wd` after `frames` steps of 1/60 s.
 fn run_frames(wd: record, frames: int, env: record) -> record
   let cur = wd
   for f in range(0, frames) do
@@ -701,7 +701,7 @@ end
 
 test "norm and seg_dist measure in pixels" do
   expect_eq(norm(3.0, 4.0), 5.0)
-  // Beside the middle of a segment, then past its end.
+  # Beside the middle of a segment, then past its end.
   expect_near(seg_dist(5.0, 3.0, 0.0, 0.0, 10.0, 0.0), 3.0, 0.000001)
   expect_near(seg_dist(13.0, 4.0, 0.0, 0.0, 10.0, 0.0), 5.0, 0.000001)
 end
@@ -719,7 +719,7 @@ end
 test "a free disc falls and a pinned one stays" do
   let wd = add_pin(add_ball(empty_world(), 100, 100, 14, 0), 300, 100, 14, 0)
   let after = run_frames(wd, 30, test_env(900.0))
-  // Half a second of 900 px/s^2 from rest is 112.5 px, less the sub-step error.
+  # Half a second of 900 px/s^2 from rest is 112.5 px, less the sub-step error.
   expect_near(after.y[0] - 100.0, 112.5, 3.0)
   expect(after.vy[0] > 400.0, "the falling disc has picked up speed")
   expect_eq([after.x[1], after.y[1]], [300.0, 100.0])
@@ -729,7 +729,7 @@ test "a rod keeps its length while its bob swings" do
   let wd = add_ball(add_pin(empty_world(), 400, 100, 6, 0), 520, 100, 14, 0)
   let hung = add_link(wd, 0, 1, ROD, 0.0, -1.0)
   expect_eq(links_on(hung, 1), 1)
-  // A 120 px pendulum is near the bottom of its swing after half a second.
+  # A 120 px pendulum is near the bottom of its swing after half a second.
   let after = run_frames(hung, 30, test_env(900.0))
   expect(audit(after).stretch < 0.5, "the rod stretched {audit(after).stretch} px")
   expect(after.y[1] > 180.0, "the bob is at y = {after.y[1]}")

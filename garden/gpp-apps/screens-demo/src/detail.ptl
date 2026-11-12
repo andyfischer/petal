@@ -1,9 +1,9 @@
-// screens-demo — DETAIL screen. Reached by navigating from HOME. Pressing
-// `b` calls navigate_back() (the in-script history API); the host's Ctrl+[ /
-// Ctrl+] and :back / :forward drive the same stack.
-//
-// Like home.ptl this paints with `ui_theme()` and bloom, so it also runs under
-// a bare `garden-panel-run -I core-runtime`.
+# screens-demo — DETAIL screen. Reached by navigating from HOME. Pressing
+# `b` calls navigate_back() (the in-script history API); the host's Ctrl+[ /
+# Ctrl+] and :back / :forward drive the same stack.
+#
+# Like home.ptl this paints with `ui_theme()` and bloom, so it also runs under
+# a bare `garden-panel-run -I core-runtime`.
 import bloom
 import garden
 import ui
@@ -13,7 +13,7 @@ let w = screen_width()
 let h = screen_height()
 clear(T.bg.r, T.bg.g, T.bg.b)
 
-// The screen's identity band: DETAIL is the amber screen.
+# The screen's identity band: DETAIL is the amber screen.
 draw_rect(rect(0, 0, w, 4), T.warn)
 
 let cw = min(460, w - 48)

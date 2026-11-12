@@ -1,8 +1,8 @@
-// Mutable Cells
-// `let` bindings are dataflow bindings: `x = 1` rebinds the name, and an
-// assignment inside a function only shadows — the outer binding is untouched.
-// When you need a slot that a function or a callback really can write, declare
-// it `var` and write it with `set`.
+# Mutable Cells
+# `let` bindings are dataflow bindings: `x = 1` rebinds the name, and an
+# assignment inside a function only shadows — the outer binding is untouched.
+# When you need a slot that a function or a callback really can write, declare
+# it `var` and write it with `set`.
 
 print("Accumulating in a loop")
 print("======================")
@@ -13,8 +13,8 @@ for i in [1, 2, 3, 4] do
 end
 print("total:", total)
 
-// The case `=` cannot express: writing from inside a lambda. Without a cell
-// this would silently shadow, and `flagged` would still be 0 at the end.
+# The case `=` cannot express: writing from inside a lambda. Without a cell
+# this would silently shadow, and `flagged` would still be 0 at the end.
 print("")
 print("Writing from inside a callback")
 print("==============================")
@@ -27,8 +27,8 @@ end)
 print("doubled:", doubled)
 print("even values seen:", flagged)
 
-// A cell is a box, and each *evaluation* of the declaration makes a new one —
-// so this factory hands out independent counters that share nothing.
+# A cell is a box, and each *evaluation* of the declaration makes a new one —
+# so this factory hands out independent counters that share nothing.
 print("")
 print("Closures share the box")
 print("======================")
@@ -47,8 +47,8 @@ let b = make_counter()
 print("a:", a(), a(), a())
 print("b:", b())
 
-// Reading a `var` gives its contents, never the box, so nothing aliases by
-// accident: the record below keeps the value as of the moment it was built.
+# Reading a `var` gives its contents, never the box, so nothing aliases by
+# accident: the record below keeps the value as of the moment it was built.
 print("")
 print("Reads copy, they don't alias")
 print("===========================")
@@ -58,7 +58,7 @@ let snapshot = {level: level}
 set level = 99
 print("snapshot:", snapshot, "level:", level)
 
-// `set` also takes field and index targets.
+# `set` also takes field and index targets.
 var player = {hp: 100, pos: [0, 0]}
 fn take_damage(amount: num)
   set player.hp = get player.hp - amount
@@ -67,10 +67,10 @@ take_damage(30)
 set player.pos[0] = 5
 print("player:", player)
 
-// `state var` is a cell that also persists across runs, and it accepts writes
-// from elsewhere. Declared at the *top level* it is one cell for the whole
-// program — the shape to use when several functions have to agree on one value.
-// (A plain `state` inside `record_hit` would give each callsite its own count.)
+# `state var` is a cell that also persists across runs, and it accepts writes
+# from elsewhere. Declared at the *top level* it is one cell for the whole
+# program — the shape to use when several functions have to agree on one value.
+# (A plain `state` inside `record_hit` would give each callsite its own count.)
 print("")
 print("Persistent cells")
 print("================")

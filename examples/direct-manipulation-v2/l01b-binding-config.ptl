@@ -1,13 +1,13 @@
-// dm-title: the same, with `cx` declared a `tunable` setting
-// dm-level: L1
-//
-// `tunable` is the strong "this is a knob" signal: the bar drag now edits `cx`
-// (the default `Soft` preference lists knob-only alternatives first when
-// they verify), and with `strict` (v1's rule) nothing else is even tried.
-//
-// dm-goal bar-x: rect#1.0 += 20 | expect=cx
-// dm-goal bar-x-strict: rect#1.0 += 20 | strict expect=cx
-// dm-goal circle-y: circle#0.1 -= 15 | expect=cy
+# dm-title: the same, with `cx` declared a `tunable` setting
+# dm-level: L1
+#
+# `tunable` is the strong "this is a knob" signal: the bar drag now edits `cx`
+# (the default `Soft` preference lists knob-only alternatives first when
+# they verify), and with `strict` (v1's rule) nothing else is even tried.
+#
+# dm-goal bar-x: rect#1.0 += 20 | expect=cx
+# dm-goal bar-x-strict: rect#1.0 += 20 | strict expect=cx
+# dm-goal circle-y: circle#0.1 -= 15 | expect=cy
 
 import ui
 

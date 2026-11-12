@@ -1,18 +1,18 @@
-// ─────────────────────────────────────────────────────────────────────────
-// data — Campfire's workspace: the people, the channels, the seeded history,
-// the afternoon's scripted chatter and the pools teammates reply from.
-//
-// Everything here is constant data plus pure helpers over it. The app keeps
-// the live message list in `state`; this module only says what the
-// workspace looked like at 2:32 PM on launch week, and what happens next.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# data — Campfire's workspace: the people, the channels, the seeded history,
+# the afternoon's scripted chatter and the pools teammates reply from.
+#
+# Everything here is constant data plus pure helpers over it. The app keeps
+# the live message list in `state`; this module only says what the
+# workspace looked like at 2:32 PM on launch week, and what happens next.
+# ─────────────────────────────────────────────────────────────────────────
 
-// The simulated clock starts at 2:32 PM; every message stamps itself with
-// minutes into the day.
+# The simulated clock starts at 2:32 PM; every message stamps itself with
+# minutes into the day.
 pub let START_MIN = 872
 pub let ME = "jordan"
 
-// ── People ───────────────────────────────────────────────────────────────
+# ── People ───────────────────────────────────────────────────────────────
 
 let PEOPLE = const({
   jordan: {name: "Jordan Lee", role: "Product engineer", color: :4f6bed, away: false},
@@ -38,7 +38,7 @@ pub fn initials(key: string) -> string
   if len(parts) > 1 then a ++ char_slice(parts[len(parts) - 1], 0, 1) else a end
 end
 
-// ── Channels ─────────────────────────────────────────────────────────────
+# ── Channels ─────────────────────────────────────────────────────────────
 
 let ALL = const(["jordan", "maya", "theo", "priya", "lars", "ines", "kenji"])
 
@@ -62,12 +62,12 @@ pub fn channel_index(id: string) -> int
   max(0, index_of(ids, id))
 end
 
-// The other person in a direct message.
+# The other person in a direct message.
 pub fn dm_peer(c: record) -> string
   find(c.members, fn(k) -> k != ME) ?? ME
 end
 
-// ── Time ─────────────────────────────────────────────────────────────────
+# ── Time ─────────────────────────────────────────────────────────────────
 
 pub fn clock_text(minute: int) -> string
   let h = (minute / 60) % 24
@@ -77,8 +77,8 @@ pub fn clock_text(minute: int) -> string
   "{h12}:{pad_start(str(m), 2, "0")} {ampm}"
 end
 
-// ── Seeded history ───────────────────────────────────────────────────────
-// day 0 is yesterday, day 1 today.
+# ── Seeded history ───────────────────────────────────────────────────────
+# day 0 is yesterday, day 1 today.
 
 fn m(ch: string, who: string, day: int, at: int, text: string, reacts: list, thread: list) -> record
   {id: 0, ch: ch, who: who, day: day, at: at, text: text, reacts: reacts, thread: thread, born: -1.0}
@@ -156,8 +156,8 @@ pub fn seed_messages() -> list
   out
 end
 
-// What has been read when the app opens: everything except the newest
-// message in #general and in #design.
+# What has been read when the app opens: everything except the newest
+# message in #general and in #design.
 pub fn seed_seen(msgs: list) -> record
   let seen = {}
   for c in CHANNELS do
@@ -168,10 +168,10 @@ pub fn seed_seen(msgs: list) -> record
   seen
 end
 
-// ── The afternoon's script ───────────────────────────────────────────────
-// `at` is seconds after 2:32 PM. Each line is announced by its author typing
-// for `typing` seconds first. `thread` names the seeded message (by its text
-// prefix) a thread reply goes under.
+# ── The afternoon's script ───────────────────────────────────────────────
+# `at` is seconds after 2:32 PM. Each line is announced by its author typing
+# for `typing` seconds first. `thread` names the seeded message (by its text
+# prefix) a thread reply goes under.
 
 fn ev(at: num, ch: string, who: string, typing: num, text: string) -> record
   {at: at, ch: ch, who: who, typing: typing, text: text, thread: ""}
@@ -190,9 +190,9 @@ pub let SCRIPT = const([
   ev(150.0, "dm-theo", "theo", 2.0, "Thanks for the review yesterday — merged 🙏"),
 ])
 
-// ── Replies ──────────────────────────────────────────────────────────────
-// A teammate answering something you wrote picks from the pool its words
-// suggest; `pick` chooses deterministically from the message number.
+# ── Replies ──────────────────────────────────────────────────────────────
+# A teammate answering something you wrote picks from the pool its words
+# suggest; `pick` chooses deterministically from the message number.
 
 let POOLS = const([
   {keys: ["thank", "thx", "appreciate"], lines: ["Anytime 🙌", "Of course!", "Happy to help."]},
@@ -211,7 +211,7 @@ end
 
 pub fn reply_for(text: string, seed: int, who: string) -> string
   let low = lower(text)
-  // A message that ends on a question gets an answer, whatever else it says.
+  # A message that ends on a question gets an answer, whatever else it says.
   if ends_with(trim(low), "?") then
     let qs = last(POOLS).lines
     return qs[pick(seed, hash_str(who) % 1000, len(qs))]
@@ -221,8 +221,8 @@ pub fn reply_for(text: string, seed: int, who: string) -> string
   lines[pick(seed, hash_str(who) % 1000, len(lines))]
 end
 
-// Who answers you in a channel: whoever you named, else anyone there but
-// you, preferring whoever spoke last.
+# Who answers you in a channel: whoever you named, else anyone there but
+# you, preferring whoever spoke last.
 pub fn responder(c: record, text: string, last_other: string, seed: int) -> string
   if c.kind == "dm" then return dm_peer(c) end
   let others = filter(c.members, fn(k) -> k != ME)
@@ -231,14 +231,14 @@ pub fn responder(c: record, text: string, last_other: string, seed: int) -> stri
   if last_other != "" && pick(seed, 3, 3) > 0 then last_other else others[pick(seed, 5, len(others))] end
 end
 
-// The teammate in `c` that `text` names, by @handle or first name; "" for none.
+# The teammate in `c` that `text` names, by @handle or first name; "" for none.
 pub fn addressed(c: record, text: string) -> string
   let low = lower(text)
   let named = find(c.members, fn(k) -> k != ME && (index_of(low, "@" ++ k) >= 0 || index_of(low, lower(first_name(k))) >= 0))
   named ?? ""
 end
 
-// Someone else who will leave a reaction on your message.
+# Someone else who will leave a reaction on your message.
 pub fn reactor(c: record, not_who: string, seed: int) -> string
   let others = filter(c.members, fn(k) -> k != ME && k != not_who)
   if len(others) == 0 then "" else others[pick(seed, 11, len(others))] end
@@ -246,7 +246,7 @@ end
 
 pub let QUICK = const(["👍", "🎉", "👀", "🙌"])
 
-// Whether `text` mentions you.
+# Whether `text` mentions you.
 pub fn mentions_me(text: string) -> bool
   index_of(lower(text), "@jordan") >= 0
 end

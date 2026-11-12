@@ -1,7 +1,7 @@
-// Micro-benchmark: a `state` hit inside a function. `counter` is called from
-// a 200-iteration loop, so its declaration holds 200 slots, one per call path
-// (loop index, callsite), and each call after the first run is a hit. See
-// state_hit_top.ptl for the command; the control is state_hit_none.ptl.
+# Micro-benchmark: a `state` hit inside a function. `counter` is called from
+# a 200-iteration loop, so its declaration holds 200 slots, one per call path
+# (loop index, callsite), and each call after the first run is a hit. See
+# state_hit_top.ptl for the command; the control is state_hit_none.ptl.
 
 fn counter(i)
   state n = i

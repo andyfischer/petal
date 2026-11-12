@@ -1,6 +1,6 @@
-// `x |> f` is `f(x)` and `x |> f(y)` is `f(x, y)`. How it lexes and parses
-// is held by test/vitest/pipe-operator.test.ts; what it evaluates to, here.
-// Run with `petal test test/ptl`.
+# `x |> f` is `f(x)` and `x |> f(y)` is `f(x, y)`. How it lexes and parses
+# is held by test/vitest/pipe-operator.test.ts; what it evaluates to, here.
+# Run with `petal test test/ptl`.
 
 test "a value pipes into a function" do
   expect_eq(42 |> str, "42")

@@ -1,6 +1,6 @@
-// Interactive Nodes — drag a node to move it, click it to toggle it.
-//
-// Demonstrates state, mouse input, and drawing that follows the data.
+# Interactive Nodes — drag a node to move it, click it to toggle it.
+#
+# Demonstrates state, mouse input, and drawing that follows the data.
 
 import ui
 
@@ -21,7 +21,7 @@ let pressed = mouse_pressed(1)
 let down = mouse_down(1)
 let node_r = 35
 
-// Color palette
+# Color palette
 let bg = :161823
 let title_color = :8c8caa
 let conn_inactive = :3c3c50
@@ -32,12 +32,12 @@ let inactive_outer = :463c41
 let inactive_inner = :554b50
 let label_color = :dcdceb
 
-// Connections between nodes (indices)
+# Connections between nodes (indices)
 let connections = [
   [0, 1], [1, 2], [0, 3], [3, 4], [2, 4], [1, 4]
 ]
 
-// Press: pick up whichever node is under the cursor.
+# Press: pick up whichever node is under the cursor.
 if pressed then
   for i in range(0, len(nodes)) do
     let n = nodes[i]
@@ -61,13 +61,13 @@ if down && dragging >= 0 then
     active: n.active
   }
 else
-  // Release. A pick-up that barely moved was a click, not a drag, so it toggles.
+  # Release. A pick-up that barely moved was a click, not a drag, so it toggles.
   if !down && dragging >= 0 then
     let n = nodes[dragging]
     let dx = float(mx - n.x + drag_offset_x)
     let dy = float(my - n.y + drag_offset_y)
     let moved2 = dx * dx + dy * dy
-    if moved2 < 25.0 then         // 5 px, squared
+    if moved2 < 25.0 then         # 5 px, squared
       nodes[dragging] = {
         x: n.x, y: n.y,
         label: n.label,
@@ -78,7 +78,7 @@ else
   dragging = -1
 end
 
-// Overloaded draw functions: accept point/color records
+# Overloaded draw functions: accept point/color records
 let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
@@ -94,12 +94,12 @@ fn draw_text(text: string, pos: record, size: num, color: record)
   _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
-// === DRAW ===
+# === DRAW ===
 clear(bg.r, bg.g, bg.b)
 
 draw_text("Interactive Nodes — drag to move, click to toggle", {x: 20, y: 10}, 16, title_color)
 
-// Draw connections
+# Draw connections
 for conn in connections do
   let a = nodes[conn[0]]
   let b = nodes[conn[1]]
@@ -110,7 +110,7 @@ for conn in connections do
   draw_line({x: a.x, y: a.y}, {x: b.x, y: b.y}, c)
 end
 
-// Draw nodes
+# Draw nodes
 for i in range(0, len(nodes)) do
   let n = nodes[i]
   let hover_dx = float(mx - n.x)
@@ -118,14 +118,14 @@ for i in range(0, len(nodes)) do
   let hover = (hover_dx * hover_dx + hover_dy * hover_dy) < float(node_r * node_r)
 
   if n.active then
-    // Active: green glow
+    # Active: green glow
     if hover then
       draw_circle(cx: n.x, cy: n.y, radius: node_r + 6, r: 40, g: 120, b: 60)
     end
     draw_circle(cx: n.x, cy: n.y, radius: node_r, r: active_outer.r, g: active_outer.g, b: active_outer.b)
     draw_circle(cx: n.x, cy: n.y, radius: node_r - 4, r: active_inner.r, g: active_inner.g, b: active_inner.b)
   else
-    // Inactive: dim
+    # Inactive: dim
     if hover then
       draw_circle(cx: n.x, cy: n.y, radius: node_r + 6, r: 80, g: 70, b: 70)
     end
@@ -137,6 +137,6 @@ for i in range(0, len(nodes)) do
   draw_text(n.label, {x: n.x - tw / 2, y: n.y - 7}, 14, label_color)
 end
 
-// Status bar
+# Status bar
 let active_count = len(filter(nodes, fn(n) -> n.active))
 draw_text("Active: " ++ str(active_count) ++ " / " ++ str(len(nodes)), {x: 20, y: 560}, 14, {r: 120, g: 120, b: 150})

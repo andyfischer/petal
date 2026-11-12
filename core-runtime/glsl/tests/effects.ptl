@@ -1,22 +1,22 @@
-// Post effects written as Petal lambdas instead of GLSL strings.
-//
-// Each one is the Petal counterpart of an effect in
-// engine/script/prelude/postfx.ptl (or tests/data/post_effects.ptl for
-// duotone); `streak` is new and exercises control flow, a helper function and
-// int/float mixing. petal2glsl.py turns them back into GLSL.
-//
-// Convention used by the experiment:
-//   - the first parameter is the pixel (`fx: Fx`);
-//   - every other parameter is an effect param, its default the param's default;
-//   - the value of the body is the new fx.color;
-//   - a captured top-level constant is inlined;
-//   - src, fx_luma, hash33, ... are the shader environment (not Petal builtins).
-//
-// This file compiles and runs (nothing here calls the lambdas).
-//
-// The shader environment is not something to import, so `petal fix-imports`
-// is told not to look for a package that happens to export one of its names:
-// petal-fix-imports-ignore
+# Post effects written as Petal lambdas instead of GLSL strings.
+#
+# Each one is the Petal counterpart of an effect in
+# engine/script/prelude/postfx.ptl (or tests/data/post_effects.ptl for
+# duotone); `streak` is new and exercises control flow, a helper function and
+# int/float mixing. petal2glsl.py turns them back into GLSL.
+#
+# Convention used by the experiment:
+#   - the first parameter is the pixel (`fx: Fx`);
+#   - every other parameter is an effect param, its default the param's default;
+#   - the value of the body is the new fx.color;
+#   - a captured top-level constant is inlined;
+#   - src, fx_luma, hash33, ... are the shader environment (not Petal builtins).
+#
+# This file compiles and runs (nothing here calls the lambdas).
+#
+# The shader environment is not something to import, so `petal fix-imports`
+# is told not to look for a package that happens to export one of its names:
+# petal-fix-imports-ignore
 
 class Fx
   color: vec3,
@@ -36,9 +36,9 @@ let film_grain = fn(fx: Fx, amount = 0.35, size = 1.5, color = 0.25, speed = 24.
 end
 
 let scanlines = fn(fx: Fx, amount = 0.3, lines = 360.0, roll = 0.15)
-  // Never finer than two pixels per line (it would alias into bands).
+  # Never finer than two pixels per line (it would alias into bands).
   let line = 0.5 + 0.5 * cos(fx.uv.y * min(lines, fx.resolution.y * 0.5) * TAU)
-  // Bright pixels bleed over the gap between lines, as on a tube.
+  # Bright pixels bleed over the gap between lines, as on a tube.
   let c = fx.color * (1 - amount * (1 - line) * (1 - 0.6 * fx_luma(fx.color)))
   let band = fract(fx.uv.y * 0.6 + fx.time * 0.08)
   c * (1 - roll * 0.3 * smoothstep(0.85, 1.0, 1 - abs(band * 2 - 1)))
@@ -71,7 +71,7 @@ let color_grade = fn(fx: Fx, amount = 0.35, shadows = :1a2a6c, highlights = :ffb
   let l = fx_luma(fx.color)
   let tint = linear_to_srgb(lerp(shadows, highlights, smoothstep(balance - 0.35, balance + 0.35, l)))
   let c = fx.color + (tint - fx_luma(tint)) * amount * 0.6
-  // Faded film: lifted blacks, slightly lower whites.
+  # Faded film: lifted blacks, slightly lower whites.
   c * (1.0 - fade * 0.15) + fade * 0.08
 end
 
@@ -101,9 +101,9 @@ let outline = fn(fx: Fx, amount = 0.8, width = 1.5, threshold = 0.04, color = :0
   lerp(fx.color, linear_to_srgb(color), edge * amount)
 end
 
-// Not in the library: a horizontal streak of the bright pixels. Here for the
-// constructs the others do not use: var/set, for, if (statement and
-// expression), return, an int capture, int/float mixing, a helper function.
+# Not in the library: a horizontal streak of the bright pixels. Here for the
+# constructs the others do not use: var/set, for, if (statement and
+# expression), return, an int capture, int/float mixing, a helper function.
 fn streak_weight(i: int, n: int) -> float
   1.0 - abs(i) / (n + 1.0)
 end

@@ -1,26 +1,26 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  SPLICE — a non-linear video editor's timeline, in a Garden panel.
-//
-//  Six tracks (three picture, three sound) hold the clips of a 43-second
-//  teaser cut. A playhead scrubs and plays across them at 24 fps, and the
-//  program monitor shows the picture under it: every "frame" of footage is
-//  drawn procedurally by scenes.ptl from the clip's source time, so trimming
-//  a clip's head really does change what the monitor shows at that point.
-//
-//  Clips move between positions and tracks with snapping, trim from either
-//  edge within their source media, split at the playhead, delete (or ripple
-//  delete), and come in from the media bin by drag and drop. Every edit is
-//  one undo step.
-//
-//  Designed for a 1280x850 viewport. See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  SPLICE — a non-linear video editor's timeline, in a Garden panel.
+#
+#  Six tracks (three picture, three sound) hold the clips of a 43-second
+#  teaser cut. A playhead scrubs and plays across them at 24 fps, and the
+#  program monitor shows the picture under it: every "frame" of footage is
+#  drawn procedurally by scenes.ptl from the clip's source time, so trimming
+#  a clip's head really does change what the monitor shows at that point.
+#
+#  Clips move between positions and tracks with snapping, trim from either
+#  edge within their source media, split at the playhead, delete (or ripple
+#  delete), and come in from the media bin by drag and drop. Every edit is
+#  one undo step.
+#
+#  Designed for a 1280x850 viewport. See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import text_layout
 import ui
 import garden
 import ./scenes
 
-// ── Palette ──────────────────────────────────────────────────────────────
+# ── Palette ──────────────────────────────────────────────────────────────
 let BG      = :0a0c10
 let CARD    = :12151c
 let WELL    = :181c25
@@ -35,7 +35,7 @@ let ACCENT  = :f2b766
 let HEAD    = :ff5d55
 let SNAPC   = :ffd166
 
-// ── Text styles ──────────────────────────────────────────────────────────
+# ── Text styles ──────────────────────────────────────────────────────────
 let S_BRAND = {size: 15, font: "ui", weight: 700, color: TEXT, spacing: 2.4}
 let S_TITLE = {size: 14, font: "ui", weight: 700, color: TEXT}
 let S_SUB   = {size: 11, font: "ui", color: DIM}
@@ -50,13 +50,13 @@ let S_RULER = {size: 9, font: "mono", color: FAINT}
 let S_CLIP  = {size: 10, font: "ui", weight: 600, color: :f4f6fa}
 let S_KEY   = {size: 9, font: "mono", color: DIM}
 
-// ── Model ────────────────────────────────────────────────────────────────
+# ── Model ────────────────────────────────────────────────────────────────
 let FPS = 24
-let MIN_LEN = 6            // shortest clip a trim leaves, in frames
+let MIN_LEN = 6            # shortest clip a trim leaves, in frames
 let SNAP_PX = 8
 
-// Media: the bin. `dur` is the source length in frames; titles are
-// generated, so theirs is generous.
+# Media: the bin. `dur` is the source length in frames; titles are
+# generated, so theirs is generous.
 let MEDIA = const([
   {name: "Harbour at Dusk", file: "A014_C003_dusk.mov", kind: "video", scene: "harbor", dur: 336, color: :4c8dff},
   {name: "Lighthouse Beam", file: "A016_C011_beam.mov", kind: "video", scene: "lighthouse", dur: 288, color: :4c8dff},
@@ -72,8 +72,8 @@ let MEDIA = const([
   {name: "Gulls & Surf", file: "amb_harbour_gulls.wav", kind: "audio", scene: "gulls", dur: 720, color: :46b8c8},
 ])
 
-// Tracks, top to bottom as drawn. Picture tracks composite bottom-up
-// (V1 first), so a clip on V2 covers V1 and a title on V3 sits over both.
+# Tracks, top to bottom as drawn. Picture tracks composite bottom-up
+# (V1 first), so a clip on V2 covers V1 and a title on V3 sits over both.
 let TRACKS = const([
   {code: "V3", name: "Titles", kind: "video", h: 42, color: :f2b766},
   {code: "V2", name: "B-roll", kind: "video", h: 46, color: :8b7cf6},
@@ -109,24 +109,24 @@ end
 
 let DRAG0 = {kind: "", id: -1, off: 0.0, t: 0, s: 0, n: 0, m: -1, mx0: 0.0, f0: 0.0, moved: false, ok: false}
 
-// ── State ────────────────────────────────────────────────────────────────
+# ── State ────────────────────────────────────────────────────────────────
 state doc = seed_doc()
-state playhead = 0.0         // frames, fractional while playing
+state playhead = 0.0         # frames, fractional while playing
 state playing = false
-state ppf = 0.0              // pixels per frame; 0 until the first fit
-state view0 = 0.0            // frame at the left edge of the tracks
-state sel = -1               // selected clip id
+state ppf = 0.0              # pixels per frame; 0 until the first fit
+state view0 = 0.0            # frame at the left edge of the tracks
+state sel = -1               # selected clip id
 state snap_on = true
-state off = [false, false, false, false, false, false]   // track hidden / muted
+state off = [false, false, false, false, false, false]   # track hidden / muted
 state undo = []
 state redo = []
 state drag = DRAG0
-state g_doc = doc            // the document as a gesture found it
+state g_doc = doc            # the document as a gesture found it
 state bin_tab = 0
 state bin_scroll = 0.0
 state meter = [0.0, 0.0]
 state peak = [0.0, 0.0]
-state played = 0.0           // seconds of playback, for tests
+state played = 0.0           # seconds of playback, for tests
 state n_moves = 0
 state n_trims = 0
 state n_splits = 0
@@ -135,7 +135,7 @@ state n_deletes = 0
 state n_snaps = 0
 state toast = {text: "", t: -10.0}
 
-// ── Layout (recomputed every frame; the pane can resize) ─────────────────
+# ── Layout (recomputed every frame; the pane can resize) ─────────────────
 let W = screen_width()
 let H = screen_height()
 let M = 16
@@ -164,7 +164,7 @@ let R_TRACKS = rect(TX0, TRK_Y0, TW, TRK_END - TRK_Y0)
 let R_RULER = rect(TX0, RULER_Y, TW, RULER_H)
 let R_SB = rect(TX0, TRK_END + 6, TW, 8)
 
-// Monitor: screen, meters, transport.
+# Monitor: screen, meters, transport.
 let MON_HEAD = 34
 let MON_FOOT = 58
 let SCR_AVAIL_H = UP_H - MON_HEAD - MON_FOOT
@@ -180,12 +180,12 @@ let R_PLAY  = rect(TC_CX - 20, FOOT_Y + 4, 40, 40)
 let R_FWD   = rect(TC_CX + 26, FOOT_Y + 8, 36, 32)
 let R_NEXT  = rect(TC_CX + 68, FOOT_Y + 8, 36, 32)
 
-// Bin rows.
+# Bin rows.
 let BIN_LIST_Y = R_BIN.y + 70
 let BIN_ROW = 50
 let R_BINLIST = rect(R_BIN.x + 8, BIN_LIST_Y, BIN_W - 16, R_BIN.y + UP_H - BIN_LIST_Y - 8)
 
-// ── Time helpers ─────────────────────────────────────────────────────────
+# ── Time helpers ─────────────────────────────────────────────────────────
 fn two(n: int) -> string
   pad_start(n, 2, "0")
 end
@@ -206,7 +206,7 @@ fn ruler_label(f: int, step: int) -> string
   if step % FPS == 0 then "{two(s / 60)}:{two(s % 60)}" else "{s / 60}:{two(s % 60)}:{two(f % FPS)}" end
 end
 
-// ── View: frames <-> pixels ──────────────────────────────────────────────
+# ── View: frames <-> pixels ──────────────────────────────────────────────
 fn fx(v: record, f: num) -> float
   v.x0 + (f - v.v0) * v.ppf
 end
@@ -231,7 +231,7 @@ fn fits(kind: string, t: int) -> bool
   if kind == "audio" then TRACKS[t].kind == "audio" else TRACKS[t].kind == "video" end
 end
 
-// ── Pure document edits ──────────────────────────────────────────────────
+# ── Pure document edits ──────────────────────────────────────────────────
 fn find_clip(clips: list, id: int) -> int
   let out = -1
   for k in range(0, len(clips)) do
@@ -252,8 +252,8 @@ fn without(clips: list, id: int) -> list
   filter(clips, fn(c) -> c.id != id)
 end
 
-// Overwrite edit: lay `c` onto its track, cutting away whatever it covers.
-// A clip it lands inside is split in two around it.
+# Overwrite edit: lay `c` onto its track, cutting away whatever it covers.
+# A clip it lands inside is split in two around it.
 fn place(d: record, c: record) -> record
   let out = []
   let next = d.next
@@ -294,8 +294,8 @@ fn spans(c: record, f: int) -> bool
   f > c.s && f < c.s + c.n
 end
 
-// Split the selected clip at the playhead, or, with nothing selected (or
-// the selection elsewhere), every clip on a live track the playhead crosses.
+# Split the selected clip at the playhead, or, with nothing selected (or
+# the selection elsewhere), every clip on a live track the playhead crosses.
 fn split_at(d: record, sel_id: int, f: int, dead: list) -> record
   let k = find_clip(d.clips, sel_id)
   if k >= 0 && spans(d.clips[k], f) then
@@ -322,8 +322,8 @@ fn ripple_delete(d: record, id: int) -> record
   {...d, clips: rest}
 end
 
-// The nearest clip edges on a track either side of a clip: how far a trim
-// may reach before it would run into a neighbour.
+# The nearest clip edges on a track either side of a clip: how far a trim
+# may reach before it would run into a neighbour.
 fn prev_end(clips: list, c: record) -> int
   let e = 0
   for o in clips do
@@ -362,8 +362,8 @@ fn snap_points(d: record, ph: num, except: int) -> list
   pts
 end
 
-// Nearest snap point to any of `cands` (frames), within `thr` frames.
-// Returns how far to shift and where the snap line goes, or nil.
+# Nearest snap point to any of `cands` (frames), within `thr` frames.
+# Returns how far to shift and where the snap line goes, or nil.
 fn snap_best(pts: list, cands: list, thr: num) -> record
   let best = {d: 0, at: -1, dist: thr + 1.0}
   for c in cands do
@@ -375,7 +375,7 @@ fn snap_best(pts: list, cands: list, thr: num) -> record
   best
 end
 
-// The clip on track `t` under frame `f`.
+# The clip on track `t` under frame `f`.
 fn clip_under(clips: list, t: int, f: num) -> record
   let out = nil
   for c in clips do
@@ -393,9 +393,9 @@ fn media_ok(tab: int, m: record) -> bool
   end
 end
 
-// ═════════════════════════════════════════════════════════════════════════
-//  INPUT
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+#  INPUT
+# ═════════════════════════════════════════════════════════════════════════
 claim_key("z", "cmd")
 claim_key("z", "cmd+shift")
 
@@ -416,7 +416,7 @@ fn say(msg: string) -> record
   {text: msg, t: time()}
 end
 
-// ── Hover ────────────────────────────────────────────────────────────────
+# ── Hover ────────────────────────────────────────────────────────────────
 let in_tracks = point_in(mx, my, R_TRACKS)
 let hov_t = if in_tracks then track_at(my) else -1 end
 let hov_id = -1
@@ -440,7 +440,7 @@ if point_in(mx, my, R_BINLIST) then
   if row >= 0 && row < len(bin_items) then hov_bin = bin_items[row] end
 end
 
-// Toolbar buttons, measured once and shared by hit-testing and drawing.
+# Toolbar buttons, measured once and shared by hit-testing and drawing.
 fn tool_buttons(x0: num, y: num) -> list
   let labels = [["Undo", "⌘Z"], ["Redo", "⇧⌘Z"], ["Split", "S"], ["Delete", "⌫"], ["Ripple", "⇧⌫"],
     ["Marker", "M"], ["Snap", "N"]]
@@ -473,7 +473,7 @@ let BIN_TAB_R = for k in range(0, 4) do
   rect(R_BIN.x + 10 + k * ((BIN_W - 20) / 4), R_BIN.y + 38, (BIN_W - 20) / 4 - 4, 22)
 end
 
-// ── Actions shared by keys and buttons ───────────────────────────────────
+# ── Actions shared by keys and buttons ───────────────────────────────────
 let act = ""
 let blocked = drag.kind != ""
 
@@ -520,7 +520,7 @@ if !blocked then
   end
 end
 
-// ── Mouse press: exactly one gesture starts ──────────────────────────────
+# ── Mouse press: exactly one gesture starts ──────────────────────────────
 if !blocked && mouse_pressed(0) then
   let hit_btn = ""
   for b in BTNS do
@@ -588,14 +588,14 @@ if !blocked && mouse_pressed(0) then
   if drag.kind != "" then g_doc = doc end
 end
 
-// ── Escape mid-gesture puts everything back ──────────────────────────────
+# ── Escape mid-gesture puts everything back ──────────────────────────────
 if drag.kind != "" && key_pressed("escape") then
   doc = g_doc
   drag = DRAG0
   toast = say("Edit cancelled")
 end
 
-// ── The gesture in flight ────────────────────────────────────────────────
+# ── The gesture in flight ────────────────────────────────────────────────
 let snap_line = -1
 if drag.kind != "" && (mouse_down(0) || mouse_released(0)) then
   if abs(mx - drag.mx0) > 3 || abs(my - drag.f0) > 3 && drag.kind == "bin" then drag.moved = true end
@@ -650,8 +650,8 @@ if drag.kind != "" && (mouse_down(0) || mouse_released(0)) then
         end
       end
       if drag.kind == "trim_l" then
-        // A title is generated, so its head extends freely; footage stops
-        // at the first frame of its source.
+        # A title is generated, so its head extends freely; footage stops
+        # at the first frame of its source.
         let is_title = MEDIA[c.m].kind == "title"
         let lo = max(prev_end(doc.clips, c), if is_title then 0 else c.s - c.i end)
         let ns = clamp(f, lo, c.s + c.n - MIN_LEN)
@@ -690,7 +690,7 @@ if drag.kind != "" && (mouse_down(0) || mouse_released(0)) then
   end
 end
 
-// Release: commit the gesture.
+# Release: commit the gesture.
 if drag.kind != "" && !mouse_down(0) then
   if drag.kind == "move" && drag.moved then
     let k = find_clip(doc.clips, drag.id)
@@ -723,7 +723,7 @@ if drag.kind != "" && !mouse_down(0) then
   drag = DRAG0
 end
 
-// ── Commands ─────────────────────────────────────────────────────────────
+# ── Commands ─────────────────────────────────────────────────────────────
 let ph_f = int(round(playhead))
 let pre = doc
 match act
@@ -772,7 +772,7 @@ match act
     view0 = 0.0
   when _ -> nil
 end
-// A key or button edit is one undo step of its own (undo/redo excepted).
+# A key or button edit is one undo step of its own (undo/redo excepted).
 if act != "undo" && act != "redo" && doc != pre then
   undo = append(undo, pre)
   if len(undo) > 80 then undo = slice(undo, 1, len(undo)) end
@@ -780,7 +780,7 @@ if act != "undo" && act != "redo" && doc != pre then
 end
 if find_clip(doc.clips, sel) < 0 then sel = -1 end
 
-// ── Wheel: scroll the timeline; cmd/alt zooms around the pointer ─────────
+# ── Wheel: scroll the timeline; cmd/alt zooms around the pointer ─────────
 let wy = scroll_y()
 let wx = scroll_x()
 if drag.kind == "" && (wy != 0 || wx != 0) then
@@ -800,9 +800,9 @@ if drag.kind == "" && (wy != 0 || wx != 0) then
   end
 end
 
-// ═════════════════════════════════════════════════════════════════════════
-//  PLAYBACK
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+#  PLAYBACK
+# ═════════════════════════════════════════════════════════════════════════
 end_f = seq_end(doc.clips)
 if playing then
   playhead += fdt * FPS
@@ -811,14 +811,14 @@ if playing then
     playhead = float(end_f)
     playing = false
   end
-  // Page the view along when the playhead runs off the right edge.
+  # Page the view along when the playhead runs off the right edge.
   let x = TX0 + (playhead - view0) * ppf
   if x > TX0 + TW - 24 then view0 = playhead - TW * 0.08 / ppf end
   request_frame()
 end
 playhead = clamp(playhead, 0.0, float(end_f + FPS * 10))
 
-// Keep a playhead that a key or button moved in view.
+# Keep a playhead that a key or button moved in view.
 if !playing && drag.kind == "" && playhead != ph0 then
   let x = TX0 + (playhead - view0) * ppf
   if x < TX0 then view0 = playhead - 20 / ppf end
@@ -827,7 +827,7 @@ end
 view0 = clamp(view0, 0.0, max(0.0, float(end_f + FPS * 6) - TW / ppf))
 V = {x0: TX0, w: TW, v0: view0, ppf: ppf}
 
-// What the monitor shows: each picture track, bottom-up.
+# What the monitor shows: each picture track, bottom-up.
 let PH = int(floor(playhead))
 let on_air = for t in [2, 1, 0] do
   if off[t] then continue end
@@ -836,7 +836,7 @@ let on_air = for t in [2, 1, 0] do
   c
 end
 
-// Meters: the loudness of every live audio clip under the playhead.
+# Meters: the loudness of every live audio clip under the playhead.
 let lvl_l = 0.0
 let lvl_r = 0.0
 for t in [3, 4, 5] do
@@ -860,7 +860,7 @@ end
 if meter[0] > 0.0 || meter[1] > 0.0 || peak[0] > 0.0 || peak[1] > 0.0 then request_frame() end
 if time() - toast.t < 2.2 then request_frame() end
 
-// ── Values for tests ─────────────────────────────────────────────────────
+# ── Values for tests ─────────────────────────────────────────────────────
 let obs_playhead = PH
 let obs_tc = tc(PH)
 let obs_playing = playing
@@ -883,9 +883,9 @@ let obs_layout = for c in sort_by(sort_by(doc.clips, fn(c) -> c.s), fn(c) -> c.t
 end
 let obs_played = round(played, 2)
 
-// ═════════════════════════════════════════════════════════════════════════
-//  DRAWING
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+#  DRAWING
+# ═════════════════════════════════════════════════════════════════════════
 
 fn label(s: string, r: record, style: record, align: string) -> nil
   text_layout.draw_text_line(s, r, style, align)
@@ -921,7 +921,7 @@ fn btn(r: Rect, text: string, hot: bool, on: bool, enabled: bool) -> nil
   label(text, r, {...S_BTN, color: fg}, "center")
 end
 
-// ── Transport icons (no glyphs: every shape is drawn) ────────────────────
+# ── Transport icons (no glyphs: every shape is drawn) ────────────────────
 fn icon_play(cx: num, cy: num, s: num, c: record) -> nil
   fill_triangle(cx - s * 0.4, cy - s * 0.55, cx - s * 0.4, cy + s * 0.55, cx + s * 0.6, cy, c)
 end
@@ -937,7 +937,7 @@ fn icon_step(cx: num, cy: num, s: num, dir: num, c: record) -> nil
 end
 
 fn icon_edit(cx: num, cy: num, s: num, dir: num, c: record) -> nil
-  // Jump to an edit point: two arrowheads running into a bar.
+  # Jump to an edit point: two arrowheads running into a bar.
   for k in range(0, 2) do
     let tip = cx + dir * (s * 0.3 - k * s * 0.42)
     fill_triangle(tip - dir * s * 0.42, cy - s * 0.4, tip - dir * s * 0.42, cy + s * 0.4, tip, cy, c)
@@ -955,7 +955,7 @@ fn transport_btn(r: Rect, hot: bool, primary: bool) -> nil
   end
 end
 
-// ── Bin ──────────────────────────────────────────────────────────────────
+# ── Bin ──────────────────────────────────────────────────────────────────
 fn draw_thumb(m: record, r: Rect, t: num) -> nil
   if m.kind == "audio" then
     draw_rect_rounded(r, 4, tint(:0d1017, m.color, 14))
@@ -1020,7 +1020,7 @@ fn draw_bin(items: list, hov: int, tab: int, scroll: num, dragging: int) -> nil
   end
 end
 
-// ── Monitor ──────────────────────────────────────────────────────────────
+# ── Monitor ──────────────────────────────────────────────────────────────
 fn draw_monitor(air: list, ph: num, play: bool, endf: int, lv: list, pk: list, mode: string) -> nil
   panel_card(R_MON)
   label("PROGRAM", rect(R_MON.x + 16, R_MON.y + 8, 100, 22), S_CAP, "left")
@@ -1038,10 +1038,10 @@ fn draw_monitor(air: list, ph: num, play: bool, endf: int, lv: list, pk: list, m
   if len(air) == 0 then
     label("No picture at {tc(ph)}", R_SCR, {...S_SMALL, color: GHOST}, "center")
   end
-  // Action-safe guides, faint, like a monitor overlay.
+  # Action-safe guides, faint, like a monitor overlay.
   draw_rect_outline(R_SCR.x + R_SCR.w * 0.05, R_SCR.y + R_SCR.h * 0.05, R_SCR.w * 0.9, R_SCR.h * 0.9, :ffffff, 18)
   if mode != "" then
-    // Trim view: the frame at the edge being dragged, framed in the accent.
+    # Trim view: the frame at the edge being dragged, framed in the accent.
     draw_rect_outline(R_SCR, ACCENT, 255, 2)
     let tag = if mode == "Trim in" then "IN" else "OUT" end
     let tw = text_width(tag, S_CAP) + 14
@@ -1049,7 +1049,7 @@ fn draw_monitor(air: list, ph: num, play: bool, endf: int, lv: list, pk: list, m
     label(tag, rect(R_SCR.x + 10, R_SCR.y + 10, tw, 18), {...S_CAP, color: :1a1206}, "center")
   end
 
-  // Meters: two channels, -60..0 dB, green to amber to red.
+  # Meters: two channels, -60..0 dB, green to amber to red.
   let mr = R_METER
   for ch in range(0, 2) do
     let r = rect(mr.x + ch * 9, mr.y, 7, mr.h - 14)
@@ -1068,7 +1068,7 @@ fn draw_monitor(air: list, ph: num, play: bool, endf: int, lv: list, pk: list, m
   end
   label("L R", rect(mr.x - 4, mr.y + mr.h - 12, 26, 12), {...S_TINY, size: 8}, "center")
 
-  // Transport row.
+  # Transport row.
   label(tc(ph), rect(R_MON.x + 18, FOOT_Y + 2, 200, 28), S_TCBIG, "left")
   label("of {tc(endf)}", rect(R_MON.x + 19, FOOT_Y + 30, 200, 16), {...S_TC, size: 10, color: FAINT}, "left")
   let mx = mouse_x()
@@ -1087,7 +1087,7 @@ fn draw_monitor(air: list, ph: num, play: bool, endf: int, lv: list, pk: list, m
   label(fr, rect(R_MON.x, FOOT_Y, R_MON.w - 18, 48), S_TINY, "right")
 end
 
-// ── Inspector ────────────────────────────────────────────────────────────
+# ── Inspector ────────────────────────────────────────────────────────────
 fn prop(y: num, k: string, v: string) -> nil
   label(k, rect(R_INS.x + 16, y, 100, 20), S_SMALL, "left")
   label(v, rect(R_INS.x, y, INS_W - 16, 20), {...S_TC, color: TEXT}, "right")
@@ -1126,7 +1126,7 @@ fn draw_inspector(d: record, sel_id: int, ph: num, endf: int) -> nil
   chip(R_INS.x + INS_W - 16 - text_width(tr.code ++ "  " ++ tr.name, S_TINY) - 14, R_INS.y + 10, tr.code ++ "  " ++ tr.name, tr.color)
   draw_text(text_ellipsize(m.name, S_TITLE, INS_W - 32), {x: x, y: R_INS.y + 34}, S_TITLE)
   draw_text(text_ellipsize(m.file, S_SUB, INS_W - 32), {x: x, y: R_INS.y + 54}, {...S_SUB, color: FAINT})
-  // A still of the frame under the playhead, or the clip's first frame.
+  # A still of the frame under the playhead, or the clip's first frame.
   let pv = rect(x, R_INS.y + 76, INS_W - 32, (INS_W - 32) * 9 / 16)
   let at = if ph >= c.s && ph < c.s + c.n then ph else float(c.s) end
   if m.kind == "audio" then
@@ -1152,7 +1152,7 @@ fn draw_inspector(d: record, sel_id: int, ph: num, endf: int) -> nil
   prop(y + 38, "Duration", dur_label(c.n))
   if m.kind != "title" then
     prop(y + 57, "Source in", tc(c.i))
-    // Where the clip sits inside its source media.
+    # Where the clip sits inside its source media.
     let bar = rect(x, y + 84, INS_W - 32, 6)
     draw_rect_rounded(bar, 3, WELL_HI)
     let a = bar.x + bar.w * c.i / float(m.dur)
@@ -1164,7 +1164,7 @@ fn draw_inspector(d: record, sel_id: int, ph: num, endf: int) -> nil
   end
 end
 
-// ── Timeline ─────────────────────────────────────────────────────────────
+# ── Timeline ─────────────────────────────────────────────────────────────
 fn tick_step(p: num) -> int
   let out = 14400
   for st in [1, 2, 4, 6, 12, 24, 48, 120, 240, 480, 1440, 2880, 7200, 14400] do
@@ -1180,7 +1180,7 @@ fn draw_ruler(v: record, d: record, ph: num, endf: int) -> nil
   let f0 = int(floor(v.v0 / minor)) * minor
   let f1 = int(v.v0 + v.w / v.ppf) + minor
   clip_push(R_RULER)
-  // Beyond the end of the sequence is dimmed.
+  # Beyond the end of the sequence is dimmed.
   let ex = fx(v, endf)
   if ex < R_RULER.x + R_RULER.w then
     draw_rect(max(ex, R_RULER.x), R_RULER.y, R_RULER.x + R_RULER.w - max(ex, R_RULER.x), R_RULER.h, BG, 120)
@@ -1199,7 +1199,7 @@ fn draw_ruler(v: record, d: record, ph: num, endf: int) -> nil
     fill_polygon([[x, R_RULER.y + R_RULER.h], [x - 5, R_RULER.y + R_RULER.h - 6], [x - 5, R_RULER.y + R_RULER.h - 13],
       [x + 5, R_RULER.y + R_RULER.h - 13], [x + 5, R_RULER.y + R_RULER.h - 6]], :6fb3f2)
   end
-  // A marker under the pointer names itself.
+  # A marker under the pointer names itself.
   for mk in d.markers do
     let x = fx(v, mk.f)
     if abs(mouse_x() - x) <= 6 && point_in(mouse_x(), mouse_y(), R_RULER) then
@@ -1310,7 +1310,7 @@ fn draw_clip(v: record, c: record, r: Rect, selected: bool, hot: bool, edge: str
   else
     draw_rect_rounded_outline(r, 5, :000000, 110, 1)
   end
-  // Trim grips: a bracket on the edge under the pointer.
+  # Trim grips: a bracket on the edge under the pointer.
   if edge == "l" then
     draw_rect_rounded(r.x - 1, r.y - 1, 5, r.h + 2, 2, ACCENT)
     draw_rect(r.x + 4, r.y - 1, 5, 2, ACCENT)
@@ -1347,7 +1347,7 @@ end
 
 fn draw_timeline(v: record, d: record, sel_id: int, hid: int, hedge: string, dr: record, dead: list, snap_f: int, ph: num, endf: int) -> nil
   draw_rect(R_TL.x + 1, RULER_Y - 1, R_TL.w - 2, 1, LINE_S)
-  // Track lanes.
+  # Track lanes.
   for t in range(0, N_TRK) do
     let tr = TRACKS[t]
     let lane = rect(TX0, TY[t], TW, tr.h - 2)
@@ -1362,7 +1362,7 @@ fn draw_timeline(v: record, d: record, sel_id: int, hid: int, hedge: string, dr:
   draw_track_heads(dead, d)
 
   clip_push(rect(TX0, TRK_Y0 - 2, TW, TRK_END - TRK_Y0 + 4))
-  // Marker lines run faintly through the tracks.
+  # Marker lines run faintly through the tracks.
   for mk in d.markers do
     draw_rect(fx(v, mk.f), TRK_Y0, 1, TRK_END - TRK_Y0, :6fb3f2, 40)
   end
@@ -1371,7 +1371,7 @@ fn draw_timeline(v: record, d: record, sel_id: int, hid: int, hedge: string, dr:
     if r.x > TX0 + TW || r.x + r.w < TX0 then continue end
     let moving = dr.kind == "move" && dr.moved && dr.id == c.id
     if moving then
-      // Leave a hollow where the clip was picked up from.
+      # Leave a hollow where the clip was picked up from.
       draw_rect_rounded_outline(r, 5, GHOST, 255, 1)
       continue
     end
@@ -1379,7 +1379,7 @@ fn draw_timeline(v: record, d: record, sel_id: int, hid: int, hedge: string, dr:
     let edge = if trimming then (if dr.kind == "trim_l" then "l" else "r" end) elsif c.id == hid then hedge else "" end
     draw_clip(v, c, r, c.id == sel_id, c.id == hid, edge, false, dead[c.t])
   end
-  // The clip being dragged, at its candidate position, over everything.
+  # The clip being dragged, at its candidate position, over everything.
   if dr.kind == "move" && dr.moved then
     let k = find_clip(d.clips, dr.id)
     if k >= 0 then
@@ -1397,7 +1397,7 @@ fn draw_timeline(v: record, d: record, sel_id: int, hid: int, hedge: string, dr:
   end
   clip_pop()
 
-  // Playhead.
+  # Playhead.
   let px = fx(v, ph)
   if px >= TX0 - 1 && px <= TX0 + TW + 1 then
     draw_rect(px - 1, R_RULER.y + 8, 2, TRK_END - R_RULER.y - 8, HEAD)
@@ -1409,7 +1409,7 @@ fn draw_timeline(v: record, d: record, sel_id: int, hid: int, hedge: string, dr:
     fill_triangle(sx - 5, R_RULER.y + R_RULER.h - 7, sx + 5, R_RULER.y + R_RULER.h - 7, sx, R_RULER.y + R_RULER.h - 1, SNAPC)
   end
 
-  // Scrollbar.
+  # Scrollbar.
   let total = max(float(endf + FPS * 4), v.v0 + v.w / v.ppf)
   let a = R_SB.x + R_SB.w * v.v0 / total
   let w = max(24.0, R_SB.w * (v.w / v.ppf) / total)
@@ -1419,10 +1419,10 @@ fn draw_timeline(v: record, d: record, sel_id: int, hid: int, hedge: string, dr:
   label("{len(d.clips)} clips  ·  {tc(endf)}", rect(R_TL.x + 16, R_SB.y - 6, HEAD_W - 20, 20), S_TINY, "left")
 end
 
-// ── Frame ────────────────────────────────────────────────────────────────
+# ── Frame ────────────────────────────────────────────────────────────────
 clear(BG.r, BG.g, BG.b)
 
-// Top bar.
+# Top bar.
 let brand_x = M + 4
 draw_rect_rounded(brand_x, 14, 22, 22, 5, ACCENT)
 draw_rect(brand_x + 5, 19, 3, 12, :1a1206)
@@ -1458,7 +1458,7 @@ draw_toolbar(BTNS, len(undo) > 0, len(redo) > 0, sel >= 0, snap_on, ppf)
 draw_ruler(V, doc, playhead, end_f)
 draw_timeline(V, doc, sel, hov_id, hov_edge, drag, off, snap_line, playhead, end_f)
 
-// Timecode bubble on the playhead while scrubbing or trimming.
+# Timecode bubble on the playhead while scrubbing or trimming.
 if drag.kind == "scrub" || drag.kind == "trim_l" || drag.kind == "trim_r" || drag.kind == "move" && drag.moved then
   let k = find_clip(doc.clips, drag.id)
   let f = if drag.kind == "scrub" || k < 0 then PH
@@ -1476,7 +1476,7 @@ if drag.kind == "scrub" || drag.kind == "trim_l" || drag.kind == "trim_r" || dra
   label(s, br, {...S_TC, color: TEXT}, "center")
 end
 
-// A bin item in flight follows the pointer.
+# A bin item in flight follows the pointer.
 if drag.kind == "bin" && drag.moved && !drag.ok then
   let m = MEDIA[drag.m]
   let r = rect(mx + 10, my + 8, 96, 54)
@@ -1488,7 +1488,7 @@ if drag.kind == "bin" && drag.moved && !drag.ok then
   label(nm, rect(r.x, r.y + r.h + 4, nw, 17), {...S_TINY, color: TEXT}, "center")
 end
 
-// Toast.
+# Toast.
 let age = time() - toast.t
 if age < 2.2 && toast.text != "" then
   let a = clamp((2.2 - age) / 0.4, 0.0, 1.0)

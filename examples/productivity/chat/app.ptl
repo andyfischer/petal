@@ -1,19 +1,19 @@
-// ─────────────────────────────────────────────────────────────────────────
-// Campfire — a team chat client, drawn as a Garden panel.
-//
-// Exercises: a long, variable-height scrolling feed that sticks to the bottom
-// while new messages arrive and stays put while you read history; a
-// multi-line composer with real text editing (the prelude's text area:
-// caret, selection, clipboard, undo, growing from one row to eight);
-// asynchronous teammates driven off a simulated clock (typing indicators,
-// replies, reactions, thread replies, unread and mention badges); threads in
-// a side pane; reactions; per-channel drafts; a context menu.
-//
-// The workspace, the seeded history and the scripted afternoon live in
-// data.ptl. This file is the clock, input and paint.
-//
-// Run:  tools/run-example.ts chat   (or garden --headless --debug-port 0 --init layout.ptl)
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# Campfire — a team chat client, drawn as a Garden panel.
+#
+# Exercises: a long, variable-height scrolling feed that sticks to the bottom
+# while new messages arrive and stays put while you read history; a
+# multi-line composer with real text editing (the prelude's text area:
+# caret, selection, clipboard, undo, growing from one row to eight);
+# asynchronous teammates driven off a simulated clock (typing indicators,
+# replies, reactions, thread replies, unread and mention badges); threads in
+# a side pane; reactions; per-channel drafts; a context menu.
+#
+# The workspace, the seeded history and the scripted afternoon live in
+# data.ptl. This file is the clock, input and paint.
+#
+# Run:  tools/run-example.ts chat   (or garden --headless --debug-port 0 --init layout.ptl)
+# ─────────────────────────────────────────────────────────────────────────
 
 import text_layout
 import ./data as d
@@ -21,8 +21,8 @@ import ui
 import bloom
 import garden
 
-// ── Palette ──────────────────────────────────────────────────────────────
-// A deep ink sidebar against warm paper: navigation recedes, talk reads.
+# ── Palette ──────────────────────────────────────────────────────────────
+# A deep ink sidebar against warm paper: navigation recedes, talk reads.
 
 let SIDE = :191b29
 let SIDE_HOT = :24273a
@@ -52,7 +52,7 @@ let GREEN = :2fb37a
 let FRESH = :e3e6ff
 let WHITE = :ffffff
 
-// ── Type ─────────────────────────────────────────────────────────────────
+# ── Type ─────────────────────────────────────────────────────────────────
 
 fn st(size: num, color: record) -> record
   {size: size, color: color, font: "ui"}
@@ -67,54 +67,54 @@ fn caps(color: record) -> record
 end
 
 let BODY = const(st(15, INK_2))
-let LINE = 22                 // a body row in the feed
-let LGAP = 3                  // the composer's extra leading
+let LINE = 22                 # a body row in the feed
+let LGAP = 3                  # the composer's extra leading
 
-// ── Metrics ──────────────────────────────────────────────────────────────
+# ── Metrics ──────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
 let SIDE_W = 256
 let HEADER_H = 64
 let THREAD_W = 384
-let AV = 36                   // an avatar's side
-let GUTTER = 72               // where message text starts, from the feed's left
-let BAR_W = 5 * 32 + 8        // the hover action bar
-let MAX_ROWS = 8              // the composer grows to this many rows, then scrolls
+let AV = 36                   # an avatar's side
+let GUTTER = 72               # where message text starts, from the feed's left
+let BAR_W = 5 * 32 + 8        # the hover action bar
+let MAX_ROWS = 8              # the composer grows to this many rows, then scrolls
 
-// ── State ────────────────────────────────────────────────────────────────
+# ── State ────────────────────────────────────────────────────────────────
 
 state msgs = d.seed_messages()
 state next_id = len(msgs) + 1
-state seen = d.seed_seen(msgs)          // per channel: how many messages have been read
+state seen = d.seed_seen(msgs)          # per channel: how many messages have been read
 state ch = "launch"
-state entry_seen = 999                  // where the "new" divider sits in this visit
-state drafts = {}                       // per channel: the unsent composer text
-state focus = "composer"                // "composer", "thread" or ""
-state thread_id = 0                     // the message whose thread is open, 0 for none
+state entry_seen = 999                  # where the "new" divider sits in this visit
+state drafts = {}                       # per channel: the unsent composer text
+state focus = "composer"                # "composer", "thread" or ""
+state thread_id = 0                     # the message whose thread is open, 0 for none
 state thread_draft = ""
 
-state clock = 0.0                       // simulated seconds since 2:32 PM
-state queue = initial_queue()           // scheduled teammate activity
-state typing = []                       // {ch, who, thread, until}
-state arrivals = 0                      // messages teammates have posted this session
-state sent_n = 0                        // messages you have posted
-state reacted_n = 0                     // reactions you have toggled
+state clock = 0.0                       # simulated seconds since 2:32 PM
+state queue = initial_queue()           # scheduled teammate activity
+state typing = []                       # {ch, who, thread, until}
+state arrivals = 0                      # messages teammates have posted this session
+state sent_n = 0                        # messages you have posted
+state reacted_n = 0                     # reactions you have toggled
 
-state scrolls = {}                      // per channel: {top, stuck}
-state view_top = 0.0                    // the feed's drawn scroll, easing toward the target
-state snap = true                       // the next frame jumps rather than eases
-state last_fr = {w: 0, h: 0}            // the feed's size last frame
-state t_top = 0.0                       // the thread pane's scroll
+state scrolls = {}                      # per channel: {top, stuck}
+state view_top = 0.0                    # the feed's drawn scroll, easing toward the target
+state snap = true                       # the next frame jumps rather than eases
+state last_fr = {w: 0, h: 0}            # the feed's size last frame
+state t_top = 0.0                       # the thread pane's scroll
 state t_stuck = true
-state refocus = ""                      // a composer to hand the keyboard to next frame
-state hover_id = 0                      // the message showing the action bar
-state menu_tag = ""             // the message the context menu was opened on
+state refocus = ""                      # a composer to hand the keyboard to next frame
+state hover_id = 0                      # the message showing the action bar
+state menu_tag = ""             # the message the context menu was opened on
 state toast = {msg: "", left: 0.0}
 
-// ── The scheduler ────────────────────────────────────────────────────────
+# ── The scheduler ────────────────────────────────────────────────────────
 
-// The scripted afternoon, as typing and posting events on one queue.
+# The scripted afternoon, as typing and posting events on one queue.
 fn initial_queue() -> list
   let out = []
   for s in d.SCRIPT do
@@ -136,13 +136,13 @@ fn ev_react(at: num, target: int, who: string, e: string) -> record
   {at: at, kind: "react", ch: "", who: who, thread: 0, until: 0.0, prefix: "", text: "", e: e, target: target}
 end
 
-// What teammates do after you post: one of them types and answers (in the
-// thread when you wrote in one), and another reacts.
+# What teammates do after you post: one of them types and answers (in the
+# thread when you wrote in one), and another reacts.
 fn schedule_replies(q: list, c: record, text: string, ms: list, target: int, thread: int, now: num, seed: int) -> list
   let mine = filter(ms, fn(x) -> x.ch == c.id && x.who != d.ME)
   let last_other = if len(mine) > 0 then last(mine).who else "" end
   let parent = if thread != 0 then find(ms, fn(x) -> x.id == thread) else nil end
-  // Whoever you named answers; in a thread, otherwise, whoever started it.
+  # Whoever you named answers; in a thread, otherwise, whoever started it.
   let named = d.addressed(c, text)
   let who = if named != "" then
     named
@@ -163,7 +163,7 @@ fn schedule_replies(q: list, c: record, text: string, ms: list, target: int, thr
   out
 end
 
-// ── Message transforms ───────────────────────────────────────────────────
+# ── Message transforms ───────────────────────────────────────────────────
 
 fn toggle_react(ms: list, id: int, e: string, who: string, only_add: bool) -> list
   for x in ms do
@@ -205,15 +205,15 @@ fn trim_text(s: string) -> string
   char_slice(s, a, b)
 end
 
-// ── Rich text: `code` and @mentions ──────────────────────────────────────
+# ── Rich text: `code` and @mentions ──────────────────────────────────────
 
 fn is_word(c: string) -> bool
   let o = ord(c)
   (o >= 97 && o <= 122) || (o >= 65 && o <= 90) || (o >= 48 && o <= 57) || c == "_" || c == "-"
 end
 
-// The text as shown (backticks dropped) and the spans that are code or a
-// mention, as character ranges in what is shown.
+# The text as shown (backticks dropped) and the spans that are code or a
+# mention, as character ranges in what is shown.
 fn parse_rich(text: string) -> record
   let cs = chars(text)
   let n = len(cs)
@@ -257,7 +257,7 @@ fn span_at(spans: list, at: int) -> string
   if s == nil then "" else s.kind end
 end
 
-// One wrapped row, cut where the spans start and end.
+# One wrapped row, cut where the spans start and end.
 fn draw_rich_row(text: string, row: record, spans: list, x: num, y: num, style: record) -> nil
   let cuts = [row.start, row.end]
   for s in spans do
@@ -274,7 +274,7 @@ fn draw_rich_row(text: string, row: record, spans: list, x: num, y: num, style: 
     let w = text_advance(seg, style)
     let kind = span_at(spans, a)
     if kind == "code" then
-      // Code sits in a chip with a little air either side of it.
+      # Code sits in a chip with a little air either side of it.
       cx += 3
       draw_rect_rounded(cx - 3, y + 1, w + 6, LINE - 2, 4, CODE_BG)
       draw_text(seg, {x: cx, y: y}, {...style, color: CODE_INK})
@@ -292,9 +292,9 @@ fn draw_rich_row(text: string, row: record, spans: list, x: num, y: num, style: 
   end
 end
 
-// ── Feed layout ──────────────────────────────────────────────────────────
-// Every message is laid out once per frame into an item with its height, so
-// the scroll range, the hit testing and the paint all read the same numbers.
+# ── Feed layout ──────────────────────────────────────────────────────────
+# Every message is laid out once per frame into an item with its height, so
+# the scroll range, the hit testing and the paint all read the same numbers.
 
 fn reacts_h(m: record) -> int
   if len(m.reacts) > 0 then 34 else 0 end
@@ -304,8 +304,8 @@ fn thread_h(m: record) -> int
   if len(m.thread) > 0 then 36 else 0 end
 end
 
-// A message starts a new group unless the same person spoke within five
-// minutes on the same day.
+# A message starts a new group unless the same person spoke within five
+# minutes on the same day.
 fn starts_group(prev, m: record) -> bool
   prev == nil || prev.who != m.who || prev.day != m.day || m.at - prev.at > 5
 end
@@ -337,7 +337,7 @@ fn layout_msgs(list: list, w: num, new_at: int, intro_h: int, summaries: bool) -
   {items: items, total: y + 14}
 end
 
-// ── Paint helpers ────────────────────────────────────────────────────────
+# ── Paint helpers ────────────────────────────────────────────────────────
 
 fn hit(r: record, ok: bool) -> bool
   ok && point_in(mouse_x(), mouse_y(), r)
@@ -347,7 +347,7 @@ fn avatar(who: string, x: num, y: num, s: num) -> nil
   let p = d.person(who)
   let r = rect(x, y, s, s)
   draw_rect_rounded(r, int(s * 0.26), p.color)
-  // Small faces carry one initial; two letters at 20 px read as noise.
+  # Small faces carry one initial; two letters at 20 px read as noise.
   let label = if s < 28 then char_slice(d.initials(who), 0, 1) else d.initials(who) end
   text_layout.draw_text_line(label, r, sb(if s < 28 then int(s * 0.5) else int(s * 0.38) end, WHITE), "center")
 end
@@ -370,7 +370,7 @@ fn count_badge(right: num, cy: num, n: int, bg: record) -> nil
   text_layout.draw_text_line(label, r, ts, "center")
 end
 
-// A chip under a message: an emoji and how many people chose it.
+# A chip under a message: an emoji and how many people chose it.
 fn chip_w(r: record) -> int
   text_width(str(len(r.who)), sb(12, INK_2)) + 46
 end
@@ -390,7 +390,7 @@ fn summary_rect(m: record, x: num, y: num) -> Rect
 end
 
 fn icon_thread(cx: num, cy: num, c: record) -> nil
-  // A speech bubble: a rounded body and a tail.
+  # A speech bubble: a rounded body and a tail.
   draw_rect_rounded_outline(cx - 8, cy - 7, 16, 12, 4, c, 255, 1.6)
   draw_polyline([{x: cx - 4, y: cy + 5}, {x: cx - 6, y: cy + 9}, {x: cx, y: cy + 5}], c, 255, 1.6)
 end
@@ -408,7 +408,7 @@ fn icon_close(r: record, c: record) -> nil
   draw_line(cx + 5, cy - 5, cx - 5, cy + 5, c, 255, 1.6)
 end
 
-// The three dots of a typing indicator, each rising in turn.
+# The three dots of a typing indicator, each rising in turn.
 fn typing_dots(x: num, cy: num, t: num, c: record) -> nil
   for i in range(0, 3) do
     let phase = t * 7.0 - i * 0.9
@@ -427,8 +427,8 @@ fn typing_line(names: list) -> string
   end
 end
 
-// One message, with its top at y. `hot` paints the hover wash and the
-// continuation's time; `fresh` is 0..1 for a message that just arrived.
+# One message, with its top at y. `hot` paints the hover wash and the
+# continuation's time; `fresh` is 0..1 for a message that just arrived.
 fn draw_msg(it: record, x: num, y: num, w: num, hot: bool, fresh: float, summaries: bool, open: bool) -> nil
   let m = it.m
   let mention = m.who != d.ME && d.mentions_me(m.text)
@@ -522,8 +522,8 @@ fn draw_new_line(x: num, y: num, w: num) -> nil
   text_layout.draw_text_line("NEW", pr, ts, "center")
 end
 
-// The composer box: a growing text area over a toolbar with the send button.
-// Returns true when the send button was clicked.
+# The composer box: a growing text area over a toolbar with the send button.
+# Returns true when the send button was clicked.
 fn draw_composer(box: record, text_r: record, res: record, has: bool, hint: string, ok: bool, compact: bool) -> bool
   let ts = {...BODY, color: INK}
   if has then
@@ -561,7 +561,7 @@ fn draw_composer(box: record, text_r: record, res: record, has: bool, hint: stri
     let ty = text_r.y + (track - th) * float(res.scroll) / float(max(1, res.content_h - text_r.h))
     draw_rect_rounded(box.x + box.w - 7, ty, 3, th, 2, tint(PAPER, INK, 20))
   end
-  // The toolbar.
+  # The toolbar.
   let bar_y = box.y + box.h - 38
   let send_r = rect(box.x + box.w - 46, bar_y + 4, 38, 30)
   let ready = trim_text(res.text) != ""
@@ -587,14 +587,14 @@ fn draw_composer(box: record, text_r: record, res: record, has: bool, hint: stri
   ready && over && mouse_pressed(0)
 end
 
-// ═════════════════════════════════════════════════════════════════════════
-// Frame
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+# Frame
+# ═════════════════════════════════════════════════════════════════════════
 
 ui.theme_set({panel: PAPER, surface: PAPER, overlay: PAPER, text: INK, muted: MUTED, dim: FAINT,
   accent: ACCENT, outline: RULE, border: RULE, hover: ACCENT_SOFT, selection: ACCENT_SOFT})
 
-// While a composer has the keyboard its editing chords are its own.
+# While a composer has the keyboard its editing chords are its own.
 if focus != "" then
   for k in ["a", "c", "x", "v", "z", "y"] do claim_key(k, "cmd") end
   claim_key("z", "cmd+shift")
@@ -605,14 +605,14 @@ if focus != "" then
   claim_key("backspace", "cmd")
 end
 
-// ── The clock and the scheduler ──────────────────────────────────────────
-// Time advances by dt(), so under POST /tick the afternoon plays out frame
-// for frame the same every run. A long pause (a slept panel waking) counts
-// as one second, not as a burst of everything that was due.
+# ── The clock and the scheduler ──────────────────────────────────────────
+# Time advances by dt(), so under POST /tick the afternoon plays out frame
+# for frame the same every run. A long pause (a slept panel waking) counts
+# as one second, not as a burst of everything that was due.
 
 let step = clamp(dt(), 0.0, 1.0)
 clock += step
-// The afternoon runs fast: a minute of chat time passes every twelve seconds.
+# The afternoon runs fast: a minute of chat time passes every twelve seconds.
 let now_min = d.START_MIN + int(clock / 12.0)
 
 let due = sort_by(filter(queue, fn(e) -> e.at <= clock), fn(e) -> e.at)
@@ -649,7 +649,7 @@ end
 typing = filter(typing, fn(t) -> t.until > clock)
 if toast.left > 0.0 then toast.left = max(0.0, toast.left - step) end
 
-// ── Derived: channels ────────────────────────────────────────────────────
+# ── Derived: channels ────────────────────────────────────────────────────
 
 let by_ch = group_by(msgs, fn(x) -> x.ch)
 fn ch_list(groups: record, id: string) -> list
@@ -663,7 +663,7 @@ let thread_open = thread_id != 0 && find(feed_msgs, fn(x) -> x.id == thread_id) 
 if !thread_open then thread_id = 0 end
 let parent = if thread_open then find(feed_msgs, fn(x) -> x.id == thread_id) else nil end
 
-// ── Layout ───────────────────────────────────────────────────────────────
+# ── Layout ───────────────────────────────────────────────────────────────
 
 let FX = SIDE_W
 let FW = W - SIDE_W - (if thread_open then THREAD_W else 0 end)
@@ -673,8 +673,8 @@ let ts_in = {...BODY, color: INK}
 let lh = int(text_metrics(ts_in).line_height) + LGAP
 let draft = field(drafts, ch, "")
 
-// The composer grows with what is in it. Its rows are measured from the
-// buffer as it stands, before this frame's keys.
+# The composer grows with what is in it. Its rows are measured from the
+# buffer as it stands, before this frame's keys.
 let c_text_w = FW - 40 - 28 - 6
 let c_rows = clamp(len(text_wrap_rows(draft, ts_in, float(c_text_w))), 1, MAX_ROWS)
 let c_box_h = 12 + c_rows * lh + 6 + 40
@@ -689,14 +689,14 @@ let t_box = rect(TX + 16, H - 28 - t_box_h, THREAD_W - 32, t_box_h)
 let t_text_r = rect(t_box.x + 14, t_box.y + 12, t_text_w, t_rows * lh)
 let TR = rect(TX, HEADER_H, THREAD_W, t_box.y - 10 - HEADER_H)
 
-// An open bloom menu captures its own input; the feed reads the mouse itself,
-// so it stands down while one is open.
+# An open bloom menu captures its own input; the feed reads the mouse itself,
+# so it stands down while one is open.
 let blocking = bloom.menu_any_open()
 let press = mouse_pressed(0) && !blocking
 
-// Who holds the keyboard after a prelude field ran, as the app's own `focus`
-// id: a press inside the field takes it (`has_focus` says so afterwards), a
-// press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
+# Who holds the keyboard after a prelude field ran, as the app's own `focus`
+# id: a press inside the field takes it (`has_focus` says so afterwards), a
+# press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
 fn field_focus(key, focus, had, pointer)
   if !pointer || !mouse_pressed(0) then focus
   elsif has_focus(key) then key
@@ -705,25 +705,25 @@ fn field_focus(key, focus, had, pointer)
   end
 end
 
-// ── Text entry ───────────────────────────────────────────────────────────
-// Return sends and Shift+Return breaks the line. The text area always takes
-// Return as a line break, so a plain Return sends what was there before the
-// key and throws the break away.
+# ── Text entry ───────────────────────────────────────────────────────────
+# Return sends and Shift+Return breaks the line. The text area always takes
+# Return as a line break, so a plain Return sends what was there before the
+# key and throws the break away.
 
-// The composer's caret lives in the text area, one per callsite rather than
-// one per channel. Giving the keyboard up for a frame and taking it back
-// puts the caret at the end of the draft you return to.
+# The composer's caret lives in the text area, one per callsite rather than
+# one per channel. Giving the keyboard up for a frame and taking it back
+# puts the caret at the end of the draft you return to.
 if refocus != "" then
   focus = refocus
   refocus = ""
 end
 
-// Typing with nothing focused goes to the composer, as in every chat app.
+# Typing with nothing focused goes to the composer, as in every chat app.
 if focus == "" && char_len(text_input()) > 0 && !mod_cmd() && !mod_ctrl() then focus = "composer" end
 
-// The fields read the runtime's focus. This app moves its own focus id
-// itself (typing, Escape, opening a thread), so a move is handed to the runtime
-// before the fields run. A press on a field is already the runtime's.
+# The fields read the runtime's focus. This app moves its own focus id
+# itself (typing, Escape, opening a thread), so a move is handed to the runtime
+# before the fields run. A press on a field is already the runtime's.
 state synced_focus = ""
 if focus != synced_focus then
   focus_request(if focus == "composer" || focus == "thread" then focus else nil end)
@@ -755,9 +755,9 @@ elsif plain_return && was_focus == "thread" then
   send_thread = trim_text(thread_draft)
 end
 
-// ── Keys ─────────────────────────────────────────────────────────────────
+# ── Keys ─────────────────────────────────────────────────────────────────
 
-let act = ""        // what to do once the frame has been drawn
+let act = ""        # what to do once the frame has been drawn
 let act_id = 0
 let act_arg = ""
 
@@ -778,7 +778,7 @@ if !blocking then
   end
 end
 
-// ── Feed layout and scroll ───────────────────────────────────────────────
+# ── Feed layout and scroll ───────────────────────────────────────────────
 
 let intro_h = 132
 let new_at = if entry_seen < n_msgs then entry_seen else -1 end
@@ -805,23 +805,23 @@ if top >= max_top - 2.0 then stuck = true end
 if stuck then top = max_top end
 scrolls = {...scrolls, [ch]: {top: top, stuck: stuck}}
 
-// New content glides into place; a feed that merely changed height (the
-// composer grew a row) stays pinned without a lag.
+# New content glides into place; a feed that merely changed height (the
+# composer grew a row) stays pinned without a lag.
 if FR.h != last_fr.h || FR.w != last_fr.w then snap = true end
 last_fr = {w: FR.w, h: FR.h}
 view_top = if snap then top else approach(view_top, top, 16.0) end
 snap = false
 if abs(view_top - top) > 0.5 then request_frame() end
-// Content shorter than the feed sits at its foot, the way a conversation
-// starts at the bottom of the window.
+# Content shorter than the feed sits at its foot, the way a conversation
+# starts at the bottom of the window.
 let base_y = if total < FR.h then FR.y + FR.h - total else FR.y - int(view_top) end
 
-// Reading: the feed is read whenever you are at its foot.
+# Reading: the feed is read whenever you are at its foot.
 if stuck then seen = {...seen, [ch]: n_msgs} end
 let unseen_here = n_msgs - field(seen, ch, 0)
 
-// Which message the pointer is on. The action bar overhangs the message
-// above, so while the pointer is on the bar its message stays hot.
+# Which message the pointer is on. The action bar overhangs the message
+# above, so while the pointer is on the bar its message stays hot.
 let bar_hold = false
 let hot_id = 0
 for it in items do
@@ -844,16 +844,16 @@ if !bar_hold then
 end
 hover_id = hot_id
 
-// ═════════════════════════════════════════════════════════════════════════
-// Paint
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+# Paint
+# ═════════════════════════════════════════════════════════════════════════
 
 clear(PAPER.r, PAPER.g, PAPER.b)
 
-// ── Feed ─────────────────────────────────────────────────────────────────
+# ── Feed ─────────────────────────────────────────────────────────────────
 
 clip_push(FR)
-// The beginning of the channel.
+# The beginning of the channel.
 let iy = base_y
 if iy + intro_h > FR.y then
   if cur.kind == "dm" then
@@ -893,7 +893,7 @@ for it in items do
       menu_tag = str(m.id)
       bloom.menu_open_at("msg", mouse_x(), mouse_y())
     end
-    // Clicks on what the message carries.
+    # Clicks on what the message carries.
     let by = if it.head then y + 34 else y + 2 end
     let ry = by + len(it.rows) * LINE + 6
     if len(m.reacts) > 0 then
@@ -909,7 +909,7 @@ for it in items do
   end
 end
 
-// The action bar over the hot message.
+# The action bar over the hot message.
 let bar_pick = ""
 if hot_id != 0 && !blocking then
   let it = find(items, fn(x) -> x.kind == "msg" && x.m.id == hot_id)
@@ -932,7 +932,7 @@ if hot_id != 0 && !blocking then
 end
 clip_pop()
 
-// The fade that content scrolls under, and the way back down.
+# The fade that content scrolls under, and the way back down.
 draw_scroll_shadow(rect(FX, 0, FW, HEADER_H), min(1.0, float(max(0, FR.y - base_y - intro_h)) / 30.0), {a: 30, height: 8})
 let jump_r = rect(0, 0, 0, 0)
 if !stuck then
@@ -943,7 +943,7 @@ if !stuck then
   let over = hit(jump_r, !blocking)
   draw_shadow(jump_r, {radius: 17, blur: 12, dy: 3, color: :1c1e2a, a: 40})
   draw_rect_rounded(jump_r, 17, if unseen_here > 0 then (if over then ACCENT_HI else ACCENT end) elsif over then :2e3144 else INK end)
-  // A down arrow drawn as strokes.
+  # A down arrow drawn as strokes.
   let ax = jump_r.x + 19
   let ay = jump_r.y + 17
   draw_line(ax, ay - 6, ax, ay + 5, WHITE, 255, 1.8)
@@ -952,7 +952,7 @@ if !stuck then
   if over && press then act = "jump" end
 end
 
-// ── Header ───────────────────────────────────────────────────────────────
+# ── Header ───────────────────────────────────────────────────────────────
 
 draw_rect(FX, 0, FW, HEADER_H, PAPER)
 draw_rect(FX, HEADER_H - 1, FW, 1, RULE)
@@ -968,7 +968,7 @@ else
   draw_text("#", {x: FX + 20, y: 12}, sb(17, FAINT))
   draw_text(cur.name, {x: FX + 36, y: 12}, ns)
   draw_text(ellipsize(cur.topic, FW - 240, st(13, MUTED)), {x: FX + 20, y: 37}, st(13, MUTED))
-  // The members, as a stack of faces and a count.
+  # The members, as a stack of faces and a count.
   let mem = cur.members
   let shown_n = min(4, len(mem))
   let mx = FX + FW - 20 - 40 - shown_n * 20
@@ -984,7 +984,7 @@ else
   text_layout.draw_text_line(str(len(mem)), rect(mx + shown_n * 20 + 8, 16, 32, 32), sb(13, INK_2), "left")
 end
 
-// ── Composer and the typing line ─────────────────────────────────────────
+# ── Composer and the typing line ─────────────────────────────────────────
 
 let hint = if cur.kind == "dm" then "Message {cur.name}" else "Message #{cur.name}" end
 if draw_composer(c_box, c_text_r, {...c_res, text: draft}, focus == "composer", hint, !blocking, FW < 560) then
@@ -1001,7 +1001,7 @@ if len(names) > 0 then
   request_frame()
 end
 
-// ── Thread pane ──────────────────────────────────────────────────────────
+# ── Thread pane ──────────────────────────────────────────────────────────
 
 let t_lay = {items: [], total: 0}
 if thread_open then
@@ -1016,7 +1016,7 @@ if thread_open then
   if over && press then act = "close_thread" end
   draw_rect(TX, HEADER_H - 1, THREAD_W, 1, RULE)
 
-  // The parent, then a rule with the count, then the replies.
+  # The parent, then a rule with the count, then the replies.
   let replies = for rp in parent.thread do
     {id: -1, ch: ch, who: rp.who, day: 1, at: rp.at, text: rp.text, reacts: [], thread: [], born: rp.born}
   end
@@ -1065,10 +1065,10 @@ if thread_open then
   end
 end
 
-// ── Sidebar ──────────────────────────────────────────────────────────────
+# ── Sidebar ──────────────────────────────────────────────────────────────
 
 draw_rect(0, 0, SIDE_W, H, SIDE)
-// The workspace.
+# The workspace.
 draw_rect_gradient_rounded(rect(18, 16, 34, 34), 9, :f08a4b, :d9488f, 0.8)
 text_layout.draw_text_line("F", rect(18, 16, 34, 34), sb(17, WHITE), "center")
 draw_text("Fernwood Labs", {x: 62, y: 15}, sb(16, WHITE))
@@ -1126,11 +1126,11 @@ if switch_to != "" then
   act_arg = switch_to
 end
 
-// The simulated clock, at the foot.
+# The simulated clock, at the foot.
 draw_rect(16, H - 52, SIDE_W - 32, 1, SIDE_RULE)
 text_layout.draw_text_line("Wed, Oct 21 · {d.clock_text(now_min)}", rect(22, H - 50, SIDE_W - 44, 44), st(12, SIDE_FAINT), "left")
 if len(queue) > 0 then
-  // The afternoon is still unfolding: a slow pulse says the clock is live.
+  # The afternoon is still unfolding: a slow pulse says the clock is live.
   draw_circle({x: SIDE_W - 30, y: H - 28}, 3.5, GREEN, 140 + int(sin(clock * 3.0) * 100.0))
   request_frame()
 end
@@ -1145,7 +1145,7 @@ if toast.left > 0.0 then
   request_frame()
 end
 
-// ── Context menu: the last draw call of the frame ────────────────────────
+# ── Context menu: the last draw call of the frame ────────────────────────
 
 let menu_m = find(feed_msgs, fn(x) -> str(x.id) == menu_tag)
 let mine = menu_m != nil && menu_m.who == d.ME
@@ -1175,9 +1175,9 @@ if picked >= 0 && menu_m != nil then
   end
 end
 
-// ═════════════════════════════════════════════════════════════════════════
-// Apply
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+# Apply
+# ═════════════════════════════════════════════════════════════════════════
 
 if chip_hit.id != 0 then
   act = "react"
@@ -1244,7 +1244,7 @@ match act
     entry_seen = 999
     scrolls = {...scrolls, [ch]: {top: max_top, stuck: true}}
   when "delete" ->
-    // A deleted message that had been read takes its place in the count with it.
+    # A deleted message that had been read takes its place in the count with it.
     let at_i = index_of(map(feed_msgs, fn(x) -> x.id), act_id)
     msgs = filter(msgs, fn(x) -> x.id != act_id)
     if at_i >= 0 && at_i < field(seen, ch, 0) then seen = {...seen, [ch]: field(seen, ch, 0) - 1} end
@@ -1252,13 +1252,13 @@ match act
   when _ -> nil
 end
 
-// A click that lands on nothing editable leaves the keyboard where a chat
-// app keeps it: in the composer of the pane that was clicked.
+# A click that lands on nothing editable leaves the keyboard where a chat
+# app keeps it: in the composer of the pane that was clicked.
 if press && focus == "" && refocus == "" then
   focus = if thread_id != 0 && hit(rect(TX, 0, THREAD_W, H), true) then "thread" else "composer" end
 end
 
-// ── What a test can read ─────────────────────────────────────────────────
+# ── What a test can read ─────────────────────────────────────────────────
 
 let obs_channel = ch
 let obs_msgs = len(ch_list(group_by(msgs, fn(x) -> x.ch), ch))

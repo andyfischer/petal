@@ -1,5 +1,5 @@
-// An exported `var` — a cell that lives in this module. Importers read it
-// (through either import form) but only this module writes it.
+# An exported `var` — a cell that lives in this module. Importers read it
+# (through either import form) but only this module writes it.
 
 pub var hits = 0
 

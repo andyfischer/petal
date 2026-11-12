@@ -1,24 +1,24 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  INKWELL — a Markdown editor with a live preview, as a Garden Petal panel.
-//
-//  A dark source editor on the left (soft wrap, caret, selection, undo/redo,
-//  syntax colouring, list continuation), a rendered preview on the right
-//  (headings, paragraphs with bold/italic/code/links, bullet and numbered
-//  lists, task lists you can tick from the preview, quotes, fenced code,
-//  tables, rules), a draggable splitter between them, and a rail with the
-//  documents and a live outline. The preview follows the editor's scroll,
-//  and clicking a heading in the preview puts the caret on its source line.
-//  Documents persist through the panel store.
-//
-//  Designed for a 1280x850 viewport. See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  INKWELL — a Markdown editor with a live preview, as a Garden Petal panel.
+#
+#  A dark source editor on the left (soft wrap, caret, selection, undo/redo,
+#  syntax colouring, list continuation), a rendered preview on the right
+#  (headings, paragraphs with bold/italic/code/links, bullet and numbered
+#  lists, task lists you can tick from the preview, quotes, fenced code,
+#  tables, rules), a draggable splitter between them, and a rail with the
+#  documents and a live outline. The preview follows the editor's scroll,
+#  and clicking a heading in the preview puts the caret on its source line.
+#  Documents persist through the panel store.
+#
+#  Designed for a 1280x850 viewport. See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import ui
 import bloom
 import garden
 
-// ── Palette ──────────────────────────────────────────────────────────────
-// Editor side: ink on slate. Preview side: type on paper.
+# ── Palette ──────────────────────────────────────────────────────────────
+# Editor side: ink on slate. Preview side: type on paper.
 let SLATE      = :171a23
 let SLATE_HI   = :1d2130
 let GUTTER     = :141720
@@ -56,7 +56,7 @@ let LINK       = :3358c4
 let CHECK      = :4c9a6a
 let TABLE_HEAD = :f2f0ea
 
-// ── Metrics ──────────────────────────────────────────────────────────────
+# ── Metrics ──────────────────────────────────────────────────────────────
 let W = screen_width()
 let H = screen_height()
 
@@ -65,12 +65,12 @@ let STATUS_H = 26
 let RAIL_W   = 210
 
 let FS_ED    = 13
-let LH       = 21                 // editor line height
-let GUT_W    = 46                 // line-number gutter
+let LH       = 21                 # editor line height
+let GUT_W    = 46                 # line-number gutter
 let ED_PAD   = 16
 let ED_TS    = {size: FS_ED, font: "mono", color: TEXT}
-// Measured over a long run so the per-character advance keeps its fraction;
-// a rounded single-glyph width drifts a full column by the end of a line.
+# Measured over a long run so the per-character advance keeps its fraction;
+# a rounded single-glyph width drifts a full column by the end of a line.
 let CW       = text_width("mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm", ED_TS) / 50.0
 
 let PV_FONT  = "ui"
@@ -86,7 +86,7 @@ let FS       = 13
 
 let MAIN = rect(RAIL_W, TOP_H, W - RAIL_W, H - TOP_H - STATUS_H)
 
-// The chords the editor needs back from Garden.
+# The chords the editor needs back from Garden.
 claim_key("z", "cmd")
 claim_key("z", "cmd+shift")
 claim_key("b", "cmd")
@@ -96,7 +96,7 @@ claim_key("a", "cmd")
 claim_key("s", "cmd")
 claim_key("e", "cmd")
 
-// ── Seed documents ───────────────────────────────────────────────────────
+# ── Seed documents ───────────────────────────────────────────────────────
 fn seed_docs() -> list
   [
     {id: 1, name: "Tour of Inkwell", lines: [
@@ -217,7 +217,7 @@ fn seed_docs() -> list
   ]
 end
 
-// ── Small helpers ────────────────────────────────────────────────────────
+# ── Small helpers ────────────────────────────────────────────────────────
 fn iclamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
 end
@@ -283,8 +283,8 @@ fn count_words(s: string) -> int
   n
 end
 
-// ── Line classification (block level) ───────────────────────────────────
-// Shared by the editor's colouring and the preview's parser.
+# ── Line classification (block level) ───────────────────────────────────
+# Shared by the editor's colouring and the preview's parser.
 
 fn heading_level(s: string) -> int
   let n = 0
@@ -312,7 +312,7 @@ fn is_fence(s: string) -> bool
   starts(ltrim(s), "```")
 end
 
-// {kind, indent, marker_len, num, task} or nil for a plain line
+# {kind, indent, marker_len, num, task} or nil for a plain line
 fn list_marker(s: string) -> record
   let ind = indent_of(s)
   let t = slice(s, start: ind, end: len(s))
@@ -363,11 +363,11 @@ fn split_cells(s: string) -> list
   out
 end
 
-// ── Inline markup ────────────────────────────────────────────────────────
-// `match_at` looks at position i and reports a matched span starting there:
-// {kind, ml (marker length), close (index of the closing marker), url}.
-// kind is "none" when nothing opens here. The editor colours the span with
-// its markers; the preview recurses into the inner text.
+# ── Inline markup ────────────────────────────────────────────────────────
+# `match_at` looks at position i and reports a matched span starting there:
+# {kind, ml (marker length), close (index of the closing marker), url}.
+# kind is "none" when nothing opens here. The editor colours the span with
+# its markers; the preview recurses into the inner text.
 
 fn match_at(s: string, i: num) -> record
   let c = ch(s, i)
@@ -385,7 +385,7 @@ fn match_at(s: string, i: num) -> record
     let j = find_from(s, needle: "~~", from: i + 2)
     if j > i + 2 then {kind: "strike", ml: 2, close: j, url: ""} else none end
   elsif (c == "*" || c == "_") && ch(s, i + 1) != " " && ch(s, i + 1) != "" then
-    // Emphasis opens only at a word boundary so snake_case stays plain.
+    # Emphasis opens only at a word boundary so snake_case stays plain.
     let prev = ch(s, i - 1)
     if c == "_" && prev != "" && prev != " " && prev != "(" then
       none
@@ -406,8 +406,8 @@ fn match_at(s: string, i: num) -> record
   end
 end
 
-// Editor colouring: character ranges {a, b, kind} covering the whole span,
-// markers included.
+# Editor colouring: character ranges {a, b, kind} covering the whole span,
+# markers included.
 fn inline_ranges(s: string) -> list
   let out = []
   let i = 0
@@ -426,7 +426,7 @@ fn inline_ranges(s: string) -> list
   out
 end
 
-// Preview tokens: {text, bold, italic, code, strike, url}.
+# Preview tokens: {text, bold, italic, code, strike, url}.
 fn parse_inline(s: string, st: record) -> list
   let out = []
   let buf = ""
@@ -483,10 +483,10 @@ fn plain_text(s: string) -> string
   out
 end
 
-// ── Block parser ─────────────────────────────────────────────────────────
-// Blocks: {kind, line, ...}. kinds: heading{level, inl}, para{inl},
-// quote{inl}, item{depth, ordered, num, task, inl}, code{lang, lines},
-// rule, table{head, rows}.
+# ── Block parser ─────────────────────────────────────────────────────────
+# Blocks: {kind, line, ...}. kinds: heading{level, inl}, para{inl},
+# quote{inl}, item{depth, ordered, num, task, inl}, code{lang, lines},
+# rule, table{head, rows}.
 
 fn parse_blocks(lines: list) -> list
   let blocks = []
@@ -545,7 +545,7 @@ fn parse_blocks(lines: list) -> list
     elsif list_marker(s).kind != "none" then
       let m = list_marker(s)
       let text = slice(s, start: m.indent + m.mlen, end: len(s))
-      // Lazy continuation: following indented plain lines belong to the item.
+      # Lazy continuation: following indented plain lines belong to the item.
       let j = i + 1
       while j < n && len(trim(lines[j])) > 0 && list_marker(lines[j]).kind == "none" &&
         indent_of(lines[j]) > m.indent && !is_fence(lines[j]) && heading_level(lines[j]) == 0 do
@@ -571,14 +571,14 @@ fn parse_blocks(lines: list) -> list
   blocks
 end
 
-// ── Preview layout ───────────────────────────────────────────────────────
-// Turns blocks into flat draw items with absolute y (before scrolling):
-//   {kind: "text", x, y, text, ts, url}     a run of one style
-//   {kind: "rect", r, c, a, rad}            fills (code backgrounds, bars)
-//   {kind: "line", x1, y1, x2, y2, c, w}    rules, underlines
-//   {kind: "check", r, on, line}            a task box (clickable)
-//   {kind: "jump", r, line}                 a heading's hit area
-// plus `anchors`: [{line, y}] per block for scroll sync.
+# ── Preview layout ───────────────────────────────────────────────────────
+# Turns blocks into flat draw items with absolute y (before scrolling):
+#   {kind: "text", x, y, text, ts, url}     a run of one style
+#   {kind: "rect", r, c, a, rad}            fills (code backgrounds, bars)
+#   {kind: "line", x1, y1, x2, y2, c, w}    rules, underlines
+#   {kind: "check", r, on, line}            a task box (clickable)
+#   {kind: "jump", r, line}                 a heading's hit area
+# plus `anchors`: [{line, y}] per block for scroll sync.
 
 fn tok_style(t: record, base: record) -> record
   let s = base
@@ -593,8 +593,8 @@ fn space_w(ts: record) -> num
   text_width("a a", ts) - text_width("aa", ts)
 end
 
-// Flow one inline run into wrapped lines. Returns {items, y} with y at the
-// bottom of the last line.
+# Flow one inline run into wrapped lines. Returns {items, y} with y at the
+# bottom of the last line.
 fn flow(tokens: list, x0: num, y0: num, width: num, base: record, lh: num) -> record
   let items = []
   let x = x0
@@ -606,7 +606,7 @@ fn flow(tokens: list, x0: num, y0: num, width: num, base: record, lh: num) -> re
     let ty = y + (lh - ts.size) / 2 - 1
     for wi in range(0, len(ws)) do
       let w = ws[wi]
-      // A leading/trailing space in the token is an empty word: keep the gap.
+      # A leading/trailing space in the token is an empty word: keep the gap.
       if wi > 0 then
         x = x + sw
       end
@@ -623,8 +623,8 @@ fn flow(tokens: list, x0: num, y0: num, width: num, base: record, lh: num) -> re
         end
         items = append(items, {kind: "text", x: tx, y: ty, text: w, ts: ts, url: t.url})
         if t.url != "" then
-          // The underline runs under the following space too, so a multi-word
-          // link reads as one link rather than a row of words.
+          # The underline runs under the following space too, so a multi-word
+          # link reads as one link rather than a row of words.
           let more = wi + 1 < len(ws) && len(ws[wi + 1]) > 0 && x + ww + sw + text_width(ws[wi + 1], ts) <= x0 + width
           items = append(items, {kind: "line", x1: tx, y1: ty + ts.size + 3,
             x2: tx + text_width(w, ts) + if more then sw else 0 end, y2: ty + ts.size + 3, c: LINK, w: 1})
@@ -655,7 +655,7 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
   let prev = "none"
   for bi in range(0, len(blocks)) do
     let b = blocks[bi]
-    // Spacing before a block depends on the pair: items pack, headings breathe.
+    # Spacing before a block depends on the pair: items pack, headings breathe.
     let gap = if prev == "none" then 0
     elsif b.kind == "item" && prev == "item" then 4
     elsif b.kind == "heading" then if b.level <= 2 then 26 else 20 end
@@ -729,7 +729,7 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
         ncol = max(ncol, len(r))
       end
       if ncol > 0 then
-        // Column widths: the widest cell, then scaled down to fit.
+        # Column widths: the widest cell, then scaled down to fit.
         let cell_ts = {...PV_TS, size: 14}
         let head_ts = {...cell_ts, weight: 700}
         let widths = []
@@ -782,7 +782,7 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
   {items: items, anchors: anchors, h: y}
 end
 
-// ── Editor: wrap model, positions, edit primitives ───────────────────────
+# ── Editor: wrap model, positions, edit primitives ───────────────────────
 fn wrap_starts(s: string, maxc: num) -> list
   let starts_ = [0]
   let n = len(s)
@@ -927,7 +927,7 @@ fn word_end(s: string, col: num) -> num
   i
 end
 
-// What Return should prefix the new line with, continuing a list.
+# What Return should prefix the new line with, continuing a list.
 fn continuation(s: string) -> string
   let m = list_marker(s)
   if m.kind == "none" then
@@ -948,7 +948,7 @@ fn typing_ok() -> bool
   !key_pressed("tab") && !mod_ctrl() && !mod_cmd()
 end
 
-// Editor colouring for one logical line: {a, b, color, weight} runs.
+# Editor colouring for one logical line: {a, b, color, weight} runs.
 fn line_runs(s: string, in_fence: bool) -> list
   let n = len(s)
   if in_fence || is_fence(s) then
@@ -999,7 +999,7 @@ fn line_runs(s: string, in_fence: bool) -> list
   end
 end
 
-// Which lines sit inside a code fence (so their colouring is flat).
+# Which lines sit inside a code fence (so their colouring is flat).
 fn fence_map(lines: list) -> list
   let out = []
   let inf = false
@@ -1014,7 +1014,7 @@ fn fence_map(lines: list) -> list
   out
 end
 
-// ── Documents and persistence ────────────────────────────────────────────
+# ── Documents and persistence ────────────────────────────────────────────
 fn doc_by_id(ds: list, id: num)
   let found = nil
   for d in ds do
@@ -1058,21 +1058,21 @@ fn doc_words(d: record) -> int
   n
 end
 
-// ════════════════════════════════════════════════════════════════════════
-//  State
-// ════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════
+#  State
+# ════════════════════════════════════════════════════════════════════════
 state docs    = load_docs()
 state sel_doc = 1
-state mode    = "split"          // "editor" | "split" | "preview"
+state mode    = "split"          # "editor" | "split" | "preview"
 state sync    = true
 state cur     = {line: 0, col: 0}
 state anchor  = {line: 0, col: 0}
 state goal    = 0
-state escroll = 0                // editor scroll, px
-state pscroll = 0                // preview scroll, px
+state escroll = 0                # editor scroll, px
+state pscroll = 0                # preview scroll, px
 state last_escroll = -1
 state dragging = false
-state pane_frac = 0.5           // the editor pane's share of MAIN
+state pane_frac = 0.5           # the editor pane's share of MAIN
 state undo    = []
 state redo    = []
 state last_edit = -9.0
@@ -1084,7 +1084,7 @@ state flash   = -99.0
 state click_t = -9.0
 state click_x = 0
 state click_y = 0
-state jump_to = -1               // a line the rail/preview asked the editor to show
+state jump_to = -1               # a line the rail/preview asked the editor to show
 
 let now = time()
 let mx = mouse_x()
@@ -1094,7 +1094,7 @@ let click = mouse_pressed(0)
 let doc = doc_by_id(docs, sel_doc)
 let lines = doc.lines
 
-// ── Layout of the two panes ──────────────────────────────────────────────
+# ── Layout of the two panes ──────────────────────────────────────────────
 let s = bloom.splitter(MAIN, pane_frac, {min_a: 300, min_b: 300, line: OUTLINE, active: ACCENT, band: 9, gap: 0})
 pane_frac = s.frac
 let ed_r = if mode == "editor" then MAIN elsif mode == "preview" then rect(0, 0, 0, 0) else s.a end
@@ -1112,7 +1112,7 @@ let rows = build_rows(lines, MAXC)
 cur = clamp_pos(lines, cur)
 anchor = clamp_pos(lines, anchor)
 
-// ── Editor input: pointer ────────────────────────────────────────────────
+# ── Editor input: pointer ────────────────────────────────────────────────
 fn hit_pos(rows: list, px: num, py: num, scroll: num) -> record
   let ri = iclamp(int((py - TEXT_Y + scroll) / LH), lo: 0, hi: max(0, len(rows) - 1))
   let r = rows[ri]
@@ -1141,7 +1141,7 @@ if show_ed && click && point_in(px: mx, py: my, r: text_r) && !s.dragging then
     dragging = true
   end
 end
-// Clicking the gutter selects the whole logical line.
+# Clicking the gutter selects the whole logical line.
 if show_ed && click && point_in(px: mx, py: my, r: rect(ed_r.x, ed_r.y, GUT_W, ed_r.h)) then
   let p = hit_pos(rows, px: mx + GUT_W, py: my, scroll: escroll)
   anchor = {line: p.line, col: 0}
@@ -1158,7 +1158,7 @@ if show_ed && hovered(ed_r) then
   escroll = escroll - scroll_y() * 3 * LH
 end
 
-// ── Editor input: keyboard ───────────────────────────────────────────────
+# ── Editor input: keyboard ───────────────────────────────────────────────
 let new_lines = lines
 let did_edit = false
 let edit_kind = ""
@@ -1171,7 +1171,7 @@ let hi = sel_hi(anchor, cur)
 let hassel = !pos_eq(anchor, cur)
 let ri = row_of(rows, cur)
 
-// Wrap the selection (or the word at the caret) in `mark`.
+# Wrap the selection (or the word at the caret) in `mark`.
 fn wrap_sel(lines: list, lo: record, hi: record, hassel: bool, cur: record, mark: string, suffix: string) -> record
   let a = lo
   let b = hi
@@ -1296,7 +1296,7 @@ elsif key_pressed("return") then
   let cont = continuation(base[at.line])
   let m = list_marker(base[at.line])
   if m.kind != "none" && len(cont) == 0 && at.col == len(base[at.line]) then
-    // Return on an empty list item ends the list: clear the marker.
+    # Return on an empty list item ends the list: clear the marker.
     new_lines = delete_range(lines: base, s: {line: at.line, col: 0}, e: at)
     cur = {line: at.line, col: 0}
   else
@@ -1334,10 +1334,10 @@ if moved && !sh then
   anchor = cur
 end
 
-// ── Commit edits ─────────────────────────────────────────────────────────
+# ── Commit edits ─────────────────────────────────────────────────────────
 if did_edit then
   if edit_kind != "history" then
-    // One undo step per burst of the same kind of edit.
+    # One undo step per burst of the same kind of edit.
     if edit_kind != last_kind || now - last_edit > 0.8 || edit_kind == "wrap" then
       undo = append(undo, {lines: lines, cur: anchor, anchor: anchor})
       if len(undo) > 100 then undo = slice(undo, start: 1, end: len(undo)) end
@@ -1352,7 +1352,7 @@ if did_edit then
   edits = edits + 1
 end
 
-// Save: ⌘S, or 1.5 s after the last edit.
+# Save: ⌘S, or 1.5 s after the last edit.
 if dirty && (now - last_edit > 1.5 || cmd && key_pressed("s")) then
   panel_store_set(store_key(sel_doc), join(lines, "\n"))
   dirty = false
@@ -1360,7 +1360,7 @@ if dirty && (now - last_edit > 1.5 || cmd && key_pressed("s")) then
   flash = now
 end
 
-// ── Recompute after edits ────────────────────────────────────────────────
+# ── Recompute after edits ────────────────────────────────────────────────
 let rows2 = build_rows(lines, MAXC)
 cur = clamp_pos(lines, cur)
 anchor = clamp_pos(lines, anchor)
@@ -1387,16 +1387,16 @@ let hi2 = sel_hi(anchor, cur)
 let hassel2 = !pos_eq(anchor, cur)
 let fences = fence_map(lines)
 
-// ════════════════════════════════════════════════════════════════════════
-//  Draw: backgrounds
-// ════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════
+#  Draw: backgrounds
+# ════════════════════════════════════════════════════════════════════════
 clear(SLATE.r, SLATE.g, SLATE.b)
 draw_rect(rect(0, 0, RAIL_W, H), RAIL_BG)
 draw_rect(rect(0, 0, W, TOP_H), RAIL_BG)
 draw_rect(rect(0, TOP_H - 1, W, 1), OUTLINE)
 draw_rect(rect(RAIL_W - 1, TOP_H, 1, H - TOP_H), OUTLINE)
 
-// ── Editor pane ──────────────────────────────────────────────────────────
+# ── Editor pane ──────────────────────────────────────────────────────────
 if show_ed then
   draw_rect(ed_r, SLATE)
   draw_rect(rect(ed_r.x, ed_r.y, GUT_W, ed_r.h), GUTTER)
@@ -1415,7 +1415,7 @@ if show_ed then
       draw_text_right("{r.li + 1}", right_x: ed_r.x + GUT_W - 10, y: ry + 1,
         style: {size: FS_TINY, font: "mono", color: if on_caret_line then DIM else FAINT end})
     end
-    // selection band
+    # selection band
     if hassel2 && lo2.line <= r.li && hi2.line >= r.li then
       let s0 = if lo2.line < r.li then r.a elsif lo2.line == r.li then max(r.a, lo2.col) else r.b + 1 end
       let s1 = if hi2.line > r.li then r.b elsif hi2.line == r.li then min(r.b, hi2.col) else r.a - 1 end
@@ -1424,7 +1424,7 @@ if show_ed then
         draw_rect_rounded(rect(TEXT_X + (s0 - r.a) * CW, ry - 3, max(3, sw), LH), radius: 3, c: SELBG)
       end
     end
-    // coloured runs, clipped to this display row
+    # coloured runs, clipped to this display row
     for run in line_runs(ln, fences[r.li]) do
       let a = max(run.a, r.a)
       let b = min(run.b, r.b)
@@ -1433,7 +1433,7 @@ if show_ed then
       end
     end
   end
-  // caret
+  # caret
   if !hassel2 then
     let ry = TEXT_Y + cri * LH - escroll
     let cx = TEXT_X + (cur.col - rows2[cri].a) * CW
@@ -1447,9 +1447,9 @@ if show_ed then
   end
 end
 
-// ════════════════════════════════════════════════════════════════════════
-//  Preview pane
-// ════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════
+#  Preview pane
+# ════════════════════════════════════════════════════════════════════════
 let hover_link = ""
 let pv_x0 = pv_r.x + PV_PAD
 let pv_w = min(720, pv_r.w - PV_PAD * 2)
@@ -1458,7 +1458,7 @@ let pv_top = pv_r.y + 28
 let pv_h = pv_r.h - 28
 let pv_content_h = lay.h + 40
 
-// Scroll sync: the first visible editor line picks the preview position.
+# Scroll sync: the first visible editor line picks the preview position.
 if show_pv && show_ed && sync && escroll != last_escroll then
   let top_row = rows2[iclamp(int(escroll / LH), lo: 0, hi: len(rows2) - 1)]
   let target = -1
@@ -1515,7 +1515,7 @@ if show_pv then
     end
   end
   clip_none()
-  // top fade + scrollbar
+  # top fade + scrollbar
   draw_rect_gradient(rect(pv_r.x, pv_r.y, pv_r.w, 28), PAPER, PAPER, pi() / 2, 255, 0)
   if pv_content_h > pv_h then
     let bh = max(36, pv_h * pv_h / pv_content_h)
@@ -1524,7 +1524,7 @@ if show_pv then
   end
 end
 
-// A task ticked in the preview edits the source line.
+# A task ticked in the preview edits the source line.
 if toggle_line >= 0 then
   let s0 = lines[toggle_line]
   let m = list_marker(s0)
@@ -1544,9 +1544,9 @@ if toggle_line >= 0 then
   edits = edits + 1
 end
 
-// ════════════════════════════════════════════════════════════════════════
-//  Rail: documents + outline
-// ════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════
+#  Rail: documents + outline
+# ════════════════════════════════════════════════════════════════════════
 fn label(text: string, x: num, y: num, c: record)
   draw_text(text, pos: {x: x, y: y}, style: {size: FS_MICRO, color: c, spacing: 1.3})
 end
@@ -1593,7 +1593,7 @@ label("OUTLINE", x: rail_pad, y: ry, c: FAINT)
 ry = ry + 22
 let heads = filter(blocks, fn(b) -> b.kind == "heading")
 let outline_n = len(heads)
-// The heading the caret currently sits under.
+# The heading the caret currently sits under.
 let cur_head = -1
 for h in heads do
   if h.line <= cur.line then cur_head = h.line end
@@ -1627,7 +1627,7 @@ if outline_n == 0 then
   draw_text("No headings yet", pos: {x: rail_pad + 4, y: ry + 2}, style: {size: FS_SM, color: FAINT})
 end
 
-// rail footer: reset the demo text
+# rail footer: reset the demo text
 let reset_r = rect(10, H - STATUS_H - 40, RAIL_W - 20, 26)
 let reset_hot = hovered(reset_r)
 draw_rect_rounded(reset_r, radius: 6, c: RAIL_ROW, a: if reset_hot then 255 else 120 end)
@@ -1647,15 +1647,15 @@ if reset_hot && click then
   flash = now
 end
 
-// ════════════════════════════════════════════════════════════════════════
-//  Top bar
-// ════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════
+#  Top bar
+# ════════════════════════════════════════════════════════════════════════
 draw_circle(center: {x: 24, y: TOP_H / 2}, radius: 7, c: ACCENT)
 draw_circle(center: {x: 24, y: TOP_H / 2}, radius: 3, c: RAIL_BG)
 draw_text("Inkwell", pos: {x: 40, y: TOP_H / 2 - 9}, style: {size: 16, color: TEXT, weight: 700, spacing: 0.2})
 draw_text(ellipsize(doc.name, avail_px: 380, size: FS), pos: {x: RAIL_W + 16, y: TOP_H / 2 - 8}, style: {size: FS, color: DIM})
 
-// view-mode segmented control
+# view-mode segmented control
 let seg_labels = ["Editor", "Split", "Preview"]
 let seg_ids = ["editor", "split", "preview"]
 let seg_w = 78
@@ -1676,7 +1676,7 @@ for i in range(0, 3) do
   if hot && click then mode = seg_ids[i] end
 end
 
-// sync toggle
+# sync toggle
 let sync_r = rect(W - 16 - 108, 9, 108, 28)
 let sync_hot = hovered(sync_r)
 draw_rect_rounded(sync_r, radius: 7, c: if sync then ACCENT_INK else SLATE_HI end, a: if sync then 60 else 255 end)
@@ -1688,9 +1688,9 @@ if sync_hot && click then
   last_escroll = -1
 end
 
-// ════════════════════════════════════════════════════════════════════════
-//  Status bar
-// ════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════
+#  Status bar
+# ════════════════════════════════════════════════════════════════════════
 let sy = H - STATUS_H
 draw_rect(rect(0, sy, W, STATUS_H), RAIL_BG)
 draw_rect(rect(0, sy, W, 1), OUTLINE)

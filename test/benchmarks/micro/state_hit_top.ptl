@@ -1,17 +1,17 @@
-// Micro-benchmark: what a `state` hit costs. 200 top-level declarations, each
-// one a hit on every run after the first (the slot exists, so the init block
-// is skipped). `petal bench` starts every run from an empty stack, so this is
-// measured on a kept stack:
-//
-//   cd core && cargo run --release --example rerun_timing -- \
-//     ../test/benchmarks/micro/state_hit_top.ptl \
-//     ../test/benchmarks/micro/state_hit_fn.ptl \
-//     ../test/benchmarks/micro/state_hit_none.ptl
-//
-// A run's time less an empty program's (about 2 µs), over 200, is the cost of
-// one top-level hit; state_hit_fn.ptl's less state_hit_none.ptl's, over 200,
-// is the cost of one hit inside a function.
-// Figures are in docs/dev/performance.md (A state hit).
+# Micro-benchmark: what a `state` hit costs. 200 top-level declarations, each
+# one a hit on every run after the first (the slot exists, so the init block
+# is skipped). `petal bench` starts every run from an empty stack, so this is
+# measured on a kept stack:
+#
+#   cd core && cargo run --release --example rerun_timing -- \
+#     ../test/benchmarks/micro/state_hit_top.ptl \
+#     ../test/benchmarks/micro/state_hit_fn.ptl \
+#     ../test/benchmarks/micro/state_hit_none.ptl
+#
+# A run's time less an empty program's (about 2 µs), over 200, is the cost of
+# one top-level hit; state_hit_fn.ptl's less state_hit_none.ptl's, over 200,
+# is the cost of one hit inside a function.
+# Figures are in docs/dev/performance.md (A state hit).
 
 state s000 = 0
 state s001 = 1

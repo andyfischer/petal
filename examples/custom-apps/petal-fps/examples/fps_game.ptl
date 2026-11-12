@@ -1,26 +1,26 @@
-// === Petal FPS — Cyberpunk City ===
-//
-// A playable first-person shooter. Almost all gameplay logic runs in Petal;
-// the Rust host provides window, input, software z-buffered rasterizer,
-// and a few native helpers.
-//
-// Scene:
-//   - a neon-striped street plane that follows the camera
-//   - twelve skyscrapers from a fixed table below
-//   - patrolling robot enemies; shoot them with the crosshair
-//   - HUD: crosshair, health, ammo, enemy counter, minimap, FPS
-//
-// Controls: mouse looks, WASD moves, left-click / Space shoots, R reloads,
-// Esc releases the mouse grab.
+# === Petal FPS — Cyberpunk City ===
+#
+# A playable first-person shooter. Almost all gameplay logic runs in Petal;
+# the Rust host provides window, input, software z-buffered rasterizer,
+# and a few native helpers.
+#
+# Scene:
+#   - a neon-striped street plane that follows the camera
+#   - twelve skyscrapers from a fixed table below
+#   - patrolling robot enemies; shoot them with the crosshair
+#   - HUD: crosshair, health, ammo, enemy counter, minimap, FPS
+#
+# Controls: mouse looks, WASD moves, left-click / Space shoots, R reloads,
+# Esc releases the mouse grab.
 
 import fps
 import ui/input
 
-// =========================================================================
-// Persistent state (survives hot reload thanks to name-based state keys)
-// =========================================================================
+# =========================================================================
+# Persistent state (survives hot reload thanks to name-based state keys)
+# =========================================================================
 
-// Player
+# Player
 state player_x = 0.0
 state player_y = 1.7
 state player_z = -6.0
@@ -30,10 +30,10 @@ state hp = 100
 state ammo = 30
 state score = 0
 state want_grab = false
-state muzzle = 0      // frames remaining of muzzle flash
+state muzzle = 0      # frames remaining of muzzle flash
 
-// Enemy bots: {x, z, phase, hp, alive}. `phase` is where each one sits on its
-// patrol circle.
+# Enemy bots: {x, z, phase, hp, alive}. `phase` is where each one sits on its
+# patrol circle.
 state enemies = [
   {x:   6.0, z:   6.0, phase: 0.0, hp: 3, alive: true},
   {x:  -5.0, z:   8.0, phase: 1.0, hp: 3, alive: true},
@@ -45,8 +45,8 @@ state enemies = [
   {x:   0.0, z:  26.0, phase: 2.5, hp: 3, alive: true}
 ]
 
-// Buildings: {x, z, w, d, h, r, g, b}. Never written after this, but `state`
-// so that editing the script mid-game leaves the city standing.
+# Buildings: {x, z, w, d, h, r, g, b}. Never written after this, but `state`
+# so that editing the script mid-game leaves the city standing.
 state buildings = [
   {x:  -8.0, z:   4.0, w: 4.0, d: 4.0, h: 10.0, r: 60,  g: 10,  b: 90},
   {x:   8.0, z:   4.0, w: 4.0, d: 4.0, h:  7.0, r: 20,  g: 60,  b: 120},
@@ -62,9 +62,9 @@ state buildings = [
   {x:  16.0, z:  22.0, w: 4.0, d: 4.0, h: 13.0, r: 60,  g: 140, b: 200}
 ]
 
-// =========================================================================
-// Frame constants
-// =========================================================================
+# =========================================================================
+# Frame constants
+# =========================================================================
 let delta = dt()
 let sw = float(screen_width())
 let sh = float(screen_height())
@@ -74,17 +74,17 @@ let fov = 70.0 * pi() / 180.0
 let focal = cy / tan(fov / 2.0)
 let near = 0.2
 
-// =========================================================================
-// Initial mouse grab
-// =========================================================================
+# =========================================================================
+# Initial mouse grab
+# =========================================================================
 if !want_grab then
   grab_mouse()
   want_grab = true
 end
 
-// =========================================================================
-// Input: mouse look + WASD movement
-// =========================================================================
+# =========================================================================
+# Input: mouse look + WASD movement
+# =========================================================================
 let look_sens = 0.0022
 yaw = yaw + float(mouse_dx()) * look_sens
 pitch = pitch - float(mouse_dy()) * look_sens
@@ -109,36 +109,36 @@ if mag_m > 0.01 then
   player_z = player_z + (mz / mag_m) * move_speed * delta
 end
 
-// Keep player above ground & clamped to the street area.
+# Keep player above ground & clamped to the street area.
 if player_x > 22.0 then player_x = 22.0 end
 if player_x < -22.0 then player_x = -22.0 end
 if player_z > 32.0 then player_z = 32.0 end
 if player_z < -12.0 then player_z = -12.0 end
 
-// =========================================================================
-// Shooting: left mouse or SPACE
-// =========================================================================
+# =========================================================================
+# Shooting: left mouse or SPACE
+# =========================================================================
 let fired = false
 if (mouse_pressed(1) || key_pressed("space")) && ammo > 0 then
   fired = true
   ammo = ammo - 1
   muzzle = 4
-  // Ray from camera along view direction
+  # Ray from camera along view direction
   let rx = sin(yaw) * cos(pitch)
   let ry = 0.0 - sin(pitch)
   let rz = cos(yaw) * cos(pitch)
-  // Test against every alive enemy as a sphere of radius ~1.2 m. Closest wins.
+  # Test against every alive enemy as a sphere of radius ~1.2 m. Closest wins.
   let best_t = 1000000.0
   let best_i = -1
   let i = 0
   while i < len(enemies) do
     let e = enemies[i]
     if e.alive then
-      // Enemy center ~1m off ground
+      # Enemy center ~1m off ground
       let dx = e.x - player_x
       let dy = 1.0 - player_y
       let dz = e.z - player_z
-      // t = dot(d, r), then check perpendicular distance
+      # t = dot(d, r), then check perpendicular distance
       let t = dx * rx + dy * ry + dz * rz
       if t > 0.2 && t < best_t then
         let px = rx * t - dx
@@ -166,9 +166,9 @@ if muzzle > 0 then muzzle = muzzle - 1 end
 
 if key_pressed("r") then ammo = 30 end
 
-// =========================================================================
-// Enemy AI: slow circular patrol around spawn. Damage on proximity.
-// =========================================================================
+# =========================================================================
+# Enemy AI: slow circular patrol around spawn. Damage on proximity.
+# =========================================================================
 let ei = 0
 while ei < len(enemies) do
   let e = enemies[ei]
@@ -177,7 +177,7 @@ while ei < len(enemies) do
     let ox = sin(new_phase) * 2.0
     let oz = cos(new_phase) * 2.0
     enemies[ei].phase = new_phase
-    // Damage player if close
+    # Damage player if close
     let dx = (e.x + ox) - player_x
     let dz = (e.z + oz) - player_z
     if dx * dx + dz * dz < 1.5 then
@@ -188,9 +188,9 @@ while ei < len(enemies) do
   ei = ei + 1
 end
 
-// =========================================================================
-// Projection helpers
-// =========================================================================
+# =========================================================================
+# Projection helpers
+# =========================================================================
 let cos_y = cos(0.0 - yaw)
 let sin_y = sin(0.0 - yaw)
 let cos_p = cos(0.0 - pitch)
@@ -263,23 +263,23 @@ fn box_(x: num, y: num, z: num, w: num, h: num, d: num, r: num, g: num, b: num)
     b: int(min(255.0, float(b) * 1.2)))
 end
 
-// =========================================================================
-// Draw: sky + ground + streets
-// =========================================================================
+# =========================================================================
+# Draw: sky + ground + streets
+# =========================================================================
 sky_gradient(40, 8, 90, 240, 70, 150)
 
-// Ground — a patch that follows the camera, rebuilt each frame directly below
-// the player and rotated to face yaw. A world-fixed floor grid would have
-// vertices behind the near plane, and `tri` drops any triangle with one, so
-// sky would leak through the floor at your feet.
+# Ground — a patch that follows the camera, rebuilt each frame directly below
+# the player and rotated to face yaw. A world-fixed floor grid would have
+# vertices behind the near plane, and `tri` drops any triangle with one, so
+# sky would leak through the floor at your feet.
 let ground_half = 50.0
-let gp_near = 0.4       // meters ahead of the camera to start the quad
-let gp_far  = 60.0      // meters ahead to extend
+let gp_near = 0.4       # meters ahead of the camera to start the quad
+let gp_far  = 60.0      # meters ahead to extend
 let gp_left  = 0.0 - ground_half
 let gp_right = ground_half
 
-// One strip, in world space, from `near_d` to `far_d` ahead of the player —
-// all four corners are past the near plane by construction.
+# One strip, in world space, from `near_d` to `far_d` ahead of the player —
+# all four corners are past the near plane by construction.
 fn gstrip(near_d: num, far_d: num, shade: num)
   let ax = player_x + fwd_x * near_d + right_x * gp_left
   let az = player_z + fwd_z * near_d + right_z * gp_left
@@ -293,7 +293,7 @@ fn gstrip(near_d: num, far_d: num, shade: num)
     r: shade, g: shade / 2, b: shade + 20)
 end
 
-// Layer bands of alternating shade from near to far for visual depth.
+# Layer bands of alternating shade from near to far for visual depth.
 let gi = 0
 while gi < 10 do
   let n = gp_near + float(gi) * 6.0
@@ -301,11 +301,11 @@ while gi < 10 do
   gstrip(near_d: n, far_d: f, shade: 12 + (gi % 2) * 10)
   gi = gi + 1
 end
-// Behind the camera — single darker strip (only visible if you turn around).
+# Behind the camera — single darker strip (only visible if you turn around).
 gstrip(near_d: 0.0 - gp_far, far_d: 0.0 - gp_near, shade: 10)
 
-// Neon street lines: cyan cross-strips every 6 m in world Z + fixed magenta
-// center stripe. These are in world coordinates so they anchor the scene.
+# Neon street lines: cyan cross-strips every 6 m in world Z + fixed magenta
+# center stripe. These are in world coordinates so they anchor the scene.
 let neon_i = -8
 while neon_i < 12 do
   let z = float(neon_i) * 6.0
@@ -315,14 +315,14 @@ end
 neon_line(x1: -1.0, y1: 0.05, z1: -48.0, x2: -1.0, y2: 0.05, z2: 72.0, r: 255, g: 50, b: 180)
 neon_line(x1: 1.0, y1: 0.05, z1: -48.0,  x2: 1.0, y2: 0.05, z2: 72.0, r: 255, g: 50, b: 180)
 
-// =========================================================================
-// Draw: buildings with neon rooftop outline
-// =========================================================================
+# =========================================================================
+# Draw: buildings with neon rooftop outline
+# =========================================================================
 let bi = 0
 while bi < len(buildings) do
   let b = buildings[bi]
   box_(x: b.x, y: b.h / 2.0, z: b.z, w: b.w, h: b.h, d: b.d, r: b.r, g: b.g, b: b.b)
-  // Rooftop neon rim
+  # Rooftop neon rim
   let hx = b.w / 2.0
   let hz = b.d / 2.0
   let rt = b.h + 0.02
@@ -333,33 +333,33 @@ while bi < len(buildings) do
   bi = bi + 1
 end
 
-// =========================================================================
-// Draw: enemies — colored cubes that bob on their patrol path.
-// =========================================================================
+# =========================================================================
+# Draw: enemies — colored cubes that bob on their patrol path.
+# =========================================================================
 let di = 0
 while di < len(enemies) do
   let e = enemies[di]
   if e.alive then
     let ex = e.x + sin(e.phase) * 2.0
     let ez = e.z + cos(e.phase) * 2.0
-    // Body
+    # Body
     box_(x: ex, y: 0.8, z: ez, w: 0.9, h: 1.4, d: 0.9, r: 230, g: 40, b: 60)
-    // Head (glowing cyan)
+    # Head (glowing cyan)
     box_(x: ex, y: 1.7, z: ez, w: 0.55, h: 0.55, d: 0.55, r: 60, g: 240, b: 230)
-    // HP dot — small white box on top that shrinks as HP drops
+    # HP dot — small white box on top that shrinks as HP drops
     let hb = 0.15 * float(e.hp)
     box_(x: ex, y: 2.1, z: ez, w: hb, h: 0.1, d: hb, r: 255, g: 255, b: 255)
   end
   di = di + 1
 end
 
-// =========================================================================
-// HUD
-// =========================================================================
+# =========================================================================
+# HUD
+# =========================================================================
 let cxh = int(cx)
 let cyh = int(cy)
 
-// Crosshair — amber while the muzzle flash is up.
+# Crosshair — amber while the muzzle flash is up.
 let ch_col_r = 200
 let ch_col_g = 255
 let ch_col_b = 220
@@ -371,23 +371,23 @@ rect2d(cxh - 1, cyh + 2, 2, 7, ch_col_r, ch_col_g, ch_col_b)
 rect2d(cxh - 9, cyh - 1, 7, 2, ch_col_r, ch_col_g, ch_col_b)
 rect2d(cxh + 2, cyh - 1, 7, 2, ch_col_r, ch_col_g, ch_col_b)
 
-// Muzzle flash bloom
+# Muzzle flash bloom
 if muzzle > 0 then
   let flash = muzzle * 4
   rect2d(cxh - flash, cyh - flash, flash * 2, flash * 2, 255, 200, 40)
 end
 
-// Health bar (bottom-left)
+# Health bar (bottom-left)
 let hp_max_w = 200
 let hp_w = hp_max_w * hp / 100
 rect2d(16, int(sh) - 40, hp_max_w, 16, 30, 10, 30)
 rect2d(16, int(sh) - 40, hp_w, 16, 255, 60, 90)
 text2d("HP " ++ str(hp), 20, int(sh) - 38, 2, 255, 255, 255)
 
-// Ammo (bottom-right)
+# Ammo (bottom-right)
 text2d("AMMO " ++ str(ammo) ++ "/30", int(sw) - 200, int(sh) - 38, 3, 255, 220, 60)
 
-// Score + enemies left
+# Score + enemies left
 let alive_count = 0
 let ci = 0
 while ci < len(enemies) do
@@ -397,26 +397,26 @@ end
 text2d("SCORE " ++ str(score), int(sw) - 200, 10, 3, 60, 240, 230)
 text2d("ENEMIES " ++ str(alive_count), int(sw) - 200, 40, 2, 200, 200, 200)
 
-// Debug readouts
+# Debug readouts
 text2d("POS " ++ str(int(player_x)) ++ " " ++ str(int(player_z)), 10, 10, 2, 180, 255, 220)
 text2d("FPS " ++ str(int(1.0 / (delta + 0.0001))), 10, 30, 2, 140, 200, 180)
 
-// -------- Minimap (top-right, under SCORE) --------
+# -------- Minimap (top-right, under SCORE) --------
 let mm_size = 140
 let mm_x = int(sw) - mm_size - 20
 let mm_y = 80
-let mm_scale = 0.5  // world units per pixel (140 px → 70 m radius)
+let mm_scale = 0.5  # world units per pixel (140 px → 70 m radius)
 rect2d(mm_x - 2, mm_y - 2, mm_size + 4, mm_size + 4, 200, 220, 240)
 rect2d(mm_x, mm_y, mm_size, mm_size, 10, 10, 25)
-// Player
+# Player
 let mpx = mm_x + mm_size / 2
 let mpy = mm_y + mm_size / 2
 rect2d(mpx - 2, mpy - 2, 4, 4, 60, 255, 230)
-// Facing tick
+# Facing tick
 let tx = mpx + int(sin(yaw) * 6.0)
 let ty = mpy - int(cos(yaw) * 6.0)
 line2d(mpx, mpy, tx, ty, 60, 255, 230)
-// Buildings as dim rects
+# Buildings as dim rects
 let mmi = 0
 while mmi < len(buildings) do
   let b = buildings[mmi]
@@ -429,7 +429,7 @@ while mmi < len(buildings) do
   end
   mmi = mmi + 1
 end
-// Enemies as red dots
+# Enemies as red dots
 let mme = 0
 while mme < len(enemies) do
   let e = enemies[mme]
@@ -443,7 +443,7 @@ while mme < len(enemies) do
   mme = mme + 1
 end
 
-// Game over overlay
+# Game over overlay
 if hp <= 0 then
   rect2d(0, 0, int(sw), int(sh), 60, 0, 20)
   text2d("YOU DIED", int(cx) - 80, int(cy) - 20, 6, 255, 60, 60)

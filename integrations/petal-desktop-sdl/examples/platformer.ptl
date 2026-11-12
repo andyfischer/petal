@@ -1,25 +1,25 @@
-// Simple Platformer
-// Arrow keys to move, space to jump
-// Collect coins to score points!
+# Simple Platformer
+# Arrow keys to move, space to jump
+# Collect coins to score points!
 
 import ui
 
-// Player state
+# Player state
 state px = 100.0
 state py = 400.0
 state vx = 0.0
 state vy = 0.0
 state on_ground = false
-// A cell: the only writer is the coin-collision `map` callback below, which
-// cannot reach an ordinary `state` binding across the lambda boundary.
+# A cell: the only writer is the coin-collision `map` callback below, which
+# cannot reach an ordinary `state` binding across the lambda boundary.
 state var score = 0
 state facing_right = true
 state jump_timer = 0.0
 
-// Particles for jump dust
+# Particles for jump dust
 state particles = []
 
-// Clouds (generated once)
+# Clouds (generated once)
 state clouds = [
   {x: 80, y: 60, w: 90},
   {x: 300, y: 40, w: 70},
@@ -28,7 +28,7 @@ state clouds = [
   {x: 180, y: 100, w: 60}
 ]
 
-// Background trees
+# Background trees
 state trees = [
   {x: 50, h: 80},
   {x: 200, h: 100},
@@ -38,7 +38,7 @@ state trees = [
   {x: 770, h: 75}
 ]
 
-// Platforms: list of {x, y, w, h}
+# Platforms: list of {x, y, w, h}
 state platforms = [
   {x: 0, y: 550, w: 800, h: 50},
   {x: 150, y: 450, w: 120, h: 15},
@@ -50,7 +50,7 @@ state platforms = [
   {x: 100, y: 150, w: 110, h: 15}
 ]
 
-// Coins: list of {x, y, collected}
+# Coins: list of {x, y, collected}
 state coins = [
   {x: 200, y: 420, collected: false},
   {x: 460, y: 370, collected: false},
@@ -93,7 +93,7 @@ let sparkle_yellow = {r: 255, g: 255, b: 200}
 let white = {r: 255, g: 255, b: 255}
 let hint_color = {r: 180, g: 180, b: 200}
 
-// Input
+# Input
 vx = 0.0
 if key_down("left") then
   vx = -move_speed
@@ -107,7 +107,7 @@ if key_pressed("space") && on_ground then
   vy = jump_force
   on_ground = false
   jump_timer = 0.3
-  // Spawn dust particles
+  # Spawn dust particles
   let i = 0
   while i < 6 do
     particles = append(particles, {
@@ -126,7 +126,7 @@ if jump_timer > 0.0 then
   jump_timer -= delta
 end
 
-// Update particles
+# Update particles
 particles = map(particles, fn(p)
   {
     x: p.x + p.vx * delta,
@@ -139,20 +139,20 @@ particles = map(particles, fn(p)
 end)
 particles = filter(particles, fn(p) -> p.life > 0.0)
 
-// Apply gravity
+# Apply gravity
 vy += gravity * delta
 
-// Move horizontally
+# Move horizontally
 px += vx * delta
 
-// Wrap horizontally
+# Wrap horizontally
 if px > 800.0 then px = px - 824.0 end
 if px < -24.0 then px = px + 824.0 end
 
-// Move vertically
+# Move vertically
 py += vy * delta
 
-// Platform collision
+# Platform collision
 on_ground = false
 for plat in platforms do
   let plat_x = float(plat.x)
@@ -160,9 +160,9 @@ for plat in platforms do
   let plat_w = float(plat.w)
   let plat_h = float(plat.h)
 
-  // Check if player overlaps platform horizontally
+  # Check if player overlaps platform horizontally
   if px + float(pw) > plat_x && px < plat_x + plat_w then
-    // Falling onto platform (feet at py + ph)
+    # Falling onto platform (feet at py + ph)
     if vy >= 0.0 && py + float(ph) > plat_y && py + float(ph) < plat_y + plat_h + vy * delta then
       py = plat_y - float(ph)
       vy = 0.0
@@ -171,7 +171,7 @@ for plat in platforms do
   end
 end
 
-// Coin collision
+# Coin collision
 coins = map(coins, fn(c)
   if c.collected then
     c
@@ -189,16 +189,16 @@ coins = map(coins, fn(c)
   end
 end)
 
-// Keep player on screen vertically
+# Keep player on screen vertically
 if py > 560.0 then
   py = 400.0
   vy = 0.0
 end
 
-// === DRAWING ===
+# === DRAWING ===
 
-// --- Sky gradient background ---
-// Dark blue at top, lighter blue-purple toward horizon
+# --- Sky gradient background ---
+# Dark blue at top, lighter blue-purple toward horizon
 let sky_row = 0
 while sky_row < 11 do
   let sy = sky_row * 50
@@ -209,21 +209,21 @@ while sky_row < 11 do
   sky_row += 1
 end
 
-// --- Clouds ---
+# --- Clouds ---
 for cloud in clouds do
   let cx = cloud.x
   let cy = cloud.y
   let cw = cloud.w
-  // Subtle cloud drift
+  # Subtle cloud drift
   let drift = (fc / 3) % 800
   let cloud_x = (cx + drift) % 850 - 50
-  // Cloud body (layered circles for fluffy look)
+  # Cloud body (layered circles for fluffy look)
   draw_circle(cx: cloud_x + cw / 3, cy: cy + 8, radius: cw / 4, r: 220, g: 225, b: 240)
   draw_circle(cx: cloud_x + cw * 2 / 3, cy: cy + 8, radius: cw / 4, r: 220, g: 225, b: 240)
   draw_circle(cx: cloud_x + cw / 2, cy: cy, radius: cw / 3, r: 230, g: 235, b: 248)
 end
 
-// --- Background hills (distant, darker) ---
+# --- Background hills (distant, darker) ---
 let hill = 0
 while hill < 8 do
   let hx = hill * 120 - 40
@@ -234,26 +234,26 @@ while hill < 8 do
   hill += 1
 end
 
-// --- Background trees ---
+# --- Background trees ---
 for tree in trees do
   let tx = tree.x
   let th = tree.h
   let ty = 550 - th
-  // Trunk
+  # Trunk
   draw_rect(x: tx + 8, y: ty + th / 2, w: 8, h: th / 2, r: 90, g: 60, b: 35)
-  // Foliage layers (triangles approximated with circles)
+  # Foliage layers (triangles approximated with circles)
   draw_circle(cx: tx + 12, cy: ty + th / 3, radius: 18, r: 30, g: 85, b: 30)
   draw_circle(cx: tx + 12, cy: ty + th / 6, radius: 14, r: 40, g: 100, b: 35)
   draw_circle(cx: tx + 12, cy: ty + 4, radius: 10, r: 50, g: 115, b: 40)
 end
 
-// --- Ground (main platform) bottom fill ---
+# --- Ground (main platform) bottom fill ---
 draw_rect(x: 0, y: 550, w: 800, h: 50, r: 80, g: 50, b: 30)
-// Grass layer on top of ground
+# Grass layer on top of ground
 draw_rect(x: 0, y: 548, w: 800, h: 6, r: 60, g: 160, b: 50)
-// Lighter grass highlight
+# Lighter grass highlight
 draw_rect(x: 0, y: 548, w: 800, h: 2, r: 80, g: 190, b: 60)
-// Dirt texture spots
+# Dirt texture spots
 let dirt = 0
 while dirt < 12 do
   let dx = dirt * 70 + 15
@@ -261,7 +261,7 @@ while dirt < 12 do
   draw_rect(x: dx + 30, y: 575, w: 8, h: 4, r: 65, g: 38, b: 20)
   dirt += 1
 end
-// Grass blades on ground
+# Grass blades on ground
 let blade = 0
 while blade < 30 do
   let bx = blade * 27 + 5
@@ -271,31 +271,31 @@ while blade < 30 do
   blade += 1
 end
 
-// --- Draw floating platforms (with grass/dirt detail) ---
+# --- Draw floating platforms (with grass/dirt detail) ---
 for plat in platforms do
   if plat.y < 540 then
-    // Dirt body
+    # Dirt body
     draw_rect(x: plat.x, y: plat.y + 3, w: plat.w, h: plat.h - 3, r: 110, g: 70, b: 40)
-    // Darker bottom edge
+    # Darker bottom edge
     draw_rect(x: plat.x, y: plat.y + plat.h - 3, w: plat.w, h: 3, r: 85, g: 55, b: 30)
-    // Grass top layer
+    # Grass top layer
     draw_rect(x: plat.x, y: plat.y, w: plat.w, h: 5, r: 60, g: 170, b: 55)
-    // Bright grass highlight
+    # Bright grass highlight
     draw_rect(x: plat.x, y: plat.y, w: plat.w, h: 2, r: 80, g: 200, b: 65)
-    // Grass blade details on platforms
+    # Grass blade details on platforms
     let pb = 0
     while pb < plat.w / 15 do
       let pbx = plat.x + pb * 15 + 4
       draw_line({x: pbx, y: plat.y}, {x: pbx - 1, y: plat.y - 4}, grass_green3)
       pb += 1
     end
-    // Side edges
+    # Side edges
     draw_line({x: plat.x, y: plat.y}, {x: plat.x, y: plat.y + plat.h}, plat_edge_brown)
     draw_line({x: plat.x + plat.w - 1, y: plat.y}, {x: plat.x + plat.w - 1, y: plat.y + plat.h}, plat_edge_brown)
   end
 end
 
-// --- Draw particles (jump dust) ---
+# --- Draw particles (jump dust) ---
 for p in particles do
   let alpha_ratio = p.life / 0.5
   let pr = int(200.0 * alpha_ratio)
@@ -304,7 +304,7 @@ for p in particles do
   draw_circle(cx: int(p.x), cy: int(p.y), radius: int(p.size), r: 140 + pr / 3, g: 120 + pg / 3, b: 90 + pb / 3)
 end
 
-// --- Draw coins (with sparkle animation) ---
+# --- Draw coins (with sparkle animation) ---
 for c in coins do
   if !c.collected then
     let coin_bob = (fc + c.x * 3) % 40
@@ -316,13 +316,13 @@ for c in coins do
     end
     let cy = c.y + bob_offset
 
-    // Coin glow (outer ring)
+    # Coin glow (outer ring)
     draw_circle(cx: c.x, cy: cy, radius: 11, r: 180, g: 140, b: 20)
-    // Coin body
+    # Coin body
     draw_circle(cx: c.x, cy: cy, radius: 8, r: 255, g: 210, b: 40)
-    // Coin highlight (inner shine)
+    # Coin highlight (inner shine)
     draw_circle(cx: c.x - 2, cy: cy - 2, radius: 4, r: 255, g: 240, b: 120)
-    // Sparkle effect
+    # Sparkle effect
     let sparkle_phase = (fc + c.x * 7) % 30
     if sparkle_phase < 10 then
       let sx = c.x + 8
@@ -333,47 +333,47 @@ for c in coins do
   end
 end
 
-// --- Draw player character ---
+# --- Draw player character ---
 let player_x = int(px)
 let player_y = int(py)
 
-// Body
+# Body
 draw_rect(x: player_x + 2, y: player_y + 10, w: 20, h: 18, r: 60, g: 130, b: 230)
-// Body highlight
+# Body highlight
 draw_rect(x: player_x + 4, y: player_y + 12, w: 6, h: 14, r: 80, g: 150, b: 245)
 
-// Head
+# Head
 draw_rect(x: player_x + 1, y: player_y + 2, w: 22, h: 14, r: 240, g: 195, b: 160)
-// Hair / hat
+# Hair / hat
 draw_rect(x: player_x, y: player_y - 2, w: 24, h: 6, r: 200, g: 60, b: 60)
-// Hat brim
+# Hat brim
 draw_rect(x: player_x - 2, y: player_y + 3, w: 28, h: 3, r: 180, g: 50, b: 50)
 
-// Eyes (direction-aware)
+# Eyes (direction-aware)
 if facing_right then
-  // Right-facing eyes
+  # Right-facing eyes
   draw_rect(x: player_x + 12, y: player_y + 6, w: 4, h: 5, r: 255, g: 255, b: 255)
   draw_rect(x: player_x + 17, y: player_y + 6, w: 4, h: 5, r: 255, g: 255, b: 255)
-  // Pupils
+  # Pupils
   draw_rect(x: player_x + 14, y: player_y + 8, w: 2, h: 3, r: 30, g: 30, b: 60)
   draw_rect(x: player_x + 19, y: player_y + 8, w: 2, h: 3, r: 30, g: 30, b: 60)
 else
-  // Left-facing eyes
+  # Left-facing eyes
   draw_rect(x: player_x + 3, y: player_y + 6, w: 4, h: 5, r: 255, g: 255, b: 255)
   draw_rect(x: player_x + 8, y: player_y + 6, w: 4, h: 5, r: 255, g: 255, b: 255)
-  // Pupils
+  # Pupils
   draw_rect(x: player_x + 3, y: player_y + 8, w: 2, h: 3, r: 30, g: 30, b: 60)
   draw_rect(x: player_x + 8, y: player_y + 8, w: 2, h: 3, r: 30, g: 30, b: 60)
 end
 
-// Mouth (small)
+# Mouth (small)
 if facing_right then
   draw_rect(x: player_x + 14, y: player_y + 13, w: 4, h: 2, r: 200, g: 100, b: 100)
 else
   draw_rect(x: player_x + 6, y: player_y + 13, w: 4, h: 2, r: 200, g: 100, b: 100)
 end
 
-// Legs (animated when moving)
+# Legs (animated when moving)
 let leg_phase = (fc * 3) % 12
 if abs(vx) > 10.0 then
   if leg_phase < 6 then
@@ -384,12 +384,12 @@ if abs(vx) > 10.0 then
     draw_rect(x: player_x + 14, y: player_y + 28, w: 6, h: 6, r: 50, g: 50, b: 120)
   end
 else
-  // Standing
+  # Standing
   draw_rect(x: player_x + 4, y: player_y + 28, w: 6, h: 6, r: 50, g: 50, b: 120)
   draw_rect(x: player_x + 14, y: player_y + 28, w: 6, h: 6, r: 50, g: 50, b: 120)
 end
 
-// Shoes
+# Shoes
 if abs(vx) > 10.0 then
   if leg_phase < 6 then
     draw_rect(x: player_x + 3, y: player_y + 33, w: 8, h: 3, r: 160, g: 50, b: 40)
@@ -403,16 +403,16 @@ else
   draw_rect(x: player_x + 13, y: player_y + 33, w: 8, h: 3, r: 160, g: 50, b: 40)
 end
 
-// --- HUD ---
-// Score background
+# --- HUD ---
+# Score background
 draw_rect(x: 10, y: 10, w: 160, h: 36, r: 0, g: 0, b: 0)
 draw_rect(x: 11, y: 11, w: 158, h: 34, r: 30, g: 30, b: 60)
-// Coin icon in HUD
+# Coin icon in HUD
 draw_circle(cx: 30, cy: 28, radius: 8, r: 255, g: 210, b: 40)
 draw_circle(cx: 28, cy: 26, radius: 4, r: 255, g: 240, b: 120)
-// Score text
+# Score text
 draw_text("x " ++ str(score), {x: 45, y: 18}, 24, white)
 
-// Controls hint
+# Controls hint
 draw_rect(x: 220, y: 572, w: 360, h: 22, r: 0, g: 0, b: 0)
 draw_text("Arrows: Move  Space: Jump", {x: 240, y: 574}, 16, hint_color)

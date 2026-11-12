@@ -1,15 +1,15 @@
-// Asteroids - Simplified with 8-directional movement
-// Arrow keys to move, Space to shoot
+# Asteroids - Simplified with 8-directional movement
+# Arrow keys to move, Space to shoot
 
 import ui
 
-// Ship state
+# Ship state
 state ship_x = 400.0
 state ship_y = 300.0
 state ship_dir = 0
-// Direction: 0=up, 1=up-right, 2=right, 3=down-right, 4=down, 5=down-left, 6=left, 7=up-left
+# Direction: 0=up, 1=up-right, 2=right, 3=down-right, 4=down, 5=down-left, 6=left, 7=up-left
 
-// Game state
+# Game state
 state bullets = []
 state asteroids = []
 state score = 0
@@ -17,7 +17,7 @@ state spawn_timer = 0.0
 state game_over = false
 state cooldown = 0.0
 
-// Visual effects state
+# Visual effects state
 state particles = []
 state stars = []
 state screen_shake = 0.0
@@ -45,7 +45,7 @@ let swf = float(sw)
 let shf = float(sh)
 let frame = frame_count()
 
-// Initialize starfield once
+# Initialize starfield once
 if !stars_initialized then
   stars_initialized = true
   for i in range(0, 80) do
@@ -59,8 +59,8 @@ if !stars_initialized then
   end
 end
 
-// Direction vectors for 8 directions (dx, dy) scaled to 1
-// 0=up, 1=up-right, 2=right, 3=down-right, 4=down, 5=down-left, 6=left, 7=up-left
+# Direction vectors for 8 directions (dx, dy) scaled to 1
+# 0=up, 1=up-right, 2=right, 3=down-right, 4=down, 5=down-left, 6=left, 7=up-left
 let dir_x = [0.0, 0.7, 1.0, 0.7, 0.0, -0.7, -1.0, -0.7]
 let dir_y = [-1.0, -0.7, 0.0, 0.7, 1.0, 0.7, 0.0, -0.7]
 
@@ -69,7 +69,7 @@ let bullet_speed = 400.0
 let is_thrusting = false
 
 if !game_over then
-  // Input: change direction
+  # Input: change direction
   if key_down("left") && key_down("up") then
     ship_dir = 7
   elsif key_down("right") && key_down("up") then
@@ -88,13 +88,13 @@ if !game_over then
     ship_dir = 6
   end
 
-  // Movement
+  # Movement
   if key_down("up") || key_down("down") || key_down("left") || key_down("right") then
     ship_x += dir_x[ship_dir] * speed * delta
     ship_y += dir_y[ship_dir] * speed * delta
     is_thrusting = true
 
-    // Spawn exhaust particles
+    # Spawn exhaust particles
     for i in range(0, 2) do
       let ex_dx = -dir_x[ship_dir] * random(40.0, 120.0) + random(-30.0, 30.0)
       let ex_dy = -dir_y[ship_dir] * random(40.0, 120.0) + random(-30.0, 30.0)
@@ -112,13 +112,13 @@ if !game_over then
     end
   end
 
-  // Wrap ship
+  # Wrap ship
   if ship_x < 0.0 then ship_x += swf end
   if ship_x > swf then ship_x -= swf end
   if ship_y < 0.0 then ship_y += shf end
   if ship_y > shf then ship_y -= shf end
 
-  // Shoot
+  # Shoot
   cooldown -= delta
   if cooldown < 0.0 then cooldown = 0.0 end
   if key_pressed("space") && cooldown <= 0.0 then
@@ -130,7 +130,7 @@ if !game_over then
       dy: dir_y[ship_dir] * bullet_speed,
       life: 1.5
     })
-    // Muzzle flash particles
+    # Muzzle flash particles
     for i in range(0, 4) do
       particles = append(particles, {
         x: ship_x + dir_x[ship_dir] * 16.0,
@@ -146,42 +146,42 @@ if !game_over then
     end
   end
 
-  // Update bullets
+  # Update bullets
   bullets = map(bullets, fn(b) -> { x: b.x + b.dx * delta, y: b.y + b.dy * delta, dx: b.dx, dy: b.dy, life: b.life - delta })
 
-  // Remove off-screen or expired bullets
+  # Remove off-screen or expired bullets
   bullets = filter(bullets, fn(b) -> b.x > -10.0 && b.x < swf + 10.0 && b.y > -10.0 && b.y < shf + 10.0 && b.life > 0.0)
 
-  // Spawn asteroids
+  # Spawn asteroids
   spawn_timer += delta
   if spawn_timer > 1.5 then
     spawn_timer = 0.0
-    // Pick a random edge to spawn from
+    # Pick a random edge to spawn from
     let edge = int(random(0.0, 4.0))
     let ax = 0.0
     let ay = 0.0
     let adx = 0.0
     let ady = 0.0
     if edge == 0 then
-      // Top
+      # Top
       ax = random(0.0, swf)
       ay = -30.0
       adx = random(-60.0, 60.0)
       ady = random(30.0, 80.0)
     elsif edge == 1 then
-      // Bottom
+      # Bottom
       ax = random(0.0, swf)
       ay = shf + 30.0
       adx = random(-60.0, 60.0)
       ady = random(-80.0, -30.0)
     elsif edge == 2 then
-      // Left
+      # Left
       ax = -30.0
       ay = random(0.0, shf)
       adx = random(30.0, 80.0)
       ady = random(-60.0, 60.0)
     else
-      // Right
+      # Right
       ax = swf + 30.0
       ay = random(0.0, shf)
       adx = random(-80.0, -30.0)
@@ -192,12 +192,12 @@ if !game_over then
     asteroids = append(asteroids, { x: ax, y: ay, dx: adx, dy: ady, size: asize, rot: arot })
   end
 
-  // Update asteroids
+  # Update asteroids
   asteroids = map(asteroids, fn(a)
     let nx = a.x + a.dx * delta
     let ny = a.y + a.dy * delta
     let nr = a.rot + 50.0 * delta
-    // Wrap around
+    # Wrap around
     if nx < -50.0 then nx += swf + 100.0 end
     if nx > swf + 50.0 then nx -= swf + 100.0 end
     if ny < -50.0 then ny += shf + 100.0 end
@@ -205,7 +205,7 @@ if !game_over then
     { x: nx, y: ny, dx: a.dx, dy: a.dy, size: a.size, rot: nr }
   end)
 
-  // Collision: bullets vs asteroids
+  # Collision: bullets vs asteroids
   let new_asteroids = []
   let new_bullets = bullets
   for a in asteroids do
@@ -219,11 +219,11 @@ if !game_over then
         hit = true
         score += 10
 
-        // Explosion particles
+        # Explosion particles
         for i in range(0, 12) do
           let angle_approx = random(0.0, 6.28)
           let spd = random(40.0, 180.0)
-          // Approximate cos/sin with direction
+          # Approximate cos/sin with direction
           let px_dir = random(-1.0, 1.0)
           let py_dir = random(-1.0, 1.0)
           let plen = max(abs(px_dir) + abs(py_dir), 0.3)
@@ -240,7 +240,7 @@ if !game_over then
           })
         end
 
-        // Debris particles (gray)
+        # Debris particles (gray)
         for i in range(0, 6) do
           let px_dir = random(-1.0, 1.0)
           let py_dir = random(-1.0, 1.0)
@@ -259,7 +259,7 @@ if !game_over then
           })
         end
 
-        // Screen shake on hit
+        # Screen shake on hit
         screen_shake = 0.15
       else
         remaining = append(remaining, b)
@@ -273,7 +273,7 @@ if !game_over then
   asteroids = new_asteroids
   bullets = new_bullets
 
-  // Collision: ship vs asteroids
+  # Collision: ship vs asteroids
   for a in asteroids do
     let dist_x = ship_x - a.x
     let dist_y = ship_y - a.y
@@ -283,7 +283,7 @@ if !game_over then
       game_over = true
       screen_shake = 0.4
 
-      // Big explosion on ship death
+      # Big explosion on ship death
       for i in range(0, 25) do
         let px_dir = random(-1.0, 1.0)
         let py_dir = random(-1.0, 1.0)
@@ -305,13 +305,13 @@ if !game_over then
   end
 end
 
-// Update screen shake
+# Update screen shake
 if screen_shake > 0.0 then
   screen_shake -= delta
   if screen_shake < 0.0 then screen_shake = 0.0 end
 end
 
-// Update particles
+# Update particles
 particles = map(particles, fn(p) -> { x: p.x + p.dx * delta, y: p.y + p.dy * delta,
   dx: p.dx * 0.97, dy: p.dy * 0.97,
   life: p.life - delta, max_life: p.max_life,
@@ -319,14 +319,14 @@ particles = map(particles, fn(p) -> { x: p.x + p.dx * delta, y: p.y + p.dy * del
   size: p.size, kind: p.kind })
 particles = filter(particles, fn(p) -> p.life > 0.0)
 
-// Slowly scroll stars
+# Slowly scroll stars
 stars = map(stars, fn(s)
   let ny = s.y + s.speed * delta
   if ny > shf then ny = ny - shf end
   { x: s.x, y: ny, brightness: s.brightness, size: s.size, speed: s.speed }
 end)
 
-// Restart on space when game over
+# Restart on space when game over
 if game_over && key_pressed("space") then
   game_over = false
   ship_x = 400.0
@@ -338,9 +338,9 @@ if game_over && key_pressed("space") then
   spawn_timer = 0.0
 end
 
-// === DRAWING ===
+# === DRAWING ===
 
-// Screen shake offset
+# Screen shake offset
 let shake_x = 0
 let shake_y = 0
 if screen_shake > 0.0 then
@@ -348,13 +348,13 @@ if screen_shake > 0.0 then
   shake_y = int(random(-3.0, 3.0) * screen_shake * 10.0)
 end
 
-// Deep space background
+# Deep space background
 clear(5, 5, 15)
 
-// Draw stars
+# Draw stars
 for s in stars do
   let sb = int(s.brightness)
-  // Twinkling: modulate brightness with frame
+  # Twinkling: modulate brightness with frame
   let twinkle = int(s.brightness * 0.7) + int(s.brightness * 0.3)
   let si = int(s.size)
   if si >= 2 then
@@ -364,7 +364,7 @@ for s in stars do
   end
 end
 
-// Draw particles (behind game objects for glow effect)
+# Draw particles (behind game objects for glow effect)
 for p in particles do
   let alpha = p.life / p.max_life
   let pr = int(p.r * alpha)
@@ -375,47 +375,47 @@ for p in particles do
   let px = int(p.x) + shake_x
   let py = int(p.y) + shake_y
   if p.kind == 1 && ps > 2 then
-    // Explosion particles get a glow
+    # Explosion particles get a glow
     draw_circle(cx: px, cy: py, radius: ps + 1, r: int(float(pr) * 0.3), g: int(float(pg) * 0.3), b: int(float(pb) * 0.3))
   end
   draw_circle(cx: px, cy: py, radius: ps, r: pr, g: pg, b: pb)
 end
 
-// Draw asteroids with layered look
+# Draw asteroids with layered look
 for a in asteroids do
   let ax = int(a.x) + shake_x
   let ay = int(a.y) + shake_y
   let as_int = int(a.size)
 
-  // Outer glow
+  # Outer glow
   draw_circle(cx: ax, cy: ay, radius: as_int + 2, r: 60, g: 50, b: 40)
-  // Main body
+  # Main body
   draw_circle(cx: ax, cy: ay, radius: as_int, r: 140, g: 120, b: 100)
-  // Inner highlight (off-center for 3D effect)
+  # Inner highlight (off-center for 3D effect)
   draw_circle(cx: ax - as_int / 4, cy: ay - as_int / 4, radius: as_int / 2, r: 170, g: 155, b: 135)
-  // Dark crater-like details
+  # Dark crater-like details
   draw_circle(cx: ax + as_int / 3, cy: ay + as_int / 4, radius: max(as_int / 4, 2), r: 100, g: 85, b: 70)
   draw_circle(cx: ax - as_int / 5, cy: ay + as_int / 3, radius: max(as_int / 5, 1), r: 90, g: 75, b: 60)
 end
 
-// Draw bullets with glow trail
+# Draw bullets with glow trail
 for b in bullets do
   let bx = int(b.x) + shake_x
   let by = int(b.y) + shake_y
-  // Glow
+  # Glow
   draw_circle(cx: bx, cy: by, radius: 5, r: 80, g: 80, b: 0)
-  // Core
+  # Core
   draw_circle(cx: bx, cy: by, radius: 3, r: 255, g: 255, b: 100)
-  // Bright center
+  # Bright center
   draw_circle(cx: bx, cy: by, radius: 1, r: 255, g: 255, b: 255)
 end
 
-// Draw ship
+# Draw ship
 let sx = int(ship_x) + shake_x
 let sy = int(ship_y) + shake_y
 
 if !game_over then
-  // Ship glow (engine area)
+  # Ship glow (engine area)
   if is_thrusting then
     let glow_x = sx - int(dir_x[ship_dir] * 10.0)
     let glow_y = sy - int(dir_y[ship_dir] * 10.0)
@@ -423,31 +423,31 @@ if !game_over then
     draw_circle(cx: glow_x, cy: glow_y, radius: 5, r: 80, g: 40, b: 0)
   end
 
-  // Shield/aura glow
+  # Shield/aura glow
   draw_circle(cx: sx, cy: sy, radius: 14, r: 0, g: 30, b: 50)
 
-  // Ship body - main fuselage
+  # Ship body - main fuselage
   draw_rect(x: sx - 3, y: sy - 10, w: 6, h: 20, r: 20, g: 140, b: 220)
 
-  // Ship wings
+  # Ship wings
   draw_rect(x: sx - 10, y: sy, w: 7, h: 12, r: 15, g: 100, b: 180)
   draw_rect(x: sx + 3, y: sy, w: 7, h: 12, r: 15, g: 100, b: 180)
 
-  // Wing tips (brighter)
+  # Wing tips (brighter)
   draw_rect(x: sx - 10, y: sy + 8, w: 3, h: 4, r: 0, g: 200, b: 255)
   draw_rect(x: sx + 7, y: sy + 8, w: 3, h: 4, r: 0, g: 200, b: 255)
 
-  // Cockpit highlight
+  # Cockpit highlight
   draw_rect(x: sx - 2, y: sy - 8, w: 4, h: 5, r: 100, g: 220, b: 255)
   draw_rect(x: sx - 1, y: sy - 6, w: 2, h: 3, r: 180, g: 240, b: 255)
 
-  // Direction indicator (brighter, pulsing)
+  # Direction indicator (brighter, pulsing)
   let front_x = int(ship_x + dir_x[ship_dir] * 16.0) + shake_x
   let front_y = int(ship_y + dir_y[ship_dir] * 16.0) + shake_y
   draw_circle(cx: front_x, cy: front_y, radius: 3, r: 255, g: 60, b: 60)
   draw_circle(cx: front_x, cy: front_y, radius: 1, r: 255, g: 200, b: 200)
 
-  // Engine nozzle glow when thrusting
+  # Engine nozzle glow when thrusting
   if is_thrusting then
     let eng_x = sx + int(-dir_x[ship_dir] * 12.0)
     let eng_y = sy + int(-dir_y[ship_dir] * 12.0)
@@ -456,21 +456,21 @@ if !game_over then
   end
 end
 
-// === HUD ===
+# === HUD ===
 
-// Score background bar
+# Score background bar
 draw_rect(x: 0, y: 0, w: sw, h: 40, r: 10, g: 10, b: 30)
 draw_line({x: 0, y: 40}, {x: sw, y: 40}, {r: 0, g: 80, b: 160})
 
-// Score text
+# Score text
 draw_text("SCORE", {x: 20, y: 8}, 14, {r: 0, g: 150, b: 255})
 draw_text(str(score), {x: 20, y: 22}, 22, :ffffff)
 
-// Asteroid count
+# Asteroid count
 let acount = len(asteroids)
 draw_text("ASTEROIDS: " ++ str(acount), {x: sw - 180, y: 12}, 16, {r: 180, g: 180, b: 200})
 
-// Controls hint (fades out after a few seconds)
+# Controls hint (fades out after a few seconds)
 if frame < 300 then
   let hint_alpha = 255
   if frame > 200 then
@@ -480,7 +480,7 @@ if frame < 300 then
 end
 
 if game_over then
-  // Dark overlay
+  # Dark overlay
   draw_rect(x: 0, y: sh / 2 - 60, w: sw, h: 120, r: 20, g: 0, b: 0)
   let red = :ff0000
   draw_line({x: 0, y: sh / 2 - 60}, {x: sw, y: sh / 2 - 60}, red)
@@ -489,7 +489,7 @@ if game_over then
   draw_text("GAME OVER", {x: sw / 2 - 110, y: sh / 2 - 40}, 40, {r: 255, g: 40, b: 40})
   draw_text("Final Score: " ++ str(score), {x: sw / 2 - 80, y: sh / 2}, 22, {r: 255, g: 200, b: 100})
 
-  // Blink restart prompt
+  # Blink restart prompt
   if frame % 60 < 40 then
     draw_text("Press SPACE to restart", {x: sw / 2 - 110, y: sh / 2 + 35}, 18, {r: 200, g: 200, b: 200})
   end

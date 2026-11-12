@@ -1,5 +1,5 @@
-// Records
-// Identifier-keyed objects with field access.
+# Records
+# Identifier-keyed objects with field access.
 
 let user = {
   name: "Alice",
@@ -11,7 +11,7 @@ print("Name:", user.name)
 print("Age:", user.age)
 print("City:", user.city)
 
-// Nested records
+# Nested records
 let company = {
   name: "Acme",
   ceo: {
@@ -23,7 +23,7 @@ let company = {
 print("Company:", company.name)
 print("CEO:", company.ceo.name)
 
-// Records with enum values
+# Records with enum values
 enum Role
   Admin,
   Editor,
@@ -37,7 +37,7 @@ let account = {
 }
 print(account.user.name, "is an", account.role.name)
 
-// Pattern matching on records
+# Pattern matching on records
 fn describe(person: record)
   match person
     when {name: n, age: a} if a >= 18 -> print(n, "is an adult")

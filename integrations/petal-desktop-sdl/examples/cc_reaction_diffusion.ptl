@@ -1,21 +1,21 @@
-// Reaction-Diffusion — Gray-Scott model.
-//
-// Two chemicals A and B on a grid. Each cell evolves by:
-//
-//   dA/dt = Da * laplacian(A) - A*B^2 + f*(1 - A)
-//   dB/dt = Db * laplacian(B) + A*B^2 - (k + f)*B
-//
-// Tiny tweaks to (f, k) produce wildly different organic patterns:
-// spots, stripes, mazes, branching coral, holes.
-//
-// We run on a coarse grid (50x37) because the inner loop is interpreted —
-// finer than this and frame time blows up.
-//
-// Controls:
-//   click         drop a seed of B at the cursor
-//   1 / 2 / 3 / 4 preset (spots / stripes / coral / mazes)
-//   r             reset to a single central seed
-//   space         pause / resume
+# Reaction-Diffusion — Gray-Scott model.
+#
+# Two chemicals A and B on a grid. Each cell evolves by:
+#
+#   dA/dt = Da * laplacian(A) - A*B^2 + f*(1 - A)
+#   dB/dt = Db * laplacian(B) + A*B^2 - (k + f)*B
+#
+# Tiny tweaks to (f, k) produce wildly different organic patterns:
+# spots, stripes, mazes, branching coral, holes.
+#
+# We run on a coarse grid (50x37) because the inner loop is interpreted —
+# finer than this and frame time blows up.
+#
+# Controls:
+#   click         drop a seed of B at the cursor
+#   1 / 2 / 3 / 4 preset (spots / stripes / coral / mazes)
+#   r             reset to a single central seed
+#   space         pause / resume
 
 import ui
 import color
@@ -48,7 +48,7 @@ fn seed_grid(cols, rows)
       b = append(b, 0.0)
     end
   end
-  // Square seed of B at the center
+  # Square seed of B at the center
   let cx = cols / 2
   let cy = rows / 2
   for dy in range(-3, 4) do
@@ -91,8 +91,8 @@ if mouse_down(0) then
   end
 end
 
-// Preset table (f, k, name) — drawn from the well-known Gray-Scott parameter
-// space chart. Tiny shifts in (f, k) move you between regimes.
+# Preset table (f, k, name) — drawn from the well-known Gray-Scott parameter
+# space chart. Tiny shifts in (f, k) move you between regimes.
 let presets = [
   { f: 0.0367, k: 0.0649, name: "spots" },
   { f: 0.014,  k: 0.054,  name: "solitons" },
@@ -108,9 +108,9 @@ let dt_step = 1.0
 
 let n = cols * rows
 
-// === Update step ===
-// Run multiple sub-iterations per frame to speed up pattern formation.
-// More sub-steps = faster evolution but lower frame rate.
+# === Update step ===
+# Run multiple sub-iterations per frame to speed up pattern formation.
+# More sub-steps = faster evolution but lower frame rate.
 let sub_steps = 3
 if !paused then
   for s in range(0, sub_steps) do
@@ -122,7 +122,7 @@ if !paused then
         let a_c = grid_a[idx]
         let b_c = grid_b[idx]
 
-        // Wrap-around neighbour indices
+        # Wrap-around neighbour indices
         let i_l = (i + cols - 1) % cols
         let i_r = (i + 1) % cols
         let j_u = (j + rows - 1) % rows
@@ -153,16 +153,16 @@ if !paused then
   generation += sub_steps
 end
 
-// === Draw ===
+# === Draw ===
 clear(4, 6, 14)
 
-// Map B concentration to colour. The activator A washes out where B is high.
+# Map B concentration to colour. The activator A washes out where B is high.
 for j in range(0, rows) do
   for i in range(0, cols) do
     let idx = j * cols + i
     let b_v = grid_b[idx]
     if b_v > 0.04 then
-      // Hue swings with B; brightness is also B-driven
+      # Hue swings with B; brightness is also B-driven
       let h = (200.0 + b_v * 160.0 + float(generation) * 0.05) % 360.0
       let s = 0.7
       let v = clamp(0.25 + b_v * 1.4, lo: 0.05, hi: 1.0)

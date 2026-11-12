@@ -1,4 +1,4 @@
-// String interpolation with embedded expressions (strings aren't dup-tracked).
+# String interpolation with embedded expressions (strings aren't dup-tracked).
 let name = "Ada"
 let age = 36
 print("Hello, {name}! You are {age}.")

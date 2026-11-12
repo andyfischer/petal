@@ -1,16 +1,16 @@
-// dm-title: three nested helpers with a default parameter
-// dm-level: L3
-//
-// A 3×2 grid of dots: `draw_cell` → `cell_center` → `grid_x`/`grid_y`.
-// Dragging one dot right is ambiguous on purpose: `margin`, `cell` and
-// `gap` all move it (and other dots). Two goals pin it down: "move the third
-// dot of the first row, keep the first dot where it is" can only be `cell`
-// or `gap`, and `gap` has no collateral on the radii.
-//
-// dm-goal one-dot: circle#2.0 += 24 | expect=margin,cell,gap,lit:20
-// dm-goal spread-row: circle#2.0 += 16, circle#0.0 += 0 | expect=gap
-// dm-goal top: circle#0.1 += 10 | expect=lit:30
-// dm-goal radius: circle#0.2 += 4 | expect=lit:0.4
+# dm-title: three nested helpers with a default parameter
+# dm-level: L3
+#
+# A 3×2 grid of dots: `draw_cell` → `cell_center` → `grid_x`/`grid_y`.
+# Dragging one dot right is ambiguous on purpose: `margin`, `cell` and
+# `gap` all move it (and other dots). Two goals pin it down: "move the third
+# dot of the first row, keep the first dot where it is" can only be `cell`
+# or `gap`, and `gap` has no collateral on the radii.
+#
+# dm-goal one-dot: circle#2.0 += 24 | expect=margin,cell,gap,lit:20
+# dm-goal spread-row: circle#2.0 += 16, circle#0.0 += 0 | expect=gap
+# dm-goal top: circle#0.1 += 10 | expect=lit:30
+# dm-goal radius: circle#0.2 += 4 | expect=lit:0.4
 
 import ui
 

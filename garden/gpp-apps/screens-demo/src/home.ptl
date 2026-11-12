@@ -1,12 +1,12 @@
-// screens-demo — HOME screen. A fixed panel drawer (no data). Pressing `n`
-// navigates to the detail screen via the first-class `navigate` request.
-//
-// Built on the petal-ui component library plus **bloom**
-// (core-runtime/bloom), the pure-Petal component set Garden registers as
-// importable modules: `ui_theme()` mirrors the host palette in Garden and
-// falls back to the built-in theme under a bare `garden-panel-run`, so this screen
-// runs headlessly too — with `-I core-runtime` so that the bloom
-// modules resolve outside Garden.
+# screens-demo — HOME screen. A fixed panel drawer (no data). Pressing `n`
+# navigates to the detail screen via the first-class `navigate` request.
+#
+# Built on the petal-ui component library plus **bloom**
+# (core-runtime/bloom), the pure-Petal component set Garden registers as
+# importable modules: `ui_theme()` mirrors the host palette in Garden and
+# falls back to the built-in theme under a bare `garden-panel-run`, so this screen
+# runs headlessly too — with `-I core-runtime` so that the bloom
+# modules resolve outside Garden.
 import bloom
 import garden
 import ui
@@ -16,7 +16,7 @@ let w = screen_width()
 let h = screen_height()
 clear(T.bg.r, T.bg.g, T.bg.b)
 
-// The screen's identity band: HOME is the green screen.
+# The screen's identity band: HOME is the green screen.
 draw_rect(rect(0, 0, w, 4), T.success)
 
 let cw = min(460, w - 48)
@@ -28,8 +28,8 @@ pill(c.x + c.w - text_width(tag, T.font_sm) - 14, c.y + 4, tag, T.success)
 draw_text("The host fetches DETAIL's source over the navigate request.",
           {x: c.x, y: c.y + 44}, T.font_sm, T.dim)
 
-// The navigation is a bloom button as well as a key, so the screen is usable
-// with a pointer. `id` puts it in the Tab ring, and Return fires it there.
+# The navigation is a bloom button as well as a key, so the screen is usable
+# with a pointer. `id` puts it in the Tab ring, and Return fires it there.
 let go = bloom.button(rect(c.x, c.y + 74, 150, 30), "Open DETAIL",
                       {variant: "primary", icon_end: "arrow_right", id: "detail"})
 

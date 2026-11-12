@@ -1,10 +1,10 @@
-// Rotary dial with declarative dragging (ui/drag): `vary`.
-//
-// The model is one angle. The view puts the knob on a circle at that angle;
-// nothing in the app turns a pointer position back into an angle. `vary`
-// solves for the angle that puts the knob under the pointer, one solver
-// step per frame, by rendering the view hypothetically: once with the
-// angle nudged, to measure which way the knob moves, then at the step.
+# Rotary dial with declarative dragging (ui/drag): `vary`.
+#
+# The model is one angle. The view puts the knob on a circle at that angle;
+# nothing in the app turns a pointer position back into an angle. `vary`
+# solves for the angle that puts the knob under the pointer, one solver
+# step per frame, by rendering the view hypothetically: once with the
+# angle nudged, to measure which way the knob moves, then at the step.
 import ui
 import ui/drag
 

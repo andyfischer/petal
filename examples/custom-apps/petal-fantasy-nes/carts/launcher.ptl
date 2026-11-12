@@ -1,23 +1,23 @@
-// launcher — the console's boot menu, and itself an ordinary cart.
-//
-// This is the first screen anyone sees, so it is written to look like a boot
-// ROM: a chrome band top and bottom, the console name in 16x16 letters, the
-// carts found in `carts/` as a scrolling list, an animated cursor sprite, and
-// a blinking prompt. It uses nothing the host does not also give every other
-// cart — `cart_count`/`cart_name`/`cart_path` to enumerate, `launch_cart` to
-// hand the machine over, and the pads to move.
-//
-// The font is the interesting part. Rather than 40-odd hand-drawn 8x8 tiles,
-// each glyph is one line of 5x7 bitmap here, expanded into the pattern table
-// at boot: `small_tile` pads a glyph into an 8x8 cell, and `big_glyph` doubles
-// it into a 16x16 block cut into four tiles, which is how the title gets to be
-// twice the size of everything else without a second font. Both run every
-// frame — tile writes are idempotent by design — so editing this file live
-// repaints immediately.
+# launcher — the console's boot menu, and itself an ordinary cart.
+#
+# This is the first screen anyone sees, so it is written to look like a boot
+# ROM: a chrome band top and bottom, the console name in 16x16 letters, the
+# carts found in `carts/` as a scrolling list, an animated cursor sprite, and
+# a blinking prompt. It uses nothing the host does not also give every other
+# cart — `cart_count`/`cart_name`/`cart_path` to enumerate, `launch_cart` to
+# hand the machine over, and the pads to move.
+#
+# The font is the interesting part. Rather than 40-odd hand-drawn 8x8 tiles,
+# each glyph is one line of 5x7 bitmap here, expanded into the pattern table
+# at boot: `small_tile` pads a glyph into an 8x8 cell, and `big_glyph` doubles
+# it into a 16x16 block cut into four tiles, which is how the title gets to be
+# twice the size of everything else without a second font. Both run every
+# frame — tile writes are idempotent by design — so editing this file live
+# repaints immediately.
 
-// ── Tile budget ───────────────────────────────────────────────────────────
-// 0-7 are chrome, the font lands at 16, and the title's per-character tiles
-// (four each) start at 64. Nothing here comes close to the 512-tile table.
+# ── Tile budget ───────────────────────────────────────────────────────────
+# 0-7 are chrome, the font lands at 16, and the title's per-character tiles
+# (four each) start at 64. Nothing here comes close to the 512-tile table.
 
 import nes
 import nes/nes_sound
@@ -29,77 +29,77 @@ let TILE_CURSOR = 3
 let FONT_BASE = 16
 let TITLE_BASE = 64
 
-// ── The 5x7 font ──────────────────────────────────────────────────────────
-// One glyph per entry, seven space-separated rows of five pixels. "0" is the
-// transparent/backdrop entry and "1" is the palette's first color, which is
-// exactly what `define_tile` wants, so no translation is needed on the way in.
+# ── The 5x7 font ──────────────────────────────────────────────────────────
+# One glyph per entry, seven space-separated rows of five pixels. "0" is the
+# transparent/backdrop entry and "1" is the palette's first color, which is
+# exactly what `define_tile` wants, so no translation is needed on the way in.
 
 let FONT_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-:/>"
 
 let FONT_GLYPHS = [
-  "01110 10001 10001 11111 10001 10001 10001",   // A
-  "11110 10001 10001 11110 10001 10001 11110",   // B
-  "01110 10001 10000 10000 10000 10001 01110",   // C
-  "11110 10001 10001 10001 10001 10001 11110",   // D
-  "11111 10000 10000 11110 10000 10000 11111",   // E
-  "11111 10000 10000 11110 10000 10000 10000",   // F
-  "01110 10001 10000 10111 10001 10001 01111",   // G
-  "10001 10001 10001 11111 10001 10001 10001",   // H
-  "11111 00100 00100 00100 00100 00100 11111",   // I
-  "00111 00010 00010 00010 00010 10010 01100",   // J
-  "10001 10010 10100 11000 10100 10010 10001",   // K
-  "10000 10000 10000 10000 10000 10000 11111",   // L
-  "10001 11011 10101 10101 10001 10001 10001",   // M
-  "10001 11001 10101 10011 10001 10001 10001",   // N
-  "01110 10001 10001 10001 10001 10001 01110",   // O
-  "11110 10001 10001 11110 10000 10000 10000",   // P
-  "01110 10001 10001 10001 10101 10010 01101",   // Q
-  "11110 10001 10001 11110 10100 10010 10001",   // R
-  "01111 10000 10000 01110 00001 00001 11110",   // S
-  "11111 00100 00100 00100 00100 00100 00100",   // T
-  "10001 10001 10001 10001 10001 10001 01110",   // U
-  "10001 10001 10001 10001 10001 01010 00100",   // V
-  "10001 10001 10001 10101 10101 11011 10001",   // W
-  "10001 10001 01010 00100 01010 10001 10001",   // X
-  "10001 10001 01010 00100 00100 00100 00100",   // Y
-  "11111 00001 00010 00100 01000 10000 11111",   // Z
-  "01110 10001 10011 10101 11001 10001 01110",   // 0
-  "00100 01100 00100 00100 00100 00100 01110",   // 1
-  "01110 10001 00001 00010 00100 01000 11111",   // 2
-  "11111 00010 00100 00010 00001 10001 01110",   // 3
-  "00010 00110 01010 10010 11111 00010 00010",   // 4
-  "11111 10000 11110 00001 00001 10001 01110",   // 5
-  "00110 01000 10000 11110 10001 10001 01110",   // 6
-  "11111 00001 00010 00100 01000 01000 01000",   // 7
-  "01110 10001 10001 01110 10001 10001 01110",   // 8
-  "01110 10001 10001 01111 00001 00010 01100",   // 9
-  "00000 00000 00000 00000 00000 00000 00000",   // space
-  "00000 00000 00000 00000 00000 01100 01100",   // .
-  "00000 00000 00000 01110 00000 00000 00000",   // -
-  "00000 01100 01100 00000 01100 01100 00000",   // :
-  "00001 00010 00010 00100 01000 01000 10000",   // /
-  "01000 00100 00010 00001 00010 00100 01000",   // >
+  "01110 10001 10001 11111 10001 10001 10001",   # A
+  "11110 10001 10001 11110 10001 10001 11110",   # B
+  "01110 10001 10000 10000 10000 10001 01110",   # C
+  "11110 10001 10001 10001 10001 10001 11110",   # D
+  "11111 10000 10000 11110 10000 10000 11111",   # E
+  "11111 10000 10000 11110 10000 10000 10000",   # F
+  "01110 10001 10000 10111 10001 10001 01111",   # G
+  "10001 10001 10001 11111 10001 10001 10001",   # H
+  "11111 00100 00100 00100 00100 00100 11111",   # I
+  "00111 00010 00010 00010 00010 10010 01100",   # J
+  "10001 10010 10100 11000 10100 10010 10001",   # K
+  "10000 10000 10000 10000 10000 10000 11111",   # L
+  "10001 11011 10101 10101 10001 10001 10001",   # M
+  "10001 11001 10101 10011 10001 10001 10001",   # N
+  "01110 10001 10001 10001 10001 10001 01110",   # O
+  "11110 10001 10001 11110 10000 10000 10000",   # P
+  "01110 10001 10001 10001 10101 10010 01101",   # Q
+  "11110 10001 10001 11110 10100 10010 10001",   # R
+  "01111 10000 10000 01110 00001 00001 11110",   # S
+  "11111 00100 00100 00100 00100 00100 00100",   # T
+  "10001 10001 10001 10001 10001 10001 01110",   # U
+  "10001 10001 10001 10001 10001 01010 00100",   # V
+  "10001 10001 10001 10101 10101 11011 10001",   # W
+  "10001 10001 01010 00100 01010 10001 10001",   # X
+  "10001 10001 01010 00100 00100 00100 00100",   # Y
+  "11111 00001 00010 00100 01000 10000 11111",   # Z
+  "01110 10001 10011 10101 11001 10001 01110",   # 0
+  "00100 01100 00100 00100 00100 00100 01110",   # 1
+  "01110 10001 00001 00010 00100 01000 11111",   # 2
+  "11111 00010 00100 00010 00001 10001 01110",   # 3
+  "00010 00110 01010 10010 11111 00010 00010",   # 4
+  "11111 10000 11110 00001 00001 10001 01110",   # 5
+  "00110 01000 10000 11110 10001 10001 01110",   # 6
+  "11111 00001 00010 00100 01000 01000 01000",   # 7
+  "01110 10001 10001 01110 10001 10001 01110",   # 8
+  "01110 10001 10001 01111 00001 00010 01100",   # 9
+  "00000 00000 00000 00000 00000 00000 00000",   # space
+  "00000 00000 00000 00000 00000 01100 01100",   # .
+  "00000 00000 00000 01110 00000 00000 00000",   # -
+  "00000 01100 01100 00000 01100 01100 00000",   # :
+  "00001 00010 00010 00100 01000 01000 10000",   # /
+  "01000 00100 00010 00001 00010 00100 01000",   # >
 ]
 
 let BLANK_ROW = "00000000"
 
-// Index of `ch` in the font, falling back to the space glyph. Cart names come
-// from filenames, so anything the font lacks (an underscore, say) reads as a
-// word break rather than as a missing tile.
+# Index of `ch` in the font, falling back to the space glyph. Cart names come
+# from filenames, so anything the font lacks (an underscore, say) reads as a
+# word break rather than as a missing tile.
 fn glyph_index(ch: string) -> int
   let i = index_of(FONT_CHARS, upper(ch))
   if i < 0 then index_of(FONT_CHARS, " ") else i end
 end
 
-// A glyph padded into an 8x8 cell: one column of left bearing, one blank row
-// of leading under the baseline.
+# A glyph padded into an 8x8 cell: one column of left bearing, one blank row
+# of leading under the baseline.
 fn small_tile(pattern: string) -> list
   let rows = for r in split(pattern, " ") do "0" ++ r ++ "00" end
   append(rows, BLANK_ROW)
 end
 
-// The same glyph at 2x, centered in a 16x16 block and cut into the four tiles
-// the map needs (top-left, top-right, bottom-left, bottom-right).
+# The same glyph at 2x, centered in a 16x16 block and cut into the four tiles
+# the map needs (top-left, top-right, bottom-left, bottom-right).
 fn big_glyph(ch: string) -> list
   let pattern = FONT_GLYPHS[glyph_index(ch)]
   let wide = for r in split(pattern, " ") do
@@ -116,7 +116,7 @@ fn big_glyph(ch: string) -> list
   ]
 end
 
-// ── Drawing helpers ───────────────────────────────────────────────────────
+# ── Drawing helpers ───────────────────────────────────────────────────────
 
 fn text_at(cx: num, cy: num, text: string, pal: num)
   for i in range(0, len(text)) do
@@ -128,14 +128,14 @@ fn centered(text: string) -> int
   int((32 - len(text)) / 2)
 end
 
-// Double-size text is two cells per character, so it centers differently.
+# Double-size text is two cells per character, so it centers differently.
 fn centered_big(text: string) -> int
   int((32 - len(text) * 2) / 2)
 end
 
-// Two rows of double-size text. Each character owns four tiles of its own, so
-// the same letter twice costs two definitions — at eleven characters that is
-// cheaper than tracking which glyphs are already resident.
+# Two rows of double-size text. Each character owns four tiles of its own, so
+# the same letter twice costs two definitions — at eleven characters that is
+# cheaper than tracking which glyphs are already resident.
 fn big_text(cx: num, cy: num, text: string, top_pal: num, bottom_pal: num)
   for i in range(0, len(text)) do
     let base = TITLE_BASE + i * 4
@@ -154,19 +154,19 @@ fn rule_at(cy: num, pal: num)
   end
 end
 
-// ── Palettes ──────────────────────────────────────────────────────────────
-// Black backdrop, one palette per role: body text, the highlighted row, the
-// title's top half, and the chrome (which doubles as the title's bottom half,
-// so the name fades white-to-blue down its own height).
+# ── Palettes ──────────────────────────────────────────────────────────────
+# Black backdrop, one palette per role: body text, the highlighted row, the
+# title's top half, and the chrome (which doubles as the title's bottom half,
+# so the name fades white-to-blue down its own height).
 
 set_backdrop(15)
-set_palette(0, 15, 48, 16, 33)     // body: white, gray, blue
-set_palette(1, 15, 39, 40, 48)     // highlight: orange, olive, white
-set_palette(2, 15, 48, 49, 33)     // title top: white
-set_palette(3, 15, 33, 18, 49)     // chrome + title bottom: blues
-set_palette(4, 15, 48, 39, 22)     // sprites: white, orange, red
+set_palette(0, 15, 48, 16, 33)     # body: white, gray, blue
+set_palette(1, 15, 39, 40, 48)     # highlight: orange, olive, white
+set_palette(2, 15, 48, 49, 33)     # title top: white
+set_palette(3, 15, 33, 18, 49)     # chrome + title bottom: blues
+set_palette(4, 15, 48, 39, 22)     # sprites: white, orange, red
 
-// ── Chrome tiles ──────────────────────────────────────────────────────────
+# ── Chrome tiles ──────────────────────────────────────────────────────────
 
 define_tile(TILE_BLANK, [
   BLANK_ROW, BLANK_ROW, BLANK_ROW, BLANK_ROW,
@@ -195,8 +195,8 @@ define_tile(TILE_RULE, [
   "00000000",
 ])
 
-// The cursor: a chunky arrow with a lit edge, drawn as a sprite so it can sit
-// between cells and bob without disturbing the map.
+# The cursor: a chunky arrow with a lit edge, drawn as a sprite so it can sit
+# between cells and bob without disturbing the map.
 define_tile(TILE_CURSOR, [
   "01000000",
   "01100000",
@@ -210,7 +210,7 @@ define_tile(TILE_CURSOR, [
 
 define_tiles(FONT_BASE, for g in FONT_GLYPHS do small_tile(g) end)
 
-// ── Layout ────────────────────────────────────────────────────────────────
+# ── Layout ────────────────────────────────────────────────────────────────
 
 let LIST_X = 6
 let LIST_TOP = 11
@@ -231,9 +231,9 @@ text_at(cx: centered("A PETAL FANTASY CONSOLE"), cy: 6, text: "A PETAL FANTASY C
 rule_at(8, 3)
 rule_at(24, 3)
 
-// ── The menu ──────────────────────────────────────────────────────────────
-// `state var` so the highlighted row survives a hot reload of this file — the
-// launcher is edited while it is running more than any other cart.
+# ── The menu ──────────────────────────────────────────────────────────────
+# `state var` so the highlighted row survives a hot reload of this file — the
+# launcher is edited while it is running more than any other cart.
 
 state var selected = 0
 
@@ -247,8 +247,8 @@ if count > 0 then
   if pad_pressed(0, "down") then
     set selected = (selected + 1) % count
   end
-  // A cart may have been deleted while the menu was up; the list is rescanned
-  // on every load, so the selection has to be re-clamped rather than trusted.
+  # A cart may have been deleted while the menu was up; the list is rescanned
+  # on every load, so the selection has to be re-clamped rather than trusted.
   set selected = clamp(selected, lo: 0, hi: count - 1)
 
   if pad_pressed(0, "start") || pad_pressed(0, "a") then
@@ -265,8 +265,8 @@ else
   let heading = if count == 1 then "1 CART" else "{count} CARTS" end
   text_at(cx: 3, cy: 9, text: heading, pal: 0)
 
-  // Scroll the window only once the selection would leave it, keeping the
-  // cursor mid-list on long lists and pinned at the top on short ones.
+  # Scroll the window only once the selection would leave it, keeping the
+  # cursor mid-list on long lists and pinned at the top on short ones.
   let first = if count <= LIST_ROWS then
     0
   else
@@ -277,14 +277,14 @@ else
   for i in range(first, last) do
     let row = LIST_TOP + i - first
     let pal = if i == selected then 1 else 0 end
-    // Filenames can be longer than the column; cut rather than run into the
-    // right edge of the map (a write past the last cell is dropped anyway).
+    # Filenames can be longer than the column; cut rather than run into the
+    # right edge of the map (a write past the last cell is dropped anyway).
     let name = upper(cart_name(i))
     text_at(cx: LIST_X, cy: row, text: if len(name) > 24 then slice(name, start: 0, end: 24) else name end, pal: pal)
   end
 
-  // More entries above or below the window than fit: mark the edges. Kept one
-  // column clear of the cursor, which lives at LIST_X - 2.
+  # More entries above or below the window than fit: mark the edges. Kept one
+  # column clear of the cursor, which lives at LIST_X - 2.
   if first > 0 then
     text_at(cx: LIST_X - 3, cy: LIST_TOP, text: "-", pal: 0)
   end
@@ -292,14 +292,14 @@ else
     text_at(cx: LIST_X - 3, cy: LIST_TOP + LIST_ROWS - 1, text: "-", pal: 0)
   end
 
-  // The cursor is the one moving thing on the screen; the two-frame bob is
-  // what keeps the boot screen from looking frozen.
+  # The cursor is the one moving thing on the screen; the two-frame bob is
+  # what keeps the boot screen from looking frozen.
   let bob = if (frame / 16) % 2 == 0 then 0 else 1 end
   let cursor_row = LIST_TOP + selected - first
   sprite((LIST_X - 2) * 8 + bob, cursor_row * 8, TILE_CURSOR, 4)
 end
 
-// ── Footer ────────────────────────────────────────────────────────────────
+# ── Footer ────────────────────────────────────────────────────────────────
 
 let HELP = "UP DOWN MOVE - ESC QUITS"
 text_at(cx: centered(HELP), cy: 26, text: HELP, pal: 0)

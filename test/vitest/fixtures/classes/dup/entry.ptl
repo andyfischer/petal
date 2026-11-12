@@ -1,5 +1,5 @@
-// Two unrelated modules declaring the same class name: each class belongs to
-// its own module, so both compile, and each module's `Dup` is its own.
+# Two unrelated modules declaring the same class name: each class belongs to
+# its own module, so both compile, and each module's `Dup` is its own.
 import ./dup_a
 import ./dup_b
 

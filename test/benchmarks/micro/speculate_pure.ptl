@@ -1,13 +1,13 @@
-// Micro-benchmark: `speculate` of a small pure function against a plain call
-// (docs/tasks/differentiation-rewrite.md, Design §4). `f` touches nothing
-// `speculate` would have to put back, so the difference per call is the
-// fixed cost of entering, leaving and building the result: what every
-// `autodiff` probe of an arithmetic helper pays. `plain`, `spec` and `specv`
-// each call `f` 500 times with a varying argument.
-//
-//   petal bench --fn plain --fn spec --fn specv test/benchmarks/micro/speculate_pure.ptl
-//
-// Numbers are in docs/features/speculate.md (Performance).
+# Micro-benchmark: `speculate` of a small pure function against a plain call
+# (docs/tasks/differentiation-rewrite.md, Design §4). `f` touches nothing
+# `speculate` would have to put back, so the difference per call is the
+# fixed cost of entering, leaving and building the result: what every
+# `autodiff` probe of an arithmetic helper pays. `plain`, `spec` and `specv`
+# each call `f` 500 times with a varying argument.
+#
+#   petal bench --fn plain --fn spec --fn specv test/benchmarks/micro/speculate_pure.ptl
+#
+# Numbers are in docs/features/speculate.md (Performance).
 
 fn f(x)
   (x - 3.0) * (x - 3.0) + sin(x)

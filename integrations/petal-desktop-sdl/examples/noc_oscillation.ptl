@@ -1,6 +1,6 @@
-// Nature of Code - Oscillation
-// Inspired by Chapter 3: Oscillation
-// Pendulums, springs, and wave patterns
+# Nature of Code - Oscillation
+# Inspired by Chapter 3: Oscillation
+# Pendulums, springs, and wave patterns
 
 import ui
 
@@ -14,7 +14,7 @@ let sh = float(screen_height())
 let PI = pi()
 time += delta
 
-// Initialize pendulums
+# Initialize pendulums
 if len(pendulums) == 0 then
   for i in range(0, 5) do
     let t = float(i)
@@ -32,7 +32,7 @@ if len(pendulums) == 0 then
   end
 end
 
-// Update pendulums
+# Update pendulums
 let new_pendulums = []
 for p in pendulums do
   let gravity = 1.5
@@ -48,13 +48,13 @@ for p in pendulums do
 end
 pendulums = new_pendulums
 
-// Wave offset
+# Wave offset
 wave_offset += delta * 2.0
 
-// === Drawing ===
+# === Drawing ===
 clear(10, 12, 25)
 
-// --- Sine wave at bottom ---
+# --- Sine wave at bottom ---
 let wave_y_base = sh - 120.0
 let wave_points = 80
 for i in range(0, wave_points - 1) do
@@ -63,7 +63,7 @@ for i in range(0, wave_points - 1) do
   let y1 = wave_y_base + sin(float(i) * 0.15 + wave_offset) * 30.0
   let y2 = wave_y_base + sin(float(i + 1) * 0.15 + wave_offset) * 30.0
 
-  // Multiple layered waves with different colors
+  # Multiple layered waves with different colors
   let wy1 = y1
   let wy2 = y2
   draw_line(int(x1), int(wy1), int(x2), int(wy2), 60, 120, 200)
@@ -77,13 +77,13 @@ for i in range(0, wave_points - 1) do
   draw_line(int(x1), int(wy5), int(x2), int(wy6), 30, 50, 120)
 end
 
-// --- Standing wave (middle) ---
+# --- Standing wave (middle) ---
 let standing_y = sh / 2.0 + 30.0
 for i in range(0, wave_points - 1) do
   let x1 = float(i) / float(wave_points) * sw
   let x2 = float(i + 1) / float(wave_points) * sw
 
-  // Standing wave = two traveling waves superimposed
+  # Standing wave = two traveling waves superimposed
   let amp1 = sin(float(i) * 0.12 - wave_offset * 3.0) * 25.0
   let amp2 = sin(float(i) * 0.12 + wave_offset * 3.0) * 25.0
   let y1 = standing_y + amp1 + amp2
@@ -97,7 +97,7 @@ for i in range(0, wave_points - 1) do
 end
 draw_text("Standing Wave", x: 10, y: int(standing_y) - 50, size: 12, r: 80, g: 60, b: 120)
 
-// --- Circular motion (Lissajous pattern) ---
+# --- Circular motion (Lissajous pattern) ---
 let liss_cx = sw - 100.0
 let liss_cy = 180.0
 let liss_points = 200
@@ -112,28 +112,28 @@ for i in range(0, liss_points - 1) do
   draw_line(int(x1), int(y1), int(x2), int(y2),
     int(fade * 200.0), int(fade * 150.0), int(100.0 + fade * 155.0))
 end
-// Current point
+# Current point
 let liss_px = liss_cx + sin(time * 0.5 * 3.0) * 50.0
 let liss_py = liss_cy + sin(time * 0.5 * 2.0) * 50.0
 draw_circle(cx: int(liss_px), cy: int(liss_py), radius: 5, r: 255, g: 200, b: 255)
 draw_text("Lissajous", x: int(liss_cx) - 30, y: int(liss_cy) + 60, size: 12, r: 80, g: 80, b: 120)
 
-// --- Draw pendulums ---
+# --- Draw pendulums ---
 for p in pendulums do
   let bob_x = p.origin_x + sin(p.angle) * p.length
   let bob_y = p.origin_y + cos(p.angle) * p.length
 
-  // String
+  # String
   draw_line(int(p.origin_x), int(p.origin_y), int(bob_x), int(bob_y), 80, 80, 90)
 
-  // Pivot
+  # Pivot
   draw_circle(cx: int(p.origin_x), cy: int(p.origin_y), radius: 4, r: 60, g: 60, b: 70)
 
-  // Bob glow
+  # Bob glow
   draw_circle(cx: int(bob_x), cy: int(bob_y), radius: 16, r: p.r / 4, g: p.g / 4, b: p.b / 4)
-  // Bob
+  # Bob
   draw_circle(cx: int(bob_x), cy: int(bob_y), radius: 12, r: p.r, g: p.g, b: p.b)
-  // Highlight
+  # Highlight
   draw_circle(cx: int(bob_x) - 3, cy: int(bob_y) - 3, radius: 4,
     r: min(255, p.r + 80), g: min(255, p.g + 80), b: min(255, p.b + 80))
 end

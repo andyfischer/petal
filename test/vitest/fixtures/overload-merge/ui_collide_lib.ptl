@@ -1,8 +1,8 @@
-// The arity-collision case. The `ui` package's `draw_rect_outline` set takes 2 to 9
-// arguments; this module declares the 2-argument arity itself. Its own
-// declaration is the higher-precedence one and wins for that arity (it shifts
-// the rect right by 1 so the trace shows which ran); the arities it does not
-// declare — here the 3-argument alpha form — stay reachable.
+# The arity-collision case. The `ui` package's `draw_rect_outline` set takes 2 to 9
+# arguments; this module declares the 2-argument arity itself. Its own
+# declaration is the higher-precedence one and wins for that arity (it shifts
+# the rect right by 1 so the trace shows which ran); the arities it does not
+# declare — here the 3-argument alpha form — stay reachable.
 import ui
 
 pub fn draw_rect_outline(r, c)

@@ -1,8 +1,8 @@
-// Vec3 Demo
-// Shows off the first-class vec3 type: operators, fields, and the vector
-// builtins (dot, cross, normalize, mag, distance, lerp, limit).
-// Simulates a ball thrown across a room, bouncing off the floor, then
-// builds a camera basis with cross products.
+# Vec3 Demo
+# Shows off the first-class vec3 type: operators, fields, and the vector
+# builtins (dot, cross, normalize, mag, distance, lerp, limit).
+# Simulates a ball thrown across a room, bouncing off the floor, then
+# builds a camera basis with cross products.
 
 import vec2
 
@@ -17,7 +17,7 @@ print("=====================================")
 for step in range(0, 16) do
   set vel = limit(vel + gravity * dt, 12.0)
   set pos = pos + vel * dt
-  // Bounce: reflect the vertical velocity, losing some energy.
+  # Bounce: reflect the vertical velocity, losing some energy.
   if pos.y < 0.0 then
     set pos = vec3(x: pos.x, y: -pos.y, z: pos.z)
     set vel = vec3(x: vel.x, y: -vel.y * 0.6, z: vel.z)

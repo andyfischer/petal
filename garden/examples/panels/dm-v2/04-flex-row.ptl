@@ -1,21 +1,21 @@
-// ── Drag mode 4: a flex-row layout from text widths ──────
-//   garden petal-ide examples/panels/dm-v2/04-flex-row.ptl
-//
-// A menu bar: each button is as wide as its label
-// (`text_width`) plus `pad` on both sides, laid out left to
-// right with `gap` between, by a recursive `layout_row`.
-//
-// What to drag (drag mode on: Cmd+Shift+D):
-// - The LAST button, right (grab it below its label):
-//   `gap` or `pad` spread the row, `x0` slides it; the
-//   panel lists them with how many other shapes each moves.
-// - A LABEL instead of its button: bigger text also pushes
-//   it right, so `font_size` can win (it moves in whole-pixel
-//   steps of `text_width`). Click "never" on its row in the
-//   panel to rule it out for this session (no source change),
-//   or its state chip twice to make it `rigid(14)`.
-// - The FIRST button, right: `x0` (the row's origin).
-// - Any button, down: `y0` moves every button and label.
+# ── Drag mode 4: a flex-row layout from text widths ──────
+#   garden petal-ide examples/panels/dm-v2/04-flex-row.ptl
+#
+# A menu bar: each button is as wide as its label
+# (`text_width`) plus `pad` on both sides, laid out left to
+# right with `gap` between, by a recursive `layout_row`.
+#
+# What to drag (drag mode on: Cmd+Shift+D):
+# - The LAST button, right (grab it below its label):
+#   `gap` or `pad` spread the row, `x0` slides it; the
+#   panel lists them with how many other shapes each moves.
+# - A LABEL instead of its button: bigger text also pushes
+#   it right, so `font_size` can win (it moves in whole-pixel
+#   steps of `text_width`). Click "never" on its row in the
+#   panel to rule it out for this session (no source change),
+#   or its state chip twice to make it `rigid(14)`.
+# - The FIRST button, right: `x0` (the row's origin).
+# - Any button, down: `y0` moves every button and label.
 
 import ui
 

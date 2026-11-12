@@ -1,4 +1,4 @@
-// if / elsif / else as an expression — no values are mutated.
+# if / elsif / else as an expression — no values are mutated.
 fn classify(n)
   if n < 0 then "negative"
   elsif n == 0 then "zero"

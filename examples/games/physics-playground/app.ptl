@@ -1,24 +1,24 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  PHYSICS PLAYGROUND — a Garden panel app written in Petal.
-//
-//  Exercises: dragging (grab and throw, a slingshot launcher, link-drawing
-//  and a cutting stroke), gravity (strength and direction, live), collisions
-//  (discs against discs, walls and static bars, with restitution, friction
-//  and spin) and constraints (rigid rods, springs, pins).
-//
-//  The solver lives in physics.ptl and the seeded stages in scenes.ptl; this
-//  file is input, chrome and drawing. The world is one immutable record, so
-//  undo is a list of earlier worlds.
-//
-//  Designed for a 1240x820 viewport.  See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  PHYSICS PLAYGROUND — a Garden panel app written in Petal.
+#
+#  Exercises: dragging (grab and throw, a slingshot launcher, link-drawing
+#  and a cutting stroke), gravity (strength and direction, live), collisions
+#  (discs against discs, walls and static bars, with restitution, friction
+#  and spin) and constraints (rigid rods, springs, pins).
+#
+#  The solver lives in physics.ptl and the seeded stages in scenes.ptl; this
+#  file is input, chrome and drawing. The world is one immutable record, so
+#  undo is a list of earlier worlds.
+#
+#  Designed for a 1240x820 viewport.  See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import ./physics as ph
 import ./scenes as sc
 import ui
 import garden
 
-// ── Palette: a drafting table at night ───────────────────────────────────
+# ── Palette: a drafting table at night ───────────────────────────────────
 
 let C_BG     = :0b0e14
 let C_STAGE  = :10141d
@@ -39,10 +39,10 @@ let C_ROD    = :b7c0d2
 let C_SPRING = :6fd6a8
 let C_WHITE  = :ffffff
 
-// Body colours, by index: coral, amber, mint, sky, violet, rose, steel.
+# Body colours, by index: coral, amber, mint, sky, violet, rose, steel.
 let HUES = [:ff7a6b, :ffb454, :6fd6a8, :6cb8ff, :a48cf2, :f283b6, :9aa4b8]
 
-// ── Type scale: 10 / 11 / 12 / 14 / 24 ───────────────────────────────────
+# ── Type scale: 10 / 11 / 12 / 14 / 24 ───────────────────────────────────
 
 let S_TITLE = {size: 24, color: C_TEXT, font: "ui", weight: 700}
 let S_KICK  = {size: 10, color: C_MUTE, font: "ui", spacing: 3}
@@ -55,13 +55,13 @@ let S_CAP   = {size: 11, color: C_TEXT, font: "ui", weight: 700}
 let S_NAME  = {size: 14, color: C_TEXT, font: "ui", weight: 700}
 let S_TAB   = {size: 12, color: C_DIM, font: "ui", weight: 700}
 
-// ── Tunables ─────────────────────────────────────────────────────────────
+# ── Tunables ─────────────────────────────────────────────────────────────
 
-let gravity_px  = tunable(980.0)   // px/s^2 at 1.0 g
-let launch_gain = tunable(5.0)     // slingshot: px of pull to px/s of launch
-let spring_hz   = tunable(3.5)     // natural frequency of a hand-drawn spring
+let gravity_px  = tunable(980.0)   # px/s^2 at 1.0 g
+let launch_gain = tunable(5.0)     # slingshot: px of pull to px/s of launch
+let spring_hz   = tunable(3.5)     # natural frequency of a hand-drawn spring
 let max_bodies  = tunable(200)
-let rest_after  = tunable(0.7)     // seconds of stillness before the world sleeps
+let rest_after  = tunable(0.7)     # seconds of stillness before the world sleeps
 
 let PAD  = 24
 let HEAD = 84
@@ -84,9 +84,9 @@ let BALL_SIZES = [8.0, 14.0, 22.0, 32.0]
 let SPEEDS = [1.0, 0.5, 0.25]
 let SPEED_LABELS = ["1×", "½", "¼"]
 
-// ── Persistent state ─────────────────────────────────────────────────────
-// `state var` marks what a function writes (the actions, further down);
-// plain `state` is written only at module scope.
+# ── Persistent state ─────────────────────────────────────────────────────
+# `state var` marks what a function writes (the actions, further down);
+# plain `state` is written only at module scope.
 
 state ready          = false
 state var scene      = 0
@@ -95,9 +95,9 @@ state var emit       = {x: 0.0, y: 0.0, every: 1.0, left: 0, r: 7.0}
 state var emit_t     = 0.0
 state var tool       = 0
 state size_i         = 1
-state var grav       = 1.0           // in g
-state grav_keep      = 1.0           // what `0` restores
-state var gdir       = 1.5708        // radians; pi/2 is straight down
+state var grav       = 1.0           # in g
+state grav_keep      = 1.0           # what `0` restores
+state var gdir       = 1.5708        # radians; pi/2 is straight down
 state var bounce     = 0.45
 state var fric       = 0.4
 state var drag       = 0.02
@@ -106,26 +106,26 @@ state speed_i        = 0
 state show_vec       = false
 state var show_trail = false
 state show_pts       = false
-state var grab_id    = -1            // body id being dragged
+state var grab_id    = -1            # body id being dragged
 state grab_ox        = 0.0
 state grab_oy        = 0.0
-state var aiming     = false         // ball tool: a launch is being drawn
+state var aiming     = false         # ball tool: a launch is being drawn
 state aim_x          = 0.0
 state aim_y          = 0.0
-state var linking    = false         // rod/spring tool: a link is being drawn
-state link_id        = -1            // body id it started on, or -1 for open stage
+state var linking    = false         # rod/spring tool: a link is being drawn
+state link_id        = -1            # body id it started on, or -1 for open stage
 state link_x         = 0.0
 state link_y         = 0.0
 state var cutting    = false
 state cut_x          = 0.0
 state cut_y          = 0.0
-state cut_saved      = false         // this stroke already pushed its undo step
-state cut_path       = []            // the last few points of the stroke, for drawing
+state cut_saved      = false         # this stroke already pushed its undo step
+state cut_path       = []            # the last few points of the stroke, for drawing
 state var sel_id     = -1
-state ui_drag        = ""            // the slider or dial holding the mouse
-state var undo       = []            // earlier {w, left} steps, oldest first
-state var trail      = []            // recent {x, y} position lists
-state var hist       = []            // recent {k, p} energy samples
+state ui_drag        = ""            # the slider or dial holding the mouse
+state var undo       = []            # earlier {w, left} steps, oldest first
+state var trail      = []            # recent {x, y} position lists
+state var hist       = []            # recent {k, p} energy samples
 state var sim_t      = 0.0
 state var steps      = 0
 state subs           = 0
@@ -143,7 +143,7 @@ state n_cut          = 0
 state n_thrown       = 0
 state var n_removed  = 0
 
-// ── Pure helpers ─────────────────────────────────────────────────────────
+# ── Pure helpers ─────────────────────────────────────────────────────────
 
 fn tx(s: string, x: num, y: num, style: record)
   draw_text(s, int(x), int(y), style)
@@ -169,14 +169,14 @@ fn hit(x: num, y: num, w: num, h: num) -> bool
   px >= x && px < x + w && py >= y && py < y + h
 end
 
-// "1.00", "0.45": two places, always.
+# "1.00", "0.45": two places, always.
 fn fixed2(v: num) -> string
   let n = int(round(float(v) * 100.0))
   let frac = n % 100
   if frac < 10 then "{n / 100}.0{frac}" else "{n / 100}.{frac}" end
 end
 
-// 940 -> "940", 12400 -> "12.4k", 3200000 -> "3.20M".
+# 940 -> "940", 12400 -> "12.4k", 3200000 -> "3.20M".
 fn compact(v: num) -> string
   let a = abs(float(v))
   if a >= 1000000.0 then "{fixed2(a / 1000000.0)}M"
@@ -204,7 +204,7 @@ fn wrap_lines(s: string, width: num, style: record) -> list
   lines
 end
 
-// How many pins, rods and springs a world holds.
+# How many pins, rods and springs a world holds.
 fn count_parts(wd: record) -> record
   let pins = 0
   for i in range(0, wd.n) do
@@ -217,7 +217,7 @@ fn count_parts(wd: record) -> record
   {pins: pins, rods: rods, springs: len(wd.links) - rods}
 end
 
-// One undo step: the world as it was, and what the dispenser still held.
+# One undo step: the world as it was, and what the dispenser still held.
 fn pushed(stack: list, wd: record, left: int) -> list
   let s = append(stack, {w: wd, left: left})
   if len(s) > 24 then slice(s, len(s) - 24, len(s)) else s end
@@ -232,7 +232,7 @@ fn dir_name(a: num) -> string
   else "{deg}°" end
 end
 
-// A zigzag from a to b: the coils of a spring.
+# A zigzag from a to b: the coils of a spring.
 fn coil_points(ax: num, ay: num, bx: num, by: num, teeth: int, amp: num) -> list
   let dx = bx - ax
   let dy = by - ay
@@ -255,32 +255,32 @@ fn coil_points(ax: num, ay: num, bx: num, by: num, teeth: int, amp: num) -> list
   flat([head, mid, tail])
 end
 
-// ── Geometry ─────────────────────────────────────────────────────────────
+# ── Geometry ─────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
-let sx = PAD + RAIL + GAP                 // the stage, in pane pixels
+let sx = PAD + RAIL + GAP                 # the stage, in pane pixels
 let sy = HEAD
 let sw = W - PAD * 2 - RAIL - SIDE - GAP * 2
 let sh = H - HEAD - FOOT - 8
-let SW = float(sw)                        // and as the world sees it
+let SW = float(sw)                        # and as the world sees it
 let SH = float(sh)
 let side_x = sx + sw + GAP
 let rail_x = PAD
 
 let mx = mouse_x()
 let my = mouse_y()
-let wx = float(mx - sx)                   // the pointer, in world pixels
+let wx = float(mx - sx)                   # the pointer, in world pixels
 let wy = float(my - sy)
 let in_stage = mx >= sx && mx < sx + sw && my >= sy && my < sy + sh
 
 let HUE_FILL = for c in HUES do blend(C_STAGE, c, 0.26) end
 let HUE_DIM = for c in HUES do blend(C_STAGE, c, 0.5) end
 
-// ── Frame timing ─────────────────────────────────────────────────────────
-// The delta comes from time(), not dt(): under POST /tick the panel's clock
-// is virtual and advances by exactly the dt of each driven frame, so a tick
-// script replays to the same world every run.
+# ── Frame timing ─────────────────────────────────────────────────────────
+# The delta comes from time(), not dt(): under POST /tick the panel's clock
+# is virtual and advances by exactly the dt of each driven frame, so a tick
+# script replays to the same world every run.
 
 let now = time()
 let raw_dt = if last_time < 0.0 then 0.0 else clamp(now - last_time, 0.0, 0.25) end
@@ -290,27 +290,27 @@ toast_t = max(0.0, toast_t - min(raw_dt, 0.05))
 
 claim_key("z", "cmd")
 
-// ── Intents ──────────────────────────────────────────────────────────────
-// Keys and widgets only say what they want. The edits that renumber bodies
-// are carried out once, after all input has been read, by the actions below,
-// so an index found while drawing the chrome is still good at the click, and
-// every way of asking for a thing does exactly the same thing.
+# ── Intents ──────────────────────────────────────────────────────────────
+# Keys and widgets only say what they want. The edits that renumber bodies
+# are carried out once, after all input has been read, by the actions below,
+# so an index found while drawing the chrome is still good at the click, and
+# every way of asking for a thing does exactly the same thing.
 
 let want_scene  = -1
 let want_undo   = false
 let want_clear  = false
 let want_step   = false
-let want_pin    = -1        // body index to pin or free
-let want_remove = -1        // body index to delete
+let want_pin    = -1        # body index to pin or free
+let want_remove = -1        # body index to delete
 let obs_bins    = []
-var wake        = false     // something changed: the world may not sleep
-var said        = ""        // this frame's toast, if any
+var wake        = false     # something changed: the world may not sleep
+var said        = ""        # this frame's toast, if any
 
-// ── Actions ──────────────────────────────────────────────────────────────
-// Every state these write is a `state var`, and `wake` and `said` are `var`s:
-// a function writes a cell with `set` and reads it with `get`.
+# ── Actions ──────────────────────────────────────────────────────────────
+# Every state these write is a `state var`, and `wake` and `said` are `var`s:
+# a function writes a cell with `set` and reads it with `get`.
 
-// Abandon a launch, a link or a cut that is being drawn.
+# Abandon a launch, a link or a cut that is being drawn.
 fn cancel_gestures()
   set aiming = false
   set linking = false
@@ -322,7 +322,7 @@ fn pick_tool(k: int)
   cancel_gestures()
 end
 
-// Push an undo step: the world as it is, before an edit.
+# Push an undo step: the world as it is, before an edit.
 fn checkpoint()
   set undo = pushed(get undo, get world, get emit.left)
 end
@@ -369,7 +369,7 @@ fn undo_last() -> nil
   set said = "Undone"
 end
 
-// Remove every body that is not pinned, and empty the dispenser.
+# Remove every body that is not pinned, and empty the dispenser.
 fn clear_loose() -> nil
   let wd = get world
   let loose = 0
@@ -393,7 +393,7 @@ fn clear_loose() -> nil
   set said = "{plural(loose, "loose body", "loose bodies")} cleared"
 end
 
-// Pin body i, or free it; it becomes the selection.
+# Pin body i, or free it; it becomes the selection.
 fn toggle_pin(i: int) -> nil
   if i < 0 || i >= get world.n then return nil end
   checkpoint()
@@ -404,7 +404,7 @@ fn toggle_pin(i: int) -> nil
   set said = if was then "#{get sel_id} freed" else "#{get sel_id} pinned" end
 end
 
-// Delete body i and the links on it.
+# Delete body i and the links on it.
 fn delete_body(i: int) -> nil
   if i < 0 || i >= get world.n then return nil end
   checkpoint()
@@ -423,7 +423,7 @@ if !ready then
   want_scene = 0
 end
 
-// ── Input: keys ──────────────────────────────────────────────────────────
+# ── Input: keys ──────────────────────────────────────────────────────────
 
 for i in range(0, len(TOOLS)) do
   if key_pressed(str(i + 1)) || (key_pressed(TOOL_KEYS[i]) && !mod_cmd()) then
@@ -452,7 +452,7 @@ if key_pressed("f") then speed_i = (speed_i + 1) % len(SPEEDS) end
 if key_pressed("equals") || key_pressed("rightbracket") then size_i = min(len(BALL_SIZES) - 1, size_i + 1) end
 if key_pressed("minus") || key_pressed("leftbracket") then size_i = max(0, size_i - 1) end
 
-// Arrows tip the whole stage; 0 switches gravity off and back on.
+# Arrows tip the whole stage; 0 switches gravity off and back on.
 let tipped = -1.0
 if key_pressed("down") then tipped = 1.5708 end
 if key_pressed("up") then tipped = 4.7124 end
@@ -481,7 +481,7 @@ if key_pressed("escape") then
   if aiming || linking || cutting then
     cancel_gestures()
   elsif held >= 0 then
-    // Let go without a throw: the body is left where it is, at rest.
+    # Let go without a throw: the body is left where it is, at rest.
     set world = ph.set_velocity(world, held, 0.0, 0.0)
     set grab_id = -1
     set wake = true
@@ -493,14 +493,14 @@ end
 let sel = ph.index_of_id(world, sel_id)
 if sel >= 0 && (key_pressed("backspace") || key_pressed("delete")) then want_remove = sel end
 
-// ── Chrome ───────────────────────────────────────────────────────────────
+# ── Chrome ───────────────────────────────────────────────────────────────
 
 fn card(x: num, y: num, w: num, h: num)
   draw_rect_rounded(rect(x, y, w, h), 10, C_CARD)
   draw_rect_rounded_outline(rect(x, y, w, h), 10, C_LINE, 255, 1)
 end
 
-// A push button. Returns true on the frame it is clicked.
+# A push button. Returns true on the frame it is clicked.
 fn ui_btn(x: num, y: num, w: num, h: num, label: string, on: bool, tone: record) -> bool
   let over = hit(x, y, w, h)
   let face = if on then blend(C_CARD, tone, 0.22) elsif over then blend(C_CARD, C_TEXT, 0.08) else C_WELL end
@@ -512,8 +512,8 @@ fn ui_btn(x: num, y: num, w: num, h: num, label: string, on: bool, tone: record)
   over && mouse_pressed(0)
 end
 
-// A labelled slider. `drag` is the id currently holding the mouse; returns
-// the new fraction and the new holder.
+# A labelled slider. `drag` is the id currently holding the mouse; returns
+# the new fraction and the new holder.
 fn ui_slider(id: string, x: num, y: num, w: num, label: string, value: string, frac: num, drag: string) -> record
   tx(label, x, y, S_LABEL)
   tx_right(value, x + w, y - 2, S_VAL)
@@ -538,7 +538,7 @@ fn ui_slider(id: string, x: num, y: num, w: num, label: string, value: string, f
   {frac: f, drag: d}
 end
 
-// The gravity compass: an arrow you drag round. Snaps to 15 degrees.
+# The gravity compass: an arrow you drag round. Snaps to 15 degrees.
 fn ui_dial(cx: num, cy: num, r: num, ang: num, strength: num, drag: string) -> record
   let px = mouse_x()
   let py = mouse_y()
@@ -582,7 +582,7 @@ fn ui_dial(cx: num, cy: num, r: num, ang: num, strength: num, drag: string) -> r
   {ang: a, drag: d}
 end
 
-// The six tool glyphs, drawn from primitives in a 24 px box around (cx, cy).
+# The six tool glyphs, drawn from primitives in a 24 px box around (cx, cy).
 fn tool_icon(k: int, cx: num, cy: num, col: record)
   if k == 0 then
     draw_circle_outline(cx - 4, cy + 4, 6, col, 255, 2)
@@ -615,7 +615,7 @@ end
 
 clear(C_BG.r, C_BG.g, C_BG.b)
 
-// Header: title on the left, the scene tabs over the stage's right edge.
+# Header: title on the left, the scene tabs over the stage's right edge.
 tx("Physics playground", PAD, 16, S_TITLE)
 tx("PETAL / GARDEN TESTBED 12", PAD + 1, 52, S_KICK)
 
@@ -637,7 +637,7 @@ for i in range(0, len(sc.NAMES)) do
   tab_x += tab_w[i] + 6
 end
 
-// Tool rail.
+# Tool rail.
 for i in range(0, len(TOOLS)) do
   let by = HEAD + i * 68
   let on = i == tool
@@ -655,7 +655,7 @@ for i in range(0, len(TOOLS)) do
   end
 end
 
-// Ball size, under the tools.
+# Ball size, under the tools.
 let size_y = HEAD + len(TOOLS) * 68 + 10
 tx_center("SIZE", rail_x + RAIL / 2 + 1, size_y, S_TINY)
 for i in range(0, len(BALL_SIZES)) do
@@ -670,7 +670,7 @@ for i in range(0, len(BALL_SIZES)) do
   if over && mouse_pressed(0) then size_i = i end
 end
 
-// Sidebar: world.
+# Sidebar: world.
 let card_w = SIDE
 let inner = card_w - 28
 let cx1 = side_x + 14
@@ -702,7 +702,7 @@ set drag = round(d_s.frac * 0.5, 2)
 ui_drag = d_s.drag
 if ui_drag != "" then set wake = true end
 
-// Sidebar: time and overlays.
+# Sidebar: time and overlays.
 let time_y = world_y + world_h + 10
 let time_h = 100
 card(side_x, time_y, card_w, time_h)
@@ -724,7 +724,7 @@ if ui_btn(cx1, time_y + 66, tog_w, 22, "VECTORS", show_vec, HUES[3]) then show_v
 if ui_btn(cx1 + tog_w + 6, time_y + 66, tog_w, 22, "TRAILS", show_trail, HUES[3]) then set show_trail = !show_trail end
 if ui_btn(cx1 + (tog_w + 6) * 2, time_y + 66, tog_w, 22, "CONTACTS", show_pts, HUES[3]) then show_pts = !show_pts end
 
-// ── Sidebar: selection, or the scene ─────────────────────────────────────
+# ── Sidebar: selection, or the scene ─────────────────────────────────────
 
 let census = count_parts(world)
 let en_y = time_y + time_h + 10
@@ -773,7 +773,7 @@ else
   end
 end
 
-// ── Input: the stage ─────────────────────────────────────────────────────
+# ── Input: the stage ─────────────────────────────────────────────────────
 
 let free_mouse = ui_drag == ""
 let hover = if in_stage && free_mouse then ph.pick_body(world, wx, wy, 4.0) else -1 end
@@ -834,7 +834,7 @@ end
 
 grab = ph.index_of_id(world, grab_id)
 
-// A cutting stroke severs every link it crosses between two frames.
+# A cutting stroke severs every link it crosses between two frames.
 if cutting && mouse_down(0) then
   let cwx = clamp(wx, 0.0, SW)
   let cwy = clamp(wy, 0.0, SH)
@@ -874,7 +874,7 @@ if mouse_released(0) || !mouse_down(0) then
       set said = "The stage is full ({max_bodies} bodies)"
     else
       let r = BALL_SIZES[size_i]
-      // The pull is measured to the stage edge, exactly as the preview draws it.
+      # The pull is measured to the stage edge, exactly as the preview draws it.
       let ex = clamp(wx, 0.0, SW)
       let ey = clamp(wy, 0.0, SH)
       let lvx = clamp((aim_x - ex) * launch_gain, -1800.0, 1800.0)
@@ -906,7 +906,7 @@ if mouse_released(0) || !mouse_down(0) then
       set said = "The stage is full ({max_bodies} bodies)"
     else
       checkpoint()
-      // An end left on open stage gets a small pinned anchor lb hold it.
+      # An end left on open stage gets a small pinned anchor lb hold it.
       if la < 0 then
         set world = ph.add_pin(world, link_x, link_y, 5, 6)
         la = world.n - 1
@@ -933,12 +933,12 @@ if mouse_released(0) || !mouse_down(0) then
   end
 end
 
-// The Ball tool's size also answers the wheel.
+# The Ball tool's size also answers the wheel.
 if in_stage && tool == 1 && scroll_y() != 0.0 then
   size_i = clamp(size_i + (if scroll_y() < 0.0 then 1 else -1 end), 0, len(BALL_SIZES) - 1)
 end
 
-// ── Carry out the intents ────────────────────────────────────────────────
+# ── Carry out the intents ────────────────────────────────────────────────
 
 if want_scene >= 0 then load_scene(want_scene) end
 if want_undo then undo_last() end
@@ -951,14 +951,14 @@ if said != "" then
   toast_t = 2.2
 end
 
-// ── Simulation ───────────────────────────────────────────────────────────
+# ── Simulation ───────────────────────────────────────────────────────────
 
 if wake then
   asleep = false
   rest_t = 0.0
 end
 
-// The edits above may have removed or renumbered bodies: look them up again.
+# The edits above may have removed or renumbered bodies: look them up again.
 grab = ph.index_of_id(world, grab_id)
 sel = ph.index_of_id(world, sel_id)
 hover = if in_stage && free_mouse then ph.pick_body(world, wx, wy, 4.0) else -1 end
@@ -973,7 +973,7 @@ let env = {gx: gx, gy: gy, bounce: bounce, fric: fric, drag: drag, w: SW, h: SH,
 let sim_dt = if want_step then 1.0 / 60.0 elsif paused || asleep then 0.0 else frame_dt * SPEEDS[speed_i] end
 
 if sim_dt > 0.0 then
-  // The dispenser (Pegboard): one ball every `every` seconds until it is empty.
+  # The dispenser (Pegboard): one ball every `every` seconds until it is empty.
   if emit.left > 0 then
     set emit_t += sim_dt
     while emit_t >= emit.every && emit.left > 0 && world.n < max_bodies do
@@ -995,8 +995,8 @@ if sim_dt > 0.0 then
   set steps += res.subs
   set sim_t += sim_dt
 
-  // Rest is judged on how far things actually moved, not on the velocities
-  // the solver is still juggling inside a settled pile.
+  # Rest is judged on how far things actually moved, not on the velocities
+  # the solver is still juggling inside a settled pile.
   let shift = 0.0
   if len(prev_x) == world.n then
     for i in range(0, world.n) do
@@ -1027,17 +1027,17 @@ if running || toast_t > 0.0 || grab >= 0 || aiming || linking || cutting || ui_d
   request_frame()
 end
 
-// ── Sidebar: energy ──────────────────────────────────────────────────────
+# ── Sidebar: energy ──────────────────────────────────────────────────────
 
 card(side_x, en_y, card_w, en_h)
 tx("ENERGY", cx1, en_y + 13, S_LABEL)
 let last_e = if len(hist) > 0 then last(hist) else {k: 0.0, p: 0.0} end
-// Stored energy is shown above its lowest point in the window, so the two
-// bands trade height as a pendulum swings and the top edge stays level
-// when nothing is being lost.
+# Stored energy is shown above its lowest point in the window, so the two
+# bands trade height as a pendulum swings and the top edge stays level
+# when nothing is being lost.
 let p_floor = reduce(hist, last_e.p, fn(acc, e) -> min(acc, e.p))
-// The scale never drops below a small floor, so the solver's residue in a
-// settled pile reads as the sliver it is instead of filling the chart.
+# The scale never drops below a small floor, so the solver's residue in a
+# settled pile reads as the sliver it is instead of filling the chart.
 let e_peak = reduce(hist, 40000.0, fn(acc, e) -> max(acc, e.k + e.p - p_floor))
 let gx0 = cx1
 let gy0 = en_y + 36
@@ -1066,12 +1066,12 @@ draw_circle(cx1 + 122, en_y + 91, 3, HUES[3])
 tx("STORED", cx1 + 131, en_y + 85, S_TINY)
 tx(compact(last_e.p - p_floor), cx1 + 180, en_y + 83, S_VAL)
 
-// ── Draw: the stage ──────────────────────────────────────────────────────
+# ── Draw: the stage ──────────────────────────────────────────────────────
 
 draw_rect_rounded(rect(sx, sy, sw, sh), 12, C_STAGE)
 clip(sx, sy, sw, sh)
 
-// Graph paper: a fine grid with every fourth line a touch brighter.
+# Graph paper: a fine grid with every fourth line a touch brighter.
 let cell = 32
 for i in range(1, sw / cell + 1) do
   draw_rect(rect(sx + i * cell, sy, 1, sh), if i % 4 == 0 then C_GRID2 else C_GRID end)
@@ -1084,7 +1084,7 @@ let n = world.n
 let X = world.x
 let Y = world.y
 
-// Pegboard: the dispenser, and a count over every bin.
+# Pegboard: the dispenser, and a count over every bin.
 if scene == 2 then
   let lay = sc.bin_layout(SW, SH)
   let hx = sx + int(emit.x)
@@ -1109,16 +1109,16 @@ if scene == 2 then
   obs_bins = bins
 end
 
-// A quiet census in the corner, under everything that moves.
+# A quiet census in the corner, under everything that moves.
 tx("{plural(n, "BODY", "BODIES")}  ·  {plural(contacts, "CONTACT", "CONTACTS")}", sx + 16, sy + 14, S_TINY)
 
-// Static bars.
+# Static bars.
 for sg in world.segs do
   draw_line(sx + sg.x1, sy + sg.y1, sx + sg.x2, sy + sg.y2, C_BAR, 255, 6)
   draw_line(sx + sg.x1, sy + sg.y1, sx + sg.x2, sy + sg.y2, C_BAR_HI, 255, 1)
 end
 
-// Trails: only the bigger bodies leave one, so a ball pit stays readable.
+# Trails: only the bigger bodies leave one, so a ball pit stays readable.
 if show_trail && len(trail) > 2 && len(trail[0].x) == n then
   let nt = len(trail)
   let drawn = 0
@@ -1132,7 +1132,7 @@ if show_trail && len(trail) > 2 && len(trail[0].x) == n then
   end
 end
 
-// Links, under the bodies they join.
+# Links, under the bodies they join.
 for k in range(0, len(world.links)) do
   let L = world.links[k]
   let ax = sx + X[L.a]
@@ -1143,11 +1143,11 @@ for k in range(0, len(world.links)) do
   if L.kind == 0 then
     draw_line(ax, ay, bx, by, if hot then C_WARN else C_ROD end, 255, 3)
   else
-    // A spring warms from mint to coral as it is pulled or squeezed.
+    # A spring warms from mint to coral as it is pulled or squeezed.
     let strain = abs(ph.norm(bx - ax, by - ay) - L.len) / max(1.0, L.len)
     let col = if hot then C_WARN else blend(C_SPRING, HUES[0], min(1.0, strain * 2.2)) end
     if L.hz >= 8.0 then
-      // The stiff lacing inside a soft body reads better as bare thread.
+      # The stiff lacing inside a soft body reads better as bare thread.
       draw_line(ax, ay, bx, by, col, 150, 1)
     else
       draw_polyline(coil_points(ax, ay, bx, by, clamp(int(L.len / 9.0), 4, 26), 5.0), col, 255, 2)
@@ -1155,7 +1155,7 @@ for k in range(0, len(world.links)) do
   end
 end
 
-// Bodies.
+# Bodies.
 for i in range(0, n) do
   let cx = sx + X[i]
   let cy = sy + Y[i]
@@ -1176,13 +1176,13 @@ for i in range(0, n) do
   else
     draw_circle(cx, cy, r, HUE_FILL[world.c[i]])
     draw_circle_outline(cx, cy, r, col, 255, 2)
-    // A spoke, so spin is something you can see.
+    # A spoke, so spin is something you can see.
     let a = world.ang[i]
     draw_line(cx + cos(a) * r * 0.28, cy + sin(a) * r * 0.28, cx + cos(a) * (r - 3.0), cy + sin(a) * (r - 3.0), col, 255, 2)
   end
 end
 
-// Overlays.
+# Overlays.
 if show_vec then
   for i in range(0, n) do
     let sp = ph.norm(world.vx[i], world.vy[i])
@@ -1207,7 +1207,7 @@ if show_pts then
   end
 end
 
-// Hover and selection rings.
+# Hover and selection rings.
 if sel >= 0 then
   draw_circle_outline(sx + X[sel], sy + Y[sel], world.r[sel] + 5.0, C_ACC, 255, 1)
 end
@@ -1216,7 +1216,7 @@ if hover >= 0 && grab < 0 then
     if tool == 5 then C_WARN else C_WHITE end, 200, 1)
 end
 
-// The gesture in progress.
+# The gesture in progress.
 let pwx = clamp(wx, 0.0, SW)
 let pwy = clamp(wy, 0.0, SH)
 if grab >= 0 then
@@ -1235,7 +1235,7 @@ if aiming then
   draw_circle(sx + pwx, sy + pwy, 3, col)
   draw_circle(sx + aim_x, sy + aim_y, r, blend(C_STAGE, col, 0.26))
   draw_circle_outline(sx + aim_x, sy + aim_y, r, col, 255, 2)
-  // Where it will go: the first 0.7 s of free flight.
+  # Where it will go: the first 0.7 s of free flight.
   if abs(lvx) + abs(lvy) > 30.0 then
     for k in range(1, 15) do
       let t = float(k) * 0.05
@@ -1269,7 +1269,7 @@ if n == 0 then
   tx_center("Press 2 and click to drop a ball, or pick a scene above.", sx + sw / 2, sy + sh / 2, S_BODY)
 end
 
-// State badge, top-right; toast, bottom-centre.
+# State badge, top-right; toast, bottom-centre.
 let badge = if paused then "PAUSED" elsif asleep && n > 0 then "AT REST" else "" end
 if badge != "" then
   let bw = text_width(badge, S_LABEL) + 22
@@ -1291,7 +1291,7 @@ end
 clip_none()
 draw_rect_rounded_outline(rect(sx, sy, sw, sh), 12, C_EDGE, 255, 1)
 
-// ── Draw: footer ─────────────────────────────────────────────────────────
+# ── Draw: footer ─────────────────────────────────────────────────────────
 
 fn chip(x: num, y: num, cap: string, desc: string) -> int
   let cw = text_width(cap, S_CAP) + 16
@@ -1311,12 +1311,12 @@ fx += chip(fx, fy, "← ↑ ↓ →", "tip gravity")
 fx += chip(fx, fy, "0", "zero-g")
 fx += chip(fx, fy, "TAB", "next scene")
 
-// The armed tool and what it does, at the right.
+# The armed tool and what it does, at the right.
 let hint_w = text_width(TOOL_HINTS[tool], S_HINT)
 tx_right(TOOL_HINTS[tool], W - PAD, fy + 4, S_HINT)
 tx_right(TOOLS[tool], W - PAD - hint_w - 10, fy + 5, {...S_LABEL, color: C_ACC})
 
-// ── Observation mirrors (readable in /state → panel.values) ──────────────
+# ── Observation mirrors (readable in /state → panel.values) ──────────────
 
 let obs_scene     = sc.NAMES[scene]
 let obs_tool      = TOOLS[tool]
@@ -1353,7 +1353,7 @@ let obs_thrown    = n_thrown
 let obs_removed   = n_removed
 let obs_toast     = toast
 let obs_stage     = [sx, sy, sw, sh]
-// The O(n^2) audit only runs while nothing moves.
+# The O(n^2) audit only runs while nothing moves.
 let obs_audit     = if paused || asleep then ph.audit(world) else nil end
 let obs_first     = if n > 0 then [round(X[0], 1), round(Y[0], 1)] else [] end
 let obs_last      = if n > 0 then [round(X[n - 1], 1), round(Y[n - 1], 1)] else [] end

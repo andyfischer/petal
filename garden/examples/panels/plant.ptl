@@ -1,25 +1,25 @@
-// ── A procedural plant, grown by recursion + `state var` tables ───────────
-//   garden petal-ide examples/panels/plant.ptl
-//
-// A port of a 2008 Flash toy (andyfischer/plant_test).
+# ── A procedural plant, grown by recursion + `state var` tables ───────────
+#   garden petal-ide examples/panels/plant.ptl
+#
+# A port of a 2008 Flash toy (andyfischer/plant_test).
 
 import ui
 
-let wiggle_factor = tunable(0.5)           // how much a segment veers off straight
-let max_segment_angle = tunable(0.5)       // veer ceiling, in multiples of pi
-let max_segment_radius = tunable(3.0)      // trunk half-thickness at the base
-let max_segment_length = tunable(10.0)     // a segment stops growing here
-let max_height = tunable(500.0)            // sets how fast thickness tapers
-let minimum_thickness = tunable(0.3)       // too thin to sprout another segment
+let wiggle_factor = tunable(0.5)           # how much a segment veers off straight
+let max_segment_angle = tunable(0.5)       # veer ceiling, in multiples of pi
+let max_segment_radius = tunable(3.0)      # trunk half-thickness at the base
+let max_segment_length = tunable(10.0)     # a segment stops growing here
+let max_height = tunable(500.0)            # sets how fast thickness tapers
+let minimum_thickness = tunable(0.3)       # too thin to sprout another segment
 let min_distance_between_branches = tunable(30.0)
-let branch_spread_angle = tunable(1.0)     // radians between the two split branches
-let leaf_spread_angle = tunable(1.0)       // radians between a tip's two leaves
-let time_scale = tunable(2.0)              // growth speed multiplier
+let branch_spread_angle = tunable(1.0)     # radians between the two split branches
+let leaf_spread_angle = tunable(1.0)       # radians between a tip's two leaves
+let time_scale = tunable(2.0)              # growth speed multiplier
 
-let LENGTH_GROW_RATE = 40.0                // units of length per unit of plant-time
+let LENGTH_GROW_RATE = 40.0                # units of length per unit of plant-time
 let RADIUS_GROW_RATE = 1.0
 let LEAF_MAX_LENGTH = 20.0
-let MIN_DISPLAY_RADIUS = 0.4               // keeps the finest twigs a visible width
+let MIN_DISPLAY_RADIUS = 0.4               # keeps the finest twigs a visible width
 let MAX_SEGMENTS = 700
 let MAX_DEPTH = 60
 
@@ -29,23 +29,23 @@ let SOIL = [38, 30, 24]
 let taper_per_segment = max_segment_radius / max_height
 let angle_ceiling = max_segment_angle * pi()
 
-// ── Frame setup ───────────────────────────────────────────────────────────
+# ── Frame setup ───────────────────────────────────────────────────────────
 
 let w = screen_width()
 let h = screen_height()
-let gdt = dt() * time_scale                // plant-time elapsed this frame
+let gdt = dt() * time_scale                # plant-time elapsed this frame
 
-// What the plant remembers lives in two tables keyed by id: one record per
-// segment, one per leaf. They are top-level `state var` maps, not `state`
-// inside `grow` and `leaf`, because a segment's identity is its place in the
-// tree, not the call path that reached it — a leaf is reached from a deeper
-// and deeper segment as its branch extends (see Leaves, below).
-//
-// Each frame reads last frame's tables and writes the entries it reaches into
-// fresh ones, which replace the old at the end of the frame. So an entry the
-// frame did not reach (a segment past the MAX_SEGMENTS cap, say) is dropped,
-// and starts fresh if it is reached again. Regrow empties both tables, and the
-// next frame grows a new plant from a new root.
+# What the plant remembers lives in two tables keyed by id: one record per
+# segment, one per leaf. They are top-level `state var` maps, not `state`
+# inside `grow` and `leaf`, because a segment's identity is its place in the
+# tree, not the call path that reached it — a leaf is reached from a deeper
+# and deeper segment as its branch extends (see Leaves, below).
+#
+# Each frame reads last frame's tables and writes the entries it reaches into
+# fresh ones, which replace the old at the end of the frame. So an entry the
+# frame did not reach (a segment past the MAX_SEGMENTS cap, say) is dropped,
+# and starts fresh if it is reached again. Regrow empties both tables, and the
+# next frame grows a new plant from a new root.
 state var segments = Map()
 state var leaves = Map()
 if key_pressed("r") || mouse_pressed(0) then
@@ -55,25 +55,25 @@ end
 var next_segments = Map()
 var next_leaves = Map()
 
-// Two accumulators the recursion writes into. `var` (not `state`) — they are
-// rebuilt from scratch every frame, which is the point.
+# Two accumulators the recursion writes into. `var` (not `state`) — they are
+# rebuilt from scratch every frame, which is the point.
 var segment_count = 0
 var leaf_blades = []
 
-// ── Leaves ────────────────────────────────────────────────────────────────
-// Leaves are keyed by *lineage*, not by segment. In the Flash version a tip's
-// leaves were physically handed down to each new segment as the branch
-// extended (`transferLeaves`), so a leaf outlived the segment it hung from.
-// Keying on the lineage says the same thing with no bookkeeping: the growing
-// tip of one branch keeps reaching the same entries, so the leaf just keeps
-// aging while the branch it rides on gets longer.
-//
-// (A function must be defined before the line that calls it — hence leaves
-// before branches, even though branches are what call them.)
+# ── Leaves ────────────────────────────────────────────────────────────────
+# Leaves are keyed by *lineage*, not by segment. In the Flash version a tip's
+# leaves were physically handed down to each new segment as the branch
+# extended (`transferLeaves`), so a leaf outlived the segment it hung from.
+# Keying on the lineage says the same thing with no bookkeeping: the growing
+# tip of one branch keeps reaching the same entries, so the leaf just keeps
+# aging while the branch it rides on gets longer.
+#
+# (A function must be defined before the line that calls it — hence leaves
+# before branches, even though branches are what call them.)
 
 fn leaf(id, tip, bend)
-  // A new leaf's record is built (and its `random`s run) only the frame this
-  // id is first reached; `??` leaves the initializer alone on a hit.
+  # A new leaf's record is built (and its `random`s run) only the frame this
+  # id is first reached; `??` leaves the initializer alone on a hit.
   let was = get leaves[id] ?? {age: 0.0, length: 0.0, wiggle: random(-1.0, 1.0), tint: random(0.0, 1.0)}
   let wiggle = was.wiggle
   let tint = was.tint
@@ -86,8 +86,8 @@ fn leaf(id, tip, bend)
   let angle = tip.angle + clamp(wiggle * wiggle_factor + bend, lo: -angle_ceiling, hi: angle_ceiling) * ease
   let shown = length * ease
 
-  // The blade: a long thin diamond, widest a third of the way out. Same
-  // proportions the Flash version scaled its leaf clip to (3x long, 1/3 wide).
+  # The blade: a long thin diamond, widest a third of the way out. Same
+  # proportions the Flash version scaled its leaf clip to (3x long, 1/3 wide).
   let blade = shown * 3.0
   let wide = shown / 3.0
   let dx = sin(angle)
@@ -112,12 +112,12 @@ fn bud(lineage, tip)
   leaf(id: lineage ++ ":1", tip: tip, bend: spread)
 end
 
-// ── One segment ───────────────────────────────────────────────────────────
-// `base` carries what the parent hands down: where its end landed, the two
-// corners of its end edge (so the child's quad butts flush against it), and
-// its displayed angle. `bend` and `ratio` are the parent's decisions about
-// this child; `dist_before` is how much branch has accumulated since the last
-// fork, which is what eventually triggers the next one.
+# ── One segment ───────────────────────────────────────────────────────────
+# `base` carries what the parent hands down: where its end landed, the two
+# corners of its end edge (so the child's quad butts flush against it), and
+# its displayed angle. `bend` and `ratio` are the parent's decisions about
+# this child; `dist_before` is how much branch has accumulated since the last
+# fork, which is what eventually triggers the next one.
 
 fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
   set segment_count += 1
@@ -125,16 +125,16 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
     return nil
   end
 
-  // Everything a segment remembers. The `random`s run once, the frame this id
-  // is first reached, so a segment's crookedness is fixed for its whole life.
+  # Everything a segment remembers. The `random`s run once, the frame this id
+  # is first reached, so a segment's crookedness is fixed for its whole life.
   let was = get segments[id] ?? {
     age: 0.0,
     length: 0.0,
     radius: 0.0,
     wiggle: random(-1.0, 1.0),
-    children: 0,                           // 0 = tip, 1 = one child, 2 = forked
-    fork_share: random(0.2, 0.8),          // thickness split between the two
-    leaf_heir: random_int(0, 2),           // which fork keeps the existing leaves
+    children: 0,                           # 0 = tip, 1 = one child, 2 = forked
+    fork_share: random(0.2, 0.8),          # thickness split between the two
+    leaf_heir: random_int(0, 2),           # which fork keeps the existing leaves
   }
   let wiggle = was.wiggle
   let fork_share = was.fork_share
@@ -142,20 +142,20 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
 
   let age = was.age + gdt
 
-  // Grow. Length runs to the genome's cap; radius chases the thickness this
-  // segment is entitled to (its share of the parent's end thickness) and,
-  // like real wood, never shrinks back once laid down.
+  # Grow. Length runs to the genome's cap; radius chases the thickness this
+  # segment is entitled to (its share of the parent's end thickness) and,
+  # like real wood, never shrinks back once laid down.
   let length = min(was.length + gdt * LENGTH_GROW_RATE, max_segment_length)
   let radius_ceiling = if depth == 0 then max_segment_radius else ratio * parent_end_radius end
   let radius = max(was.radius, min(was.radius + gdt * RADIUS_GROW_RATE, radius_ceiling))
   let end_radius = max(radius - taper_per_segment, 0.0)
 
-  // A segment eases into its full length and full veer as it ages, so new
-  // growth unfolds instead of popping in at full size.
+  # A segment eases into its full length and full veer as it ages, so new
+  # growth unfolds instead of popping in at full size.
   let ease = 1.0 - 1.0 / (age + 1.0)
-  // The trunk stands straight; only what grows off it veers. (The Flash version
-  // arrived at the same place by a bug: it tilted the root quad and then zeroed
-  // the angle its children read, which put a kink at the base.)
+  # The trunk stands straight; only what grows off it veers. (The Flash version
+  # arrived at the same place by a bug: it tilted the root quad and then zeroed
+  # the angle its children read, which put a kink at the base.)
   let veer = if depth == 0 then 0.0 else clamp(wiggle * wiggle_factor + bend, lo: -angle_ceiling, hi: angle_ceiling) end
   let angle = base.angle + veer * ease
   let shown_length = length * ease
@@ -163,7 +163,7 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
   let end_x = base.x + shown_length * sin(angle)
   let end_y = base.y - shown_length * cos(angle)
 
-  // The end edge, half a thickness out either side of the centreline.
+  # The end edge, half a thickness out either side of the centreline.
   let half = 2.0 * max(end_radius * ease, MIN_DISPLAY_RADIUS)
   let end_lx = end_x - half * cos(angle)
   let end_ly = end_y - half * sin(angle)
@@ -174,13 +174,13 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
     [base.lx, base.ly], [end_lx, end_ly], [end_rx, end_ry], [base.rx, base.ry],
   ], r: BARK[0], g: BARK[1], b: BARK[2])
 
-  // How much unbranched growth stands between here and the last fork.
+  # How much unbranched growth stands between here and the last fork.
   let dist = dist_before + length
 
-  // A tip decides what to become. Reaching the fork distance wins over simply
-  // extending, so a long straight run always ends in a split rather than
-  // growing forever. Once decided, it is remembered — this is the only place
-  // the shape of the tree is ever chosen.
+  # A tip decides what to become. Reaching the fork distance wins over simply
+  # extending, so a long straight run always ends in a split rather than
+  # growing forever. Once decided, it is remembered — this is the only place
+  # the shape of the tree is ever chosen.
   let children = if was.children != 0 then
     was.children
   elsif dist > min_distance_between_branches then
@@ -199,12 +199,12 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
   let handoff = {x: end_x, y: end_y, lx: end_lx, ly: end_ly, rx: end_rx, ry: end_ry, angle: angle}
 
   if children == 1 then
-    // Straight extension: same lineage, so this branch's leaves stay with it.
+    # Straight extension: same lineage, so this branch's leaves stay with it.
     grow(id: id ++ ".c", lineage: lineage, depth: depth + 1, base: handoff, bend: 0.0, ratio: 1.0, parent_end_radius: end_radius, dist_before: dist)
   elsif children == 2 then
-    // A fork. One child inherits the leaf pair (so those leaves keep the age
-    // they have already accumulated and stay the big ones); the other starts
-    // a lineage of its own, with fresh buds.
+    # A fork. One child inherits the leaf pair (so those leaves keep the age
+    # they have already accumulated and stay the big ones); the other starts
+    # a lineage of its own, with fresh buds.
     let spread = branch_spread_angle / 2.0
     let heir_a = leaf_heir == 0
     grow(id: id ++ ".a", lineage: if heir_a then lineage else id ++ ".a" end,
@@ -216,7 +216,7 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
   end
 end
 
-// ── Draw ──────────────────────────────────────────────────────────────────
+# ── Draw ──────────────────────────────────────────────────────────────────
 
 clear(18, 20, 28)
 
@@ -234,12 +234,12 @@ grow(id: "r", lineage: "L", depth: 0,
     angle: 0.0},
   bend: 0.0, ratio: 1.0, parent_end_radius: max_segment_radius, dist_before: 0.0)
 
-// This frame's tables become the ones the next frame reads.
+# This frame's tables become the ones the next frame reads.
 set segments = get next_segments
 set leaves = get next_leaves
 
-// Leaves last, so a blade is never buried under a branch drawn after it —
-// the same two-pass order the Flash renderer used.
+# Leaves last, so a blade is never buried under a branch drawn after it —
+# the same two-pass order the Flash renderer used.
 for blade in leaf_blades do
   fill_poly(points: blade.points, r: blade.r, g: blade.g, b: blade.b)
 end

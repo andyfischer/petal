@@ -1,11 +1,11 @@
-// Micro-benchmark: what declaring enum constant data costs a run. 50 variants,
-// three data keys each, declared and otherwise unused; `enum_decl_plain.ptl`
-// is the same enum without data. Run both on one kept stack:
-//
-//   cd core && cargo run --release --example rerun_timing -- \
-//     ../test/benchmarks/micro/enum_decl_data.ptl ../test/benchmarks/micro/enum_decl_plain.ptl
-//
-// Figures are in docs/dev/performance.md (Enum data reads).
+# Micro-benchmark: what declaring enum constant data costs a run. 50 variants,
+# three data keys each, declared and otherwise unused; `enum_decl_plain.ptl`
+# is the same enum without data. Run both on one kept stack:
+#
+#   cd core && cargo run --release --example rerun_timing -- \
+#     ../test/benchmarks/micro/enum_decl_data.ptl ../test/benchmarks/micro/enum_decl_plain.ptl
+#
+# Figures are in docs/dev/performance.md (Enum data reads).
 
 enum Tile
   t00(code: 0, label: "t00", cost: 0.5),

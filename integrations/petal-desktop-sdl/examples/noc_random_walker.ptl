@@ -1,6 +1,6 @@
-// Nature of Code - Random Walker
-// Inspired by Chapter 0: Randomness
-// A walker that moves randomly, leaving a colorful trail
+# Nature of Code - Random Walker
+# Inspired by Chapter 0: Randomness
+# A walker that moves randomly, leaving a colorful trail
 
 import ui
 
@@ -13,7 +13,7 @@ let sw = screen_width()
 let sh = screen_height()
 time += delta
 
-// Initialize walkers
+# Initialize walkers
 if len(walkers) == 0 then
   for i in range(0, 5) do
     walkers = append(walkers, {
@@ -26,10 +26,10 @@ if len(walkers) == 0 then
   end
 end
 
-// Update each walker with random steps
+# Update each walker with random steps
 let new_walkers = []
 for w in walkers do
-  // Tendency to move toward mouse (Levy flight inspired)
+  # Tendency to move toward mouse (Levy flight inspired)
   let mx = float(mouse_x())
   let my = float(mouse_y())
   let roll = random(0.0, 1.0)
@@ -38,18 +38,18 @@ for w in walkers do
   let step_y = 0.0
 
   if roll < 0.01 then
-    // Rare large jump (Levy flight)
+    # Rare large jump (Levy flight)
     step_x = random(-50.0, 50.0)
     step_y = random(-50.0, 50.0)
   elsif roll < 0.4 then
-    // Biased toward mouse
+    # Biased toward mouse
     let dx = mx - w.x
     let dy = my - w.y
     let dist = sqrt(dx * dx + dy * dy) + 0.1
     step_x = dx / dist * 3.0 + random(-2.0, 2.0)
     step_y = dy / dist * 3.0 + random(-2.0, 2.0)
   else
-    // Pure random
+    # Pure random
     step_x = random(-3.0, 3.0)
     step_y = random(-3.0, 3.0)
   end
@@ -57,14 +57,14 @@ for w in walkers do
   let nx = min(float(sw) - 1.0, max(0.0, w.x + step_x))
   let ny = min(float(sh) - 1.0, max(0.0, w.y + step_y))
 
-  // Record trail point
+  # Record trail point
   trail = append(trail, { x: nx, y: ny, r: w.r, g: w.g, b: w.b, age: 0.0 })
 
   new_walkers = append(new_walkers, { x: nx, y: ny, r: w.r, g: w.g, b: w.b })
 end
 walkers = new_walkers
 
-// Age and prune trail
+# Age and prune trail
 let new_trail = []
 for t in trail do
   let aged = { x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, age: t.age + delta }
@@ -74,15 +74,15 @@ for t in trail do
 end
 trail = new_trail
 
-// Keep trail manageable
+# Keep trail manageable
 if len(trail) > 3000 then
   trail = slice(trail, start: len(trail) - 2500, end: len(trail))
 end
 
-// === Drawing ===
+# === Drawing ===
 clear(10, 10, 15)
 
-// Draw trail
+# Draw trail
 for t in trail do
   let fade = max(0.0, 1.0 - t.age / 8.0)
   let tr = int(float(t.r) * fade)
@@ -92,12 +92,12 @@ for t in trail do
   draw_circle(cx: int(t.x), cy: int(t.y), radius: size, r: tr, g: tg, b: tb)
 end
 
-// Draw walkers
+# Draw walkers
 for w in walkers do
   draw_circle(cx: int(w.x), cy: int(w.y), radius: 8, r: min(255, w.r + 50), g: min(255, w.g + 50), b: min(255, w.b + 50))
   draw_circle(cx: int(w.x), cy: int(w.y), radius: 5, r: w.r, g: w.g, b: w.b)
 end
 
-// Title
+# Title
 draw_text("Random Walkers", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
 draw_text("Move mouse to attract", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)

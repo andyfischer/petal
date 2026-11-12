@@ -1,5 +1,5 @@
 import io
-// Branches and clamping on a computed value.
+# Branches and clamping on a computed value.
 let s = symbol("draw")
 let width = 320
 let gap = 4.5

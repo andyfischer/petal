@@ -1,67 +1,67 @@
-// Petal Quest — a side-scrolling action platformer, written entirely in Petal.
-//
-//   cargo run -- carts/petal_quest/game.ptl --scale 3
-//
-// Three worlds, four enemy kinds, a boss, and a status-bar scroll split. The
-// artwork is in `art.ptl` and the level shapes are in `levels.ptl`; this file
-// owns everything that moves.
-//
-// ── How the cart is arranged ──────────────────────────────────────────────
-//
-// The console re-runs this file top to bottom every frame, so the file reads
-// as: constants, then functions, then one short per-frame body at the bottom
-// that dispatches on the current scene. Nothing at the top level does work —
-// a `let` up here is a constant, not a step of the game.
-//
-// **Everything mutable lives in two state slots**, reached through accessor
-// functions (`game()` / `put_game(g)`, `level_cache(n)`):
-//
-//   - `_pq_game` — the small, fast-changing record: hero, entities, score.
-//   - `_pq_level` — the *built* level: 26x144 grids of tile / palette /
-//     solidity ints, plus the entity spawn list. Large and immutable once
-//     built, which is exactly why it is not inside the game record: a record
-//     is copied when it is mutated and shared, and copying the level grid
-//     sixty times a second would be the whole frame budget.
-//
-// Keeping them separate is also what makes hot reload work the way it should:
-// edit this file mid-level and the hero keeps his position, score and lives,
-// because the state slots survive and the level is rebuilt from data that has
-// not changed. (The state slots are named `_pq_*` deliberately — a Petal
-// `state` slot is keyed by the declared *name* across the whole program, so a
-// cart that declares `state cur` shares a slot with the sound prelude's.)
-//
-// ── The frame budget ──────────────────────────────────────────────────────
-//
-// A cart gets 16 ms. Four things here are per-frame expensive if written
-// naively, and all four are behind a cache:
-//
-//   1. **Building a level** (stitching chunks, parsing legend characters into
-//      int grids) happens once per level, keyed on the level number.
-//   2. **Defining artwork** — `define_art` converts string art to digit rows
-//      in Petal before the host ever sees it — is *rotated*: one group of
-//      tiles per frame, all of them at once only when the tileset changes.
-//      Editing a sprite still shows up, within eight frames.
-//   3. **Painting the map** is incremental: the map is 64 cells wide and
-//      wraps, the level is up to 144, so only the column scrolling into view
-//      is painted (26 `set_tile` calls), not the screen.
-//   4. **The HUD** is rewritten only when a number it shows changes.
-//
-// ── Coordinates ───────────────────────────────────────────────────────────
-//
-// World pixels, x rightward from the level's left edge and y downward from
-// the top of the *screen*. The status bar owns screen rows 0-3 and is held
-// still by `lock_top(32)`, so the play area is y 32..240 — which is why level
-// data row `r` is map row `r + 4`. There is no vertical scrolling.
+# Petal Quest — a side-scrolling action platformer, written entirely in Petal.
+#
+#   cargo run -- carts/petal_quest/game.ptl --scale 3
+#
+# Three worlds, four enemy kinds, a boss, and a status-bar scroll split. The
+# artwork is in `art.ptl` and the level shapes are in `levels.ptl`; this file
+# owns everything that moves.
+#
+# ── How the cart is arranged ──────────────────────────────────────────────
+#
+# The console re-runs this file top to bottom every frame, so the file reads
+# as: constants, then functions, then one short per-frame body at the bottom
+# that dispatches on the current scene. Nothing at the top level does work —
+# a `let` up here is a constant, not a step of the game.
+#
+# **Everything mutable lives in two state slots**, reached through accessor
+# functions (`game()` / `put_game(g)`, `level_cache(n)`):
+#
+#   - `_pq_game` — the small, fast-changing record: hero, entities, score.
+#   - `_pq_level` — the *built* level: 26x144 grids of tile / palette /
+#     solidity ints, plus the entity spawn list. Large and immutable once
+#     built, which is exactly why it is not inside the game record: a record
+#     is copied when it is mutated and shared, and copying the level grid
+#     sixty times a second would be the whole frame budget.
+#
+# Keeping them separate is also what makes hot reload work the way it should:
+# edit this file mid-level and the hero keeps his position, score and lives,
+# because the state slots survive and the level is rebuilt from data that has
+# not changed. (The state slots are named `_pq_*` deliberately — a Petal
+# `state` slot is keyed by the declared *name* across the whole program, so a
+# cart that declares `state cur` shares a slot with the sound prelude's.)
+#
+# ── The frame budget ──────────────────────────────────────────────────────
+#
+# A cart gets 16 ms. Four things here are per-frame expensive if written
+# naively, and all four are behind a cache:
+#
+#   1. **Building a level** (stitching chunks, parsing legend characters into
+#      int grids) happens once per level, keyed on the level number.
+#   2. **Defining artwork** — `define_art` converts string art to digit rows
+#      in Petal before the host ever sees it — is *rotated*: one group of
+#      tiles per frame, all of them at once only when the tileset changes.
+#      Editing a sprite still shows up, within eight frames.
+#   3. **Painting the map** is incremental: the map is 64 cells wide and
+#      wraps, the level is up to 144, so only the column scrolling into view
+#      is painted (26 `set_tile` calls), not the screen.
+#   4. **The HUD** is rewritten only when a number it shows changes.
+#
+# ── Coordinates ───────────────────────────────────────────────────────────
+#
+# World pixels, x rightward from the level's left edge and y downward from
+# the top of the *screen*. The status bar owns screen rows 0-3 and is held
+# still by `lock_top(32)`, so the play area is y 32..240 — which is why level
+# data row `r` is map row `r + 4`. There is no vertical scrolling.
 
 import nes
 import nes/nes_sound
 import ./art as gfx
 import ./levels as maps
 
-// ── Tunables ──────────────────────────────────────────────────────────────
-// The numbers that decide how the game feels, in one place, in the order you
-// would reach for them. Gravity and jump velocity are per-frame at 60fps:
-// JUMP_V 4.9 against GRAV 0.32 apexes 37px up (4.6 tiles) after 15 frames.
+# ── Tunables ──────────────────────────────────────────────────────────────
+# The numbers that decide how the game feels, in one place, in the order you
+# would reach for them. Gravity and jump velocity are per-frame at 60fps:
+# JUMP_V 4.9 against GRAV 0.32 apexes 37px up (4.6 tiles) after 15 frames.
 
 let GRAV = 0.32
 let MAX_FALL = 5.2
@@ -71,40 +71,40 @@ let RUN_MAX = 1.9
 let SPRINT_MAX = 2.9
 let FRICTION = 0.30
 let JUMP_V = -4.9
-let JUMP_CUT = 0.42          // vy is multiplied by this when A is released
-let COYOTE = 6               // frames after walking off a ledge that A still jumps
-let BUFFER = 7               // frames an early A press is remembered for
-let STOMP_V = -3.6           // the bounce off a stomped enemy
+let JUMP_CUT = 0.42          # vy is multiplied by this when A is released
+let COYOTE = 6               # frames after walking off a ledge that A still jumps
+let BUFFER = 7               # frames an early A press is remembered for
+let STOMP_V = -3.6           # the bounce off a stomped enemy
 let HURT_V = -3.2
-let INVULN = 100             // frames of blinking after a respawn
-let STAR_TIME = 480          // frames the star powerup lasts
-let DYING = 70               // frames of the death animation before respawning
+let INVULN = 100             # frames of blinking after a respawn
+let STAR_TIME = 480          # frames the star powerup lasts
+let DYING = 70               # frames of the death animation before respawning
 
-// The hero's collision box, as an inset into his 16x16 sprite.
+# The hero's collision box, as an inset into his 16x16 sprite.
 let HERO_BW = 12
 let HERO_BH = 15
 let HERO_OX = 2
 let HERO_OY = 1
 
-// ── Pattern table layout ──────────────────────────────────────────────────
-// 512 tiles. The background set is swapped per world; everything else is
-// resident. See `ensure_art`.
+# ── Pattern table layout ──────────────────────────────────────────────────
+# 512 tiles. The background set is swapped per world; everything else is
+# resident. See `ensure_art`.
 
-let T_BG = 0                 // 16 background tiles, swapped per world
-let T_TITLE = 16             // hill left / mid / right, sun
-let T_HERO = 20              // 8 poses x 4 tiles
-let T_SLIME = 52             // 2 poses x 4
+let T_BG = 0                 # 16 background tiles, swapped per world
+let T_TITLE = 16             # hill left / mid / right, sun
+let T_HERO = 20              # 8 poses x 4 tiles
+let T_SLIME = 52             # 2 poses x 4
 let T_HOP = 60
 let T_BAT = 68
-let T_BOSS = 76              // 2 poses x 16 (32x32)
-let T_COIN = 108             // 3 frames, 8x8
+let T_BOSS = 76              # 2 poses x 16 (32x32)
+let T_COIN = 108             # 3 frames, 8x8
 let T_HEART = 111
-let T_STAR = 112             // 2 frames, 8x8
-let T_POOF = 114             // 3 frames x 4
-let T_FONT = 448             // the prelude font, out of the way at the top
+let T_STAR = 112             # 2 frames, 8x8
+let T_POOF = 114             # 3 frames x 4
+let T_FONT = 448             # the prelude font, out of the way at the top
 
-// Background slots inside the tileset, by name. All three worlds use this
-// layout (see `art.ptl`), which is why nothing below mentions a world.
+# Background slots inside the tileset, by name. All three worlds use this
+# layout (see `art.ptl`), which is why nothing below mentions a world.
 let B_AIR = 0
 let B_TOP = 1
 let B_FILL = 2
@@ -116,24 +116,24 @@ let B_LEDGE_R = 7
 let B_SPIKE = 14
 let B_BANNER = 15
 
-// Sprite palettes.
+# Sprite palettes.
 let PAL_HERO = 4
 let PAL_ENEMY = 5
 let PAL_ITEM = 6
 let PAL_BOSS = 7
-let PAL_HUD = 2              // background palette 2 — white in every world
+let PAL_HUD = 2              # background palette 2 — white in every world
 
-// Cell kinds in the collision grid.
+# Cell kinds in the collision grid.
 let K_AIR = 0
 let K_SOLID = 1
 let K_HURT = 2
-let K_ONEWAY = 3             // a ledge: solid only to a falling box
+let K_ONEWAY = 3             # a ledge: solid only to a falling box
 
-let LEVEL_ROWS = 26          // data rows in a chunk; map rows 4..29
-let ROW0 = 4                 // map row of data row 0
+let LEVEL_ROWS = 26          # data rows in a chunk; map rows 4..29
+let ROW0 = 4                 # map row of data row 0
 let CHUNK_W = 16
 
-// Scores.
+# Scores.
 let SCORE_COIN = 10
 let SCORE_STOMP = 100
 let SCORE_BOSS = 500
@@ -141,12 +141,12 @@ let SCORE_GOAL = 200
 
 let BOSS_HP = 5
 
-// ── State ─────────────────────────────────────────────────────────────────
-// One top-level cell per thing the cart remembers across frames, read with
-// `get` and written with `set`. Module scope is what makes them shared — every
-// entry point sees the same cell — and what carries them across a hot reload.
-// `nil` is the "not built yet" sentinel — the reader function for each cell is
-// what fills it in.
+# ── State ─────────────────────────────────────────────────────────────────
+# One top-level cell per thing the cart remembers across frames, read with
+# `get` and written with `set`. Module scope is what makes them shared — every
+# entry point sees the same cell — and what carries them across a hot reload.
+# `nil` is the "not built yet" sentinel — the reader function for each cell is
+# what fills it in.
 
 state var _pq_game = nil
 state var _pq_level = nil
@@ -169,7 +169,7 @@ fn put_game(g: record) -> int
   0
 end
 
-// A fresh run: three lives, no score, back at world 1.
+# A fresh run: three lives, no score, back at world 1.
 fn new_game() -> record
   {
     level: 0,
@@ -192,70 +192,70 @@ end
 fn new_hero(x: num, y: num) -> record
   {x: float(x), y: float(y), vx: 0.0, vy: 0.0,
     face: 1, ground: false, coyote: 0, buffer: 0,
-    mode: "live",              // live | hurt | dying
+    mode: "live",              # live | hurt | dying
     timer: 0, invuln: 0, star: 0, anim_t: 0.0}
 end
 
-// ── Sound effects ─────────────────────────────────────────────────────────
-// Nine effects, driven straight onto the chip.
-//
-// This is *not* `nes_sound`'s `sfx_def`/`sfx_play`, and the reason is a live
-// bug rather than a preference: that path calls the standard library's
-// `has_field`, and `std` is not reachable from inside a host prelude module —
-// a cart that plays an effect dies with "Unknown builtin: has_field". Until
-// that is fixed, the effects live here.
-//
-// The policy is the one `nes_sound` documents, because it is the right one: an
-// effect borrows one channel for its whole (short) length, writing over the
-// music there *after* `music_tick()` has written it, and hands it straight
-// back — so the melody resumes mid-phrase instead of restarting. `pri` settles
-// a collision; nothing is ever queued. Pulse 2 carries the tuned effects
-// (pulse 1 has the melody, and losing the melody is what a player notices) and
-// noise carries the percussive ones.
-//
-// An effect is a volume envelope (one entry per frame, which is also its
-// length) plus a pitch envelope in semitones relative to its base note. Both
-// hold their last value; the volume envelope running out is what ends it.
+# ── Sound effects ─────────────────────────────────────────────────────────
+# Nine effects, driven straight onto the chip.
+#
+# This is *not* `nes_sound`'s `sfx_def`/`sfx_play`, and the reason is a live
+# bug rather than a preference: that path calls the standard library's
+# `has_field`, and `std` is not reachable from inside a host prelude module —
+# a cart that plays an effect dies with "Unknown builtin: has_field". Until
+# that is fixed, the effects live here.
+#
+# The policy is the one `nes_sound` documents, because it is the right one: an
+# effect borrows one channel for its whole (short) length, writing over the
+# music there *after* `music_tick()` has written it, and hands it straight
+# back — so the melody resumes mid-phrase instead of restarting. `pri` settles
+# a collision; nothing is ever queued. Pulse 2 carries the tuned effects
+# (pulse 1 has the melody, and losing the melody is what a player notices) and
+# noise carries the percussive ones.
+#
+# An effect is a volume envelope (one entry per frame, which is also its
+# length) plus a pitch envelope in semitones relative to its base note. Both
+# hold their last value; the volume envelope running out is what ends it.
 
 fn sfx_bank() -> record
   {
-    // A rising chirp — the pitch envelope is what makes it read as "up".
+    # A rising chirp — the pitch envelope is what makes it read as "up".
     jump: {ch: "p2", note: "C-5", pri: 2, duty: 2, mode: 0,
       vol: [12, 12, 11, 10, 8, 6, 4, 2, 1],
       pitch: [0.0, 1.5, 3.0, 4.2, 5.2, 6.0, 6.5, 6.8, 7.0]},
-    // Landing: a short low thud you feel more than hear.
+    # Landing: a short low thud you feel more than hear.
     land: {ch: "noise", note: "C-2", pri: 1, duty: 0, mode: 0,
       vol: [6, 4, 2, 1], pitch: [0.0]},
-    // The universal pickup: a fifth up on frame four.
+    # The universal pickup: a fifth up on frame four.
     coin: {ch: "p2", note: "E-5", pri: 2, duty: 1, mode: 0,
       vol: [13, 13, 13, 13, 12, 12, 11, 9, 7, 5, 3, 1],
       pitch: [0.0, 0.0, 0.0, 0.0, 7.0]},
-    // Menu blip: quiet and low priority, so it never steps on anything.
+    # Menu blip: quiet and low priority, so it never steps on anything.
     select: {ch: "p2", note: "G-5", pri: 1, duty: 1, mode: 0,
       vol: [8, 8, 6, 4, 2], pitch: [0.0]},
-    // Damage: short, dissonant, falling. High priority — being hurt is the
-    // one event that must never be masked by anything else.
+    # Damage: short, dissonant, falling. High priority — being hurt is the
+    # one event that must never be masked by anything else.
     hit: {ch: "p2", note: "A-4", pri: 6, duty: 0, mode: 0,
       vol: [15, 14, 12, 10, 7, 4, 2, 1],
       pitch: [0.0, -1.5, -3.5, -5.5, -7.5, -9.5, -11.5, -13.5]},
-    // An enemy squashed: a fat duty falling fast.
+    # An enemy squashed: a fat duty falling fast.
     stomp: {ch: "p2", note: "G-4", pri: 3, duty: 3, mode: 0,
       vol: [13, 12, 10, 8, 5, 3, 1],
       pitch: [3.0, 1.0, -1.5, -4.0, -6.5, -8.5, -10.0]},
-    // Powerup: a major arpeggio climbing out of the pickup.
+    # Powerup: a major arpeggio climbing out of the pickup.
     power: {ch: "p2", note: "C-5", pri: 5, duty: 2, mode: 0,
       vol: [13, 13, 13, 13, 12, 12, 11, 11, 10, 9, 7, 5, 3, 1],
       pitch: [0.0, 4.0, 7.0, 12.0, 7.0, 12.0, 16.0, 19.0,
         12.0, 16.0, 19.0, 24.0, 19.0, 24.0]},
-    // The banner: the level-clear fanfare's opening flourish.
+    # The banner: the level-clear fanfare's opening flourish.
     goal: {ch: "p2", note: "C-5", pri: 7, duty: 1, mode: 0,
       vol: [14, 14, 14, 13, 13, 13, 12, 12, 12, 11, 11, 10, 9, 7, 5, 3, 1],
       pitch: [0.0, 0.0, 4.0, 4.0, 7.0, 7.0, 12.0, 12.0, 12.0,
         16.0, 16.0, 19.0, 19.0, 24.0, 24.0, 24.0, 24.0]},
-    // The boss taking a hit: short-mode noise, metallic.
+    # The boss taking a hit: short-mode noise, metallic.
     clang: {ch: "noise", note: "A-2", pri: 5, duty: 0, mode: 1,
       vol: [15, 12, 14, 11, 13, 10, 8, 6, 4, 2, 1], pitch: [0.0]},
-    // The boss dying: long noise sweeping down into a rumble.
+    # The boss dying: long noise sweeping down into a rumble.
     boom: {ch: "noise", note: "D#3", pri: 8, duty: 0, mode: 0,
       vol: [15, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
       pitch: [0.0, -2.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0,
@@ -274,8 +274,8 @@ fn sfx_state() -> record
   s
 end
 
-// Trigger an effect. Unknown names are ignored, and the SOUND option is
-// checked here rather than at forty call sites.
+# Trigger an effect. Unknown names are ignored, and the SOUND option is
+# checked here rather than at forty call sites.
 fn sfx(name: string) -> int
   if !game().opts.sfx then
     return 0
@@ -293,9 +293,9 @@ fn sfx(name: string) -> int
   0
 end
 
-// Advance both effect channels and write the chip. Must run *after*
-// `music_tick()`: the last write of the frame is the one the APU hears, and
-// that is exactly how an effect borrows a channel.
+# Advance both effect channels and write the chip. Must run *after*
+# `music_tick()`: the last write of the frame is the one the APU hears, and
+# that is exactly how an effect borrows a channel.
 fn sfx_tick() -> int
   let s = sfx_state()
   if s.frame == frame_count() then
@@ -324,8 +324,8 @@ fn sfx_tick() -> int
   0
 end
 
-// The three tunes, built once. `song_gameplay()` parses tracker text, so
-// rebuilding it every frame would cost more than the rest of the cart.
+# The three tunes, built once. `song_gameplay()` parses tracker text, so
+# rebuilding it every frame would cost more than the rest of the cart.
 fn tunes() -> record
   let t = get _pq_tunes
   if t == nil then
@@ -336,9 +336,9 @@ fn tunes() -> record
   t
 end
 
-// The boss variation: the gameplay loop a fourth lower and a step faster.
-// Patterns 0-3 are tonal and 4 is the drum kit, which must not be transposed
-// (a "note" on the noise channel is a period, not a pitch).
+# The boss variation: the gameplay loop a fourth lower and a step faster.
+# Patterns 0-3 are tonal and 4 is the drum kit, which must not be transposed
+# (a "note" on the noise channel is a period, not a pitch).
 fn boss_song(g: record) -> record
   let pats = []
   for i in range(0, len(g.patterns)) do
@@ -358,13 +358,13 @@ fn boss_song(g: record) -> record
   })
 end
 
-// ── Artwork ───────────────────────────────────────────────────────────────
-// `define_art` and `define_meta` do their string-to-digits work in Petal, so
-// defining every tile every frame is real money. The host hashes the result
-// and skips unchanged writes, but the conversion still happens here — so the
-// tiles are split into groups and one group is refreshed per frame. A tileset
-// change (a new world) forces all of them in one frame, which is the only
-// time it has to be immediate.
+# ── Artwork ───────────────────────────────────────────────────────────────
+# `define_art` and `define_meta` do their string-to-digits work in Petal, so
+# defining every tile every frame is real money. The host hashes the result
+# and skips unchanged writes, but the conversion still happens here — so the
+# tiles are split into groups and one group is refreshed per frame. A tileset
+# change (a new world) forces all of them in one frame, which is the only
+# time it has to be immediate.
 
 let ART_GROUPS = 8
 
@@ -424,10 +424,10 @@ fn ensure_art(world: num) -> int
   0
 end
 
-// ── Palettes ──────────────────────────────────────────────────────────────
-// Background 0-3 come from the level; sprites 4-7 are fixed, so an enemy
-// keeps its colors across worlds and the player never has to relearn what a
-// green blob means.
+# ── Palettes ──────────────────────────────────────────────────────────────
+# Background 0-3 come from the level; sprites 4-7 are fixed, so an enemy
+# keeps its colors across worlds and the player never has to relearn what a
+# green blob means.
 
 fn set_sprite_palettes() -> int
   palette(PAL_HERO, navy, red, peach)
@@ -446,14 +446,14 @@ fn set_level_palettes(lv: record) -> int
   0
 end
 
-// ── Building a level ──────────────────────────────────────────────────────
-// The chunk strings become three parallel int grids — tile, palette, kind —
-// because the inner loops that paint the map and resolve collisions run
-// thousands of times a second and a character comparison is not the thing to
-// spend that on. Objects are lifted out into spawn lists as they are found,
-// and their cell is left as air.
+# ── Building a level ──────────────────────────────────────────────────────
+# The chunk strings become three parallel int grids — tile, palette, kind —
+# because the inner loops that paint the map and resolve collisions run
+# thousands of times a second and a character comparison is not the thing to
+# spend that on. Objects are lifted out into spawn lists as they are found,
+# and their cell is left as air.
 
-// Terrain legend -> background slot. Anything not listed is air.
+# Terrain legend -> background slot. Anything not listed is air.
 fn terrain_slot(ch: string) -> int
   match ch
     when "#" -> B_TOP
@@ -475,12 +475,12 @@ fn terrain_slot(ch: string) -> int
   end
 end
 
-// Which background sub-palette each slot is drawn in, per world. Three lists
-// of sixteen, hand-picked: the same shape is stone in the caves and marble in
-// the castle only because this table says so.
+# Which background sub-palette each slot is drawn in, per world. Three lists
+# of sixteen, hand-picked: the same shape is stone in the caves and marble in
+# the castle only because this table says so.
 fn slot_palettes(world: num) -> list
-  // Slot 14 is the spikes, and it is deliberately the loudest palette each
-  // world has: the one tile that hurts must never read as scenery.
+  # Slot 14 is the spikes, and it is deliberately the loudest palette each
+  # world has: the one tile that hurts must never read as scenery.
   if world == 1 then
     [0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 0, 0, 0, 2, 3, 3]
   elsif world == 2 then
@@ -498,7 +498,7 @@ fn slot_kind(slot: num) -> int
   end
 end
 
-// One legend character -> a spawned object, or nil for terrain.
+# One legend character -> a spawned object, or nil for terrain.
 fn object_kind(ch: string)
   match ch
     when "@" -> "spawn"
@@ -528,7 +528,7 @@ fn build_level(n: num, src: record, rev: num) -> record
   end
 
   let spawn = {x: 32.0, y: 32.0}
-  let spawns = []            // enemies and pickups, as templates
+  let spawns = []            # enemies and pickups, as templates
   let coins = []
   let boss_at = nil
   let goal_x = cols * 8
@@ -550,8 +550,8 @@ fn build_level(n: num, src: record, rev: num) -> record
         srow = append(srow, slot_kind(slot))
 
         if obj != nil then
-          // The cell is where the object's feet go: a 16-tall entity written
-          // on row r stands on the ground at row r + 1.
+          # The cell is where the object's feet go: a 16-tall entity written
+          # on row r stands on the ground at row r + 1.
           let wx = float((ci * CHUNK_W + c) * 8)
           let wy = float((r + ROW0) * 8)
           if obj == "spawn" then
@@ -577,7 +577,7 @@ fn build_level(n: num, src: record, rev: num) -> record
   {
     id: n,
     rev: rev,
-    chunks: chunks,          // kept for the hot-reload comparison, not copied
+    chunks: chunks,          # kept for the hot-reload comparison, not copied
     name: src.name,
     world: src.world,
     backdrop: src.backdrop,
@@ -595,12 +595,12 @@ fn build_level(n: num, src: record, rev: num) -> record
   }
 end
 
-// The built level, rebuilt when the level number changes — or when the level
-// *data* changes under a hot reload. `maps.level(n)` only wraps module-level
-// lists in a record, so calling it every frame is nearly free, and comparing
-// its chunk list against the built one is a deep compare done in Rust. That
-// is what makes editing `levels.ptl` mid-game repaint the world without
-// dropping the hero, his score or his lives.
+# The built level, rebuilt when the level number changes — or when the level
+# *data* changes under a hot reload. `maps.level(n)` only wraps module-level
+# lists in a record, so calling it every frame is nearly free, and comparing
+# its chunk list against the built one is a deep compare done in Rust. That
+# is what makes editing `levels.ptl` mid-game repaint the world without
+# dropping the hero, his score or his lives.
 fn level_cache(n: num) -> record
   let src = maps.level(n)
   let c = get _pq_level
@@ -611,26 +611,26 @@ fn level_cache(n: num) -> record
   c
 end
 
-// ── Collision ─────────────────────────────────────────────────────────────
-// The prelude's `solid_at` reads the background map, which here holds only a
-// 64-cell window of a 144-cell level. So collision reads the level's own
-// grid: it is correct off-screen (enemies keep walking), and it costs two
-// list indexes instead of a native call.
+# ── Collision ─────────────────────────────────────────────────────────────
+# The prelude's `solid_at` reads the background map, which here holds only a
+# 64-cell window of a 144-cell level. So collision reads the level's own
+# grid: it is correct off-screen (enemies keep walking), and it costs two
+# list indexes instead of a native call.
 
 fn cell_kind(lv: record, cx: num, cy: num)
   let r = cy - ROW0
   if cx < 0 || cx >= lv.cols then
-    K_SOLID                  // the level's ends are walls
+    K_SOLID                  # the level's ends are walls
   elsif r < 0 then
-    K_SOLID                  // the ceiling, under the status bar
+    K_SOLID                  # the ceiling, under the status bar
   elsif r >= LEVEL_ROWS then
-    K_AIR                    // below the level: the pit
+    K_AIR                    # below the level: the pit
   else
     lv.sol[r][cx]
   end
 end
 
-// Does a box overlap any fully solid cell?
+# Does a box overlap any fully solid cell?
 fn box_solid(lv: record, x: num, y: num, w: num, h: num) -> bool
   let x0 = int(floor(x / 8.0))
   let x1 = int(floor((x + w - 1) / 8.0))
@@ -663,10 +663,10 @@ fn box_hurts(lv: record, x: num, y: num, w: num, h: num) -> bool
   hit
 end
 
-// A one-way ledge blocks only a box whose feet were above it and are now
-// inside it — which is the whole of "you can jump up through a platform and
-// still land on it". Holding down disables the check for a few frames, so
-// dropping through is a normal move rather than a bug.
+# A one-way ledge blocks only a box whose feet were above it and are now
+# inside it — which is the whole of "you can jump up through a platform and
+# still land on it". Holding down disables the check for a few frames, so
+# dropping through is a normal move rather than a bug.
 fn oneway_block(lv: record, x: num, w: num, old_bottom: num, new_bottom: num) -> bool
   if new_bottom <= old_bottom then
     return false
@@ -687,10 +687,10 @@ fn oneway_block(lv: record, x: num, w: num, old_bottom: num, new_bottom: num) ->
   hit
 end
 
-// Move a box through the level, one pixel at a time, X then Y. Returns where
-// it ended up plus which axes were blocked — the caller kills that axis's
-// velocity. Same contract as the prelude's `move_box`, over this cart's grid
-// and with the one-way rule added.
+# Move a box through the level, one pixel at a time, X then Y. Returns where
+# it ended up plus which axes were blocked — the caller kills that axis's
+# velocity. Same contract as the prelude's `move_box`, over this cart's grid
+# and with the one-way rule added.
 fn move_body(lv: record, x: num, y: num, w: num, h: num, dx: num, dy: num, drop: bool) -> record
   let cx = x
   let cy = y
@@ -728,19 +728,19 @@ fn move_body(lv: record, x: num, y: num, w: num, h: num, dx: num, dy: num, drop:
   {x: cx, y: cy, hx: hx, hy: hy, ground: hy && dy > 0.0}
 end
 
-// Is there ground directly under this box? A one-pixel probe, which is what
-// coyote time and the walkers' ledge test both want.
+# Is there ground directly under this box? A one-pixel probe, which is what
+# coyote time and the walkers' ledge test both want.
 fn grounded(lv: record, x: num, y: num, w: num, h: num) -> bool
   box_solid(lv, x, y + 1.0, w, h) ||
   oneway_block(lv, x, w, old_bottom: y + float(h), new_bottom: y + float(h) + 1.0)
 end
 
-// ── Painting the map ──────────────────────────────────────────────────────
-// The map is 64 cells wide and wraps; a level is up to 144. So the map is a
-// window: columns are painted as they scroll toward the view and the wrap
-// takes care of the rest. Normal play paints one column per 8 pixels of
-// scroll — 26 `set_tile` calls — and a level change or a respawn repaints the
-// whole window in one frame.
+# ── Painting the map ──────────────────────────────────────────────────────
+# The map is 64 cells wide and wraps; a level is up to 144. So the map is a
+# window: columns are painted as they scroll toward the view and the wrap
+# takes care of the rest. Normal play paints one column per 8 pixels of
+# scroll — 26 `set_tile` calls — and a level change or a respawn repaints the
+# whole window in one frame.
 
 let PAINT_AHEAD = 36
 let PAINT_BEHIND = 4
@@ -784,19 +784,19 @@ fn paint_window(lv: record, cam: num) -> int
     end
     plo = min(plo, lo)
     phi = max(phi, hi)
-    // The window is 64 cells; anything older than that has been overwritten
-    // by the wrap and must be repainted if the camera ever comes back.
+    # The window is 64 cells; anything older than that has been overwritten
+    # by the wrap and must be repainted if the camera ever comes back.
     plo = max(plo, phi - 63)
     set _pq_paint = {id: lv.rev, lo: plo, hi: phi}
   end
   0
 end
 
-// ── The HUD ───────────────────────────────────────────────────────────────
-// Map rows 0-3, held still at scroll x = 0 by `lock_top(32)` while the play
-// area scrolls underneath. Rewritten only when a number changes: the text
-// helpers cost a `set_tile` per character, and the score is the same string
-// on 59 frames out of 60.
+# ── The HUD ───────────────────────────────────────────────────────────────
+# Map rows 0-3, held still at scroll x = 0 by `lock_top(32)` while the play
+# area scrolls underneath. Rewritten only when a number changes: the text
+# helpers cost a `set_tile` per character, and the score is the same string
+# on 59 frames out of 60.
 
 fn draw_hud(g: record, lv: record) -> int
   let key = "{g.score}/{g.coins}/{g.lives}/{g.level}/{lv.name}"
@@ -811,22 +811,22 @@ fn draw_hud(g: record, lv: record) -> int
     map_text(17, 2, "x" ++ pad_num(g.lives, 2), PAL_HUD)
     map_text(25, 1, "WORLD", PAL_HUD)
     map_text(25, 2, "{g.level + 1} OF {maps.level_count}", PAL_HUD)
-    // The level's name on the bottom row of the bar, where it doubles as the
-    // rule between the status bar and the play area.
+    # The level's name on the bottom row of the bar, where it doubles as the
+    # rule between the status bar and the play area.
     map_text_center(3, lv.name, PAL_HUD)
     set _pq_hud = {key: key}
   end
   0
 end
 
-// Force the next `draw_hud` to redraw, after something else has written over
-// the status rows (a title screen, a pause banner).
+# Force the next `draw_hud` to redraw, after something else has written over
+# the status rows (a title screen, a pause banner).
 fn dirty_hud() -> int
   set _pq_hud = nil
   0
 end
 
-// ── Starting a level ──────────────────────────────────────────────────────
+# ── Starting a level ──────────────────────────────────────────────────────
 
 fn start_level(g: record, from_checkpoint: bool) -> record
   let lv = level_cache(g.level)
@@ -835,8 +835,8 @@ fn start_level(g: record, from_checkpoint: bool) -> record
   let x = sp.x
   let y = sp.y
   if cp > 0 then
-    // A checkpoint is a chunk boundary: drop the hero in at the top of the
-    // chunk and let gravity find the floor.
+    # A checkpoint is a chunk boundary: drop the hero in at the top of the
+    # chunk and let gravity find the floor.
     x = float(cp * CHUNK_W * 8 + 24)
     y = float(ROW0 * 8 + 8)
   end
@@ -882,19 +882,19 @@ fn spawn_items(lv: record) -> list
   out
 end
 
-// ── The hero ──────────────────────────────────────────────────────────────
-// The part that has to feel right. Three things do most of that work:
-//
-//   * **Coyote time** — six frames of "still on the ground" after walking off
-//     an edge, so a jump pressed a moment late still happens.
-//   * **A jump buffer** — a press up to seven frames before landing is
-//     remembered and fires on touchdown, so a jump pressed a moment early is
-//     not swallowed.
-//   * **A variable jump** — releasing A while rising cuts the remaining
-//     upward velocity to 42%, so a tap is a hop and a hold is a leap.
-//
-// Everything else (acceleration, friction, a separate air acceleration) is
-// there so that the hero has weight without feeling slippery.
+# ── The hero ──────────────────────────────────────────────────────────────
+# The part that has to feel right. Three things do most of that work:
+#
+#   * **Coyote time** — six frames of "still on the ground" after walking off
+#     an edge, so a jump pressed a moment late still happens.
+#   * **A jump buffer** — a press up to seven frames before landing is
+#     remembered and fires on touchdown, so a jump pressed a moment early is
+#     not swallowed.
+#   * **A variable jump** — releasing A while rising cuts the remaining
+#     upward velocity to 42%, so a tap is a hop and a hold is a leap.
+#
+# Everything else (acceleration, friction, a separate air acceleration) is
+# there so that the hero has weight without feeling slippery.
 
 fn hero_box(h: record) -> record
   {x: h.x, y: h.y, w: HERO_BW, h: HERO_BH}
@@ -929,7 +929,7 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
     h.vx = approach(h.vx, float(sign(h.vx)) * top, FRICTION)
   end
 
-  // Coyote time and the jump buffer, both counted down in frames.
+  # Coyote time and the jump buffer, both counted down in frames.
   if h.ground then
     h.coyote = COYOTE
   elsif h.coyote > 0 then
@@ -949,10 +949,10 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
     sfx("jump")
   end
 
-  // Variable jump height: while A is not held, the *rise* is capped rather
-  // than scaled. Scaling it every frame would compound to a dead stop in two
-  // frames; a cap lets go of the rest of the climb and hands the arc back to
-  // gravity, which is what a short hop should feel like.
+  # Variable jump height: while A is not held, the *rise* is capped rather
+  # than scaled. Scaling it every frame would compound to a dead stop in two
+  # frames; a cap lets go of the rest of the climb and hands the arc back to
+  # gravity, which is what a short hop should feel like.
   if h.vy < JUMP_V * JUMP_CUT && !btn("a") && h.mode == "live" then
     h.vy = JUMP_V * JUMP_CUT
   end
@@ -973,7 +973,7 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
   end
   h.ground = m.ground || grounded(lv, x: h.x, y: h.y, w: HERO_BW, h: HERO_BH)
 
-  // The boss arena is fenced by the camera, not by tiles.
+  # The boss arena is fenced by the camera, not by tiles.
   if boss_lock > 0.0 then
     h.x = clamp(h.x, lo: boss_lock + 8.0, hi: boss_lock + 256.0 - 8.0 - float(HERO_BW))
   end
@@ -993,7 +993,7 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
   g
 end
 
-// Which of the eight poses to draw, from the state the hero is in.
+# Which of the eight poses to draw, from the state the hero is in.
 fn hero_pose(h: record)
   if h.mode == "hurt" || h.mode == "dying" then
     7
@@ -1007,8 +1007,8 @@ fn hero_pose(h: record)
 end
 
 fn draw_hero(h: record) -> int
-  // Blink while invulnerable, but never on the frame the player is actually
-  // controlling a jump — a hero who vanishes mid-air reads as a bug.
+  # Blink while invulnerable, but never on the frame the player is actually
+  # controlling a jump — a hero who vanishes mid-air reads as a bug.
   let show = h.invuln <= 0 || h.star > 0 || pmod(frame_count(), 8) < 5
   if show then
     let pal = if h.star > 0 && pmod(frame_count(), 6) < 3 then PAL_ITEM else PAL_HERO end
@@ -1018,7 +1018,7 @@ fn draw_hero(h: record) -> int
   0
 end
 
-// ── Damage, death and respawn ─────────────────────────────────────────────
+# ── Damage, death and respawn ─────────────────────────────────────────────
 
 fn hurt_hero(g: record, from_x: num) -> record
   let h = g.hero
@@ -1039,8 +1039,8 @@ fn hurt_hero(g: record, from_x: num) -> record
   g
 end
 
-// The death animation: a hop, then a fall through everything. Respawn (or
-// game over) happens when the timer runs out.
+# The death animation: a hop, then a fall through everything. Respawn (or
+# game over) happens when the timer runs out.
 fn kill_hero(g: record) -> record
   let h = g.hero
   h.mode = "dying"
@@ -1057,10 +1057,10 @@ fn lose_life(g: record) -> record
   kill_hero(g)
 end
 
-// ── Enemies ───────────────────────────────────────────────────────────────
-// Three behaviours, each written to be legible at a glance from across the
-// screen — a walker turns at edges, a hopper telegraphs before it leaps, a
-// flyer sweeps. Every one of them dies to a stomp and hurts on contact.
+# ── Enemies ───────────────────────────────────────────────────────────────
+# Three behaviours, each written to be legible at a glance from across the
+# screen — a walker turns at edges, a hopper telegraphs before it leaps, a
+# flyer sweeps. Every one of them dies to a stomp and hurts on contact.
 
 fn ent_box(e: record) -> record
   if e.kind == "flyer" then
@@ -1076,8 +1076,8 @@ fn update_walker(e: record, lv: record) -> record
   e.vy = min(e.vy + GRAV, MAX_FALL)
   let b = ent_box(e)
   let m = move_body(lv, x: b.x, y: b.y, w: b.w, h: b.h, dx: e.vx, dy: e.vy, drop: false)
-  // Turn at a wall, and at the edge of the floor — a walker that falls off
-  // every ledge would clear the level of enemies before the player arrived.
+  # Turn at a wall, and at the edge of the floor — a walker that falls off
+  # every ledge would clear the level of enemies before the player arrived.
   let edge = !grounded(lv, x: m.x + (if e.vx < 0.0 then -2.0 else 2.0 end), y: m.y, w: b.w, h: b.h)
   if m.hx || (m.ground && edge) then
     e.vx = -e.vx
@@ -1113,9 +1113,9 @@ end
 
 fn update_flyer(e: record, lv: record, hero: record) -> record
   e.t = e.t + 1
-  // Patrols a 96-pixel beat around where it started, and dips toward the hero
-  // when he comes within a screen — enough to be threatening, not enough to
-  // chase him across the level.
+  # Patrols a 96-pixel beat around where it started, and dips toward the hero
+  # when he comes within a screen — enough to be threatening, not enough to
+  # chase him across the level.
   let target = e.hx
   if abs(hero.x - e.hx) < 128.0 then
     target = hero.x
@@ -1165,9 +1165,9 @@ fn draw_entities(g: record, cam: num) -> int
   0
 end
 
-// Hero vs enemies: landing on one kills it, touching one any other way hurts.
-// The stomp test is "falling, and the hero's feet are in the enemy's top
-// third", which is forgiving enough to feel fair at speed.
+# Hero vs enemies: landing on one kills it, touching one any other way hurts.
+# The stomp test is "falling, and the hero's feet are in the enemy's top
+# third", which is forgiving enough to feel fair at speed.
 fn kill_entity(g: record, i: num) -> record
   let es = g.ents
   let e = es[i]
@@ -1192,7 +1192,7 @@ fn collide_entities(g: record) -> record
           g = kill_entity(g, i)
           let h = g.hero
           h.vy = STOMP_V
-          h.buffer = 0            // no double-bounce from a buffered jump
+          h.buffer = 0            # no double-bounce from a buffered jump
           g.hero = h
         elsif g.hero.star > 0 then
           g = kill_entity(g, i)
@@ -1205,7 +1205,7 @@ fn collide_entities(g: record) -> record
   g
 end
 
-// ── Pickups ───────────────────────────────────────────────────────────────
+# ── Pickups ───────────────────────────────────────────────────────────────
 
 fn collide_items(g: record) -> record
   let hb = inflate(rect(g.hero.x, g.hero.y, HERO_BW, HERO_BH), 2)
@@ -1255,10 +1255,10 @@ fn draw_items(g: record, cam: num) -> int
   0
 end
 
-// ── Effects ───────────────────────────────────────────────────────────────
-// One 16x16 burst, three frames, eighteen frames long. Used for every death
-// and every powerup, which is what keeps the game readable: one shape means
-// "something just resolved".
+# ── Effects ───────────────────────────────────────────────────────────────
+# One 16x16 burst, three frames, eighteen frames long. Used for every death
+# and every powerup, which is what keeps the game readable: one shape means
+# "something just resolved".
 
 fn update_poofs(g: record) -> record
   let out = []
@@ -1280,10 +1280,10 @@ fn draw_poofs(g: record) -> int
   0
 end
 
-// ── The Rift Warden ───────────────────────────────────────────────────────
-// The boss is a three-beat loop the player can read: it drifts with its eye
-// open (untouchable, and it fires), then the eye shuts and it sinks low
-// enough to stomp, then it recoils. Five stomps.
+# ── The Rift Warden ───────────────────────────────────────────────────────
+# The boss is a three-beat loop the player can read: it drifts with its eye
+# open (untouchable, and it fires), then the eye shuts and it sinks low
+# enough to stomp, then it recoils. Five stomps.
 
 fn new_boss(at: record) -> record
   {x: at.x, y: at.y, vx: 0.7, hp: BOSS_HP, phase: "open", t: 0, flash: 0}
@@ -1298,8 +1298,8 @@ fn update_boss(g: record, cam: num) -> record
   bs.t = bs.t + 1
   if bs.flash > 0 then bs.flash = bs.flash - 1 end
 
-  // It drifts at half speed with its eye shut, which is the difference
-  // between a window the player can aim at and one they have to be lucky in.
+  # It drifts at half speed with its eye shut, which is the difference
+  # between a window the player can aim at and one they have to be lucky in.
   bs.x = bs.x + bs.vx * (if bs.phase == "shut" then 0.5 else 1.0 end)
   if bs.x < cam + 24.0 then
     bs.x = cam + 24.0
@@ -1311,7 +1311,7 @@ fn update_boss(g: record, cam: num) -> record
 
   if bs.phase == "open" then
     bs.y = approach(bs.y, 48.0, 0.6)
-    // Three shots, spaced, aimed at wherever the hero was standing.
+    # Three shots, spaced, aimed at wherever the hero was standing.
     if bs.t % 34 == 0 then
       let h = g.hero
       let dx = h.x - bs.x
@@ -1326,10 +1326,10 @@ fn update_boss(g: record, cam: num) -> record
       bs.t = 0
     end
   elsif bs.phase == "shut" then
-    // Sinks to stomping height and holds there — the window. 145 is chosen
-    // against the hero's numbers, not by eye: his jump apexes with his feet
-    // at y=155, and the box here spans 151..173, so a standing hero (top 177)
-    // is never touched but a jumping one lands squarely on it.
+    # Sinks to stomping height and holds there — the window. 145 is chosen
+    # against the hero's numbers, not by eye: his jump apexes with his feet
+    # at y=155, and the box here spans 151..173, so a standing hero (top 177)
+    # is never touched but a jumping one lands squarely on it.
     bs.y = approach(bs.y, 145.0, 1.4)
     if bs.t > 110 then
       bs.phase = "open"
@@ -1400,9 +1400,9 @@ fn draw_boss(g: record, cam: num) -> int
   let pose = if bs.phase == "open" then 0 else 1 end
   let pal = if bs.flash > 0 && pmod(frame_count(), 4) < 2 then PAL_ITEM else PAL_BOSS end
   draw_meta_world(bs.x, bs.y, meta(T_BOSS + pose * 16, 4, 4, pal), 0)
-  // A health pip per remaining hit, pinned to the top of the arena rather
-  // than to the boss: it is the one thing on screen that must never be behind
-  // the thing it describes.
+  # A health pip per remaining hit, pinned to the top of the arena rather
+  # than to the boss: it is the one thing on screen that must never be behind
+  # the thing it describes.
   for i in range(0, bs.hp) do
     sprite_world(cam + 108.0 + float(i * 10), 40.0, T_HEART, PAL_BOSS)
   end
@@ -1416,7 +1416,7 @@ fn draw_shots(g: record) -> int
   0
 end
 
-// ── The game scene ────────────────────────────────────────────────────────
+# ── The game scene ────────────────────────────────────────────────────────
 
 fn game_frame() -> int
   let g = game()
@@ -1427,9 +1427,9 @@ fn game_frame() -> int
 
   let lv = level_cache(g.level)
 
-  // Pause is a state of the game scene, not a scene of its own: the level
-  // stays painted and the sprites stay where they are, which is what a pause
-  // should look like.
+  # Pause is a state of the game scene, not a scene of its own: the level
+  # stays painted and the sprites stay where they are, which is what a pause
+  # should look like.
   if btnp("start") && g.hero.mode == "live" then
     g.paused = !g.paused
     sfx("select")
@@ -1441,15 +1441,15 @@ fn game_frame() -> int
       set_scene("title")
     end
     put_game(g)
-    // A paused frame still has to push the scroll split and the status bar —
-    // the PPU is state, not a display list, but the per-scanline overrides
-    // are re-armed every frame.
+    # A paused frame still has to push the scroll split and the status bar —
+    # the PPU is state, not a display list, but the per-scanline overrides
+    # are re-armed every frame.
     set_scroll(cam_x(), 0)
     lock_top(32)
     draw_hud(g, lv)
-    // The banner is pushed *before* the frozen scene: sprites are dropped
-    // from the back of a 64-sprite frame, and on a paused frame the words are
-    // the one thing that must survive.
+    # The banner is pushed *before* the frozen scene: sprites are dropped
+    # from the back of a 64-sprite frame, and on a paused frame the words are
+    # the one thing that must survive.
     text_sprites_center(104, "PAUSED", PAL_BOSS)
     text_sprites_center(128, "START - RESUME", PAL_HUD)
     text_sprites_center(144, "SELECT - QUIT", PAL_HUD)
@@ -1457,7 +1457,7 @@ fn game_frame() -> int
     return 0
   end
 
-  // The boss arena locks the camera; everywhere else it follows the hero.
+  # The boss arena locks the camera; everywhere else it follows the hero.
   let arena = lv.boss_x >= 0 && g.hero.x > lv.boss_x
   let cam = 0.0
   if arena then
@@ -1481,7 +1481,7 @@ fn game_frame() -> int
       g = update_boss(g, cam)
       g = collide_boss(g)
     end
-    // Spikes, and the checkpoint the hero has walked past.
+    # Spikes, and the checkpoint the hero has walked past.
     if box_hurts(lv, x: g.hero.x, y: g.hero.y, w: HERO_BW, h: HERO_BH) then
       g = hurt_hero(g, g.hero.x - float(g.hero.face) * 16.0)
     end
@@ -1489,14 +1489,14 @@ fn game_frame() -> int
     if chunk > g.checkpoint then
       g.checkpoint = chunk
     end
-    // The banner ends the level.
+    # The banner ends the level.
     if lv.boss_x < 0 && g.hero.x + float(HERO_BW) > lv.goal_x then
       g.score = g.score + SCORE_GOAL
       g.bonus = g.coins * 50
       sfx("goal")
       set_scene("clear")
     end
-    // The pit.
+    # The pit.
     if g.hero.y > 248.0 && g.hero.mode != "dying" then
       g = lose_life(g)
     end
@@ -1504,7 +1504,7 @@ fn game_frame() -> int
   g = update_shots(g, cam)
   g = update_poofs(g)
 
-  // Respawn, or the end of the run.
+  # Respawn, or the end of the run.
   if g.hero.mode == "dying" && g.hero.timer <= 0 then
     if g.lives <= 0 then
       set_scene("gameover")
@@ -1524,8 +1524,8 @@ fn game_frame() -> int
   0
 end
 
-// Sprite order is priority order — the first pushed is the one that survives
-// a crowded scanline, so the hero goes first and the scenery last.
+# Sprite order is priority order — the first pushed is the one that survives
+# a crowded scanline, so the hero goes first and the scenery last.
 fn draw_game_sprites(g: record, cam: num) -> int
   draw_hero(g.hero)
   if g.boss != nil then
@@ -1538,14 +1538,14 @@ fn draw_game_sprites(g: record, cam: num) -> int
   0
 end
 
-// ── Title screen ──────────────────────────────────────────────────────────
-// Painted into the map once on entry, then animated: the cloud band shifts a
-// cell every twenty frames (real tile animation, not sprites), the sun pulses
-// through a palette, and a slime patrols the ridge under the menu.
+# ── Title screen ──────────────────────────────────────────────────────────
+# Painted into the map once on entry, then animated: the cloud band shifts a
+# cell every twenty frames (real tile animation, not sprites), the sun pulses
+# through a palette, and a slime patrols the ridge under the menu.
 
 fn paint_title() -> int
   fill_map(B_AIR, 0)
-  // A ridge of hills along the bottom, with a ground line under it.
+  # A ridge of hills along the bottom, with a ground line under it.
   for x in range(0, 32) do
     set_tile(x, 22, T_TITLE + 1, 3)
     for y in range(23, 30) do
@@ -1559,19 +1559,19 @@ fn paint_title() -> int
     set_tile(bx + 1, 21, T_TITLE + 1, 3)
     set_tile(bx + 2, 21, T_TITLE + 2, 3)
   end
-  // The banner and pole, borrowed from the tileset, as a decoration.
+  # The banner and pole, borrowed from the tileset, as a decoration.
   set_tile(29, 20, B_BANNER, 1)
   for y in range(21, 22) do
     set_tile(29, y, 13, 2)
   end
-  // The sun, in palette 1 — the only background palette on this screen with a
-  // yellow in it, which is also what makes the title lettering gold.
+  # The sun, in palette 1 — the only background palette on this screen with a
+  # yellow in it, which is also what makes the title lettering gold.
   set_tile(28, 8, T_TITLE + 3, 1)
   0
 end
 
 fn title_clouds(t: num) -> int
-  // Two cloud tiles per puff, four puffs, sliding right to left.
+  # Two cloud tiles per puff, four puffs, sliding right to left.
   for x in range(0, 32) do
     set_tile(x, 7, B_AIR, 0)
     set_tile(x, 10, B_AIR, 0)
@@ -1600,7 +1600,7 @@ fn title_frame() -> int
     set_sprite_palettes()
     paint_title()
     dirty_hud()
-    // Start a run clean if the last one ended.
+    # Start a run clean if the last one ended.
     if g.lives <= 0 then
       g = new_game()
       put_game(g)
@@ -1612,9 +1612,9 @@ fn title_frame() -> int
 
   map_text_center(2, "PETAL QUEST", 1)
   map_text_center(4, "A FANTASY-NES ADVENTURE", 2)
-  // Row 6, not down by the ground: a glyph tile paints its empty pixels in
-  // palette entry 0, which is the backdrop, so background text laid over the
-  // scenery would carry a sky-colored box around every letter.
+  # Row 6, not down by the ground: a glyph tile paints its empty pixels in
+  # palette entry 0, which is the backdrop, so background text laid over the
+  # scenery would carry a sky-colored box around every letter.
   map_text_center(6, "WRITTEN IN PETAL, 2026", 2)
 
   let m = map_menu("main", 10, 12, ["START", "OPTIONS", "HOW TO PLAY"], 2)
@@ -1632,8 +1632,8 @@ fn title_frame() -> int
     set_scene("howto")
   end
 
-  // The cast, idling on the ridge: proof the sprites work before you press a
-  // button, and a place for the eye to rest.
+  # The cast, idling on the ridge: proof the sprites work before you press a
+  # button, and a place for the eye to rest.
   let t = scene_time()
   let hx = 40.0 + sin(t * 0.9) * 20.0
   draw_meta(hx, 152.0, meta(T_HERO + anim([2, 3, 4, 3], 8.0) * 4, 2, 2, PAL_HERO),
@@ -1646,14 +1646,14 @@ fn title_frame() -> int
   0
 end
 
-// ── Options ───────────────────────────────────────────────────────────────
+# ── Options ───────────────────────────────────────────────────────────────
 
 fn on_off(b: bool) -> string
   if b then "ON" else "OFF" end
 end
 
-// Both text screens share one look: a dark ground so the white body text
-// carries, and palette 1 (gold) reserved for the heading.
+# Both text screens share one look: a dark ground so the white body text
+# carries, and palette 1 (gold) reserved for the heading.
 fn paint_page() -> int
   fill_map(B_AIR, 0)
   set_backdrop(navy)
@@ -1709,13 +1709,13 @@ fn options_frame() -> int
   0
 end
 
-// ── How to play ───────────────────────────────────────────────────────────
+# ── How to play ───────────────────────────────────────────────────────────
 
 fn howto_frame() -> int
   if scene_entered() then
     paint_page()
     map_text_center(2, "HOW TO PLAY", 1)
-    // 32 cells wide: nothing here may exceed 30 characters from column 1.
+    # 32 cells wide: nothing here may exceed 30 characters from column 1.
     map_text(1, 5, "ARROWS  - RUN", 2)
     map_text(1, 7, "Z / A   - JUMP (HOLD=HIGHER)", 2)
     map_text(1, 9, "X / B   - SPRINT", 2)
@@ -1734,7 +1734,7 @@ fn howto_frame() -> int
   0
 end
 
-// ── Level clear, game over, victory ───────────────────────────────────────
+# ── Level clear, game over, victory ───────────────────────────────────────
 
 fn clear_frame() -> int
   let g = game()
@@ -1743,7 +1743,7 @@ fn clear_frame() -> int
     music_stop()
     dirty_hud()
   end
-  // The level stays on screen behind the banner text: the player earned it.
+  # The level stays on screen behind the banner text: the player earned it.
   set_scroll(cam_x(), 0)
   lock_top(32)
   draw_hud(g, lv)
@@ -1814,8 +1814,8 @@ fn victory_frame() -> int
 
   let t = scene_time()
   draw_meta(120.0, 168.0, meta(T_HERO + anim([0, 1], 2.0) * 4, 2, 2, PAL_HERO), 0)
-  // Fireworks: six coins on their own phases, thrown along a sine arc that
-  // clears the lettering.
+  # Fireworks: six coins on their own phases, thrown along a sine arc that
+  # clears the lettering.
   for i in range(0, 6) do
     let p = fract(t * 0.4 + float(i) * 0.17)
     let x = 24.0 + float(i) * 38.0
@@ -1831,9 +1831,9 @@ fn victory_frame() -> int
   0
 end
 
-// ── Audio for the frame ───────────────────────────────────────────────────
-// One place decides what should be playing, so the options toggle and the
-// pause screen cannot disagree with the boss fight.
+# ── Audio for the frame ───────────────────────────────────────────────────
+# One place decides what should be playing, so the options toggle and the
+# pause screen cannot disagree with the boss fight.
 
 fn audio_frame() -> int
   let g = game()
@@ -1859,13 +1859,13 @@ fn audio_frame() -> int
   0
 end
 
-// ── The frame ─────────────────────────────────────────────────────────────
-// Everything above is definitions; this is the whole of what runs.
+# ── The frame ─────────────────────────────────────────────────────────────
+# Everything above is definitions; this is the whole of what runs.
 
 start_scene("title")
 
 set_map_size(64, 30)
-font_tiles(T_FONT, 3)          // white ink in every palette this cart uses
+font_tiles(T_FONT, 3)          # white ink in every palette this cart uses
 
 let g0 = game()
 let world_now = if scene() == "game" || scene() == "clear" then

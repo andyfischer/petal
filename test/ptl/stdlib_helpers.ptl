@@ -1,11 +1,11 @@
-// The helpers a large program otherwise writes by hand: selection (`argmin`,
-// `min_by`, `top_k`), grouping, `fill`, `interp`, `ord` / `chr`, the stateless
-// hashes, `plural` / `list_and`, and `lerp` of two records. docs/Builtins.md.
-// Run with `petal test test/ptl`.
+# The helpers a large program otherwise writes by hand: selection (`argmin`,
+# `min_by`, `top_k`), grouping, `fill`, `interp`, `ord` / `chr`, the stateless
+# hashes, `plural` / `list_and`, and `lerp` of two records. docs/Builtins.md.
+# Run with `petal test test/ptl`.
 
 import vec2
 
-// ── fill ───────────────────────────────────────────────────────────────────
+# ── fill ───────────────────────────────────────────────────────────────────
 
 test "fill: a list of copies" do
   expect_eq(fill(3, 0.0), [0.0, 0.0, 0.0])
@@ -24,7 +24,7 @@ test "fill: the copies are values, so writing one leaves the others" do
   expect_eq(get cells, [0, 0, 5])
 end
 
-// ── argmin / argmax / top_indices ──────────────────────────────────────────
+# ── argmin / argmax / top_indices ──────────────────────────────────────────
 
 test "argmin and argmax: the index, the first of equals" do
   expect_eq(argmin([3, 1, 2, 1]), 1)
@@ -62,7 +62,7 @@ test "top_indices agrees with a full sort" do
   expect_eq(top_indices(xs, 7).map(fn(i) -> xs[i]), by_sort.map(fn(i) -> xs[i]))
 end
 
-// ── min_by / max_by / top_k ────────────────────────────────────────────────
+# ── min_by / max_by / top_k ────────────────────────────────────────────────
 
 let TOWNS = [
   {name: "Ames", pop: 66000, state: "IA"},
@@ -102,7 +102,7 @@ test "top_k: by the elements, or by a key" do
   expect_eq(top_k([], 3), [])
 end
 
-// ── group_by / count / flat_map ────────────────────────────────────────────
+# ── group_by / count / flat_map ────────────────────────────────────────────
 
 test "group_by: a record of lists, groups and members in first-seen order" do
   let by_state = group_by(TOWNS, fn(t) -> t.state)
@@ -146,7 +146,7 @@ test "a builtin is a callback like any function" do
   expect_eq(filter(["", "a", ""], len), ["a"])
 end
 
-// ── interp ─────────────────────────────────────────────────────────────────
+# ── interp ─────────────────────────────────────────────────────────────────
 
 let CURVE = [[1900, 5], [1950, 10], [2000, 0]]
 
@@ -198,7 +198,7 @@ test "interp agrees with the loop it replaces" do
   end
 end
 
-// ── ord / chr ──────────────────────────────────────────────────────────────
+# ── ord / chr ──────────────────────────────────────────────────────────────
 
 test "ord and chr: code points" do
   expect_eq(ord("A"), 65)
@@ -218,11 +218,11 @@ test "ord and chr: a round trip, and arithmetic on letters" do
   expect_eq(ord("z") - ord("a"), 25)
 end
 
-// ── hash_int / hash01 / hash_str ───────────────────────────────────────────
+# ── hash_int / hash01 / hash_str ───────────────────────────────────────────
 
-// These values are the contract: the same on every machine, in every run and
-// in every version. (They are also the Cheesecake engine's, which had the
-// functions first.)
+# These values are the contract: the same on every machine, in every run and
+# in every version. (They are also the Cheesecake engine's, which had the
+# functions first.)
 test "hash: the documented values" do
   expect_eq(hash_int(1), 1956814053452306)
   expect_eq(hash_int(3, 7), 8394216175903167)
@@ -280,7 +280,7 @@ test "hash_str: depends on the text and the salt" do
   expect(hash_str("") >= 0)
 end
 
-// ── plural / list_and ──────────────────────────────────────────────────────
+# ── plural / list_and ──────────────────────────────────────────────────────
 
 test "plural: the count and its noun" do
   expect_eq(plural(1, "car"), "1 car")
@@ -302,7 +302,7 @@ test "list_and: a list as prose" do
   expect_eq(list_and([1, 2], word: "nor"), "1 nor 2")
 end
 
-// ── fixed / commas (number formatting) ─────────────────────────────────────
+# ── fixed / commas (number formatting) ─────────────────────────────────────
 
 test "number formatting is fixed() and commas() in a hole" do
   let x = 1234.5678
@@ -312,7 +312,7 @@ test "number formatting is fixed() and commas() in a hole" do
   expect_eq("${commas(-9876.5, 0)}", "$-9,877")
 end
 
-// ── lerp of two records ────────────────────────────────────────────────────
+# ── lerp of two records ────────────────────────────────────────────────────
 
 test "lerp: two records, field by field" do
   let a = {sepia: 0.0, grain: 10, gsize: 2.0}
@@ -351,7 +351,7 @@ test "lerp: a color is still a color, and numbers still numbers" do
   expect_eq(lerp([0.0, 10.0], [1.0, 20.0], 0.5), [0.5, 15.0])
 end
 
-// ── any / all ──────────────────────────────────────────────────────────────
+# ── any / all ──────────────────────────────────────────────────────────────
 
 test "any and all: stop at the element that decides" do
   var calls = 0
@@ -367,7 +367,7 @@ test "any and all: stop at the element that decides" do
   set calls = 0
   expect(all([3, 4], big))
   expect_eq(get calls, 2)
-  // the later element would raise; it is never reached
+  # the later element would raise; it is never reached
   expect(any([{v: 1}, 5], fn(x) -> x.v))
   expect(!all([{v: nil}, 5], fn(x) -> x.v))
 end
@@ -401,7 +401,7 @@ test "any, all and find: the method form and named arguments" do
   expect_eq(find(xs: [4, 5], pred: fn(x) -> x > 4), 5)
 end
 
-// ── find ───────────────────────────────────────────────────────────────────
+# ── find ───────────────────────────────────────────────────────────────────
 
 test "find: the first element that matches, or nil" do
   var calls = 0
@@ -413,8 +413,8 @@ test "find: the first element that matches, or nil" do
   expect_eq(get calls, 2)
   expect_eq(find([1, 2], big), nil)
   expect_eq(find([], big), nil)
-  // the element itself, not the predicate's result
+  # the element itself, not the predicate's result
   expect_eq(find([0, {v: 4}, 9], fn(x) -> x != 0 && x.v), {v: 4})
-  // the later element would raise; it is never reached
+  # the later element would raise; it is never reached
   expect_eq(find([{v: 1}, 5], fn(x) -> x.v), {v: 1})
 end

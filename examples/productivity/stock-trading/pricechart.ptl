@@ -1,10 +1,10 @@
-// Meridian: the price chart.
-//
-// `fold` and `with_tail` build a timeframe's bars out of finer ones; `chart`
-// draws a window of them (candles or a line, volume underneath, a moving
-// average, order and position lines, the last-price tag) and handles the
-// pointer inside it: a crosshair on hover, the wheel to zoom, a drag to pan,
-// and a plain click that reports the price under it.
+# Meridian: the price chart.
+#
+# `fold` and `with_tail` build a timeframe's bars out of finer ones; `chart`
+# draws a window of them (candles or a line, volume underneath, a moving
+# average, order and position lines, the last-price tag) and handles the
+# pointer inside it: a crosshair on hover, the wheel to zoom, a drag to pan,
+# and a plain click that reports the price under it.
 
 import text_layout as tl
 import ./look as lk
@@ -14,15 +14,15 @@ import ui
 let AXIS_W = 66
 let TIME_H = 24
 let LEGEND_H = 26
-let RIGHT_PAD = 3          // empty candle slots kept right of the live edge
+let RIGHT_PAD = 3          # empty candle slots kept right of the live edge
 let MA_LEN = 20
 pub let MIN_VIS = 24
 pub let MAX_VIS = 200
 
-// ── Building a timeframe ────────────────────────────────────────────────────
+# ── Building a timeframe ────────────────────────────────────────────────────
 
-// Group bars into buckets `secs` wide. The input is in time order, so each
-// bucket is a run.
+# Group bars into buckets `secs` wide. The input is in time order, so each
+# bucket is a run.
 pub fn fold(bars: list, secs: num) -> list
   let out = []
   let cur = nil
@@ -43,8 +43,8 @@ pub fn fold(bars: list, secs: num) -> list
   out
 end
 
-// The completed bars plus the one still forming, which either extends the
-// last bucket or opens the next.
+# The completed bars plus the one still forming, which either extends the
+# last bucket or opens the next.
 pub fn with_tail(bars: list, cur: record, secs: num) -> list
   let g = cur.t - cur.t % secs
   let tail = last(bars)
@@ -56,9 +56,9 @@ pub fn with_tail(bars: list, cur: record, secs: num) -> list
   end
 end
 
-// ── Axes ────────────────────────────────────────────────────────────────────
+# ── Axes ────────────────────────────────────────────────────────────────────
 
-// The smallest 1 / 2 / 5 x 10^k step, in cents, that is at least `raw`.
+# The smallest 1 / 2 / 5 x 10^k step, in cents, that is at least `raw`.
 pub fn nice_step(raw: num) -> int
   let step = 1
   while true do
@@ -87,11 +87,11 @@ fn time_label(t: num, step: num) -> string
   if step >= 86400 || t % 86400 == 0 then nf.day(t) else nf.hhmm(t) end
 end
 
-// The wash under a line: three-pixel columns from the line down to `base`,
-// each fading out at the same rate. The columns sit on whole pixels, because
-// a rect's x and width are truncated separately and fractional ones leave
-// hairline gaps. (The prelude's `draw_area_fill` also weights each column by
-// its height, which bands visibly under a series this jagged.)
+# The wash under a line: three-pixel columns from the line down to `base`,
+# each fading out at the same rate. The columns sit on whole pixels, because
+# a rect's x and width are truncated separately and fractional ones leave
+# hairline gaps. (The prelude's `draw_area_fill` also weights each column by
+# its height, which bands visibly under a series this jagged.)
 fn area_under(pts: list, base: num, c: record) -> nil
   let stop = int(last(pts).x)
   let i = 0
@@ -112,20 +112,20 @@ fn area_under(pts: list, base: num, c: record) -> nil
   end
 end
 
-// A value tag on the right-hand price axis.
+# A value tag on the right-hand price axis.
 fn axis_tag(x: num, y: num, text: string, face: record, ink: record) -> nil
   let r = Rect(x + 1, y - 9, AXIS_W - 5, 18)
   draw_rect_rounded(r, 4, face)
   tl.draw_text_line(text, Rect(r.x + 7, r.y, r.w - 12, r.h), lk.mono(11, ink))
 end
 
-// ── The chart ───────────────────────────────────────────────────────────────
+# ── The chart ───────────────────────────────────────────────────────────────
 
-// `series` is every bar of the timeframe, oldest first. `o` carries the view
-// (`vis` bars shown, `pan` bars back from the live edge, `mode`), the bar
-// width `secs`, the market `clock`, `marks` (horizontal price lines, as
-// `{p, label, color}`) and `fills` (executions to flag, as `{t, side}`). Returns the view after this frame's input, the bar and
-// price under the crosshair, and `clicked` (a price in cents, or 0).
+# `series` is every bar of the timeframe, oldest first. `o` carries the view
+# (`vis` bars shown, `pan` bars back from the live edge, `mode`), the bar
+# width `secs`, the market `clock`, `marks` (horizontal price lines, as
+# `{p, label, color}`) and `fills` (executions to flag, as `{t, side}`). Returns the view after this frame's input, the bar and
+# price under the crosshair, and `clicked` (a price in cents, or 0).
 pub fn chart(r: record, series: list, o: record) -> record
   let plot = Rect(r.x + 1, r.y, r.w - AXIS_W - 2, r.h - TIME_H)
   let vol_h = min(70.0, plot.h * 0.2)
@@ -135,7 +135,7 @@ pub fn chart(r: record, series: list, o: record) -> record
   let mx = float(mouse_x())
   let my = float(mouse_y())
 
-  // Zoom about the live edge.
+  # Zoom about the live edge.
   let vis = int(o.vis)
   if inside && scroll_y() != 0 then
     let f = if scroll_y() > 0 then 1.15 else 0.87 end
@@ -146,7 +146,7 @@ pub fn chart(r: record, series: list, o: record) -> record
   let pan = clamp(int(o.pan), lo: 0, hi: max_pan)
   let slot = plot.w / float(nv + RIGHT_PAD)
 
-  // Drag to pan; a press that never moves is a click.
+  # Drag to pan; a press that never moves is a click.
   state drag_on = false
   state drag_x = 0.0
   state drag_pan = 0
@@ -175,7 +175,7 @@ pub fn chart(r: record, series: list, o: record) -> record
   let stop = n - pan
   let start = stop - nv
 
-  // The price range of what is on screen.
+  # The price range of what is on screen.
   let lo = series[start].l
   let hi = series[start].h
   let vmax = 1
@@ -201,13 +201,13 @@ pub fn chart(r: record, series: list, o: record) -> record
     clicked = max(1, cursor_px)
   end
 
-  // The last trade, which the axis labels step aside for.
+  # The last trade, which the axis labels step aside for.
   let tail = series[n - 1]
   let live_c = if tail.c >= tail.o then lk.UP else lk.DOWN end
   let live_y = y_of(tail.c)
   let live_on = float(tail.c) < top && float(tail.c) > bot
 
-  // ── Grid and axes ──
+  # ── Grid and axes ──
   clip_push(Rect(r.x, r.y, r.w, r.h))
   let pstep = nice_step(span / 6.0)
   let p = int(ceil(bot / float(pstep))) * pstep
@@ -236,7 +236,7 @@ pub fn chart(r: record, series: list, o: record) -> record
     end
   end
 
-  // ── Volume ──
+  # ── Volume ──
   clip_push(plot)
   let body = clamp(slot * 0.68, lo: 1.0, hi: 15.0)
   let vbase = plot.y + plot.h
@@ -246,14 +246,14 @@ pub fn chart(r: record, series: list, o: record) -> record
     draw_rect(x_of(k) - body / 2.0, vbase - h, body, h, if b.c >= b.o then lk.UP else lk.DOWN end, 70)
   end
 
-  // The column under the pointer.
+  # The column under the pointer.
   let hover_k = -1
   if inside && !drag_moved then
     hover_k = clamp(start + int((mx - plot.x) / slot), lo: start, hi: stop - 1)
     draw_rect(x_of(hover_k) - slot / 2.0, plot.y + LEGEND_H, slot, plot.h - LEGEND_H, lk.TEXT, 9)
   end
 
-  // ── Price ──
+  # ── Price ──
   if o.mode == "line" then
     let pts = for k in range(start, stop) do
       {x: x_of(k), y: y_of(series[k].c)}
@@ -273,8 +273,8 @@ pub fn chart(r: record, series: list, o: record) -> record
     end
   end
 
-  // The account's own executions: a wedge under the bar it bought in, over
-  // the bar it sold in. Bars are contiguous, so the bar is an index away.
+  # The account's own executions: a wedge under the bar it bought in, over
+  # the bar it sold in. Bars are contiguous, so the bar is an index away.
   for f in o.fills do
     let k = start + (f.t - f.t % o.secs - series[start].t) / o.secs
     if k >= start && k < stop then
@@ -293,7 +293,7 @@ pub fn chart(r: record, series: list, o: record) -> record
     end
   end
 
-  // The moving average, from a running sum.
+  # The moving average, from a running sum.
   let ma_pts = []
   let ma_at = {}
   let sum = 0
@@ -315,7 +315,7 @@ pub fn chart(r: record, series: list, o: record) -> record
     draw_polyline(ma_pts, lk.VIOLET, 210, 1.4)
   end
 
-  // Working orders and the position's average cost.
+  # Working orders and the position's average cost.
   for mk in o.marks do
     if float(mk.p) < top && float(mk.p) > bot then
       let y = y_of(mk.p)
@@ -329,7 +329,7 @@ pub fn chart(r: record, series: list, o: record) -> record
     end
   end
 
-  // The last price: a rule across the plot, a pulse at the live edge.
+  # The last price: a rule across the plot, a pulse at the live edge.
   if live_on then
     lk.dashed(plot.x, plot.x + plot.w, live_y, live_c, 150, 2, 3)
     if pan == 0 then
@@ -343,7 +343,7 @@ pub fn chart(r: record, series: list, o: record) -> record
 
   if live_on then
     axis_tag(plot.x + plot.w, live_y, nf.px(tail.c), live_c, lk.INK)
-    // How long the forming bar has left.
+    # How long the forming bar has left.
     let left = max(0, o.secs - (o.clock - tail.t))
     let cd = if left >= 3600 then "{left / 3600}h {left % 3600 / 60}m"
     else "{left / 60}:{pad_start(str(left % 60), 2, "0")}" end
@@ -352,7 +352,7 @@ pub fn chart(r: record, series: list, o: record) -> record
     end
   end
 
-  // ── Crosshair ──
+  # ── Crosshair ──
   if hover_k >= 0 then
     let x = x_of(hover_k)
     lk.vdashed(x, plot.y + LEGEND_H, plot.y + plot.h, lk.MUTED, 150)
@@ -370,7 +370,7 @@ pub fn chart(r: record, series: list, o: record) -> record
     tl.draw_text_line(stamp, tag, st, "center")
   end
 
-  // ── Legend: the bar under the crosshair, or the forming one ──
+  # ── Legend: the bar under the crosshair, or the forming one ──
   let lb = if hover_k >= 0 then series[hover_k] else tail end
   let lc = if lb.c >= lb.o then lk.UP else lk.DOWN end
   let cells = [["O", nf.px(lb.o), lc], ["H", nf.px(lb.h), lc], ["L", nf.px(lb.l), lc], ["C", nf.px(lb.c), lc],

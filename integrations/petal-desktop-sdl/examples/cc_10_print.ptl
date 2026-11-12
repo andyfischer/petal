@@ -1,20 +1,20 @@
-// 10 PRINT — the famous Commodore 64 one-liner generative pattern.
-//
-//     10 PRINT CHR$(205.5+RND(1)); : GOTO 10
-//
-// Each cell randomly picks a forward-slash (/) or back-slash (\). The
-// resulting maze-like weave is one of the canonical generative art pieces.
-//
-// We extend it with:
-//   - cells "fall" into place from above (animated reveal)
-//   - colour drift by row + slow time
-//   - palette shift on key press
-//   - mutations: every few seconds a few cells flip
-//
-// Controls:
-//   space   regenerate
-//   1-4     palette
-//   m       toggle mutations
+# 10 PRINT — the famous Commodore 64 one-liner generative pattern.
+#
+#     10 PRINT CHR$(205.5+RND(1)); : GOTO 10
+#
+# Each cell randomly picks a forward-slash (/) or back-slash (\). The
+# resulting maze-like weave is one of the canonical generative art pieces.
+#
+# We extend it with:
+#   - cells "fall" into place from above (animated reveal)
+#   - colour drift by row + slow time
+#   - palette shift on key press
+#   - mutations: every few seconds a few cells flip
+#
+# Controls:
+#   space   regenerate
+#   1-4     palette
+#   m       toggle mutations
 
 import ui
 import color
@@ -23,7 +23,7 @@ state grid = []
 state cols = 0
 state rows = 0
 state cell = 22
-state reveal = 0      // how many rows are revealed so far
+state reveal = 0      # how many rows are revealed so far
 state reveal_t = 0.0
 state palette_id = 0
 state mutate = true
@@ -64,14 +64,14 @@ if key_pressed("3") then palette_id = 2 end
 if key_pressed("4") then palette_id = 3 end
 if key_pressed("m") then mutate = !mutate end
 
-// Reveal one new row every ~30ms
+# Reveal one new row every ~30ms
 reveal_t += delta
 while reveal_t > 0.03 && reveal < rows do
   reveal += 1
   reveal_t -= 0.03
 end
 
-// Mutations: flip a handful of cells per second after reveal completes
+# Mutations: flip a handful of cells per second after reveal completes
 mutate_t += delta
 if mutate && reveal == rows && mutate_t > 0.08 then
   mutate_t = 0.0
@@ -83,28 +83,28 @@ if mutate && reveal == rows && mutate_t > 0.08 then
   end
 end
 
-// Palettes (bg, fg_a, fg_b)
+# Palettes (bg, fg_a, fg_b)
 fn palette(id, j, t, rows_f)
   let p = float(j) / rows_f
   if id == 0 then
-    // Mint on indigo
+    # Mint on indigo
     let bg = { r: 14, g: 12, b: 32 }
     let h_a = (160.0 + p * 40.0 + t * 12.0) % 360.0
     let h_b = (180.0 + p * 60.0 + t * 12.0) % 360.0
     { bg: bg, a: hsv_deg(h: h_a, s: 0.7, v: 0.95), b: hsv_deg(h: h_b, s: 0.5, v: 0.85) }
   elsif id == 1 then
-    // Warm sunset
+    # Warm sunset
     let bg = { r: 28, g: 12, b: 18 }
     let h_a = (15.0 + p * 35.0 + t * 8.0) % 360.0
     let h_b = (340.0 + p * 25.0 + t * 8.0) % 360.0
     { bg: bg, a: hsv_deg(h: h_a, s: 0.85, v: 0.95), b: hsv_deg(h: h_b, s: 0.7, v: 0.9) }
   elsif id == 2 then
-    // Mono ink on parchment
+    # Mono ink on parchment
     let bg = { r: 232, g: 224, b: 200 }
     let shade = int(40.0 + p * 60.0)
     { bg: bg, a: { r: shade, g: shade, b: shade }, b: { r: shade, g: shade, b: shade } }
   else
-    // Neon rainbow
+    # Neon rainbow
     let h = (p * 360.0 + t * 30.0) % 360.0
     { bg: { r: 0, g: 0, b: 0 }, a: hsv_deg(h, s: 0.9, v: 1.0), b: hsv_deg(h: (h + 60.0) % 360.0, s: 0.9, v: 1.0) }
   end
@@ -112,28 +112,28 @@ end
 
 let t_now = float(frame_count()) * delta
 
-// Background
+# Background
 let pal0 = palette(id: palette_id, j: 0, t: t_now, rows_f: float(rows))
 clear(pal0.bg.r, pal0.bg.g, pal0.bg.b)
 
-// Draw revealed rows
+# Draw revealed rows
 for j in range(0, reveal) do
   let pal = palette(id: palette_id, j: j, t: t_now, rows_f: float(rows))
   let cy = j * cell
   for i in range(0, cols) do
     let cx = i * cell
     let slash = grid[j * cols + i]
-    // Pick color: a if slash, b if backslash
+    # Pick color: a if slash, b if backslash
     let col = pal.a
     if !slash then col = pal.b end
-    // Antialiased slashes by drawing 2 lines + outer thinner one
+    # Antialiased slashes by drawing 2 lines + outer thinner one
     if slash then
-      // bottom-left to top-right
+      # bottom-left to top-right
       draw_line(cx, cy + cell - 1, cx + cell - 1, cy, col.r, col.g, col.b)
       draw_line(cx + 1, cy + cell - 1, cx + cell - 1, cy + 1, col.r, col.g, col.b)
       draw_line(cx, cy + cell - 2, cx + cell - 2, cy, col.r, col.g, col.b)
     else
-      // top-left to bottom-right
+      # top-left to bottom-right
       draw_line(cx, cy, cx + cell - 1, cy + cell - 1, col.r, col.g, col.b)
       draw_line(cx + 1, cy, cx + cell - 1, cy + cell - 2, col.r, col.g, col.b)
       draw_line(cx, cy + 1, cx + cell - 2, cy + cell - 1, col.r, col.g, col.b)
@@ -141,7 +141,7 @@ for j in range(0, reveal) do
   end
 end
 
-// HUD
+# HUD
 draw_rect(x: 8, y: 8, w: 240, h: 60, r: 0, g: 0, b: 0)
 draw_text("10 PRINT", x: 14, y: 12, size: 16, r: 220, g: 220, b: 240)
 let mut_label = "mutations: off"

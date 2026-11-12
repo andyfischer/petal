@@ -1,14 +1,14 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  PATCHWORK — a node-based dataflow editor as a Garden Petal panel.
-//
-//  A patch is a list of node records living in world coordinates plus a list
-//  of links, each wiring one node's output into one input port of another.
-//  Every frame the whole patch is evaluated (memoized, cycle-safe), the
-//  links carry animated flow dots, and the sink nodes — Display, Scope,
-//  Gauge, Color — render what arrives at them.
-//
-//  Designed for a 1280x850 viewport. See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  PATCHWORK — a node-based dataflow editor as a Garden Petal panel.
+#
+#  A patch is a list of node records living in world coordinates plus a list
+#  of links, each wiring one node's output into one input port of another.
+#  Every frame the whole patch is evaluated (memoized, cycle-safe), the
+#  links carry animated flow dots, and the sink nodes — Display, Scope,
+#  Gauge, Color — render what arrives at them.
+#
+#  Designed for a 1280x850 viewport. See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import ui
 import bloom
@@ -17,7 +17,7 @@ import noise
 
 let TAU = 6.28318530718
 
-// ── Chrome palette ───────────────────────────────────────────────────────
+# ── Chrome palette ───────────────────────────────────────────────────────
 let BG       = :0b0d12
 let CANVAS   = :0d1017
 let GRID     = :1a1f2b
@@ -56,9 +56,9 @@ fn cat_label(cat: string) -> string
   end
 end
 
-// ── Node catalogue ───────────────────────────────────────────────────────
-//  ins    — connectable input ports, each with a default used when unwired
-//  params — knobs that are never wired, edited in the inspector
+# ── Node catalogue ───────────────────────────────────────────────────────
+#  ins    — connectable input ports, each with a default used when unwired
+#  params — knobs that are never wired, edited in the inspector
 
 fn port(name: string, lo: num, hi: num, def: num) -> record
   {name: name, lo: float(lo), hi: float(hi), def: float(def)}
@@ -107,7 +107,7 @@ fn kind_of(id: string) -> record
   out
 end
 
-// ── Node geometry (world units) ──────────────────────────────────────────
+# ── Node geometry (world units) ──────────────────────────────────────────
 
 let NODE_W = 172.0
 let HDR_H = 30.0
@@ -144,7 +144,7 @@ fn out_port(n: record) -> record
   {x: n.x + NODE_W, y: n.y + HDR_H / 2.0}
 end
 
-// ── Graph helpers (pure: every one returns a new value) ──────────────────
+# ── Graph helpers (pure: every one returns a new value) ──────────────────
 
 fn idx_of(nodes: list, id: num) -> int
   let found = -1
@@ -211,7 +211,7 @@ fn add_link(links: list, from: num, to: num, port_i: num) -> list
   append(links_without_into(links, id: to, port_i: port_i), {from: from, to: to, port: port_i})
 end
 
-// Move the given ids to the end of the list so they draw on top.
+# Move the given ids to the end of the list so they draw on top.
 fn raise(nodes: list, ids: list) -> list
   let rest = []
   let top = []
@@ -222,7 +222,7 @@ fn raise(nodes: list, ids: list) -> list
   rest
 end
 
-// Does wiring `from` into `to` close a loop? Walk upstream from `from`.
+# Does wiring `from` into `to` close a loop? Walk upstream from `from`.
 fn reaches(links: list, from: num, target: num, depth: num) -> bool
   if from == target then return true end
   if depth > 64 then return false end
@@ -235,8 +235,8 @@ fn reaches(links: list, from: num, target: num, depth: num) -> bool
   hit
 end
 
-// ── Evaluation ───────────────────────────────────────────────────────────
-//  Recursive, memoized per frame, and a cycle guard so a loop yields 0.
+# ── Evaluation ───────────────────────────────────────────────────────────
+#  Recursive, memoized per frame, and a cycle guard so a loop yields 0.
 
 var EV_NODES = []
 var EV_LINKS = []
@@ -286,7 +286,7 @@ fn ev_node(idx: int) -> num
   v
 end
 
-// Output value of every node, aligned with `nodes`.
+# Output value of every node, aligned with `nodes`.
 fn eval_all(nodes: list, links: list, t: num) -> list
   set EV_NODES = nodes
   set EV_LINKS = links
@@ -295,7 +295,7 @@ fn eval_all(nodes: list, links: list, t: num) -> list
   for i in range(0, len(nodes)) do ev_node(i) end
 end
 
-// Every input value of one node (wired or default), for the inspector.
+# Every input value of one node (wired or default), for the inspector.
 fn input_values(nodes: list, links: list, vals: list, n: record) -> list
   let k = kind_of(n.kind)
   for i in range(0, len(k.ins)) do
@@ -309,9 +309,9 @@ fn input_values(nodes: list, links: list, vals: list, n: record) -> list
   end
 end
 
-// ── Scope history: one slot per node ─────────────────────────────────────
-//  The draw loop is keyed by node id, because raising a node reorders it and
-//  the trace must stay with its node. A deleted scope's history goes with it.
+# ── Scope history: one slot per node ─────────────────────────────────────
+#  The draw loop is keyed by node id, because raising a node reorders it and
+#  the trace must stay with its node. A deleted scope's history goes with it.
 
 fn scope_push(v: num, playing: bool) -> list
   state samples = []
@@ -322,7 +322,7 @@ fn scope_push(v: num, playing: bool) -> list
   samples
 end
 
-// ── Formatting & small draw helpers ──────────────────────────────────────
+# ── Formatting & small draw helpers ──────────────────────────────────────
 
 fn fmt(v: num) -> string
   if abs(v) >= 1000.0 then
@@ -350,7 +350,7 @@ fn clamp01(v: num) -> num
   clamp(v, lo: 0.0, hi: 1.0)
 end
 
-// The prelude has no record overloads for these two outlines.
+# The prelude has no record overloads for these two outlines.
 fn rr_outline(r: Rect, radius: num, c: record, a: num, wd: num)
   draw_rect_rounded_outline(x: int(r.x), y: int(r.y), w: int(r.w), h: int(r.h), radius: int(radius), r: c.r, g: c.g, b: c.b, a: int(a), width: max(1, int(wd)))
 end
@@ -363,7 +363,7 @@ fn to_rgb(v: num) -> int
   int(round(clamp01(v) * 255.0))
 end
 
-// Cubic bezier between two ports, sampled into a polyline.
+# Cubic bezier between two ports, sampled into a polyline.
 fn bezier_pts(x0: num, y0: num, x1: num, y1: num, n: int) -> list
   let d = max(48.0, abs(x1 - x0) * 0.5)
   let cx0 = x0 + d
@@ -386,7 +386,7 @@ fn bezier_at(x0: num, y0: num, x1: num, y1: num, t: num) -> record
     y: u * u * u * y0 + 3.0 * u * u * t * y0 + 3.0 * u * t * t * y1 + t * t * t * y1}
 end
 
-// A small pill button drawn in the app's own chrome. True on click.
+# A small pill button drawn in the app's own chrome. True on click.
 fn pill_btn(r: Rect, label: string, active: bool) -> bool
   let hov = hovered(r)
   let fill = if active then over(bg: PANEL, fg: ACCENT, a: 0.22) elsif hov then HOVER else ELEV end
@@ -397,7 +397,7 @@ fn pill_btn(r: Rect, label: string, active: bool) -> bool
   ui.clicked(r)
 end
 
-// ── The seeded patch ─────────────────────────────────────────────────────
+# ── The seeded patch ─────────────────────────────────────────────────────
 
 fn seed_nodes() -> list
   let n1 = make_node(id: 1, kind: "time", x: 40, y: 40)
@@ -440,7 +440,7 @@ fn seed_links() -> list
   ]
 end
 
-// ── Layout ───────────────────────────────────────────────────────────────
+# ── Layout ───────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
@@ -456,7 +456,7 @@ let canvas = rect(PAL_W, HEADER_H, W - PAL_W - INSP_W, H - HEADER_H - STATUS_H)
 let palette = rect(0, HEADER_H, PAL_W, H - HEADER_H - STATUS_H)
 let insp = rect(W - INSP_W, HEADER_H, INSP_W, H - HEADER_H - STATUS_H)
 
-// ── Camera helpers ───────────────────────────────────────────────────────
+# ── Camera helpers ───────────────────────────────────────────────────────
 
 fn zoom_about(cam: record, canvas: Rect, sx: num, sy: num, factor: num) -> record
   let nz = clamp(cam.zoom * factor, lo: 0.35, hi: 2.5)
@@ -489,12 +489,12 @@ fn fit_all(nodes: list, canvas: Rect) -> record
   end
 end
 
-// ── Persistent state ─────────────────────────────────────────────────────
+# ── Persistent state ─────────────────────────────────────────────────────
 
-// The patch survives a restart through the panel store; anything else here
-// (selection, camera, clock, history) starts fresh. Garden has no JSON
-// builtins, so the patch is a small line-based text format: one `N` line per
-// node, one `L` line per wire, a `V1` header carrying the next id.
+# The patch survives a restart through the panel store; anything else here
+# (selection, camera, clock, history) starts fresh. Garden has no JSON
+# builtins, so the patch is a small line-based text format: one `N` line per
+# node, one `L` line per wire, a `V1` header carrying the next id.
 
 fn nums_to_str(xs: list) -> string
   if len(xs) == 0 then "-" else join(map(xs, fn(v) -> str(v)), ",") end
@@ -557,12 +557,12 @@ state hist = []
 state fut = []
 state drag = {mode: "none", x0: 0.0, y0: 0.0, cx: 0.0, cy: 0.0, node: -1, port: -1,
   dir: "out", starts: [], kind: "", moved: false}
-state menu_at = {x: 0, y: 0, tag: {what: "canvas", id: -1}}   // where the menu opened, and on what
+state menu_at = {x: 0, y: 0, tag: {what: "canvas", id: -1}}   # where the menu opened, and on what
 state ops = 0
 state param_dirty = false
 state flash = {text: "", until: 0.0}
 
-// ── Frame setup ──────────────────────────────────────────────────────────
+# ── Frame setup ──────────────────────────────────────────────────────────
 
 claim_key("z", "cmd")
 claim_key("z", "cmd+shift")
@@ -596,8 +596,8 @@ end
 let wmx = to_wx(cam, canvas, sx: mx)
 let wmy = to_wy(cam, canvas, sy: my)
 
-// ── Hit testing (world space) ────────────────────────────────────────────
-//  {kind: "none"|"node"|"in"|"out", node: id, port: i}
+# ── Hit testing (world space) ────────────────────────────────────────────
+#  {kind: "none"|"node"|"in"|"out", node: id, port: i}
 
 fn hit_test(nodes: list, wx: num, wy: num, z: num) -> record
   let out = {kind: "none", node: -1, port: -1}
@@ -626,7 +626,7 @@ end
 
 let hit = if over_canvas then hit_test(nodes, wx: wmx, wy: wmy, z: z) else {kind: "none", node: -1, port: -1} end
 
-// ── Undo bookkeeping ─────────────────────────────────────────────────────
+# ── Undo bookkeeping ─────────────────────────────────────────────────────
 
 fn push_hist(hist: list, nodes: list, links: list) -> list
   let h = append(hist, {nodes: nodes, links: links})
@@ -638,7 +638,7 @@ fn note(flash: record, text: string, now: num) -> record
   {text: text, until: now + 2.2}
 end
 
-// ── Keyboard ─────────────────────────────────────────────────────────────
+# ── Keyboard ─────────────────────────────────────────────────────────────
 
 let want_undo = key_pressed("z") && mod_cmd() && !mod_shift()
 let want_redo = key_pressed("z") && mod_cmd() && mod_shift()
@@ -666,7 +666,7 @@ end
 if key_pressed("0") then cam = {...cam, zoom: 1.0} end
 if want_fit then cam = fit_all(nodes, canvas) end
 
-// Arrow nudge
+# Arrow nudge
 let nudge_x = 0.0
 let nudge_y = 0.0
 let nstep = if mod_shift() then 24.0 else 4.0 end
@@ -683,12 +683,12 @@ if (nudge_x != 0.0 || nudge_y != 0.0) && len(sel) > 0 && !blocked then
   ops = ops + 1
 end
 
-// ── Editing operations (shared by keys, buttons and the menu) ────────────
+# ── Editing operations (shared by keys, buttons and the menu) ────────────
 
 fn dup_sel(nodes: list, links: list, sel: list, start_id: num) -> record
   let out = nodes
   let ids = []
-  let remap = []          // [old, new] pairs
+  let remap = []          # [old, new] pairs
   let nid = start_id
   for n in nodes do
     if contains(sel, n.id) then
@@ -753,7 +753,7 @@ if want_redo && len(fut) > 0 then
   ops = ops + 1
 end
 
-// ── Mouse: wheel ─────────────────────────────────────────────────────────
+# ── Mouse: wheel ─────────────────────────────────────────────────────────
 
 if over_canvas && !blocked then
   let sy = scroll_y()
@@ -767,12 +767,12 @@ if over_canvas && !blocked then
   end
 end
 
-// ── Mouse: press ─────────────────────────────────────────────────────────
+# ── Mouse: press ─────────────────────────────────────────────────────────
 
 let space_held = key_down("space")
 
-// A gesture whose release never reached us (focus lost mid-drag) must not
-// wedge the canvas: with no button held there is nothing to be dragging.
+# A gesture whose release never reached us (focus lost mid-drag) must not
+# wedge the canvas: with no button held there is nothing to be dragging.
 if drag.mode != "none" && drag.mode != "place" && !mouse_down(0) && !mouse_down(2) && !mouse_released(0) && !mouse_released(2) then
   drag = {...drag, mode: "none"}
 end
@@ -786,7 +786,7 @@ if over_canvas && !blocked && drag.mode == "none" then
     elsif hit.kind == "in" then
       let li = link_into(links, id: hit.node, port_i: hit.port)
       if li >= 0 then
-        // Pick the wire back up from its source and drop it elsewhere.
+        # Pick the wire back up from its source and drop it elsewhere.
         hist = push_hist(hist, nodes, links)
         fut = []
         let src = links[li].from
@@ -824,7 +824,7 @@ if over_canvas && !blocked && drag.mode == "none" then
   end
 end
 
-// ── Mouse: drag ──────────────────────────────────────────────────────────
+# ── Mouse: drag ──────────────────────────────────────────────────────────
 
 if drag.mode == "pan" && mouse_down(0) || drag.mode == "pan" && mouse_down(2) then
   cam = {...cam, x: drag.cx - (float(mx) - drag.x0) / z, y: drag.cy - (float(my) - drag.y0) / z}
@@ -869,7 +869,7 @@ if drag.mode == "place" && !mouse_down(0) && over_canvas then
   drag = {...drag, mode: "none"}
 end
 
-// ── Mouse: release ───────────────────────────────────────────────────────
+# ── Mouse: release ───────────────────────────────────────────────────────
 
 if mouse_released(0) || mouse_released(2) then
   if drag.mode == "link" then
@@ -921,17 +921,17 @@ if mouse_released(0) || mouse_released(2) then
   end
 end
 
-// ── Evaluate ─────────────────────────────────────────────────────────────
+# ── Evaluate ─────────────────────────────────────────────────────────────
 
 let vals = eval_all(nodes, links, t: clock)
 
-// ── Draw: canvas ─────────────────────────────────────────────────────────
+# ── Draw: canvas ─────────────────────────────────────────────────────────
 
 clear(BG.r, BG.g, BG.b)
 draw_rect(canvas, CANVAS)
 clip(x: canvas.x, y: canvas.y, w: canvas.w, h: canvas.h)
 
-// dotted grid
+# dotted grid
 let gstep = if z < 0.7 then 64.0 else 32.0 end
 let gx0 = float(int(floor(cam.x / gstep))) * gstep
 let gy0 = float(int(floor(cam.y / gstep))) * gstep
@@ -948,7 +948,7 @@ while to_sx(cam, canvas, wx: gwx) < float(canvas.x + canvas.w) do
   gwx = gwx + gstep
 end
 
-// links
+# links
 let flow_t = clock * 0.35
 for l in links do
   let a = idx_of(nodes, l.from)
@@ -974,7 +974,7 @@ for l in links do
   end
 end
 
-// the wire being dragged
+# the wire being dragged
 if drag.mode == "link" then
   let ni = idx_of(nodes, drag.node)
   if ni >= 0 then
@@ -994,7 +994,7 @@ if drag.mode == "link" then
   end
 end
 
-// nodes
+# nodes
 fn draw_scope(r: Rect, samples: list, c: record)
   draw_rect_rounded(r, radius: 4, c: BG)
   if len(samples) >= 2 then
@@ -1016,7 +1016,7 @@ fn draw_scope(r: Rect, samples: list, c: record)
       let y = float(r.y) + float(r.h) - pad_y - (samples[i] - lo) / (hi - lo) * (float(r.h) - pad_y * 2.0)
       [x, y]
     end
-    // zero line when it is inside the window
+    # zero line when it is inside the window
     if lo < 0.0 && hi > 0.0 then
       let zy = float(r.y) + float(r.h) - pad_y - (0.0 - lo) / (hi - lo) * (float(r.h) - pad_y * 2.0)
       draw_line(x1: r.x + 4, y1: int(zy), x2: r.x + r.w - 4, y2: int(zy), r: FAINT.r, g: FAINT.g, b: FAINT.b, a: 120, width: 1)
@@ -1062,12 +1062,12 @@ for n in nodes key n.id do
     draw_shadow(sr, {radius: rad, blur: 12, spread: 0, dx: 0, dy: 4, color: BG, a: 140})
   end
   draw_rect_rounded(sr, radius: rad, c: if hov then NODE_HOV else NODE_BG end)
-  // header band
+  # header band
   let hdr = rect(sx, sy, sw, HDR_H * z)
   draw_rect_rounded(hdr, radius: rad, c: over(bg: NODE_BG, fg: c, a: 0.16))
   draw_rect(x: sx, y: sy + HDR_H * z - rad, w: sw, h: rad, r: over(bg: NODE_BG, fg: c, a: 0.16).r, g: over(bg: NODE_BG, fg: c, a: 0.16).g, b: over(bg: NODE_BG, fg: c, a: 0.16).b)
   draw_rect(x: sx, y: sy + HDR_H * z - 1.0, w: sw, h: 1.0, r: c.r, g: c.g, b: c.b, a: 90)
-  // title
+  # title
   let tsz = max(7, int(13.0 * z))
   let title_s = ts(tsz, TEXT)
   draw_text(k.label, pos: {x: sx + 12.0 * z, y: sy + (HDR_H * z - float(tsz)) / 2.0 - 1.0}, style: title_s)
@@ -1076,7 +1076,7 @@ for n in nodes key n.id do
   let vtxt = fmt(v)
   draw_text(vtxt, pos: {x: sx + sw - 14.0 * z - text_width(vtxt, vs), y: sy + (HDR_H * z - float(vsz)) / 2.0}, style: vs)
 
-  // input rows
+  # input rows
   let ivals = input_values(nodes, links, vals, n)
   for i in range(0, len(k.ins)) do
     let p = in_port(n, i)
@@ -1087,7 +1087,7 @@ for n in nodes key n.id do
     let val_s = mono(rsz, if wired then over(bg: NODE_BG, fg: c, a: 0.75) else FAINT end)
     let vt = fmt(ivals[i])
     draw_text(vt, pos: {x: sx + sw - 12.0 * z - text_width(vt, val_s), y: py - float(rsz) / 2.0 - 1.0}, style: val_s)
-    // port
+    # port
     let px = to_sx(cam, canvas, wx: p.x)
     let port_hot = (hit.kind == "in" && hit.node == n.id && hit.port == i) ||
     (drag.mode == "link" && drag.dir == "out" && drag.node != n.id)
@@ -1099,7 +1099,7 @@ for n in nodes key n.id do
     circ_outline(cx: px, cy: py, rad: pr, c: c, a: 255, wd: max(1.0, 1.5 * z))
   end
 
-  // output port
+  # output port
   let o = out_port(n)
   let ox = to_sx(cam, canvas, wx: o.x)
   let oy = to_sy(cam, canvas, wy: o.y)
@@ -1110,7 +1110,7 @@ for n in nodes key n.id do
   end
   draw_circle(center: {x: ox, y: oy}, radius: PORT_R * z, c: c)
 
-  // preview area
+  # preview area
   let ph = preview_h(n.kind)
   if ph > 0.0 then
     let py0 = sy + (HDR_H + float(len(k.ins)) * ROW_H + 4.0) * z
@@ -1142,7 +1142,7 @@ for n in nodes key n.id do
   end
 end
 
-// marquee
+# marquee
 if drag.mode == "marquee" then
   let x0 = to_sx(cam, canvas, wx: min(drag.x0, wmx))
   let y0 = to_sy(cam, canvas, wy: min(drag.y0, wmy))
@@ -1153,7 +1153,7 @@ if drag.mode == "marquee" then
   draw_rect_outline(mr, c: ACCENT, a: 200, width: 1)
 end
 
-// ghost of a node being placed from the palette
+# ghost of a node being placed from the palette
 if drag.mode == "place" && over_canvas then
   let k = kind_of(drag.kind)
   let gr = rect(float(mx) - NODE_W * z / 2.0, float(my) - HDR_H * z / 2.0, NODE_W * z, HDR_H * z)
@@ -1161,7 +1161,7 @@ if drag.mode == "place" && over_canvas then
   rr_outline(gr, radius: 8.0 * z, c: cat_color(k.cat), a: 160, wd: 1)
 end
 
-// empty-canvas hint
+# empty-canvas hint
 if len(nodes) == 0 then
   let es = ts(14, FAINT)
   let et = "Drag a node in from the palette, or right-click to add one."
@@ -1170,7 +1170,7 @@ end
 
 clip_none()
 
-// ── Draw: palette ────────────────────────────────────────────────────────
+# ── Draw: palette ────────────────────────────────────────────────────────
 
 draw_rect(palette, PANEL)
 draw_rect(x: palette.x + palette.w - 1, y: palette.y, w: 1, h: palette.h, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
@@ -1206,8 +1206,8 @@ for pr in pal_rows do
   end
 end
 
-// A press-and-release inside the palette without leaving it drops the node
-// at the centre of the view; dragging onto the canvas drops it there.
+# A press-and-release inside the palette without leaving it drops the node
+# at the centre of the view; dragging onto the canvas drops it there.
 if drag.mode == "place" && !mouse_down(0) && !over_canvas then
   hist = push_hist(hist, nodes, links)
   fut = []
@@ -1221,7 +1221,7 @@ if drag.mode == "place" && !mouse_down(0) && !over_canvas then
   drag = {...drag, mode: "none"}
 end
 
-// palette footer: legend
+# palette footer: legend
 let leg_y = palette.y + palette.h - 96
 draw_rect(x: palette.x + 14, y: leg_y - 12, w: palette.w - 28, h: 1, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
 caps("TIPS", x: palette.x + 18, y: leg_y, c: FAINT)
@@ -1230,7 +1230,7 @@ for i in range(0, len(tips)) do
   draw_text(tips[i], pos: {x: palette.x + 18, y: leg_y + 20 + i * 17}, style: ts(11, FAINT))
 end
 
-// ── Draw: inspector ──────────────────────────────────────────────────────
+# ── Draw: inspector ──────────────────────────────────────────────────────
 
 draw_rect(insp, PANEL)
 draw_rect(x: insp.x, y: insp.y, w: 1, h: insp.h, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
@@ -1240,9 +1240,9 @@ let iw = insp.w - 44
 let iy = insp.y + 18
 
 let one = if len(sel) == 1 then idx_of(nodes, sel[0]) else -1 end
-// `vals` was evaluated before this frame's edits. A node is selected on the
-// frame it is added, so the inspector would index one past the end of `vals`;
-// evaluate again when the graph has grown or shrunk since.
+# `vals` was evaluated before this frame's edits. A node is selected on the
+# frame it is added, so the inspector would index one past the end of `vals`;
+# evaluate again when the graph has grown or shrunk since.
 let now_vals = if len(vals) == len(nodes) then vals else eval_all(nodes, links, t: clock) end
 
 if one >= 0 then
@@ -1265,7 +1265,7 @@ if one >= 0 then
   draw_rect(x: ix, y: iy, w: iw, h: 1, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
   iy = iy + 16
 
-  // parameters
+  # parameters
   let changed = false
   let np = n.params
   if len(k.params) > 0 then
@@ -1286,7 +1286,7 @@ if one >= 0 then
     end
   end
 
-  // inputs
+  # inputs
   let ni = n.ins
   if len(k.ins) > 0 then
     iy = iy + 4
@@ -1339,7 +1339,7 @@ if one >= 0 then
     ops = ops + 1
   end
 
-  // output
+  # output
   iy = iy + 6
   draw_rect(x: ix, y: iy, w: iw, h: 1, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
   iy = iy + 16
@@ -1352,7 +1352,7 @@ if one >= 0 then
   draw_text(fo, pos: {x: ix, y: iy}, style: ts(11, FAINT))
   iy = iy + 26
 
-  // actions
+  # actions
   let bw = (iw - 8) / 2
   if pill_btn(rect(ix, iy, bw, 28), label: "Duplicate", active: false) && !blocked then
     hist = push_hist(hist, nodes, links)
@@ -1442,7 +1442,7 @@ else
   end
 end
 
-// ── Draw: header ─────────────────────────────────────────────────────────
+# ── Draw: header ─────────────────────────────────────────────────────────
 
 draw_rect(x: 0, y: 0, w: W, h: HEADER_H, r: PANEL.r, g: PANEL.g, b: PANEL.b)
 draw_rect(x: 0, y: HEADER_H - 1, w: W, h: 1, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
@@ -1482,11 +1482,11 @@ end
 if pill_btn(b_fit, label: "Fit", active: false) && !blocked then cam = fit_all(nodes, canvas) end
 if pill_btn(b_zoom, label: str(int(round(z * 100.0))) ++ "%", active: false) && !blocked then cam = {...cam, zoom: 1.0} end
 
-// clock readout beside the transport
+# clock readout beside the transport
 let ck = "t = " ++ fmt(clock) ++ " s"
 draw_text(ck, pos: {x: b_reset.x - 14 - text_width(ck, mono(12, DIM)), y: by + 8}, style: mono(12, DIM))
 
-// ── Draw: status bar ─────────────────────────────────────────────────────
+# ── Draw: status bar ─────────────────────────────────────────────────────
 
 let sb = rect(0, H - STATUS_H, W, STATUS_H)
 draw_rect(sb, PANEL)
@@ -1523,7 +1523,7 @@ else
   draw_text(pt, pos: {x: W - 22 - text_width(pt, ps), y: sb.y + 8}, style: ps)
 end
 
-// ── Context menu: the last draw call ─────────────────────────────────────
+# ── Context menu: the last draw call ─────────────────────────────────────
 
 let m_tag = menu_at.tag
 let is_node_menu = m_tag.what == "node"
@@ -1538,7 +1538,7 @@ else
   out
 end
 let chosen = bloom.menu("ctx", canvas, items, {at: "point"})
-// Separators cannot be chosen, so a chosen item is one of the plain labels.
+# Separators cannot be chosen, so a chosen item is one of the plain labels.
 let picked = {label: if chosen >= 0 then items[chosen] else "" end}
 if chosen >= 0 then
   if is_node_menu then
@@ -1579,7 +1579,7 @@ if chosen >= 0 then
       cam = fit_all(nodes, canvas)
       ops = ops + 1
     else
-      // "Add <kind>" — drop it where the menu was opened
+      # "Add <kind>" — drop it where the menu was opened
       for k in KINDS do
         if picked.label == "Add " ++ k.label then
           hist = push_hist(hist, nodes, links)
@@ -1596,7 +1596,7 @@ if chosen >= 0 then
   end
 end
 
-// ── Persist ──────────────────────────────────────────────────────────────
+# ── Persist ──────────────────────────────────────────────────────────────
 
 state saved_ops = -1
 if ops != saved_ops then

@@ -1,26 +1,26 @@
-// ── Drag mode 5: a projectile with rigid physics ─────────
-//   garden petal-ide examples/panels/dm-v2/05-projectile.ptl
-//
-// 200 Euler steps with `var` in a loop. The landing marker
-// (red) is where the simulation ends. Gravity, the time step,
-// the drawing scale, the ground line and the x origin are
-// wrapped in `rigid(...)`: a drag must change the launch,
-// not the physics.
-//
-// What to drag (drag mode on: Cmd+Shift+D):
-// - The red LANDING marker, right or left: `v0` or `angle`
-//   (the panel ranks both, and both together).
-// - A grey TRAIL dot near the top, upward: a higher arc
-//   (`v0`, `angle`, or launching from higher up).
-// - Click `angle`'s gutter square twice so it reads
-//   `rigid(0.9)`, and drag the marker again: only `v0` (and
-//   the launch height) are left, and the panel shows
-//   `angle` as rigid. Click once more to free it.
-// - `g` is rigid here on purpose: free it (one click: the
-//   cycle is free > tunable > rigid > free) and it joins the
-//   panel, though the landing is a branch (`if y < 0`), so
-//   the solver finds the launch numbers more useful.
-// - `steps` is a loop bound: shown as fixed ("structural").
+# ── Drag mode 5: a projectile with rigid physics ─────────
+#   garden petal-ide examples/panels/dm-v2/05-projectile.ptl
+#
+# 200 Euler steps with `var` in a loop. The landing marker
+# (red) is where the simulation ends. Gravity, the time step,
+# the drawing scale, the ground line and the x origin are
+# wrapped in `rigid(...)`: a drag must change the launch,
+# not the physics.
+#
+# What to drag (drag mode on: Cmd+Shift+D):
+# - The red LANDING marker, right or left: `v0` or `angle`
+#   (the panel ranks both, and both together).
+# - A grey TRAIL dot near the top, upward: a higher arc
+#   (`v0`, `angle`, or launching from higher up).
+# - Click `angle`'s gutter square twice so it reads
+#   `rigid(0.9)`, and drag the marker again: only `v0` (and
+#   the launch height) are left, and the panel shows
+#   `angle` as rigid. Click once more to free it.
+# - `g` is rigid here on purpose: free it (one click: the
+#   cycle is free > tunable > rigid > free) and it joins the
+#   panel, though the landing is a branch (`if y < 0`), so
+#   the solver finds the launch numbers more useful.
+# - `steps` is a loop bound: shown as fixed ("structural").
 
 import ui
 

@@ -1,5 +1,5 @@
-// `get_in` / `set_in` (nested reads and replacements with the path as data)
-// and the multi-generator `for`. Run with `petal test test/ptl`.
+# `get_in` / `set_in` (nested reads and replacements with the path as data)
+# and the multi-generator `for`. Run with `petal test test/ptl`.
 
 test "set_in is the value a path assignment leaves" do
   let st = {meetings: [{room: 1}, {room: 2}, {room: 5}], name: "plan"}

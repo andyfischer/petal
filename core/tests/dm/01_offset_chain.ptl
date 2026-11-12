@@ -1,5 +1,5 @@
 import io
-// A position through a helper and a chain of arithmetic.
+# A position through a helper and a chain of arithmetic.
 let s = symbol("draw")
 let margin = 12
 let scale = 1.5

@@ -1,4 +1,4 @@
-// Enum construction + match destructuring to evaluate an expression tree.
+# Enum construction + match destructuring to evaluate an expression tree.
 enum Expr
   Num(value),
   Add(left, right),
@@ -11,6 +11,6 @@ fn eval(e)
     when Expr.Mul(a, b) -> eval(a) * eval(b)
   end
 end
-// (2 + 3) * 4 = 20
+# (2 + 3) * 4 = 20
 let tree = Expr.Mul(Expr.Add(Expr.Num(2), Expr.Num(3)), Expr.Num(4))
 print(eval(tree))

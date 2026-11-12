@@ -1,23 +1,23 @@
-// Fern preferences: the form controls.
-//
-// Every control here is a function from the current value to the new one:
-// `toggle(key, r, on, enabled)` returns the bool to store. None of them holds
-// the app's data, so undo, reset and persistence stay in one place.
-//
-// Pointer handling is bloom's `probe` (press-and-release clicks, eased hover
-// and press, inert under an open menu or dialog). Everything a control
-// animates for itself goes through `anim`, which is keyed by the setting id,
-// not by where the row happens to be drawn, so a knob keeps its motion when a
-// search reorders the page.
+# Fern preferences: the form controls.
+#
+# Every control here is a function from the current value to the new one:
+# `toggle(key, r, on, enabled)` returns the bool to store. None of them holds
+# the app's data, so undo, reset and persistence stay in one place.
+#
+# Pointer handling is bloom's `probe` (press-and-release clicks, eased hover
+# and press, inert under an open menu or dialog). Everything a control
+# animates for itself goes through `anim`, which is keyed by the setting id,
+# not by where the row happens to be drawn, so a knob keeps its motion when a
+# search reorders the page.
 
 import bloom
 import text_layout as tl
 import ui
 
-// This frame's theme: colors, the corner radius, the type scale and the motion
-// speed. A plain module `var`, set by the app before it draws anything.
+# This frame's theme: colors, the corner radius, the type scale and the motion
+# speed. A plain module `var`, set by the app before it draws anything.
 var _t = {}
-// Whether any animator is still moving, so the app knows to ask for a frame.
+# Whether any animator is still moving, so the app knows to ask for a frame.
 var _busy = false
 
 pub fn begin(t: record)
@@ -29,8 +29,8 @@ pub fn busy() -> bool
   get _busy
 end
 
-// ── Type ───────────────────────────────────────────────────────────────────
-// One record to measure and draw with, at the interface scale.
+# ── Type ───────────────────────────────────────────────────────────────────
+# One record to measure and draw with, at the interface scale.
 
 pub fn ts(size: num, color: record) -> record
   {size: round(size * (get _t).scale, 1), font: "ui", color: color}
@@ -44,15 +44,15 @@ pub fn mono(size: num, color: record) -> record
   {size: round(size * (get _t).scale, 1), font: "mono", color: color}
 end
 
-// ── Motion ─────────────────────────────────────────────────────────────────
+# ── Motion ─────────────────────────────────────────────────────────────────
 
-// A value easing toward `target`, one animator per call path: each callsite,
-// in each row of a keyed loop, eases on its own. It starts at the target, so
-// nothing slides in from zero when a page first appears, and an animator that
-// goes a frame without being asked starts over the same way. "Reduce motion"
-// sets the theme's speed to 0, which makes every one of these a plain
-// assignment. The app keys its row loops by setting id, so a row's animators
-// stay with its setting.
+# A value easing toward `target`, one animator per call path: each callsite,
+# in each row of a keyed loop, eases on its own. It starts at the target, so
+# nothing slides in from zero when a page first appears, and an animator that
+# goes a frame without being asked starts over the same way. "Reduce motion"
+# sets the theme's speed to 0, which makes every one of these a plain
+# assignment. The app keys its row loops by setting id, so a row's animators
+# stay with its setting.
 pub fn anim(target: num, rate: num = 22.0) -> float
   let t = get _t
   let goal = float(target)
@@ -76,7 +76,7 @@ fn flag(on: bool) -> float
   if on then 1.0 else 0.0 end
 end
 
-// A color at the strength a disabled control shows it: `e` is 1 for live.
+# A color at the strength a disabled control shows it: `e` is 1 for live.
 fn fade(c: record, e: num) -> record
   mix(mix(c, (get _t).card, 0.62), c, e)
 end
@@ -86,7 +86,7 @@ fn knob_shadow(r: record, radius: num, e: num) -> nil
     a: int((get _t).shadow * 0.9 * e)})
 end
 
-// ── Toggle ─────────────────────────────────────────────────────────────────
+# ── Toggle ─────────────────────────────────────────────────────────────────
 
 pub fn toggle(key: string, r: record, on: bool, enabled: bool) -> bool
   let t = get _t
@@ -98,7 +98,7 @@ pub fn toggle(key: string, r: record, on: bool, enabled: bool) -> bool
   draw_rect_rounded(r, int(r.h / 2), fade(face, e))
   let inset = 2.0
   let d = r.h - inset * 2.0
-  // A held knob stretches toward where it is about to go.
+  # A held knob stretches toward where it is about to go.
   let stretch = 5.0 * p.active
   let x = r.x + inset + k * (r.w - d - inset * 2.0) - stretch * k
   let knob = Rect(x, r.y + inset, d + stretch, d)
@@ -107,10 +107,10 @@ pub fn toggle(key: string, r: record, on: bool, enabled: bool) -> bool
   out
 end
 
-// ── Checkbox ───────────────────────────────────────────────────────────────
+# ── Checkbox ───────────────────────────────────────────────────────────────
 
-// `box` is where the square is drawn, `hit` what a click lands on (usually
-// the whole row, so the label is part of the target).
+# `box` is where the square is drawn, `hit` what a click lands on (usually
+# the whole row, so the label is part of the target).
 pub fn checkbox(key: string, box: record, hit: record, on: bool, enabled: bool) -> bool
   let t = get _t
   let p = bloom.probe(hit, enabled)
@@ -127,7 +127,7 @@ pub fn checkbox(key: string, box: record, hit: record, on: bool, enabled: bool) 
     draw_rect_rounded(inner, max(0, radius - 1), mix(t.well, fade(t.accent, e), k))
   end
   if k > 0.05 then
-    // The tick is drawn in: the short stroke first, then the long one.
+    # The tick is drawn in: the short stroke first, then the long one.
     let a = {x: sq.x + sq.w * 0.26, y: sq.y + sq.h * 0.53}
     let b = {x: sq.x + sq.w * 0.43, y: sq.y + sq.h * 0.70}
     let c = {x: sq.x + sq.w * 0.75, y: sq.y + sq.h * 0.31}
@@ -143,7 +143,7 @@ pub fn checkbox(key: string, box: record, hit: record, on: bool, enabled: bool) 
   out
 end
 
-// ── Segmented control ──────────────────────────────────────────────────────
+# ── Segmented control ──────────────────────────────────────────────────────
 
 pub fn seg_width(labels: list) -> num
   let t = get _t
@@ -175,7 +175,7 @@ pub fn segmented(key: string, r: record, labels: list, index: num, enabled: bool
     if p.click then
       chosen = i
     end
-    // The label warms as the thumb arrives, not on the frame of the click.
+    # The label warms as the thumb arrives, not on the frame of the click.
     let near = clamp(1.0 - abs(pos - float(i)), lo: 0.0, hi: 1.0)
     let ink = mix(mix(t.muted, t.text, 0.6 * p.hot), t.text, near)
     tl.draw_text_line(labels[i], cr, ts(12.5, fade(ink, e)), "center")
@@ -183,9 +183,9 @@ pub fn segmented(key: string, r: record, labels: list, index: num, enabled: bool
   chosen
 end
 
-// ── Select ─────────────────────────────────────────────────────────────────
+# ── Select ─────────────────────────────────────────────────────────────────
 
-// The menu id a select uses, so the app can open it from the keyboard.
+# The menu id a select uses, so the app can open it from the keyboard.
 pub fn select_id(key: string) -> string
   "select:" ++ key
 end
@@ -206,7 +206,7 @@ pub fn select(key: string, r: record, options: list, index: num, enabled: bool) 
   let label = if index >= 0 && index < len(options) then options[int(index)] else "Choose…" end
   let style = ts(13, fade(t.text, e))
   tl.draw_text_line(tl.elide(label, style, r.w - 40), Rect(r.x + 12, r.y, r.w - 40, r.h), style)
-  // The chevron turns over while the menu is open.
+  # The chevron turns over while the menu is open.
   let cx = r.x + r.w - 17.0
   let cy = r.y + r.h / 2.0
   let dy = 2.5 * (1.0 - 2.0 * k)
@@ -216,11 +216,11 @@ pub fn select(key: string, r: record, options: list, index: num, enabled: bool) 
   if picked >= 0 then picked else int(index) end
 end
 
-// ── Slider ─────────────────────────────────────────────────────────────────
+# ── Slider ─────────────────────────────────────────────────────────────────
 
-// Returns the raw position as a float; the caller snaps it to the setting's
-// step. Press anywhere to jump there, and the drag keeps tracking after the
-// pointer leaves the track.
+# Returns the raw position as a float; the caller snaps it to the setting's
+# step. Press anywhere to jump there, and the drag keeps tracking after the
+# pointer leaves the track.
 pub fn slider(key: string, r: record, value: num, lo: num, hi: num, step: num, enabled: bool) -> float
   let t = get _t
   let p = bloom.probe(r, enabled)
@@ -236,8 +236,8 @@ pub fn slider(key: string, r: record, value: num, lo: num, hi: num, step: num, e
     v = float(lo) + f * range_w
   end
   let e = anim(flag(enabled), 16.0)
-  // The knob eases to the snapped value, so a stepped slider clicks into
-  // place instead of teleporting between detents.
+  # The knob eases to the snapped value, so a stepped slider clicks into
+  # place instead of teleporting between detents.
   let shown = anim(clamp((float(value) - float(lo)) / range_w, lo: 0.0, hi: 1.0), 34.0)
   let grow = anim(if dragging then 1.0 else 0.45 * p.hot end, 26.0)
   let cy = r.y + r.h / 2.0
@@ -264,12 +264,12 @@ pub fn slider(key: string, r: record, value: num, lo: num, hi: num, step: num, e
   v
 end
 
-// ── Stepper ────────────────────────────────────────────────────────────────
+# ── Stepper ────────────────────────────────────────────────────────────────
 
 fn step_button(r: record, name: string, enabled: bool) -> bool
   let t = get _t
   let p = bloom.probe(r, enabled)
-  // Hold to repeat: after a pause, then steadily.
+  # Hold to repeat: after a pause, then steadily.
   state held = 0.0
   state fired = 0
   let rep = false
@@ -298,8 +298,8 @@ fn step_button(r: record, name: string, enabled: bool) -> bool
   p.click || rep
 end
 
-// Returns -1, 0 or +1: which way to step. The number in the middle rolls in
-// the direction it changed.
+# Returns -1, 0 or +1: which way to step. The number in the middle rolls in
+# the direction it changed.
 pub fn stepper(key: string, r: record, label: string, value: num, can_down: bool, can_up: bool, enabled: bool) -> int
   let t = get _t
   let e = anim(flag(enabled), 16.0)
@@ -325,7 +325,7 @@ pub fn stepper(key: string, r: record, label: string, value: num, can_down: bool
   delta
 end
 
-// ── Swatches ───────────────────────────────────────────────────────────────
+# ── Swatches ───────────────────────────────────────────────────────────────
 
 pub fn swatch_width(n: num) -> num
   n * 24 + (n - 1) * 8
@@ -358,13 +358,13 @@ pub fn swatches(key: string, r: record, colors: list, index: num, enabled: bool)
   chosen
 end
 
-// ── Radio list ─────────────────────────────────────────────────────────────
+# ── Radio list ─────────────────────────────────────────────────────────────
 
 pub fn radio_height(n: num) -> num
   n * 44 * (get _t).scale
 end
 
-// One row per option, each with a line of explanation.
+# One row per option, each with a line of explanation.
 pub fn radios(key: string, r: record, labels: list, notes: list, index: num, enabled: bool) -> int
   let t = get _t
   let e = anim(flag(enabled), 16.0)
@@ -401,11 +401,11 @@ pub fn radios(key: string, r: record, labels: list, notes: list, index: num, ena
   chosen
 end
 
-// ── Text input ─────────────────────────────────────────────────────────────
+# ── Text input ─────────────────────────────────────────────────────────────
 
-// Who holds the keyboard after a prelude field ran, as the app's own `focus`
-// id: a press inside the field takes it (`has_focus` says so afterwards), a
-// press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
+# Who holds the keyboard after a prelude field ran, as the app's own `focus`
+# id: a press inside the field takes it (`has_focus` says so afterwards), a
+# press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
 fn field_focus(key: string, focus: string, had: bool, pointer: bool) -> string
   if !pointer || !mouse_pressed(0) then focus
   elsif has_focus(key) then key
@@ -414,10 +414,10 @@ fn field_focus(key: string, focus: string, had: bool, pointer: bool) -> string
   end
 end
 
-// The editing is the `ui` prelude's `text_field_update`: caret, selection,
-// clipboard, word movement and undo. The paint is ours. `focus` is the id of
-// the field holding the keyboard ("" for none); the result's `focus` is the
-// id that holds it afterwards.
+# The editing is the `ui` prelude's `text_field_update`: caret, selection,
+# clipboard, word movement and undo. The paint is ours. `focus` is the id of
+# the field holding the keyboard ("" for none); the result's `focus` is the
+# id that holds it afterwards.
 pub fn input(key: string, r: record, buf: string, focus: string, o: record) -> record
   let t = get _t
   let enabled = field(o, "enabled", true)
@@ -437,7 +437,7 @@ pub fn input(key: string, r: record, buf: string, focus: string, o: record) -> r
   let radius = min(int(t.radius), int(r.h / 2))
   let edge = mix(mix(mix(t.line, t.text, 0.16 * p.hot), t.accent, k), t.danger, b)
   if k > 0.02 then
-    // The focus ring blooms outside the box, so focus never resizes it.
+    # The focus ring blooms outside the box, so focus never resizes it.
     let g = 3.0 * k
     draw_rect_rounded(Rect(r.x - g, r.y - g, r.w + g * 2.0, r.h + g * 2.0), radius + int(g),
       mix(t.accent, t.danger, b), int(70 * k))
@@ -461,10 +461,10 @@ pub fn input(key: string, r: record, buf: string, focus: string, o: record) -> r
     draw_text(res.text, {x: tx, y: ty}, ts(13, fade(t.text, e)))
   end
   if has then
-    // The caret holds steady while you type, blinks once you stop, and after
-    // a few seconds comes to rest lit.
-    // Per call path, not per field: only the focused field reaches this, and
-    // if its row moves the caret just restarts lit, which is what typing does.
+    # The caret holds steady while you type, blinks once you stop, and after
+    # a few seconds comes to rest lit.
+    # Per call path, not per field: only the focused field reaches this, and
+    # if its row moves the caret just restarts lit, which is what typing does.
     state rest = 0.0
     rest = if res.changed || text_input() != "" then 0.0 else rest + min(dt(), 0.05) end
     if rest > 6.0 || fract(rest * 0.9) < 0.58 then
@@ -472,7 +472,7 @@ pub fn input(key: string, r: record, buf: string, focus: string, o: record) -> r
       draw_line({x: cx, y: base - m.cap_height - 3.0}, {x: cx, y: base + m.descent + 1.0},
         mix(t.accent, t.danger, b), 255, 1.6)
     end
-    // Keep ticking while it blinks, then let the panel sleep on a lit caret.
+    # Keep ticking while it blinks, then let the panel sleep on a lit caret.
     if rest < 6.5 then
       set _busy = true
     end
@@ -481,10 +481,10 @@ pub fn input(key: string, r: record, buf: string, focus: string, o: record) -> r
   {text: res.text, focus: owner, has: has, submitted: res.submitted, changed: res.changed}
 end
 
-// ── Small buttons ──────────────────────────────────────────────────────────
+# ── Small buttons ──────────────────────────────────────────────────────────
 
-// A borderless icon button that shows a face only while hovered. `draw` is
-// the glyph: a function of (rect, color).
+# A borderless icon button that shows a face only while hovered. `draw` is
+# the glyph: a function of (rect, color).
 pub fn icon_button(r: record, draw: function, enabled: bool) -> bool
   let t = get _t
   let p = bloom.probe(r, enabled)
@@ -496,7 +496,7 @@ pub fn icon_button(r: record, draw: function, enabled: bool) -> bool
   p.click
 end
 
-// A key cap, for the hint bar. Returns the x after it.
+# A key cap, for the hint bar. Returns the x after it.
 pub fn keycap(x: num, y: num, label: string) -> num
   let t = get _t
   let style = ts(11, t.muted)

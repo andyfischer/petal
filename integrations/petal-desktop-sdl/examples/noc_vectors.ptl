@@ -1,6 +1,6 @@
-// Nature of Code - Vectors & Motion
-// Inspired by Chapter 1: Vectors
-// Balls with velocity and acceleration, attracted to the mouse
+# Nature of Code - Vectors & Motion
+# Inspired by Chapter 1: Vectors
+# Balls with velocity and acceleration, attracted to the mouse
 
 import ui
 
@@ -12,7 +12,7 @@ let sw = float(screen_width())
 let sh = float(screen_height())
 time += delta
 
-// Initialize movers
+# Initialize movers
 if len(movers) == 0 then
   for i in range(0, 20) do
     let mass = 1.0 + random(0.0, 3.0)
@@ -32,10 +32,10 @@ end
 let mx = float(mouse_x())
 let my = float(mouse_y())
 
-// Update movers
+# Update movers
 let new_movers = []
 for m in movers do
-  // Acceleration toward mouse
+  # Acceleration toward mouse
   let dx = mx - m.x
   let dy = my - m.y
   let dist = sqrt(dx * dx + dy * dy) + 1.0
@@ -44,11 +44,11 @@ for m in movers do
   let ax = dx / dist * force / m.mass
   let ay = dy / dist * force / m.mass
 
-  // Update velocity
+  # Update velocity
   let nvx = (m.vx + ax * delta) * 0.998
   let nvy = (m.vy + ay * delta) * 0.998
 
-  // Limit speed
+  # Limit speed
   let speed = sqrt(nvx * nvx + nvy * nvy)
   let max_speed = 400.0 / m.mass
   if speed > max_speed then
@@ -56,11 +56,11 @@ for m in movers do
     nvy = nvy / speed * max_speed
   end
 
-  // Update position
+  # Update position
   let nx = m.x + nvx * delta
   let ny = m.y + nvy * delta
 
-  // Bounce off edges
+  # Bounce off edges
   if nx < 0.0 || nx > sw then nvx = -nvx * 0.8; nx = max(0.0, min(sw, nx)) end
   if ny < 0.0 || ny > sh then nvy = -nvy * 0.8; ny = max(0.0, min(sh, ny)) end
 
@@ -71,10 +71,10 @@ for m in movers do
 end
 movers = new_movers
 
-// === Drawing ===
+# === Drawing ===
 clear(15, 15, 25)
 
-// Draw connection lines between nearby movers
+# Draw connection lines between nearby movers
 for i in range(0, len(movers)) do
   for j in range(i + 1, len(movers)) do
     let a = movers[i]
@@ -89,12 +89,12 @@ for i in range(0, len(movers)) do
   end
 end
 
-// Draw movers
+# Draw movers
 for m in movers do
   let radius = int(m.mass * 6.0)
   let speed = sqrt(m.vx * m.vx + m.vy * m.vy)
 
-  // Velocity line
+  # Velocity line
   let vlen = min(30.0, speed * 0.1)
   let vdist = sqrt(m.vx * m.vx + m.vy * m.vy) + 0.1
   draw_line(int(m.x), int(m.y),
@@ -102,16 +102,16 @@ for m in movers do
     int(m.y + m.vy / vdist * vlen),
     100, 200, 100)
 
-  // Glow
+  # Glow
   draw_circle(cx: int(m.x), cy: int(m.y), radius: radius + 4, r: m.r / 4, g: m.g / 4, b: m.b / 4)
-  // Body
+  # Body
   draw_circle(cx: int(m.x), cy: int(m.y), radius: radius, r: m.r, g: m.g, b: m.b)
-  // Highlight
+  # Highlight
   draw_circle(cx: int(m.x) - radius / 3, cy: int(m.y) - radius / 3, radius: max(2, radius / 3),
     r: min(255, m.r + 80), g: min(255, m.g + 80), b: min(255, m.b + 80))
 end
 
-// Mouse indicator
+# Mouse indicator
 draw_circle(cx: int(mx), cy: int(my), radius: 6, r: 255, g: 255, b: 100)
 draw_circle(cx: int(mx), cy: int(my), radius: 3, r: 255, g: 255, b: 255)
 

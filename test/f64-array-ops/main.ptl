@@ -1,4 +1,4 @@
-// f64 array set / swap, each copy-on-writing the backing store.
+# f64 array set / swap, each copy-on-writing the backing store.
 let a = f64_array(5)
 let b = set_at(a, 0, 1.5)
 let c = set_at(b, 4, 9.5)

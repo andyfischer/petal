@@ -1,30 +1,30 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// ORBITAL — live fleet telemetry
-//
-// A Garden panel app: an 18-host server-monitoring console. A simulated metric
-// stream advances on a fixed tick; the fleet column, the four KPI tiles, the
-// main streaming chart, the per-core utilization heatmap and the alert feed all
-// read the same signal. Alerts are raised and resolved by threshold crossings
-// as the stream moves.
-//
-//   Run:  GARDEN_HEADLESS_SIZE=1440x900 garden --headless --debug-port 0 \
-//             --init layout.ptl
-//
-//   Keys: up/down/j/k  select host      1-4  select metric
-//         space  pause / resume         a    acknowledge all alerts
-//         [ / ]  slower / faster stream
-//   Mouse: click a host row, a KPI tile or an alert; hover the chart for a
-//          crosshair readout; wheel over the fleet column or the alert feed.
-// ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# ORBITAL — live fleet telemetry
+#
+# A Garden panel app: an 18-host server-monitoring console. A simulated metric
+# stream advances on a fixed tick; the fleet column, the four KPI tiles, the
+# main streaming chart, the per-core utilization heatmap and the alert feed all
+# read the same signal. Alerts are raised and resolved by threshold crossings
+# as the stream moves.
+#
+#   Run:  GARDEN_HEADLESS_SIZE=1440x900 garden --headless --debug-port 0 \
+#             --init layout.ptl
+#
+#   Keys: up/down/j/k  select host      1-4  select metric
+#         space  pause / resume         a    acknowledge all alerts
+#         [ / ]  slower / faster stream
+#   Mouse: click a host row, a KPI tile or an alert; hover the chart for a
+#          crosshair readout; wheel over the fleet column or the alert feed.
+# ─────────────────────────────────────────────────────────────────────────────
 
 import ui
 import bloom
 import color
 import noise
 
-// ── Palette ──────────────────────────────────────────────────────────────────
-// A single blue-black ground with three surfaces above it. The hairline is the
-// only border in the design — cards are separated by tone and space, not boxes.
+# ── Palette ──────────────────────────────────────────────────────────────────
+# A single blue-black ground with three surfaces above it. The hairline is the
+# only border in the design — cards are separated by tone and space, not boxes.
 let BG       = :0a0d13
 let SURFACE  = :10141c
 let RAISED   = :171d28
@@ -46,23 +46,23 @@ let C_MEM    = :a78bfa
 let C_NET    = :46d39a
 let C_LAT    = :f0b344
 
-// Spacing scale.
+# Spacing scale.
 let S1 = 6
 let S2 = 12
 let S3 = 18
 let S4 = 24
 let S5 = 32
 
-// Type scale. Five sizes only: the host rasterizes one glyph per
-// (character, size) into a fixed atlas, and a dense page spread over many
-// sizes overflows it.
+# Type scale. Five sizes only: the host rasterizes one glyph per
+# (character, size) into a fixed atlas, and a dense page spread over many
+# sizes overflows it.
 let T_MICRO = 10
 let T_SMALL = 12
 let T_BODY  = 14
 let T_LEAD  = 20
 let T_HERO  = 28
 
-// ── Text helpers ─────────────────────────────────────────────────────────────
+# ── Text helpers ─────────────────────────────────────────────────────────────
 
 fn tx(s: string, x: num, y: num, size: num, c: record)
   draw_text(s, pos: {x: x, y: y}, style: {size: size, color: c})
@@ -80,14 +80,14 @@ fn tx_center(s: string, cx: num, y: num, size: num, c: record)
   draw_text(s, pos: {x: cx - text_width(s, size) / 2.0, y: y}, style: {size: size, color: c})
 end
 
-// Small-caps section label: the one place letter-spacing earns its keep.
+# Small-caps section label: the one place letter-spacing earns its keep.
 fn label_caps(s: string, x: num, y: num, c: record)
   draw_text(upper(s), pos: {x: x, y: y}, style: {size: T_MICRO, color: c, spacing: 1.4})
 end
 
-// ── Number formatting ────────────────────────────────────────────────────────
+# ── Number formatting ────────────────────────────────────────────────────────
 
-// Fixed-point without a printf. `str(12.3)` gives 12.300000000000001.
+# Fixed-point without a printf. `str(12.3)` gives 12.300000000000001.
 fn dec(x: num, places: num) -> string
   let mul = 1
   for i in range(0, places) do
@@ -145,8 +145,8 @@ fn ago(secs: num) -> string
   end
 end
 
-// ── Metric metadata ──────────────────────────────────────────────────────────
-// Index order is the wire order everywhere: 0 cpu, 1 mem, 2 net, 3 lat.
+# ── Metric metadata ──────────────────────────────────────────────────────────
+# Index order is the wire order everywhere: 0 cpu, 1 mem, 2 net, 3 lat.
 
 let M_NAME  = ["cpu", "memory", "network", "p95 latency"]
 let M_SHORT = ["CPU", "MEM", "NET", "P95"]
@@ -165,7 +165,7 @@ fn fmt_bare(m: num, v: num) -> string
   dec(v, M_DEC[m])
 end
 
-// 0 nominal · 1 warning · 2 critical
+# 0 nominal · 1 warning · 2 critical
 fn level_of(m: num, v: num) -> int
   if v >= M_CRIT[m] then 2
   elsif v >= M_WARN[m] then 1
@@ -181,10 +181,10 @@ fn level_word(lv: num) -> string
   if lv == 2 then "critical" elsif lv == 1 then "warning" else "nominal" end
 end
 
-// Alerting level *with hysteresis*: a metric climbs a band the moment it
-// crosses, but has to fall a few percent below the line to leave it again.
-// Without this a series sitting on a threshold flaps, and the feed fills with
-// alternating "crossed" / "recovered" rows saying nothing.
+# Alerting level *with hysteresis*: a metric climbs a band the moment it
+# crosses, but has to fall a few percent below the line to leave it again.
+# Without this a series sitting on a threshold flaps, and the feed fills with
+# alternating "crossed" / "recovered" rows saying nothing.
 fn level_hyst(m: num, v: num, prev: num)
   let raw = level_of(m, v)
   if raw >= prev then
@@ -198,16 +198,16 @@ fn level_hyst(m: num, v: num, prev: num)
   end
 end
 
-// The same three levels read differently in a log: level 0 arrived there by
-// coming back down, so it is "resolved" rather than "nominal".
+# The same three levels read differently in a log: level 0 arrived there by
+# coming back down, so it is "resolved" rather than "nominal".
 fn sev_word(lv: num) -> string
   if lv == 2 then "critical" elsif lv == 1 then "warning" else "resolved" end
 end
 
-// ── The fleet ────────────────────────────────────────────────────────────────
-// Plausible seeded inventory. `base`/`amp` set each host's resting level and
-// swing per metric; `hot` adds a slow, occasional surge — that is what pushes a
-// host over a threshold and puts a row in the alert feed.
+# ── The fleet ────────────────────────────────────────────────────────────────
+# Plausible seeded inventory. `base`/`amp` set each host's resting level and
+# swing per metric; `hot` adds a slow, occasional surge — that is what pushes a
+# host over a threshold and puts a row in the alert feed.
 
 class Host
   name: string,
@@ -242,11 +242,11 @@ let HOSTS = [
 
 let NHOST = len(HOSTS)
 
-// ── The signal ───────────────────────────────────────────────────────────────
-// The stream is a *pure function* of the tick index rather than a stored
-// buffer: three octaves of Perlin noise per (host, metric), plus an occasional
-// slow surge. So "history" is just sample(h, m, tick - k) — no ring buffers to
-// maintain, and every chart can look as far back as it likes.
+# ── The signal ───────────────────────────────────────────────────────────────
+# The stream is a *pure function* of the tick index rather than a stored
+# buffer: three octaves of Perlin noise per (host, metric), plus an occasional
+# slow surge. So "history" is just sample(h, m, tick - k) — no ring buffers to
+# maintain, and every chart can look as far back as it likes.
 
 noise_seed(20260808)
 
@@ -271,7 +271,7 @@ fn core_load(h: record, core: num, i: num)
   clamp(cpu + (n - 0.5) * 52.0, lo: 0.0, hi: 100.0)
 end
 
-// Worst level across all four metrics — the fleet row's status dot.
+# Worst level across all four metrics — the fleet row's status dot.
 fn host_level(h: record, i: num) -> int
   let worst = 0
   for m in range(0, 4) do
@@ -283,25 +283,25 @@ fn host_level(h: record, i: num) -> int
   worst
 end
 
-// ── Persistent state ─────────────────────────────────────────────────────────
+# ── Persistent state ─────────────────────────────────────────────────────────
 
-state tick = 0            // stream position, one sample == one simulated second
-state acc = 0.0           // dt accumulator
+state tick = 0            # stream position, one sample == one simulated second
+state acc = 0.0           # dt accumulator
 state paused = false
-state rate = 2            // index into RATES
-state sel_host = 1        // atlas-02 — the host that surges first
+state rate = 2            # index into RATES
+state sel_host = 1        # atlas-02 — the host that surges first
 state sel_metric = 0
 state fleet = list_state()
 state alerts_scroll = 0
-state ack_count = 0       // counted key edges, so /state can observe them
+state ack_count = 0       # counted key edges, so /state can observe them
 state pause_toggles = 0
 
 let RATES = [0.60, 0.35, 0.20, 0.10]
 let RATE_NAME = ["0.5x", "1x", "2x", "4x"]
 
-// Alert records: {t, sev, host, metric, text, ack}
-// Seeded with a little history so the feed reads as a running log, not an
-// empty box waiting for the first threshold crossing.
+# Alert records: {t, sev, host, metric, text, ack}
+# Seeded with a little history so the feed reads as a running log, not an
+# empty box waiting for the first threshold crossing.
 state alerts = [
   {t: -34,  sev: 1, host: 13, metric: 3, text: "p95 latency crossed the 170 ms warning line", ack: false},
   {t: -96,  sev: 0, host: 5,  metric: 1, text: "memory recovered — back inside limits", ack: true},
@@ -309,8 +309,8 @@ state alerts = [
   {t: -309, sev: 1, host: 8,  metric: 0, text: "cpu crossed the 78% warning line", ack: true},
 ]
 
-// Per (host, metric) threshold level as of the last tick, so a crossing fires
-// exactly once instead of every frame it stays over the line.
+# Per (host, metric) threshold level as of the last tick, so a crossing fires
+# exactly once instead of every frame it stays over the line.
 state levels = for si in range(0, NHOST) do
   let row = for m in range(0, 4) do
     level_of(m, sample(h: HOSTS[si], m: m, i: 0))
@@ -318,7 +318,7 @@ state levels = for si in range(0, NHOST) do
   row
 end
 
-// ── Input · stream advance ───────────────────────────────────────────────────
+# ── Input · stream advance ───────────────────────────────────────────────────
 
 let w = screen_width()
 let h = screen_height()
@@ -354,7 +354,7 @@ if !paused then
     tick = tick + 1
     advanced = advanced + 1
 
-    // Re-evaluate every threshold at the new sample.
+    # Re-evaluate every threshold at the new sample.
     let next_levels = for si in range(0, NHOST) do
       let row = for m in range(0, 4) do
         level_hyst(m, v: sample(h: HOSTS[si], m: m, i: tick), prev: levels[si][m])
@@ -399,7 +399,7 @@ for al in alerts do
   if !al.ack then open_alerts = open_alerts + 1 end
 end
 
-// ── Layout ───────────────────────────────────────────────────────────────────
+# ── Layout ───────────────────────────────────────────────────────────────────
 
 let PAD = S4
 let HEAD_H = 76
@@ -416,9 +416,9 @@ let tile_h = 104
 let tile_gap = S3 - 2
 let tile_w = (right_w - 3 * tile_gap) / 4
 
-// The right column is height-driven: tiles and the bottom row take a fixed
-// share and the streaming chart absorbs whatever is left, so the whole page
-// still lands inside the pane when Garden hands us 828px instead of 900.
+# The right column is height-driven: tiles and the bottom row take a fixed
+# share and the streaming chart absorbs whatever is left, so the whole page
+# still lands inside the pane when Garden hands us 828px instead of 900.
 let low_h = clamp(body_h * 0.36, lo: 262.0, hi: 306.0)
 let chart_y = body_y + tile_h + S4
 let chart_h = body_h - tile_h - low_h - 2 * S4
@@ -431,7 +431,7 @@ let alerts_r = rect(right_x + cores_w + S3 + 2, low_y, right_w - cores_w - S3 - 
 
 clear(BG.r, BG.g, BG.b)
 
-// ── Chrome helpers ───────────────────────────────────────────────────────────
+# ── Chrome helpers ───────────────────────────────────────────────────────────
 
 fn card(r: record)
   draw_rect_rounded(r, radius: 10, c: SURFACE)
@@ -447,8 +447,8 @@ fn dashed_h(x0: num, x1: num, y: num, c: record, a: num)
   end
 end
 
-// A tiny sparkline: `n` samples ending at `end_i`, autoscaled to its own range
-// so a flat-but-high series still shows its shape.
+# A tiny sparkline: `n` samples ending at `end_i`, autoscaled to its own range
+# so a flat-but-high series still shows its shape.
 fn sparkline(r: record, hst: record, m: num, end_i: num, n: num, c: record, fill_a: num)
   let lo = 1000000000.0
   let hi = -1000000000.0
@@ -479,12 +479,12 @@ fn sparkline(r: record, hst: record, m: num, end_i: num, n: num, c: record, fill
   draw_circle(cx: px, cy: py, radius: 2.0, r: c.r, g: c.g, b: c.b, a: 255)
 end
 
-// ── Header ───────────────────────────────────────────────────────────────────
+# ── Header ───────────────────────────────────────────────────────────────────
 
 draw_rect(x: 0, y: 0, w: w, h: HEAD_H, r: SURFACE.r, g: SURFACE.g, b: SURFACE.b)
 draw_line(x1: 0, y1: HEAD_H, x2: w, y2: HEAD_H, r: HAIR.r, g: HAIR.g, b: HAIR.b, a: 255, width: 1)
 
-// Wordmark: a ring with an orbiting dot.
+# Wordmark: a ring with an orbiting dot.
 let mark_x = PAD + 12.0
 let mark_y = 38.0
 draw_circle(cx: mark_x, cy: mark_y, radius: 11.0, r: C_CPU.r, g: C_CPU.g, b: C_CPU.b, a: 34)
@@ -497,7 +497,7 @@ label_caps("fleet telemetry", x: mark_x + 24.0, y: 45.0, c: FAINT)
 
 draw_line(x1: mark_x + 168.0, y1: 22.0, x2: mark_x + 168.0, y2: 54.0, r: HAIR.r, g: HAIR.g, b: HAIR.b, a: 255, width: 1)
 
-// Cluster identity + counts.
+# Cluster identity + counts.
 let warn_hosts = 0
 let crit_hosts = 0
 for hi in range(0, NHOST) do
@@ -518,7 +518,7 @@ head_stat(label: "healthy", value: str(ok_hosts), c: OK, x: stat_x, y: 38.0)
 head_stat(label: "warning", value: str(warn_hosts), c: WARN, x: stat_x + 86.0, y: 38.0)
 head_stat(label: "critical", value: str(crit_hosts), c: CRIT, x: stat_x + 172.0, y: 38.0)
 
-// Aggregate throughput, derived from every host's network sample.
+# Aggregate throughput, derived from every host's network sample.
 let cluster_net = 0.0
 for hi in range(0, NHOST) do
   cluster_net = cluster_net + sample(h: HOSTS[hi], m: 2, i: tick)
@@ -528,7 +528,7 @@ head_stat(label: "requests / sec", value: commas(rps), c: TEXT, x: stat_x + 268.
 head_stat(label: "stream clock", value: uptime, c: TEXT, x: stat_x + 428.0, y: 38.0)
 head_stat(label: "open alerts", value: str(open_alerts), c: if open_alerts > 0 then WARN else DIM end, x: stat_x + 576.0, y: 38.0)
 
-// Live / paused pill, on the right.
+# Live / paused pill, on the right.
 let pill_w = 96.0
 let pill_r = rect(w - PAD - pill_w, 22.0, pill_w, 32.0)
 let pill_c = if paused then WARN else OK end
@@ -548,7 +548,7 @@ if ui.clicked(pill_r) then
   pause_toggles = pause_toggles + 1
 end
 
-// ── Fleet column ─────────────────────────────────────────────────────────────
+# ── Fleet column ─────────────────────────────────────────────────────────────
 
 let FOOT_H = 78
 let list_top = body_y + 34
@@ -592,11 +592,11 @@ for k in range(0, VIS_ROWS) do
       draw_line(x1: rr.x + 14, y1: rr.y, x2: rr.x + rr.w - 14, y2: rr.y, r: HAIR.r, g: HAIR.g, b: HAIR.b, a: 150, width: 1)
     end
 
-    // Vertical rhythm inside the row is derived from its height, so the list
-    // can absorb the leftover pixels the pane's height leaves over.
+    # Vertical rhythm inside the row is derived from its height, so the list
+    # can absorb the leftover pixels the pane's height leaves over.
     let ry = rr.y + float(ROW_H - 40) / 2.0
 
-    // Status dot, haloed when it is not nominal.
+    # Status dot, haloed when it is not nominal.
     if lv > 0 then
       draw_circle(cx: rr.x + 20.0, cy: ry + 12.0, radius: 7.0, r: lc.r, g: lc.g, b: lc.b, a: 40)
     end
@@ -615,7 +615,7 @@ end
 clip_none()
 bloom.scrollbar(list_r, count: NHOST, rows: VIS_ROWS, scroll: fleet.scroll)
 
-// Fleet footer: the cluster's own load, as one bar per level band.
+# Fleet footer: the cluster's own load, as one bar per level band.
 draw_rect_rounded(foot_r, radius: 10, c: SURFACE)
 label_caps("cluster " ++ M_NAME[sel_metric], x: foot_r.x + 14, y: foot_r.y + 12, c: DIM)
 let agg = 0.0
@@ -633,7 +633,7 @@ draw_rect_rounded(rect(bar.x, bar.y, bar.w * frac, bar.h), radius: 3, c: M_COLOR
 draw_rect(rect(bar.x + bar.w * (M_WARN[sel_metric] / M_MAX[sel_metric]), bar.y - 4, 1, bar.h + 8), c: WARN, a: 170)
 draw_rect(rect(bar.x + bar.w * (M_CRIT[sel_metric] / M_MAX[sel_metric]), bar.y - 4, 1, bar.h + 8), c: CRIT, a: 170)
 
-// ── KPI tiles ────────────────────────────────────────────────────────────────
+# ── KPI tiles ────────────────────────────────────────────────────────────────
 
 let host = HOSTS[sel_host]
 
@@ -655,7 +655,7 @@ for m in range(0, 4) do
   tx(vs, x: tr.x + 14, y: tr.y + 28, size: T_HERO, c: if lv > 0 then level_color(lv) else TEXT end)
   tx(M_UNIT[m], x: tr.x + 16 + text_width(vs, T_HERO), y: tr.y + 46, size: T_SMALL, c: FAINT)
 
-  // Delta against 20 samples ago.
+  # Delta against 20 samples ago.
   let d = v - prev
   let dpct = if prev > 0.001 then d / prev * 100.0 else 0.0 end
   let up = d >= 0.0
@@ -671,7 +671,7 @@ for m in range(0, 4) do
   end
 end
 
-// ── Main streaming chart ─────────────────────────────────────────────────────
+# ── Main streaming chart ─────────────────────────────────────────────────────
 
 card(chart_r)
 
@@ -683,7 +683,7 @@ let cur_lv = level_of(sel_metric, cur)
 tx(host.name, x: chart_r.x + S4, y: chart_r.y + 16, size: T_BODY, c: TEXT)
 label_caps(M_NAME[sel_metric] ++ "  ·  last " ++ str(WINDOW) ++ "s", x: chart_r.x + S4, y: chart_r.y + 37, c: DIM)
 
-// Window statistics, computed once and reused by the axis.
+# Window statistics, computed once and reused by the axis.
 let lo = 1000000000.0
 let hi = -1000000000.0
 let sum = 0.0
@@ -716,18 +716,18 @@ let unit_str = M_UNIT[sel_metric]
 let hero_right = chart_r.x + chart_r.w - S4
 tx_right(unit_str, right_x: hero_right, y: chart_r.y + 26, size: T_SMALL, c: FAINT)
 tx_right(cur_str, right_x: hero_right - text_width(unit_str, T_SMALL) - 2, y: chart_r.y + 8, size: T_HERO, c: cur_c)
-// `text_width` takes the same style record `draw_text` does, so a letter-spaced
-// label right-aligns exactly — no manual allowance for the tracking.
+# `text_width` takes the same style record `draw_text` does, so a letter-spaced
+# label right-aligns exactly — no manual allowance for the tracking.
 let lw = upper(level_word(cur_lv))
 let lw_style = {size: T_MICRO, color: if cur_lv > 0 then cur_c else FAINT end, spacing: 1.4}
 draw_text(lw, pos: {x: hero_right - text_width(lw, lw_style), y: chart_r.y + 46}, style: lw_style)
 
-// Plot area.
+# Plot area.
 let plot = rect(chart_r.x + 66, chart_r.y + 72, chart_r.w - 66 - S4 - 4, chart_r.h - 72 - 40)
 
-// The scale reaches up to the warning line *when the series is near it*, so
-// the threshold reads as real headroom — but a quiet host is not squashed into
-// the bottom third of the card to make room for a line it will never touch.
+# The scale reaches up to the warning line *when the series is near it*, so
+# the threshold reads as real headroom — but a quiet host is not squashed into
+# the bottom third of the card to make room for a line it will never touch.
 let head = hi * 1.10
 let vmax = if hi > M_WARN[sel_metric] * 0.80 then
   min(max(head, M_WARN[sel_metric] * 1.06), M_MAX[sel_metric])
@@ -740,7 +740,7 @@ fn plot_y(p: record, v: num, vmin: num, vmax: num)
   p.y + p.h - (v - vmin) / (vmax - vmin) * p.h
 end
 
-// Horizontal grid + y labels.
+# Horizontal grid + y labels.
 for g in range(0, 5) do
   let gv = vmin + (vmax - vmin) * float(g) / 4.0
   let gy = plot_y(p: plot, v: gv, vmin: vmin, vmax: vmax)
@@ -748,7 +748,7 @@ for g in range(0, 5) do
   tx_right(fmt_bare(sel_metric, gv), right_x: plot.x - 10, y: gy - 6, size: T_MICRO, c: FAINT)
 end
 
-// Vertical grid + time labels.
+# Vertical grid + time labels.
 let stepx = plot.w / float(WINDOW - 1)
 for g in range(0, 5) do
   let k = (WINDOW - 1) * g / 4
@@ -759,7 +759,7 @@ for g in range(0, 5) do
   tx_center(lbl, cx: gx, y: plot.y + plot.h + 12, size: T_MICRO, c: FAINT)
 end
 
-// Threshold lines.
+# Threshold lines.
 if M_WARN[sel_metric] > vmin && M_WARN[sel_metric] < vmax then
   let wy = plot_y(p: plot, v: M_WARN[sel_metric], vmin: vmin, vmax: vmax)
   dashed_h(plot.x, plot.x + plot.w, y: wy, c: WARN, a: 110)
@@ -771,16 +771,16 @@ if M_CRIT[sel_metric] > vmin && M_CRIT[sel_metric] < vmax then
   tx("crit", x: plot.x + plot.w - 30, y: cy2 - 13, size: T_MICRO, c: CRIT, spacing: 0)
 end
 
-// Area + line. One convex quad per segment gives the fill; the stroke rides on
-// top of it.
+# Area + line. One convex quad per segment gives the fill; the stroke rides on
+# top of it.
 let px = 0.0
 let py = 0.0
 for k in range(0, WINDOW) do
   let x = plot.x + stepx * float(k)
   let y = plot_y(p: plot, v: series[k], vmin: vmin, vmax: vmax)
   if k > 0 then
-    // Two passes make a cheap vertical gradient: a wash all the way down to the
-    // baseline, and a denser band hugging the curve.
+    # Two passes make a cheap vertical gradient: a wash all the way down to the
+    # baseline, and a denser band hugging the curve.
     let base = plot.y + plot.h
     fill_poly(points: [[px, py], [x, y], [x, base], [px, base]], r: mc.r, g: mc.g, b: mc.b, a: 13)
     fill_poly(points: [[px, py], [x, y],
@@ -792,14 +792,14 @@ for k in range(0, WINDOW) do
   py = y
 end
 
-// The live head of the series.
+# The live head of the series.
 draw_circle(cx: px, cy: py, radius: 5.0, r: mc.r, g: mc.g, b: mc.b, a: 60)
 draw_circle(cx: px, cy: py, radius: 2.6, r: BRIGHT.r, g: BRIGHT.g, b: BRIGHT.b, a: 255)
 
-// Hover crosshair.
+# Hover crosshair.
 let hover_k = -1
 if hovered(plot) then
-  // `clamp` promotes to float, and a float is not a list index.
+  # `clamp` promotes to float, and a float is not a list index.
   hover_k = int(clamp(round((mouse_x() - plot.x) / stepx), lo: 0.0, hi: float(WINDOW - 1)))
   let hx = plot.x + stepx * float(hover_k)
   let hv = series[hover_k]
@@ -822,7 +822,7 @@ if hovered(plot) then
   tx(l2, x: tipr.x + 18, y: tipr.y + 30, size: T_MICRO, c: FAINT)
 end
 
-// ── Per-core heatmap ─────────────────────────────────────────────────────────
+# ── Per-core heatmap ─────────────────────────────────────────────────────────
 
 card(cores_r)
 let NCORE = 8
@@ -862,7 +862,7 @@ for c in range(0, NCORE) do
   end
 end
 
-// Ramp legend.
+# Ramp legend.
 let legend_y = grid_y + float(NCORE) * (cell_h + 3.0) + 12.0
 label_caps("0%", x: grid_x, y: legend_y + 3.0, c: FAINT)
 for k in range(0, 60) do
@@ -879,7 +879,7 @@ end
 tx_right("peak core " ++ dec(busiest, 1) ++ "%", right_x: cores_r.x + cores_r.w - S4, y: legend_y - 1.0, size: T_MICRO,
   c: if busiest >= 90.0 then CRIT elsif busiest >= 78.0 then WARN else DIM end)
 
-// ── Alert feed ───────────────────────────────────────────────────────────────
+# ── Alert feed ───────────────────────────────────────────────────────────────
 
 card(alerts_r)
 let unacked = open_alerts
@@ -893,8 +893,8 @@ end
 tx_right("a  ack all", right_x: alerts_r.x + alerts_r.w - S4, y: alerts_r.y + 16, size: T_MICRO, c: FAINT)
 
 let AROW_H = 52
-// Whole rows only: a half-row peeking under the clip reads as a rendering bug
-// rather than as "there is more below", which is what the scrollbar is for.
+# Whole rows only: a half-row peeking under the clip reads as a rendering bug
+# rather than as "there is more below", which is what the scrollbar is for.
 let a_vis = max(1, (int(alerts_r.h) - 46) / AROW_H)
 let feed_r = rect(alerts_r.x + 10, alerts_r.y + 38, alerts_r.w - 20, a_vis * AROW_H)
 alerts_scroll = scroll_update(offset: alerts_scroll, total_lines: len(alerts), visible_lines: a_vis, r: feed_r, active: false)
@@ -935,6 +935,6 @@ if len(alerts) == 0 then
 end
 bloom.scrollbar(feed_r, count: len(alerts), rows: a_vis, scroll: alerts_scroll)
 
-// ── Footer hint ──────────────────────────────────────────────────────────────
+# ── Footer hint ──────────────────────────────────────────────────────────────
 let hint = "↑↓ host    1-4 metric    space pause    [ ] rate    a ack"
 tx(hint, x: fleet_x + 2, y: h - 16, size: T_MICRO, c: FAINT, spacing: 0)

@@ -1,13 +1,13 @@
-// ─────────────────────────────────────────────────────────────────────────
-// Kanban — a drag-and-drop sprint board, drawn as a Garden panel.
-//
-// Exercises: columns, cards, declarative drag and drop (`ui/drag`) with the
-// other cards sliding out of the way, per-column pixel scrolling, keyboard
-// navigation and card movement, hover/selection states, and a typographic
-// hierarchy built only from size / color / spacing.
-//
-// Run:  garden --headless --debug-port 0 --init layout.ptl
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# Kanban — a drag-and-drop sprint board, drawn as a Garden panel.
+#
+# Exercises: columns, cards, declarative drag and drop (`ui/drag`) with the
+# other cards sliding out of the way, per-column pixel scrolling, keyboard
+# navigation and card movement, hover/selection states, and a typographic
+# hierarchy built only from size / color / spacing.
+#
+# Run:  garden --headless --debug-port 0 --init layout.ptl
+# ─────────────────────────────────────────────────────────────────────────
 
 import ui
 import ui/drag
@@ -18,10 +18,10 @@ class Card
   tag: string,
   who: string,
   pts: int,
-  pri: int,          // 0 = low, 1 = normal, 2 = urgent
+  pri: int,          # 0 = low, 1 = normal, 2 = urgent
 end
 
-// ── Palette ──────────────────────────────────────────────────────────────
+# ── Palette ──────────────────────────────────────────────────────────────
 
 let BG        = :0b0d12
 let SURFACE   = :12151d
@@ -76,7 +76,7 @@ fn pri_name(p: num) -> string
   if p == 2 then "urgent" elsif p == 1 then "normal" else "low" end
 end
 
-// ── Board state ──────────────────────────────────────────────────────────
+# ── Board state ──────────────────────────────────────────────────────────
 
 state cols = [
   [
@@ -105,7 +105,7 @@ state sel_id = "c6"
 state scrolls = [0, 0, 0, 0]
 state moves = 0
 
-// ── Layout metrics (recomputed every frame — the pane can resize) ─────────
+# ── Layout metrics (recomputed every frame — the pane can resize) ─────────
 
 let W = screen_width()
 let H = screen_height()
@@ -124,8 +124,8 @@ let INNER_W = COL_W - COL_PAD * 2
 let CARD_IN = INNER_W - CARD_PAD * 2
 let TITLE_SIZE = 14
 let TITLE_LH = 19
-// Measure ten glyphs, not one: the real advance is fractional (8.4px at 14),
-// and rounding it down per-character overestimates a line by several chars.
+# Measure ten glyphs, not one: the real advance is fractional (8.4px at 14),
+# and rounding it down per-character overestimates a line by several chars.
 let CHW10 = max(50, text_width("MMMMMMMMMM", TITLE_SIZE))
 let LINE_CHARS = max(8, CARD_IN * 10 / CHW10)
 
@@ -133,12 +133,12 @@ fn col_x(c: num) -> num
   M + c * (COL_W + GUT)
 end
 
-// The clipped card well one column's cards scroll inside.
+# The clipped card well one column's cards scroll inside.
 fn col_surf(c: num) -> Rect
   rect(col_x(c), SURF_TOP, COL_W, SURF_H)
 end
 
-// ── Small list surgery (lists are immutable values) ───────────────────────
+# ── Small list surgery (lists are immutable values) ───────────────────────
 
 fn list_remove(xs: list, k: num) -> list
   let out = []
@@ -176,10 +176,10 @@ fn find_card(cs: list, id: string) -> record
   out
 end
 
-// ── Card geometry ────────────────────────────────────────────────────────
+# ── Card geometry ────────────────────────────────────────────────────────
 
-// Each title's wrapped lines, worked out once a frame: the drag engine runs
-// the view once per board a drag can reach, and every one has these cards.
+# Each title's wrapped lines, worked out once a frame: the drag engine runs
+# the view once per board a drag can reach, and every one has these cards.
 let TITLE_LINES = Map()
 for col in cols do
   for card in col do
@@ -203,7 +203,7 @@ fn column_h(cards: list) -> int
   max(0, h - CARD_GAP)
 end
 
-// ── Drawing ──────────────────────────────────────────────────────────────
+# ── Drawing ──────────────────────────────────────────────────────────────
 
 fn draw_card(r: record, card: record, mode: string)
   if mode == "lift" then
@@ -225,7 +225,7 @@ fn draw_card(r: record, card: record, mode: string)
     draw_rect_rounded(rect(r.x + 1, r.y + 13, 3, r.h - 26), radius: 2, c: ACCENT)
   end
 
-  // Top row: tag pill on the left, priority dot on the right.
+  # Top row: tag pill on the left, priority dot on the right.
   let tc = tag_color(card.tag)
   let pw = text_width(card.tag, 10) + 16
   draw_rect_rounded(rect(r.x + CARD_PAD, r.y + CARD_PAD, pw, 17), radius: 8, c: tc, a: 38)
@@ -233,14 +233,14 @@ fn draw_card(r: record, card: record, mode: string)
   draw_circle(center: {x: r.x + r.w - CARD_PAD - 4, y: r.y + CARD_PAD + 8}, radius: 4,
     c: pri_color(card.pri))
 
-  // Title, one or two wrapped lines.
+  # Title, one or two wrapped lines.
   let lines = card_lines(card)
   let ty = r.y + CARD_PAD + 26
   for k in range(0, len(lines)) do
     draw_text(lines[k], {x: r.x + CARD_PAD, y: ty + k * TITLE_LH}, TITLE_SIZE, TEXT)
   end
 
-  // Footer: assignee chip, estimate.
+  # Footer: assignee chip, estimate.
   let fy = r.y + r.h - CARD_PAD - 20
   let wc = who_color(card.who)
   draw_circle({x: r.x + CARD_PAD + 10, y: fy + 10}, 10, wc, 46)
@@ -248,8 +248,8 @@ fn draw_card(r: record, card: record, mode: string)
   draw_text_right("{card.pts} pts", right_x: r.x + r.w - CARD_PAD, y: fy + 5, size: 11, c: FAINT)
 end
 
-// Soft edges where the well clips its cards, so a scrolled column reads as
-// continuing rather than as a card sliced in half.
+# Soft edges where the well clips its cards, so a scrolled column reads as
+# continuing rather than as a card sliced in half.
 fn draw_edge_fade(surf: record, content: num, off: num)
   let steps = 16
   for k in range(0, steps) do
@@ -272,11 +272,11 @@ fn draw_vscroll(surf: record, content: num, off: num)
   end
 end
 
-// ── The board, as a function of the columns ──────────────────────────────
-// Everything a drag can change comes from `cs`. The drag engine also runs it,
-// speculatively, on every board a drag can reach, so a card lands exactly
-// where this code would draw it. `sc` (the scrolls), `sel` (the selected id)
-// and `hover_id` only place the wells' contents and pick card styles.
+# ── The board, as a function of the columns ──────────────────────────────
+# Everything a drag can change comes from `cs`. The drag engine also runs it,
+# speculatively, on every board a drag can reach, so a card lands exactly
+# where this code would draw it. `sc` (the scrolls), `sel` (the selected id)
+# and `hover_id` only place the wells' contents and pick card styles.
 
 var hover_id = ""
 
@@ -289,7 +289,7 @@ fn view(cs: list, sc: list, sel: string)
     let surf = col_surf(c)
     let cnt = len(cs[c])
 
-    // Lane header, above the surface so the surface stays a clean card well.
+    # Lane header, above the surface so the surface stays a clean card well.
     draw_circle(center: {x: x + 6, y: BOARD_TOP + 12}, radius: 4, c: lane.color)
     draw_text(lane.name, pos: {x: x + 18, y: BOARD_TOP + 5},
       style: {size: 12, color: TEXT, spacing: 1})
@@ -299,7 +299,7 @@ fn view(cs: list, sc: list, sel: string)
       c: if over then DANGER else FAINT end)
     draw_rect(rect(x, BOARD_TOP + 24, COL_W, 2), c: lane.color, a: 90)
 
-    // Card well; mid-drag, the lane the card would land in is outlined.
+    # Card well; mid-drag, the lane the card would land in is outlined.
     draw_rect_rounded(surf, radius: 14, c: SURFACE)
     if c == tc then
       draw_rect_outline(surf, c: ACCENT, a: 70, width: 1)
@@ -309,8 +309,8 @@ fn view(cs: list, sc: list, sel: string)
     if cnt == 0 then
       draw_text_center("empty", cx: x + COL_W / 2, y: SURF_TOP + 26, size: 11, c: :333b47)
     end
-    // Cards ease to new slots relative to the scroll, so the wheel moves
-    // them at once while a reorder animates.
+    # Cards ease to new slots relative to the scroll, so the wheel moves
+    # them at once while a reorder animates.
     place_origin({x: 0, y: -sc[c]}, fn()
       let y = SURF_TOP + COL_PAD - sc[c]
       for card in cs[c] key card.id do
@@ -334,10 +334,10 @@ fn view(cs: list, sc: list, sel: string)
   nil
 end
 
-// ── Input ────────────────────────────────────────────────────────────────
+# ── Input ────────────────────────────────────────────────────────────────
 
-// The drag engine: a press on a card and a few pixels of travel pick it up;
-// releasing commits the board it previews.
+# The drag engine: a press on a card and a few pixels of travel pick it up;
+# releasing commits the board it previews.
 let d = drag_session(cols, fn(cs) view(cs, scrolls, sel_id) end)
 if d.dropped then
   cols = d.drop
@@ -347,7 +347,7 @@ end
 let mx = mouse_x()
 let my = mouse_y()
 
-// Which card is the pointer over, as drawn last frame? (Not mid-drag.)
+# Which card is the pointer over, as drawn last frame? (Not mid-drag.)
 if !d.active then
   for c in range(0, 4) do
     if point_in(px: mx, py: my, r: col_surf(c)) then
@@ -362,7 +362,7 @@ if !d.active then
 end
 let hit = get hover_id
 
-// Wheel scrolls the column under the pointer.
+# Wheel scrolls the column under the pointer.
 if scroll_y() != 0 && !d.active then
   for c in range(0, 4) do
     let surf = col_surf(c)
@@ -374,7 +374,7 @@ if scroll_y() != 0 && !d.active then
   end
 end
 
-// Press: select the card, or clear the selection on bare well space.
+# Press: select the card, or clear the selection on bare well space.
 if mouse_pressed(0) && hit != "" then
   sel_id = hit
 elsif mouse_pressed(0) then
@@ -389,11 +389,11 @@ elsif mouse_pressed(0) then
   end
 end
 
-// Keyboard: arrows select, shift+arrows move, 1-4 send, p cycles priority.
+# Keyboard: arrows select, shift+arrows move, 1-4 send, p cycles priority.
 let cur = find_card(cols, sel_id)
 let arrowed = key_pressed("up") || key_pressed("down") || key_pressed("left") || key_pressed("right")
 if cur.c < 0 && arrowed && len(cols[0]) > 0 then
-  // Nothing selected: the first arrow lands on the first card.
+  # Nothing selected: the first arrow lands on the first card.
   cur = {c: 0, i: 0}
   sel_id = cols[0][0].id
 elsif key_pressed("escape") then
@@ -448,7 +448,7 @@ for n in range(0, 4) do
   end
 end
 
-// Keyboard navigation keeps the selection on screen.
+# Keyboard navigation keeps the selection on screen.
 if arrowed || sent then
   let s2 = find_card(cols, sel_id)
   if s2.c >= 0 then
@@ -470,13 +470,13 @@ if key_pressed("p") then
   end
 end
 
-// ── Frame ────────────────────────────────────────────────────────────────
+# ── Frame ────────────────────────────────────────────────────────────────
 
 let sel = find_card(cols, sel_id)
 
 clear(BG.r, BG.g, BG.b)
 
-// Header ------------------------------------------------------------------
+# Header ------------------------------------------------------------------
 let total_pts = 0
 let done_pts = 0
 let n_cards = 0
@@ -505,10 +505,10 @@ if fill_w > 0 then
 end
 draw_rect(rect(0, 86, W, 1), RULE)
 
-// Columns: the board a drag previews, else the board.
+# Columns: the board a drag previews, else the board.
 view(if d.active then d.preview else cols end, scrolls, sel_id)
 
-// Footer ------------------------------------------------------------------
+# Footer ------------------------------------------------------------------
 let fy = H - FOOT_H
 draw_rect(rect(0, fy, W, 1), RULE)
 if sel.c >= 0 then

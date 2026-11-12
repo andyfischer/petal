@@ -1,17 +1,17 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  PETAL PAINT — a vector drawing surface for a Garden panel.
-//
-//  Strokes are stored as records with points in artboard-normalized
-//  coordinates (0..1), so the drawing survives a pane resize. Every frame
-//  re-renders the whole stroke list; there is no pixel buffer.
-//
-//  Designed for a 1280x850 viewport. See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  PETAL PAINT — a vector drawing surface for a Garden panel.
+#
+#  Strokes are stored as records with points in artboard-normalized
+#  coordinates (0..1), so the drawing survives a pane resize. Every frame
+#  re-renders the whole stroke list; there is no pixel buffer.
+#
+#  Designed for a 1280x850 viewport. See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import ui
 import bloom
 
-// ── Chrome palette ───────────────────────────────────────────────────────
+# ── Chrome palette ───────────────────────────────────────────────────────
 let BG      = :0c0e13
 let PANEL   = :13171f
 let ELEV    = :1a1f2a
@@ -23,16 +23,16 @@ let FAINT   = :5b6577
 let ACCENT  = :6ea8ff
 let PAPER   = :f7f5f0
 
-// ── Ink palette (what you paint with) ────────────────────────────────────
+# ── Ink palette (what you paint with) ────────────────────────────────────
 let INKS = [
   :17191f, :55606f, :9aa3b2, :ffffff, :b5651d, :2f6fed,
   :d64550, :f08a3c, :e8c34a, :79b74a, :2bb39a, :8b5cf6,
 ]
 
-// The tools, in rail order. Each carries what the chrome shows for it: `label`
-// on the rail tooltip and status bar, `stroke` in the history list, the
-// shortcut `key`, and the tooltip's `hint`. A stroke's `kind` is the tool that
-// made it.
+# The tools, in rail order. Each carries what the chrome shows for it: `label`
+# on the rail tooltip and status bar, `stroke` in the history list, the
+# shortcut `key`, and the tooltip's `hint`. A stroke's `kind` is the tool that
+# made it.
 enum Tool
   brush(label: "Brush", stroke: "Brush", key: "1", hint: "freehand"),
   line(label: "Line", stroke: "Line", key: "2", hint: "click-drag"),
@@ -46,7 +46,7 @@ let TOOLS = Tool.all
 
 let TAU = 6.28318530718
 
-// ── Small helpers ────────────────────────────────────────────────────────
+# ── Small helpers ────────────────────────────────────────────────────────
 
 fn hex_digit(n: num) -> string
   slice("0123456789ABCDEF", start: n, end: n + 1)
@@ -86,7 +86,7 @@ fn label(s: string, x: num, y: num, c: record)
   draw_text(s, pos: {x: x, y: y}, style: {size: 10, color: c, spacing: 2})
 end
 
-// ── Stroke geometry ──────────────────────────────────────────────────────
+# ── Stroke geometry ──────────────────────────────────────────────────────
 
 fn to_px(art: record, p: list) -> record
   {x: float(art.x) + p[0] * float(art.w), y: float(art.y) + p[1] * float(art.h)}
@@ -174,7 +174,7 @@ fn draw_stroke(art: record, s: record)
   end
 end
 
-// ── Seeded artwork ───────────────────────────────────────────────────────
+# ── Seeded artwork ───────────────────────────────────────────────────────
 
 fn mk(kind: Tool, color: record, size: num, pts: list) -> record
   {kind: kind, color: color, size: size, alpha: 255, pts: pts}
@@ -190,24 +190,24 @@ end
 
 fn seed_artwork() -> list
   let out = []
-  // wash of sky
+  # wash of sky
   out = append(out, mk(kind: Tool.fill, color: :dfe7ef, size: 0, alpha: 130, pts: []))
-  // sun
+  # sun
   out = append(out, mk(kind: Tool.ellipse, color: :e8c34a, size: 3, pts: [[0.735, 0.10], [0.865, 0.29]]))
   out = append(out, mk(kind: Tool.ellipse, color: :e8c34a, size: 2, alpha: 90, pts: [[0.705, 0.075], [0.895, 0.315]]))
-  // far ridge
+  # far ridge
   out = append(out, mk(kind: Tool.brush, color: :9aa3b2, size: 3, pts: [
     [0.02, 0.50], [0.11, 0.38], [0.19, 0.45], [0.30, 0.28], [0.41, 0.44],
     [0.52, 0.34], [0.63, 0.47], [0.75, 0.37], [0.87, 0.48], [0.98, 0.42],
   ]))
-  // near ridge
+  # near ridge
   out = append(out, mk(kind: Tool.brush, color: :55606f, size: 4, pts: [
     [0.02, 0.63], [0.13, 0.55], [0.22, 0.60], [0.33, 0.47], [0.45, 0.61],
     [0.56, 0.53], [0.68, 0.64], [0.80, 0.56], [0.90, 0.63], [0.98, 0.58],
   ]))
-  // horizon
+  # horizon
   out = append(out, mk(kind: Tool.line, color: :9aa3b2, size: 2, pts: [[0.02, 0.735], [0.98, 0.735]]))
-  // water
+  # water
   out = append(out, mk(kind: Tool.brush, color: :2bb39a, size: 3, alpha: 150, pts: [
     [0.06, 0.80], [0.16, 0.785], [0.26, 0.805], [0.36, 0.79], [0.46, 0.81],
     [0.56, 0.792], [0.66, 0.812], [0.76, 0.795], [0.86, 0.815], [0.94, 0.80],
@@ -216,24 +216,24 @@ fn seed_artwork() -> list
     [0.12, 0.875], [0.24, 0.86], [0.36, 0.882], [0.48, 0.866], [0.60, 0.886],
     [0.72, 0.868], [0.84, 0.888],
   ]))
-  // cabin
+  # cabin
   out = append(out, mk(kind: Tool.rect, color: :17191f, size: 3, pts: [[0.115, 0.615], [0.215, 0.735]]))
   out = append(out, mk(kind: Tool.brush, color: :b5651d, size: 3, pts: [[0.098, 0.618], [0.165, 0.552], [0.232, 0.618]]))
   out = append(out, mk(kind: Tool.rect, color: :e8c34a, size: 2, pts: [[0.145, 0.645], [0.185, 0.682]]))
-  // grass
+  # grass
   out = append(out, tick(0.30, 0.735, 0.700))
   out = append(out, tick(0.325, 0.735, 0.708))
   out = append(out, tick(0.35, 0.735, 0.697))
   out = append(out, tick(0.66, 0.735, 0.704))
   out = append(out, tick(0.685, 0.735, 0.694))
   out = append(out, tick(0.71, 0.735, 0.710))
-  // birds
+  # birds
   out = append(out, mk(kind: Tool.brush, color: :55606f, size: 2, pts: [[0.46, 0.175], [0.483, 0.160], [0.506, 0.176]]))
   out = append(out, mk(kind: Tool.brush, color: :55606f, size: 2, pts: [[0.535, 0.215], [0.552, 0.204], [0.569, 0.216]]))
   out
 end
 
-// ── Layout ───────────────────────────────────────────────────────────────
+# ── Layout ───────────────────────────────────────────────────────────────
 
 fn build_layout(w: num, h: num, nrows: num) -> record
   let header_h = 64
@@ -248,7 +248,7 @@ fn build_layout(w: num, h: num, nrows: num) -> record
   let canvas = rect(rail_w, header_h, w - rail_w - panel_w, h - header_h - status_h)
   let art = rect(canvas.x + 34, canvas.y + 30, canvas.w - 68, canvas.h - 60)
 
-  // header action pills, right aligned
+  # header action pills, right aligned
   let bw = 78
   let bh = 30
   let by = (header_h - bh) / 2
@@ -258,7 +258,7 @@ fn build_layout(w: num, h: num, nrows: num) -> record
   let btn_undo = rect(bx - (bw + 8) * 2, by, bw, bh)
   let btn_grid = rect(bx - (bw + 8) * 2 - 8 - 66, by, 66, bh)
 
-  // tool rail
+  # tool rail
   let tool_rects = []
   let ty = rail.y + 24
   for i in range(0, len(TOOLS)) do
@@ -266,7 +266,7 @@ fn build_layout(w: num, h: num, nrows: num) -> record
     ty = ty + 62
   end
 
-  // right panel
+  # right panel
   let px = panel.x + 24
   let pw = panel_w - 48
   let y = panel.y + 22
@@ -314,7 +314,7 @@ fn build_layout(w: num, h: num, nrows: num) -> record
     list_r: list_r, rows: rows}
 end
 
-// ── Chrome widgets ───────────────────────────────────────────────────────
+# ── Chrome widgets ───────────────────────────────────────────────────────
 
 fn plate(r: record, radius: num, fill: record, edge: record)
   draw_rect_rounded(r.inset(-1), radius: radius + 1, c: edge)
@@ -370,13 +370,13 @@ fn tool_icon(tool: Tool, r: record, c: record)
   end
 end
 
-// The history row menu.
+# The history row menu.
 let HIST_ITEMS = ["Select on canvas", "Duplicate", "Bring to front", {sep: true},
   {label: "Delete stroke", danger: true}]
 
-// Garden's renderer draws every text run above every quad — so text painted
-// *before* the menu still shows through it. Work out the menu box (bloom
-// measures it the same way) and skip the text it will cover.
+# Garden's renderer draws every text run above every quad — so text painted
+# *before* the menu still shows through it. Work out the menu box (bloom
+# measures it the same way) and skip the text it will cover.
 fn menu_est(m: record)
   let size = bloom.menu_size(HIST_ITEMS, {})
   let w = size.w
@@ -404,7 +404,7 @@ fn slider_track(r: record, t: num, c: record)
   dot(x: kx, y: ty, rad: 7, c: c, a: 255)
 end
 
-// ── Persistent document + tool state ─────────────────────────────────────
+# ── Persistent document + tool state ─────────────────────────────────────
 
 state strokes = seed_artwork()
 state hist = []
@@ -416,12 +416,12 @@ state brush = 5
 state opacity = 255
 state grid = false
 state sel = -1
-state menu_at = {x: 0, y: 0, tag: -1}   // where the history menu opened, and on which stroke
+state menu_at = {x: 0, y: 0, tag: -1}   # where the history menu opened, and on which stroke
 state size_grab = false
 state alpha_grab = false
 state ops = 0
 
-// ── Frame ────────────────────────────────────────────────────────────────
+# ── Frame ────────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
@@ -433,7 +433,7 @@ let color = INKS[ink]
 let over_art = point_in(px: mx, py: my, r: art)
 let blocked = bloom.menu_any_open()
 
-// ── Keyboard ─────────────────────────────────────────────────────────────
+# ── Keyboard ─────────────────────────────────────────────────────────────
 for t in TOOLS do
   if key_pressed(t.key) then
     tool = t
@@ -447,7 +447,7 @@ let want_undo = key_pressed("u") || (key_pressed("z") && mod_cmd() && !mod_shift
 let want_redo = key_pressed("r") || (key_pressed("z") && mod_cmd() && mod_shift())
 let want_clear = key_pressed("c")
 
-// ── Pointer: mouse-down UI regions (sliders keep the grab) ───────────────
+# ── Pointer: mouse-down UI regions (sliders keep the grab) ───────────────
 if mouse_pressed(0) && hovered(L.size_slider) then size_grab = true end
 if mouse_pressed(0) && hovered(L.alpha_slider) then alpha_grab = true end
 if !mouse_down(0) then
@@ -463,7 +463,7 @@ if alpha_grab then
   opacity = 25 + int(round(t * 230.0))
 end
 
-// ── Pointer: tools, swatches, history rows, header pills ─────────────────
+# ── Pointer: tools, swatches, history rows, header pills ─────────────────
 for i in range(0, len(TOOLS)) do
   if !blocked && ui.clicked(L.tool_rects[i]) then
     tool = TOOLS[i]
@@ -486,7 +486,7 @@ for i in range(0, len(L.rows)) do
 end
 if !blocked && ui.clicked(L.btn_grid) then grid = !grid end
 
-// ── Painting on the artboard ─────────────────────────────────────────────
+# ── Painting on the artboard ─────────────────────────────────────────────
 let kind = tool
 let paint_c = if tool == Tool.eraser then PAPER else color end
 let paint_w = if tool == Tool.eraser then brush * 3 else brush end
@@ -537,7 +537,7 @@ if cur.active && !mouse_down(0) then
   cur = {kind: nil, color: :000000, size: 0, alpha: 0, pts: [], active: false}
 end
 
-// ── Undo / redo / clear ──────────────────────────────────────────────────
+# ── Undo / redo / clear ──────────────────────────────────────────────────
 let hit_undo = !blocked && ui.clicked(L.btn_undo) && len(hist) > 0
 let hit_redo = !blocked && ui.clicked(L.btn_redo) && len(fut) > 0
 let hit_clear = !blocked && ui.clicked(L.btn_clear) && len(strokes) > 0
@@ -566,11 +566,11 @@ end
 if sel >= len(strokes) then sel = -1 end
 if len(hist) > 60 then hist = slice(hist, start: len(hist) - 60, end: len(hist)) end
 
-// ── Draw: background + canvas well ───────────────────────────────────────
+# ── Draw: background + canvas well ───────────────────────────────────────
 clear(BG.r, BG.g, BG.b)
 draw_rect(L.canvas, :090b0f)
 
-// artboard shadow, paper, strokes
+# artboard shadow, paper, strokes
 draw_rect_rounded(x: art.x - 1, y: art.y + 5, w: art.w + 2, h: art.h, radius: 4, r: 0, g: 0, b: 0, a: 90)
 draw_rect(art, PAPER)
 clip(x: art.x, y: art.y, w: art.w, h: art.h)
@@ -601,7 +601,7 @@ end
 clip_none()
 draw_rect_outline(x: art.x, y: art.y, w: art.w, h: art.h, r: 0, g: 0, b: 0, a: 40)
 
-// selection marquee
+# selection marquee
 if sel >= 0 && sel < len(strokes) then
   let bb = stroke_bbox(art, strokes[sel])
   draw_rect_outline(x: bb.x, y: bb.y, w: bb.w, h: bb.h, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b, a: 220, width: 1)
@@ -611,7 +611,7 @@ if sel >= 0 && sel < len(strokes) then
   dot(x: bb.x + bb.w, y: bb.y + bb.h, rad: 3, c: ACCENT, a: 255)
 end
 
-// brush cursor
+# brush cursor
 if over_art && !cur.active then
   let cr = if tool == Tool.eraser then paint_w else brush end
   if tool == Tool.fill then
@@ -626,7 +626,7 @@ if over_art && !cur.active then
   end
 end
 
-// ── Draw: header ─────────────────────────────────────────────────────────
+# ── Draw: header ─────────────────────────────────────────────────────────
 draw_rect(L.header, PANEL)
 seg(x1: 0, y1: L.header.h, x2: W, y2: L.header.h, c: :000000, a: 130, wd: 1)
 
@@ -644,7 +644,7 @@ pill(L.btn_undo, text: "Undo", keycap: "U", on: false, enabled: len(hist) > 0)
 pill(L.btn_redo, text: "Redo", keycap: "R", on: false, enabled: len(fut) > 0)
 pill(L.btn_clear, text: "Clear", keycap: "C", on: false, enabled: len(strokes) > 0)
 
-// ── Draw: tool rail ──────────────────────────────────────────────────────
+# ── Draw: tool rail ──────────────────────────────────────────────────────
 draw_rect(L.rail, PANEL)
 seg(x1: L.rail.w, y1: L.rail.y, x2: L.rail.w, y2: L.rail.y + L.rail.h, c: :000000, a: 130, wd: 1)
 
@@ -666,7 +666,7 @@ for i in range(0, len(TOOLS)) do
     if on then ACCENT else FAINT end)
 end
 
-// ── Draw: right panel ────────────────────────────────────────────────────
+# ── Draw: right panel ────────────────────────────────────────────────────
 draw_rect(L.panel, PANEL)
 seg(x1: L.panel.x, y1: L.panel.y, x2: L.panel.x, y2: L.panel.y + L.panel.h, c: :000000, a: 130, wd: 1)
 
@@ -748,7 +748,7 @@ if len(strokes) > len(L.rows) && !overlaps(older_r, mcover) then
   draw_text("+{len(strokes) - len(L.rows)} older", {x: older_r.x, y: older_r.y}, 10, FAINT)
 end
 
-// ── Draw: status bar ─────────────────────────────────────────────────────
+# ── Draw: status bar ─────────────────────────────────────────────────────
 draw_rect(L.status, PANEL)
 seg(x1: 0, y1: L.status.y, x2: W, y2: L.status.y, c: :000000, a: 130, wd: 1)
 let sy = L.status.y + 11
@@ -769,7 +769,7 @@ let hints = fit_parts(parts: ["drag to paint", "1–6 tools", "[ ] size", "U / R
   avail_px: float(W) * 0.60, size: 11)
 draw_text_center(hints, cx: W / 2 + 40, y: sy + 1, size: 11, c: mix(FAINT, DIM, t: 0.4))
 
-// ── Tooltip for the hovered tool (drawn last, over the canvas) ───────────
+# ── Tooltip for the hovered tool (drawn last, over the canvas) ───────────
 if tip >= 0 then
   let t = TOOLS[tip]
   let r = L.tool_rects[tip]
@@ -783,7 +783,7 @@ if tip >= 0 then
   draw_text(t.hint, {x: tr.x + 12, y: tr.y + 25}, 10, FAINT)
 end
 
-// ── History context menu (drawn last so it sits over everything) ─────────
+# ── History context menu (drawn last so it sits over everything) ─────────
 let picked = bloom.menu("history", art, HIST_ITEMS, {at: "point"})
 if picked >= 0 then
   let t = menu_at.tag

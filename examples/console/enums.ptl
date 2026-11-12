@@ -1,7 +1,7 @@
-// Enums
-// Named variants, associated data, and pattern matching.
+# Enums
+# Named variants, associated data, and pattern matching.
 
-// Simple enum (no associated data)
+# Simple enum (no associated data)
 enum Color
   Red,
   Green,
@@ -11,7 +11,7 @@ end
 let favorite = Color.Blue
 print("Favorite color:", favorite)
 
-// Enum with associated data
+# Enum with associated data
 enum Shape
   Circle(radius),
   Rectangle(width, height),
@@ -36,7 +36,7 @@ for s in shapes do
   print("Area:", area(s))
 end
 
-// Result type for error handling
+# Result type for error handling
 enum Result
   Ok(value),
   Error(message),

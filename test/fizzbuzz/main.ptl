@@ -1,4 +1,4 @@
-// Classic conditional cascade.
+# Classic conditional cascade.
 for i in range(1, 16) do
   if i % 15 == 0 then print("FizzBuzz")
   elsif i % 3 == 0 then print("Fizz")

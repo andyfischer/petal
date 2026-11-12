@@ -1,6 +1,6 @@
-// Tetris
-// Arrow keys: left/right to move, up to rotate, down for soft drop
-// 10-wide, 20-tall grid. 7 tetromino shapes. Line clearing with score.
+# Tetris
+# Arrow keys: left/right to move, up to rotate, down for soft drop
+# 10-wide, 20-tall grid. 7 tetromino shapes. Line clearing with score.
 
 import ui
 
@@ -29,16 +29,16 @@ let grid_line_color = {r: 22, g: 22, b: 35}
 let label_color = {r: 120, g: 140, b: 200}
 let controls_color = {r: 160, g: 160, b: 180}
 
-// --- Piece definitions ---
-// Each piece has 4 rotations, each rotation is a list of 8 ints (4 x,y pairs)
-// I piece
+# --- Piece definitions ---
+# Each piece has 4 rotations, each rotation is a list of 8 ints (4 x,y pairs)
+# I piece
 let piece_i = [
   [0,-1, 1,-1, 2,-1, 3,-1],
   [1,0, 1,1, 1,2, 1,3],
   [0,-1, 1,-1, 2,-1, 3,-1],
   [1,0, 1,1, 1,2, 1,3]
 ]
-// O piece
+# O piece
 let piece_o = [
   [0,0, 1,0, 0,1, 1,1],
   [0,0, 1,0, 0,1, 1,1],
@@ -46,35 +46,35 @@ let piece_o = [
   [0,0, 1,0, 0,1, 1,1]
 ]
 
-// T piece
+# T piece
 let piece_t = [
   [0,0, 1,0, 2,0, 1,1],
   [1,0, 1,1, 1,2, 0,1],
   [0,1, 1,1, 2,1, 1,0],
   [0,0, 0,1, 0,2, 1,1]
 ]
-// S piece
+# S piece
 let piece_s = [
   [1,0, 2,0, 0,1, 1,1],
   [0,0, 0,1, 1,1, 1,2],
   [1,0, 2,0, 0,1, 1,1],
   [0,0, 0,1, 1,1, 1,2]
 ]
-// Z piece
+# Z piece
 let piece_z = [
   [0,0, 1,0, 1,1, 2,1],
   [1,0, 0,1, 1,1, 0,2],
   [0,0, 1,0, 1,1, 2,1],
   [1,0, 0,1, 1,1, 0,2]
 ]
-// J piece
+# J piece
 let piece_j = [
   [0,0, 0,1, 1,1, 2,1],
   [1,0, 0,0, 0,1, 0,2],
   [0,0, 1,0, 2,0, 2,1],
   [1,0, 1,1, 1,2, 0,2]
 ]
-// L piece
+# L piece
 let piece_l = [
   [2,0, 0,1, 1,1, 2,1],
   [0,0, 0,1, 0,2, 1,2],
@@ -84,8 +84,8 @@ let piece_l = [
 
 let all_pieces = [piece_i, piece_o, piece_t, piece_s, piece_z, piece_j, piece_l]
 
-// Colors for each piece type (index 1-7 in grid, 0 = empty)
-// I=1 cyan, O=2 yellow, T=3 purple, S=4 green, Z=5 red, J=6 blue, L=7 orange
+# Colors for each piece type (index 1-7 in grid, 0 = empty)
+# I=1 cyan, O=2 yellow, T=3 purple, S=4 green, Z=5 red, J=6 blue, L=7 orange
 fn piece_color(t)
   if t == 1 then :00f0f0
   elsif t == 2 then :f0f000
@@ -98,7 +98,7 @@ fn piece_color(t)
   end
 end
 
-// Lighter highlight color for 3D top/left edge
+# Lighter highlight color for 3D top/left edge
 fn piece_highlight(t)
   if t == 1 then :96ffff
   elsif t == 2 then :ffff96
@@ -111,7 +111,7 @@ fn piece_highlight(t)
   end
 end
 
-// Darker shadow color for 3D bottom/right edge
+# Darker shadow color for 3D bottom/right edge
 fn piece_shadow(t)
   if t == 1 then :008c8c
   elsif t == 2 then :969600
@@ -124,33 +124,33 @@ fn piece_shadow(t)
   end
 end
 
-// Draw a single cell with 3D beveled look
+# Draw a single cell with 3D beveled look
 fn draw_cell(px, py, sz, color_type)
   let c = piece_color(color_type)
   let hi = piece_highlight(color_type)
   let sh = piece_shadow(color_type)
   let bevel = 3
-  // Main fill
+  # Main fill
   draw_rect(x: px, y: py, w: sz - 1, h: sz - 1, r: c.r, g: c.g, b: c.b)
-  // Top highlight edge
+  # Top highlight edge
   draw_rect(x: px, y: py, w: sz - 1, h: bevel, r: hi.r, g: hi.g, b: hi.b)
-  // Left highlight edge
+  # Left highlight edge
   draw_rect(x: px, y: py, w: bevel, h: sz - 1, r: hi.r, g: hi.g, b: hi.b)
-  // Bottom shadow edge
+  # Bottom shadow edge
   draw_rect(x: px, y: py + sz - 1 - bevel, w: sz - 1, h: bevel, r: sh.r, g: sh.g, b: sh.b)
-  // Right shadow edge
+  # Right shadow edge
   draw_rect(x: px + sz - 1 - bevel, y: py, w: bevel, h: sz - 1, r: sh.r, g: sh.g, b: sh.b)
-  // Inner face (slightly brighter center)
+  # Inner face (slightly brighter center)
   let inset = bevel
   draw_rect(x: px + inset, y: py + inset, w: sz - 1 - inset * 2, h: sz - 1 - inset * 2, r: c.r, g: c.g, b: c.b)
 end
 
-// --- State ---
-// `grid`, `fall_timer` and `initialized` are only ever written at top level,
-// where `=` is an ordinary phi, so they stay plain `state` on the dataflow
-// path. The rest are cells: `spawn_piece` and `clear_lines` write them from
-// inside a function, which `=` cannot do — it would only shadow. `grid` is
-// threaded through parameters instead, as `lock_piece` already did.
+# --- State ---
+# `grid`, `fall_timer` and `initialized` are only ever written at top level,
+# where `=` is an ordinary phi, so they stay plain `state` on the dataflow
+# path. The rest are cells: `spawn_piece` and `clear_lines` write them from
+# inside a function, which `=` cannot do — it would only shadow. `grid` is
+# threaded through parameters instead, as `lock_piece` already did.
 state grid = []
 state var cur_type = 0
 state var cur_rot = 0
@@ -167,13 +167,13 @@ state var level = 1
 
 let fall_interval = max(0.1, 0.5 - float(level - 1) * 0.04)
 
-// --- Helper functions ---
+# --- Helper functions ---
 fn get_cell(grd, gx, gy)
   grd[gy * 10 + gx]
 end
 
-// Value semantics: index-assign rebinds the local `grd`, so return the
-// updated grid and have callers rebind (`grid = set_cell(grid, ...)`).
+# Value semantics: index-assign rebinds the local `grd`, so return the
+# updated grid and have callers rebind (`grid = set_cell(grid, ...)`).
 fn set_cell(grd, gx, gy, val)
   grd[gy * 10 + gx] = val
   grd
@@ -204,7 +204,7 @@ fn check_collision(grd, piece_type, rot, px, py)
   collides
 end
 
-// Compute ghost piece Y (hard drop preview)
+# Compute ghost piece Y (hard drop preview)
 fn ghost_y(grd, piece_type, rot, px, py)
   let gy = py
   while !check_collision(grd, piece_type, rot, px, py: gy + 1) do
@@ -213,9 +213,9 @@ fn ghost_y(grd, piece_type, rot, px, py)
   gy
 end
 
-// Takes the grid for the same reason lock_piece does: a bare `grid` here reads
-// the capture taken when the frame's script reached this definition, which on
-// the first frame is still the empty initial slot.
+# Takes the grid for the same reason lock_piece does: a bare `grid` here reads
+# the capture taken when the frame's script reached this definition, which on
+# the first frame is still the empty initial slot.
 fn spawn_piece(g)
   set cur_type = get next_type
   set next_type = int(random(0.0, 7.0))
@@ -227,10 +227,10 @@ fn spawn_piece(g)
   end
 end
 
-// Value semantics: takes the grid and returns the updated grid; the caller
-// rebinds (`grid = lock_piece(grid)`). (A local `let g = grid` then mutating
-// `g` would not work: `let` binding a state-var read aliases the local to the
-// state slot, so route the grid through a parameter instead.)
+# Value semantics: takes the grid and returns the updated grid; the caller
+# rebinds (`grid = lock_piece(grid)`). (A local `let g = grid` then mutating
+# `g` would not work: `let` binding a state-var read aliases the local to the
+# state slot, so route the grid through a parameter instead.)
 fn lock_piece(g)
   let blocks = get_blocks(get cur_type, get cur_rot)
   let i = 0
@@ -245,7 +245,7 @@ fn lock_piece(g)
   g
 end
 
-// Value semantics: takes the grid and returns the updated grid (see lock_piece).
+# Value semantics: takes the grid and returns the updated grid (see lock_piece).
 fn clear_lines(g)
   let cleared = 0
   let y = 19
@@ -260,7 +260,7 @@ fn clear_lines(g)
     end
     if full then
       cleared += 1
-      // Shift everything above down by one
+      # Shift everything above down by one
       let row = y
       while row > 0 do
         let col = 0
@@ -270,13 +270,13 @@ fn clear_lines(g)
         end
         row -= 1
       end
-      // Clear top row
+      # Clear top row
       let col = 0
       while col < 10 do
         g = set_cell(grd: g, gx: col, gy: 0, val: 0)
         col += 1
       end
-      // Don't decrement y - check same row again since rows shifted
+      # Don't decrement y - check same row again since rows shifted
     else
       y -= 1
     end
@@ -294,7 +294,7 @@ fn clear_lines(g)
   g
 end
 
-// --- Initialization ---
+# --- Initialization ---
 if !initialized then
   initialized = true
   let i = 0
@@ -306,7 +306,7 @@ if !initialized then
   spawn_piece(grid)
 end
 
-// --- Input ---
+# --- Input ---
 if !game_over then
   if key_pressed("left") then
     if !check_collision(grd: grid, piece_type: cur_type, rot: cur_rot, px: cur_x - 1, py: cur_y) then
@@ -325,7 +325,7 @@ if !game_over then
     end
   end
 
-  // Hard drop
+  # Hard drop
   if key_pressed("space") then
     let gy = ghost_y(grd: grid, piece_type: cur_type, rot: cur_rot, px: cur_x, py: cur_y)
     set cur_y = gy
@@ -335,13 +335,13 @@ if !game_over then
     fall_timer = 0.0
   end
 
-  // Soft drop
+  # Soft drop
   let effective_interval = fall_interval
   if key_down("down") then
     effective_interval = 0.05
   end
 
-  // Fall timer
+  # Fall timer
   fall_timer += dt()
   if fall_timer >= effective_interval then
     fall_timer = 0.0
@@ -355,13 +355,13 @@ if !game_over then
   end
 end
 
-// Flash timer countdown
+# Flash timer countdown
 if flash_timer > 0.0 then
   set flash_timer -= dt()
   if flash_timer < 0.0 then set flash_timer = 0.0 end
 end
 
-// Restart
+# Restart
 if game_over && key_pressed("return") then
   set game_over = false
   set score = 0
@@ -376,10 +376,10 @@ if game_over && key_pressed("return") then
   spawn_piece(grid)
 end
 
-// --- Drawing ---
+# --- Drawing ---
 clear(15, 15, 25)
 
-// Background decorative side stripes
+# Background decorative side stripes
 let stripe = 0
 while stripe < 20 do
   let sy = stripe * 30
@@ -390,15 +390,15 @@ while stripe < 20 do
   stripe += 1
 end
 
-// Board outer glow/border (layered rectangles for glow effect)
+# Board outer glow/border (layered rectangles for glow effect)
 draw_rect(x: board_x - 6, y: board_y - 6, w: grid_w * cell_size + 12, h: grid_h * cell_size + 12, r: 40, g: 60, b: 100)
 draw_rect(x: board_x - 4, y: board_y - 4, w: grid_w * cell_size + 8, h: grid_h * cell_size + 8, r: 25, g: 35, b: 60)
 draw_rect(x: board_x - 2, y: board_y - 2, w: grid_w * cell_size + 4, h: grid_h * cell_size + 4, r: 15, g: 20, b: 40)
 
-// Draw board background
+# Draw board background
 draw_rect(x: board_x, y: board_y, w: grid_w * cell_size, h: grid_h * cell_size, r: 8, g: 8, b: 16)
 
-// Draw subtle grid lines
+# Draw subtle grid lines
 let lx = 0
 while lx <= grid_w do
   draw_line({x: board_x + lx * cell_size, y: board_y}, {x: board_x + lx * cell_size, y: board_y + grid_h * cell_size}, grid_line_color)
@@ -410,16 +410,16 @@ while ly <= grid_h do
   ly += 1
 end
 
-// Flash effect overlay when lines cleared
+# Flash effect overlay when lines cleared
 if flash_timer > 0.0 then
   let flash_intensity = int(flash_timer * 400.0)
   if flash_intensity > 120 then flash_intensity = 120 end
   draw_rect(x: board_x, y: board_y, w: grid_w * cell_size, h: grid_h * cell_size, r: flash_intensity, g: flash_intensity, b: flash_intensity)
-  // Redraw grid on top after flash
+  # Redraw grid on top after flash
   draw_rect(x: board_x, y: board_y, w: grid_w * cell_size, h: grid_h * cell_size, r: 8, g: 8, b: 16)
 end
 
-// Draw grid cells (locked pieces) with 3D effect
+# Draw grid cells (locked pieces) with 3D effect
 let gy = 0
 while gy < grid_h do
   let gx = 0
@@ -433,7 +433,7 @@ while gy < grid_h do
   gy += 1
 end
 
-// Draw ghost piece (drop preview)
+# Draw ghost piece (drop preview)
 if !game_over then
   let gpy = ghost_y(grd: grid, piece_type: cur_type, rot: cur_rot, px: cur_x, py: cur_y)
   if gpy != cur_y then
@@ -451,7 +451,7 @@ if !game_over then
   end
 end
 
-// Draw current piece with 3D effect
+# Draw current piece with 3D effect
 if !game_over then
   let blocks = get_blocks(cur_type, cur_rot)
   let i = 0
@@ -465,17 +465,17 @@ if !game_over then
   end
 end
 
-// Board outline (crisp border)
+# Board outline (crisp border)
 draw_rect_outline(board_x - 1, board_y - 1, grid_w * cell_size + 2, grid_h * cell_size + 2, 80, 100, 150)
 
-// ---- Right sidebar ----
+# ---- Right sidebar ----
 let sidebar_x = board_x + grid_w * cell_size + 24
 
-// NEXT piece panel
+# NEXT piece panel
 draw_rect(x: sidebar_x, y: board_y, w: 130, h: 110, r: 20, g: 22, b: 38)
 draw_rect_outline(sidebar_x, board_y, 130, 110, 60, 70, 110)
 draw_text("NEXT", {x: sidebar_x + 38, y: board_y + 8}, 20, label_color)
-// Draw next piece centered in panel
+# Draw next piece centered in panel
 let next_blocks = get_blocks(next_type, 0)
 let ni = 0
 while ni < 4 do
@@ -485,28 +485,28 @@ while ni < 4 do
   ni += 1
 end
 
-// SCORE panel
+# SCORE panel
 draw_rect(x: sidebar_x, y: board_y + 124, w: 130, h: 80, r: 20, g: 22, b: 38)
 draw_rect_outline(sidebar_x, board_y + 124, 130, 80, 60, 70, 110)
 draw_text("SCORE", {x: sidebar_x + 32, y: board_y + 132}, 18, label_color)
 draw_text(str(score), {x: sidebar_x + 14, y: board_y + 160}, 28, :ffffff)
 
-// LEVEL panel
+# LEVEL panel
 draw_rect(x: sidebar_x, y: board_y + 218, w: 130, h: 80, r: 20, g: 22, b: 38)
 draw_rect_outline(sidebar_x, board_y + 218, 130, 80, 60, 70, 110)
 draw_text("LEVEL", {x: sidebar_x + 34, y: board_y + 226}, 18, label_color)
 draw_text(str(level), {x: sidebar_x + 14, y: board_y + 254}, 28, {r: 100, g: 255, b: 180})
 
-// LINES panel
+# LINES panel
 draw_rect(x: sidebar_x, y: board_y + 312, w: 130, h: 80, r: 20, g: 22, b: 38)
 draw_rect_outline(sidebar_x, board_y + 312, 130, 80, 60, 70, 110)
 draw_text("LINES", {x: sidebar_x + 36, y: board_y + 320}, 18, label_color)
 draw_text(str(lines_cleared), {x: sidebar_x + 14, y: board_y + 348}, 28, {r: 255, g: 220, b: 100})
 
-// ---- Left sidebar ----
+# ---- Left sidebar ----
 let left_x = board_x - 160
 
-// Controls info
+# Controls info
 draw_rect(x: left_x, y: board_y, w: 140, h: 200, r: 20, g: 22, b: 38)
 draw_rect_outline(left_x, board_y, 140, 200, 50, 55, 85)
 draw_text("CONTROLS", {x: left_x + 16, y: board_y + 10}, 16, label_color)
@@ -515,7 +515,7 @@ draw_text("Up  Rotate", {x: left_x + 14, y: board_y + 66}, 14, controls_color)
 draw_text("Dn  Soft drop", {x: left_x + 14, y: board_y + 90}, 14, controls_color)
 draw_text("Spc Hard drop", {x: left_x + 14, y: board_y + 114}, 14, controls_color)
 
-// Title
+# Title
 draw_text("T", {x: left_x + 14, y: board_y + 240}, 36, {r: 0, g: 240, b: 240})
 draw_text("E", {x: left_x + 38, y: board_y + 240}, 36, {r: 240, g: 240, b: 0})
 draw_text("T", {x: left_x + 62, y: board_y + 240}, 36, {r: 180, g: 50, b: 255})
@@ -523,7 +523,7 @@ draw_text("R", {x: left_x + 86, y: board_y + 240}, 36, {r: 50, g: 240, b: 50})
 draw_text("I", {x: left_x + 112, y: board_y + 240}, 36, {r: 240, g: 50, b: 50})
 draw_text("S", {x: left_x + 126, y: board_y + 240}, 36, {r: 240, g: 160, b: 30})
 
-// Decorative blocks on left side
+# Decorative blocks on left side
 let deco = 0
 while deco < 6 do
   let deco_type = (deco % 7) + 1
@@ -531,16 +531,16 @@ while deco < 6 do
   deco += 1
 end
 
-// Game over overlay
+# Game over overlay
 if game_over then
-  // Darken the board
+  # Darken the board
   draw_rect(x: board_x, y: board_y, w: grid_w * cell_size, h: grid_h * cell_size, r: 0, g: 0, b: 0)
-  // Redraw locked pieces dimmed (just draw dark overlay)
+  # Redraw locked pieces dimmed (just draw dark overlay)
   draw_rect(x: board_x + 10, y: board_y + grid_h * cell_size / 2 - 50, w: grid_w * cell_size - 20, h: 100, r: 20, g: 10, b: 30)
   draw_rect_outline(board_x + 10, board_y + grid_h * cell_size / 2 - 50, grid_w * cell_size - 20, 100, 200, 50, 80)
   draw_text("GAME OVER", {x: board_x + 42, y: board_y + grid_h * cell_size / 2 - 35}, 30, {r: 255, g: 60, b: 80})
   draw_text("Score: " ++ str(score), {x: board_x + 65, y: board_y + grid_h * cell_size / 2}, 22, :ffffff)
-  // Blinking restart text
+  # Blinking restart text
   if frame_count() % 60 < 40 then
     draw_text("ENTER to restart", {x: board_x + 42, y: board_y + grid_h * cell_size / 2 + 30}, 16, {r: 200, g: 200, b: 220})
   end

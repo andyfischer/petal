@@ -1,12 +1,12 @@
-// Three-way switch with declarative dragging (ui/drag): `between`.
-//
-// The model is which of three positions the switch is in. The view draws
-// the knob at that position, in that position's colour, over a background
-// of that colour. Dragging the knob reaches all three states, and `between`
-// lets it slide anywhere inside the triangle they make, stopping at its
-// edges: the knob's rect and both colours are blended from the three
-// renderings by the knob's barycentric weights. Letting go settles on the
-// position with the largest weight.
+# Three-way switch with declarative dragging (ui/drag): `between`.
+#
+# The model is which of three positions the switch is in. The view draws
+# the knob at that position, in that position's colour, over a background
+# of that colour. Dragging the knob reaches all three states, and `between`
+# lets it slide anywhere inside the triangle they make, stopping at its
+# edges: the knob's rect and both colours are blended from the three
+# renderings by the knob's barycentric weights. Letting go settles on the
+# position with the largest weight.
 import ui
 import ui/drag
 
@@ -21,7 +21,7 @@ state changes = 0
 fn view(pos)
   let bg = place("bg", BG[pos])
   draw_rect(0, 0, 360, 300, bg)
-  // The track: the triangle between the three positions.
+  # The track: the triangle between the three positions.
   let names = ["off", "low", "high"]
   for i in range(3) do
     let a = SPOTS[names[i]]

@@ -1,31 +1,31 @@
-// glsl — translate a Petal function to GLSL. EXPERIMENTAL.
-//
-//     import glsl
-//
-//     let grade = fn(fx: Fx, amount = 0.5) -> fx.color * amount
-//     let g = glsl.glsl_function(grade, ENV)   // {code, common, params, uniforms, taps, error, ...}
-//     let text = glsl.to_glsl(grade, ENV)      // the same as one GLSL string
-//
-// The translator reads the function with the core introspection builtins
-// (`fn_info`, `fn_ast`) and walks its syntax tree. It runs nothing: the code
-// only has to be in the pure numeric subset (floats, ints, bools, vec2/vec3,
-// arithmetic, the math builtins, `let`/`var`/`set`, `if`, `for i in range`,
-// `while`, `return`, calls of other translatable functions). Anything else is
-// refused with the line and column of the construct.
-//
-// The result is cached under the function's `code_hash`, so a script that
-// calls this every frame translates once, and again only after an edit that
-// changes the function (or a function it calls). See
-// docs/game-engine-features/petal-to-glsl.md for the mapping, the environment record and the
-// limits.
+# glsl — translate a Petal function to GLSL. EXPERIMENTAL.
+#
+#     import glsl
+#
+#     let grade = fn(fx: Fx, amount = 0.5) -> fx.color * amount
+#     let g = glsl.glsl_function(grade, ENV)   // {code, common, params, uniforms, taps, error, ...}
+#     let text = glsl.to_glsl(grade, ENV)      // the same as one GLSL string
+#
+# The translator reads the function with the core introspection builtins
+# (`fn_info`, `fn_ast`) and walks its syntax tree. It runs nothing: the code
+# only has to be in the pure numeric subset (floats, ints, bools, vec2/vec3,
+# arithmetic, the math builtins, `let`/`var`/`set`, `if`, `for i in range`,
+# `while`, `return`, calls of other translatable functions). Anything else is
+# refused with the line and column of the construct.
+#
+# The result is cached under the function's `code_hash`, so a script that
+# calls this every frame translates once, and again only after an edit that
+# changes the function (or a function it calls). See
+# docs/game-engine-features/petal-to-glsl.md for the mapping, the environment record and the
+# limits.
 
 pub let VERSION = 1
 
-// --- GLSL types ------------------------------------------------------------
-//
-// The host names types with strings (`env.structs`, `env.functions`, and the
-// annotations in the Petal source); they become a `Ty` on the way in and a
-// string again on the way out (`ty_text`).
+# --- GLSL types ------------------------------------------------------------
+#
+# The host names types with strings (`env.structs`, `env.functions`, and the
+# annotations in the Petal source); they become a `Ty` on the way in and a
+# string again on the way out (`ty_text`).
 
 enum Ty
   float(dim: 1),
@@ -34,9 +34,9 @@ enum Ty
   vec2(dim: 2),
   vec3(dim: 3),
   vec4(dim: 4),
-  // A struct of `env.structs`, or a type only the host's functions know.
+  # A struct of `env.structs`, or a type only the host's functions know.
   named(id, dim: 0),
-  // The type of an expression that was refused.
+  # The type of an expression that was refused.
   unknown(dim: 0),
 end
 
@@ -44,7 +44,7 @@ let TY_BY_NAME = {
   float: Ty.float, int: Ty.int, bool: Ty.bool,
   vec2: Ty.vec2, vec3: Ty.vec3, vec4: Ty.vec4,
 }
-// The float vector of each width (a width of 1 is a float).
+# The float vector of each width (a width of 1 is a float).
 let VEC_OF_DIM = [Ty.unknown, Ty.float, Ty.vec2, Ty.vec3, Ty.vec4]
 
 fn ty_named(name: string) -> Ty
@@ -59,7 +59,7 @@ fn ty_text(t: Ty) -> string
   end
 end
 
-// A float, int, bool or vector: what a uniform or a local may be.
+# A float, int, bool or vector: what a uniform or a local may be.
 fn is_value_type(t: Ty) -> bool
   t.dim > 0
 end
@@ -72,13 +72,13 @@ fn is_num(t: Ty) -> bool
   t == Ty.int || t == Ty.float
 end
 
-// The vector type a call of `name` constructs (`vec3(...)`), or nil.
+# The vector type a call of `name` constructs (`vec3(...)`), or nil.
 fn vec_ctor(name: string)
   let t = TY_BY_NAME?.[name]
   if t != nil && is_vec(t) then t else nil end
 end
 
-// `env.structs` with its field types read: {Fx: {color: Ty.vec3, ...}}.
+# `env.structs` with its field types read: {Fx: {color: Ty.vec3, ...}}.
 fn read_structs(raw: record) -> record
   let out = {}
   for name in keys(raw) do
@@ -91,7 +91,7 @@ fn read_structs(raw: record) -> record
   out
 end
 
-// `env.functions` with its signatures read.
+# `env.functions` with its signatures read.
 fn read_signatures(raw: record) -> record
   let out = {}
   for name in keys(raw) do
@@ -101,22 +101,22 @@ fn read_signatures(raw: record) -> record
   out
 end
 
-// --- Tables ----------------------------------------------------------------
+# --- Tables ----------------------------------------------------------------
 
-// Petal builtin -> GLSL name, generic over float / vecN: f(T) -> T.
+# Petal builtin -> GLSL name, generic over float / vecN: f(T) -> T.
 let SAME_TYPE_1 = {
   floor: "floor", ceil: "ceil", fract: "fract", round: "round",
   sin: "sin", cos: "cos", tan: "tan", asin: "asin", acos: "acos",
   atan: "atan", exp: "exp", log: "log", sqrt: "sqrt",
   radians: "radians", degrees: "degrees", normalize: "normalize",
 }
-// Also defined on int.
+# Also defined on int.
 let KEEP_INT_1 = {abs: "abs", sign: "sign"}
-// f(float | vecN, ...) -> the widest argument; the value is the arity.
+# f(float | vecN, ...) -> the widest argument; the value is the arity.
 let WIDEST_N = {clamp: 3, lerp: 3, smoothstep: 3, step: 2, mod: 2, pow: 2}
 
-// Names a local must not take: GLSL keywords, and the functions this
-// translator emits calls to (a local of that name would hide the function).
+# Names a local must not take: GLSL keywords, and the functions this
+# translator emits calls to (a local of that name would hide the function).
 let RESERVED_LIST = [
   "sample", "input", "output", "common", "filter", "active", "half", "fixed",
   "texture", "mix", "length", "step", "mod", "min", "max", "fx", "params",
@@ -131,8 +131,8 @@ let RESERVED_LIST = [
   "precision",
 ]
 
-// Precedence levels, loosest first: 0 ternary, 1 ||, 2 &&, 3 == !=,
-// 4 < <= > >=, 5 + -, 6 * / %, 7 unary, 8 atom.
+# Precedence levels, loosest first: 0 ternary, 1 ||, 2 &&, 3 == !=,
+# 4 < <= > >=, 5 + -, 6 * / %, 7 unary, 8 atom.
 let BINOPS = {
   Add: {sym: "+", prec: 5}, Sub: {sym: "-", prec: 5},
   Mul: {sym: "*", prec: 6}, Div: {sym: "/", prec: 6},
@@ -142,27 +142,27 @@ let BINOPS = {
   And: {sym: "&&", prec: 2}, Or: {sym: "||", prec: 1},
 }
 
-// --- Values ----------------------------------------------------------------
+# --- Values ----------------------------------------------------------------
 
-// A translated expression: GLSL text, its type, its precedence.
+# A translated expression: GLSL text, its type, its precedence.
 class Val
   code: string,
   ty: Ty,
   prec: int,
-  // The value of an int literal (it can be re-printed as a float), or nil.
+  # The value of an int literal (it can be re-printed as a float), or nil.
   lit,
-  // The value of a constant int expression (for loop trip counts), or nil.
+  # The value of a constant int expression (for loop trip counts), or nil.
   cv,
 end
 
-// The two operands of an arithmetic operator, brought to compatible types.
+# The two operands of an arithmetic operator, brought to compatible types.
 class Operands
   a: Val,
   b: Val,
   ty: Ty,
 end
 
-// A function body's tail value and where it is.
+# A function body's tail value and where it is.
 class Tail
   v: Val,
   node: record,
@@ -199,7 +199,7 @@ fn srgb_to_linear(channel: int) -> float
   round(lin * 1000000.0) / 1000000.0
 end
 
-// Whether `v` (any value) is a color record (what `#rrggbb` evaluates to).
+# Whether `v` (any value) is a color record (what `#rrggbb` evaluates to).
 fn is_color(v) -> bool
   if type(v) != "record" then return false end
   let ks = keys(v)
@@ -212,7 +212,7 @@ fn color_vec3(r: int, g: int, b: int) -> string
     float_lit(srgb_to_linear(b)) ++ ")"
 end
 
-// [r, g, b] when `node` is what a color literal parses to, else nil.
+# [r, g, b] when `node` is what a color literal parses to, else nil.
 fn color_of(node: record)
   if node.tag != "Record" || len(node.fields) != 3 then return nil end
   let out = {}
@@ -227,30 +227,30 @@ fn join_codes(vals: list) -> string
   join(for v in vals do v.code end, ", ")
 end
 
-// --- The translation context -----------------------------------------------
-//
-// `c` is one function being translated. `c.read()` / `c.write(s)` read and
-// write its mutable half (a `FnState`), and `c.tr` is the same pair for what
-// the whole translation shares (a `TranslationState`). `c.cfg` is what the
-// environment and the options say, the same for every function.
+# --- The translation context -----------------------------------------------
+#
+# `c` is one function being translated. `c.read()` / `c.write(s)` read and
+# write its mutable half (a `FnState`), and `c.tr` is the same pair for what
+# the whole translation shares (a `TranslationState`). `c.cfg` is what the
+# environment and the options say, the same for every function.
 
-// A mutable value behind two closures.
+# A mutable value behind two closures.
 class Cell
   read: function,
   write: function,
 end
 
 class Config
-  // {name: Sig}: the functions the shader has that Petal does not.
+  # {name: Sig}: the functions the shader has that Petal does not.
   env_fns: record,
-  // {name: {field: Ty}}.
+  # {name: {field: Ty}}.
   structs: record,
-  // The names of `env.count`.
+  # The names of `env.count`.
   counted: list,
   inline: bool,
-  // `params.` (or "") in front of a uniform's name.
+  # `params.` (or "") in front of a uniform's name.
   uniforms_struct: string,
-  // In front of a helper's GLSL name.
+  # In front of a helper's GLSL name.
   prefix: string,
 end
 
@@ -259,19 +259,19 @@ class Sig
   returns: Ty,
 end
 
-// A local or a parameter in scope: its GLSL name and type.
+# A local or a parameter in scope: its GLSL name and type.
 class Local
   glsl: string,
   ty: Ty,
 end
 
-// A hook's result: the struct field the body's value is assigned to.
+# A hook's result: the struct field the body's value is assigned to.
 class Hook
   target: string,
   ty: Ty,
 end
 
-// A translated helper and how to call it. Emitted once per name.
+# A translated helper and how to call it. Emitted once per name.
 class Helper
   glsl: string,
   params: list,
@@ -282,30 +282,30 @@ end
 
 class FnState
   lines: list,
-  // A list of {name: Local}, innermost last.
+  # A list of {name: Local}, innermost last.
   scopes: list,
-  // The GLSL names taken: {name: true}.
+  # The GLSL names taken: {name: true}.
   used: record,
   indent: int,
-  // How many times the current statement runs per call, nil when not known.
+  # How many times the current statement runs per call, nil when not known.
   loop_factor,
   taps: int,
   taps_hidden: bool,
-  // The return type, a Ty once known.
+  # The return type, a Ty once known.
   ret_ty,
 end
 
 class TranslationState
-  // {name: Helper}.
+  # {name: Helper}.
   helpers: record,
-  // The GLSL of every helper, in order.
+  # The GLSL of every helper, in order.
   common: list,
-  // The first error, {message, line, column}, or nil.
+  # The first error, {message, line, column}, or nil.
   err,
   uniforms: list,
-  // {name: glsl type string}.
+  # {name: glsl type string}.
   uniform_types: record,
-  // The helpers being translated (to refuse recursion).
+  # The helpers being translated (to refuse recursion).
   busy: list,
 end
 
@@ -314,12 +314,12 @@ class Ctx
   write: function,
   tr: Cell,
   cfg: Config,
-  // {name: {value}}: what the function captured.
+  # {name: {value}}: what the function captured.
   captures: record,
   uniform_prefix: string,
-  // A Hook, or nil for a plain function.
+  # A Hook, or nil for a plain function.
   hook,
-  // The function's name, nil for the entry function.
+  # The function's name, nil for the entry function.
   fn_name,
   line,
   column,
@@ -333,7 +333,7 @@ fn cell(initial) -> Cell
   end)
 end
 
-// `node` is the construct refused, or nil for the function itself.
+# `node` is the construct refused, or nil for the function itself.
 fn fail(c: Ctx, message: string, node) -> Val
   let ts = c.tr.read()
   if ts.err == nil then
@@ -372,7 +372,7 @@ fn declare(c: Ctx, name: string, ty: Ty) -> string
   glsl
 end
 
-// The Local `name` is, or nil.
+# The Local `name` is, or nil.
 fn lookup(c: Ctx, name: string)
   let scopes = c.read().scopes
   let n = len(scopes)
@@ -401,7 +401,7 @@ fn indent_by(c: Ctx, by: int) -> nil
   c.write(s)
 end
 
-// --- Types -----------------------------------------------------------------
+# --- Types -----------------------------------------------------------------
 
 fn to_float(c: Ctx, v: Val, node: record) -> Val
   if v.ty == Ty.float then return v end
@@ -420,7 +420,7 @@ fn coerce(c: Ctx, v: Val, ty: Ty, node: record) -> Val
   fail(c, "expected " ++ ty_text(ty) ++ ", found " ++ ty_text(v.ty), node)
 end
 
-// Bring two operands of an arithmetic operator to compatible GLSL types.
+# Bring two operands of an arithmetic operator to compatible GLSL types.
 fn unify(c: Ctx, a: Val, b: Val, node: record) -> Operands
   if a.ty == b.ty then return Operands(a, b, a.ty) end
   if is_vec(a.ty) && is_num(b.ty) then return Operands(a, to_float(c, b, node), a.ty) end
@@ -452,7 +452,7 @@ fn widest(c: Ctx, vals: list, node: record) -> Ty
   found ?? Ty.float
 end
 
-// --- Expressions -----------------------------------------------------------
+# --- Expressions -----------------------------------------------------------
 
 fn expr(c: Ctx, node: record) -> Val
   if failed(c) then return bad() end
@@ -479,7 +479,7 @@ fn e_literal(c: Ctx, node: record) -> Val
   fail(c, "a " ++ node.type ++ " literal has no GLSL form", node)
 end
 
-// A captured value read as an expression.
+# A captured value read as an expression.
 fn capture(c: Ctx, name: string, value, node: record) -> Val
   let t = type(value)
   if t == "int" then
@@ -513,7 +513,7 @@ fn capture(c: Ctx, name: string, value, node: record) -> Val
     end
     return atom(color_vec3(value.r, value.g, value.b), Ty.vec3)
   end
-  // A uniform: the text then depends on the code alone, never on the value.
+  # A uniform: the text then depends on the code alone, never on the value.
   let uname = c.uniform_prefix ++ name
   let ts = c.tr.read()
   if !contains(ts.uniforms, uname) then
@@ -615,7 +615,7 @@ fn swizzle_ok(field: string, dim: int) -> bool
   false
 end
 
-// {field: Ty} when `ty` is a struct of the environment, else nil.
+# {field: Ty} when `ty` is a struct of the environment, else nil.
 fn struct_fields(c: Ctx, ty: Ty)
   match ty
     when Ty.named(id) -> c.cfg.structs?.[id]
@@ -657,7 +657,7 @@ fn single_expr(stmts: list) -> bool
   len(stmts) == 1 && stmts[0].tag == "Expr"
 end
 
-// An `if` whose value is used.
+# An `if` whose value is used.
 fn e_if(c: Ctx, node: record) -> Val
   let then_body = node.then_body
   let else_body = node.else_body
@@ -665,8 +665,8 @@ fn e_if(c: Ctx, node: record) -> Val
     return fail(c, "an `if` used as a value needs an `else`", node)
   end
   if single_expr(then_body) && single_expr(else_body) then
-    // Two plain expressions: a ternary, unless an arm needs statements of its
-    // own (then everything it did is undone and the general form is used).
+    # Two plain expressions: a ternary, unless an arm needs statements of its
+    # own (then everything it did is undone and the general form is used).
     let saved = c.read()
     let cv = cond(c, node.condition)
     let a = expr(c, then_body[0].expr)
@@ -679,7 +679,7 @@ fn e_if(c: Ctx, node: record) -> Val
     end
     c.write(saved)
   end
-  // A temporary assigned in both arms.
+  # A temporary assigned in both arms.
   let tmp = declare(c, "pick", Ty.unknown)
   let slot = len(c.read().lines)
   emit(c, "")
@@ -805,7 +805,7 @@ fn e_call(c: Ctx, node: record) -> Val
     let ty = widest(c, fl, node)
     if failed(c) then return bad() end
     if name == "pow" then
-      // GLSL's pow wants both arguments of one type.
+      # GLSL's pow wants both arguments of one type.
       fl = for a in fl do
         if a.ty == ty then a else atom(ty_text(ty) ++ "(" ++ a.code ++ ")", ty) end
       end
@@ -854,10 +854,10 @@ fn call_helper(c: Ctx, name: string, value: function, args: list, node: record) 
   atom(call_text(h.glsl, vals), h.ret)
 end
 
-// --- Statements ------------------------------------------------------------
+# --- Statements ------------------------------------------------------------
 
-// A function body: its statements, then the tail value (a Tail; nil when the
-// body ends in a statement).
+# A function body: its statements, then the tail value (a Tail; nil when the
+# body ends in a statement).
 fn body(c: Ctx, stmts: list)
   let n = len(stmts)
   if n == 0 then return nil end
@@ -867,7 +867,7 @@ fn body(c: Ctx, stmts: list)
   let last = stmts[n - 1]
   if last.tag == "Expr" then
     let e = last.expr
-    // A loop, or an `if` with no `else`, ends the body as a statement.
+    # A loop, or an `if` with no `else`, ends the body as a statement.
     if e.tag != "For" && !(e.tag == "If" && e.else_body == nil) then
       return Tail(expr(c, e), e)
     end
@@ -1011,7 +1011,7 @@ fn for_stmt(c: Ctx, node: record) -> nil
   emit(c, "}")
 end
 
-// `return v` (v is nil for a bare `return`), or the body's tail value.
+# `return v` (v is nil for a bare `return`), or the body's tail value.
 fn ret(c: Ctx, v, node: record) -> nil
   if failed(c) then return nil end
   if c.hook != nil then
@@ -1042,7 +1042,7 @@ fn hook_result(c: Ctx, v: Val, node: record) -> Val
   v
 end
 
-// --- Functions -------------------------------------------------------------
+# --- Functions -------------------------------------------------------------
 
 fn captures_of(info: record) -> record
   let out = {}
@@ -1052,7 +1052,7 @@ fn captures_of(info: record) -> record
   out
 end
 
-// A context for translating one function.
+# A context for translating one function.
 fn context(
   tr: Cell, cfg: Config, indent: int, ret_ty, captures: record, uniform_prefix: string,
   hook, fn_name, line, column,
@@ -1072,13 +1072,13 @@ fn type_ok(c: Ctx, ty: Ty) -> bool
   is_value_type(ty) || struct_fields(c, ty) != nil
 end
 
-// Translate `value` (a Petal function) into a GLSL function and return how to
-// call it (a Helper, nil after a failure). Emitted once per name.
-//
-// `uprefix` prefixes the uniforms its captures become (default `<name>_`) and
-// `glsl_name` overrides the emitted name (default `<prefix><name>`); the entry
-// function of a plain-function translation passes both. `node` is the call
-// being translated, nil for the entry function.
+# Translate `value` (a Petal function) into a GLSL function and return how to
+# call it (a Helper, nil after a failure). Emitted once per name.
+#
+# `uprefix` prefixes the uniforms its captures become (default `<name>_`) and
+# `glsl_name` overrides the emitted name (default `<prefix><name>`); the entry
+# function of a plain-function translation passes both. `node` is the call
+# being translated, nil for the entry function.
 fn helper(c: Ctx, name: string, value: function, node, uprefix = nil, glsl_name = nil)
   let ts = c.tr.read()
   let known = ts.helpers?.[name]
@@ -1140,8 +1140,8 @@ fn helper(c: Ctx, name: string, value: function, node, uprefix = nil, glsl_name 
   out
 end
 
-// The GLSL type of an effect parameter (a uniform); Ty.unknown after a
-// failure. `node` is where to report a failure, nil for the function itself.
+# The GLSL type of an effect parameter (a uniform); Ty.unknown after a
+# failure. `node` is where to report a failure, nil for the function itself.
 fn param(c: Ctx, p: record, pinfo: record, node) -> Ty
   if p.default == nil then
     fail(c, "param `" ++ p.name ++ "` needs a default (it is the param's default value)", node)
@@ -1210,9 +1210,9 @@ fn translate(f: function, info: record, env: record, opts: record) -> record
   let is_hook = first != nil && first.type != nil && has(structs, first.type)
 
   if !is_hook then
-    // A plain function: the whole thing is one GLSL function definition.
-    // A named fn keeps its name (behind opts.name as a prefix, when given); a
-    // lambda is called opts.name, or `f`.
+    # A plain function: the whole thing is one GLSL function definition.
+    # A named fn keeps its name (behind opts.name as a prefix, when given); a
+    # lambda is called opts.name, or `f`.
     let name = ast.name ?? (opts?.name ?? "f")
     cfg.prefix = if opts?.name != nil then opts.name ++ "_" else "" end
     let top = context(
@@ -1224,7 +1224,7 @@ fn translate(f: function, info: record, env: record, opts: record) -> record
     if done.err != nil then
       return empty_result(done.err.message, done.err.line, done.err.column)
     end
-    // The entry function is the last definition; everything before it is common.
+    # The entry function is the last definition; everything before it is common.
     let cut = last_definition(done.common)
     return {
       error: nil, kind: "function", name: h.glsl,
@@ -1236,9 +1236,9 @@ fn translate(f: function, info: record, env: record, opts: record) -> record
     }
   end
 
-  // A hook body: the first parameter is the host's `inout` struct, every
-  // other parameter is a uniform with a default, and the body's value is the
-  // new value of one field of the struct.
+  # A hook body: the first parameter is the host's `inout` struct, every
+  # other parameter is a uniform with a default, and the body's value is the
+  # new value of one field of the struct.
   let self_name = env?.self ?? first.name
   let result_field = env?.result
   if result_field == nil || !has(structs[first.type], result_field) then
@@ -1295,8 +1295,8 @@ fn translate(f: function, info: record, env: record, opts: record) -> record
   }
 end
 
-// The index of the line that opens the last function definition in `lines`
-// (definitions start in column 0, their bodies are indented).
+# The index of the line that opens the last function definition in `lines`
+# (definitions start in column 0, their bodies are indented).
 fn last_definition(lines: list) -> int
   let cut = 0
   for i in range(0, len(lines)) do
@@ -1306,11 +1306,11 @@ fn last_definition(lines: list) -> int
   cut
 end
 
-// --- Captures as of this run -----------------------------------------------
+# --- Captures as of this run -----------------------------------------------
 
-// What the cached translation depends on besides the code (`key`: the values
-// that are written into the text, and the types of the ones that are not), and
-// the current value of every capture that can be a uniform (`values`).
+# What the cached translation depends on besides the code (`key`: the values
+# that are written into the text, and the types of the ones that are not), and
+# the current value of every capture that can be a uniform (`values`).
 fn live_captures(info: record, prefix: string, inline: bool, depth: int) -> record
   let key = []
   let values = {}
@@ -1334,34 +1334,34 @@ fn live_captures(info: record, prefix: string, inline: bool, depth: int) -> reco
   {key: key, values: values}
 end
 
-// --- The public surface ----------------------------------------------------
+# --- The public surface ----------------------------------------------------
 
-// Translate the Petal function `f` to GLSL and return the parts a host needs:
-//
-//   error         nil, or {message, line, column} for code outside the subset
-//   kind          "hook" or "function"
-//   code          a hook: the statements of its body; a function: its definition
-//   common        the GLSL functions `code` calls (helpers), "" when none
-//   name          a function: its GLSL name; a hook: env.entry
-//   signature     a hook: "void <entry>(inout <Struct> <self>)"
-//   params        a hook: {name: default} for each parameter after the first
-//   param_types   {name: glsl type} for the same
-//   uniforms      {name: current value} for each captured float / vector /
-//                 color the code reads (they are uniforms, not constants)
-//   uniform_types {name: glsl type} for the same
-//   taps          how many times the functions named in env.count are called
-//                 (loops with constant bounds multiplied out), nil if unknown
-//   taps_in_loop  whether some of those calls sit in a loop
-//   code_hash     the function's code hash (what the cache is keyed on)
-//
-// `env` describes the shader side: {structs, functions, self, result,
-// uniforms, count, entry}. `opts`: {name, inline_captures}. Both are
-// documented in docs/game-engine-features/petal-to-glsl.md.
-//
-// The translation is cached in a `memo` per (code hash, structural captures,
-// environment, options), so calling this every frame is cheap: a hit costs
-// one `fn_info` per function involved and a memo lookup. It is a pure function
-// of that key, so every caller asking for the same shader shares the entry.
+# Translate the Petal function `f` to GLSL and return the parts a host needs:
+#
+#   error         nil, or {message, line, column} for code outside the subset
+#   kind          "hook" or "function"
+#   code          a hook: the statements of its body; a function: its definition
+#   common        the GLSL functions `code` calls (helpers), "" when none
+#   name          a function: its GLSL name; a hook: env.entry
+#   signature     a hook: "void <entry>(inout <Struct> <self>)"
+#   params        a hook: {name: default} for each parameter after the first
+#   param_types   {name: glsl type} for the same
+#   uniforms      {name: current value} for each captured float / vector /
+#                 color the code reads (they are uniforms, not constants)
+#   uniform_types {name: glsl type} for the same
+#   taps          how many times the functions named in env.count are called
+#                 (loops with constant bounds multiplied out), nil if unknown
+#   taps_in_loop  whether some of those calls sit in a loop
+#   code_hash     the function's code hash (what the cache is keyed on)
+#
+# `env` describes the shader side: {structs, functions, self, result,
+# uniforms, count, entry}. `opts`: {name, inline_captures}. Both are
+# documented in docs/game-engine-features/petal-to-glsl.md.
+#
+# The translation is cached in a `memo` per (code hash, structural captures,
+# environment, options), so calling this every frame is cheap: a hit costs
+# one `fn_info` per function involved and a memo lookup. It is a pure function
+# of that key, so every caller asking for the same shader shares the entry.
 pub fn glsl_function(f, env: record = {}, opts: record = {}) -> record
   if type(f) != "function" then
     return {...empty_result("to_glsl expects a function, got a " ++ type(f), nil, nil), uniforms: {}, code_hash: nil}
@@ -1383,10 +1383,10 @@ pub fn glsl_function(f, env: record = {}, opts: record = {}) -> record
   {...cached, uniforms: uniforms, code_hash: info.code_hash}
 end
 
-// The GLSL of `f` as one string: its helpers, then the function itself (a
-// hook body is wrapped in its signature). Code outside the subset gives a
-// `#error` line carrying the message and position, so the failure surfaces
-// where the shader is compiled; use `glsl_function` to get it as data.
+# The GLSL of `f` as one string: its helpers, then the function itself (a
+# hook body is wrapped in its signature). Code outside the subset gives a
+# `#error` line carrying the message and position, so the failure surfaces
+# where the shader is compiled; use `glsl_function` to get it as data.
 pub fn to_glsl(f, env: record = {}, opts: record = {}) -> string
   let g = glsl_function(f, env, opts)
   if g.error != nil then
@@ -1400,7 +1400,7 @@ pub fn to_glsl(f, env: record = {}, opts: record = {}) -> string
   if g.common == "" then text else g.common ++ "\n\n" ++ text end
 end
 
-// "message [line L, column C]" for an error record of `glsl_function`.
+# "message [line L, column C]" for an error record of `glsl_function`.
 pub fn glsl_error_text(err: record) -> string
   if err.line == nil then
     err.message

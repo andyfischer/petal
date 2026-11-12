@@ -1,16 +1,16 @@
-// State Machine
-// Using an enum with constant data, and state, to model a traffic light
-// controller.
-//
-// The light's phase is the *program's* state, not the state of any one call, so
-// it lives in top-level `state var` cells: one cell for the whole program, read
-// with `get` and written with `set` from anywhere. Declaring it inside
-// `traffic_light()` instead would give the controller a fresh cell for every
-// tick of the loop below — a light that is forever on its first frame.
+# State Machine
+# Using an enum with constant data, and state, to model a traffic light
+# controller.
+#
+# The light's phase is the *program's* state, not the state of any one call, so
+# it lives in top-level `state var` cells: one cell for the whole program, read
+# with `get` and written with `set` from anywhere. Declaring it inside
+# `traffic_light()` instead would give the controller a fresh cell for every
+# tick of the loop below — a light that is forever on its first frame.
 
-// Each phase carries its own facts as constant data: how it is drawn, how many
-// ticks it holds, and which phase follows it. A variant's data may name any
-// variant, including a later one of the same enum.
+# Each phase carries its own facts as constant data: how it is drawn, how many
+# ticks it holds, and which phase follows it. A variant's data may name any
+# variant, including a later one of the same enum.
 enum Light
   Red(symbol: "[R] .  . ", hold: 5, next: Light.Green),
   Yellow(symbol: " . [Y] . ", hold: 2, next: Light.Red),
@@ -23,7 +23,7 @@ state var ticks_in_state = 0
 fn traffic_light()
   set ticks_in_state = get ticks_in_state + 1
 
-  // Transition rule: one for every phase, because the phase holds the numbers.
+  # Transition rule: one for every phase, because the phase holds the numbers.
   let light = get current
   if get ticks_in_state >= light.hold then
     set ticks_in_state = 0

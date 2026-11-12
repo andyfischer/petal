@@ -1,22 +1,22 @@
-// Default Parameter Values
-// A parameter written `name = expr` may be left out of a call. The default is
-// an expression, evaluated inside the function on every call that omits the
-// argument — never once at declaration.
+# Default Parameter Values
+# A parameter written `name = expr` may be left out of a call. The default is
+# an expression, evaluated inside the function on every call that omits the
+# argument — never once at declaration.
 
 fn greet(name: string, greeting: string = "Hello", punct: string = "!") -> string
   "{greeting}, {name}{punct}"
 end
 
-// Trailing defaulted parameters can simply be left off.
+# Trailing defaulted parameters can simply be left off.
 print(greet("Ada"))
 print(greet("Ada", "Hi"))
 
-// Any defaulted parameter can be skipped by naming a later one.
+# Any defaulted parameter can be skipped by naming a later one.
 print(greet("Ada", punct: "?"))
 print(greet(punct: "...", name: "Ada"))
 
-// A default may use the parameters before it, and anything the function body
-// could capture.
+# A default may use the parameters before it, and anything the function body
+# could capture.
 let margin = 4
 
 fn inset(width: num, height: num = width, pad: num = margin * 2) -> list
@@ -27,8 +27,8 @@ print("inset:", inset(20))
 print("inset:", inset(20, 10))
 print("inset:", inset(20, pad: 0))
 
-// The expression runs on *every* call that omits the argument, so a list
-// default is a fresh list each time — the two calls below do not share one.
+# The expression runs on *every* call that omits the argument, so a list
+# default is a fresh list each time — the two calls below do not share one.
 fn tagged(item, tags: list = [])
   push(tags, item)
 end
@@ -37,8 +37,8 @@ print("tagged:", tagged("a"))
 print("tagged:", tagged("b"))
 print("tagged:", tagged("c", ["x"]))
 
-// The same goes for a default with a side effect: it happens once per call
-// that leans on it, and not at all when the argument is passed.
+# The same goes for a default with a side effect: it happens once per call
+# that leans on it, and not at all when the argument is passed.
 var issued = 0
 
 fn next_id() -> int
@@ -56,7 +56,7 @@ print(ticket("reserved", 99))
 print(ticket("third"))
 print("ids issued:", get issued)
 
-// Passing nil is passing an argument; only omitting it evaluates the default.
+# Passing nil is passing an argument; only omitting it evaluates the default.
 fn describe(value = "nothing passed")
   "got {value}"
 end
@@ -64,13 +64,13 @@ end
 print(describe())
 print(describe(nil))
 
-// Lambdas take defaults too, and a callback handed fewer arguments than it
-// declares uses its defaults for the rest.
+# Lambdas take defaults too, and a callback handed fewer arguments than it
+# declares uses its defaults for the rest.
 let scale = fn(x, by = 10) -> x * by
 print("scale:", scale(3), scale(3, 2))
 print("mapped:", map([1, 2, 3], fn(x, by = 100) -> x * by))
 
-// Methods: the receiver is the first parameter, the defaults come after it.
+# Methods: the receiver is the first parameter, the defaults come after it.
 class Counter
   count: int,
 end
@@ -82,9 +82,9 @@ end
 let c = Counter(5)
 print("bumped:", c.bumped().count, c.bumped(10).count, c.bumped(by: 3).count)
 
-// Overloads: a variant with exactly as many parameters as the call has
-// arguments still wins; otherwise the call goes to the one variant whose
-// defaults cover it.
+# Overloads: a variant with exactly as many parameters as the call has
+# arguments still wins; otherwise the call goes to the one variant whose
+# defaults cover it.
 fn area(size)
   "square {size * size}"
 end

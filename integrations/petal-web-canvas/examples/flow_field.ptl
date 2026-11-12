@@ -1,7 +1,7 @@
-// Flow Field — particles drift along a field of layered sine waves.
-// Each particle is a soft dot trailing a few fading dots behind it, so the
-// motion reads as flowing strands of light. Trails are reset when a particle
-// wraps to a new spot, so a dot never streaks a line across the screen.
+# Flow Field — particles drift along a field of layered sine waves.
+# Each particle is a soft dot trailing a few fading dots behind it, so the
+# motion reads as flowing strands of light. Trails are reset when a particle
+# wraps to a new spot, so a dot never streaks a line across the screen.
 
 import ui
 
@@ -18,7 +18,7 @@ let num_particles = 400
 let field_scale = 0.008
 let trail_len = 5
 
-// Flow field — the angle a particle should travel at a given point + time.
+# Flow field — the angle a particle should travel at a given point + time.
 fn field_angle(px, py, t)
   let n = sin(px * field_scale + t) * cos(py * field_scale * 0.7 + t * 0.5)
   n += sin((px + py) * field_scale * 0.5 + t * 0.8) * 0.5
@@ -26,7 +26,7 @@ fn field_angle(px, py, t)
   n * PI * 2.0
 end
 
-// Hue (0..1) -> warm-to-cool rgb record, riding around the color wheel.
+# Hue (0..1) -> warm-to-cool rgb record, riding around the color wheel.
 fn hue_color(h)
   let hmod = ((h * 6.0) % 6.0 + 6.0) % 6.0
   let cr = 0
@@ -42,7 +42,7 @@ fn hue_color(h)
   {r: cr, g: cg, b: cb}
 end
 
-// Seed particles on the first frame.
+# Seed particles on the first frame.
 if len(particles) == 0 then
   for i in range(0, num_particles) do
     particles = append(particles, {
@@ -55,16 +55,16 @@ if len(particles) == 0 then
   end
 end
 
-// Advance every particle one step along the field.
+# Advance every particle one step along the field.
 let new_particles = []
 for p in particles do
   let angle = field_angle(px: p.x, py: p.y, t: field_time)
   let nx = p.x + cos(angle) * p.speed * delta
   let ny = p.y + sin(angle) * p.speed * delta
 
-  // Build the new trail: current position first, then the old trail,
-  // capped at trail_len. Wrapping particles start a fresh trail so the
-  // jump to a new position is never connected to the old one.
+  # Build the new trail: current position first, then the old trail,
+  # capped at trail_len. Wrapping particles start a fresh trail so the
+  # jump to a new position is never connected to the old one.
   let new_trail = []
   let wrapped = nx < 0.0 || nx > sw || ny < 0.0 || ny > sh
   if wrapped then
@@ -88,13 +88,13 @@ for p in particles do
 end
 particles = new_particles
 
-// === Drawing ===
+# === Drawing ===
 clear(8, 8, 16)
 
 for p in particles do
   let col = hue_color(p.hue + field_angle(px: p.x, py: p.y, t: field_time) * 0.05)
 
-  // Trailing dots: older points are smaller and dimmer.
+  # Trailing dots: older points are smaller and dimmer.
   for k in range(0, len(p.trail)) do
     let t = p.trail[k]
     let fade = 1.0 - float(k + 1) / float(trail_len + 1)
@@ -104,7 +104,7 @@ for p in particles do
       b: int(float(col.b) * fade * 0.7))
   end
 
-  // Head: a soft halo under a bright core.
+  # Head: a soft halo under a bright core.
   draw_circle(cx: int(p.x), cy: int(p.y), radius: 2, r: col.r / 4, g: col.g / 4, b: col.b / 4)
   draw_circle(cx: int(p.x), cy: int(p.y), radius: 1,
     r: min(255, col.r + 40), g: min(255, col.g + 40), b: min(255, col.b + 40))

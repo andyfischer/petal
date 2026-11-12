@@ -1,9 +1,9 @@
-// Breakout / Brick Breaker — Neon Edition
-// Mouse controls the paddle horizontally. Ball bounces off walls, paddle, and bricks.
+# Breakout / Brick Breaker — Neon Edition
+# Mouse controls the paddle horizontally. Ball bounces off walls, paddle, and bricks.
 
 import ui
 
-// --- Constants ---
+# --- Constants ---
 let paddle_w = 120
 let paddle_h = 14
 let paddle_y_pos = 560.0
@@ -32,7 +32,7 @@ fn draw_text(text, pos, size, color)
   _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
-// --- State ---
+# --- State ---
 state ball_x = 400.0
 state ball_y = 400.0
 state ball_dx = 200.0
@@ -44,7 +44,7 @@ state initialized = false
 state particles = []
 state ball_trail = []
 
-// --- Initialize bricks ---
+# --- Initialize bricks ---
 if !initialized then
   initialized = true
   let row = 0
@@ -60,7 +60,7 @@ if !initialized then
   end
 end
 
-// --- Neon brick colors by row ---
+# --- Neon brick colors by row ---
 fn brick_color(row)
   if row == 0 then :ff2850
   elsif row == 1 then :ff7814
@@ -73,21 +73,21 @@ end
 
 let delta = dt()
 
-// --- Paddle position from mouse ---
+# --- Paddle position from mouse ---
 let paddle_x = float(mouse_x()) - float(paddle_w) / 2.0
 paddle_x = max(0.0, min(paddle_x, float(screen_width() - paddle_w)))
 
-// --- Ball movement ---
+# --- Ball movement ---
 ball_x += ball_dx * delta
 ball_y += ball_dy * delta
 
-// --- Store ball trail ---
+# --- Store ball trail ---
 ball_trail = append(ball_trail, { x: ball_x, y: ball_y })
 if len(ball_trail) > 12 then
   ball_trail = slice(ball_trail, start: len(ball_trail) - 12, end: len(ball_trail))
 end
 
-// --- Wall collisions ---
+# --- Wall collisions ---
 if ball_x < float(ball_radius) then
   ball_x = float(ball_radius)
   ball_dx = abs(ball_dx)
@@ -101,7 +101,7 @@ if ball_y < float(ball_radius) then
   ball_dy = abs(ball_dy)
 end
 
-// --- Paddle collision ---
+# --- Paddle collision ---
 if ball_dy > 0.0 && ball_y + float(ball_radius) >= paddle_y_pos && ball_y + float(ball_radius) <= paddle_y_pos + float(paddle_h) then
   if ball_x >= paddle_x && ball_x <= paddle_x + float(paddle_w) then
     ball_dy = -abs(ball_dy)
@@ -111,7 +111,7 @@ if ball_dy > 0.0 && ball_y + float(ball_radius) >= paddle_y_pos && ball_y + floa
   end
 end
 
-// --- Brick collision ---
+# --- Brick collision ---
 fn rects_collide(x1, y1, w1, h1, x2, y2, w2, h2)
   x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2
 end
@@ -129,7 +129,7 @@ while i < len(bricks) do
       bricks[i] = { x: b.x, y: b.y, alive: false, row: b.row }
       score += 10
 
-      // Spawn particles
+      # Spawn particles
       let c = brick_color(b.row)
       let p = 0
       while p < 8 do
@@ -141,7 +141,7 @@ while i < len(bricks) do
         p += 1
       end
 
-      // Determine bounce direction
+      # Determine bounce direction
       let ball_cx = ball_x
       let ball_cy = ball_y
       let brick_cx = float(b.x) + float(brick_w) / 2.0
@@ -158,11 +158,11 @@ while i < len(bricks) do
   i += 1
 end
 
-// --- Update particles ---
+# --- Update particles ---
 particles = map(particles, fn(p) -> { x: p.x + p.vx * delta, y: p.y + p.vy * delta, vx: p.vx * 0.98, vy: p.vy + 200.0 * delta, life: p.life - delta * 1.5, r: p.r, g: p.g, b: p.b })
 particles = filter(particles, fn(p) -> p.life > 0.0)
 
-// --- Ball falls off bottom ---
+# --- Ball falls off bottom ---
 if ball_y > float(screen_height() + 20) then
   lives -= 1
   ball_x = 400.0
@@ -172,7 +172,7 @@ if ball_y > float(screen_height() + 20) then
   ball_trail = []
 end
 
-// --- Check win ---
+# --- Check win ---
 let all_dead = true
 let j = 0
 while j < len(bricks) do
@@ -182,17 +182,17 @@ while j < len(bricks) do
   j += 1
 end
 
-// --- Drawing ---
+# --- Drawing ---
 clear(10, 8, 20)
 
-// --- Starfield background ---
+# --- Starfield background ---
 let fc = frame_count()
 let star = 0
 while star < 40 do
-  // Use deterministic positions based on star index
+  # Use deterministic positions based on star index
   let sx = (star * 137 + 51) % 800
   let sy = (star * 199 + 23) % 600
-  // Twinkle: vary brightness by frame
+  # Twinkle: vary brightness by frame
   let twinkle = ((fc + star * 17) % 60)
   let bright = 30
   if twinkle < 20 then
@@ -202,55 +202,55 @@ while star < 40 do
   star += 1
 end
 
-// --- Border glow ---
-// Top border
+# --- Border glow ---
+# Top border
 draw_rect(x: 0, y: 0, w: 800, h: 2, r: 40, g: 20, b: 80)
 draw_rect(x: 0, y: 2, w: 800, h: 1, r: 80, g: 40, b: 160)
-// Left border
+# Left border
 draw_rect(x: 0, y: 0, w: 2, h: 600, r: 40, g: 20, b: 80)
 draw_rect(x: 2, y: 0, w: 1, h: 600, r: 80, g: 40, b: 160)
-// Right border
+# Right border
 draw_rect(x: 797, y: 0, w: 3, h: 600, r: 40, g: 20, b: 80)
 draw_rect(x: 797, y: 0, w: 1, h: 600, r: 80, g: 40, b: 160)
 
-// --- Draw bricks with 3D effect ---
+# --- Draw bricks with 3D effect ---
 let k = 0
 while k < len(bricks) do
   let b = bricks[k]
   if b.alive then
     let c = brick_color(b.row)
 
-    // Glow behind brick (slightly larger, dimmer)
+    # Glow behind brick (slightly larger, dimmer)
     let gr = c.r / 4
     let gg = c.g / 4
     let gb = c.b / 4
     draw_rect(x: b.x - 1, y: b.y - 1, w: brick_w + 2, h: brick_h + 2, r: gr, g: gg, b: gb)
 
-    // Main brick body
+    # Main brick body
     draw_rect(x: b.x, y: b.y, w: brick_w, h: brick_h, r: c.r, g: c.g, b: c.b)
 
-    // Top highlight (lighter)
+    # Top highlight (lighter)
     let hr = min(255, c.r + 60)
     let hg = min(255, c.g + 60)
     let hb = min(255, c.b + 60)
     draw_rect(x: b.x, y: b.y, w: brick_w, h: 3, r: hr, g: hg, b: hb)
 
-    // Bottom shadow (darker)
+    # Bottom shadow (darker)
     let sr = c.r / 2
     let sg = c.g / 2
     let sb = c.b / 2
     draw_rect(x: b.x, y: b.y + brick_h - 3, w: brick_w, h: 3, r: sr, g: sg, b: sb)
 
-    // Left edge highlight
+    # Left edge highlight
     draw_rect(x: b.x, y: b.y, w: 2, h: brick_h, r: hr, g: hg, b: hb)
 
-    // Right edge shadow
+    # Right edge shadow
     draw_rect(x: b.x + brick_w - 2, y: b.y, w: 2, h: brick_h, r: sr, g: sg, b: sb)
   end
   k += 1
 end
 
-// --- Draw particles ---
+# --- Draw particles ---
 let pi = 0
 while pi < len(particles) do
   let p = particles[pi]
@@ -263,7 +263,7 @@ while pi < len(particles) do
   pi += 1
 end
 
-// --- Draw ball trail ---
+# --- Draw ball trail ---
 let ti = 0
 while ti < len(ball_trail) do
   let t = ball_trail[ti]
@@ -279,38 +279,38 @@ while ti < len(ball_trail) do
   ti += 1
 end
 
-// --- Draw paddle with gradient effect ---
-// Outer glow
+# --- Draw paddle with gradient effect ---
+# Outer glow
 draw_rect(x: int(paddle_x) - 2, y: int(paddle_y_pos) - 2, w: paddle_w + 4, h: paddle_h + 4, r: 20, g: 40, b: 80)
-// Main paddle body
+# Main paddle body
 draw_rect(x: int(paddle_x), y: int(paddle_y_pos), w: paddle_w, h: paddle_h, r: 60, g: 130, b: 220)
-// Top shine
+# Top shine
 draw_rect(x: int(paddle_x), y: int(paddle_y_pos), w: paddle_w, h: 3, r: 120, g: 190, b: 255)
-// Center bright line
+# Center bright line
 draw_rect(x: int(paddle_x) + 4, y: int(paddle_y_pos) + 4, w: paddle_w - 8, h: 2, r: 150, g: 210, b: 255)
-// Bottom edge
+# Bottom edge
 draw_rect(x: int(paddle_x), y: int(paddle_y_pos) + paddle_h - 2, w: paddle_w, h: 2, r: 30, g: 70, b: 140)
 
-// --- Draw ball with glow ---
-// Outer glow layers
+# --- Draw ball with glow ---
+# Outer glow layers
 draw_circle(cx: int(ball_x), cy: int(ball_y), radius: ball_radius + 6, r: 15, g: 30, b: 60)
 draw_circle(cx: int(ball_x), cy: int(ball_y), radius: ball_radius + 3, r: 40, g: 80, b: 140)
-// Ball core
+# Ball core
 draw_circle(cx: int(ball_x), cy: int(ball_y), radius: ball_radius, r: 200, g: 230, b: 255)
-// Bright center
+# Bright center
 draw_circle(cx: int(ball_x), cy: int(ball_y), radius: ball_radius - 2, r: 240, g: 250, b: 255)
 
-// --- HUD area ---
-// Score panel background
+# --- HUD area ---
+# Score panel background
 draw_rect(x: 10, y: 6, w: 180, h: 28, r: 20, g: 15, b: 40)
 draw_rect_outline(10, 6, 180, 28, 80, 40, 160)
 draw_text("SCORE  " ++ str(score), {x: 20, y: 10}, 22, {r: 180, g: 220, b: 255})
 
-// Lives panel background
+# Lives panel background
 draw_rect(x: 610, y: 6, w: 180, h: 28, r: 20, g: 15, b: 40)
 draw_rect_outline(610, 6, 180, 28, 80, 40, 160)
 
-// Draw lives as hearts/circles
+# Draw lives as hearts/circles
 let li = 0
 while li < lives do
   let lx = 700 + li * 22
@@ -319,10 +319,10 @@ while li < lives do
   li += 1
 end
 
-// Score label on right side
+# Score label on right side
 draw_text("LIVES", {x: 620, y: 10}, 22, {r: 255, g: 140, b: 160})
 
-// Win message
+# Win message
 if all_dead && initialized then
   draw_rect(x: 250, y: 270, w: 300, h: 70, r: 10, g: 8, b: 20)
   draw_rect_outline(250, 270, 300, 70, 20, 255, 100)
@@ -330,7 +330,7 @@ if all_dead && initialized then
   draw_text("Score: " ++ str(score), {x: 335, y: 320}, 22, {r: 180, g: 255, b: 200})
 end
 
-// Game over message
+# Game over message
 if lives <= 0 then
   draw_rect(x: 250, y: 270, w: 300, h: 80, r: 10, g: 8, b: 20)
   draw_rect_outline(250, 270, 300, 80, 255, 40, 60)

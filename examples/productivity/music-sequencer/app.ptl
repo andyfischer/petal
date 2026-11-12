@@ -1,25 +1,25 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  CADENCE — a two-bar step sequencer and piano roll for a Garden panel.
-//
-//  Eight lanes over a 32-step timeline: six drum lanes you paint with the
-//  mouse, and two melodic lanes whose notes are edited in a piano roll
-//  below. A transport runs a playhead over the pattern at the tempo and
-//  swing you set, inside a loop region you drag on the ruler, and a pattern
-//  change made while it plays is queued to the end of the loop.
-//
-//  There is no audio device in a panel, so playback is made visible instead:
-//  each trigger kicks its lane's meter, lights its step, and feeds a small
-//  output scope synthesised from the envelopes.
-//
-//  Designed for a 1280x850 viewport. See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  CADENCE — a two-bar step sequencer and piano roll for a Garden panel.
+#
+#  Eight lanes over a 32-step timeline: six drum lanes you paint with the
+#  mouse, and two melodic lanes whose notes are edited in a piano roll
+#  below. A transport runs a playhead over the pattern at the tempo and
+#  swing you set, inside a loop region you drag on the ruler, and a pattern
+#  change made while it plays is queued to the end of the loop.
+#
+#  There is no audio device in a panel, so playback is made visible instead:
+#  each trigger kicks its lane's meter, lights its step, and feeds a small
+#  output scope synthesised from the envelopes.
+#
+#  Designed for a 1280x850 viewport. See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import text_layout
 import ui
 import bloom
 import garden
 
-// ── Palette ──────────────────────────────────────────────────────────────
+# ── Palette ──────────────────────────────────────────────────────────────
 let BG      = :0d0f14
 let PANEL   = :13161d
 let WELL    = :181c25
@@ -36,10 +36,10 @@ let ACCENT  = :ffd166
 let HEAD    = :f6f2e4
 let DANGER  = :ff6b5e
 
-// ── Model constants ──────────────────────────────────────────────────────
-let STEPS  = 32          // two bars of sixteenths
+# ── Model constants ──────────────────────────────────────────────────────
+let STEPS  = 32          # two bars of sixteenths
 let N_TRK  = 8
-let ROWS   = 24          // two octaves in the piano roll
+let ROWS   = 24          # two octaves in the piano roll
 
 let TRACKS = [
   {name: "Kick",       kind: "drum", base: 0,  decay: 7.0,  color: :ff6b5e},
@@ -55,9 +55,9 @@ let TRACKS = [
 let NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 let PAT_KEYS = ["A", "B", "C", "D"]
 
-// ── Seed song ────────────────────────────────────────────────────────────
-// A lane is written the way a drum machine manual prints it: one character
-// per sixteenth, `X` accent, `x` normal, `o` ghost, `.` rest.
+# ── Seed song ────────────────────────────────────────────────────────────
+# A lane is written the way a drum machine manual prints it: one character
+# per sixteenth, `X` accent, `x` normal, `o` ghost, `.` rest.
 
 fn lane(s: string) -> list
   for ch in chars(s) do
@@ -151,19 +151,19 @@ fn seed_mix() -> list
   ]
 end
 
-// ── State ────────────────────────────────────────────────────────────────
+# ── State ────────────────────────────────────────────────────────────────
 state pats = seed_patterns()
 state mixer = seed_mix()
 
 state playing = false
-state pos = 0.0            // playhead, in steps
+state pos = 0.0            # playhead, in steps
 state bpm = 122
-state swing = 0.12         // 0 .. 0.6 — how late the off-sixteenths land
+state swing = 0.12         # 0 .. 0.6 — how late the off-sixteenths land
 state loop_on = true
 state loop_a = 0
 state loop_b = 32
-state cur = 0              // pattern being played and edited
-state queued = -1          // pattern waiting for the loop to come round
+state cur = 0              # pattern being played and edited
+state queued = -1          # pattern waiting for the loop to come round
 
 state sel_trk = 0
 state cur_step = 0
@@ -183,11 +183,11 @@ state redo = []
 state gesture = false
 state cancels = 0
 state drag = {kind: "", trk: 0, val: 0, a: 0, b: 0, idx: -1, y0: 0, v0: 0}
-// What a gesture started from, so `escape` can put it all back mid-drag.
+# What a gesture started from, so `escape` can put it all back mid-drag.
 state g0 = {pats: [], mixer: [], undo: [], redo: [], bpm: 0, swing: 0.0, la: 0, lb: 0, lon: true, pos: 0.0}
-state menu_lane = -1           // the lane the lane menu was opened on
+state menu_lane = -1           # the lane the lane menu was opened on
 
-// ── Layout (recomputed every frame — the pane can resize) ────────────────
+# ── Layout (recomputed every frame — the pane can resize) ────────────────
 let W = screen_width()
 let H = screen_height()
 let M = 20
@@ -211,7 +211,7 @@ let PR_ROW = max(6, BODY_H / ROWS)
 let PR_H = PR_ROW * ROWS
 let KEYS_W = 58
 
-// Transport blocks, left to right.
+# Transport blocks, left to right.
 let TB_Y = 14
 let TB_H = 48
 let R_PLAY  = rect(GX, TB_Y, 48, TB_H)
@@ -235,7 +235,7 @@ let R_ROLL = rect(GX, BODY_Y, GW, PR_H)
 let VEL_TOP = BODY_Y + 16
 let VEL_H = BODY_H - 22
 
-// ── Text styles ──────────────────────────────────────────────────────────
+# ── Text styles ──────────────────────────────────────────────────────────
 let S_TITLE = {size: 19, font: "ui", weight: 700, color: TEXT}
 let S_CAP   = {size: 9,  font: "ui", weight: 600, color: FAINT, spacing: 1.1}
 let S_BODY  = {size: 12, font: "ui", color: DIM}
@@ -245,7 +245,7 @@ let S_NUM   = {size: 21, font: "mono", color: TEXT}
 let S_MONO  = {size: 10, font: "mono", color: FAINT}
 let S_BTN   = {size: 10, font: "ui", weight: 700, color: DIM}
 
-// ── Geometry helpers ─────────────────────────────────────────────────────
+# ── Geometry helpers ─────────────────────────────────────────────────────
 fn step_x(s: num) -> num
   GX + s * STEP_W
 end
@@ -306,7 +306,7 @@ fn note_name(midi: int) -> string
   "{NOTE_NAMES[midi % 12]}{midi / 12 - 1}"
 end
 
-// ── Pure pattern edits ───────────────────────────────────────────────────
+# ── Pure pattern edits ───────────────────────────────────────────────────
 fn lane_text(l: list) -> string
   let out = ""
   for v in l do
@@ -366,7 +366,7 @@ fn list_without(xs: list, k: int) -> list
   end
 end
 
-// Index of the note under a step/pitch, or -1. Later notes win (drawn on top).
+# Index of the note under a step/pitch, or -1. Later notes win (drawn on top).
 fn note_hit(ns: list, s: int, p: int) -> int
   let out = -1
   for i in range(0, len(ns)) do
@@ -395,9 +395,9 @@ fn count_events(p: record) -> int
   n + len(p.notes[0]) + len(p.notes[1])
 end
 
-// ── Playback: which events start inside [a, b) ───────────────────────────
-// Swing delays every second sixteenth by a fraction of a step, so a step's
-// trigger time is not always its integer index.
+# ── Playback: which events start inside [a, b) ───────────────────────────
+# Swing delays every second sixteenth by a fraction of a step, so a step's
+# trigger time is not always its integer index.
 fn trig_time(s: int, sw: num) -> float
   if s % 2 == 1 then s + sw * 0.5 else float(s) end
 end
@@ -434,9 +434,9 @@ fn gated(ns: list, at: num) -> bool
   out
 end
 
-// ═════════════════════════════════════════════════════════════════════════
-//  INPUT
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+#  INPUT
+# ═════════════════════════════════════════════════════════════════════════
 claim_key("z", "cmd")
 claim_key("z", "cmd+shift")
 
@@ -448,7 +448,7 @@ let changed = false
 let sel_mel = TRACKS[sel_trk].kind == "mel"
 let lo_step = if loop_on then loop_a else 0 end
 
-// ── Keyboard ─────────────────────────────────────────────────────────────
+# ── Keyboard ─────────────────────────────────────────────────────────────
 if !blocked then
   if key_pressed("z") && mod_cmd() then
     if mod_shift() then
@@ -473,7 +473,7 @@ if !blocked then
       elapsed = 0.0
       loops = 0
       queued = -1
-      levels = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   // stop silences the tails
+      levels = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # stop silences the tails
     end
     if key_pressed("l") then loop_on = !loop_on end
     if key_pressed("m") then mixer[sel_trk].mute = !mixer[sel_trk].mute end
@@ -557,7 +557,7 @@ if !blocked then
   end
 end
 
-// ── Mouse: hover targets ─────────────────────────────────────────────────
+# ── Mouse: hover targets ─────────────────────────────────────────────────
 let free = !blocked && drag.kind == ""
 let over_lanes = point_in(mx, my, R_LANES)
 let hov_trk = if over_lanes then clamp(int((my - LANES_Y) / ROW_H), 0, N_TRK - 1) else -1 end
@@ -567,7 +567,7 @@ let over_vel = !sel_mel && point_in(mx, my, R_BODY)
 let hov_pitch = if over_roll then pitch_at(my) else -1 end
 let hov_note = if over_roll then note_hit(pats[cur].notes[sel_trk - 6], hov_step, hov_pitch) else -1 end
 
-// Right press: a lane opens its menu; a note in the roll is deleted.
+# Right press: a lane opens its menu; a note in the roll is deleted.
 if !blocked && drag.kind == "" && mouse_pressed(1) then
   for t in range(0, N_TRK) do
     if point_in(mx, my, row_rect(t)) then
@@ -584,7 +584,7 @@ if !blocked && drag.kind == "" && mouse_pressed(1) then
   end
 end
 
-// ── Mouse: left press starts exactly one gesture ─────────────────────────
+# ── Mouse: left press starts exactly one gesture ─────────────────────────
 if free && mouse_pressed(0) then
   if point_in(mx, my, R_PLAY) then
     playing = !playing
@@ -594,7 +594,7 @@ if free && mouse_pressed(0) then
     elapsed = 0.0
     loops = 0
     queued = -1
-    levels = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   // stop silences the tails
+    levels = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # stop silences the tails
   elsif point_in(mx, my, R_LOOP) then
     loop_on = !loop_on
   elsif point_in(mx, my, R_BPM_UP) then
@@ -671,14 +671,14 @@ if free && mouse_pressed(0) then
   end
 end
 
-// Remember where the gesture began. `snap` rather than `pats`: drawing a new
-// note has already appended it by now.
+# Remember where the gesture began. `snap` rather than `pats`: drawing a new
+# note has already appended it by now.
 if mouse_pressed(0) && drag.kind != "" then
   g0 = {pats: snap, mixer: mixer, undo: undo, redo: redo, bpm: bpm, swing: swing,
     la: loop_a, lb: loop_b, lon: loop_on, pos: pos}
 end
-// `escape` with the button still down abandons the gesture: the pattern, the
-// undo stack and whichever dial was being dragged go back to how they were.
+# `escape` with the button still down abandons the gesture: the pattern, the
+# undo stack and whichever dial was being dragged go back to how they were.
 if drag.kind != "" && key_pressed("escape") then
   pats = g0.pats
   mixer = g0.mixer
@@ -695,9 +695,9 @@ if drag.kind != "" && key_pressed("escape") then
   drag = {kind: "", trk: 0, val: 0, a: 0, b: 0, idx: -1, y0: 0, v0: 0}
 end
 
-// ── Mouse: the gesture in flight ─────────────────────────────────────────
-// A note gesture holds an index into the lane; if a key or a queued pattern
-// change replaced that lane mid-drag, the gesture is dropped, not followed.
+# ── Mouse: the gesture in flight ─────────────────────────────────────────
+# A note gesture holds an index into the lane; if a key or a queued pattern
+# change replaced that lane mid-drag, the gesture is dropped, not followed.
 if drag.kind == "note_new" || drag.kind == "note_resize" || drag.kind == "note_move" then
   if drag.idx >= len(pats[cur].notes[drag.trk - 6]) then
     drag = {kind: "", trk: 0, val: 0, a: 0, b: 0, idx: -1, y0: 0, v0: 0}
@@ -706,8 +706,8 @@ end
 if drag.kind != "" && mouse_down(0) || drag.kind != "" && mouse_released(0) then
   let s_now = step_at(mx)
   if drag.kind == "paint" then
-    // Fill every step between the last sample and this one, so a fast drag
-    // (or a debug-server drag, which is three events) leaves no holes.
+    # Fill every step between the last sample and this one, so a fast drag
+    # (or a debug-server drag, which is three events) leaves no holes.
     let a = min(drag.a, s_now)
     let b = max(drag.a, s_now)
     for s in range(a, b + 1) do
@@ -755,8 +755,8 @@ if drag.kind != "" && mouse_down(0) || drag.kind != "" && mouse_released(0) then
   elsif drag.kind == "note_new" || drag.kind == "note_resize" then
     let k = drag.trk - 6
     let n = pats[cur].notes[k][drag.idx]
-    // A plain click keeps the length the last note had; the drag only takes
-    // over once the pointer has left the step it started on.
+    # A plain click keeps the length the last note had; the drag only takes
+    # over once the pointer has left the step it started on.
     if s_now != drag.a then drag.b = 1 end
     let want = if drag.kind == "note_new" && drag.b == 0 then n.len else clamp(s_now - n.s + 1, 1, STEPS - n.s) end
     if want != n.len then
@@ -781,7 +781,7 @@ if !mouse_down(0) && drag.kind != "" then
   drag = {kind: "", trk: 0, val: 0, a: 0, b: 0, idx: -1, y0: 0, v0: 0}
 end
 
-// ── Wheel: fine velocity on a step or note, tempo on the tempo block ─────
+# ── Wheel: fine velocity on a step or note, tempo on the tempo block ─────
 let wheel = scroll_y()
 if wheel != 0 && !blocked && drag.kind == "" then
   let dv = if wheel > 0 then -6 else 6 end
@@ -799,7 +799,7 @@ if wheel != 0 && !blocked && drag.kind == "" then
   end
 end
 
-// ── Undo bookkeeping: one snapshot per gesture ───────────────────────────
+# ── Undo bookkeeping: one snapshot per gesture ───────────────────────────
 if changed && (gesture || pats != snap) then
   if !gesture then
     undo = append(undo, snap)
@@ -810,9 +810,9 @@ if changed && (gesture || pats != snap) then
 end
 if !mouse_down(0) then gesture = false end
 
-// ═════════════════════════════════════════════════════════════════════════
-//  PLAYBACK
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+#  PLAYBACK
+# ═════════════════════════════════════════════════════════════════════════
 let any_solo = false
 for mr in mixer do
   if mr.solo then any_solo = true end
@@ -821,14 +821,14 @@ let audible = for mr in mixer do
   !mr.mute && (!any_solo || mr.solo)
 end
 
-// The frame delta comes from the panel clock rather than `dt()`: under the
-// debug server's `/tick` that clock advances by exactly the ticked `dt` and
-// by nothing on a settle frame, so a scripted run lands on the same step
-// every time.
+# The frame delta comes from the panel clock rather than `dt()`: under the
+# debug server's `/tick` that clock advances by exactly the ticked `dt` and
+# by nothing on a settle frame, so a scripted run lands on the same step
+# every time.
 let now = time()
 let fdt = if last_t < 0.0 then 0.0 else clamp(now - last_t, 0.0, 0.25) end
 last_t = now
-let rate = bpm * 4.0 / 60.0          // steps per second
+let rate = bpm * 4.0 / 60.0          # steps per second
 let wrapped = false
 
 for t in range(0, N_TRK) do
@@ -865,7 +865,7 @@ if playing then
     end
   end
   elapsed = elapsed + fdt
-  // A held note keeps its lane's meter up for as long as it sounds.
+  # A held note keeps its lane's meter up for as long as it sounds.
   for k in range(0, 2) do
     if audible[6 + k] && gated(pats[cur].notes[k], pos) then
       levels[6 + k] = max(levels[6 + k], 0.55 * (0.25 + 0.75 * mixer[6 + k].vol))
@@ -884,9 +884,9 @@ let play_step = clamp(int(floor(pos)), 0, STEPS - 1)
 let pat = pats[cur]
 sel_mel = TRACKS[sel_trk].kind == "mel"
 
-// ═════════════════════════════════════════════════════════════════════════
-//  DRAWING
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+#  DRAWING
+# ═════════════════════════════════════════════════════════════════════════
 
 fn label(s: string, r: record, style: record, align: string)
   text_layout.draw_text_line(s, r, style, align)
@@ -913,7 +913,7 @@ end
 
 clear(BG.r, BG.g, BG.b)
 
-// ── Transport bar ────────────────────────────────────────────────────────
+# ── Transport bar ────────────────────────────────────────────────────────
 draw_rect(rect(0, 0, W, TOP_H), PANEL)
 draw_rect(rect(0, TOP_H, W, 1), LINE_S)
 
@@ -921,7 +921,7 @@ draw_text("Cadence", {x: M, y: 17}, S_TITLE)
 draw_text("NIGHT BUS", {x: M, y: 45}, {...S_CAP, color: DIM})
 draw_text("A MINOR  4/4", {x: M + text_width("NIGHT BUS", S_CAP) + 12, y: 45}, S_CAP)
 
-// Play / pause.
+# Play / pause.
 let hot_play = free && point_in(mx, my, R_PLAY)
 draw_rect_rounded(R_PLAY, 8, if playing then ACCENT elsif hot_play then WELL_HI else WELL end)
 if !playing then draw_rect_rounded_outline(R_PLAY, 8, LINE) end
@@ -934,18 +934,18 @@ else
   fill_triangle(pcx - 5, pcy - 9, pcx - 5, pcy + 9, pcx + 9, pcy, TEXT)
 end
 
-// Stop.
+# Stop.
 well(R_STOP, free && point_in(mx, my, R_STOP), false)
 draw_rect_rounded(rect(R_STOP.x + R_STOP.w / 2 - 6, R_STOP.y + R_STOP.h / 2 - 6, 12, 12), 2, DIM)
 
-// Loop toggle.
+# Loop toggle.
 well(R_LOOP, free && point_in(mx, my, R_LOOP), loop_on)
 let lc = if loop_on then ACCENT else FAINT end
 draw_rect_rounded_outline(rect(R_LOOP.x + 16, R_LOOP.y + 11, 22, 12), 6, lc, 255, 2)
 fill_triangle(R_LOOP.x + 30, R_LOOP.y + 7, R_LOOP.x + 30, R_LOOP.y + 15, R_LOOP.x + 24, R_LOOP.y + 11, lc)
 label("LOOP", rect(R_LOOP.x, R_LOOP.y + 28, R_LOOP.w, 14), {...S_CAP, color: lc}, "center")
 
-// Position readout.
+# Position readout.
 well(R_POS, false, false)
 let p_bar = play_step / 16 + 1
 let p_beat = play_step % 16 / 4 + 1
@@ -959,7 +959,7 @@ let e_ten = int(elapsed * 10.0) % 10
 draw_text_right("{e_min}:{pad_start(str(e_sec), 2, "0")}.{e_ten}", R_POS.x + R_POS.w - 12, R_POS.y + 20, S_MONO)
 draw_text_right(if loops == 1 then "1 loop" else "{loops} loops" end, R_POS.x + R_POS.w - 12, R_POS.y + 33, S_MONO)
 
-// Tempo.
+# Tempo.
 well(R_BPM, free && point_in(mx, my, R_BPM) || drag.kind == "bpm", drag.kind == "bpm")
 draw_text("TEMPO", {x: R_BPM.x + 12, y: R_BPM.y + 7}, S_CAP)
 draw_text(str(bpm), {x: R_BPM.x + 12, y: R_BPM.y + 19}, S_NUM)
@@ -972,7 +972,7 @@ let ux = R_BPM_UP.x + R_BPM_UP.w / 2
 fill_triangle(ux - 4, R_BPM_UP.y + 11, ux + 4, R_BPM_UP.y + 11, ux, R_BPM_UP.y + 5, DIM)
 fill_triangle(ux - 4, R_BPM_DN.y + 5, ux + 4, R_BPM_DN.y + 5, ux, R_BPM_DN.y + 11, DIM)
 
-// Swing.
+# Swing.
 well(R_SWING, free && point_in(mx, my, R_SWING) || drag.kind == "swing", drag.kind == "swing")
 draw_text("SWING", {x: R_SWING.x + 12, y: R_SWING.y + 7}, S_CAP)
 draw_text_right("{int(round(swing * 100.0))}%", R_SWING.x + R_SWING.w - 12, R_SWING.y + 6, {...S_MONO, color: DIM})
@@ -983,7 +983,7 @@ draw_rect_rounded(rect(R_SW_TRACK.x, sw_y - 2, max(4, sw_x - R_SW_TRACK.x), 4), 
 draw_circle(sw_x, sw_y, 6, HEAD)
 draw_circle(sw_x, sw_y, 2, BG)
 
-// Patterns.
+# Patterns.
 let pulse = 0.5 + 0.5 * sin(time() * 9.0)
 for i in range(0, 4) do
   let r = pat_rect(i)
@@ -1004,7 +1004,7 @@ for i in range(0, 4) do
     {...S_MONO, size: 9, color: if is_cur then :7a6218 else GHOST end})
 end
 
-// Output scope: the envelopes, rendered as a waveform.
+# Output scope: the envelopes, rendered as a waveform.
 well(R_SCOPE, false, false)
 draw_text("OUT", {x: R_SCOPE.x + 10, y: R_SCOPE.y + 7}, S_CAP)
 let sc_n = 56
@@ -1032,7 +1032,7 @@ let sc_pts = for i in range(0, sc_n + 1) do
 end
 draw_polyline(sc_pts, if total_lv > 0.01 then ACCENT else GHOST end, 255, 1.5)
 
-// ── Ruler: loop band above, time band below ──────────────────────────────
+# ── Ruler: loop band above, time band below ──────────────────────────────
 draw_text("LOOP", {x: M + 4, y: RULER_Y + 1}, S_CAP)
 let loop_txt = if loop_b - loop_a == 4 then "BEAT {loop_a / 4 + 1} OF 8" else "BEATS {loop_a / 4 + 1} TO {loop_b / 4} OF 8" end
 draw_text_right(loop_txt, GX - 14, RULER_Y + 1, {...S_CAP, color: if loop_on then DIM else GHOST end})
@@ -1056,7 +1056,7 @@ for s in range(0, STEPS) do
     draw_rect(rect(x, ty0 + 10, 1, TIME_H - 10), GHOST)
     draw_text("{s / 16 + 1}.{s % 16 / 4 + 1}", {x: x + 6, y: ty0 + 6}, {size: 10, font: "ui", color: FAINT})
   elsif s % 2 == 1 && swing > 0.0 then
-    // The off-sixteenths sit where swing actually lands them.
+    # The off-sixteenths sit where swing actually lands them.
     draw_rect(rect(x + int(swing * 0.5 * STEP_W), ty0 + TIME_H - 5, 1, 5), mix(LINE, ACCENT, 0.55))
   else
     draw_rect(rect(x, ty0 + TIME_H - 5, 1, 5), LINE)
@@ -1064,14 +1064,14 @@ for s in range(0, STEPS) do
 end
 draw_rect(rect(GX, ty0 + TIME_H, GW, 1), LINE)
 
-// ── Lanes ────────────────────────────────────────────────────────────────
-// Beat bands behind every lane: the grid reads in fours before any cell does.
+# ── Lanes ────────────────────────────────────────────────────────────────
+# Beat bands behind every lane: the grid reads in fours before any cell does.
 for beat in range(0, 8) do
   if beat % 2 == 0 then
     draw_rect(rect(step_x(beat * 4), LANES_Y, STEP_W * 4, LANES_H), PANEL)
   end
 end
-// Outside the loop the timeline is dimmed rather than hidden.
+# Outside the loop the timeline is dimmed rather than hidden.
 for t in range(0, N_TRK) do
   let y = row_y(t)
   let tr = TRACKS[t]
@@ -1079,7 +1079,7 @@ for t in range(0, N_TRK) do
   let is_sel = t == sel_trk
   let col = if on_air then tr.color else mix(tr.color, CELL, 0.72) end
 
-  // Header.
+  # Header.
   let hr = head_rect(t)
   if is_sel then
     draw_rect_rounded(rect(hr.x, hr.y + 1, hr.w, hr.h - 2), 6, WELL_HI)
@@ -1100,7 +1100,7 @@ for t in range(0, N_TRK) do
   draw_rect_rounded(sr, 4, if s_on then ACCENT elsif free && point_in(mx, my, sr) then mix(btn_bg, TEXT, 0.14) else btn_bg end)
   label("S", sr, {...S_BTN, color: if s_on then BG else FAINT end}, "center")
 
-  // Volume fader with the meter riding inside it.
+  # Volume fader with the meter riding inside it.
   let vr = vol_rect(t)
   let vy = vr.y + vr.h / 2
   draw_rect_rounded(rect(vr.x, vy - 3, vr.w, 6), 3, CELL)
@@ -1111,7 +1111,7 @@ for t in range(0, N_TRK) do
   let kx = vr.x + 2 + int((vr.w - 4) * mixer[t].vol)
   draw_rect_rounded(rect(kx - 2, vy - 7, 4, 14), 2, if drag.kind == "vol" && drag.trk == t then HEAD else DIM end)
 
-  // Cells.
+  # Cells.
   if tr.kind == "drum" then
     for s in range(0, STEPS) do
       let v = pat.drums[t][s]
@@ -1122,7 +1122,7 @@ for t in range(0, N_TRK) do
         let lit = playing && s == play_step && on_air
         let face = if lit then mix(base, HEAD, 0.55) elsif in_loop then base else mix(base, BG, 0.45) end
         draw_rect_rounded(cr, 4, face)
-        // Velocity reads as a level inside the pad, not only as brightness.
+        # Velocity reads as a level inside the pad, not only as brightness.
         let vh = max(2, (cr.h - 6) * v / 100)
         draw_rect_rounded(rect(cr.x + cr.w - 6, cr.y + cr.h - 3 - vh, 2, vh), 1, mix(face, BG, 0.45))
       else
@@ -1131,15 +1131,15 @@ for t in range(0, N_TRK) do
       end
     end
   else
-    // A melodic lane is an overview: every note as a bar at its pitch.
+    # A melodic lane is an overview: every note as a bar at its pitch.
     draw_rect_rounded(rect(GX + 1, y + 3, GW - 2, ROW_H - 6), 4, CELL)
     for s in range(1, STEPS) do
       if s % 4 == 0 then
         draw_rect(rect(step_x(s), y + 3, 1, ROW_H - 6), if s % 16 == 0 then LINE else LINE_S end)
       end
     end
-    // The lane's own pitch range is stretched over the row, so a bass line
-    // that lives inside a fifth still reads as a contour.
+    # The lane's own pitch range is stretched over the row, so a bass line
+    # that lives inside a fifth still reads as a contour.
     let p_lo = ROWS
     let p_hi = 0
     for n in pat.notes[t - 6] do
@@ -1160,7 +1160,7 @@ for t in range(0, N_TRK) do
   end
 end
 
-// Hover and keyboard cursor on the lane grid.
+# Hover and keyboard cursor on the lane grid.
 if free && over_lanes && TRACKS[hov_trk].kind == "drum" then
   draw_rect_rounded_outline(rect(step_x(hov_step) + 1, row_y(hov_trk) + 3, STEP_W - 2, ROW_H - 6), 4, DIM)
 end
@@ -1170,7 +1170,7 @@ else
   draw_rect_rounded_outline(rect(step_x(cur_step), row_y(sel_trk) + 2, STEP_W, ROW_H - 4), 5, TEXT, 255, 1.5)
 end
 
-// ── Detail editor ────────────────────────────────────────────────────────
+# ── Detail editor ────────────────────────────────────────────────────────
 let st = TRACKS[sel_trk]
 let st_col = if audible[sel_trk] then st.color else mix(st.color, CELL, 0.72) end
 draw_rect(rect(M, DET_Y - 7, W - M * 2, 1), LINE_S)
@@ -1184,7 +1184,7 @@ else "drag across the bars to shape them   wheel for fine steps   right-click a 
 end
 draw_text_right(det_hint, W - M, DET_Y + 10, {size: 11, font: "ui", color: FAINT})
 
-// Inspector: the column beside the editor says what is selected, in numbers.
+# Inspector: the column beside the editor says what is selected, in numbers.
 let insp = []
 if sel_mel then
   let ns = pat.notes[sel_trk - 6]
@@ -1241,7 +1241,7 @@ for i in range(0, len(insp)) do
 end
 
 if sel_mel then
-  // Piano roll --------------------------------------------------------------
+  # Piano roll --------------------------------------------------------------
   let ns = pat.notes[sel_trk - 6]
   let kx = GX - 8 - KEYS_W
   for row in range(0, ROWS) do
@@ -1252,7 +1252,7 @@ if sel_mel then
     let row_bg = if black then PANEL elsif pc == 9 then mix(WELL, st.color, 0.07) else WELL end
     draw_rect(rect(GX, ry, GW, PR_ROW), if p == hov_pitch && free then mix(row_bg, TEXT, 0.05) else row_bg end)
     if pc == 0 then draw_rect(rect(GX, ry + PR_ROW - 1, GW, 1), LINE) end
-    // Keyboard.
+    # Keyboard.
     let key_lit = p == hov_pitch || sel_note >= 0 && sel_note < len(ns) && ns[sel_note].p == p
     let kc = if key_lit then mix(if black then :20242d else :c9cdd8 end, st.color, 0.6)
     elsif black then :20242d
@@ -1272,7 +1272,7 @@ if sel_mel then
     if loop_b < STEPS then draw_rect(rect(step_x(loop_b), BODY_Y, GX + GW - step_x(loop_b), PR_H), BG, 120) end
   end
   draw_rect(rect(step_x(cur_step), BODY_Y, STEP_W, PR_H), TEXT, 12)
-  // Ghost of the note a click would create.
+  # Ghost of the note a click would create.
   if free && over_roll && hov_note < 0 then
     let gl = min(last_len, STEPS - hov_step)
     draw_rect_rounded_outline(note_rect({s: hov_step, len: gl, p: hov_pitch, v: 80}), 3, mix(BG, st.color, 0.6))
@@ -1299,7 +1299,7 @@ if sel_mel then
     draw_text_center("Click to add one, or drag to draw its length", GX + GW / 2, BODY_Y + PR_H / 2 + 4, {size: 11, font: "ui", color: FAINT})
   end
 else
-  // Velocity lane -----------------------------------------------------------
+  # Velocity lane -----------------------------------------------------------
   draw_rect_rounded(rect(GX, BODY_Y, GW, BODY_H), 6, WELL)
   for beat in range(0, 8) do
     if beat % 2 == 0 then
@@ -1342,7 +1342,7 @@ else
   end
 end
 
-// ── Playhead: one line through the ruler, the lanes and the editor ───────
+# ── Playhead: one line through the ruler, the lanes and the editor ───────
 let ph_x = int(step_x(pos))
 let ph_c = if playing then HEAD else DIM end
 let det_bot = if sel_mel then BODY_Y + PR_H else BODY_Y + BODY_H end
@@ -1350,7 +1350,7 @@ draw_rect(rect(ph_x, ty0, 1, LANES_Y + LANES_H - ty0), ph_c, if playing then 255
 draw_rect(rect(ph_x, BODY_Y, 1, det_bot - BODY_Y), ph_c, if playing then 255 else 150 end)
 fill_triangle(ph_x - 5, ty0, ph_x + 6, ty0, ph_x, ty0 + 8, ph_c)
 
-// ── Footer ───────────────────────────────────────────────────────────────
+# ── Footer ───────────────────────────────────────────────────────────────
 let fy = H - FOOT_H
 draw_rect(rect(0, fy, W, FOOT_H), PANEL)
 draw_rect(rect(0, fy, W, 1), LINE_S)
@@ -1375,7 +1375,7 @@ end
 draw_text_right(status, W - M, text_layout.text_line_y(rect(0, fy, 10, FOOT_H), S_BODY),
   {...S_BODY, color: if queued >= 0 then ACCENT else DIM end})
 
-// ── Values a test can assert on ──────────────────────────────────────────
+# ── Values a test can assert on ──────────────────────────────────────────
 let obs_playing = playing
 let obs_pos = round(pos, 3)
 let obs_step = play_step
@@ -1405,7 +1405,7 @@ let obs_drag = drag.kind
 let obs_menu = bloom.menu_is_open("lane")
 let obs_cancels = cancels
 
-// ── Lane menu: the last draw call of the frame ───────────────────────────
+# ── Lane menu: the last draw call of the frame ───────────────────────────
 let menu_mel = menu_lane == 6 || menu_lane == 7
 let picked = bloom.menu("lane", rect(mx, my, 0, 0), [
   "Clear lane",

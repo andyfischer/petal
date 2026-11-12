@@ -1,145 +1,145 @@
-// fantasy-nes prelude — module `nes`
-//
-// The vocabulary a cart is actually written in: artwork from string art, a
-// built-in font, the background map, pads, scenes, menus, tile collision and
-// animation. A cart writes `import nes` and calls these bare (or
-// `import nes: btn, scene`); nothing is imported implicitly. Only `pub`
-// declarations are visible to carts — everything else (and any name starting
-// with `_`) is module-private.
-//
-// Nothing here reaches the hardware directly. Every function bottoms out in a
-// native (`set_tile`, `sprite`, `pad_down`, …), so a cart that ignores the
-// prelude entirely still works, and a cart that uses it can always drop to the
-// raw call for the one thing the helper does not cover.
-//
-// Two rules shape every signature below, and both come from Petal's model:
-//
-//  1. **The cart re-runs top to bottom every frame.** Nothing here is a
-//     "setup" call that must happen once — every helper is idempotent and
-//     correct when called unconditionally, every frame, from the top of the
-//     file. Helpers that must remember something across frames keep it in a
-//     module `state` slot, which also survives hot reload.
-//  2. **Colors are master-palette indices, never RGB.** Petal has no hex
-//     integer literals, so indices are decimal throughout; the `$xx` in a
-//     comment is the hardware numbering every NES palette chart uses.
-//
-// Coordinates are pixels unless the name says `_cell`. Rects are the built-in
-// `Rect` (fields x, y, w, h), so a hand-written `{x: .., y: .., w: .., h: ..}`
-// works anywhere a rect is taken.
-//
-// Every `state` variable here is named `_nes_something`: a module's state is
-// reported to the host under its module-qualified name, so the prefix is what
-// makes `nes::_nes_scroll` read as the console's own bookkeeping next to a
-// cart's `scroll` in a state dump.
+# fantasy-nes prelude — module `nes`
+#
+# The vocabulary a cart is actually written in: artwork from string art, a
+# built-in font, the background map, pads, scenes, menus, tile collision and
+# animation. A cart writes `import nes` and calls these bare (or
+# `import nes: btn, scene`); nothing is imported implicitly. Only `pub`
+# declarations are visible to carts — everything else (and any name starting
+# with `_`) is module-private.
+#
+# Nothing here reaches the hardware directly. Every function bottoms out in a
+# native (`set_tile`, `sprite`, `pad_down`, …), so a cart that ignores the
+# prelude entirely still works, and a cart that uses it can always drop to the
+# raw call for the one thing the helper does not cover.
+#
+# Two rules shape every signature below, and both come from Petal's model:
+#
+#  1. **The cart re-runs top to bottom every frame.** Nothing here is a
+#     "setup" call that must happen once — every helper is idempotent and
+#     correct when called unconditionally, every frame, from the top of the
+#     file. Helpers that must remember something across frames keep it in a
+#     module `state` slot, which also survives hot reload.
+#  2. **Colors are master-palette indices, never RGB.** Petal has no hex
+#     integer literals, so indices are decimal throughout; the `$xx` in a
+#     comment is the hardware numbering every NES palette chart uses.
+#
+# Coordinates are pixels unless the name says `_cell`. Rects are the built-in
+# `Rect` (fields x, y, w, h), so a hand-written `{x: .., y: .., w: .., h: ..}`
+# works anywhere a rect is taken.
+#
+# Every `state` variable here is named `_nes_something`: a module's state is
+# reported to the host under its module-qualified name, so the prefix is what
+# makes `nes::_nes_scroll` read as the console's own bookkeeping next to a
+# cart's `scroll` in a state dump.
 
-// ── What a cart gets with `import nes` ────────────────────────────────────
-// The console's natives (`nes/nes_host`) and petal-ui's input, timing and frame
-// natives (`ui/input`), re-exported so one import brings the whole machine.
+# ── What a cart gets with `import nes` ────────────────────────────────────
+# The console's natives (`nes/nes_host`) and petal-ui's input, timing and frame
+# natives (`ui/input`), re-exported so one import brings the whole machine.
 pub import ./nes_host
 pub import ui/input
 
-// ── Screen geometry ───────────────────────────────────────────────────────
-// The console's fixed dimensions. `screen_width()`/`screen_height()` come from
-// petal-ui and report the *window*, which is scaled — these are the picture.
+# ── Screen geometry ───────────────────────────────────────────────────────
+# The console's fixed dimensions. `screen_width()`/`screen_height()` come from
+# petal-ui and report the *window*, which is scaled — these are the picture.
 
 pub let screen_w = 256
 pub let screen_h = 240
 
-// One tile is 8x8. Named because cart code converts between the two spaces
-// constantly and `* 8` reads as a magic number after the third time.
+# One tile is 8x8. Named because cart code converts between the two spaces
+# constantly and `* 8` reads as a magic number after the third time.
 pub let tile_size = 8
 
-// The visible picture in cells: 32 x 30.
+# The visible picture in cells: 32 x 30.
 pub let screen_cols = 32
 pub let screen_rows = 30
 
-// A rect is the built-in `Rect` class. `rect` *is* the constructor rather than
-// a wrapper, so a bad argument is reported at the cart's own `rect(...)` call
-// instead of putting the caret in this file (the same reasoning as petal-ui).
+# A rect is the built-in `Rect` class. `rect` *is* the constructor rather than
+# a wrapper, so a bad argument is reported at the cart's own `rect(...)` call
+# instead of putting the caret in this file (the same reasoning as petal-ui).
 pub let rect = Rect
 
-// ── Master-palette colors ─────────────────────────────────────────────────
-// Names for the entries of the fixed 64-color master palette that are actually
-// worth naming. A palette is four of these; color 0 is the shared backdrop.
-//
-// The table is laid out in four rows of 16: 0-15 dark, 16-31 mid, 32-47
-// bright, 48-63 pale. So a name and "the same hue one row down" is the whole
-// shading vocabulary — `green` / `light_green` / `pale_green` are $1A/$2A/$3A.
+# ── Master-palette colors ─────────────────────────────────────────────────
+# Names for the entries of the fixed 64-color master palette that are actually
+# worth naming. A palette is four of these; color 0 is the shared backdrop.
+#
+# The table is laid out in four rows of 16: 0-15 dark, 16-31 mid, 32-47
+# bright, 48-63 pale. So a name and "the same hue one row down" is the whole
+# shading vocabulary — `green` / `light_green` / `pale_green` are $1A/$2A/$3A.
 
-pub let black = 15            // $0F — the real black, not index 0
-pub let dark_gray = 0         // $00
-pub let gray = 16             // $10
-pub let light_gray = 61       // $3D
-pub let white = 48            // $30
+pub let black = 15            # $0F — the real black, not index 0
+pub let dark_gray = 0         # $00
+pub let gray = 16             # $10
+pub let light_gray = 61       # $3D
+pub let white = 48            # $30
 
-pub let navy = 1              // $01
-pub let blue = 17             // $11
-pub let light_blue = 33       // $21 — the classic sky
-pub let pale_blue = 49        // $31
+pub let navy = 1              # $01
+pub let blue = 17             # $11
+pub let light_blue = 33       # $21 — the classic sky
+pub let pale_blue = 49        # $31
 
-pub let indigo = 3            // $03
-pub let violet = 19           // $13
-pub let purple = 20           // $14
-pub let magenta = 37          // $25
-pub let pink = 53             // $35
+pub let indigo = 3            # $03
+pub let violet = 19           # $13
+pub let purple = 20           # $14
+pub let magenta = 37          # $25
+pub let pink = 53             # $35
 
-pub let maroon = 6            // $06
-pub let red = 22              // $16
-pub let salmon = 38           // $26
-pub let pale_red = 54         // $36
+pub let maroon = 6            # $06
+pub let red = 22              # $16
+pub let salmon = 38           # $26
+pub let pale_red = 54         # $36
 
-pub let brown = 23            // $17
-pub let orange = 39           // $27
-pub let peach = 55            // $37 — named `peach` and not `tan`, which
-//       would shadow the `tan()` builtin
+pub let brown = 23            # $17
+pub let orange = 39           # $27
+pub let peach = 55            # $37 — named `peach` and not `tan`, which
+#       would shadow the `tan()` builtin
 
-pub let olive = 24            // $18
-pub let yellow = 40           // $28
-pub let pale_yellow = 56      // $38
+pub let olive = 24            # $18
+pub let yellow = 40           # $28
+pub let pale_yellow = 56      # $38
 
-pub let dark_green = 10       // $0A
-pub let green = 26            // $1A
-pub let light_green = 42      // $2A
-pub let pale_green = 58       // $3A
+pub let dark_green = 10       # $0A
+pub let green = 26            # $1A
+pub let light_green = 42      # $2A
+pub let pale_green = 58       # $3A
 
-pub let teal = 28             // $1C
-pub let cyan = 44             // $2C
-pub let pale_cyan = 60        // $3C
+pub let teal = 28             # $1C
+pub let cyan = 44             # $2C
+pub let pale_cyan = 60        # $3C
 
-// ── Palettes ──────────────────────────────────────────────────────────────
-// Eight four-color palettes: 0-3 for the background, 4-7 for sprites. Color 0
-// of every one of them is the same universal backdrop, which is why the
-// convenience form below takes only three colors — repeating the backdrop in
-// all eight calls is noise, and getting one of them wrong is a bug you find by
-// staring at a screenshot.
+# ── Palettes ──────────────────────────────────────────────────────────────
+# Eight four-color palettes: 0-3 for the background, 4-7 for sprites. Color 0
+# of every one of them is the same universal backdrop, which is why the
+# convenience form below takes only three colors — repeating the backdrop in
+# all eight calls is noise, and getting one of them wrong is a bug you find by
+# staring at a screenshot.
 
 native fn _native_set_backdrop(...args) = "set_backdrop"
 
 state var _nes_backdrop = 15
 
-// The universal color 0: the screen behind everything, and the transparent
-// entry of every palette. Remembered so `palette(i, c1, c2, c3)` can fill it
-// in, so call this *before* the palettes that rely on it (or just call it at
-// the top of the cart, which is where it belongs anyway).
+# The universal color 0: the screen behind everything, and the transparent
+# entry of every palette. Remembered so `palette(i, c1, c2, c3)` can fill it
+# in, so call this *before* the palettes that rely on it (or just call it at
+# the top of the cart, which is where it belongs anyway).
 pub fn set_backdrop(c: num)
   set _nes_backdrop = c
   _native_set_backdrop(c)
 end
 
-// The current backdrop index.
+# The current backdrop index.
 pub fn backdrop() -> num
   get _nes_backdrop
 end
 
-// `palette(i, c1, c2, c3)` — the three colors that are actually this
-// palette's, with color 0 taken from the backdrop. The common form.
+# `palette(i, c1, c2, c3)` — the three colors that are actually this
+# palette's, with color 0 taken from the backdrop. The common form.
 pub fn palette(index: num, c1: num, c2: num, c3: num)
   set_palette(index, backdrop(), c1, c2, c3)
 end
 
-// `palette(i, [c0, c1, c2, c3])` / `palette(i, [c1, c2, c3])` — the list form,
-// so a cart can keep its palettes as data (a table of levels, a fade sequence)
-// and splat one in without unpacking it by hand.
+# `palette(i, [c0, c1, c2, c3])` / `palette(i, [c1, c2, c3])` — the list form,
+# so a cart can keep its palettes as data (a table of levels, a fade sequence)
+# and splat one in without unpacking it by hand.
 pub fn palette(index: num, colors: list)
   if len(colors) >= 4 then
     set_palette(index, colors[0], colors[1], colors[2], colors[3])
@@ -148,37 +148,37 @@ pub fn palette(index: num, colors: list)
   end
 end
 
-// ── Tile art ──────────────────────────────────────────────────────────────
-// A tile is authored as 8 strings of 8 characters, one character per pixel:
-//
-//   define_art(1, [
-//     "..1111..",
-//     ".122221.",
-//     "12233221",
-//     ...
-//   ])
-//
-// The digits are palette entries — 0 is color 0, which is the backdrop for a
-// background tile and *transparent* for a sprite. Because a grid of digits is
-// hard to read as a picture, the same four values also have symbol spellings,
-// ordered by weight so the art looks like what it draws:
-//
-//   `.` or ` ` or `_` or `0`  -> 0   empty / transparent
-//   `-` or `1`                -> 1   darkest ink
-//   `o` or `2`                -> 2   mid
-//   `#` or `3`                -> 3   brightest ink
-//
-// Anything else reads as 0. Short rows are padded and a short list is padded
-// to 8 rows, so sketching the top half of a tile and leaving the rest blank
-// works. Pass a `remap` record ({o: 1, x: 3} …) to use your own characters —
-// its keys win over the table above.
+# ── Tile art ──────────────────────────────────────────────────────────────
+# A tile is authored as 8 strings of 8 characters, one character per pixel:
+#
+#   define_art(1, [
+#     "..1111..",
+#     ".122221.",
+#     "12233221",
+#     ...
+#   ])
+#
+# The digits are palette entries — 0 is color 0, which is the backdrop for a
+# background tile and *transparent* for a sprite. Because a grid of digits is
+# hard to read as a picture, the same four values also have symbol spellings,
+# ordered by weight so the art looks like what it draws:
+#
+#   `.` or ` ` or `_` or `0`  -> 0   empty / transparent
+#   `-` or `1`                -> 1   darkest ink
+#   `o` or `2`                -> 2   mid
+#   `#` or `3`                -> 3   brightest ink
+#
+# Anything else reads as 0. Short rows are padded and a short list is padded
+# to 8 rows, so sketching the top half of a tile and leaving the rest blank
+# works. Pass a `remap` record ({o: 1, x: 3} …) to use your own characters —
+# its keys win over the table above.
 
-// The default character table, built once (record literals cannot carry
-// punctuation keys, so it is assembled rather than written out). It is a
-// top-level cell, not a `state` inside an accessor: an in-function `state` is
-// keyed by the call path, so a cache behind one would rebuild itself once per
-// callsite — and once per iteration when the caller sits in a loop, which is
-// exactly where `_art_color` is called from.
+# The default character table, built once (record literals cannot carry
+# punctuation keys, so it is assembled rather than written out). It is a
+# top-level cell, not a `state` inside an accessor: an in-function `state` is
+# keyed by the call path, so a cache behind one would rebuild itself once per
+# callsite — and once per iteration when the caller sits in a loop, which is
+# exactly where `_art_color` is called from.
 state var _nes_art_table = _build_art_table()
 
 fn _build_art_table() -> record
@@ -200,7 +200,7 @@ fn _art_color(ch: string, remap: record)
   remap[ch] ?? ((get _nes_art_table)[ch] ?? 0)
 end
 
-// One authored line -> a string of color digits, unpadded.
+# One authored line -> a string of color digits, unpadded.
 fn _art_digits(line: string, remap: record) -> string
   let out = ""
   for ch in chars(line) do
@@ -217,9 +217,9 @@ fn _pad_to(s: string, n: num) -> string
   slice(out, start: 0, end: n)
 end
 
-// Normalize authored art into the 8 rows of 8 digits `define_tile` wants,
-// without defining anything. Useful for building a tile programmatically, or
-// for feeding the same art to `define_tile` yourself.
+# Normalize authored art into the 8 rows of 8 digits `define_tile` wants,
+# without defining anything. Useful for building a tile programmatically, or
+# for feeding the same art to `define_tile` yourself.
 pub fn art(rows: list) -> list
   art(rows, {})
 end
@@ -235,9 +235,9 @@ pub fn art(rows: list, remap: record) -> list
   slice(out, start: 0, end: 8)
 end
 
-// Define one tile from readable string art. Idempotent — the host hashes the
-// pattern table and skips unchanged writes — so this belongs at the top of the
-// cart, run every frame, and a hot reload repaints the artwork for free.
+# Define one tile from readable string art. Idempotent — the host hashes the
+# pattern table and skips unchanged writes — so this belongs at the top of the
+# cart, run every frame, and a hot reload repaints the artwork for free.
 pub fn define_art(index: num, rows: list)
   define_tile(index, art(rows, {}))
 end
@@ -246,14 +246,14 @@ pub fn define_art(index: num, rows: list, remap: record)
   define_tile(index, art(rows, remap))
 end
 
-// Define a run of tiles from a list of arts, `base` upward. Returns the next
-// free tile index, so a cart lays out its pattern table by composition instead
-// of by counting:
-//
-//   let hero = 1
-//   let next = define_art_run(hero, [walk_a, walk_b, walk_c])
-//   let coin = next
-//
+# Define a run of tiles from a list of arts, `base` upward. Returns the next
+# free tile index, so a cart lays out its pattern table by composition instead
+# of by counting:
+#
+#   let hero = 1
+#   let next = define_art_run(hero, [walk_a, walk_b, walk_c])
+#   let coin = next
+#
 pub fn define_art_run(base: num, arts: list) -> num
   define_art_run(base, arts, remap: {})
 end
@@ -265,46 +265,46 @@ pub fn define_art_run(base: num, arts: list, remap: record) -> num
   base + len(arts)
 end
 
-// ── Sprite flags ──────────────────────────────────────────────────────────
-// The bits `sprite(x, y, tile, pal, flags)` takes.
+# ── Sprite flags ──────────────────────────────────────────────────────────
+# The bits `sprite(x, y, tile, pal, flags)` takes.
 
 pub let flip_x = 1
 pub let flip_y = 2
 pub let behind_bg = 4
 
-// Flags from two booleans, for the usual "face the way you are walking" line:
-//   sprite(x, y, tile, 4, flip(facing_left, false))
+# Flags from two booleans, for the usual "face the way you are walking" line:
+#   sprite(x, y, tile, 4, flip(facing_left, false))
 pub fn flip(fx: bool, fy: bool) -> int
   (if fx then 1 else 0 end) + (if fy then 2 else 0 end)
 end
 
-// ── Metasprites ───────────────────────────────────────────────────────────
-// Anything bigger than 8x8 is several sprites moving together. A metasprite is
-// a record — {base, w, h, pal, parts} — describing that group once, so the
-// gameplay code carries one value and one position.
-//
-// The authoring path is `define_meta`: draw the whole object as one grid of
-// string art and let the helper slice it into tiles.
-//
-//   let hero = define_meta(16, [
-//     "....####....####....",
-//     ...
-//   ], 4)
-//   draw_meta(hero_x, hero_y, hero, flip(facing_left, false))
-//
-// Grid art is sliced left to right, top to bottom, so the tiles land in
-// pattern-table order and `sprite_meta` can draw the group in one native call.
-// For an irregular shape (a boss with a detached arm, a two-tile shadow) build
-// one from explicit parts with `meta_of` / `meta_part` instead.
+# ── Metasprites ───────────────────────────────────────────────────────────
+# Anything bigger than 8x8 is several sprites moving together. A metasprite is
+# a record — {base, w, h, pal, parts} — describing that group once, so the
+# gameplay code carries one value and one position.
+#
+# The authoring path is `define_meta`: draw the whole object as one grid of
+# string art and let the helper slice it into tiles.
+#
+#   let hero = define_meta(16, [
+#     "....####....####....",
+#     ...
+#   ], 4)
+#   draw_meta(hero_x, hero_y, hero, flip(facing_left, false))
+#
+# Grid art is sliced left to right, top to bottom, so the tiles land in
+# pattern-table order and `sprite_meta` can draw the group in one native call.
+# For an irregular shape (a boss with a detached arm, a two-tile shadow) build
+# one from explicit parts with `meta_of` / `meta_part` instead.
 
-// A metasprite over `w_tiles` x `h_tiles` of already-defined tiles starting at
-// `tile_base`, in pattern-table order.
+# A metasprite over `w_tiles` x `h_tiles` of already-defined tiles starting at
+# `tile_base`, in pattern-table order.
 pub fn meta(tile_base: num, w_tiles: num, h_tiles: num, pal: num) -> record
   {base: tile_base, w: w_tiles, h: h_tiles, pal: pal, parts: []}
 end
 
-// One piece of an irregular metasprite: `dx`/`dy` are pixel offsets from the
-// object's top-left corner.
+# One piece of an irregular metasprite: `dx`/`dy` are pixel offsets from the
+# object's top-left corner.
 pub fn meta_part(dx: num, dy: num, tile: num) -> record
   meta_part(dx, dy, tile, pal: 4, flags: 0)
 end
@@ -317,8 +317,8 @@ pub fn meta_part(dx: num, dy: num, tile: num, pal: num, flags: num) -> record
   {dx: dx, dy: dy, tile: tile, pal: pal, flags: flags}
 end
 
-// A metasprite from explicit parts. Its w/h are derived from the parts' extent
-// so `meta_rect` and the collision helpers still describe it correctly.
+# A metasprite from explicit parts. Its w/h are derived from the parts' extent
+# so `meta_rect` and the collision helpers still describe it correctly.
 pub fn meta_of(parts: list) -> record
   let w = 0
   let h = 0
@@ -329,10 +329,10 @@ pub fn meta_of(parts: list) -> record
   {base: -1, w: w / 8, h: h / 8, pal: 0, parts: parts}
 end
 
-// Define a metasprite from one grid of string art, `base` upward. The grid's
-// width and height are rounded up to whole tiles (short rows are padded), and
-// the same `remap` rules as `define_art` apply. Idempotent, like every other
-// artwork call. Returns the metasprite.
+# Define a metasprite from one grid of string art, `base` upward. The grid's
+# width and height are rounded up to whole tiles (short rows are padded), and
+# the same `remap` rules as `define_art` apply. Idempotent, like every other
+# artwork call. Returns the metasprite.
 pub fn define_meta(base: num, rows: list, pal: num) -> record
   define_meta(base, rows, pal, remap: {})
 end
@@ -361,8 +361,8 @@ pub fn define_meta(base: num, rows: list, pal: num, remap: record) -> record
   meta(tile_base: base, w_tiles: cols, h_tiles: rws, pal: pal)
 end
 
-// Pixel size of a metasprite, and the rect it occupies at (x, y) — the box the
-// collision helpers want.
+# Pixel size of a metasprite, and the rect it occupies at (x, y) — the box the
+# collision helpers want.
 pub fn meta_w(m: record)
   m.w * 8
 end
@@ -375,8 +375,8 @@ pub fn meta_rect(x: num, y: num, m: record) -> Rect
   rect(x, y, meta_w(m), meta_h(m))
 end
 
-// Draw a metasprite with its top-left corner at (x, y). Costs one sprite per
-// tile out of the 64-per-frame budget.
+# Draw a metasprite with its top-left corner at (x, y). Costs one sprite per
+# tile out of the 64-per-frame budget.
 pub fn draw_meta(x: num, y: num, m: record)
   draw_meta(x, y, m, flags: 0)
 end
@@ -385,8 +385,8 @@ pub fn draw_meta(x: num, y: num, m: record, flags: num)
   if len(m.parts) == 0 then
     sprite_meta(px(x), px(y), m.base, m.pal, m.w, m.h, flags)
   else
-    // Flipping a part list has to mirror the offsets as well as the tiles,
-    // or the pieces stay where they were and the object turns inside out.
+    # Flipping a part list has to mirror the offsets as well as the tiles,
+    # or the pieces stay where they were and the object turns inside out.
     let fx = flags % 2 >= 1
     let fy = int(flags / 2) % 2 >= 1
     for p in m.parts do
@@ -397,103 +397,103 @@ pub fn draw_meta(x: num, y: num, m: record, flags: num)
   end
 end
 
-// ── The built-in font ─────────────────────────────────────────────────────
-// 64 glyphs — ASCII 32 ('space') through 95 ('_'), i.e. uppercase, digits and
-// punctuation — as 5x7 pixels inside an 8x8 tile. Lowercase input is folded to
-// uppercase rather than dropped.
-//
-// The glyphs live in the *pattern table*, like all other art, so text costs
-// tiles: 64 of them, at `font_base()`, which defaults to 448 (the top of the
-// 512-tile table, out of the way of a cart's own artwork). Call
-// `font_tiles(base)` to move it, or never call anything — the text helpers
-// install the font themselves, at most once per frame, so `map_text(...)`
-// simply works.
-//
-// Each glyph is one string: seven 5-character rows separated by "/", `#` for
-// ink and `.` for empty. Written compactly on purpose — 64 glyphs in the
-// 8-rows-of-8 form would be 500 lines of prelude for art nobody edits.
+# ── The built-in font ─────────────────────────────────────────────────────
+# 64 glyphs — ASCII 32 ('space') through 95 ('_'), i.e. uppercase, digits and
+# punctuation — as 5x7 pixels inside an 8x8 tile. Lowercase input is folded to
+# uppercase rather than dropped.
+#
+# The glyphs live in the *pattern table*, like all other art, so text costs
+# tiles: 64 of them, at `font_base()`, which defaults to 448 (the top of the
+# 512-tile table, out of the way of a cart's own artwork). Call
+# `font_tiles(base)` to move it, or never call anything — the text helpers
+# install the font themselves, at most once per frame, so `map_text(...)`
+# simply works.
+#
+# Each glyph is one string: seven 5-character rows separated by "/", `#` for
+# ink and `.` for empty. Written compactly on purpose — 64 glyphs in the
+# 8-rows-of-8 form would be 500 lines of prelude for art nobody edits.
 
 let _FONT_FIRST = 32
 let _FONT_CHARS = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
 
 let _FONT_GLYPHS = [
-  "...../...../...../...../...../...../.....",   // space
-  "..#../..#../..#../..#../..#../...../..#..",   // !
-  ".#.#./.#.#./...../...../...../...../.....",   // "
-  "...../.#.#./#####/.#.#./#####/.#.#./.....",   // #
-  "..#../.####/#.#../.###./..#.#/####./..#..",   // $
-  "##..#/##..#/...#./..#../.#.../#..##/#..##",   // %
-  ".##../#..#./#.#../.#.../#.#.#/#..#./.##.#",   // &
-  "..#../..#../...../...../...../...../.....",   // '
-  "...#./..#../.#.../.#.../.#.../..#../...#.",   // (
-  ".#.../..#../...#./...#./...#./..#../.#...",   // )
-  "...../#.#.#/.###./#####/.###./#.#.#/.....",   // *
-  "...../..#../..#../#####/..#../..#../.....",   // +
-  "...../...../...../...../..#../..#../.#...",   // ,
-  "...../...../...../#####/...../...../.....",   // -
-  "...../...../...../...../...../..#../..#..",   // .
-  "....#/....#/...#./..#../.#.../#..../#....",   // /
-  ".###./#...#/#..##/#.#.#/##..#/#...#/.###.",   // 0
-  "..#../.##../..#../..#../..#../..#../.###.",   // 1
-  ".###./#...#/....#/..##./.#.../#..../#####",   // 2
-  "####./....#/....#/.###./....#/....#/####.",   // 3
-  "...#./..##./.#.#./#..#./#####/...#./...#.",   // 4
-  "#####/#..../####./....#/....#/#...#/.###.",   // 5
-  "..##./.#.../#..../####./#...#/#...#/.###.",   // 6
-  "#####/....#/...#./..#../.#.../.#.../.#...",   // 7
-  ".###./#...#/#...#/.###./#...#/#...#/.###.",   // 8
-  ".###./#...#/#...#/.####/....#/...#./.##..",   // 9
-  "...../..#../..#../...../..#../..#../.....",   // :
-  "...../..#../..#../...../..#../..#../.#...",   // ;
-  "...#./..#../.#.../#..../.#.../..#../...#.",   // <
-  "...../...../#####/...../#####/...../.....",   // =
-  ".#.../..#../...#./....#/...#./..#../.#...",   // >
-  ".###./#...#/....#/..##./..#../...../..#..",   // ?
-  ".###./#...#/#.###/#.#.#/#.###/#..../.###.",   // @
-  ".###./#...#/#...#/#####/#...#/#...#/#...#",   // A
-  "####./#...#/#...#/####./#...#/#...#/####.",   // B
-  ".###./#...#/#..../#..../#..../#...#/.###.",   // C
-  "###../#..#./#...#/#...#/#...#/#..#./###..",   // D
-  "#####/#..../#..../####./#..../#..../#####",   // E
-  "#####/#..../#..../####./#..../#..../#....",   // F
-  ".###./#...#/#..../#.###/#...#/#...#/.###.",   // G
-  "#...#/#...#/#...#/#####/#...#/#...#/#...#",   // H
-  ".###./..#../..#../..#../..#../..#../.###.",   // I
-  "..###/...#./...#./...#./...#./#..#./.##..",   // J
-  "#...#/#..#./#.#../##.../#.#../#..#./#...#",   // K
-  "#..../#..../#..../#..../#..../#..../#####",   // L
-  "#...#/##.##/#.#.#/#.#.#/#...#/#...#/#...#",   // M
-  "#...#/##..#/#.#.#/#.#.#/#..##/#...#/#...#",   // N
-  ".###./#...#/#...#/#...#/#...#/#...#/.###.",   // O
-  "####./#...#/#...#/####./#..../#..../#....",   // P
-  ".###./#...#/#...#/#...#/#.#.#/#..#./.##.#",   // Q
-  "####./#...#/#...#/####./#.#../#..#./#...#",   // R
-  ".####/#..../#..../.###./....#/....#/####.",   // S
-  "#####/..#../..#../..#../..#../..#../..#..",   // T
-  "#...#/#...#/#...#/#...#/#...#/#...#/.###.",   // U
-  "#...#/#...#/#...#/#...#/#...#/.#.#./..#..",   // V
-  "#...#/#...#/#...#/#.#.#/#.#.#/##.##/#...#",   // W
-  "#...#/#...#/.#.#./..#../.#.#./#...#/#...#",   // X
-  "#...#/#...#/.#.#./..#../..#../..#../..#..",   // Y
-  "#####/....#/...#./..#../.#.../#..../#####",   // Z
-  ".###./.#.../.#.../.#.../.#.../.#.../.###.",   // [
-  "#..../#..../.#.../..#../...#./....#/....#",   // backslash
-  ".###./...#./...#./...#./...#./...#./.###.",   // ]
-  "..#../.#.#./#...#/...../...../...../.....",   // ^
-  "...../...../...../...../...../...../#####"    // _
+  "...../...../...../...../...../...../.....",   # space
+  "..#../..#../..#../..#../..#../...../..#..",   # !
+  ".#.#./.#.#./...../...../...../...../.....",   # "
+  "...../.#.#./#####/.#.#./#####/.#.#./.....",   # #
+  "..#../.####/#.#../.###./..#.#/####./..#..",   # $
+  "##..#/##..#/...#./..#../.#.../#..##/#..##",   # %
+  ".##../#..#./#.#../.#.../#.#.#/#..#./.##.#",   # &
+  "..#../..#../...../...../...../...../.....",   # '
+  "...#./..#../.#.../.#.../.#.../..#../...#.",   # (
+  ".#.../..#../...#./...#./...#./..#../.#...",   # )
+  "...../#.#.#/.###./#####/.###./#.#.#/.....",   # *
+  "...../..#../..#../#####/..#../..#../.....",   # +
+  "...../...../...../...../..#../..#../.#...",   # ,
+  "...../...../...../#####/...../...../.....",   # -
+  "...../...../...../...../...../..#../..#..",   # .
+  "....#/....#/...#./..#../.#.../#..../#....",   # /
+  ".###./#...#/#..##/#.#.#/##..#/#...#/.###.",   # 0
+  "..#../.##../..#../..#../..#../..#../.###.",   # 1
+  ".###./#...#/....#/..##./.#.../#..../#####",   # 2
+  "####./....#/....#/.###./....#/....#/####.",   # 3
+  "...#./..##./.#.#./#..#./#####/...#./...#.",   # 4
+  "#####/#..../####./....#/....#/#...#/.###.",   # 5
+  "..##./.#.../#..../####./#...#/#...#/.###.",   # 6
+  "#####/....#/...#./..#../.#.../.#.../.#...",   # 7
+  ".###./#...#/#...#/.###./#...#/#...#/.###.",   # 8
+  ".###./#...#/#...#/.####/....#/...#./.##..",   # 9
+  "...../..#../..#../...../..#../..#../.....",   # :
+  "...../..#../..#../...../..#../..#../.#...",   # ;
+  "...#./..#../.#.../#..../.#.../..#../...#.",   # <
+  "...../...../#####/...../#####/...../.....",   # =
+  ".#.../..#../...#./....#/...#./..#../.#...",   # >
+  ".###./#...#/....#/..##./..#../...../..#..",   # ?
+  ".###./#...#/#.###/#.#.#/#.###/#..../.###.",   # @
+  ".###./#...#/#...#/#####/#...#/#...#/#...#",   # A
+  "####./#...#/#...#/####./#...#/#...#/####.",   # B
+  ".###./#...#/#..../#..../#..../#...#/.###.",   # C
+  "###../#..#./#...#/#...#/#...#/#..#./###..",   # D
+  "#####/#..../#..../####./#..../#..../#####",   # E
+  "#####/#..../#..../####./#..../#..../#....",   # F
+  ".###./#...#/#..../#.###/#...#/#...#/.###.",   # G
+  "#...#/#...#/#...#/#####/#...#/#...#/#...#",   # H
+  ".###./..#../..#../..#../..#../..#../.###.",   # I
+  "..###/...#./...#./...#./...#./#..#./.##..",   # J
+  "#...#/#..#./#.#../##.../#.#../#..#./#...#",   # K
+  "#..../#..../#..../#..../#..../#..../#####",   # L
+  "#...#/##.##/#.#.#/#.#.#/#...#/#...#/#...#",   # M
+  "#...#/##..#/#.#.#/#.#.#/#..##/#...#/#...#",   # N
+  ".###./#...#/#...#/#...#/#...#/#...#/.###.",   # O
+  "####./#...#/#...#/####./#..../#..../#....",   # P
+  ".###./#...#/#...#/#...#/#.#.#/#..#./.##.#",   # Q
+  "####./#...#/#...#/####./#.#../#..#./#...#",   # R
+  ".####/#..../#..../.###./....#/....#/####.",   # S
+  "#####/..#../..#../..#../..#../..#../..#..",   # T
+  "#...#/#...#/#...#/#...#/#...#/#...#/.###.",   # U
+  "#...#/#...#/#...#/#...#/#...#/.#.#./..#..",   # V
+  "#...#/#...#/#...#/#.#.#/#.#.#/##.##/#...#",   # W
+  "#...#/#...#/.#.#./..#../.#.#./#...#/#...#",   # X
+  "#...#/#...#/.#.#./..#../..#../..#../..#..",   # Y
+  "#####/....#/...#./..#../.#.../#..../#####",   # Z
+  ".###./.#.../.#.../.#.../.#.../.#.../.###.",   # [
+  "#..../#..../.#.../..#../...#./....#/....#",   # backslash
+  ".###./...#./...#./...#./...#./...#./.###.",   # ]
+  "..#../.#.#./#...#/...../...../...../.....",   # ^
+  "...../...../...../...../...../...../#####"    # _
 ]
 
-// The default font base: the last 64 tiles of the 512-tile pattern table, so
-// installing the font never collides with art a cart laid out from 0 upward.
+# The default font base: the last 64 tiles of the 512-tile pattern table, so
+# installing the font never collides with art a cart laid out from 0 upward.
 let _FONT_DEFAULT_BASE = 448
 
-// Where the font lives, what color index its ink uses, and the last frame it
-// was written to the pattern table.
+# Where the font lives, what color index its ink uses, and the last frame it
+# was written to the pattern table.
 state var _nes_font = {base: _FONT_DEFAULT_BASE, ink: 1, at: -1}
 
-// `pattern` -> the 8 rows of 8 digits `define_tile` takes, with `#` painted in
-// color `ink` and the glyph left-aligned in the cell (so text advances 8px and
-// row 8 stays clear for descender-free line spacing).
+# `pattern` -> the 8 rows of 8 digits `define_tile` takes, with `#` painted in
+# color `ink` and the glyph left-aligned in the cell (so text advances 8px and
+# row 8 stays clear for descender-free line spacing).
 fn _glyph_rows(pattern: string, ink: num) -> list
   let ink_ch = str(ink)
   let rows = []
@@ -507,10 +507,10 @@ fn _glyph_rows(pattern: string, ink: num) -> list
   append(rows, "00000000")
 end
 
-// The decoded font, cached per ink color: 64 glyphs is enough string work that
-// rebuilding it every frame would be visible in a profile, and the result
-// never changes. A `memo`, since it is a pure function of `ink`: every caller
-// asking for the same ink shares one entry.
+# The decoded font, cached per ink color: 64 glyphs is enough string work that
+# rebuilding it every frame would be visible in a profile, and the result
+# never changes. A `memo`, since it is a pure function of `ink`: every caller
+# asking for the same ink shares one entry.
 fn _font_rows(ink: num) -> list
   memo(ink) rows = _build_font_rows(ink)
   rows
@@ -533,12 +533,12 @@ fn _build_font_index() -> record
   m
 end
 
-// char -> glyph number, built once. A top-level cell for the same reason as
-// `_nes_art_table` above: `glyph()` runs once per character drawn, so a
-// call-path-keyed `state` behind an accessor would rebuild the whole index per
-// character rather than caching it. It sits *below* `_build_font_index`
-// because that builder reads `_FONT_CHARS`, a value the file computes at run
-// time — which makes it un-hoistable, so a call above it would read nil.
+# char -> glyph number, built once. A top-level cell for the same reason as
+# `_nes_art_table` above: `glyph()` runs once per character drawn, so a
+# call-path-keyed `state` behind an accessor would rebuild the whole index per
+# character rather than caching it. It sits *below* `_build_font_index`
+# because that builder reads `_FONT_CHARS`, a value the file computes at run
+# time — which makes it un-hoistable, so a call above it would read nil.
 state var _nes_font_index = _build_font_index()
 
 fn _install_font(base: num, ink: num)
@@ -548,10 +548,10 @@ fn _install_font(base: num, ink: num)
   end
 end
 
-// Install the font at `base` (64 tiles) and make it the font the text helpers
-// use. `ink` is which palette entry the glyphs are drawn in — 1 by default, so
-// the text color is the palette's first real color. Idempotent; returns the
-// next free tile index.
+# Install the font at `base` (64 tiles) and make it the font the text helpers
+# use. `ink` is which palette entry the glyphs are drawn in — 1 by default, so
+# the text color is the palette's first real color. Idempotent; returns the
+# next free tile index.
 pub fn font_tiles(base: num) -> num
   font_tiles(base, 1)
 end
@@ -562,15 +562,15 @@ pub fn font_tiles(base: num, ink: num) -> num
   base + len(_FONT_GLYPHS)
 end
 
-// The tile index the font currently starts at.
+# The tile index the font currently starts at.
 pub fn font_base() -> num
   (get _nes_font).base
 end
 
-// Make sure the glyphs are in the pattern table before something draws with
-// them, at most once per frame. This is what lets a cart use `map_text` with
-// no setup call at all — and re-running it each frame also heals the font if
-// the cart's own artwork happened to overwrite those tiles.
+# Make sure the glyphs are in the pattern table before something draws with
+# them, at most once per frame. This is what lets a cart use `map_text` with
+# no setup call at all — and re-running it each frame also heals the font if
+# the cart's own artwork happened to overwrite those tiles.
 fn _ensure_font() -> num
   let f = get _nes_font
   if f.at != frame_count() then
@@ -580,29 +580,29 @@ fn _ensure_font() -> num
   f.base
 end
 
-// The tile index for one character. Unknown characters (and lowercase, which
-// is folded) resolve through the same table; anything the font does not carry
-// draws as a space.
+# The tile index for one character. Unknown characters (and lowercase, which
+# is folded) resolve through the same table; anything the font does not carry
+# draws as a space.
 pub fn glyph(ch: string)
   _ensure_font() + ((get _nes_font_index)[upper(ch)] ?? 0)
 end
 
-// ── Text ──────────────────────────────────────────────────────────────────
-// Two ways to put words on screen, and the choice matters:
-//
-//   `map_text`     writes glyph tiles into the background map. Free (it costs
-//                  no sprites) and permanent, but it scrolls with the map.
-//   `text_sprites` draws each character as a sprite. Floats over a scrolling
-//                  background and can be positioned to the pixel, but spends
-//                  one of the 64 per-frame sprites per non-blank character.
-//
-// A scrolling game's HUD usually wants `text_sprites`, or `map_text` plus
-// `lock_top` to freeze the status rows.
+# ── Text ──────────────────────────────────────────────────────────────────
+# Two ways to put words on screen, and the choice matters:
+#
+#   `map_text`     writes glyph tiles into the background map. Free (it costs
+#                  no sprites) and permanent, but it scrolls with the map.
+#   `text_sprites` draws each character as a sprite. Floats over a scrolling
+#                  background and can be positioned to the pixel, but spends
+#                  one of the 64 per-frame sprites per non-blank character.
+#
+# A scrolling game's HUD usually wants `text_sprites`, or `map_text` plus
+# `lock_top` to freeze the status rows.
 
-// Write `s` into the background map at cell (x_cell, y_cell), in `pal`.
-// Spaces are written as the blank glyph, so re-writing a shorter string over a
-// longer one erases the tail — which is what makes this safe to call every
-// frame with a changing score.
+# Write `s` into the background map at cell (x_cell, y_cell), in `pal`.
+# Spaces are written as the blank glyph, so re-writing a shorter string over a
+# longer one erases the tail — which is what makes this safe to call every
+# frame with a changing score.
 pub fn map_text(x_cell: num, y_cell: num, s: string)
   map_text(x_cell, y_cell, s, pal: 0)
 end
@@ -614,15 +614,15 @@ pub fn map_text(x_cell: num, y_cell: num, s: string, pal: num)
   end
 end
 
-// Centered in the 32-cell width. Odd-length strings land half a cell left,
-// which is what a tile grid can do.
+# Centered in the 32-cell width. Odd-length strings land half a cell left,
+# which is what a tile grid can do.
 pub fn map_text_center(y_cell: num, s: string, pal: num)
   map_text(int((screen_cols - len(s)) / 2), y_cell, s, pal)
 end
 
-// Draw `s` as sprites with its top-left corner at pixel (x, y). Blank
-// characters cost nothing. Returns the number of sprites used, so a HUD can
-// stay inside the 64-sprite budget deliberately instead of by luck.
+# Draw `s` as sprites with its top-left corner at pixel (x, y). Blank
+# characters cost nothing. Returns the number of sprites used, so a HUD can
+# stay inside the 64-sprite budget deliberately instead of by luck.
 pub fn text_sprites(x: num, y: num, s: string) -> int
   text_sprites(x, y, s, pal: 4, flags: 0)
 end
@@ -643,13 +643,13 @@ pub fn text_sprites(x: num, y: num, s: string, pal: num, flags: num) -> int
   used
 end
 
-// Centered on the 256-pixel screen.
+# Centered on the 256-pixel screen.
 pub fn text_sprites_center(y: num, s: string, pal: num) -> int
   text_sprites(int((screen_w - len(s) * 8) / 2), y, s, pal, 0)
 end
 
-// Width of `s` if drawn, in cells and in pixels. The font is fixed-width, so
-// these are exact — lay a box out with them rather than guessing.
+# Width of `s` if drawn, in cells and in pixels. The font is fixed-width, so
+# these are exact — lay a box out with them rather than guessing.
 pub fn text_cells(s: string) -> int
   len(s)
 end
@@ -658,7 +658,7 @@ pub fn text_px(s: string) -> int
   len(s) * 8
 end
 
-// Right-align helpers, for scores and timers that grow leftward.
+# Right-align helpers, for scores and timers that grow leftward.
 pub fn map_text_right(right_cell: num, y_cell: num, s: string, pal: num)
   map_text(right_cell - len(s), y_cell, s, pal)
 end
@@ -667,8 +667,8 @@ pub fn text_sprites_right(right_x: num, y: num, s: string, pal: num) -> int
   text_sprites(right_x - text_px(s), y, s, pal, 0)
 end
 
-// Zero-padded number, the other thing every HUD needs: `pad_num(7, 3)` is
-// "007". Negative numbers keep their sign and lose one digit of padding.
+# Zero-padded number, the other thing every HUD needs: `pad_num(7, 3)` is
+# "007". Negative numbers keep their sign and lose one digit of padding.
 pub fn pad_num(n: num, digits: num) -> string
   let s = str(int(n))
   while len(s) < digits do
@@ -677,11 +677,11 @@ pub fn pad_num(n: num, digits: num) -> string
   s
 end
 
-// ── Background map ────────────────────────────────────────────────────────
-// The map is up to 64x60 cells and wraps when scrolled. These wrappers exist
-// because the *size* and the *scroll* are things cart code needs to read back
-// — for camera clamping, for wrapping, for "is this cell on screen" — and the
-// natives are write-only.
+# ── Background map ────────────────────────────────────────────────────────
+# The map is up to 64x60 cells and wraps when scrolled. These wrappers exist
+# because the *size* and the *scroll* are things cart code needs to read back
+# — for camera clamping, for wrapping, for "is this cell on screen" — and the
+# natives are write-only.
 
 native fn _native_set_map_size(...args) = "set_map_size"
 native fn _native_set_scroll(...args) = "set_scroll"
@@ -694,7 +694,7 @@ pub fn set_map_size(w_cells: num, h_cells: num)
   _native_set_map_size(w_cells, h_cells)
 end
 
-// The map's size in cells and in pixels.
+# The map's size in cells and in pixels.
 pub fn map_cols() -> num
   (get _nes_map).w
 end
@@ -716,9 +716,9 @@ pub fn set_scroll(x: num, y: num)
   _native_set_scroll(px(x), px(y))
 end
 
-// The current scroll position — the world coordinate at the top-left of the
-// screen. Named `cam_*` and not `scroll_*` because petal-ui already publishes
-// `scroll_x()`/`scroll_y()` for the mouse wheel.
+# The current scroll position — the world coordinate at the top-left of the
+# screen. Named `cam_*` and not `scroll_*` because petal-ui already publishes
+# `scroll_x()`/`scroll_y()` for the mouse wheel.
 pub fn cam_x() -> num
   (get _nes_scroll).x
 end
@@ -727,8 +727,8 @@ pub fn cam_y() -> num
   (get _nes_scroll).y
 end
 
-// Point the camera at a world position, clamped so the view never runs past
-// the edge of the map. Returns the position actually used.
+# Point the camera at a world position, clamped so the view never runs past
+# the edge of the map. Returns the position actually used.
 pub fn camera(x: num, y: num) -> record
   let cx = clamp(x, lo: 0, hi: max(0, map_w() - screen_w))
   let cy = clamp(y, lo: 0, hi: max(0, map_h() - screen_h))
@@ -736,20 +736,20 @@ pub fn camera(x: num, y: num) -> record
   {x: cx, y: cy}
 end
 
-// Center the camera on a point — the usual "follow the player" call, already
-// clamped to the map.
+# Center the camera on a point — the usual "follow the player" call, already
+# clamped to the map.
 pub fn camera_follow(x: num, y: num) -> record
   camera(x - screen_w / 2, y - screen_h / 2)
 end
 
-// World -> screen, for drawing an object that lives in map coordinates.
+# World -> screen, for drawing an object that lives in map coordinates.
 pub fn world_to_screen(x: num, y: num) -> record
   {x: x - cam_x(), y: y - cam_y()}
 end
 
-// A sprite placed in *world* coordinates: the camera offset is applied for
-// you. Most gameplay code never wants screen space, and hand-subtracting the
-// camera at every sprite call is where off-by-one jitter comes from.
+# A sprite placed in *world* coordinates: the camera offset is applied for
+# you. Most gameplay code never wants screen space, and hand-subtracting the
+# camera at every sprite call is where off-by-one jitter comes from.
 pub fn sprite_world(x: num, y: num, tile: num, pal: num)
   sprite_world(x, y, tile, pal, flags: 0)
 end
@@ -766,21 +766,21 @@ pub fn draw_meta_world(x: num, y: num, m: record, flags: num)
   draw_meta(x: x - cam_x(), y: y - cam_y(), m: m, flags: flags)
 end
 
-// Is this world-space rect anywhere near the visible screen? The cheap cull
-// every scrolling game needs before it spends a sprite on an off-screen enemy.
+# Is this world-space rect anywhere near the visible screen? The cheap cull
+# every scrolling game needs before it spends a sprite on an off-screen enemy.
 pub fn on_screen(r: record)
   overlaps(r, rect(cam_x(), cam_y(), screen_w, screen_h))
 end
 
-// Freeze the top `height_px` scanlines at scroll x = 0 while the rest of the
-// screen scrolls: the status-bar split. Call it every frame, after the camera.
+# Freeze the top `height_px` scanlines at scroll x = 0 while the rest of the
+# screen scrolls: the status-bar split. Call it every frame, after the camera.
 pub fn lock_top(height_px: num)
   for y in range(0, height_px) do
     set_scroll_at(y, 0)
   end
 end
 
-// Fill a rectangular region of cells with one tile.
+# Fill a rectangular region of cells with one tile.
 pub fn map_rect(x_cell: num, y_cell: num, w_cells: num, h_cells: num, tile: num, pal: num)
   for y in range(0, h_cells) do
     for x in range(0, w_cells) do
@@ -789,28 +789,28 @@ pub fn map_rect(x_cell: num, y_cell: num, w_cells: num, h_cells: num, tile: num,
   end
 end
 
-// Write a row of tile indices from a list.
+# Write a row of tile indices from a list.
 pub fn map_row(x_cell: num, y_cell: num, tiles: list, pal: num)
   for i in range(0, len(tiles)) do
     set_tile(x_cell + i, y_cell, tiles[i], pal)
   end
 end
 
-// Paint a region of the map from string art, one character per cell, through a
-// legend. This is how a level is authored:
-//
-//   map_art(0, 20, [
-//     "................",
-//     "....===.........",
-//     "###############."
-//   ], [
-//     ["#", 1],           // char, tile      (palette 0)
-//     ["=", 2, 1]         // char, tile, palette
-//   ])
-//
-// A character the legend does not mention is left *untouched*, so "." means
-// "not mine" and several `map_art` calls can be layered — terrain, then
-// decoration, then a doorway — without the later ones erasing the earlier.
+# Paint a region of the map from string art, one character per cell, through a
+# legend. This is how a level is authored:
+#
+#   map_art(0, 20, [
+#     "................",
+#     "....===.........",
+#     "###############."
+#   ], [
+#     ["#", 1],           // char, tile      (palette 0)
+#     ["=", 2, 1]         // char, tile, palette
+#   ])
+#
+# A character the legend does not mention is left *untouched*, so "." means
+# "not mine" and several `map_art` calls can be layered — terrain, then
+# decoration, then a doorway — without the later ones erasing the earlier.
 pub fn map_art(x_cell: num, y_cell: num, rows: list, legend: list)
   let m = _legend_rec(legend)
   for y in range(0, len(rows)) do
@@ -832,12 +832,12 @@ fn _legend_rec(legend: list) -> record
   m
 end
 
-// ── Pads ──────────────────────────────────────────────────────────────────
-// `btn`/`btnp`/`btnr` are held / pressed-this-frame / released-this-frame.
-// The one-argument forms are pad 0, which is what a one-player cart wants;
-// the two-argument forms take the pad number first.
-//
-// Button names: "up" "down" "left" "right" "a" "b" "select" "start".
+# ── Pads ──────────────────────────────────────────────────────────────────
+# `btn`/`btnp`/`btnr` are held / pressed-this-frame / released-this-frame.
+# The one-argument forms are pad 0, which is what a one-player cart wants;
+# the two-argument forms take the pad number first.
+#
+# Button names: "up" "down" "left" "right" "a" "b" "select" "start".
 
 pub fn btn(name: string)
   pad_down(0, name)
@@ -863,8 +863,8 @@ pub fn btnr(pad: num, name: string)
   pad_released(pad, name)
 end
 
-// The d-pad as -1 / 0 / +1. Opposite directions cancel, which is what a real
-// pad does mechanically and what stops diagonal-input jitter.
+# The d-pad as -1 / 0 / +1. Opposite directions cancel, which is what a real
+# pad does mechanically and what stops diagonal-input jitter.
 pub fn btn_dx() -> int
   btn_dx(0)
 end
@@ -881,17 +881,17 @@ pub fn btn_dy(pad: num) -> int
   (if pad_down(pad, "down") then 1 else 0 end) - (if pad_down(pad, "up") then 1 else 0 end)
 end
 
-// Auto-repeat, for menus and any other held-to-scroll input: true on the frame
-// the button goes down, then again every `rate` seconds once it has been held
-// for `delay`. Both are seconds; 0.35 / 0.12 feels like a console menu.
-//
-// The timers live in one module-level map, one entry per (pad, button), so
-// this is correct called unconditionally every frame and two widgets asking
-// about the same button share one repeat phase (as they should — it is one
-// button). Releasing the button removes its entry. An entry also records the
-// frame that last asked about it, and one that missed a frame reads as absent:
-// a button held through frames where nobody asked starts a fresh hold when
-// asked again, instead of resuming a stale timer and firing twice.
+# Auto-repeat, for menus and any other held-to-scroll input: true on the frame
+# the button goes down, then again every `rate` seconds once it has been held
+# for `delay`. Both are seconds; 0.35 / 0.12 feels like a console menu.
+#
+# The timers live in one module-level map, one entry per (pad, button), so
+# this is correct called unconditionally every frame and two widgets asking
+# about the same button share one repeat phase (as they should — it is one
+# button). Releasing the button removes its entry. An entry also records the
+# frame that last asked about it, and one that missed a frame reads as absent:
+# a button held through frames where nobody asked starts a fresh hold when
+# asked again, instead of resuming a stale timer and firing twice.
 state var _nes_repeat = Map()
 
 pub fn btn_repeat(name: string, delay: num, rate: num) -> bool
@@ -910,46 +910,46 @@ pub fn btn_repeat(pad: num, name: string, delay: num, rate: num) -> bool
   let at = if e != nil && e.seen >= frame_count() - 1 then e.at else -1 end
   let fire = false
   if at < 0 then
-    // First frame of the hold — fire immediately, then wait out `delay`.
+    # First frame of the hold — fire immediately, then wait out `delay`.
     fire = true
     at = time() + delay
   elsif time() >= at then
     fire = true
-    // Advance by one period rather than from `now`, so a slow frame does not
-    // stretch the repeat; a *very* slow frame resyncs instead of firing in a
-    // burst to catch up.
+    # Advance by one period rather than from `now`, so a slow frame does not
+    # stretch the repeat; a *very* slow frame resyncs instead of firing in a
+    # burst to catch up.
     at = max(at + rate, time())
   end
   set _nes_repeat[key] = {at: at, seen: frame_count()}
   fire
 end
 
-// ── Scenes ────────────────────────────────────────────────────────────────
-// A cart is title -> menu -> game -> game over, and Petal re-runs the whole
-// file every frame, so the structure that fits is a scene name plus an
-// "entered" edge:
-//
-//   start_scene("title")                       // the cart's initial scene
-//
-//   if scene() == "title" then
-//     if scene_entered() then reset_title() end
-//     ...
-//     if btnp("start") then set_scene("game") end
-//   elsif scene() == "game" then
-//     ...
-//   end
-//
-// `set_scene` takes effect on the *next* frame. That is deliberate: the rest
-// of this frame belongs to the scene that is already drawing, and the new
-// scene gets a clean frame that starts with `scene_entered()` true — which is
-// where per-scene setup goes. Switching to the scene you are already in
-// re-enters it, so "restart level" is `set_scene(scene())`.
+# ── Scenes ────────────────────────────────────────────────────────────────
+# A cart is title -> menu -> game -> game over, and Petal re-runs the whole
+# file every frame, so the structure that fits is a scene name plus an
+# "entered" edge:
+#
+#   start_scene("title")                       // the cart's initial scene
+#
+#   if scene() == "title" then
+#     if scene_entered() then reset_title() end
+#     ...
+#     if btnp("start") then set_scene("game") end
+#   elsif scene() == "game" then
+#     ...
+#   end
+#
+# `set_scene` takes effect on the *next* frame. That is deliberate: the rest
+# of this frame belongs to the scene that is already drawing, and the new
+# scene gets a clean frame that starts with `scene_entered()` true — which is
+# where per-scene setup goes. Switching to the scene you are already in
+# re-enters it, so "restart level" is `set_scene(scene())`.
 
 state var _nes_scene = {name: "", pending: "", req: -1, at: -1, at_time: 0}
 
-// Read the live scene, applying a pending switch once the frame that
-// requested it is over. Every accessor goes through this, so the switch lands
-// on the first read of the new frame no matter which one it is.
+# Read the live scene, applying a pending switch once the frame that
+# requested it is over. Every accessor goes through this, so the switch lands
+# on the first read of the new frame no matter which one it is.
 fn _scene_now() -> record
   let s = get _nes_scene
   if s.pending != "" && frame_count() != s.req then
@@ -961,35 +961,35 @@ fn _scene_now() -> record
   end
 end
 
-// The current scene name; "" before anything has started one.
+# The current scene name; "" before anything has started one.
 pub fn scene() -> string
   _scene_now().name
 end
 
-// Request a switch, effective next frame. "" is not a scene name — it is the
-// "nothing pending" sentinel — so switching to it does nothing.
+# Request a switch, effective next frame. "" is not a scene name — it is the
+# "nothing pending" sentinel — so switching to it does nothing.
 pub fn set_scene(name: string)
   let s = _scene_now()
   set _nes_scene = {name: s.name, pending: name, req: frame_count(), at: s.at, at_time: s.at_time}
 end
 
-// Set the scene *only if the cart has not started one yet*, immediately. The
-// first line of a cart: safe to run every frame, and it does not fight a
-// switch that has already happened.
+# Set the scene *only if the cart has not started one yet*, immediately. The
+# first line of a cart: safe to run every frame, and it does not fight a
+# switch that has already happened.
 pub fn start_scene(name: string)
   if _scene_now().name == "" then
     set _nes_scene = {name: name, pending: "", req: -1, at: frame_count(), at_time: time()}
   end
 end
 
-// True for exactly the first frame a scene is current — where per-scene setup
-// belongs (reset the score, repaint the map, reposition the player).
+# True for exactly the first frame a scene is current — where per-scene setup
+# belongs (reset the score, repaint the map, reposition the player).
 pub fn scene_entered() -> bool
   _scene_now().at == frame_count()
 end
 
-// Seconds, and frames, since the current scene began. For timed splash
-// screens, respawn delays and "GAME OVER" holds.
+# Seconds, and frames, since the current scene began. For timed splash
+# screens, respawn delays and "GAME OVER" holds.
 pub fn scene_time()
   time() - _scene_now().at_time
 end
@@ -998,20 +998,20 @@ pub fn scene_frames()
   frame_count() - _scene_now().at
 end
 
-// ── Menus ─────────────────────────────────────────────────────────────────
-// A cursor-driven vertical menu drawn with the font. `id` names the menu, so
-// several can coexist and each keeps its own cursor in module state across
-// frames and hot reloads.
-//
-//   let m = menu("main", 80, 100, ["START", "OPTIONS", "QUIT"], 4)
-//   if m.chosen == 0 then set_scene("game") end
-//
-// The returned record is {index, chosen, cancelled}: `index` is where the
-// cursor is right now, `chosen` is the index picked *this frame* or -1, and
-// `cancelled` is true on B. Up/down auto-repeat and wrap around.
+# ── Menus ─────────────────────────────────────────────────────────────────
+# A cursor-driven vertical menu drawn with the font. `id` names the menu, so
+# several can coexist and each keeps its own cursor in module state across
+# frames and hot reloads.
+#
+#   let m = menu("main", 80, 100, ["START", "OPTIONS", "QUIT"], 4)
+#   if m.chosen == 0 then set_scene("game") end
+#
+# The returned record is {index, chosen, cancelled}: `index` is where the
+# cursor is right now, `chosen` is the index picked *this frame* or -1, and
+# `cancelled` is true on B. Up/down auto-repeat and wrap around.
 
-// The input half, with no pixels of its own — for a cart that wants the
-// keyboard behaviour but draws its own rows.
+# The input half, with no pixels of its own — for a cart that wants the
+# keyboard behaviour but draws its own rows.
 pub fn menu_update(id: string, count: num) -> record
   if count <= 0 then
     {index: 0, chosen: -1, cancelled: false}
@@ -1031,13 +1031,13 @@ pub fn menu_update(id: string, count: num) -> record
   end
 end
 
-// Every menu's cursor, by menu id, behind a single read/write port. One
-// module-level map is what lets `menu_update` and `menu_index` look at the
-// same cursor from different callsites. Each entry records the frame that last
-// touched it, and one that missed a frame reads as 0, so a menu that stops
-// being drawn (its scene ended) starts at the top when it comes back. Such an
-// entry stays in the map until that id is used again; there is one per menu
-// id the cart has ever shown, so nothing needs to clear them.
+# Every menu's cursor, by menu id, behind a single read/write port. One
+# module-level map is what lets `menu_update` and `menu_index` look at the
+# same cursor from different callsites. Each entry records the frame that last
+# touched it, and one that missed a frame reads as 0, so a menu that stops
+# being drawn (its scene ended) starts at the top when it comes back. Such an
+# entry stays in the map until that id is used again; there is one per menu
+# id the cart has ever shown, so nothing needs to clear them.
 state var _nes_menu_sel = Map()
 
 fn _menu_sel(id: string, write: bool, v: num) -> num
@@ -1053,14 +1053,14 @@ fn _menu_sel(id: string, write: bool, v: num) -> num
   s
 end
 
-// Where a menu's cursor currently sits, without touching it.
+# Where a menu's cursor currently sits, without touching it.
 pub fn menu_index(id: string) -> num
   _menu_sel(id, write: false, v: 0)
 end
 
-// The sprite-drawn menu: floats over anything, costs one sprite per visible
-// character. Rows are 16px apart (one blank line between them) and the cursor
-// takes the two cells to the left of the text.
+# The sprite-drawn menu: floats over anything, costs one sprite per visible
+# character. Rows are 16px apart (one blank line between them) and the cursor
+# takes the two cells to the left of the text.
 pub fn menu(id: string, x: num, y: num, items: list, pal: num) -> record
   let m = menu_update(id, len(items))
   for i in range(0, len(items)) do
@@ -1073,9 +1073,9 @@ pub fn menu(id: string, x: num, y: num, items: list, pal: num) -> record
   m
 end
 
-// The map-drawn menu: costs no sprites, but scrolls with the background — use
-// it on a static title screen. Every row rewrites its cursor cell, blank
-// included, so the old cursor is erased without any bookkeeping.
+# The map-drawn menu: costs no sprites, but scrolls with the background — use
+# it on a static title screen. Every row rewrites its cursor cell, blank
+# included, so the old cursor is erased without any bookkeeping.
 pub fn map_menu(id: string, x_cell: num, y_cell: num, items: list, pal: num) -> record
   let m = menu_update(id, len(items))
   for i in range(0, len(items)) do
@@ -1086,15 +1086,15 @@ pub fn map_menu(id: string, x_cell: num, y_cell: num, items: list, pal: num) -> 
   m
 end
 
-// ── Geometry ──────────────────────────────────────────────────────────────
+# ── Geometry ──────────────────────────────────────────────────────────────
 
 pub fn point_in(px_: num, py_: num, r: record)
   px_ >= r.x && px_ < r.x + r.w && py_ >= r.y && py_ < r.y + r.h
 end
 
-// Axis-aligned overlap, in both the record and the flat form — gameplay code
-// has boxes as rects, but a quick "do these two 8x8 sprites touch" is often
-// eight loose numbers.
+# Axis-aligned overlap, in both the record and the flat form — gameplay code
+# has boxes as rects, but a quick "do these two 8x8 sprites touch" is often
+# eight loose numbers.
 pub fn overlaps(a: record, b: record)
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 end
@@ -1103,8 +1103,8 @@ pub fn overlaps(ax: num, ay: num, aw: num, ah: num, bx: num, by: num, bw: num, b
   ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah
 end
 
-// Grow (or, with a negative amount, shrink) a rect on all sides. A forgiving
-// hitbox is `inflate(hero, -2)`; a generous pickup radius is `inflate(coin, 4)`.
+# Grow (or, with a negative amount, shrink) a rect on all sides. A forgiving
+# hitbox is `inflate(hero, -2)`; a generous pickup radius is `inflate(coin, 4)`.
 pub fn inflate(r: record, amount: num) -> Rect
   rect(r.x - amount, r.y - amount, r.w + amount * 2, r.h + amount * 2)
 end
@@ -1117,32 +1117,32 @@ pub fn center_y(r: record)
   r.y + r.h / 2
 end
 
-// ── Tile collision ────────────────────────────────────────────────────────
-// Which tiles are walls is a cart decision, declared once as index ranges:
-//
-//   set_solid(1, 15)          // tiles 1..15 are solid
-//   add_solid(40, 42)         // ...and so are 40..42
-//
-// Nothing is solid until a cart says so. Both calls are idempotent, so they
-// belong at the top of the file with the artwork; `set_solid` replaces the
-// whole set every frame, which is what keeps re-running the cart from piling
-// up duplicate ranges.
+# ── Tile collision ────────────────────────────────────────────────────────
+# Which tiles are walls is a cart decision, declared once as index ranges:
+#
+#   set_solid(1, 15)          // tiles 1..15 are solid
+#   add_solid(40, 42)         // ...and so are 40..42
+#
+# Nothing is solid until a cart says so. Both calls are idempotent, so they
+# belong at the top of the file with the artwork; `set_solid` replaces the
+# whole set every frame, which is what keeps re-running the cart from piling
+# up duplicate ranges.
 
 state var _nes_solid = []
 
-// Declare the solid tile range, replacing whatever was declared before.
+# Declare the solid tile range, replacing whatever was declared before.
 pub fn set_solid(first: num, last: num)
   set _nes_solid = [[first, last]]
 end
 
-// Add another solid range on top of the current set. Because `set_solid`
-// resets, the idiomatic order is one `set_solid` followed by any number of
-// `add_solid`s, re-run every frame.
+# Add another solid range on top of the current set. Because `set_solid`
+# resets, the idiomatic order is one `set_solid` followed by any number of
+# `add_solid`s, re-run every frame.
 pub fn add_solid(first: num, last: num)
   set _nes_solid = append(get _nes_solid, [first, last])
 end
 
-// Is this tile index solid?
+# Is this tile index solid?
 pub fn solid_tile(t: num) -> bool
   let hit = false
   for r in get _nes_solid do
@@ -1153,8 +1153,8 @@ pub fn solid_tile(t: num) -> bool
   hit
 end
 
-// Is the map solid at world pixel (x, y)? Outside the map counts as solid, so
-// a level does not need a wall of tiles around its edge to be enclosed.
+# Is the map solid at world pixel (x, y)? Outside the map counts as solid, so
+# a level does not need a wall of tiles around its edge to be enclosed.
 pub fn solid_at(x: num, y: num) -> bool
   let cx = cell_of(x)
   let cy = cell_of(y)
@@ -1165,8 +1165,8 @@ pub fn solid_at(x: num, y: num) -> bool
   end
 end
 
-// Does any solid tile touch this world-space rect? Checks every cell the box
-// overlaps, so it is correct for boxes larger than one tile.
+# Does any solid tile touch this world-space rect? Checks every cell the box
+# overlaps, so it is correct for boxes larger than one tile.
 pub fn solid_box(r: record) -> bool
   let x0 = cell_of(r.x)
   let x1 = cell_of(r.x + r.w - 1)
@@ -1185,17 +1185,17 @@ pub fn solid_box(r: record) -> bool
   hit
 end
 
-// Move `r` by (dx, dy), stopping against solid tiles. Returns
-// {rect, hit_x, hit_y, grounded}: `rect` is where the box ended up, `hit_x` /
-// `hit_y` say which axis was blocked (kill that axis's velocity), and
-// `grounded` is a downward move that was blocked — the platformer's "am I
-// standing on something".
-//
-// The axes are resolved one at a time, X then Y, in steps of at most one
-// pixel. That is the classic arrangement, and it is what lets a box slide
-// along a wall instead of sticking to it: a blocked X does not cancel the fall,
-// and a blocked Y does not cancel the run. A box that starts *inside* a wall
-// cannot move at all — spawn clear of the terrain.
+# Move `r` by (dx, dy), stopping against solid tiles. Returns
+# {rect, hit_x, hit_y, grounded}: `rect` is where the box ended up, `hit_x` /
+# `hit_y` say which axis was blocked (kill that axis's velocity), and
+# `grounded` is a downward move that was blocked — the platformer's "am I
+# standing on something".
+#
+# The axes are resolved one at a time, X then Y, in steps of at most one
+# pixel. That is the classic arrangement, and it is what lets a box slide
+# along a wall instead of sticking to it: a blocked X does not cancel the fall,
+# and a blocked Y does not cancel the run. A box that starts *inside* a wall
+# cannot move at all — spawn clear of the terrain.
 pub fn move_box(r: record, dx: num, dy: num) -> record
   let cur = r
   let hit_x = false
@@ -1230,69 +1230,69 @@ pub fn move_box(r: record, dx: num, dy: num) -> record
   {rect: cur, hit_x: hit_x, hit_y: hit_y, grounded: hit_y && dy > 0}
 end
 
-// Is there solid ground directly under this box? Cheaper than a move when all
-// you want is the coyote-time / jump-allowed test.
+# Is there solid ground directly under this box? Cheaper than a move when all
+# you want is the coyote-time / jump-allowed test.
 pub fn on_ground(r: record) -> bool
   solid_box(rect(r.x, r.y + 1, r.w, r.h))
 end
 
-// ── Animation ─────────────────────────────────────────────────────────────
+# ── Animation ─────────────────────────────────────────────────────────────
 
-// The current entry of a looping animation, at `fps` frames per second, off
-// the wall clock. `frames` is any list — tile indices, metasprites, whole
-// records — so the same helper drives a walk cycle and a palette flash.
-//
-// The clock is absolute, not accumulated, so animations do not drift and two
-// objects sharing a cycle stay in step.
+# The current entry of a looping animation, at `fps` frames per second, off
+# the wall clock. `frames` is any list — tile indices, metasprites, whole
+# records — so the same helper drives a walk cycle and a palette flash.
+#
+# The clock is absolute, not accumulated, so animations do not drift and two
+# objects sharing a cycle stay in step.
 pub fn anim(frames: list, fps: num)
   anim(frames, fps, t: time())
 end
 
-// The same, driven by a clock you own — `scene_time()`, a per-entity timer —
-// which is what you want when an animation must start at frame 0 on a
-// particular event rather than wherever the global clock happens to be.
+# The same, driven by a clock you own — `scene_time()`, a per-entity timer —
+# which is what you want when an animation must start at frame 0 on a
+# particular event rather than wherever the global clock happens to be.
 pub fn anim(frames: list, fps: num, t: num)
   frames[pmod(int(floor(t * fps)), len(frames))]
 end
 
-// A one-shot animation: plays once from `t` = 0 and holds on the last frame.
-// Explosions, door opens, a death sprite that must not loop.
+# A one-shot animation: plays once from `t` = 0 and holds on the last frame.
+# Explosions, door opens, a death sprite that must not loop.
 pub fn anim_once(frames: list, fps: num, t: num)
   frames[clamp(int(floor(t * fps)), lo: 0, hi: len(frames) - 1)]
 end
 
-// True for the first half of each 1/hz cycle: the flashing "PRESS START", the
-// invulnerability blink after a hit.
+# True for the first half of each 1/hz cycle: the flashing "PRESS START", the
+# invulnerability blink after a hit.
 pub fn blink(hz: num) -> bool
   fract(time() * hz) < 0.5
 end
 
-// ── Numbers ───────────────────────────────────────────────────────────────
-// Movement is written in floats — subpixel speeds, gravity, friction — and
-// becomes whole pixels only where it meets the hardware. These are the
-// conversions that keep that from being fiddly.
+# ── Numbers ───────────────────────────────────────────────────────────────
+# Movement is written in floats — subpixel speeds, gravity, friction — and
+# becomes whole pixels only where it meets the hardware. These are the
+# conversions that keep that from being fiddly.
 
-// A world coordinate as the whole pixel a sprite is drawn at. Floors rather
-// than rounds, so a slowly moving object never jitters back and forth across a
-// pixel boundary. Every sprite helper here applies it for you; use it directly
-// when calling the raw `sprite` native with float positions.
+# A world coordinate as the whole pixel a sprite is drawn at. Floors rather
+# than rounds, so a slowly moving object never jitters back and forth across a
+# pixel boundary. Every sprite helper here applies it for you; use it directly
+# when calling the raw `sprite` native with float positions.
 pub fn px(v: num) -> int
   int(floor(v))
 end
 
-// Pixel -> cell index, correct for negative coordinates (plain integer
-// division truncates toward zero, which would put -1 and +1 in the same cell).
+# Pixel -> cell index, correct for negative coordinates (plain integer
+# division truncates toward zero, which would put -1 and +1 in the same cell).
 pub fn cell_of(pixel: num) -> int
   int(floor(pixel / 8.0))
 end
 
-// Cell index -> the pixel coordinate of its top-left corner.
+# Cell index -> the pixel coordinate of its top-left corner.
 pub fn cell_to_px(cell: num) -> num
   cell * 8
 end
 
-// Positive modulo: `pmod(-1, 4)` is 3, where `-1 % 4` is -1. Wrapping a menu
-// cursor, an animation frame or a scroll position past zero.
+# Positive modulo: `pmod(-1, 4)` is 3, where `-1 % 4` is -1. Wrapping a menu
+# cursor, an animation frame or a scroll position past zero.
 pub fn pmod(v: num, n: num) -> num
   if n == 0 then
     0
@@ -1302,9 +1302,9 @@ pub fn pmod(v: num, n: num) -> num
   end
 end
 
-// Move `v` toward `target` by at most `step`, landing exactly on it. Friction,
-// acceleration ramps, a camera easing onto its mark — all the places a naive
-// `v = v + step` overshoots and oscillates.
+# Move `v` toward `target` by at most `step`, landing exactly on it. Friction,
+# acceleration ramps, a camera easing onto its mark — all the places a naive
+# `v = v + step` overshoots and oscillates.
 pub fn approach(v: num, target: num, step: num) -> num
   if v < target then
     min(target, v + abs(step))

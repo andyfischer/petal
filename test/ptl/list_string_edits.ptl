@@ -1,5 +1,5 @@
-// `remove_at` (a list without one element) and `replace` (every occurrence of
-// one string swapped for another). Run with `petal test test/ptl`.
+# `remove_at` (a list without one element) and `replace` (every occurrence of
+# one string swapped for another). Run with `petal test test/ptl`.
 
 test "remove_at drops the element at an index" do
   expect_eq(remove_at(["a", "b", "c"], 0), ["b", "c"])

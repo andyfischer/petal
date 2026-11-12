@@ -1,4 +1,4 @@
-// Shared palette module — imported by panel.ptl and detail.ptl.
+# Shared palette module — imported by panel.ptl and detail.ptl.
 pub let colors = { fg: 15, bg: 2, accent: 9 }
 
 fn _clamp(x)

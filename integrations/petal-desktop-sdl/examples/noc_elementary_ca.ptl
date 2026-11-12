@@ -1,6 +1,6 @@
-// Nature of Code - Elementary Cellular Automaton
-// Inspired by Chapter 7: Cellular Automata
-// Wolfram's 1D cellular automata - generates all rules over time
+# Nature of Code - Elementary Cellular Automaton
+# Inspired by Chapter 7: Cellular Automata
+# Wolfram's 1D cellular automata - generates all rules over time
 
 import ui
 
@@ -17,21 +17,21 @@ let num_cells = sw / cell_size
 let max_rows = sh / cell_size
 let delta = dt()
 
-// Initialize
+# Initialize
 if len(cells) == 0 then
   for i in range(0, num_cells) do
     cells = append(cells, 0)
   end
-  // Single cell in the middle
+  # Single cell in the middle
   cells[num_cells / 2] = 1
   next_row = 0
   history = []
 end
 
-// Decode rule number into 8-bit lookup
+# Decode rule number into 8-bit lookup
 fn apply_rule(left, center, right, rule)
   let index = left * 4 + center * 2 + right
-  // Check if the bit at position 'index' is set in rule
+  # Check if the bit at position 'index' is set in rule
   let r = rule
   let result = 0
   for i in range(0, index) do
@@ -40,18 +40,18 @@ fn apply_rule(left, center, right, rule)
   r % 2
 end
 
-// Generate rows at speed
+# Generate rows at speed
 let rows_per_frame = 3
 for step in range(0, rows_per_frame) do
   if next_row < max_rows then
-    // Store current row in history
+    # Store current row in history
     let row_copy = []
     for c in cells do
       row_copy = append(row_copy, c)
     end
     history = append(history, row_copy)
 
-    // Generate next row
+    # Generate next row
     let new_cells = []
     for i in range(0, num_cells) do
       let left = cells[(i - 1 + num_cells) % num_cells]
@@ -64,12 +64,12 @@ for step in range(0, rows_per_frame) do
   end
 end
 
-// When we fill the screen, move to next rule
+# When we fill the screen, move to next rule
 if next_row >= max_rows then
   rule_timer += delta
   if rule_timer > 3.0 then
     rule_timer = 0.0
-    // Advance to next interesting rule
+    # Advance to next interesting rule
     let interesting_rules = [30, 90, 110, 184, 54, 60, 62, 150, 182, 225, 73, 105, 45, 75, 86, 135]
     let current_idx = 0
     for i in range(0, len(interesting_rules)) do
@@ -80,7 +80,7 @@ if next_row >= max_rows then
     let next_idx = (current_idx + 1) % len(interesting_rules)
     rule_num = interesting_rules[next_idx]
 
-    // Reset
+    # Reset
     cells = []
     for i in range(0, num_cells) do
       cells = append(cells, 0)
@@ -91,20 +91,20 @@ if next_row >= max_rows then
   end
 end
 
-// === Drawing ===
+# === Drawing ===
 clear(5, 5, 10)
 
-// Color scheme based on rule
+# Color scheme based on rule
 let cr = 100 + (rule_num * 7) % 155
 let cg = 80 + (rule_num * 13) % 175
 let cb = 150 + (rule_num * 3) % 105
 
-// Draw history
+# Draw history
 for y in range(0, len(history)) do
   let row = history[y]
   for x in range(0, len(row)) do
     if row[x] == 1 then
-      // Color varies slightly by position for visual interest
+      # Color varies slightly by position for visual interest
       let pr = min(255, cr + (x * 3) % 30)
       let pg = min(255, cg + (y * 2) % 20)
       let pb = min(255, cb)
@@ -113,12 +113,12 @@ for y in range(0, len(history)) do
   end
 end
 
-// HUD
+# HUD
 draw_rect(x: 0, y: 0, w: 200, h: 35, r: 0, g: 0, b: 0)
 draw_text("Rule " ++ str(rule_num), x: 10, y: 5, size: 16, r: cr, g: cg, b: cb)
 draw_text("Elementary CA", x: 10, y: 22, size: 10, r: 60, g: 60, b: 80)
 
-// Rule visualization (8 cells showing the rule)
+# Rule visualization (8 cells showing the rule)
 let rule_x = sw - 180
 draw_rect(x: rule_x - 5, y: 5, w: 175, h: 30, r: 0, g: 0, b: 0)
 for bit in range(0, 8) do
@@ -126,7 +126,7 @@ for bit in range(0, 8) do
   for i in range(0, bit) do r = r / 2 end
   let active = r % 2
 
-  // Show the 3-cell input pattern
+  # Show the 3-cell input pattern
   let bx = rule_x + bit * 20
   let input_l = (bit / 4) % 2
   let input_c = (bit / 2) % 2
@@ -136,7 +136,7 @@ for bit in range(0, 8) do
   if input_c == 1 then draw_rect(x: bx + 5, y: 8, w: 5, h: 5, r: 80, g: 80, b: 80) end
   if input_r == 1 then draw_rect(x: bx + 10, y: 8, w: 5, h: 5, r: 80, g: 80, b: 80) end
 
-  // Show result
+  # Show result
   if active == 1 then
     draw_rect(x: bx + 5, y: 18, w: 5, h: 5, r: cr, g: cg, b: cb)
   else

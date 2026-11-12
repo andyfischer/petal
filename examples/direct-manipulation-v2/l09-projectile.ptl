@@ -1,17 +1,17 @@
-// dm-title: an iterated simulation, a projectile after N steps
-// dm-level: L9
-//
-// 200 Euler steps of a projectile under gravity, with `var` accumulators,
-// stopping when it hits the ground (a branch per step). The marker is the
-// landing point; the dots are every 20th step. Dragging the landing point
-// solves for `v0` or `angle` through 200 iterations; the landing x moves in
-// steps of one Euler step (vx · dt ≈ 0.5 px), which the tolerance absorbs.
-// (`petal lint` suggests `let` for the accumulators; they are `var` on
-// purpose, to compare with the fold of l09b.)
-//
-// dm-goal land-further: circle#10.0 += 40 | expect=v0,angle xfail=the `20` in the marker's own draw call moves only the marker (no collateral), so it wins; see l09c for the hints that rule it out
-// dm-goal land-further-client: circle#10.0 += 40 | allow=var:angle expect=angle
-// dm-goal higher-arc: circle#3.1 -= 30, circle#10.0 += 0 | expect=v0,angle tol=1.5 xfail=the physics and drawing constants (`dt_sim`, `ground`) are as editable as the launch and win (moving the ground line raises the whole arc), unless marked `rigid` (l09c)
+# dm-title: an iterated simulation, a projectile after N steps
+# dm-level: L9
+#
+# 200 Euler steps of a projectile under gravity, with `var` accumulators,
+# stopping when it hits the ground (a branch per step). The marker is the
+# landing point; the dots are every 20th step. Dragging the landing point
+# solves for `v0` or `angle` through 200 iterations; the landing x moves in
+# steps of one Euler step (vx · dt ≈ 0.5 px), which the tolerance absorbs.
+# (`petal lint` suggests `let` for the accumulators; they are `var` on
+# purpose, to compare with the fold of l09b.)
+#
+# dm-goal land-further: circle#10.0 += 40 | expect=v0,angle xfail=the `20` in the marker's own draw call moves only the marker (no collateral), so it wins; see l09c for the hints that rule it out
+# dm-goal land-further-client: circle#10.0 += 40 | allow=var:angle expect=angle
+# dm-goal higher-arc: circle#3.1 -= 30, circle#10.0 += 0 | expect=v0,angle tol=1.5 xfail=the physics and drawing constants (`dt_sim`, `ground`) are as editable as the launch and win (moving the ground line raises the whole arc), unless marked `rigid` (l09c)
 
 import ui
 

@@ -1,45 +1,45 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  FRACTAL EXPLORER — a Garden panel app written in Petal.
-//
-//  An escape-time renderer for the Mandelbrot set, its Julia sets, the
-//  Burning Ship and the Tricorn, with smooth colouring, wheel zoom about the
-//  cursor, drag and keyboard pan, and a tile cache that survives a pan.
-//
-//  Exercises: custom rendering, zoom/pan, computation.
-//
-//  A script cannot compute a full-resolution image inside one frame, and a
-//  panel has no canvas that survives the frame, so the renderer is built
-//  around two caches:
-//
-//    - SAMPLES. The plane is cut into 64 px tiles on a lattice anchored at
-//      the origin. A tile holds 32 x 32 smooth iteration counts and is
-//      refined in four interlaced passes (16, 8, 4, 2 px cells), each reusing
-//      the samples of the one before. Every frame spends a budget of
-//      iterations on the coarsest unfinished tile nearest the pointer. A pan
-//      moves the lattice under the view, so only the tiles that scroll in
-//      are new work.
-//
-//    - DRAW LISTS. One draw call per sample would be 170,000 calls a frame.
-//      Each finished tile is instead fitted, row by row, with piecewise
-//      linear segments of the palette phase: a run of the set's interior is
-//      one rect, and a smooth stretch of the exterior is one gradient rect.
-//      The segments store the phase, not a colour, so a palette change, the
-//      band density and colour cycling cost no recomputation at all. Where
-//      the picture is all filaments nothing merges, so a draw-call budget
-//      holds the busiest tiles at 4 px. Each tile is drawn by one function
-//      call, which Petal's memoized scopes replay untouched on any frame
-//      where that tile's list and position did not change.
-//
-//  A zoom keeps the old image on screen, scaled about the cursor, until the
-//  new tiles are at least as sharp as it is.
-//
-//  Designed for a 1320x900 viewport.  See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  FRACTAL EXPLORER — a Garden panel app written in Petal.
+#
+#  An escape-time renderer for the Mandelbrot set, its Julia sets, the
+#  Burning Ship and the Tricorn, with smooth colouring, wheel zoom about the
+#  cursor, drag and keyboard pan, and a tile cache that survives a pan.
+#
+#  Exercises: custom rendering, zoom/pan, computation.
+#
+#  A script cannot compute a full-resolution image inside one frame, and a
+#  panel has no canvas that survives the frame, so the renderer is built
+#  around two caches:
+#
+#    - SAMPLES. The plane is cut into 64 px tiles on a lattice anchored at
+#      the origin. A tile holds 32 x 32 smooth iteration counts and is
+#      refined in four interlaced passes (16, 8, 4, 2 px cells), each reusing
+#      the samples of the one before. Every frame spends a budget of
+#      iterations on the coarsest unfinished tile nearest the pointer. A pan
+#      moves the lattice under the view, so only the tiles that scroll in
+#      are new work.
+#
+#    - DRAW LISTS. One draw call per sample would be 170,000 calls a frame.
+#      Each finished tile is instead fitted, row by row, with piecewise
+#      linear segments of the palette phase: a run of the set's interior is
+#      one rect, and a smooth stretch of the exterior is one gradient rect.
+#      The segments store the phase, not a colour, so a palette change, the
+#      band density and colour cycling cost no recomputation at all. Where
+#      the picture is all filaments nothing merges, so a draw-call budget
+#      holds the busiest tiles at 4 px. Each tile is drawn by one function
+#      call, which Petal's memoized scopes replay untouched on any frame
+#      where that tile's list and position did not change.
+#
+#  A zoom keeps the old image on screen, scaled about the cursor, until the
+#  new tiles are at least as sharp as it is.
+#
+#  Designed for a 1320x900 viewport.  See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import ui
 import garden
 
-// ── Chrome palette ───────────────────────────────────────────────────────
+# ── Chrome palette ───────────────────────────────────────────────────────
 
 let C_BG     = :07080c
 let C_STAGE  = :0a0b11
@@ -54,7 +54,7 @@ let C_ACCENT = :f2b45c
 let C_COOL   = :7cc4ff
 let C_INSIDE = :05050a
 
-// ── Type scale: 10 / 11 / 13 / 20 / 28 ───────────────────────────────────
+# ── Type scale: 10 / 11 / 13 / 20 / 28 ───────────────────────────────────
 
 let S_TITLE = {size: 28, color: C_TEXT, spacing: 8}
 let S_KICK  = {size: 10, color: C_MUTE, spacing: 4}
@@ -69,36 +69,36 @@ let S_UI    = {size: 13, font: "ui", color: C_TEXT}
 let S_UI_M  = {size: 13, font: "ui", color: C_DIM}
 let S_UI_B  = {size: 13, font: "ui", color: C_TEXT, weight: 700}
 
-// ── Tunables ─────────────────────────────────────────────────────────────
+# ── Tunables ─────────────────────────────────────────────────────────────
 
-let iter_rate    = tunable(3600000.0) // iterations per second while you interact
-let idle_boost   = tunable(3.0)       // times that when nothing else is happening
-let sample_cost  = tunable(24)        // fixed overhead of one sample, in iterations
-let fit_eps      = tunable(0.007)     // phase error a fitted gradient may make, in cycles
-let fit_span     = tunable(0.11)      // most phase one gradient may cover, in cycles
-let merge_eps    = tunable(0.003)     // phase two rows may differ by and still be drawn as one
-let draw_budget  = tunable(24000)     // draw calls the image may cost per frame
-let growth       = tunable(3.0)       // draw calls a tile gains per level, at worst
-let pan_speed    = tunable(620.0)     // px/s while an arrow key is held
-let wheel_gain   = tunable(1.22)      // zoom factor per wheel line
-let cycle_speed  = tunable(0.07)      // palette cycles per second when cycling
+let iter_rate    = tunable(3600000.0) # iterations per second while you interact
+let idle_boost   = tunable(3.0)       # times that when nothing else is happening
+let sample_cost  = tunable(24)        # fixed overhead of one sample, in iterations
+let fit_eps      = tunable(0.007)     # phase error a fitted gradient may make, in cycles
+let fit_span     = tunable(0.11)      # most phase one gradient may cover, in cycles
+let merge_eps    = tunable(0.003)     # phase two rows may differ by and still be drawn as one
+let draw_budget  = tunable(24000)     # draw calls the image may cost per frame
+let growth       = tunable(3.0)       # draw calls a tile gains per level, at worst
+let pan_speed    = tunable(620.0)     # px/s while an arrow key is held
+let wheel_gain   = tunable(1.22)      # zoom factor per wheel line
+let cycle_speed  = tunable(0.07)      # palette cycles per second when cycling
 
-// ── Lattice ──────────────────────────────────────────────────────────────
+# ── Lattice ──────────────────────────────────────────────────────────────
 
-let CELL   = 2                       // px per sample at the finest level
-let TS     = 32                      // samples per tile side
-let TPX    = 64                      // px per tile side
-let TN     = 1024                    // samples per tile
-let SEGCAP = 1024                    // most segments a tile can need
+let CELL   = 2                       # px per sample at the finest level
+let TS     = 32                      # samples per tile side
+let TPX    = 64                      # px per tile side
+let TN     = 1024                    # samples per tile
+let SEGCAP = 1024                    # most segments a tile can need
 let MAXLOD = 4
-let STEPS  = [0, 8, 4, 2, 1]         // sample stride of level 1..4
+let STEPS  = [0, 8, 4, 2, 1]         # sample stride of level 1..4
 let LOD_SAMPLES = [0, 16, 64, 256, 1024]
-let PVCAP  = 26000                   // segments the zoom preview can hold
+let PVCAP  = 26000                   # segments the zoom preview can hold
 let BAIL   = 65536.0
 let INV_LN2 = 1.4426950408889634
-let MIN_SCALE = 0.000000000000002    // world units per px: where f64 runs out
-let LN     = 256                     // entries per palette
-let PHASE_OCT = 4.0                  // doublings of the iteration count per palette cycle
+let MIN_SCALE = 0.000000000000002    # world units per px: where f64 runs out
+let LN     = 256                     # entries per palette
+let PHASE_OCT = 4.0                  # doublings of the iteration count per palette cycle
 
 let KINDS = [
   {name: "Mandelbrot",   key: "1", formula: "z -> z^2 + c",            cx: -0.65, cy: 0.0,  span: 3.5, ys: -1.0},
@@ -111,7 +111,7 @@ let K_JULIA  = 1
 let K_SHIP   = 2
 let K_TRI    = 3
 
-// Places worth visiting. A Julia place is a seed c; the others are views.
+# Places worth visiting. A Julia place is a seed c; the others are views.
 let PLACES = [
   [
     {name: "The whole set",    x: -0.65,      y: 0.0,       span: 3.5},
@@ -142,7 +142,7 @@ let PLACES = [
   ],
 ]
 
-// Cyclic palettes: stops at phase p in [0, 1), wrapping back to the first.
+# Cyclic palettes: stops at phase p in [0, 1), wrapping back to the first.
 let PALS = [
   {name: "Aurora", stops: [
     {p: 0.0,    c: :000764}, {p: 0.16,   c: :206bcb}, {p: 0.42, c: :edffff},
@@ -169,7 +169,7 @@ let BANDS = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0]
 let DETAILS = [{name: "2 px", lod: 4}, {name: "4 px", lod: 3}, {name: "8 px", lod: 2}]
 let ITER_STEPS = [64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096]
 
-// ── Pure helpers ─────────────────────────────────────────────────────────
+# ── Pure helpers ─────────────────────────────────────────────────────────
 
 fn tx(s: string, x: num, y: num, style: record) -> nil
   draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
@@ -183,7 +183,7 @@ fn tx_center(s: string, cx: num, y: num, style: record) -> nil
   draw_text(s, pos: {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style: style)
 end
 
-// Floor division and the matching always-positive remainder.
+# Floor division and the matching always-positive remainder.
 fn fdiv(a: int, b: int) -> int
   let q = a / b
   if a % b != 0 && a < 0 then q - 1 else q end
@@ -194,7 +194,7 @@ fn pmod(a: int, b: int) -> int
   if m < 0 then m + b else m end
 end
 
-// A float with exactly `places` decimals, never in exponent form.
+# A float with exactly `places` decimals, never in exponent form.
 fn fixed(v: num, places: int) -> string
   let neg = v < 0.0
   let a = abs(float(v))
@@ -210,7 +210,7 @@ fn fixed(v: num, places: int) -> string
   if places == 0 then "{sign_s}{int(whole)}" else "{sign_s}{int(whole)}.{digits}" end
 end
 
-// 1234567 -> "1,234,567"
+# 1234567 -> "1,234,567"
 fn fmt_int(v: num) -> string
   let cs = chars(str(int(v)))
   let out = ""
@@ -221,7 +221,7 @@ fn fmt_int(v: num) -> string
   out
 end
 
-// Magnification: 1.0x, 240x, 12.5kx, 3.4Mx, then powers of ten.
+# Magnification: 1.0x, 240x, 12.5kx, 3.4Mx, then powers of ten.
 fn fmt_mag(m: num) -> string
   if m < 10.0 then "{fixed(m, 2)}x"
   elsif m < 1000.0 then "{fixed(m, 0)}x"
@@ -238,12 +238,12 @@ fn fmt_complex(re: num, im: num, places: int) -> string
   "{fixed(re, places)} {sign_s} {fixed(abs(im), places)}i"
 end
 
-// ── Escape-time kernels ──────────────────────────────────────────────────
-// Each runs four iterations between bailout tests and returns the smooth
-// iteration count, or -1.0 for a point that never escaped. Testing every
-// fourth step is safe with a 2^16 bailout: |z| cannot overflow in four
-// squarings, and the smooth count n + 1 - log2(ln|z|) is the same number
-// whichever step it is read at.
+# ── Escape-time kernels ──────────────────────────────────────────────────
+# Each runs four iterations between bailout tests and returns the smooth
+# iteration count, or -1.0 for a point that never escaped. Testing every
+# fourth step is safe with a 2^16 bailout: |z| cannot overflow in four
+# squarings, and the smooth count n + 1 - log2(ln|z|) is the same number
+# whichever step it is read at.
 
 fn esc_quad(zr0: float, zi0: float, cr: float, ci: float, chunks: int) -> float
   let zr = zr0
@@ -317,9 +317,9 @@ fn esc_tri(cr: float, ci: float, chunks: int) -> float
   float(n * 4 + 5) - log(0.5 * log(m)) * INV_LN2
 end
 
-// Smooth count -> palette phase in cycles (before the band density). The
-// log keeps the bands a readable width at every depth: one cycle per
-// PHASE_OCT doublings of the count, however deep the view.
+# Smooth count -> palette phase in cycles (before the band density). The
+# log keeps the bands a readable width at every depth: one cycle per
+# PHASE_OCT doublings of the count, however deep the view.
 fn phase_of(mu: float) -> float
   log(1.0 + max(mu, 0.0) * 0.125) * INV_LN2 / PHASE_OCT
 end
@@ -328,9 +328,9 @@ fn mu_of(phase: float) -> float
   (exp(phase * PHASE_OCT / INV_LN2) - 1.0) * 8.0
 end
 
-// ── Palette tables ───────────────────────────────────────────────────────
-// Every palette as LN colours, flattened into three int lists so the draw
-// loop reads ints and never builds a colour record.
+# ── Palette tables ───────────────────────────────────────────────────────
+# Every palette as LN colours, flattened into three int lists so the draw
+# loop reads ints and never builds a colour record.
 
 fn build_lut() -> record
   let cols = []
@@ -353,7 +353,7 @@ fn build_lut() -> record
   {r: map(cols, fn(c) -> c.r), g: map(cols, fn(c) -> c.g), b: map(cols, fn(c) -> c.b)}
 end
 
-// ── Layout ───────────────────────────────────────────────────────────────
+# ── Layout ───────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
@@ -369,7 +369,7 @@ let NX = CW / TPX + 2
 let NY = CH / TPX + 2
 let NSLOT = NX * NY
 
-// Sidebar geometry, shared by the input pass and the draw pass.
+# Sidebar geometry, shared by the input pass and the draw pass.
 let SX = side.x + 16
 let SWI = side.w - 32
 let CHIP_H = 28
@@ -411,55 +411,55 @@ fn place_row(i: int) -> Rect
   rect(side.x + 8, y_place + 20 + i * PLACE_H, side.w - 16, PLACE_H)
 end
 
-// The locator map: the whole of one fractal, drawn small. A Julia set is
-// located by its seed, so it shares the Mandelbrot map.
+# The locator map: the whole of one fractal, drawn small. A Julia set is
+# located by its seed, so it shares the Mandelbrot map.
 let MM_CELL = 3
-let MAP_OF = [0, 0, 2, 3]            // which fractal's map each kind shows
+let MAP_OF = [0, 0, 2, 3]            # which fractal's map each kind shows
 
-// Where map px (0, 0) sits and how much plane one map px covers. `wy` is
-// the plane's vertical axis as the screen draws it, top to bottom.
+# Where map px (0, 0) sits and how much plane one map px covers. `wy` is
+# the plane's vertical axis as the screen draws it, top to bottom.
 fn map_geom(k: int) -> record
   let ms = KINDS[k].span * 1.12 / float(SWI)
   {ms: ms, wx0: KINDS[k].cx - ms * float(SWI) / 2.0,
     wy0: KINDS[k].cy * KINDS[k].ys - ms * float(map_r.h) / 2.0}
 end
 
-// ── Persistent state ─────────────────────────────────────────────────────
+# ── Persistent state ─────────────────────────────────────────────────────
 
 state lut = build_lut()
 
-// The view: world units per px, and the canvas origin in whole world px.
+# The view: world units per px, and the canvas origin in whole world px.
 state var scale = 1.0
 state var ox = 0
 state var oy = 0
 state var kind = 0
-state var jr = -0.123                // the Julia seed
+state var jr = -0.123                # the Julia seed
 state var ji = 0.745
 state var maxit = 192
 state var auto_iter = true
-state var epoch = 1                  // bumped whenever cached samples go stale
+state var epoch = 1                  # bumped whenever cached samples go stale
 state var views = [nil, nil, nil, nil]
 
-// Tile slots. A tile (tx, ty) lives in slot (tx mod NX, ty mod NY), so a pan
-// never moves any data: tiles that scroll out are overwritten in place.
+# Tile slots. A tile (tx, ty) lives in slot (tx mod NX, ty mod NY), so a pan
+# never moves any data: tiles that scroll out are overwritten in place.
 state var alloc = 0
-state var vals = f64_array(1)        // NSLOT x TN palette phases; -1 = inside
+state var vals = f64_array(1)        # NSLOT x TN palette phases; -1 = inside
 state var t_tx = []
 state var t_ty = []
-state var t_ep = []                  // the epoch a slot's samples belong to
-state var t_lod = []                 // 0 = empty, 1..4 = sharpest finished level
-state var t_uni = []                 // 1 = every sample is inside the set
-state var t_cap = []                 // sharpest level the draw budget allows it
-state var t_n = []                   // segments in the slot's draw list
-state var t_fit = []                 // what the draw list was fitted for
-state var sgx = f64_array(1)         // draw lists: NSLOT x SEGCAP, tile-local px
+state var t_ep = []                  # the epoch a slot's samples belong to
+state var t_lod = []                 # 0 = empty, 1..4 = sharpest finished level
+state var t_uni = []                 # 1 = every sample is inside the set
+state var t_cap = []                 # sharpest level the draw budget allows it
+state var t_n = []                   # segments in the slot's draw list
+state var t_fit = []                 # what the draw list was fitted for
+state var sgx = f64_array(1)         # draw lists: NSLOT x SEGCAP, tile-local px
 state var sgy = f64_array(1)
 state var sgw = f64_array(1)
 state var sgh = f64_array(1)
-state var sga = f64_array(1)         // phase at the left edge, or -1 = inside
-state var sgb = f64_array(1)         // phase at the right edge
+state var sga = f64_array(1)         # phase at the left edge, or -1 = inside
+state var sgb = f64_array(1)         # phase at the right edge
 
-// The refinement queue: visible slots, nearest the pointer first.
+# The refinement queue: visible slots, nearest the pointer first.
 state var queue = []
 state var pass_lod = 1
 state var qi = 0
@@ -468,7 +468,7 @@ state var job_row = 0
 state var samples_done = 0
 state var iters_done = 0
 
-// The zoom preview: the last sharp image, in the px space of its own view.
+# The zoom preview: the last sharp image, in the px space of its own view.
 state var pvx = f64_array(1)
 state var pvy = f64_array(1)
 state var pvw = f64_array(1)
@@ -479,9 +479,9 @@ state var pv_n = 0
 state var pv_scale = 1.0
 state var pv_ox = 0
 state var pv_oy = 0
-state var pv_cell = 2.0              // px per sample of the preview's coarsest tile
+state var pv_cell = 2.0              # px per sample of the preview's coarsest tile
 
-// What last frame's draw pass saw, for decisions made before this one's.
+# What last frame's draw pass saw, for decisions made before this one's.
 state var st_blank = 0
 state var st_maxcell = 0.0
 
@@ -501,22 +501,22 @@ state drag_oy = 0
 state map_drag = false
 state pan_fx = 0.0
 state pan_fy = 0.0
-state pend_j = false                 // a Julia seed waiting for a coarse pass
+state pend_j = false                 # a Julia seed waiting for a coarse pass
 state pend_jr = 0.0
 state pend_ji = 0.0
 state last_mx = 0
 state last_my = 0
 state zooms = 0
 state pans = 0
-state maps = [nil, nil, nil, nil]     // locator draw lists, built on first use
+state maps = [nil, nil, nil, nil]     # locator draw lists, built on first use
 
-// ── View and cache edits ─────────────────────────────────────────────────
+# ── View and cache edits ─────────────────────────────────────────────────
 
 fn slot_of(tile_x: int, tile_y: int) -> int
   pmod(tile_x, NX) + pmod(tile_y, NY) * NX
 end
 
-// Iterations that suit a magnification: deeper views need more to resolve.
+# Iterations that suit a magnification: deeper views need more to resolve.
 fn auto_maxit(s: float, k: int) -> int
   let home = KINDS[k].span / float(CW)
   let depth = max(log(home / s) * INV_LN2, 0.0)
@@ -525,8 +525,8 @@ fn auto_maxit(s: float, k: int) -> int
   min(v / 16 * 16, 4096)
 end
 
-// Copy what is on screen into the preview, unless the preview already held
-// is sharper than the tiles (a second zoom before the first one finished).
+# Copy what is on screen into the preview, unless the preview already held
+# is sharper than the tiles (a second zoom before the first one finished).
 fn keep_preview(wipe: bool) -> nil
   let have = get pv_n > 0
   let r = if have then get pv_scale / get scale else 1.0 end
@@ -568,13 +568,13 @@ fn keep_preview(wipe: bool) -> nil
   set pv_cell = if wipe then 1000000.0 else max(coarsest, float(CELL)) end
 end
 
-// Every cached sample is now stale.
+# Every cached sample is now stale.
 fn invalidate() -> nil
   set epoch += 1
   set job_s = -1
 end
 
-// Zoom by `factor` (> 1 is in), keeping the canvas point (px, py) fixed.
+# Zoom by `factor` (> 1 is in), keeping the canvas point (px, py) fixed.
 fn zoom_at(px: num, py: num, factor: num) -> nil
   let s0 = get scale
   let widest = 16.0 / float(CW)
@@ -590,7 +590,7 @@ fn zoom_at(px: num, py: num, factor: num) -> nil
   invalidate()
 end
 
-// Show the window `span` wide centred on (cx, cy) of fractal k's plane.
+# Show the window `span` wide centred on (cx, cy) of fractal k's plane.
 fn frame_view(k: int, cx: num, cy: num, span: num) -> nil
   let s = max(span / float(CW), MIN_SCALE)
   set scale = s
@@ -604,7 +604,7 @@ fn home_view(k: int) -> nil
   frame_view(k, KINDS[k].cx, KINDS[k].cy, KINDS[k].span)
 end
 
-// Switch fractal, remembering where the old one was left.
+# Switch fractal, remembering where the old one was left.
 fn switch_kind(k: int) -> nil
   let old = get kind
   if k == old then return nil end
@@ -650,7 +650,7 @@ fn go_place(i: int) -> nil
   end
 end
 
-// Which of fractal k's places the view is showing now, or -1.
+# Which of fractal k's places the view is showing now, or -1.
 fn at_place(k: int) -> int
   let found = -1
   let list = PLACES[k]
@@ -670,13 +670,13 @@ fn at_place(k: int) -> int
   found
 end
 
-// ── Fitting a tile's draw list ───────────────────────────────────────────
-// Walk each sample row of slot s at level `lod`. A run of interior samples
-// becomes one rect. Exterior samples are joined into the longest gradient
-// whose straight line stays within `eps` of every sample it passes (the
-// slope cone is narrowed sample by sample, so the fit is one pass). A row
-// that repeats the row above it is merged into it. Returns true when the
-// whole tile is interior.
+# ── Fitting a tile's draw list ───────────────────────────────────────────
+# Walk each sample row of slot s at level `lod`. A run of interior samples
+# becomes one rect. Exterior samples are joined into the longest gradient
+# whose straight line stays within `eps` of every sample it passes (the
+# slope cone is narrowed sample by sample, so the fit is one pass). A row
+# that repeats the row above it is merged into it. Returns true when the
+# whole tile is interior.
 
 fn fit_tile(s: int, lod: int, dens: float) -> bool
   let st = STEPS[lod]
@@ -689,7 +689,7 @@ fn fit_tile(s: int, lod: int, dens: float) -> bool
   let veps = merge_eps / dens
   let n = 0
   let all_in = true
-  let grp = 0                        // first segment of the run of rows being extended
+  let grp = 0                        # first segment of the run of rows being extended
   let grp_n = -1
   if get t_uni[s] == 1 then
     set sgx[so] = 0.0
@@ -741,9 +741,9 @@ fn fit_tile(s: int, lod: int, dens: float) -> bool
         set sgh[so + n] = cpx
         set sga[so + n] = v0
         if last == k then
-          // The neighbour is too far away in phase to be one ramp. Pair
-          // the two samples in a single two-cell blend: half the draw
-          // calls exactly where the picture is busiest.
+          # The neighbour is too far away in phase to be one ramp. Pair
+          # the two samples in a single two-cell blend: half the draw
+          # calls exactly where the picture is busiest.
           let vn = if k + 1 < count then get vals[rb + (k + 1) * st] else -1.0 end
           if vn < 0.0 then
             set sgw[so + n] = cpx
@@ -755,8 +755,8 @@ fn fit_tile(s: int, lod: int, dens: float) -> bool
             k += 2
           end
         elsif last == count - 1 then
-          // The ramp reaches the tile's last sample: run it on to the
-          // edge instead of spending a call on the final cell.
+          # The ramp reaches the tile's last sample: run it on to the
+          # edge instead of spending a call on the final cell.
           let v_end = get vals[rb + last * st]
           set sgw[so + n] = float(count - k) * cpx
           set sgb[so + n] = v_end + (v_end - v0) / float(last - k)
@@ -769,9 +769,9 @@ fn fit_tile(s: int, lod: int, dens: float) -> bool
         n += 1
       end
     end
-    // A row that repeats the one above (same cuts, phases within eps of
-    // the first row of the run) makes that row taller instead of adding
-    // calls: slow exterior and solid interior collapse vertically too.
+    # A row that repeats the one above (same cuts, phases within eps of
+    # the first row of the run) makes that row taller instead of adding
+    # calls: slow exterior and solid interior collapse vertically too.
     let row_n = n - row_start
     let same = row_n == grp_n
     if same then
@@ -799,12 +799,12 @@ fn fit_tile(s: int, lod: int, dens: float) -> bool
   all_in
 end
 
-// ── The draw budget ──────────────────────────────────────────────────────
-// Called as the worker is about to start level `lod` (the 2 px pass). A tile's draw list can grow about threefold per level, and a view
-// full of filaments would end up costing several times `draw_budget` calls
-// a frame. So the busiest tiles are held at the level they have: they are
-// the ones whose next level is mostly aliasing, and the most expensive to
-// compute. The worker then skips them, which saves the iterations too.
+# ── The draw budget ──────────────────────────────────────────────────────
+# Called as the worker is about to start level `lod` (the 2 px pass). A tile's draw list can grow about threefold per level, and a view
+# full of filaments would end up costing several times `draw_budget` calls
+# a frame. So the busiest tiles are held at the level they have: they are
+# the ones whose next level is mostly aliasing, and the most expensive to
+# compute. The worker then skips them, which saves the iterations too.
 
 fn plan_caps(lod: int) -> nil
   let total = 0
@@ -829,10 +829,10 @@ fn plan_caps(lod: int) -> nil
   end
 end
 
-// ── The refinement worker ────────────────────────────────────────────────
-// Spend up to `budget` iterations. The queue is walked once per level, so
-// every visible tile reaches 16 px before any reaches 8 px, and so on. A
-// level computes only the samples the previous one skipped.
+# ── The refinement worker ────────────────────────────────────────────────
+# Spend up to `budget` iterations. The queue is walked once per level, so
+# every visible tile reaches 16 px before any reaches 8 px, and so on. A
+# level computes only the samples the previous one skipped.
 
 fn work(budget: int, cap: int, dens: float, fit_key: int) -> int
   let spent = 0
@@ -873,7 +873,7 @@ fn work(budget: int, cap: int, dens: float, fit_key: int) -> int
     let base = s * TN
     let gx0 = get t_tx[s] * TS
     let gy0 = get t_ty[s] * TS
-    let fresh = lod == 1             // level 1 has nothing to reuse
+    let fresh = lod == 1             # level 1 has nothing to reuse
     let row = get job_row
     while row < count && spent < budget do
       let ly = row * st
@@ -886,7 +886,7 @@ fn work(budget: int, cap: int, dens: float, fit_key: int) -> int
         let x = float(gx0 + lx) * s_px
         let mu = -1.0
         if k == K_MANDEL then
-          // The main cardioid and the period-2 bulb are interior: no loop.
+          # The main cardioid and the period-2 bulb are interior: no loop.
           let xq = x - 0.25
           let q = xq * xq + y * y
           if q * (q + xq) < 0.25 * y * y || (x + 1.0) * (x + 1.0) + y * y < 0.0625 then
@@ -910,7 +910,7 @@ fn work(budget: int, cap: int, dens: float, fit_key: int) -> int
     if row >= count then
       let all_in = fit_tile(s, lod, dens)
       if all_in && lod >= 3 then
-        // Interior at 4 px everywhere: the finer levels would only agree.
+        # Interior at 4 px everywhere: the finer levels would only agree.
         set t_uni[s] = 1
         set t_lod[s] = MAXLOD
       else
@@ -926,7 +926,7 @@ fn work(budget: int, cap: int, dens: float, fit_key: int) -> int
   spent
 end
 
-// Claim a slot for every visible tile and order them for the worker.
+# Claim a slot for every visible tile and order them for the worker.
 fn build_queue(fx: num, fy: num) -> nil
   let vx0 = get ox
   let vy0 = get oy
@@ -958,7 +958,7 @@ fn build_queue(fx: num, fy: num) -> nil
   set qi = 0
 end
 
-// A locator map: fractal k at 3 px cells, as solid runs of a 14-step ramp.
+# A locator map: fractal k at 3 px cells, as solid runs of a 14-step ramp.
 fn build_map(k: int) -> record
   let g = map_geom(k)
   let ys = KINDS[k].ys
@@ -997,9 +997,9 @@ fn build_map(k: int) -> record
   {n: len(xs), x: xs, y: tops, w: ws, c: cs}
 end
 
-// Issue slot s's draw list with its top-left at pane px (x, y). The phase
-// becomes a colour here, through the palette table: one rect per interior
-// run, one gradient rect per fitted ramp. Returns the number of calls.
+# Issue slot s's draw list with its top-left at pane px (x, y). The phase
+# becomes a colour here, through the palette table: one rect per interior
+# run, one gradient rect per fitted ramp. Returns the number of calls.
 fn draw_tile(s: int, x: int, y: int, pbase: int, dens: float, off: float, lr: list, lg: list, lb: list) -> int
   let fx = float(x)
   let fy = float(y)
@@ -1020,9 +1020,9 @@ fn draw_tile(s: int, x: int, y: int, pbase: int, dens: float, off: float, lr: li
   n
 end
 
-// Issue the zoom preview: its segments scaled by `r` and moved by (dx, dy)
-// into the canvas at pane px (x, y). Edges are rounded outwards, so scaled
-// neighbours overlap by a pixel instead of leaving seams.
+# Issue the zoom preview: its segments scaled by `r` and moved by (dx, dy)
+# into the canvas at pane px (x, y). Edges are rounded outwards, so scaled
+# neighbours overlap by a pixel instead of leaving seams.
 fn draw_preview(x: int, y: int, r: float, dx: float, dy: float, pbase: int, dens: float, off: float,
   lr: list, lg: list, lb: list) -> int
   let fcx = float(x)
@@ -1054,7 +1054,7 @@ fn draw_preview(x: int, y: int, r: float, dx: float, dy: float, pbase: int, dens
   n
 end
 
-// ── Boot ─────────────────────────────────────────────────────────────────
+# ── Boot ─────────────────────────────────────────────────────────────────
 
 if alloc != NSLOT then
   set alloc = NSLOT
@@ -1092,12 +1092,12 @@ if maps[map_k] == nil then maps[map_k] = build_map(map_k) end
 let mm = maps[map_k]
 let mg = map_geom(map_k)
 
-// ── Input ────────────────────────────────────────────────────────────────
+# ── Input ────────────────────────────────────────────────────────────────
 
 let mx = mouse_x()
 let my = mouse_y()
 let in_cv = point_in(px: mx, py: my, r: cv)
-let cmx = mx - cv.x                  // pointer in canvas px
+let cmx = mx - cv.x                  # pointer in canvas px
 let cmy = my - cv.y
 let shift = mod_shift()
 let pressed = mouse_pressed(0)
@@ -1111,7 +1111,7 @@ for i in range(0, len(KINDS)) do
   if key_pressed(KINDS[i].key) then switch_kind(i) end
 end
 
-// Keyboard pan: a tap nudges, a held key glides.
+# Keyboard pan: a tap nudges, a held key glides.
 let glide = pan_speed * dt() * (if shift then 3.0 else 1.0 end)
 let nudge = if shift then 192.0 else 48.0 end
 if key_down("left") then pan_fx -= glide end
@@ -1146,7 +1146,7 @@ if key_pressed("r") || key_pressed("home") then
   home_view(kind)
 end
 
-// Iterations: [ and ] step the manual ladder, A hands it back to the zoom.
+# Iterations: [ and ] step the manual ladder, A hands it back to the zoom.
 let iter_down = key_pressed("leftbracket") || (pressed && point_in(px: mx, py: my, r: iter_minus))
 let iter_up = key_pressed("rightbracket") || (pressed && point_in(px: mx, py: my, r: iter_plus))
 if iter_down || iter_up then
@@ -1168,7 +1168,7 @@ if key_pressed("a") || (pressed && point_in(px: mx, py: my, r: iter_auto)) then
   if auto_iter then set_maxit(auto_maxit(scale, kind)) end
 end
 
-// Colour: none of these touch a sample.
+# Colour: none of these touch a sample.
 if key_pressed("p") then
   pal = (pal + (if shift then len(PALS) - 1 else 1 end)) % len(PALS)
 end
@@ -1203,7 +1203,7 @@ if pressed && point_in(px: mx, py: my, r: side) then
 end
 if !mouse_down(0) && !pressed then map_drag = false end
 
-// The locator map: drag to move the view, or in a Julia set, the seed.
+# The locator map: drag to move the view, or in a Julia set, the seed.
 if map_drag then
   let wx = mg.wx0 + float(clamp(mx - map_r.x, lo: 0, hi: map_r.w)) * mg.ms
   let wy = mg.wy0 + float(clamp(my - map_r.y, lo: 0, hi: map_r.h)) * mg.ms
@@ -1220,7 +1220,7 @@ if map_drag then
   end
 end
 
-// Canvas: wheel zooms about the pointer, drag pans, double click dives.
+# Canvas: wheel zooms about the pointer, drag pans, double click dives.
 if in_cv && scroll_y() != 0.0 then
   zoom_at(cmx, cmy, pow(wheel_gain, -scroll_y()))
   zooms += 1
@@ -1246,8 +1246,8 @@ if dragging then
   if !mouse_down(0) && !pressed then dragging = false end
 end
 
-// Right click (or J): the Julia set of the point under the pointer, and
-// from a Julia set, back to the Mandelbrot set centred on its seed.
+# Right click (or J): the Julia set of the point under the pointer, and
+# from a Julia set, back to the Mandelbrot set centred on its seed.
 if (mouse_pressed(1) && in_cv) || key_pressed("j") then
   if kind == K_MANDEL then
     let re = float(ox + (if in_cv then cmx else CW / 2 end)) * scale
@@ -1261,14 +1261,14 @@ if (mouse_pressed(1) && in_cv) || key_pressed("j") then
   end
 end
 
-// A dragged seed is applied only once the last one has a full coarse pass,
-// so the Julia set morphs as fast as it can be drawn and never goes blank.
+# A dragged seed is applied only once the last one has a full coarse pass,
+# so the Julia set morphs as fast as it can be drawn and never goes blank.
 if pend_j && (st_blank == 0 || pv_n == 0) then
   pend_j = false
   if kind == K_JULIA && (pend_jr != jr || pend_ji != ji) then set_seed(pend_jr, pend_ji) end
 end
 
-// ── Refine ───────────────────────────────────────────────────────────────
+# ── Refine ───────────────────────────────────────────────────────────────
 
 let cap = DETAILS[detail_i].lod
 let dens = BANDS[band_i]
@@ -1281,15 +1281,15 @@ if q_key != [tx0, ty0, epoch, cap] then
   q_key = [tx0, ty0, epoch, cap]
   build_queue(if in_cv then cmx else CW / 2 end, if in_cv then cmy else CH / 2 end)
 end
-// The budget is a rate times dt(), capped at one 60 Hz frame's worth, so a
-// slow frame cannot ask for a slower one, and a frame that took no time (an
-// injected event under a test's virtual clock) does no work at all: only
-// POST /tick moves the render forward, by the same amount every run.
+# The budget is a rate times dt(), capped at one 60 Hz frame's worth, so a
+# slow frame cannot ask for a slower one, and a frame that took no time (an
+# injected event under a test's virtual clock) does no work at all: only
+# POST /tick moves the render forward, by the same amount every run.
 let interactive = busy_input || key_held || dragging || map_drag
 let budget = int(iter_rate * min(dt(), 1.0 / 60.0) * (if interactive then 1.0 else idle_boost end))
 let spent = work(budget, cap, dens, fit_key)
 
-// ── Draw: the canvas ─────────────────────────────────────────────────────
+# ── Draw: the canvas ─────────────────────────────────────────────────────
 
 clear(C_BG.r, C_BG.g, C_BG.b)
 draw_rect_rounded(cv, radius: 12, c: C_STAGE)
@@ -1302,13 +1302,13 @@ let LB = lut.b
 let pbase = pal * LN
 let segs_drawn = 0
 
-// Sort the visible tiles. A tile at least as sharp as the preview is drawn
-// over it. A coarser one is left out where the preview covers it, and drawn
-// under the preview where it only partly does (the rim of a zoom out).
+# Sort the visible tiles. A tile at least as sharp as the preview is drawn
+# over it. A coarser one is left out where the preview covers it, and drawn
+# under the preview where it only partly does (the rim of a zoom out).
 let pr = if pv_n > 0 then pv_scale / scale else 1.0 end
-let pv_dx = float(pv_ox) * pr - float(ox)     // preview origin in canvas px
+let pv_dx = float(pv_ox) * pr - float(ox)     # preview origin in canvas px
 let pv_dy = float(pv_oy) * pr - float(oy)
-let pv_eff = pv_cell * pr                     // its sample size on screen now
+let pv_eff = pv_cell * pr                     # its sample size on screen now
 let n_tiles = 0
 let n_blank = 0
 let n_done = 0
@@ -1347,8 +1347,8 @@ for ty in range(ty0, ty1 + 1) do
         float(bx + TPX) <= pv_dx + float(CW) * pr && float(by + TPX) <= pv_dy + float(CH) * pr
       if covered then continue end
     end
-    // A draw list fitted for another band density or level is refitted, a
-    // few tiles a frame.
+    # A draw list fitted for another band density or level is refitted, a
+    # few tiles a frame.
     let want = fit_key + min(lod, cap)
     if !uni && t_fit[s] != want && refits < 24 then
       fit_tile(s, min(lod, cap), dens)
@@ -1364,7 +1364,7 @@ for t in under do
   segs_drawn += draw_tile(t.s, t.x, t.y, pbase, dens, cycle_off, LR, LG, LB)
 end
 
-// The preview, scaled into the current view.
+# The preview, scaled into the current view.
 if pv_n > 0 then
   segs_drawn += draw_preview(cv.x, cv.y, pr, pv_dx, pv_dy, pbase, dens, cycle_off, LR, LG, LB)
 end
@@ -1379,7 +1379,7 @@ let complete = n_done == n_tiles
 if complete && pv_n > 0 then set pv_n = 0 end
 let progress = float(have_samples) / float(max(want_samples, 1))
 
-// Tile overlay: the cache made visible. One outline per tile, tinted by level.
+# Tile overlay: the cache made visible. One outline per tile, tinted by level.
 if show_tiles then
   let LOD_COL = [C_MUTE, :ff6b6b, :ffb454, :ffe27a, :7ff0b0]
   for ty in range(ty0, ty1 + 1) do
@@ -1394,10 +1394,10 @@ if show_tiles then
   end
 end
 
-// What is under the pointer: its coordinates and its cached sample.
+# What is under the pointer: its coordinates and its cached sample.
 let cur_re = float(ox + cmx) * scale
 let cur_im = float(oy + cmy) * scale * KINDS[kind].ys
-let cur_mu = -2.0                    // -2 = not sampled yet, -1 = inside
+let cur_mu = -2.0                    # -2 = not sampled yet, -1 = inside
 if in_cv then
   let s = slot_of(fdiv(ox + cmx, TPX), fdiv(oy + cmy, TPX))
   let lod = t_lod[s]
@@ -1420,7 +1420,7 @@ fn hud_pill(r: Rect) -> nil
   draw_rect_rounded_outline(r, radius: 9, c: C_EDGE, a: 200, width: 1)
 end
 
-// Top left: which fractal, and its rule.
+# Top left: which fractal, and its rule.
 let name_s = upper(KINDS[kind].name)
 let rule_s = if kind == K_JULIA then "c = {fmt_complex(jr, ji, 4)}" else KINDS[kind].formula end
 let name_w = text_width(name_s, S_LABEL)
@@ -1429,7 +1429,7 @@ hud_pill(head_pill)
 tx(name_s, x: head_pill.x + 14, y: head_pill.y + 8, style: {...S_LABEL, color: C_ACCENT})
 tx(rule_s, x: head_pill.x + 14 + name_w + 14, y: head_pill.y + 6, style: S_MONO_D)
 
-// Bottom left: the pointer.
+# Bottom left: the pointer.
 if in_cv && !dragging then
   let pos_s = fmt_complex(cur_re, cur_im, places_n)
   let what_s = if cur_mu == -2.0 then "not sampled yet"
@@ -1441,14 +1441,14 @@ if in_cv && !dragging then
   hud_pill(pill)
   tx(pos_s, x: pill.x + 14, y: pill.y + 7, style: S_MONO)
   tx(what_s, x: pill.x + 14, y: pill.y + 25, style: {...S_HINT, color: if cur_mu < 0.0 then C_DIM else C_ACCENT end})
-  // A fine crosshair, so the readout has an exact subject.
+  # A fine crosshair, so the readout has an exact subject.
   draw_rect(mx - 9, my, 6, 1, 255, 255, 255, 170)
   draw_rect(mx + 4, my, 6, 1, 255, 255, 255, 170)
   draw_rect(mx, my - 9, 1, 6, 255, 255, 255, 170)
   draw_rect(mx, my + 4, 1, 6, 255, 255, 255, 170)
 end
 
-// Bottom right: what the renderer is doing.
+# Bottom right: what the renderer is doing.
 let cap_px = STEPS[cap] * CELL
 let status_s = if complete && n_capped > 0 then "DONE - {n_capped} BUSY TILES AT 4 PX"
 elsif complete then "SHARP AT {cap_px} PX"
@@ -1478,7 +1478,7 @@ end
 clip_pop()
 draw_rect_rounded_outline(cv, radius: 12, c: C_EDGE, a: 255, width: 1)
 
-// ── Draw: header ─────────────────────────────────────────────────────────
+# ── Draw: header ─────────────────────────────────────────────────────────
 
 tx("FRACTAL EXPLORER", x: PAD, y: 16, style: S_TITLE)
 tx("PETAL / GARDEN TESTBED 48", x: PAD + 2, y: 52, style: S_KICK)
@@ -1496,7 +1496,7 @@ tx_right(fmt_int(have_samples), right_x: cell2, y: 34, style: S_STAT)
 tx_right("DRAW CALLS", right_x: cell3, y: 18, style: S_LABEL)
 tx_right(fmt_int(segs_drawn), right_x: cell3, y: 34, style: S_STAT)
 
-// ── Draw: sidebar ────────────────────────────────────────────────────────
+# ── Draw: sidebar ────────────────────────────────────────────────────────
 
 draw_rect_rounded(side, radius: 12, c: C_PANEL)
 draw_rect_rounded_outline(side, radius: 12, c: C_EDGE, a: 255, width: 1)
@@ -1513,7 +1513,7 @@ fn section(label: string, y: num, note: string) -> nil
   if note != "" then tx_right(note, right_x: SX + SWI, y: y, style: {...S_LABEL, color: C_MUTE}) end
 end
 
-// A chip that is either the selected one of a set, or a plain button.
+# A chip that is either the selected one of a set, or a plain button.
 fn chip(r: Rect, label: string, on: bool, mx: int, my: int) -> nil
   let hov = point_in(px: mx, py: my, r: r)
   draw_rect_rounded(r, radius: 7, c: if on then mix(C_CHIP, C_ACCENT, 0.16) elsif hov then C_EDGE else C_CHIP end)
@@ -1535,13 +1535,13 @@ fn stepper(minus: Rect, plus: Rect, value: string, mx: int, my: int) -> nil
   tx_center(value, cx: (minus.x + minus.w + plus.x) / 2, y: minus.y + 7, style: S_MONO)
 end
 
-// Fractal.
+# Fractal.
 section("FRACTAL", y_kind, "1 - 4")
 for i in range(0, len(KINDS)) do
   chip(kind_chip(i), KINDS[i].name, kind == i, mx, my)
 end
 
-// Locator map.
+# Locator map.
 section(if kind == K_JULIA then "SEED" else "LOCATOR" end, y_map,
   if kind == K_JULIA then "DRAG TO MORPH" else "DRAG TO MOVE" end)
 draw_rect_rounded(map_r, radius: 8, c: C_BG)
@@ -1560,13 +1560,13 @@ if kind == K_JULIA then
   draw_circle_outline(p, 5, C_ACCENT, 255, 1)
   draw_circle(p, 2, C_TEXT, 255)
 else
-  // The viewport, or a marker once it is too small to draw as a rect.
+  # The viewport, or a marker once it is too small to draw as a rect.
   let vx = float(map_r.x) + (float(ox) * scale - mg.wx0) / mg.ms
   let vy = float(map_r.y) + (float(oy) * scale - mg.wy0) / mg.ms
   let vw = float(CW) * scale / mg.ms
   let vh = float(CH) * scale / mg.ms
   if vw >= 8.0 then
-    // Clamped to the map, so a view wider than the map still reads as a frame.
+    # Clamped to the map, so a view wider than the map still reads as a frame.
     let x0 = max(int(vx), map_r.x + 2)
     let y0 = max(int(vy), map_r.y + 2)
     let x1 = min(int(vx + vw), map_r.x + map_r.w - 2)
@@ -1585,12 +1585,12 @@ end
 clip_pop()
 draw_rect_rounded_outline(map_r, radius: 8, c: if map_drag then C_ACCENT else C_EDGE end, a: 255, width: 1)
 
-// Iterations.
+# Iterations.
 section("ITERATIONS", y_iter, "[ ]")
 stepper(iter_minus, iter_plus, fmt_int(maxit), mx, my)
 toggle_chip(iter_auto, "Auto", auto_iter, mx, my)
 
-// Palette: a strip of each, drawn through the same table the image uses.
+# Palette: a strip of each, drawn through the same table the image uses.
 section("PALETTE", y_pal, upper(PALS[pal].name))
 for i in range(0, len(PALS)) do
   let r = pal_chip(i)
@@ -1613,14 +1613,14 @@ end
 stepper(band_minus, band_plus, "{fixed(dens, 2)} bands", mx, my)
 toggle_chip(cycle_chip, "Cycle", cycling, mx, my)
 
-// Detail.
+# Detail.
 section("DETAIL", y_detail, "D")
 for i in range(0, len(DETAILS)) do
   chip(detail_chip(i), DETAILS[i].name, detail_i == i, mx, my)
 end
 toggle_chip(tiles_chip, "Tiles", show_tiles, mx, my)
 
-// Places.
+# Places.
 let place_now = at_place(kind)
 section(if kind == K_JULIA then "SEEDS" else "PLACES" end, y_place, "TAB")
 for i in range(0, len(places)) do
@@ -1635,7 +1635,7 @@ for i in range(0, len(places)) do
   tx_right(note, right_x: r.x + r.w - 10, y: r.y + 6, style: {...S_KEY, color: if on then C_DIM else C_MUTE end})
 end
 
-// ── Draw: footer ─────────────────────────────────────────────────────────
+# ── Draw: footer ─────────────────────────────────────────────────────────
 
 fn hint_chip(x: num, y: num, cap_s: string, desc: string) -> int
   let cw2 = text_width(cap_s, S_CAP) + 18
@@ -1660,7 +1660,7 @@ fx += hint_chip(x: fx, y: fy, cap_s: ", / .", desc: "bands")
 fx += hint_chip(x: fx, y: fy, cap_s: "C", desc: "cycle")
 fx += hint_chip(x: fx, y: fy, cap_s: "R", desc: "reset")
 
-// The centre of the view, to as many places as the zoom makes meaningful.
+# The centre of the view, to as many places as the zoom makes meaningful.
 let ctr_re_s = fixed(ctr_re, places_n)
 let ctr_im_s = fixed(ctr_im, places_n)
 let ctr_w = max(text_width(ctr_re_s, S_MONO), text_width(ctr_im_s, S_MONO))
@@ -1671,7 +1671,7 @@ tx_right("IM", right_x: W - PAD - ctr_w - 10, y: fy + 15, style: S_LABEL)
 
 if !complete || cycling || pend_j || key_held then request_frame() end
 
-// ── Observation mirrors (readable in /state -> panel.values) ─────────────
+# ── Observation mirrors (readable in /state -> panel.values) ─────────────
 
 let obs_kind = KINDS[kind].name
 let obs_scale = scale

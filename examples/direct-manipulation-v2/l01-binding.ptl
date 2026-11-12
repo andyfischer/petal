@@ -1,17 +1,17 @@
-// dm-title: a `let` binding feeding two shapes
-// dm-level: L1
-//
-// `cx` places a circle and the bar under it. Dragging the circle edits `cx`
-// (both move, which is the point of naming it). Dragging the bar alone is
-// ambiguous: `cx` moves it but also the circle, while the `30` in
-// `cx - 30` moves only the bar. With no hints the engine prefers the edit
-// with no collateral; l01b-binding-config.ptl declares `cx` a `tunable` setting
-// to say "this is the knob".
-//
-// dm-goal circle-x: circle#0.0 += 20 | expect=cx
-// dm-goal circle-y: circle#0.1 -= 15 | expect=cy
-// dm-goal bar-x: rect#1.0 += 20 | expect=lit:30
-// dm-goal bar-both: rect#1.0 += 20, circle#0.0 += 20 | expect=cx
+# dm-title: a `let` binding feeding two shapes
+# dm-level: L1
+#
+# `cx` places a circle and the bar under it. Dragging the circle edits `cx`
+# (both move, which is the point of naming it). Dragging the bar alone is
+# ambiguous: `cx` moves it but also the circle, while the `30` in
+# `cx - 30` moves only the bar. With no hints the engine prefers the edit
+# with no collateral; l01b-binding-config.ptl declares `cx` a `tunable` setting
+# to say "this is the knob".
+#
+# dm-goal circle-x: circle#0.0 += 20 | expect=cx
+# dm-goal circle-y: circle#0.1 -= 15 | expect=cy
+# dm-goal bar-x: rect#1.0 += 20 | expect=lit:30
+# dm-goal bar-both: rect#1.0 += 20, circle#0.0 += 20 | expect=cx
 
 import ui
 

@@ -1,16 +1,16 @@
-// Differential Growth — a self-avoiding chain of nodes that wants to:
-//   1. stay close to its neighbours (cohesion)
-//   2. push away from non-neighbour nodes nearby (repulsion)
-//   3. insert new nodes between old ones whenever they get too far apart
-//
-// The result is a curve that grows like a sea slug, brain coral, or thumbprint
-// ridge. Inspired by Tyson Brand's & Jason Webb's morphogenesis sketches.
-//
-// Controls:
-//   r       reset
-//   space   pause / resume
-//   click   add an attractor at the cursor (pulls the curve)
-//   c       clear attractors
+# Differential Growth — a self-avoiding chain of nodes that wants to:
+#   1. stay close to its neighbours (cohesion)
+#   2. push away from non-neighbour nodes nearby (repulsion)
+#   3. insert new nodes between old ones whenever they get too far apart
+#
+# The result is a curve that grows like a sea slug, brain coral, or thumbprint
+# ridge. Inspired by Tyson Brand's & Jason Webb's morphogenesis sketches.
+#
+# Controls:
+#   r       reset
+#   space   pause / resume
+#   click   add an attractor at the cursor (pulls the curve)
+#   c       clear attractors
 
 import ui
 import color
@@ -44,20 +44,20 @@ if key_pressed("r") || len(nodes) == 0 then
   attractors = []
 end
 
-// Tunables. The repulsion loop is O(n^2), so n ~250 is a soft ceiling.
-let target_dist = 8.0        // desired neighbour spacing (spring rest length)
-let split_dist  = 13.0       // split when neighbour spacing exceeds this
-let repel_radius = 18.0      // distance for non-neighbour repulsion
-let attract_str = 0.04        // weak spring — the curve must be allowed to stretch
+# Tunables. The repulsion loop is O(n^2), so n ~250 is a soft ceiling.
+let target_dist = 8.0        # desired neighbour spacing (spring rest length)
+let split_dist  = 13.0       # split when neighbour spacing exceeds this
+let repel_radius = 18.0      # distance for non-neighbour repulsion
+let attract_str = 0.04        # weak spring — the curve must be allowed to stretch
 let repel_str   = 1.4
-let jitter_str  = 1.0         // noise — primary driver of growth
-let max_step = 2.0            // capped per-frame movement
+let jitter_str  = 1.0         # noise — primary driver of growth
+let max_step = 2.0            # capped per-frame movement
 let max_nodes = 250
 
 if !paused && len(nodes) > 0 then
   let n = len(nodes)
 
-  // Compute one displacement per node
+  # Compute one displacement per node
   let dxs = []
   let dys = []
   for i in range(0, n) do
@@ -65,9 +65,9 @@ if !paused && len(nodes) > 0 then
     dys = append(dys, 0.0)
   end
 
-  // Spring between neighbours, restoring length = target_dist. Pulls when
-  // far apart, pushes when too close. Plus a small per-node jitter that
-  // breaks symmetry so segments can stretch enough to trigger insertion.
+  # Spring between neighbours, restoring length = target_dist. Pulls when
+  # far apart, pushes when too close. Plus a small per-node jitter that
+  # breaks symmetry so segments can stretch enough to trigger insertion.
   for i in range(0, n) do
     let prev_i = (i + n - 1) % n
     let next_i = (i + 1) % n
@@ -78,7 +78,7 @@ if !paused && len(nodes) > 0 then
       let dy = p.y - here.y
       let d = sqrt(dx * dx + dy * dy) + 0.01
       let stretch = d - target_dist
-      // soft pull only when stretched, no compressive force from spring
+      # soft pull only when stretched, no compressive force from spring
       if stretch > 0.0 then
         dxs[i] += dx / d * stretch * attract_str
         dys[i] += dy / d * stretch * attract_str
@@ -88,7 +88,7 @@ if !paused && len(nodes) > 0 then
     dys[i] += (random(0.0, 1.0) - 0.5) * 2.0 * jitter_str
   end
 
-  // Repulsion: O(n^2) — fine for ~1.5k nodes if we keep it tight
+  # Repulsion: O(n^2) — fine for ~1.5k nodes if we keep it tight
   for i in range(0, n) do
     let here = nodes[i]
     for j in range(0, n) do
@@ -107,7 +107,7 @@ if !paused && len(nodes) > 0 then
     end
   end
 
-  // Attractor pull
+  # Attractor pull
   for a in attractors do
     for i in range(0, n) do
       let here = nodes[i]
@@ -122,7 +122,7 @@ if !paused && len(nodes) > 0 then
     end
   end
 
-  // Apply with a per-step cap
+  # Apply with a per-step cap
   let new_nodes = []
   for i in range(0, n) do
     let here = nodes[i]
@@ -136,7 +136,7 @@ if !paused && len(nodes) > 0 then
     end
     let nx = here.x + dx
     let ny = here.y + dy
-    // Soft wall: keep nodes inside the screen
+    # Soft wall: keep nodes inside the screen
     if nx < 8.0 then nx = 8.0 end
     if nx > sw - 8.0 then nx = sw - 8.0 end
     if ny < 8.0 then ny = 8.0 end
@@ -145,7 +145,7 @@ if !paused && len(nodes) > 0 then
   end
   nodes = new_nodes
 
-  // Insertion pass — only every 4th frame so growth is gradual.
+  # Insertion pass — only every 4th frame so growth is gradual.
   if len(nodes) < max_nodes && frame_count() % 4 == 0 then
     let inserted = []
     let m = len(nodes)
@@ -168,20 +168,20 @@ if !paused && len(nodes) > 0 then
   end
 end
 
-// === Draw ===
+# === Draw ===
 clear(8, 8, 14)
 
 let n = len(nodes)
 let t_now = float(frame_count()) * delta * 30.0
 
-// Outer halo: thicker, dim
+# Outer halo: thicker, dim
 for i in range(0, n) do
   let next_i = (i + 1) % n
   let h = (float(i) / float(n) * 360.0 + t_now * 0.4) % 360.0
   let col = hsv_deg(h, s: 0.5, v: 0.45)
   draw_line(int(nodes[i].x), int(nodes[i].y), int(nodes[next_i].x), int(nodes[next_i].y), col.r, col.g, col.b)
 end
-// Crisp inner stroke
+# Crisp inner stroke
 for i in range(0, n) do
   let next_i = (i + 1) % n
   let h = (float(i) / float(n) * 360.0 + t_now * 0.4) % 360.0
@@ -189,7 +189,7 @@ for i in range(0, n) do
   draw_line(int(nodes[i].x), int(nodes[i].y), int(nodes[next_i].x), int(nodes[next_i].y), col.r, col.g, col.b)
 end
 
-// Attractor markers
+# Attractor markers
 for a in attractors do
   draw_circle(cx: int(a.x), cy: int(a.y), radius: 10, r: 60, g: 30, b: 60)
   draw_circle(cx: int(a.x), cy: int(a.y), radius: 4, r: 255, g: 200, b: 220)

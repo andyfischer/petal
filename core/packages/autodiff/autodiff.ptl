@@ -1,30 +1,30 @@
-// Package `autodiff` — derivatives and solving by finite differences
-// (docs/features/differentiation.md).
-//
-// `deriv`, `jacobian`, `solve_step` and `solve` take a function and call it
-// with its inputs nudged, then measure how its output moved. Every probe
-// runs inside `speculate`, so the function may read and write `state`, emit
-// draw commands or call effectful natives and nothing it does is left
-// behind; when the caller is itself speculating (inside a `ui/drag`
-// candidate rendering, or a `speculate` call), the probes run directly,
-// since the outer call already puts everything back. The numbers go to two
-// natives (core/src/builtins/drag_math.rs): `fd_column`, which classifies a
-// column by direct manipulation v2's rules (smooth, kink, branch flip, step,
-// zero, errored) and asks for the points to sample, and `gn_step`, the
-// Gauss-Newton step `ui/drag`'s `vary` and DM v2 share.
-//
-// A bundled builtin package: `import autodiff` puts these in scope — bare
-// (`deriv(…)`), qualified (`autodiff.deriv(…)`) and as methods.
-//
-// `f(arg)`, put back afterwards: under `speculate`, or directly when a
-// speculative call is already running (`speculate` does not nest).
+# Package `autodiff` — derivatives and solving by finite differences
+# (docs/features/differentiation.md).
+#
+# `deriv`, `jacobian`, `solve_step` and `solve` take a function and call it
+# with its inputs nudged, then measure how its output moved. Every probe
+# runs inside `speculate`, so the function may read and write `state`, emit
+# draw commands or call effectful natives and nothing it does is left
+# behind; when the caller is itself speculating (inside a `ui/drag`
+# candidate rendering, or a `speculate` call), the probes run directly,
+# since the outer call already puts everything back. The numbers go to two
+# natives (core/src/builtins/drag_math.rs): `fd_column`, which classifies a
+# column by direct manipulation v2's rules (smooth, kink, branch flip, step,
+# zero, errored) and asks for the points to sample, and `gn_step`, the
+# Gauss-Newton step `ui/drag`'s `vary` and DM v2 share.
+#
+# A bundled builtin package: `import autodiff` puts these in scope — bare
+# (`deriv(…)`), qualified (`autodiff.deriv(…)`) and as methods.
+#
+# `f(arg)`, put back afterwards: under `speculate`, or directly when a
+# speculative call is already running (`speculate` does not nest).
 fn _run(f, arg)
   if speculating() then f(arg) else speculate(f, arg).value end
 end
 
-// One column: ask `fd_column` for points until it has what it needs.
-// `probe(x)` is the function with the input at `x`; `base` its value at
-// `at`.
+# One column: ask `fd_column` for points until it has what it needs.
+# `probe(x)` is the function with the input at `x`; `base` its value at
+# `at`.
 fn _column(probe, at, base, opts)
   let samples = []
   let r = fd_column(at, base, samples, opts)
@@ -35,17 +35,17 @@ fn _column(probe, at, base, opts)
   r
 end
 
-// The `fd_column` options out of a caller's.
+# The `fd_column` options out of a caller's.
 fn _fd_opts(opts)
   {h: opts.h ?? nil, mode: opts.mode ?? "central"}
 end
 
-// A number or a list of numbers, as a list.
+# A number or a list of numbers, as a list.
 fn _rows(v)
   if type(v) == "list" then v else [v] end
 end
 
-// The Euclidean distance between two lists of numbers.
+# The Euclidean distance between two lists of numbers.
 fn _dist(a, b)
   let s = 0.0
   for i in range(0, len(a)) do
@@ -55,7 +55,7 @@ fn _dist(a, b)
   sqrt(s)
 end
 
-// The result of `deriv` from a column: `error` only when a probe failed.
+# The result of `deriv` from a column: `error` only when a probe failed.
 fn _result(c)
   if c.quality == "errored" then
     {value: c.value, quality: c.quality, step: c.step, error: c.error}
@@ -64,19 +64,19 @@ fn _result(c)
   end
 end
 
-// The derivative of `f` (one number in, a number or a list of numbers out)
-// at `x`, by central differences with `h = 1e-4 * max(|x|, 1)`.
-// `{value, quality, step}`: `quality` says whether `value` can be trusted as
-// a slope ("smooth", "kink", "branch_flip", "step", "zero", "errored"), and
-// `step` is the `h` it was measured with. `opts`: `h`, and `mode`
-// ("central" or "forward").
+# The derivative of `f` (one number in, a number or a list of numbers out)
+# at `x`, by central differences with `h = 1e-4 * max(|x|, 1)`.
+# `{value, quality, step}`: `quality` says whether `value` can be trusted as
+# a slope ("smooth", "kink", "branch_flip", "step", "zero", "errored"), and
+# `step` is the `h` it was measured with. `opts`: `h`, and `mode`
+# ("central" or "forward").
 pub fn deriv(f, x, opts = {})
   let x0 = float(x)
   let base = _run(f, x0)
   _result(_column(fn(v) _run(f, v) end, x0, base, _fd_opts(opts)))
 end
 
-// The Jacobian and the base value: `{rows, quality, step, base}`.
+# The Jacobian and the base value: `{rows, quality, step, base}`.
 fn _jacobian(f, xs, opts)
   let x0 = map(xs, fn(v) float(v) end)
   let base = _run(f, x0)
@@ -96,16 +96,16 @@ fn _jacobian(f, xs, opts)
   }
 end
 
-// The Jacobian of `f` (a list of numbers in, a number or a list of numbers
-// out) at `xs`: `{rows, quality, step}`, where `rows[i][j]` is
-// `d out_i / d in_j` (a number out is one row), and `quality` and `step`
-// have one entry per input. Same options as `deriv`.
+# The Jacobian of `f` (a list of numbers in, a number or a list of numbers
+# out) at `xs`: `{rows, quality, step}`, where `rows[i][j]` is
+# `d out_i / d in_j` (a number out is one row), and `quality` and `step`
+# have one entry per input. Same options as `deriv`.
 pub fn jacobian(f, xs, opts = {})
   let j = _jacobian(f, xs, opts)
   {rows: j.rows, quality: j.quality, step: j.step}
 end
 
-// Clamp `v` into `b`, nil or `[lo, hi]` (either end may be nil).
+# Clamp `v` into `b`, nil or `[lo, hi]` (either end may be nil).
 fn _bound(v, b)
   if b == nil then
     v
@@ -115,9 +115,9 @@ fn _bound(v, b)
   end
 end
 
-// Move from `xs` toward `next` by at most `max_step` per input (nil, a
-// number for all, or one per input; nil entries are unlimited), and keep
-// each input in its bounds.
+# Move from `xs` toward `next` by at most `max_step` per input (nil, a
+# number for all, or one per input; nil entries are unlimited), and keep
+# each input in its bounds.
 fn _limit(xs, next, max_step, bounds)
   for i in range(0, len(xs)) do
     let cap = if type(max_step) == "list" then max_step[i] else max_step end
@@ -127,15 +127,15 @@ fn _limit(xs, next, max_step, bounds)
   end
 end
 
-// One damped Gauss-Newton step from `xs` toward `f(xs) == target`, with the
-// Jacobian measured as `jacobian` does. A step that does not bring the
-// output closer is halved, up to four times; when none does, `xs` comes back
-// unchanged with `improved: false`. `{xs, residual, improved, stuck,
-// quality}`: `residual` is the distance from `f(xs)` to `target` at the
-// returned `xs`, `stuck` the indices of inputs that do not move the output
-// (quality "zero" or "errored"), and `quality` the Jacobian's, one per
-// input. `opts`: `bounds` (`[[lo, hi], …]`), `max_step` (a number, or one
-// per input), `damping` (the step's scale, default 1), plus `deriv`'s.
+# One damped Gauss-Newton step from `xs` toward `f(xs) == target`, with the
+# Jacobian measured as `jacobian` does. A step that does not bring the
+# output closer is halved, up to four times; when none does, `xs` comes back
+# unchanged with `improved: false`. `{xs, residual, improved, stuck,
+# quality}`: `residual` is the distance from `f(xs)` to `target` at the
+# returned `xs`, `stuck` the indices of inputs that do not move the output
+# (quality "zero" or "errored"), and `quality` the Jacobian's, one per
+# input. `opts`: `bounds` (`[[lo, hi], …]`), `max_step` (a number, or one
+# per input), `damping` (the step's scale, default 1), plus `deriv`'s.
 pub fn solve_step(f, xs, target, opts = {})
   let j = _jacobian(f, xs, opts)
   let x0 = map(xs, fn(v) float(v) end)
@@ -147,7 +147,7 @@ pub fn solve_step(f, xs, target, opts = {})
       stuck = append(stuck, i)
     end
   end
-  // A stuck column is not divided by: its sensitivities count as 0.
+  # A stuck column is not divided by: its sensitivities count as 0.
   let jac = for row in j.rows do
     for k in range(0, len(row)) do
       if j.quality[k] == "zero" || j.quality[k] == "errored" then 0.0 else row[k] end
@@ -178,10 +178,10 @@ pub fn solve_step(f, xs, target, opts = {})
   out
 end
 
-// `solve_step` repeated until the residual is at most `tol` (default 1e-6)
-// or `max_iter` steps (default 20) are spent, or a step stops improving.
-// `{xs, residual, improved, stuck, quality, iterations}`, where `improved`
-// says whether any step got closer and the rest are the last step's.
+# `solve_step` repeated until the residual is at most `tol` (default 1e-6)
+# or `max_iter` steps (default 20) are spent, or a step stops improving.
+# `{xs, residual, improved, stuck, quality, iterations}`, where `improved`
+# says whether any step got closer and the rest are the last step's.
 pub fn solve(f, xs, target, opts = {})
   let tol = opts.tol ?? 0.000001
   let max_iter = opts.max_iter ?? 20

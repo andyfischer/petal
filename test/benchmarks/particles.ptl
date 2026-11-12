@@ -1,7 +1,7 @@
-// Benchmark: particle system — a list of records rebuilt every frame via
-// loop-carried append, with per-particle record reads and conditional bounce.
-// The classic per-frame sketch workload (COW-heavy: every frame copies the
-// whole particle list and every updated record).
+# Benchmark: particle system — a list of records rebuilt every frame via
+# loop-carried append, with per-particle record reads and conditional bounce.
+# The classic per-frame sketch workload (COW-heavy: every frame copies the
+# whole particle list and every updated record).
 
 fn update(p)
   let x = p.x + p.vx

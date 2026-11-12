@@ -1,21 +1,21 @@
-// ── Meridian CRM ────────────────────────────────────────────────────────────
-// A contact manager: a sortable / filterable / searchable table of contacts on
-// the left, an inspector-and-edit-form on the right.
-//
-// Exercises: a real data table (five columns, click-to-sort headers with a
-// direction toggle), segment filtering, incremental search, keyboard + mouse
-// selection, wheel + scrollbar scrolling, and an editable multi-field form
-// with its own focus ring that writes back into the record store.
-//
-// Designed for a 1280x850 panel.
+# ── Meridian CRM ────────────────────────────────────────────────────────────
+# A contact manager: a sortable / filterable / searchable table of contacts on
+# the left, an inspector-and-edit-form on the right.
+#
+# Exercises: a real data table (five columns, click-to-sort headers with a
+# direction toggle), segment filtering, incremental search, keyboard + mouse
+# selection, wheel + scrollbar scrolling, and an editable multi-field form
+# with its own focus ring that writes back into the record store.
+#
+# Designed for a 1280x850 panel.
 
 import ui
 
-// ── palette ─────────────────────────────────────────────────────────────────
-let BG      = :14181e   // table / page ground
-let RAIL    = :0f1319   // left rail, one step darker
-let SURFACE = :181d25   // right inspector
-let CARD    = :1c222b   // raised chips, fields, headers
+# ── palette ─────────────────────────────────────────────────────────────────
+let BG      = :14181e   # table / page ground
+let RAIL    = :0f1319   # left rail, one step darker
+let SURFACE = :181d25   # right inspector
+let CARD    = :1c222b   # raised chips, fields, headers
 let CARD_HI = :232a35
 let LINE    = :262d38
 let LINE_SOFT = :1f2530
@@ -31,7 +31,7 @@ let WHITE   = :ffffff
 
 let AV = [:6d8dff, :2fc0a0, :e3a83f, :e8607c, :a884f5, :48b7e8]
 
-// ── metrics ─────────────────────────────────────────────────────────────────
+# ── metrics ─────────────────────────────────────────────────────────────────
 let W = screen_width()
 let H = screen_height()
 
@@ -61,7 +61,7 @@ let VISIBLE  = ROWS_H / ROW_H
 
 let STAGES = ["Lead", "Qualified", "Proposal", "Customer", "Churned"]
 
-// ── seed data ───────────────────────────────────────────────────────────────
+# ── seed data ───────────────────────────────────────────────────────────────
 state contacts = [
   {id: 1,  name: "Alina Moreau",     title: "VP Engineering",     company: "Northwind Labs",   email: "alina@northwind.dev",   phone: "+1 415 555 0132", stage: "Proposal",  value: 84000,  days: 2,  owner: "R. Okafor", tags: ["enterprise", "self-hosted"], notes: "Wants an on-prem trial before the security review. Legal is the long pole; her CISO signs off in March."},
   {id: 2,  name: "Desmond Achebe",   title: "Head of Data",       company: "Halcyon Freight",  email: "d.achebe@halcyon.co",   phone: "+1 312 555 0198", stage: "Customer",  value: 132000, days: 9,  owner: "R. Okafor", tags: ["logistics", "expansion"],    notes: "Renewed for two years. Warm intro to their Rotterdam office is on the table once the Q1 rollout lands."},
@@ -89,15 +89,15 @@ state contacts = [
   {id: 24, name: "Peter Sandoval",   title: "IT Director",        company: "Coastal Union",    email: "psandoval@coastal.bank", phone: "+1 619 555 0146", stage: "Qualified", value: 69000,  days: 12, owner: "M. Lindqvist", tags: ["banking", "compliance"],   notes: "Regulated buyer, slow but reliable. Their security team has already cleared two of our subprocessors."},
 ]
 
-// ── view state ──────────────────────────────────────────────────────────────
-state seg      = "All"        // segment filter (a stage name, or "All")
+# ── view state ──────────────────────────────────────────────────────────────
+state seg      = "All"        # segment filter (a stage name, or "All")
 state q        = ""
-state sort_key = "days"       // name | company | stage | value | days
-state sort_dir = 1            // 1 ascending, -1 descending
-state sel_id   = 1            // selected contact id (stable across sorts)
-state scroll   = 0            // first visible row
-state focus    = ""           // focused text field id, "" = none
-state editing  = false        // inspector is in form mode
+state sort_key = "days"       # name | company | stage | value | days
+state sort_dir = 1            # 1 ascending, -1 descending
+state sel_id   = 1            # selected contact id (stable across sorts)
+state scroll   = 0            # first visible row
+state focus    = ""           # focused text field id, "" = none
+state editing  = false        # inspector is in form mode
 state ed_id    = 0
 state ed_name  = ""
 state ed_title = ""
@@ -106,9 +106,9 @@ state ed_email = ""
 state ed_phone = ""
 state ed_stage = "Lead"
 state ed_value = ""
-state saves    = 0            // count of form saves (observable in /state)
+state saves    = 0            # count of form saves (observable in /state)
 
-// ── small helpers ───────────────────────────────────────────────────────────
+# ── small helpers ───────────────────────────────────────────────────────────
 fn stage_color(s: string) -> record
   match s
     when "Lead" -> VIOLET
@@ -150,8 +150,8 @@ fn ago(d: num) -> string
   end
 end
 
-// How warm a contact is, as a 0..1 fraction of a 45-day window plus the color
-// the table paints it in.
+# How warm a contact is, as a 0..1 fraction of a 45-day window plus the color
+# the table paints it in.
 fn freshness(days: num) -> record
   let f = clamp(1.0 - float(days) / 45.0, lo: 0.0, hi: 1.0)
   let c = if days <= 7 then TEAL
@@ -161,8 +161,8 @@ fn freshness(days: num) -> record
   {frac: f, color: c}
 end
 
-// Keep only ASCII digits — the deal-value field is numeric, and this is the
-// closest Petal gets to an input mask.
+# Keep only ASCII digits — the deal-value field is numeric, and this is the
+# closest Petal gets to an input mask.
 fn digits(s: string) -> string
   var out = ""
   for i in range(0, len(s)) do
@@ -176,15 +176,15 @@ fn initials(name: string) -> string
   var out = ""
   for part in split(name, " ") do
     if len(part) > 0 && len(out) < 2 then
-      // slice counts characters, so the first letter of "Óscar" is "Ó".
+      # slice counts characters, so the first letter of "Óscar" is "Ó".
       set out = out ++ upper(slice(part, start: 0, end: 1))
     end
   end
   out
 end
 
-// A short, deterministic history for a contact: the newest entry reflects the
-// stage the deal is actually in, the older two are the same for everyone.
+# A short, deterministic history for a contact: the newest entry reflects the
+# stage the deal is actually in, the older two are the same for everyone.
 fn activity(c: record) -> list
   let head = match c.stage
     when "Lead" -> "Inbound enquiry received"
@@ -200,7 +200,7 @@ fn activity(c: record) -> list
   ]
 end
 
-// A rounded panel with a 1px border, since draw_rect_outline is square-cornered.
+# A rounded panel with a 1px border, since draw_rect_outline is square-cornered.
 fn rr(r: record, radius: num, fill: record, border: record)
   draw_rect_rounded(r, radius, c: border)
   draw_rect_rounded(rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2), radius: radius - 1, c: fill)
@@ -214,10 +214,10 @@ fn chip(x: num, y: num, label: string, c: record) -> num
   r.w
 end
 
-// Draws a button and answers whether it was clicked. The inspector reads its
-// clicks through hit1/hit2 instead, so the answer is dropped at those callsites.
+# Draws a button and answers whether it was clicked. The inspector reads its
+# clicks through hit1/hit2 instead, so the answer is dropped at those callsites.
 fn btn(r: record, label: string, kind: num, on: bool) -> bool
-  // kind: 0 = quiet, 1 = primary
+  # kind: 0 = quiet, 1 = primary
   let hov = hovered(r)
   if kind == 1 then
     let bg = if hov then :829eff else ACCENT end
@@ -232,7 +232,7 @@ fn btn(r: record, label: string, kind: num, on: bool) -> bool
   hov && mouse_pressed(0)
 end
 
-// ── sorting ─────────────────────────────────────────────────────────────────
+# ── sorting ─────────────────────────────────────────────────────────────────
 fn sort_val(c: record, key: string)
   match key
     when "name" -> lower(c.name)
@@ -255,7 +255,7 @@ fn row_less(a: record, b: record, key: string, dir: num) -> bool
   end
 end
 
-// `sort` takes the comparator directly: true means `a` goes first.
+# `sort` takes the comparator directly: true means `a` goes first.
 fn sort_rows(rows: list, key: string, dir: num) -> list
   sort(rows, fn(a, b) -> row_less(a, b, key: key, dir: dir))
 end
@@ -265,7 +265,7 @@ fn matches(c: record, needle: string) -> bool
   contains(hay, needle)
 end
 
-// ── derived data ────────────────────────────────────────────────────────────
+# ── derived data ────────────────────────────────────────────────────────────
 let needle = lower(q)
 let filtered = for c in contacts do
   if seg != "All" && c.stage != seg then continue end
@@ -285,7 +285,7 @@ fn count_stage(cs: list, s: string) -> int
   n
 end
 
-// index of the selected id within the current row order (-1 when filtered out)
+# index of the selected id within the current row order (-1 when filtered out)
 fn index_of_id(rs: list, id: num) -> int
   var found = -1
   for i in range(0, len(rs)) do
@@ -294,14 +294,14 @@ fn index_of_id(rs: list, id: num) -> int
   found
 end
 let sel_ix = index_of_id(rows, sel_id)
-// A filter that hides the selected contact hands the selection to the first
-// visible row rather than leaving the inspector blank.
+# A filter that hides the selected contact hands the selection to the first
+# visible row rather than leaving the inspector blank.
 if sel_ix < 0 && n_rows > 0 then
   sel_id = rows[0].id
   sel_ix = 0
 end
 
-// ── geometry ────────────────────────────────────────────────────────────────
+# ── geometry ────────────────────────────────────────────────────────────────
 let mx = mouse_x()
 let my = mouse_y()
 
@@ -325,16 +325,16 @@ let cols = [
 
 let rows_rect = rect(TABLE_X, ROWS_TOP, TABLE_W, ROWS_H)
 
-// One sortable column header's hit rect.
+# One sortable column header's hit rect.
 fn head_rect(c: record) -> Rect
   rect(c.x - 8, HEAD_Y, c.w, HEAD_H)
 end
 
-// ── input ───────────────────────────────────────────────────────────────────
-// Focus ring: the search box on its own, or the five form fields while editing.
+# ── input ───────────────────────────────────────────────────────────────────
+# Focus ring: the search box on its own, or the five form fields while editing.
 let ring = if editing then ["name", "title", "co", "email", "phone", "value"] else ["q"] end
 
-// A press anywhere that is not a field clears the keyboard focus.
+# A press anywhere that is not a field clears the keyboard focus.
 let grabbed = false
 
 if mouse_pressed(0) && point_in(px: mx, py: my, r: search_r) then
@@ -342,13 +342,13 @@ if mouse_pressed(0) && point_in(px: mx, py: my, r: search_r) then
   grabbed = true
 end
 
-// `/` jumps to the search box (only when nothing else owns the keyboard).
+# `/` jumps to the search box (only when nothing else owns the keyboard).
 if len(focus) == 0 && key_pressed("slash") then
   focus = "q"
   grabbed = true
 end
 
-// Column headers: click to sort, click again to flip the direction.
+# Column headers: click to sort, click again to flip the direction.
 if mouse_pressed(0) then
   for c in cols do
     let hr = head_rect(c)
@@ -364,7 +364,7 @@ if mouse_pressed(0) then
   end
 end
 
-// Segment rail. Walked twice: once here for input, once below to draw it.
+# Segment rail. Walked twice: once here for input, once below to draw it.
 let seg_top = TOP_H + 54
 
 fn seg_label(i: num) -> string
@@ -385,7 +385,7 @@ for i in range(0, len(STAGES) + 1) do
   end
 end
 
-// Row selection by click.
+# Row selection by click.
 if mouse_pressed(0) && point_in(px: mx, py: my, r: rows_rect) then
   let ix = scroll + int((my - ROWS_TOP) / ROW_H)
   if ix >= 0 && ix < n_rows then
@@ -395,12 +395,12 @@ if mouse_pressed(0) && point_in(px: mx, py: my, r: rows_rect) then
   focus = ""
 end
 
-// Wheel over the table.
+# Wheel over the table.
 if point_in(px: mx, py: my, r: rows_rect) then
   scroll = clamp(int(scroll + scroll_y()), lo: 0, hi: max(0, n_rows - VISIBLE))
 end
 
-// Keyboard navigation — only when no text field owns the keyboard.
+# Keyboard navigation — only when no text field owns the keyboard.
 if len(focus) == 0 then
   if n_rows > 0 then
     var want = sel_ix
@@ -418,10 +418,10 @@ if len(focus) == 0 then
   end
 end
 
-// Clamp scroll after any filter change, and keep the selection on screen.
+# Clamp scroll after any filter change, and keep the selection on screen.
 scroll = int(clamp(scroll, lo: 0, hi: max(0, n_rows - VISIBLE)))
 
-// Tab cycles the focus ring.
+# Tab cycles the focus ring.
 if key_pressed("tab") && len(focus) > 0 then
   var j = 0
   for i in range(0, len(ring)) do
@@ -435,7 +435,7 @@ end
 let selected = if sel_ix >= 0 then rows[sel_ix] else nil end
 let has_sel = sel_ix >= 0
 
-// ── inspector controls ──────────────────────────────────────────────────────
+# ── inspector controls ──────────────────────────────────────────────────────
 let pad = 22
 let dx = DETAIL_X + pad
 let dw = DETAIL_W - pad * 2
@@ -444,19 +444,19 @@ let act_y = H - 62
 let act1 = rect(dx, act_y, int((dw - 10) / 2), 34)
 let act2 = rect(dx + int((dw - 10) / 2) + 10, act_y, dw - int((dw - 10) / 2) - 10, 34)
 
-// Stage picker rects (edit mode) — five chips on two rows.
+# Stage picker rects (edit mode) — five chips on two rows.
 fn stage_pick_rect(i: num, x: num, y: num, w: num) -> Rect
   let cw = int((w - 8) / 3)
   rect(x + (i % 3) * (cw + 4), y + int(i / 3) * 30, cw, 26)
 end
 
-// Text field rects, laid out top-down in the form.
+# Text field rects, laid out top-down in the form.
 let form_top = TOP_H + 118
 fn field_rect(i: num, x: num, y: num, w: num) -> Rect
   rect(x, y + i * 52 + 18, w, 32)
 end
 
-// ── field editing (state writes must live at top level) ─────────────────────
+# ── field editing (state writes must live at top level) ─────────────────────
 let typed = if grabbed then "" else text_input() end
 let backsp = key_pressed("backspace")
 let submitted = key_pressed("return")
@@ -486,7 +486,7 @@ if key_pressed("escape") then
   end
 end
 
-// Clicking a form field focuses it.
+# Clicking a form field focuses it.
 if editing && mouse_pressed(0) then
   for i in range(0, len(ring)) do
     if point_in(px: mx, py: my, r: field_rect(i, x: dx, y: form_top, w: dw)) then
@@ -496,7 +496,7 @@ if editing && mouse_pressed(0) then
   end
 end
 
-// Stage chips in the form.
+# Stage chips in the form.
 if editing && mouse_pressed(0) then
   for i in range(0, len(STAGES)) do
     if point_in(px: mx, py: my, r: stage_pick_rect(i, x: dx, y: form_top + 6 * 52 + 22, w: dw)) then
@@ -505,7 +505,7 @@ if editing && mouse_pressed(0) then
   end
 end
 
-// Action buttons: Edit / Advance in read mode, Save / Cancel in form mode.
+# Action buttons: Edit / Advance in read mode, Save / Cancel in form mode.
 let hit1 = has_sel && mouse_pressed(0) && point_in(px: mx, py: my, r: act1)
 let hit2 = has_sel && mouse_pressed(0) && point_in(px: mx, py: my, r: act2)
 let do_save = editing && (hit1 || (submitted && len(focus) > 0))
@@ -524,8 +524,8 @@ if has_sel && !editing && hit1 then
   grabbed = true
 end
 
-// Advance the deal one step along the pipeline. Customer is the end of the
-// road and Churned is off it, so neither advances — the button draws dim there.
+# Advance the deal one step along the pipeline. Customer is the end of the
+# road and Churned is off it, so neither advances — the button draws dim there.
 if has_sel && !editing && hit2 && stage_rank(selected.stage) < 3 then
   let nxt = stage_rank(selected.stage) + 1
   contacts = for c in contacts do
@@ -553,16 +553,16 @@ if editing && hit2 then
   focus = ""
 end
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Draw
-// ═════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════════
+# Draw
+# ═════════════════════════════════════════════════════════════════════════════
 clear(BG.r, BG.g, BG.b)
 
-// ── left rail ───────────────────────────────────────────────────────────────
+# ── left rail ───────────────────────────────────────────────────────────────
 draw_rect(rect(0, 0, RAIL_W, H), RAIL)
 draw_rect(rect(RAIL_W, 0, 1, H), LINE)
 
-// brand
+# brand
 draw_rect_rounded(rect(24, 19, 22, 22), radius: 6, c: ACCENT)
 draw_text("M", pos: {x: 31, y: 24}, style: {size: FS, color: :0f1319})
 draw_text("meridian", pos: {x: 56, y: 21}, style: {size: FS_H, color: TEXT, spacing: 0.2})
@@ -588,7 +588,7 @@ for i in range(0, len(STAGES) + 1) do
   draw_text_right("{cnt}", right_x: r.x + r.w - 12, y: r.y + 8, size: FS_SM, c: if on then DIM else FAINT end)
 end
 
-// pipeline card at the foot of the rail
+# pipeline card at the foot of the rail
 let card_y = H - 130
 rr(rect(12, card_y, RAIL_W - 24, 106), radius: 10, fill: CARD, border: LINE)
 draw_text("OPEN PIPELINE", pos: {x: 26, y: card_y + 16}, style: {size: FS_MICRO, color: FAINT, spacing: 1.2})
@@ -597,10 +597,10 @@ draw_line({x: 26, y: card_y + 68}, {x: RAIL_W - 26, y: card_y + 68}, c: LINE)
 draw_text("{n_rows} shown", pos: {x: 26, y: card_y + 78}, style: {size: FS_SM, color: DIM})
 draw_text_right("of {len(contacts)}", right_x: RAIL_W - 26, y: card_y + 78, size: FS_SM, c: FAINT)
 
-// ── top bar ─────────────────────────────────────────────────────────────────
+# ── top bar ─────────────────────────────────────────────────────────────────
 draw_rect(rect(0, TOP_H, W, 1), LINE)
 
-// search box
+# search box
 let q_focus = focus == "q"
 rr(search_r, radius: 9, fill: if q_focus then :10141b else CARD end, border: if q_focus then ACCENT else LINE end)
 draw_circle({x: search_r.x + 17, y: search_r.y + 14}, 5, FAINT, 0)
@@ -629,7 +629,7 @@ end
 let dir_label = if sort_dir == 1 then "ascending" else "descending" end
 draw_text_right("sorted by {sort_label} · {dir_label}", right_x: TABLE_X + TABLE_W - 22, y: 22, size: FS_SM, c: FAINT)
 
-// ── table header ────────────────────────────────────────────────────────────
+# ── table header ────────────────────────────────────────────────────────────
 for c in cols do
   let on = sort_key == c.key
   let hr = head_rect(c)
@@ -653,7 +653,7 @@ for c in cols do
 end
 draw_rect(rect(TABLE_X, HEAD_Y + HEAD_H + 3, TABLE_W, 1), LINE)
 
-// ── rows ────────────────────────────────────────────────────────────────────
+# ── rows ────────────────────────────────────────────────────────────────────
 clip(x: TABLE_X, y: ROWS_TOP, w: TABLE_W, h: ROWS_H)
 let shown = min(VISIBLE, max(0, n_rows - scroll))
 for i in range(0, shown) do
@@ -670,7 +670,7 @@ for i in range(0, shown) do
     draw_rect_rounded(r, radius: 8, c: CARD, a: 150)
   end
 
-  // avatar + name + title
+  # avatar + name + title
   let acol = AV[c.id % len(AV)]
   let ax = cx0 + 14
   draw_circle({x: ax, y: y + ROW_H / 2}, 14, acol, 46)
@@ -681,18 +681,18 @@ for i in range(0, shown) do
     style: {size: FS_ROW, color: if on then WHITE else TEXT end})
   draw_text(ellipsize(c.title, avail_px: nm_w, size: FS_SM), pos: {x: nm_x, y: y + 26}, style: {size: FS_SM, color: FAINT})
 
-  // company + owner
+  # company + owner
   draw_text(ellipsize(c.company, avail_px: w_co - 16, size: FS), pos: {x: cols[1].x, y: y + 9}, style: {size: FS, color: DIM})
   draw_text(c.owner, pos: {x: cols[1].x, y: y + 27}, style: {size: FS_SM, color: FAINT})
 
-  // stage chip
+  # stage chip
   chip(x: cols[2].x, y: y + 13, label: c.stage, c: stage_color(c.stage))
 
-  // deal value
+  # deal value
   draw_text_right(money(c.value), right_x: cols[3].x + cols[3].w - 4, y: y + 16, size: FS_ROW,
     c: if on then TEXT else DIM end)
 
-  // last contact: a freshness dot and the phrase, on the row's centre line
+  # last contact: a freshness dot and the phrase, on the row's centre line
   let fresh = freshness(c.days)
   let last_r = cols[4].x + cols[4].w - 4
   let last_s = ago(c.days)
@@ -711,7 +711,7 @@ if n_rows == 0 then
     pos: {x: cx0, y: ROWS_TOP + 64}, style: {size: FS, color: FAINT})
 end
 
-// scrollbar
+# scrollbar
 if n_rows > VISIBLE then
   let track = rect(TABLE_X + TABLE_W - 13, ROWS_TOP + 2, 6, ROWS_H - 6)
   draw_rect_rounded(track, radius: 3, c: LINE)
@@ -720,14 +720,14 @@ if n_rows > VISIBLE then
   draw_rect_rounded(rect(track.x, ty, track.w, th), radius: 3, c: :4c5768)
 end
 
-// ── footer ──────────────────────────────────────────────────────────────────
+# ── footer ──────────────────────────────────────────────────────────────────
 draw_rect(rect(TABLE_X, H - FOOT_H, TABLE_W, 1), LINE)
 let foot = if n_rows == 0 then "no results" else "{n_rows} contacts · {money_big(pipeline)} in view" end
 draw_text(foot, pos: {x: cx0, y: H - 26}, style: {size: FS_SM, color: FAINT})
 draw_text_right("click a header to sort  ·  ↑↓ select  ·  / search", right_x: TABLE_X + TABLE_W - 22, y: H - 26,
   size: FS_SM, c: FAINT)
 
-// ── inspector ───────────────────────────────────────────────────────────────
+# ── inspector ───────────────────────────────────────────────────────────────
 draw_rect(rect(DETAIL_X, 0, DETAIL_W, H), SURFACE)
 draw_rect(rect(DETAIL_X, 0, 1, H), LINE)
 
@@ -776,7 +776,7 @@ else
       draw_text_center(s, cx: pr.x + pr.w / 2, y: pr.y + 7, size: FS_SM, c: if on then sc else DIM end)
     end
 
-    // Everything the form does not own, shown so the record still reads whole.
+    # Everything the form does not own, shown so the record still reads whole.
     let ry2 = sy + 78
     draw_line({x: dx, y: ry2 - 16}, {x: dx + dw, y: ry2 - 16}, c: LINE)
     draw_text("NOT EDITABLE HERE", pos: {x: dx, y: ry2}, style: {size: FS_MICRO, color: FAINT, spacing: 1.2})
@@ -829,8 +829,8 @@ else
       draw_text(lines[i], pos: {x: dx, y: ny + 18 + i * 19}, style: {size: FS, color: DIM})
     end
 
-    // Activity timeline — synthesized from the record so every contact has a
-    // plausible history behind it.
+    # Activity timeline — synthesized from the record so every contact has a
+    # plausible history behind it.
     let ay2 = ny + 132
     draw_line({x: dx, y: ay2 - 16}, {x: dx + dw, y: ay2 - 16}, c: LINE)
     draw_text("ACTIVITY", pos: {x: dx, y: ay2}, style: {size: FS_MICRO, color: FAINT, spacing: 1.2})
@@ -853,7 +853,7 @@ else
   end
 end
 
-// ── observable summary (read from /state → panes[].panel.values) ────────────
+# ── observable summary (read from /state → panes[].panel.values) ────────────
 let visible_rows = n_rows
 let selection = if has_sel then selected.name else "" end
 let focus_id = focus

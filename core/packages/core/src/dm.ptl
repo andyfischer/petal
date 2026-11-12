@@ -1,22 +1,22 @@
-// Package `core` — Direct-manipulation hints (core/src/builtins/hints.rs,
-// docs/proposals/dm-v2-hints.md).
-//
-// Both return their first argument unchanged. Tools read them from the
-// program: `tunable` marks the literal `value` resolves to as a preferred
-// target for a drag, optionally with a range and a step, or every number in
-// it when `value` is data (a record, a list); `options:` lists the values a
-// setting can take. A top-level `let X = tunable(…)` is a setting that hosts
-// list and set. `rigid` marks a literal as never moving, and stops feedback
-// from passing through the call. Neither name can be redefined.
-// See docs/Builtins.md (Direct-Manipulation Hints).
+# Package `core` — Direct-manipulation hints (core/src/builtins/hints.rs,
+# docs/proposals/dm-v2-hints.md).
+#
+# Both return their first argument unchanged. Tools read them from the
+# program: `tunable` marks the literal `value` resolves to as a preferred
+# target for a drag, optionally with a range and a step, or every number in
+# it when `value` is data (a record, a list); `options:` lists the values a
+# setting can take. A top-level `let X = tunable(…)` is a setting that hosts
+# list and set. `rigid` marks a literal as never moving, and stops feedback
+# from passing through the call. Neither name can be redefined.
+# See docs/Builtins.md (Direct-Manipulation Hints).
 
 pub native fn tunable(value, min?: num, max?: num, step?: num, options?: list)
-// The form a setting with choices uses: `tunable("title", options: [...])`.
+# The form a setting with choices uses: `tunable("title", options: [...])`.
 pub native fn tunable(value, options: list)
 pub native fn rigid(value)
 
-// `const(e)`: `e`, which must be static. Around the whole initializer of a
-// top-level `let` it is the `const` declaration: `let X = const(e)` means
-// `const X = e` (docs/tasks/lifecycle-annotation-functions-refactor.md). The
-// compiler erases the call. The name cannot be redefined.
+# `const(e)`: `e`, which must be static. Around the whole initializer of a
+# top-level `let` it is the `const` declaration: `let X = const(e)` means
+# `const X = e` (docs/tasks/lifecycle-annotation-functions-refactor.md). The
+# compiler erases the call. The name cannot be redefined.
 pub native fn const(value)

@@ -1,6 +1,6 @@
-// Nature of Code - Springs
-// Inspired by Chapter 3: Oscillation - Spring Forces
-// A soft-body mesh connected by springs, with mouse interaction
+# Nature of Code - Springs
+# Inspired by Chapter 3: Oscillation - Spring Forces
+# A soft-body mesh connected by springs, with mouse interaction
 
 import ui
 
@@ -20,7 +20,7 @@ let spacing = 45.0
 let stiffness = 800.0
 let damping = 5.0
 
-// Initialize grid of nodes connected by springs
+# Initialize grid of nodes connected by springs
 if len(nodes) == 0 then
   let offset_x = (sw - float(grid_w - 1) * spacing) / 2.0
   let offset_y = 80.0
@@ -38,7 +38,7 @@ if len(nodes) == 0 then
     end
   end
 
-  // Horizontal springs
+  # Horizontal springs
   for y in range(0, grid_h) do
     for x in range(0, grid_w - 1) do
       let a = y * grid_w + x
@@ -47,7 +47,7 @@ if len(nodes) == 0 then
     end
   end
 
-  // Vertical springs
+  # Vertical springs
   for y in range(0, grid_h - 1) do
     for x in range(0, grid_w) do
       let a = y * grid_w + x
@@ -56,7 +56,7 @@ if len(nodes) == 0 then
     end
   end
 
-  // Diagonal springs (structural stability)
+  # Diagonal springs (structural stability)
   for y in range(0, grid_h - 1) do
     for x in range(0, grid_w - 1) do
       let a = y * grid_w + x
@@ -66,7 +66,7 @@ if len(nodes) == 0 then
   end
 end
 
-// Mouse interaction - drag nodes
+# Mouse interaction - drag nodes
 let mx = float(mouse_x())
 let my = float(mouse_y())
 
@@ -97,7 +97,7 @@ if dragging >= 0 then
   }
 end
 
-// Physics: apply spring forces
+# Physics: apply spring forces
 for s in springs do
   let na = nodes[s.a]
   let nb = nodes[s.b]
@@ -129,19 +129,19 @@ for s in springs do
   end
 end
 
-// Update positions
+# Update positions
 for i in range(0, len(nodes)) do
   let n = nodes[i]
   if !n.pinned && i != dragging then
-    // Gravity
+    # Gravity
     let grav = 200.0
-    // Damping
+    # Damping
     let dvx = n.vx * (1.0 - damping * delta)
     let dvy = (n.vy + grav * delta) * (1.0 - damping * delta)
     let nx = n.x + dvx * delta
     let ny = n.y + dvy * delta
 
-    // Floor
+    # Floor
     if ny > sh - 20.0 then
       ny = sh - 20.0
       dvy = -abs(dvy) * 0.3
@@ -151,10 +151,10 @@ for i in range(0, len(nodes)) do
   end
 end
 
-// === Drawing ===
+# === Drawing ===
 clear(12, 15, 25)
 
-// Draw springs
+# Draw springs
 for s in springs do
   let na = nodes[s.a]
   let nb = nodes[s.b]
@@ -163,7 +163,7 @@ for s in springs do
   let dist = sqrt(dx * dx + dy * dy)
   let stretch = abs(dist - s.rest_len) / s.rest_len
 
-  // Color based on stretch: green = relaxed, red = stretched
+  # Color based on stretch: green = relaxed, red = stretched
   let cr = int(min(255.0, stretch * 500.0))
   let cg = int(max(0.0, 80.0 - stretch * 200.0))
   let cb = int(max(0.0, 120.0 - stretch * 300.0))
@@ -171,25 +171,25 @@ for s in springs do
   draw_line(int(na.x), int(na.y), int(nb.x), int(nb.y), max(20, cr), max(20, cg), max(20, cb))
 end
 
-// Draw nodes
+# Draw nodes
 for i in range(0, len(nodes)) do
   let n = nodes[i]
   if n.pinned then
-    // Pinned nodes are gold
+    # Pinned nodes are gold
     draw_circle(cx: int(n.x), cy: int(n.y), radius: 6, r: 200, g: 180, b: 50)
     draw_circle(cx: int(n.x), cy: int(n.y), radius: 4, r: 255, g: 220, b: 80)
   elsif i == dragging then
-    // Dragged node
+    # Dragged node
     draw_circle(cx: int(n.x), cy: int(n.y), radius: 8, r: 255, g: 100, b: 100)
   else
-    // Regular nodes
+    # Regular nodes
     let speed = sqrt(n.vx * n.vx + n.vy * n.vy)
     let bright = int(min(255.0, 80.0 + speed * 0.5))
     draw_circle(cx: int(n.x), cy: int(n.y), radius: 4, r: bright, g: bright, b: min(255, bright + 40))
   end
 end
 
-// Floor
+# Floor
 draw_line(0, int(sh) - 20, int(sw), int(sh) - 20, 40, 50, 60)
 
 draw_text("Spring Mesh", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)

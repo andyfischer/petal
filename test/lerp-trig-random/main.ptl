@@ -1,9 +1,9 @@
 import autodiff
 import color
 
-// `lerp` on colors (alpha too) and number lists, the inverse trig
-// functions and `hypot` (atan's slope at 1 is 1/2, measured by `deriv`),
-// and `random` with 0, 1 or 2 arguments.
+# `lerp` on colors (alpha too) and number lists, the inverse trig
+# functions and `hypot` (atan's slope at 1 is 1/2, measured by `deriv`),
+# and `random` with 0, 1 or 2 arguments.
 print(lerp(:6a5a48, :ffd08a, 0.5))
 print(lerp(:00000000, :ffffff, 0.5))
 print(color_lerp(:ff000080, :0000ff, 0.5))

@@ -1,21 +1,21 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// MERIDIAN: a stock trading screen
-//
-// A Garden panel app. A simulated market feed ticks twelve fictional listings;
-// the screen shows a watchlist with live quotes, a candlestick chart with
-// volume and a crosshair, a depth ladder, time and sales, a blotter of
-// positions / orders / fills, and an order ticket that validates against
-// buying power and fills against the book.
-//
-//   Run:   tools/run-example.ts stock-trading
-//   Keys:  up/down pick a listing    1-4 timeframe    c candles/line
-//          b/s side   m/l market/limit   q quantity   return send the order
-//          space pause   - / = feed speed   left/right pan   home back to live
-//          p/o/f positions / orders / fills
-//
-// The files: market.ptl is the feed (pure, seeded), pricechart.ptl the chart,
-// look.ptl the palette and controls, numfmt.ptl the number formats.
-// ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# MERIDIAN: a stock trading screen
+#
+# A Garden panel app. A simulated market feed ticks twelve fictional listings;
+# the screen shows a watchlist with live quotes, a candlestick chart with
+# volume and a crosshair, a depth ladder, time and sales, a blotter of
+# positions / orders / fills, and an order ticket that validates against
+# buying power and fills against the book.
+#
+#   Run:   tools/run-example.ts stock-trading
+#   Keys:  up/down pick a listing    1-4 timeframe    c candles/line
+#          b/s side   m/l market/limit   q quantity   return send the order
+#          space pause   - / = feed speed   left/right pan   home back to live
+#          p/o/f positions / orders / fills
+#
+# The files: market.ptl is the feed (pure, seeded), pricechart.ptl the chart,
+# look.ptl the palette and controls, numfmt.ptl the number formats.
+# ─────────────────────────────────────────────────────────────────────────────
 
 import text_layout as tl
 import ./market as mk
@@ -26,20 +26,20 @@ import ui
 import bloom
 import garden
 
-let N = 12                       // listings: len(mk.UNIVERSE)
+let N = 12                       # listings: len(mk.UNIVERSE)
 let SPEEDS = [1, 4, 16]
-let BASE_RATE = 10.0             // market seconds per real second at 1x
-let MAX_STEPS = 16               // simulation steps one frame may run
+let BASE_RATE = 10.0             # market seconds per real second at 1x
+let MAX_STEPS = 16               # simulation steps one frame may run
 let MAX_QTY = 50000
-let COLLAR = 0.2                 // a limit may sit this far from the last trade
+let COLLAR = 0.2                 # a limit may sit this far from the last trade
 let TFS = [{label: "1m", secs: 60}, {label: "5m", secs: 300}, {label: "15m", secs: 900}, {label: "1h", secs: 3600}]
-let SERIES_KEEP = 330            // bars of a timeframe the chart can reach
-let FLASH_SECS = 0.5             // how long a changed quote stays lit
+let SERIES_KEEP = 330            # bars of a timeframe the chart can reach
+let FLASH_SECS = 0.5             # how long a changed quote stays lit
 let TOAST_SECS = 3.4
 
-// ── The opening book of business ────────────────────────────────────────────
-// A desk that has been trading: four positions (two up, two down against
-// their cost) and three limit orders working away from the market.
+# ── The opening book of business ────────────────────────────────────────────
+# A desk that has been trading: four positions (two up, two down against
+# their cost) and three limit orders working away from the market.
 
 fn seed_costs(m: record, qty: list) -> list
   let basis = [0.964, 1.0, 1.031, 1.0, 0.912, 1.0, 1.0, 1.0, 1.047, 1.0, 1.0, 1.0]
@@ -64,8 +64,8 @@ fn value_of(m: record, qty: list) -> int
   v
 end
 
-// `_mkt` carries some fifteen thousand bars; the underscore keeps it out of
-// the debug server's `panel.values`.
+# `_mkt` carries some fifteen thousand bars; the underscore keeps it out of
+# the debug server's `panel.values`.
 state var _mkt = mk.seed()
 state var cash = 6482055
 state var pos_qty = [120, 0, 15, 0, 800, 0, 0, 0, 40, 0, 0, 0]
@@ -78,7 +78,7 @@ state var next_id = 4
 state var toasts = []
 state start_equity = cash + value_of(_mkt, pos_qty)
 
-// ── Account actions ─────────────────────────────────────────────────────────
+# ── Account actions ─────────────────────────────────────────────────────────
 
 fn fee_for(qty: num) -> int
   max(100, int(round(float(qty) * 0.5)))
@@ -92,9 +92,9 @@ fn toast(text: string, kind: string) -> nil
   set toasts = slice([{text: text, kind: kind, age: 0.0}] ++ get toasts, 0, 3)
 end
 
-// Book one execution: `qty` shares of listing `i` for `cost` cents in total.
-// A buy adds to the position at cost; a sell releases its share of the basis
-// and realizes the difference.
+# Book one execution: `qty` shares of listing `i` for `cost` cents in total.
+# A buy adds to the position at cost; a sell releases its share of the basis
+# and realizes the difference.
 fn apply_fill(id: num, i: num, side: num, qty: num, cost: num) -> nil
   let fee = fee_for(qty)
   let held = get pos_qty[i]
@@ -119,8 +119,8 @@ fn apply_fill(id: num, i: num, side: num, qty: num, cost: num) -> nil
   toast("{verb} {nf.commas(qty)} {mk.UNIVERSE[i].tk} @ {nf.px(rec.px)}", if side > 0 then "buy" else "sell" end)
 end
 
-// Fill every working limit the market has traded through. A resting order
-// gets its own price: it was the one sitting there when the other side came.
+# Fill every working limit the market has traded through. A resting order
+# gets its own price: it was the one sitting there when the other side came.
 fn match_orders() -> nil
   let m = get _mkt
   let hit = false
@@ -143,8 +143,8 @@ fn match_orders() -> nil
   end
 end
 
-// Send an order. A market order sweeps the ladder; a limit takes whatever
-// the ladder offers at its price or better and rests the remainder.
+# Send an order. A market order sweeps the ladder; a limit takes whatever
+# the ladder offers at its price or better and rests the remainder.
 fn place_order(i: num, side: num, kind: string, qty: num, limit: num) -> nil
   let m = get _mkt
   let q = m.q[i]
@@ -180,8 +180,8 @@ fn cancel_order(id: num) -> nil
   toast("Order #{id} cancelled", "info")
 end
 
-// Run the feed forward `n` steps, matching orders after each one so a limit
-// fills on the step that crosses it, not at the end of the frame.
+# Run the feed forward `n` steps, matching orders after each one so a limit
+# fills on the step that crosses it, not at the end of the frame.
 fn advance(n: num) -> nil
   for k in range(0, n) do
     let next = mk.step(get _mkt)
@@ -190,29 +190,29 @@ fn advance(n: num) -> nil
   end
 end
 
-// ── View state ──────────────────────────────────────────────────────────────
+# ── View state ──────────────────────────────────────────────────────────────
 
-state sel = 1                    // the listing on the chart, book and ticket
-state shown_sel = 1              // ... as of the last frame, to notice it change
-state tf = 0                     // index into TFS
+state sel = 1                    # the listing on the chart, book and ticket
+state shown_sel = 1              # ... as of the last frame, to notice it change
+state tf = 0                     # index into TFS
 state chart_mode = "candles"
-state vis = 96                   // bars on screen
-state pan = 0                    // bars back from the live edge
-state tab = 0                    // blotter: positions / orders / fills
+state vis = 96                   # bars on screen
+state pan = 0                    # bars back from the live edge
+state tab = 0                    # blotter: positions / orders / fills
 state fill_scroll = 0
 state pos_scroll = 0
 state order_scroll = 0
 
-state speed = 0                  // index into SPEEDS
+state speed = 0                  # index into SPEEDS
 state paused = false
-state acc = 0.0                  // market seconds owed to the simulation
+state acc = 0.0                  # market seconds owed to the simulation
 
-state side = 1                   // ticket: 1 buy, -1 sell
-state kind = "mkt"               // ticket: "mkt" or "lmt"
+state side = 1                   # ticket: 1 buy, -1 sell
+state kind = "mkt"               # ticket: "mkt" or "lmt"
 state qty_text = "100"
 state px_text = ""
-state edit = ""                  // the field holding the keyboard: "qty", "px" or ""
-state shake = 0.0                // the rejected-order wobble, decaying
+state edit = ""                  # the field holding the keyboard: "qty", "px" or ""
+state shake = 0.0                # the rejected-order wobble, decaying
 state submits = 0
 state rejects = 0
 state chart_clicks = 0
@@ -227,7 +227,7 @@ state _agg = []
 state _day_key = ""
 state _day = {hi: 0, lo: 0, vol: 0}
 
-// ── Small helpers ───────────────────────────────────────────────────────────
+# ── Small helpers ───────────────────────────────────────────────────────────
 
 fn plain_px(cents: num) -> string
   let c = max(0, int(cents))
@@ -238,8 +238,8 @@ fn txt(s: string, r: record, style: record, align: string = "left") -> float
   tl.draw_text_line(s, r, style, align)
 end
 
-// A row of a table: each cell is `[text, style, align]`, each column a
-// `{x, w}` in the row's own coordinates.
+# A row of a table: each cell is `[text, style, align]`, each column a
+# `{x, w}` in the row's own coordinates.
 fn table_row(r: record, cols: list, cells: list) -> nil
   for k in range(0, len(cells)) do
     let c = cols[k]
@@ -254,7 +254,7 @@ fn table_head(r: record, cols: list) -> nil
   lk.hline(r.x, r.y + r.h - 1, r.w, lk.SOFT)
 end
 
-// Columns from `[label, weight, align]` triples, laid across `w` pixels.
+# Columns from `[label, weight, align]` triples, laid across `w` pixels.
 fn columns(w: num, defs: list) -> list
   let total = reduce(defs, 0.0, fn(a, d) -> a + d[1])
   let out = []
@@ -282,7 +282,7 @@ fn sparkline(r: record, bars: list, tip: num, c: record) -> nil
   draw_circle(last(pts), 2.0, c)
 end
 
-// ── Frame ───────────────────────────────────────────────────────────────────
+# ── Frame ───────────────────────────────────────────────────────────────────
 
 lk.begin()
 for k in ["a", "c", "x", "v", "z"] do claim_key(k, "cmd") end
@@ -295,9 +295,9 @@ let PAD = 14
 let GAP = 12
 let TOP_H = 56
 
-// ── Keys ────────────────────────────────────────────────────────────────────
-// With a number field focused the keys belong to it; otherwise they drive
-// the screen.
+# ── Keys ────────────────────────────────────────────────────────────────────
+# With a number field focused the keys belong to it; otherwise they drive
+# the screen.
 
 let want_submit = false
 if key_pressed("escape") then
@@ -332,7 +332,7 @@ elsif key_pressed("tab") then
 end
 let typing_key = edit == "" && (key_pressed("q") || key_pressed("tab"))
 
-// ── The feed ────────────────────────────────────────────────────────────────
+# ── The feed ────────────────────────────────────────────────────────────────
 
 let frame_dt = min(dt(), 0.25)
 if !paused then
@@ -346,7 +346,7 @@ let m = _mkt
 let clock = m.clock
 let pulse = time() * 0.9
 
-// Which quotes moved this frame, for the watchlist's flash.
+# Which quotes moved this frame, for the watchlist's flash.
 for i in range(0, N) do
   let l = m.q[i].last
   if l != seen_last[i] then
@@ -359,7 +359,7 @@ for i in range(0, N) do
   end
 end
 
-// Each listing's price a day ago, for the 24-hour change.
+# Each listing's price a day ago, for the 24-hour change.
 let ref24 = for i in range(0, N) do
   let d5 = m.done5[i]
   d5[max(0, len(d5) - 288)].c
@@ -368,14 +368,14 @@ let change = for i in range(0, N) do
   float(m.q[i].last - ref24[i]) / float(ref24[i])
 end
 
-// ── The selected listing ────────────────────────────────────────────────────
+# ── The selected listing ────────────────────────────────────────────────────
 
 let u = mk.UNIVERSE[sel]
 let q = m.q[sel]
 let sel_d5 = m.done5[sel]
 if sel != shown_sel then
-  // A different listing: the chart returns to the live edge and the ticket's
-  // limit to that listing's market.
+  # A different listing: the chart returns to the live edge and the ticket's
+  # limit to that listing's market.
   shown_sel = sel
   pan = 0
   px_text = plain_px(q.last)
@@ -384,9 +384,9 @@ if px_text == "" then
   px_text = plain_px(q.last)
 end
 
-// The chart's bars. One- and five-minute bars are kept by the feed; the two
-// wider timeframes are folded from the five-minute ones, cached until the
-// next five-minute bar completes.
+# The chart's bars. One- and five-minute bars are kept by the feed; the two
+# wider timeframes are folded from the five-minute ones, cached until the
+# next five-minute bar completes.
 let secs = TFS[tf].secs
 let agg_key = "{sel}|{tf}|{last(sel_d5).t}"
 if tf >= 2 && agg_key != _agg_key then
@@ -398,7 +398,7 @@ elsif tf == 1 then append(slice(sel_d5, -SERIES_KEEP), q.b5)
 else pc.with_tail(_agg, q.b5, secs)
 end
 
-// The day's range and volume, cached the same way.
+# The day's range and volume, cached the same way.
 let day_key = "{sel}|{last(sel_d5).t}"
 if day_key != _day_key then
   let hi = 0
@@ -416,7 +416,7 @@ let day_hi = max(_day.hi, q.b5.h)
 let day_lo = min(_day.lo, q.b5.l)
 let day_vol = _day.vol + q.b5.v
 
-// ── The account, as of this frame ───────────────────────────────────────────
+# ── The account, as of this frame ───────────────────────────────────────────
 
 let reserved_cash = 0
 let reserved_sh = for i in range(0, N) do 0 end
@@ -433,11 +433,11 @@ for o in orders do
 end
 let n_positions = len(filter(pos_qty, fn(v) -> v > 0))
 
-// ── Layout ──────────────────────────────────────────────────────────────────
+# ── Layout ──────────────────────────────────────────────────────────────────
 
 let y0 = TOP_H + GAP
 let ch = H - y0 - PAD
-// Designed for a 1588 px pane; below 1500 the side columns give some back.
+# Designed for a 1588 px pane; below 1500 the side columns give some back.
 let roomy = W >= 1500
 let WATCH_W = if roomy then 286 else 250 end
 let RIGHT_W = if roomy then 322 else 296 end
@@ -455,7 +455,7 @@ let r_blot = Rect(cx, y0 + upper_h + GAP, cw, BLOT_H)
 let r_ticket = Rect(W - PAD - RIGHT_W, y0, RIGHT_W, TICKET_H)
 let r_tape = Rect(W - PAD - RIGHT_W, y0 + TICKET_H + GAP, RIGHT_W, ch - TICKET_H - GAP)
 
-// ── Watchlist ───────────────────────────────────────────────────────────────
+# ── Watchlist ───────────────────────────────────────────────────────────────
 
 lk.card(r_watch)
 let wl = lk.card_head(r_watch, "WATCHLIST")
@@ -481,7 +481,7 @@ for i in range(0, N) do
   let mid_y = row.y + row.h / 2.0
   txt(uu.tk, Rect(row.x + 14, mid_y - 19, 60, 18), lk.uib(13, lk.TEXT))
   if pos_qty[i] > 0 then
-    // A dot for a listing the account holds.
+    # A dot for a listing the account holds.
     draw_circle({x: row.x + 14 + text_width(uu.tk, lk.uib(13, lk.TEXT)) + 9, y: mid_y - 10}, 2.5, lk.ACCENT)
   end
   txt(tl.elide(uu.name, lk.ui(11, lk.MUTED), 112), Rect(row.x + 14, mid_y + 1, 112, 16), lk.ui(11, lk.MUTED))
@@ -499,15 +499,15 @@ for i in range(0, N) do
   txt(label, pill, ps, "center")
 end
 
-// ── Chart ───────────────────────────────────────────────────────────────────
+# ── Chart ───────────────────────────────────────────────────────────────────
 
 lk.card(r_chart)
 let hx = r_chart.x + 16
 let tick_w = txt(u.tk, Rect(hx, r_chart.y + 12, 80, 26), lk.uib(20, lk.TEXT))
 let seg_mode = Rect(r_chart.x + r_chart.w - 16 - 132, r_chart.y + 11, 132, 28)
 let seg_tf = Rect(seg_mode.x - 10 - 172, r_chart.y + 11, 172, 28)
-// The name and the sector chip are drawn only where they clear the controls,
-// so a narrower pane loses detail instead of overlapping.
+# The name and the sector chip are drawn only where they clear the controls,
+# so a narrower pane loses detail instead of overlapping.
 let name_s = lk.ui(13, lk.MUTED)
 let name_x = hx + tick_w + 10
 let name_w = text_width(u.name, name_s)
@@ -524,7 +524,7 @@ tf = lk.segmented(seg_tf, for t in TFS do t.label end, tf)
 let mode_i = lk.segmented(seg_mode, ["Candles", "Line"], if chart_mode == "candles" then 0 else 1 end)
 chart_mode = if mode_i == 0 then "candles" else "line" end
 
-// The quote line: last trade, the day's move, the day's range.
+# The quote line: last trade, the day's move, the day's range.
 let fl_sel = clamp(1.0 - flash_age[sel] / FLASH_SECS, lo: 0.0, hi: 1.0)
 let qy = r_chart.y + 44
 let last_w = txt(nf.px(q.last), Rect(hx, qy, 140, 34), lk.mono(24, mix(lk.TEXT, lk.dir_color(flash_dir[sel]), fl_sel)))
@@ -556,7 +556,7 @@ for k in range(len(stats) - 1, -1, -1) do
 end
 lk.hline(r_chart.x + 1, r_chart.y + 84, r_chart.w - 2, lk.SOFT)
 
-// Lines for this listing's working orders and the position's average cost.
+# Lines for this listing's working orders and the position's average cost.
 let marks = []
 for o in orders do
   if o.status == "open" && o.i == sel then
@@ -574,7 +574,7 @@ let view = pc.chart(Rect(r_chart.x + 6, r_chart.y + 88, r_chart.w - 12, r_chart.
 vis = view.vis
 pan = view.pan
 if view.clicked > 0 then
-  // A click on the chart is a price: put it on the ticket as a limit.
+  # A click on the chart is a price: put it on the ticket as a limit.
   kind = "lmt"
   px_text = plain_px(view.clicked)
   edit = ""
@@ -587,14 +587,14 @@ if pan > 0 then
   end
 end
 
-// ── Order book ──────────────────────────────────────────────────────────────
+# ── Order book ──────────────────────────────────────────────────────────────
 
 lk.card(r_book)
 let bk = lk.card_head(r_book, "ORDER BOOK")
 let spread = q.ask - q.bid
 txt("{nf.px(spread)} spread", Rect(r_book.x, r_book.y, r_book.w - 14, 38), lk.mono(11, lk.DIM), "right")
 let depth = clamp(int((bk.h - 24 - 44 - 10) / 44), lo: 4, hi: 12)
-// The rows share whatever height the card has, so the ladder ends at its foot.
+# The rows share whatever height the card has, so the ladder ends at its foot.
 let LV_H = float(bk.h - 24 - 44 - 10) / float(depth * 2)
 let book = mk.book(sel, q.bid, q.ask, clock, depth)
 let bcols = [{label: "PRICE", x: 14, w: 64, align: "left"}, {label: "SIZE", x: 78, w: r_book.w - 170, align: "right"},
@@ -607,7 +607,7 @@ for half in [0, 1] do
   let levels = if half == 0 then book.asks else book.bids end
   let tone = if half == 0 then lk.DOWN else lk.UP end
   for k in range(0, depth) do
-    // Asks are listed far-to-near, so the best ask sits just above the spread.
+    # Asks are listed far-to-near, so the best ask sits just above the spread.
     let lv = if half == 0 then levels[depth - 1 - k] else levels[k] end
     let ry = if half == 0 then ladder_y + k * LV_H else ladder_y + depth * LV_H + 44 + k * LV_H end
     let row = Rect(bk.x + 6, ry, bk.w - 12, LV_H)
@@ -619,7 +619,7 @@ for half in [0, 1] do
         book_click = lv.p
       end
     end
-    // A marker on a level where one of the account's own orders rests.
+    # A marker on a level where one of the account's own orders rests.
     for o in orders do
       if o.status == "open" && o.i == sel && abs(o.limit - lv.p) * 2 < mk.level_step(q.bid) + 1 then
         draw_rect_rounded(Rect(row.x, row.y + 5, 3, LV_H - 10), 1, lk.AMBER)
@@ -634,14 +634,14 @@ if book_click > 0 then
   px_text = plain_px(book_click)
   edit = ""
 end
-// The spread row: the last trade, and which side it hit.
+# The spread row: the last trade, and which side it hit.
 let sp = Rect(bk.x + 6, ladder_y + depth * LV_H + 4, bk.w - 12, 36)
 draw_rect_rounded(sp, 6, mix(lk.WELL, lk.dir_color(q.side), 0.10 + 0.20 * fl_sel))
 txt(nf.px(q.last), Rect(sp.x + 10, sp.y, 110, sp.h), lk.mono(15, lk.dir_color(q.side)))
 txt(if q.side > 0 then "lifted the ask" else "hit the bid" end, Rect(sp.x, sp.y, sp.w - 10, sp.h),
   lk.ui(11, lk.MUTED), "right")
 
-// ── Time and sales ──────────────────────────────────────────────────────────
+# ── Time and sales ──────────────────────────────────────────────────────────
 
 lk.card(r_tape)
 let tp = lk.card_head(r_tape, "TIME & SALES")
@@ -659,13 +659,13 @@ for k in range(0, tape_rows) do
   if fresh > 0.0 then
     draw_rect_rounded(Rect(row.x + 6, row.y, row.w - 12, row.h), 4, tone, int(34.0 * fresh))
   end
-  // A print several times the usual size is a block: set it brighter.
+  # A print several times the usual size is a block: set it brighter.
   let big = pr.sz >= u.lot * 4
   table_row(row, tcols, [[nf.hhmmss(pr.t), lk.mono(12, lk.DIM), "left"], [nf.px(pr.p), lk.mono(12, tone), "right"],
     [nf.commas(pr.sz), lk.mono(12, if big then lk.TEXT else lk.MUTED end), "right"]])
 end
 
-// ── Blotter ─────────────────────────────────────────────────────────────────
+# ── Blotter ─────────────────────────────────────────────────────────────────
 
 lk.card(r_blot)
 let tab_labels = ["Positions  {n_positions}", "Orders  {n_working}", "Fills  {len(fills)}"]
@@ -739,7 +739,7 @@ if tab == 0 then
       lk.ui(13, lk.DIM), "center")
   end
 
-  // Where the account's money is: one segment a holding, the rest cash.
+  # Where the account's money is: one segment a holding, the rest cash.
   let total = float(max(1, cash + value_of(m, pos_qty)))
   let ay = r_blot.y + r_blot.h - FOOT
   lk.hline(tb.x + 14, ay, tb.w - 28, lk.SOFT)
@@ -768,7 +768,7 @@ elsif tab == 1 then
     ["TYPE", 0.8, "left"], ["QTY", 0.9, "right"], ["FILLED", 0.9, "right"], ["LIMIT", 1.0, "right"],
     ["LAST", 1.0, "right"], ["AWAY", 0.9, "right"], ["STATUS", 1.1, "right"], ["", 1.0, "right"]])
   table_head(Rect(tb.x, tb.y, tb.w, 26), cols)
-  // Working orders first, then what has finished, newest first within each.
+  # Working orders first, then what has finished, newest first within each.
   let shown = filter(orders, fn(o) -> o.status == "open") ++ filter(orders, fn(o) -> o.status != "open")
   order_scroll = scroll_update(order_scroll, len(shown), rows_fit, body)
   for k in range(0, min(rows_fit, len(shown) - order_scroll)) do
@@ -835,7 +835,7 @@ if cancel_id > 0 then
   cancel_order(cancel_id)
 end
 if close_i >= 0 then
-  // "Close" stages a market sell of the free shares; it does not send it.
+  # "Close" stages a market sell of the free shares; it does not send it.
   sel = close_i
   side = -1
   kind = "mkt"
@@ -843,9 +843,9 @@ if close_i >= 0 then
   edit = ""
 end
 
-// ── Order ticket ────────────────────────────────────────────────────────────
-// Drawn after everything that can stage an order (a chart click, a book
-// level, a position's Close), so it validates what is on it this frame.
+# ── Order ticket ────────────────────────────────────────────────────────────
+# Drawn after everything that can stage an order (a chart click, a book
+# level, a position's Close), so it validates what is on it this frame.
 
 let tu = mk.UNIVERSE[sel]
 let tq = m.q[sel]
@@ -869,7 +869,7 @@ if kind == "mkt" && edit == "px" then
   edit = ""
 end
 
-// The fields. A press outside both gives the keyboard back to the screen.
+# The fields. A press outside both gives the keyboard back to the screen.
 let f_qty = Rect(tx, r_ticket.y + 174, tw, 36)
 let f_px = Rect(tx, r_ticket.y + 268, tw, 36)
 if mouse_pressed(0) && !hovered(f_qty) && !hovered(f_px) then
@@ -882,9 +882,9 @@ let buying_power = cash - reserved_cash
 txt("QUANTITY", Rect(tx, r_ticket.y + 152, 120, 20), lk.caps(lk.MUTED))
 txt(if held > 0 then "holding {nf.commas(held)}" else "no position" end, Rect(tx, r_ticket.y + 152, tw, 20),
   lk.ui(11, lk.DIM), "right")
-// The fields read the runtime's focus. This app moves its own focus id
-// itself ("q", Tab, a fill), so a move is handed to the runtime
-// before the fields run. A press on a field is already the runtime's.
+# The fields read the runtime's focus. This app moves its own focus id
+# itself ("q", Tab, a fill), so a move is handed to the runtime
+# before the fields run. A press on a field is already the runtime's.
 state synced_edit = ""
 if edit != synced_edit then
   focus_request(if edit == "" then nil else edit end)
@@ -905,7 +905,7 @@ end
 if lk.step_cell(Rect(f_qty.x + f_qty.w - 32, f_qty.y, 32, f_qty.h), true, true) then
   qty_text = str(min(MAX_QTY, (parse_int(qty_text) ?? 0) + qty_step))
 end
-// Quick sizes. "Max" is what the account can afford, or every free share.
+# Quick sizes. "Max" is what the account can afford, or every free share.
 let chip_w = (float(tw) - 4.0 * 6.0) / 5.0
 let presets = [10, 50, 100, 500]
 for k in range(0, 5) do
@@ -943,11 +943,11 @@ if lk.step_cell(Rect(f_px.x + f_px.w - 32, f_px.y, 32, f_px.h), true, limit_on) 
   px_text = plain_px((nf.parse_cents(px_text) ?? 0) + px_step)
 end
 if typing_key then
-  // The key that opened the field is not also typed into it.
+  # The key that opened the field is not also typed into it.
   qty_text = nf.digits_only(qty_text, false)
 end
 
-// What the ticket says, checked against the account.
+# What the ticket says, checked against the account.
 let t_qty = parse_int(qty_text) ?? 0
 let t_px = if limit_on then nf.parse_cents(px_text) ?? 0 else 0 end
 let sweep = mk.sweep(sel, tq.bid, tq.ask, clock, side, max(1, t_qty), 0)
@@ -966,7 +966,7 @@ elsif side < 0 && t_qty > free_sh then "The account holds only {nf.commas(held)}
 else ""
 end
 let can_submit = ticket_error == ""
-// An empty quantity is a prompt, not a mistake.
+# An empty quantity is a prompt, not a mistake.
 let is_prompt = (t_qty <= 0 || (limit_on && t_px <= 0)) && !(side < 0 && held <= 0)
 
 let after_bp = if side > 0 then buying_power - est - fee
@@ -988,7 +988,7 @@ for k in range(0, len(lines)) do
   txt(lines[k][1], row, lk.mono(12, lines[k][2]), "right")
 end
 
-// The verdict line, which shakes when a bad order is sent.
+# The verdict line, which shakes when a bad order is sent.
 shake = approach(shake, 0.0, 9.0)
 let wobble = sin(shake * 22.0) * 6.0 * shake
 let msg_r = Rect(tx + wobble, r_ticket.y + 444, tw, 18)
@@ -1010,7 +1010,7 @@ let tone = if side > 0 then lk.UP else lk.DOWN end
 if lk.button(send_r, verb ++ terms, tone, can_submit) then
   want_submit = true
 end
-// A press on the disabled button still counts as trying to send.
+# A press on the disabled button still counts as trying to send.
 if !can_submit && lk.press(send_r) then
   want_submit = true
 end
@@ -1029,8 +1029,8 @@ if want_submit then
   end
 end
 
-// ── Top bar ─────────────────────────────────────────────────────────────────
-// Last, so its account figures include an order sent this frame.
+# ── Top bar ─────────────────────────────────────────────────────────────────
+# Last, so its account figures include an order sent this frame.
 
 draw_rect(0, 0, W, TOP_H, lk.PANEL)
 lk.hline(0, TOP_H, W, lk.LINE)
@@ -1041,7 +1041,7 @@ draw_polyline([{x: logo.x + 6, y: logo.y + 19}, {x: logo.x + 11, y: logo.y + 12}
 txt("MERIDIAN", Rect(logo.x + 38, 10, 120, 20), {size: 13, font: "ui", color: lk.TEXT, weight: 600, spacing: 2.2})
 txt("Paper trading desk", Rect(logo.x + 38, 28, 140, 16), lk.ui(11, lk.DIM))
 
-// The market clock and the feed's transport.
+# The market clock and the feed's transport.
 let ckx = PAD + WATCH_W + GAP
 txt("{nf.weekday(clock)} {nf.day(clock)}", Rect(ckx, 10, 90, 16), lk.ui(11, lk.MUTED))
 txt(nf.hhmmss(clock), Rect(ckx, 26, 90, 20), lk.mono(15, lk.TEXT))
@@ -1063,12 +1063,12 @@ else
   speed = speed_i - 1
 end
 
-// Breadth: how many listings are up on the day, and the average move.
+# Breadth: how many listings are up on the day, and the average move.
 let ups = len(filter(change, fn(c) -> c > 0.0))
 let avg_chg = reduce(change, 0.0, fn(a, c) -> a + c) / float(N)
 let bar_end = live_r.x + live_r.w + 12 + 196
 
-// The account, recomputed from the cells so a fill this frame is in it.
+# The account, recomputed from the cells so a fill this frame is in it.
 let equity = cash + value_of(m, pos_qty)
 let session_pnl = equity - start_equity
 let open_buys = 0
@@ -1095,7 +1095,7 @@ for k in range(len(acct) - 1, -1, -1) do
   end
 end
 
-// The breadth meter takes whatever room the account left.
+# The breadth meter takes whatever room the account left.
 let brx = bar_end + 26
 if brx + 190 < ax then
   txt("MARKET", Rect(brx, 10, 80, 16), lk.caps(lk.DIM))
@@ -1106,7 +1106,7 @@ if brx + 190 < ax then
   txt("{ups} up  {N - ups} down", Rect(bar.x, 10, 100, 16), lk.ui(11, lk.MUTED))
 end
 
-// ── Toasts ──────────────────────────────────────────────────────────────────
+# ── Toasts ──────────────────────────────────────────────────────────────────
 
 set toasts = for t in toasts do
   if t.age + frame_dt > TOAST_SECS then continue end
@@ -1117,8 +1117,8 @@ for k in range(0, len(toasts)) do
   let tone = if t.kind == "buy" then lk.UP elsif t.kind == "sell" then lk.DOWN else lk.AMBER end
   let style = lk.ui(12, lk.TEXT)
   let w = text_width(t.text, style) + 44
-  // A toast raised on a frame with no time in it (an injected click) is
-  // still legible: the fade-in starts from a third, not from nothing.
+  # A toast raised on a frame with no time in it (an injected click) is
+  # still legible: the fade-in starts from a third, not from nothing.
   let a_in = clamp(0.35 + t.age / 0.15, lo: 0.0, hi: 1.0)
   let a_out = clamp((TOAST_SECS - t.age) / 0.5, lo: 0.0, hi: 1.0)
   let a = min(a_in, a_out)
@@ -1130,12 +1130,12 @@ for k in range(0, len(toasts)) do
   draw_text(t.text, {x: tr.x + 30, y: tl.text_line_y(tr, style)}, lk.ui(12, {r: lk.TEXT.r, g: lk.TEXT.g, b: lk.TEXT.b, a: int(255 * a)}))
 end
 
-// Keep ticking while the feed runs or anything is still easing.
+# Keep ticking while the feed runs or anything is still easing.
 if !paused || lk.busy() || len(toasts) > 0 || shake > 0.0 then
   request_frame()
 end
 
-// ── What a test can assert on ───────────────────────────────────────────────
+# ── What a test can assert on ───────────────────────────────────────────────
 
 let obs_symbol = mk.UNIVERSE[sel].tk
 let obs_sel = sel

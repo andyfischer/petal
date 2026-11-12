@@ -1,5 +1,5 @@
-// Starfield — warp drive.
-// 3D star projection with motion trails.
+# Starfield — warp drive.
+# 3D star projection with motion trails.
 
 import ui
 
@@ -49,7 +49,7 @@ for s in stars do
 end
 stars = new_stars
 
-// === Draw ===
+# === Draw ===
 clear(0, 0, 8)
 
 for s in stars do

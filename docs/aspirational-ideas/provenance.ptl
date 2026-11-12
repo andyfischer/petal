@@ -1,15 +1,15 @@
-// Provenance Tracking
-// Trace what inputs influenced each computed value.
-// See ../../PETAL_GOALS.md for the motivation behind this API.
-//
-// Key methods used here:
-//   program.trace(args...)         -- run with tracing, returns Trace
-//   trace.steps / trace.result    -- inspect execution
-//   trace.influences(name)        -- what influenced a variable?
-//   trace.path(from, to)          -- dataflow path between names
-//   trace.print()                 -- human-readable output
+# Provenance Tracking
+# Trace what inputs influenced each computed value.
+# See ../../PETAL_GOALS.md for the motivation behind this API.
+#
+# Key methods used here:
+#   program.trace(args...)         -- run with tracing, returns Trace
+#   trace.steps / trace.result    -- inspect execution
+#   trace.influences(name)        -- what influenced a variable?
+#   trace.path(from, to)          -- dataflow path between names
+#   trace.print()                 -- human-readable output
 
-// --- Example 1: Simple trace ---
+# --- Example 1: Simple trace ---
 
 fn compute(a, b)
   let sum = a + b
@@ -30,17 +30,17 @@ let t = prog.trace()
 print("=== Execution Trace ===")
 print("compute(10, 20):")
 t.print()
-// Expected output:
-//   a = 10
-//   b = 20
-//   sum = a + b -> 30
-//   doubled = sum * 2 -> 60
-//   return: 60
+# Expected output:
+#   a = 10
+#   b = 20
+#   sum = a + b -> 30
+#   doubled = sum * 2 -> 60
+#   return: 60
 print("Steps:", t.step_count())
 print("")
 
-// --- Example 2: Provenance query ---
-// "What inputs influenced the final result?"
+# --- Example 2: Provenance query ---
+# "What inputs influenced the final result?"
 
 let weighted_prog = Program.parse("""
     fn weighted(x, y, z)
@@ -59,14 +59,14 @@ print("What influenced 'result' in weighted(3, 4, 5)?")
 for item in chain do
   print("  ", item.name, "(", item.op, ")")
 end
-// Shows: x -> temp -> result, y -> result
-// Does NOT include z or unused
+# Shows: x -> temp -> result, y -> result
+# Does NOT include z or unused
 
-// Check specific contributions
+# Check specific contributions
 print("Did 'z' contribute to result?", t2.contributed?("unused", to: "result"))
 print("")
 
-// --- Example 3: Tracing through a stack ---
+# --- Example 3: Tracing through a stack ---
 
 let counter_prog = Program.parse("""
     fn counter()
@@ -89,10 +89,10 @@ let t3 = stack.trace()
 print("=== Stateful Trace ===")
 print("Three invocations of counter():")
 t3.print()
-// Shows state reads and writes across invocations
+# Shows state reads and writes across invocations
 print("Final result:", t3.result)
 
-// --- Example 4: Dataflow path ---
+# --- Example 4: Dataflow path ---
 
 let pipeline_prog = Program.parse("""
     let raw = 100
@@ -110,4 +110,4 @@ print("Path from 'raw' to 'formatted':")
 for step in path do
   print("  ", step.name, "=", step.output)
 end
-// raw=100 -> parsed=200 -> validated=201 -> formatted="201"
+# raw=100 -> parsed=200 -> validated=201 -> formatted="201"

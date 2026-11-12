@@ -1,6 +1,6 @@
-// Nature of Code - Forces
-// Inspired by Chapter 2: Forces
-// Objects with gravity, wind, and friction - click to add wind
+# Nature of Code - Forces
+# Inspired by Chapter 2: Forces
+# Objects with gravity, wind, and friction - click to add wind
 
 import ui
 
@@ -15,7 +15,7 @@ let sh = float(screen_height())
 let ground_y = sh - 40.0
 time += delta
 
-// Initialize objects with different masses
+# Initialize objects with different masses
 if len(objects) == 0 then
   for i in range(0, 15) do
     let mass = 0.5 + random(0.0, 4.0)
@@ -30,9 +30,9 @@ if len(objects) == 0 then
   end
 end
 
-// Wind from mouse click
+# Wind from mouse click
 if mouse_down(0) then
-  // Wind blows toward mouse
+  # Wind blows toward mouse
   let mx = float(mouse_x())
   if mx < sw / 2.0 then
     wind_x = -200.0
@@ -47,16 +47,16 @@ if wind_timer < 0.0 then
   wind_x = wind_x * 0.95
 end
 
-// Apply forces and update
+# Apply forces and update
 let new_objects = []
 for obj in objects do
-  // Gravity (F = m * g, but a = F/m = g, same for all)
+  # Gravity (F = m * g, but a = F/m = g, same for all)
   let gravity = 400.0
 
-  // Wind (same force for all, so lighter objects affected more: a = F/m)
+  # Wind (same force for all, so lighter objects affected more: a = F/m)
   let wind_ax = wind_x / obj.mass
 
-  // Friction (when on ground)
+  # Friction (when on ground)
   let friction_x = 0.0
   if obj.y >= ground_y - obj.mass * 12.0 then
     let friction_coeff = 0.3
@@ -67,7 +67,7 @@ for obj in objects do
     end
   end
 
-  // Air drag (proportional to velocity squared)
+  # Air drag (proportional to velocity squared)
   let speed = sqrt(obj.vx * obj.vx + obj.vy * obj.vy)
   let drag_coeff = 0.01 / obj.mass
   let drag_x = 0.0
@@ -77,7 +77,7 @@ for obj in objects do
     drag_y = -drag_coeff * obj.vy * speed
   end
 
-  // Sum accelerations
+  # Sum accelerations
   let ax = wind_ax + friction_x + drag_x
   let ay = gravity + drag_y
 
@@ -86,7 +86,7 @@ for obj in objects do
   let nx = obj.x + nvx * delta
   let ny = obj.y + nvy * delta
 
-  // Ground collision
+  # Ground collision
   let radius = obj.mass * 12.0
   if ny > ground_y - radius then
     ny = ground_y - radius
@@ -94,11 +94,11 @@ for obj in objects do
     if abs(nvy) < 20.0 then nvy = 0.0 end
   end
 
-  // Wall bounce
+  # Wall bounce
   if nx < radius then nx = radius; nvx = abs(nvx) * 0.7 end
   if nx > sw - radius then nx = sw - radius; nvx = -abs(nvx) * 0.7 end
 
-  // Ceiling
+  # Ceiling
   if ny < radius then ny = radius; nvy = abs(nvy) * 0.5 end
 
   new_objects = append(new_objects, {
@@ -108,17 +108,17 @@ for obj in objects do
 end
 objects = new_objects
 
-// === Drawing ===
+# === Drawing ===
 clear(20, 20, 30)
 
-// Sky gradient
+# Sky gradient
 for i in range(0, 8) do
   let gy = i * int(sh) / 8
   let gb = 30 + i * 3
   draw_rect(x: 0, y: gy, w: int(sw), h: int(sh) / 8 + 1, r: 20, g: 20, b: gb)
 end
 
-// Wind indicator
+# Wind indicator
 if abs(wind_x) > 5.0 then
   let arrow_len = int(min(100.0, abs(wind_x) * 0.5))
   let arrow_y = 50
@@ -133,15 +133,15 @@ if abs(wind_x) > 5.0 then
   draw_text("WIND", x: arrow_x - 15, y: arrow_y - 20, size: 12, r: 200, g: 200, b: 100)
 end
 
-// Ground
+# Ground
 draw_rect(x: 0, y: int(ground_y), w: int(sw), h: int(sh) - int(ground_y), r: 40, g: 50, b: 35)
 draw_line(0, int(ground_y), int(sw), int(ground_y), 70, 90, 50)
 
-// Draw objects
+# Draw objects
 for obj in objects do
   let radius = int(obj.mass * 12.0)
 
-  // Color from hue (simplified HSV)
+  # Color from hue (simplified HSV)
   let h = obj.hue % 360
   let cr = 0
   let cg = 0
@@ -157,18 +157,18 @@ for obj in objects do
   cg = min(255, cg)
   cb = min(255, cb)
 
-  // Shadow
+  # Shadow
   draw_circle(cx: int(obj.x) + 3, cy: int(ground_y) - 2, radius: max(3, radius / 2), r: 20, g: 25, b: 15)
 
-  // Object glow
+  # Object glow
   draw_circle(cx: int(obj.x), cy: int(obj.y), radius: radius + 3, r: cr / 4, g: cg / 4, b: cb / 4)
-  // Object body
+  # Object body
   draw_circle(cx: int(obj.x), cy: int(obj.y), radius: radius, r: cr, g: cg, b: cb)
-  // Highlight
+  # Highlight
   draw_circle(cx: int(obj.x) - radius / 3, cy: int(obj.y) - radius / 3,
     radius: max(2, radius / 3), r: min(255, cr + 80), g: min(255, cg + 80), b: min(255, cb + 80))
 
-  // Velocity vector
+  # Velocity vector
   let vlen = min(30.0, sqrt(obj.vx * obj.vx + obj.vy * obj.vy) * 0.08)
   if vlen > 2.0 then
     let vd = sqrt(obj.vx * obj.vx + obj.vy * obj.vy) + 0.1

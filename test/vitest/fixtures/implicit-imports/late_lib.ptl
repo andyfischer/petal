@@ -1,8 +1,8 @@
-// The trap a plain `import ui` arms: `spinner` is also a `ui` export
-// (3 or 4 arguments), and this module declares its own *below* the function
-// that calls it. A declaration held back merely because the name is in scope
-// would bind this call to the prelude's `spinner` and fail on arity — with no
-// warning, since the module's own function is right there.
+# The trap a plain `import ui` arms: `spinner` is also a `ui` export
+# (3 or 4 arguments), and this module declares its own *below* the function
+# that calls it. A declaration held back merely because the name is in scope
+# would bind this call to the prelude's `spinner` and fail on arity — with no
+# warning, since the module's own function is right there.
 
 import ui
 

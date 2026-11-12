@@ -1,19 +1,19 @@
-// dm-title: a flex-row-like layout from text widths and padding
-// dm-level: L8
-//
-// A menu bar: each button is as wide as its label (`text_width`, an int)
-// plus `pad` on both sides, laid out left to right with `gap` between, by a
-// recursive `layout_row` over the list of labels. Widening one button is
-// `pad` (the label's width cannot be dragged); moving the last button with
-// the first one fixed is `gap` or `pad`. `font_size` only moves things in
-// whole-pixel steps of `text_width` (a step function), so the solver
-// should avoid it.
-//
-// dm-goal widen-first: rect#1.2 += 10 | expect=pad
-// dm-goal last-right: rect#5.0 += 20, rect#1.0 += 0 | expect=gap,pad
-// dm-goal last-right-client: rect#5.0 += 20, rect#1.0 += 0 | deny=var:font_size expect=gap,pad
-// dm-goal label-x: text#2.1 += 12, text#0.1 += 0 | expect=gap,pad
-// dm-goal bar-down: rect#1.1 += 10 | expect=y0
+# dm-title: a flex-row-like layout from text widths and padding
+# dm-level: L8
+#
+# A menu bar: each button is as wide as its label (`text_width`, an int)
+# plus `pad` on both sides, laid out left to right with `gap` between, by a
+# recursive `layout_row` over the list of labels. Widening one button is
+# `pad` (the label's width cannot be dragged); moving the last button with
+# the first one fixed is `gap` or `pad`. `font_size` only moves things in
+# whole-pixel steps of `text_width` (a step function), so the solver
+# should avoid it.
+#
+# dm-goal widen-first: rect#1.2 += 10 | expect=pad
+# dm-goal last-right: rect#5.0 += 20, rect#1.0 += 0 | expect=gap,pad
+# dm-goal last-right-client: rect#5.0 += 20, rect#1.0 += 0 | deny=var:font_size expect=gap,pad
+# dm-goal label-x: text#2.1 += 12, text#0.1 += 0 | expect=gap,pad
+# dm-goal bar-down: rect#1.1 += 10 | expect=y0
 
 import ui
 

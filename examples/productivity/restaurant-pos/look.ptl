@@ -1,19 +1,19 @@
-// Juniper & Ash: palette, type, money and the touch controls.
-//
-// A warm paper ground under an espresso top bar. One terracotta accent for
-// the action that matters on each surface, a sage green for "done" (sent,
-// paid), and the category hues for nothing but telling the menu apart.
-// Hit targets are 48 px or more: this is a screen people press with a thumb
-// while carrying plates.
+# Juniper & Ash: palette, type, money and the touch controls.
+#
+# A warm paper ground under an espresso top bar. One terracotta accent for
+# the action that matters on each surface, a sage green for "done" (sent,
+# paid), and the category hues for nothing but telling the menu apart.
+# Hit targets are 48 px or more: this is a screen people press with a thumb
+# while carrying plates.
 
 import text_layout as tl
 import ui
 
-// ── Palette ─────────────────────────────────────────────────────────────────
+# ── Palette ─────────────────────────────────────────────────────────────────
 
-pub let PAPER   = :f3eee6        // the floor everything sits on
+pub let PAPER   = :f3eee6        # the floor everything sits on
 pub let CARD    = :fffdf9
-pub let WELL    = :ece5da        // inset fields, stepper wells
+pub let WELL    = :ece5da        # inset fields, stepper wells
 pub let SUNK    = :e6dfd3
 pub let LINE    = :e1d8cb
 pub let RULE    = :ece6dc
@@ -21,21 +21,21 @@ pub let INK     = :2b241f
 pub let SOFT    = :5b5149
 pub let MUTED   = :8c8177
 pub let FAINT   = :b4aa9f
-pub let BAR     = :2a2320        // the top bar
+pub let BAR     = :2a2320        # the top bar
 pub let BAR_UP  = :3a312c
 pub let BAR_INK = :f5eee4
 pub let BAR_MUT = :a99c8f
-pub let ACCENT  = :c4532f        // terracotta
+pub let ACCENT  = :c4532f        # terracotta
 pub let ACCENT_D = :a8401f
 pub let SAGE    = :4f8a5f
 pub let AMBER   = :c98a1b
 pub let RED     = :c23b33
 pub let WHITE   = :ffffff
 
-// ── Type ────────────────────────────────────────────────────────────────────
-// Interface text in Inter; money in the monospace face so a column of prices
-// lines up on the decimal point; the house name and the table title in a
-// serif, for the menu-card feel.
+# ── Type ────────────────────────────────────────────────────────────────────
+# Interface text in Inter; money in the monospace face so a column of prices
+# lines up on the decimal point; the house name and the table title in a
+# serif, for the menu-card feel.
 
 pub fn ui(size: num, color: record) -> record
   {size: size, font: "ui", color: color}
@@ -69,8 +69,8 @@ pub fn with_alpha(c: record, a: num) -> record
   {r: c.r, g: c.g, b: c.b, a: int(a)}
 end
 
-// ── Money ───────────────────────────────────────────────────────────────────
-// Integer cents throughout; nothing goes through a float on its way to text.
+# ── Money ───────────────────────────────────────────────────────────────────
+# Integer cents throughout; nothing goes through a float on its way to text.
 
 pub fn usd(cents: num) -> string
   let c = int(cents)
@@ -79,15 +79,15 @@ pub fn usd(cents: num) -> string
   "{sign}${commas(a / 100)}.{pad_start(str(a % 100), 2, "0")}"
 end
 
-// Round half up to the cent: `num / den` for non-negative integers.
+# Round half up to the cent: `num / den` for non-negative integers.
 pub fn div_round(n: num, d: num) -> int
   (int(n) * 2 + int(d)) / (int(d) * 2)
 end
 
-// ── Frame bookkeeping ───────────────────────────────────────────────────────
-// `_gate` turns the pointer off for a layer (the floor under an open sheet);
-// `_taken` lets one press do one thing, so the tap that opens a sheet does not
-// also land on whatever the sheet draws under the finger.
+# ── Frame bookkeeping ───────────────────────────────────────────────────────
+# `_gate` turns the pointer off for a layer (the floor under an open sheet);
+# `_taken` lets one press do one thing, so the tap that opens a sheet does not
+# also land on whatever the sheet draws under the finger.
 
 var _busy = false
 var _gate = true
@@ -124,7 +124,7 @@ pub fn press(r: record) -> bool
   end
 end
 
-// A press nobody has claimed yet, anywhere: the click outside a sheet.
+# A press nobody has claimed yet, anywhere: the click outside a sheet.
 pub fn stray_press() -> bool
   if !get _taken && mouse_pressed(0) then
     set _taken = true
@@ -138,9 +138,9 @@ pub fn held(r: record) -> bool
   get _gate && hovered(r) && mouse_down(0)
 end
 
-// `cur` eased toward `goal`. A frame with no time in it (one the debug server
-// ran for an injected click) lands on the goal, so a capture straight after an
-// input shows the control where it is going.
+# `cur` eased toward `goal`. A frame with no time in it (one the debug server
+# ran for an injected click) lands on the goal, so a capture straight after an
+# input shows the control where it is going.
 pub fn glide(cur: num, goal: num, rate: num) -> float
   let next = if dt() <= 0.0 then float(goal) else approach(float(cur), float(goal), rate) end
   if next != float(goal) then
@@ -149,7 +149,7 @@ pub fn glide(cur: num, goal: num, rate: num) -> float
   next
 end
 
-// A 0..1 value easing toward `on`, one per callsite (and per loop iteration).
+# A 0..1 value easing toward `on`, one per callsite (and per loop iteration).
 pub fn ease_flag(on: bool, rate: num = 18.0) -> float
   let goal = if on then 1.0 else 0.0 end
   state v = goal
@@ -157,7 +157,7 @@ pub fn ease_flag(on: bool, rate: num = 18.0) -> float
   v
 end
 
-// ── Chrome ──────────────────────────────────────────────────────────────────
+# ── Chrome ──────────────────────────────────────────────────────────────────
 
 pub fn surface(r: record, radius: num = 14) -> nil
   draw_shadow(r, {radius: radius, blur: 18, dy: 4, color: :5a4632, a: 30})
@@ -188,9 +188,9 @@ pub fn minus_plus(cx: num, cy: num, s: num, plus: bool, c: record) -> nil
   end
 end
 
-// ── Controls ────────────────────────────────────────────────────────────────
+# ── Controls ────────────────────────────────────────────────────────────────
 
-// A filled touch button. `tone` is its face; disabled, it goes to a flat well.
+# A filled touch button. `tone` is its face; disabled, it goes to a flat well.
 pub fn solid(r: record, label: string, tone: record, enabled: bool = true, o: record = {}) -> bool
   let h = ease_flag(enabled && hot(r))
   let down = enabled && held(r)
@@ -217,7 +217,7 @@ pub fn solid(r: record, label: string, tone: record, enabled: bool = true, o: re
   enabled && press(r)
 end
 
-// A quiet outlined button.
+# A quiet outlined button.
 pub fn ghost(r: record, label: string, tone: record = SOFT, enabled: bool = true, o: record = {}) -> bool
   let h = ease_flag(enabled && hot(r))
   let down = enabled && held(r)
@@ -230,8 +230,8 @@ pub fn ghost(r: record, label: string, tone: record = SOFT, enabled: bool = true
   enabled && press(r)
 end
 
-// A selectable chip: a choice in a group, a tip, a quick note. `on` fills it
-// with `tone`; `sub` is a second, quieter line (an option's price).
+# A selectable chip: a choice in a group, a tip, a quick note. `on` fills it
+# with `tone`; `sub` is a second, quieter line (an option's price).
 pub fn chip(r: record, label: string, on: bool, tone: record, o: record = {}) -> bool
   let enabled = field(o, "enabled", true)
   let sub = field(o, "sub", "")
@@ -245,7 +245,7 @@ pub fn chip(r: record, label: string, on: bool, tone: record, o: record = {}) ->
   let edge = mix(mix(LINE, tone, 0.25 * h), tone, k)
   draw_rect_rounded_outline(r, radius, edge, 255, 1.0 + k)
   let ink = if !enabled then FAINT else mix(INK, mix(tone, :000000, 0.25), k) end
-  // A wide chip leads with its check; a narrow one wears it on the corner.
+  # A wide chip leads with its check; a narrow one wears it on the corner.
   let corner = r.w < 120
   let lead = if k > 0.02 && !corner then 24 else 0 end
   if k > 0.02 then
@@ -267,7 +267,7 @@ pub fn chip(r: record, label: string, on: bool, tone: record, o: record = {}) ->
   enabled && press(r)
 end
 
-// A round − or + key.
+# A round − or + key.
 pub fn step_key(r: record, plus: bool, enabled: bool = true, tone: record = INK) -> bool
   let h = ease_flag(enabled && hot(r))
   let down = enabled && held(r)
@@ -276,7 +276,7 @@ pub fn step_key(r: record, plus: bool, enabled: bool = true, tone: record = INK)
   enabled && press(r)
 end
 
-// A segmented control with a sliding thumb.
+# A segmented control with a sliding thumb.
 pub fn segmented(r: record, labels: list, index: num, o: record = {}) -> int
   let n = max(1, len(labels))
   let size = field(o, "size", 14)

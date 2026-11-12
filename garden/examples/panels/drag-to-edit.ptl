@@ -1,16 +1,16 @@
-// ── Drag a shape, change the code ────────────────────────
-//   garden petal-ide examples/panels/drag-to-edit.ptl
-//
-// Cmd-drag any shape on the canvas and watch the numbers in
-// this file move under your pointer. Cmd-click without
-// dragging still jumps the cursor to the line that drew it.
-//
-// You never say which text to change: you say where the shape
-// should be, and Petal answers with the edit. The `tunable`
-// bindings below are how this sketch tells it which variables
-// are its tuning knobs: they are moved first. `:DragNext`
-// writes the next-best answer instead, and `:DragAllow x0`
-// says which variable the next drags may move.
+# ── Drag a shape, change the code ────────────────────────
+#   garden petal-ide examples/panels/drag-to-edit.ptl
+#
+# Cmd-drag any shape on the canvas and watch the numbers in
+# this file move under your pointer. Cmd-click without
+# dragging still jumps the cursor to the line that drew it.
+#
+# You never say which text to change: you say where the shape
+# should be, and Petal answers with the edit. The `tunable`
+# bindings below are how this sketch tells it which variables
+# are its tuning knobs: they are moved first. `:DragNext`
+# writes the next-best answer instead, and `:DragAllow x0`
+# says which variable the next drags may move.
 
 import ui
 
@@ -22,27 +22,27 @@ let h = screen_height()
 
 clear(16, 18, 26)
 
-// ── 1. Literals ──────────────────────────────────────────
-// Both numbers are written right here, so a drag rewrites
-// this line and nothing else moves.
+# ── 1. Literals ──────────────────────────────────────────
+# Both numbers are written right here, so a drag rewrites
+# this line and nothing else moves.
 draw_rect(x: 46, y: 210, w: 96, h: 64, r: 90, g: 150, b: 220)
 draw_text("literals", x: 46, y: 284, size: 12, r: 130, g: 145, b: 175)
 
-// ── 2. One knob, two shapes ──────────────────────────────
-// Both squares read `edge`. Drag either one sideways and they
-// move together — the status bar says the edit is shared. The
-// y positions are literals, so they still move one at a time.
+# ── 2. One knob, two shapes ──────────────────────────────
+# Both squares read `edge`. Drag either one sideways and they
+# move together — the status bar says the edit is shared. The
+# y positions are literals, so they still move one at a time.
 draw_rect(x: edge, y: 60, w: 52, h: 52, r: 220, g: 120, b: 90)
 draw_rect(x: edge, y: 130, w: 52, h: 52, r: 130, g: 130, b: 230)
 draw_text("shared knob", x: edge, y: 200, size: 12, r: 130, g: 145, b: 175)
 
-// ── 3. Solved, not looked up ─────────────────────────────
-// There is no number to edit in `x0 + i * spacing`: a card's
-// position exists only at runtime. Drag any card anyway. Petal
-// re-runs the frame with each number nudged, sees that
-// `spacing` (a knob) and `x0` both move it, and moves
-// `spacing`: the whole row re-spaces around the card you are
-// holding. The status bar lists `x0` as the alternative.
+# ── 3. Solved, not looked up ─────────────────────────────
+# There is no number to edit in `x0 + i * spacing`: a card's
+# position exists only at runtime. Drag any card anyway. Petal
+# re-runs the frame with each number nudged, sees that
+# `spacing` (a knob) and `x0` both move it, and moves
+# `spacing`: the whole row re-spaces around the card you are
+# holding. The status bar lists `x0` as the alternative.
 let x0 = 46
 let row_y = 96
 for i in range(0, 4) do
@@ -50,11 +50,11 @@ for i in range(0, 4) do
 end
 draw_text("drag any card to re-space the row", x: x0, y: 152, size: 12, r: 130, g: 145, b: 175)
 
-// ── 5. Through a function ────────────────────────────────
-// The dots' positions come back from `orbit`, with trig in
-// between. Drag a dot and the numbers inside `orbit` (or the
-// call's arguments) are solved for, then checked by running
-// the edited code once more before anything is written.
+# ── 5. Through a function ────────────────────────────────
+# The dots' positions come back from `orbit`, with trig in
+# between. Drag a dot and the numbers inside `orbit` (or the
+# call's arguments) are solved for, then checked by running
+# the edited code once more before anything is written.
 fn orbit(cx, cy, radius, k)
   let a = k * 0.9
   {x: cx + radius * cos(a), y: cy + radius * sin(a)}
@@ -64,7 +64,7 @@ for k in range(0, 5) do
   draw_circle(p.x, p.y, 7, 200, 120, 220)
 end
 
-// ── 4. Text is a shape too ───────────────────────────────
+# ── 4. Text is a shape too ───────────────────────────────
 draw_text("cmd-drag me", x: 250, y: 250, size: 18, r: 235, g: 200, b: 120)
 
 draw_text("cmd-drag a shape — this file edits itself", x: 16, y: 20, size: 13, r: 200, g: 210, b: 235)

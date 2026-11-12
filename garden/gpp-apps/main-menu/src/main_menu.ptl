@@ -1,92 +1,92 @@
-// Garden's start screen — the drawer.
-//
-// A Petal graphical panel (see docs/petal-graphical-panels.md). Like the git and
-// sqlite drawers this is a FIXED, GENERIC script that bakes in no data: the
-// three lists arrive at runtime through the async `query(kind, arg)` native,
-// answered by the main-menu subprocess reading the recents tables of
-// ~/.garden/state/db.sqlite:
-//
-//   query("recents", "") → {
-//     projects: [ { path, name, last_opened_ms, open_count } … ],
-//     files:    [ { path, name, dir, project_name, last_opened_ms, open_count } … ],
-//     prs:      [ { repo, number, title, last_opened_ms } … ] }
-//
-// The provider derives every display field (basename, parent dir, project
-// name), so nothing here does path surgery.
-//
-// ACTIONS GO TO THE HOST, NOT THE APP. Opening a file, a folder, a PR, or the
-// native picker are `mutate(...)` calls that App::host_mutation intercepts
-// before any forwarding reaches the subprocess — the only channel a panel has
-// to ask Garden to act (`emit` is dropped for in-process panels, and only the
-// host can put a file in a pane):
-//
-//   mutate("open_project",     { path })            mutate("open_path", { path })
-//   mutate("open_pr",          { number })          mutate("open_file_dialog", { mode })
-//
-// The three sections are ONE flat selection list: up/down (and k/j) walk from
-// the last project into the first file and on into the PRs, Enter opens what is
-// selected. An empty section keeps its heading and shows a dim hint instead of
-// vanishing, so a first-ever launch — no database at all — still looks like the
-// menu it is rather than a broken screen.
-//
-// The host observes every named binding a frame makes and reports it at the
-// debug server (/state → panes[].panel.values), so `recents_ready`,
-// `project_count`, `file_count`, `pr_count`, `selected`, `row_count`,
-// `open_button`, `ROW_H` and `last_action` are the handles the integration
-// test drives this screen by — the script publishes nothing.
-//
-// Visually this is built on two layers. The host layer is petal-ui (prelude
-// level 3, core-libs/petal-ui/docs/widgets.md): `ui_theme()` mirrors Garden's palette
-// automatically, the hint bar and the text helpers come from the prelude, and
-// hierarchy uses the theme's type scale. On top of it sits **bloom**
-// (core-runtime/bloom), the pure-Petal component library Garden registers as
-// importable modules — the two buttons, the section count chips, the loading
-// skeletons and the row highlight's fade all come from there, and every one of
-// them animates without this file holding any animation state.
+# Garden's start screen — the drawer.
+#
+# A Petal graphical panel (see docs/petal-graphical-panels.md). Like the git and
+# sqlite drawers this is a FIXED, GENERIC script that bakes in no data: the
+# three lists arrive at runtime through the async `query(kind, arg)` native,
+# answered by the main-menu subprocess reading the recents tables of
+# ~/.garden/state/db.sqlite:
+#
+#   query("recents", "") → {
+#     projects: [ { path, name, last_opened_ms, open_count } … ],
+#     files:    [ { path, name, dir, project_name, last_opened_ms, open_count } … ],
+#     prs:      [ { repo, number, title, last_opened_ms } … ] }
+#
+# The provider derives every display field (basename, parent dir, project
+# name), so nothing here does path surgery.
+#
+# ACTIONS GO TO THE HOST, NOT THE APP. Opening a file, a folder, a PR, or the
+# native picker are `mutate(...)` calls that App::host_mutation intercepts
+# before any forwarding reaches the subprocess — the only channel a panel has
+# to ask Garden to act (`emit` is dropped for in-process panels, and only the
+# host can put a file in a pane):
+#
+#   mutate("open_project",     { path })            mutate("open_path", { path })
+#   mutate("open_pr",          { number })          mutate("open_file_dialog", { mode })
+#
+# The three sections are ONE flat selection list: up/down (and k/j) walk from
+# the last project into the first file and on into the PRs, Enter opens what is
+# selected. An empty section keeps its heading and shows a dim hint instead of
+# vanishing, so a first-ever launch — no database at all — still looks like the
+# menu it is rather than a broken screen.
+#
+# The host observes every named binding a frame makes and reports it at the
+# debug server (/state → panes[].panel.values), so `recents_ready`,
+# `project_count`, `file_count`, `pr_count`, `selected`, `row_count`,
+# `open_button`, `ROW_H` and `last_action` are the handles the integration
+# test drives this screen by — the script publishes nothing.
+#
+# Visually this is built on two layers. The host layer is petal-ui (prelude
+# level 3, core-libs/petal-ui/docs/widgets.md): `ui_theme()` mirrors Garden's palette
+# automatically, the hint bar and the text helpers come from the prelude, and
+# hierarchy uses the theme's type scale. On top of it sits **bloom**
+# (core-runtime/bloom), the pure-Petal component library Garden registers as
+# importable modules — the two buttons, the section count chips, the loading
+# skeletons and the row highlight's fade all come from there, and every one of
+# them animates without this file holding any animation state.
 
 import bloom
 import garden
 import ui
 
-// ── panel-local UI state ─────────────────────────────────────────────────────
+# ── panel-local UI state ─────────────────────────────────────────────────────
 state selected = 0
 state scroll_px = 0
-// The last activation this panel performed, by mutation name. Kept in `state`
-// because a mutation is a one-frame edge: the test reads the name a frame (or
-// several) after the click that caused it.
+# The last activation this panel performed, by mutation name. Kept in `state`
+# because a mutation is a one-frame edge: the test reads the name a frame (or
+# several) after the click that caused it.
 state last_action = ""
 
-// ── data (the query result, cached in `state` so we poll only until ready) ────
+# ── data (the query result, cached in `state` so we poll only until ready) ────
 state recents = {projects: [], files: [], prs: []}
 state recents_ready = false
 state recents_err = ""
 
-// ── theme ────────────────────────────────────────────────────────────────────
-// `ui_theme()` resolves to the host palette in Garden (bound every frame), so
-// the semantic tokens below already ARE Garden's colors. `palette()` is kept
-// only for the two hues the theme vocabulary doesn't carry (blue, purple) —
-// the per-section identity colors.
+# ── theme ────────────────────────────────────────────────────────────────────
+# `ui_theme()` resolves to the host palette in Garden (bound every frame), so
+# the semantic tokens below already ARE Garden's colors. `palette()` is kept
+# only for the two hues the theme vocabulary doesn't carry (blue, purple) —
+# the per-section identity colors.
 let T = ui_theme()
 let P = palette()
 
 let FS = T.font_md
 
-// ── geometry ─────────────────────────────────────────────────────────────────
+# ── geometry ─────────────────────────────────────────────────────────────────
 let w = screen_width()
 let h = screen_height()
 let PAD = 24
-let ROW_H = 44          // two text lines: the name, then its dim context line
-let HEAD_H = 30         // a section heading + its rule
-let HINT_H = 26         // the dim one-liner an empty section shows instead
+let ROW_H = 44          # two text lines: the name, then its dim context line
+let HEAD_H = 30         # a section heading + its rule
+let HINT_H = 26         # the dim one-liner an empty section shows instead
 let GAP = 20
-let HB_H = 28           // the bottom keyboard-hint bar
+let HB_H = 28           # the bottom keyboard-hint bar
 
-// A centered column: the screen is a start page, not a dense list, so it stays
-// readable rather than stretching a file path across a 2000px window.
+# A centered column: the screen is a start page, not a dense list, so it stays
+# readable rather than stretching a file path across a 2000px window.
 let col_w = min(760, w - 2 * PAD)
 let col_x = max(PAD, (w - col_w) / 2)
 
-// ── data: load once, then stop polling ───────────────────────────────────────
+# ── data: load once, then stop polling ───────────────────────────────────────
 if !recents_ready then
   let rd = query("recents", "")
   if is_ready(rd) then
@@ -94,8 +94,8 @@ if !recents_ready then
     recents_ready = true
     recents_err = ""
   elsif is_error(rd) then
-    // A reader failure is never fatal (a missing database answers with empty
-    // lists), so this is a genuine surprise — show it, keep the buttons live.
+    # A reader failure is never fatal (a missing database answers with empty
+    # lists), so this is a genuine surprise — show it, keep the buttons live.
     recents_err = error_of(rd) ?? "could not read recents"
     recents_ready = true
   end
@@ -107,8 +107,8 @@ let project_count = len(projects)
 let file_count = len(files)
 let pr_count = len(prs)
 
-// ── the flat row model: three sections, one selection ─────────────────────────
-// A row is its section plus its index into that section's list.
+# ── the flat row model: three sections, one selection ─────────────────────────
+# A row is its section plus its index into that section's list.
 enum Row
   project(idx),
   file(idx),
@@ -121,18 +121,18 @@ for i in range(0, file_count) do rows = append(rows, Row.file(i)) end
 for i in range(0, pr_count) do rows = append(rows, Row.pr(i)) end
 let row_count = len(rows)
 
-// ── header + the two Open buttons ─────────────────────────────────────────────
+# ── header + the two Open buttons ─────────────────────────────────────────────
 let title_y = PAD
 let btn_y = title_y + 62
 let BTN_H = 30
 let open_label = "Open File…"
 let folder_label = "Open Folder…"
-// Written as plain `{x, y, w, h}` records rather than `rect(…)`: every rect-taking
-// native accepts either, but only a record survives into /state → panel.values,
-// and a test that clicks Open by reading its geometry beats one that hardcodes it.
-// The icon each button carries costs about one label-height of width, so the
-// two are measured with it rather than being sized for text and then cropping
-// the glyph.
+# Written as plain `{x, y, w, h}` records rather than `rect(…)`: every rect-taking
+# native accepts either, but only a record survives into /state → panel.values,
+# and a test that clicks Open by reading its geometry beats one that hardcodes it.
+# The icon each button carries costs about one label-height of width, so the
+# two are measured with it rather than being sized for text and then cropping
+# the glyph.
 let open_button = {x: col_x, y: btn_y, w: text_width(open_label, FS) + 52, h: BTN_H}
 let folder_button = {x: open_button.x + open_button.w + 10, y: btn_y,
   w: text_width(folder_label, FS) + 52, h: BTN_H}
@@ -140,8 +140,8 @@ let folder_button = {x: open_button.x + open_button.w + 10, y: btn_y,
 let content_top = btn_y + BTN_H + 26
 let content_rect = {x: col_x, y: content_top, w: col_w, h: h - content_top - HB_H - 6}
 
-// ── layout pass: every row's offset inside the scrolled content ───────────────
-// Computed before input so a click and the draw agree on where a row is.
+# ── layout pass: every row's offset inside the scrolled content ───────────────
+# Computed before input so a click and the draw agree on where a row is.
 let cursor = 0
 let row_off = []
 let proj_head = cursor
@@ -169,7 +169,7 @@ else
 end
 let content_h = cursor
 
-// ── input: keyboard selection over the flat list ──────────────────────────────
+# ── input: keyboard selection over the flat list ──────────────────────────────
 let key_moved = false
 if key_pressed("down") || key_pressed("j") then selected += 1; key_moved = true end
 if key_pressed("up") || key_pressed("k") then selected -= 1; key_moved = true end
@@ -177,12 +177,12 @@ if key_pressed("home") then selected = 0; key_moved = true end
 if key_pressed("end") then selected = row_count - 1; key_moved = true end
 selected = int(clamp(selected, 0, max(0, row_count - 1)))
 
-// ── input: row clicks ─────────────────────────────────────────────────────────
-// `activate` names the row to open this frame (-1 = none): a click on it, or
-// Enter on the selection. Resolved before the mutations so both paths take one
-// code path. (The Open buttons are prelude `button(...)` calls in the draw
-// section below — they sit outside `content_rect`, so the two click regions
-// can't collide.)
+# ── input: row clicks ─────────────────────────────────────────────────────────
+# `activate` names the row to open this frame (-1 = none): a click on it, or
+# Enter on the selection. Resolved before the mutations so both paths take one
+# code path. (The Open buttons are prelude `button(...)` calls in the draw
+# section below — they sit outside `content_rect`, so the two click regions
+# can't collide.)
 let activate = -1
 if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), content_rect) then
   for i in range(0, row_count) do
@@ -193,10 +193,10 @@ if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), content_rect) then
     end
   end
 end
-// The host spells Return `"return"` (never `"enter"`) — see panel_key_name.
+# The host spells Return `"return"` (never `"enter"`) — see panel_key_name.
 if key_pressed("return") && row_count > 0 then activate = selected end
 
-// ── the activation itself: one host mutation per row kind ─────────────────────
+# ── the activation itself: one host mutation per row kind ─────────────────────
 if activate >= 0 && activate < row_count then
   match rows[activate]
     when Row.project(idx) ->
@@ -211,22 +211,22 @@ if activate >= 0 && activate < row_count then
   end
 end
 
-// ── input: scrolling (wheel over the content; keys pull the selection back) ───
+# ── input: scrolling (wheel over the content; keys pull the selection back) ───
 if hovered(content_rect) then scroll_px += scroll_y() * 24 end
 if key_moved && row_count > 0 then
   scroll_px = ensure_visible_px(scroll_px, row_off[selected], ROW_H, content_rect.h)
 end
 scroll_px = int(clamp(scroll_px, 0, max(0, content_h - content_rect.h)))
 
-// ── draw: chrome ──────────────────────────────────────────────────────────────
+# ── draw: chrome ──────────────────────────────────────────────────────────────
 clear(T.bg.r, T.bg.g, T.bg.b)
 draw_text("Garden", {x: col_x, y: title_y}, {size: T.font_xl, color: T.accent, weight: 700})
 draw_text("a place to start", {x: col_x, y: title_y + 32}, T.font_md, T.dim)
 
-// Two bloom buttons: the primary Open is the filled accent one, the folder its
-// plain twin — same shape and size, so the pair reads as one control group.
-// Both ripple from the point that was clicked and take Tab focus (`id`), which
-// is what makes the start screen reachable without a mouse.
+# Two bloom buttons: the primary Open is the filled accent one, the folder its
+# plain twin — same shape and size, so the pair reads as one control group.
+# Both ripple from the point that was clicked and take Tab focus (`id`), which
+# is what makes the start screen reachable without a mouse.
 if bloom.button(open_button, open_label,
                 {variant: "primary", icon: "file", size: FS, id: "open_file"}) then
   last_action = "open_file_dialog"
@@ -242,16 +242,16 @@ if len(recents_err) > 0 then
   draw_text(ellipsize(recents_err, col_w, FS), {x: col_x, y: btn_y + BTN_H + 6}, FS, T.danger)
 end
 
-// ── draw: the three sections ──────────────────────────────────────────────────
+# ── draw: the three sections ──────────────────────────────────────────────────
 clip(content_rect.x, content_rect.y, content_rect.w, content_rect.h)
 
-// A section heading: a small tracked-out label, the count right-aligned, and a
-// hairline rule under both.
+# A section heading: a small tracked-out label, the count right-aligned, and a
+# hairline rule under both.
 fn draw_heading(label, count, y)
   draw_text(label, {x: col_x, y: y}, {size: T.font_sm, color: T.muted, weight: 600, spacing: 0.8})
   if count > 0 then
-    // A bloom chip rather than a bare number, right-aligned by asking the
-    // library how wide it will be before drawing it.
+    # A bloom chip rather than a bare number, right-aligned by asking the
+    # library how wide it will be before drawing it.
     let cw = bloom.chip_width("{count}", {size: T.font_sm})
     bloom.chip(col_x + col_w - cw, y - 3, "{count}", {size: T.font_sm, color: T.muted})
   end
@@ -262,9 +262,9 @@ draw_heading("RECENT PROJECTS", project_count, content_top + proj_head - scroll_
 draw_heading("RECENT FILES", file_count, content_top + file_head - scroll_px)
 draw_heading("RECENT PULL REQUESTS", pr_count, content_top + pr_head - scroll_px)
 
-// While the recents query is still in flight there is nothing to say yet, so
-// the sections show bloom's shimmering skeleton rows rather than the "nothing
-// here" copy they would otherwise flash for a frame or two.
+# While the recents query is still in flight there is nothing to say yet, so
+# the sections show bloom's shimmering skeleton rows rather than the "nothing
+# here" copy they would otherwise flash for a frame or two.
 if !recents_ready then
   for i in range(0, 3) do
     bloom.skeleton(rect(col_x, content_top + proj_head + HEAD_H + i * 28 - scroll_px,
@@ -272,8 +272,8 @@ if !recents_ready then
   end
 end
 
-// An empty section says so rather than collapsing — on a first launch all three
-// are empty, and three headings over blank space would read as a failure.
+# An empty section says so rather than collapsing — on a first launch all three
+# are empty, and three headings over blank space would read as a failure.
 let hint_fg = mix(T.dim, T.bg, 0.35)
 if project_count == 0 && recents_ready then
   draw_text("No recent projects yet", {x: col_x, y: content_top + proj_head + HEAD_H - scroll_px}, FS, hint_fg)
@@ -289,17 +289,17 @@ for i in range(0, row_count) do
   let row = rows[i]
   let ry = content_top + row_off[i] - scroll_px
   let row_r = rect(content_rect.x, ry, content_rect.w, ROW_H)
-  // Cull rows scrolled out of the viewport: nothing below draws for them.
+  # Cull rows scrolled out of the viewport: nothing below draws for them.
   if ry + ROW_H > content_rect.y && ry < content_rect.y + content_rect.h then
-    // The selection and the hover wash both fade, through bloom's per-callsite
-    // animators — one per row, because the call is inside this loop. A jump
-    // from the first row to the last is then a movement you can follow instead
-    // of a highlight teleporting.
+    # The selection and the hover wash both fade, through bloom's per-callsite
+    # animators — one per row, because the call is inside this loop. A jump
+    # from the first row to the last is then a movement you can follow instead
+    # of a highlight teleporting.
     let sel_k = bloom.ease_flag(i == selected, 22.0)
     let hov_k = bloom.ease_flag(hovered(row_r) && i != selected, 16.0)
     if sel_k > 0.01 then
       draw_rect_rounded(row_r, T.radius_sm, mix(T.bg, T.selection, sel_k))
-      // The keyboard focus ring: the selection is where Enter lands.
+      # The keyboard focus ring: the selection is where Enter lands.
       draw_rect_outline(row_r, T.accent, int(90 * sel_k))
     end
     if hov_k > 0.01 then
@@ -308,7 +308,7 @@ for i in range(0, row_count) do
     let name_c = if i == selected then T.text else T.muted end
     let tx = row_r.x + 16
     let avail = row_r.w - 32
-    // The section identity bar: green project / blue file / purple PR.
+    # The section identity bar: green project / blue file / purple PR.
     let bar_c = match row
       when Row.project(_) -> T.success
       when Row.file(_) -> P.blue
@@ -323,8 +323,8 @@ for i in range(0, row_count) do
       when Row.file(idx) ->
         let f = files[idx]
         draw_text(ellipsize_tail(f.name, avail, FS), {x: tx, y: ry + 6}, {size: FS, color: name_c, weight: 500})
-        // The head of a long path is the expendable part — `ellipsize` keeps the
-        // tail, which is what tells two same-named files apart.
+        # The head of a long path is the expendable part — `ellipsize` keeps the
+        # tail, which is what tells two same-named files apart.
         let ctx = f.dir
         if len(f.project_name) > 0 then ctx = "{f.project_name} · {f.dir}" end
         draw_text(ellipsize(ctx, avail, T.font_sm), {x: tx, y: ry + 25}, T.font_sm, T.dim)
@@ -339,18 +339,18 @@ for i in range(0, row_count) do
 end
 clip_none()
 
-// A hint bar only while there is something to walk — the keys do nothing on an
-// empty screen, and saying otherwise is worse than saying nothing.
+# A hint bar only while there is something to walk — the keys do nothing on an
+# empty screen, and saying otherwise is worse than saying nothing.
 if row_count > 0 then
   hint_bar(rect(0, h - HB_H, w, HB_H),
            [hint("↑↓/jk", "move"), hint("return", "open")])
 end
 
-// Last, so they land on top of everything: bloom tooltips, which appear only
-// after the pointer has rested on a button for a moment.
+# Last, so they land on top of everything: bloom tooltips, which appear only
+# after the pointer has rested on a button for a moment.
 bloom.tooltip(open_button, "Open a file in this pane")
 bloom.tooltip(folder_button, "Open a folder as the project")
 
-// bloom defers its overlay painting so a component can be written where it
-// belongs and still land on top; this is where that painting happens.
+# bloom defers its overlay painting so a component can be written where it
+# belongs and still land on top; this is where that painting happens.
 bloom.overlays()

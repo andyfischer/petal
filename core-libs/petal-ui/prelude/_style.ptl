@@ -1,78 +1,78 @@
-// petal-ui style — module `ui/_style` (internal)
-//
-// The theme and the per-widget style lookups (`_get`, `_palette`, `_face`,
-// `_ts`, `_tm`) that every drawing module uses. It owns the live-theme cells,
-// so `theme_set` and friends live here too: a cell is written only by the
-// module that declares it. `ui/draw` re-exports the public names
-// (`theme`, `ui_theme`, `theme_set`, `theme_reset`, `theme_from_palette`);
-// the `_`-prefixed helpers are `pub` only for the package's other modules.
+# petal-ui style — module `ui/_style` (internal)
+#
+# The theme and the per-widget style lookups (`_get`, `_palette`, `_face`,
+# `_ts`, `_tm`) that every drawing module uses. It owns the live-theme cells,
+# so `theme_set` and friends live here too: a cell is written only by the
+# module that declares it. `ui/draw` re-exports the public names
+# (`theme`, `ui_theme`, `theme_set`, `theme_reset`, `theme_from_palette`);
+# the `_`-prefixed helpers are `pub` only for the package's other modules.
 
 import ./_base
 import io
 
-// ── Style ─────────────────────────────────────────────────────────────────
-// `theme` is the *default* palette. The live palette every prelude widget
-// paints with is `ui_theme()`, resolved in this order:
-//
-//   1. an explicit `theme_set(...)` — the app's own palette, merged over the
-//      resolved theme at the moment it was set;
-//   2. the host palette, when the embedder published one with
-//      `petal_ui::input::bind_host_palette` (Garden binds its full palette, so
-//      prelude widgets paint native there with zero script-side setup);
-//   3. the built-in default below.
-//
-//   theme_set({panel: #ffffff, text: #202020, outline: #d0d4da})   // light
-//   theme_set(theme_from_palette(palette()))                        // manual
-//
-// `theme_set` merges: keys you leave out keep their current value, so a light
-// panel is a three-line diff rather than a re-typed palette. Every widget also
-// takes an optional trailing `style` record that overrides the theme for that
-// one call (see `button`), and a style may omit any key — missing keys fall
-// through to `ui_theme()`. Between the two, no app has to reimplement a widget
-// just to change its colors.
-//
-// Beyond colors, the theme carries the scales widgets default their geometry
-// and typography from: spacing (space_sm/space/space_lg), corner radius
-// (radius_sm/radius/radius_lg), type sizes (font_sm/font_md/font_lg/font_xl),
-// the type *face* (`font`), and the elevation scale (elevation_1/2/3). Not
-// colors — but merged and overridden the same way.
-//
-// `font` is the face every widget sets its text in, and it is "ui" — the
-// host's proportional interface face — not the host's default face, which on
-// most hosts is monospace. A whole UI in monospace is the single loudest tell
-// that a panel was not designed, so the component library opts into
-// proportional type for you. A drawer that genuinely wants monospace chrome
-// (a diff viewer, a data grid) asks for it once:
-//
-//   theme_set({font: "mono"})
-//
-// and every widget follows. Text a drawer draws itself with the bare
-// `draw_text(s, pos, size, color)` form is untouched by this — that still
-// means "the host's own face", as it always has.
+# ── Style ─────────────────────────────────────────────────────────────────
+# `theme` is the *default* palette. The live palette every prelude widget
+# paints with is `ui_theme()`, resolved in this order:
+#
+#   1. an explicit `theme_set(...)` — the app's own palette, merged over the
+#      resolved theme at the moment it was set;
+#   2. the host palette, when the embedder published one with
+#      `petal_ui::input::bind_host_palette` (Garden binds its full palette, so
+#      prelude widgets paint native there with zero script-side setup);
+#   3. the built-in default below.
+#
+#   theme_set({panel: #ffffff, text: #202020, outline: #d0d4da})   // light
+#   theme_set(theme_from_palette(palette()))                        // manual
+#
+# `theme_set` merges: keys you leave out keep their current value, so a light
+# panel is a three-line diff rather than a re-typed palette. Every widget also
+# takes an optional trailing `style` record that overrides the theme for that
+# one call (see `button`), and a style may omit any key — missing keys fall
+# through to `ui_theme()`. Between the two, no app has to reimplement a widget
+# just to change its colors.
+#
+# Beyond colors, the theme carries the scales widgets default their geometry
+# and typography from: spacing (space_sm/space/space_lg), corner radius
+# (radius_sm/radius/radius_lg), type sizes (font_sm/font_md/font_lg/font_xl),
+# the type *face* (`font`), and the elevation scale (elevation_1/2/3). Not
+# colors — but merged and overridden the same way.
+#
+# `font` is the face every widget sets its text in, and it is "ui" — the
+# host's proportional interface face — not the host's default face, which on
+# most hosts is monospace. A whole UI in monospace is the single loudest tell
+# that a panel was not designed, so the component library opts into
+# proportional type for you. A drawer that genuinely wants monospace chrome
+# (a diff viewer, a data grid) asks for it once:
+#
+#   theme_set({font: "mono"})
+#
+# and every widget follows. Text a drawer draws itself with the bare
+# `draw_text(s, pos, size, color)` form is untouched by this — that still
+# means "the host's own face", as it always has.
 
 pub let theme = {
-  // Surfaces
-  bg: :14161c,          // window / canvas floor
-  panel: :1d2027,       // raised panel (original name; `surface` is its twin)
-  surface: :1d2027,     // card / widget surface
-  overlay: :262b34,     // floating layer: tooltips, key caps, badges
-  // Text
+  # Surfaces
+  bg: :14161c,          # window / canvas floor
+  panel: :1d2027,       # raised panel (original name; `surface` is its twin)
+  surface: :1d2027,     # card / widget surface
+  overlay: :262b34,     # floating layer: tooltips, key caps, badges
+  # Text
   text: :d8dee9,
-  muted: :aab4c2,       // secondary text
-  dim: :8a93a2,         // tertiary text (original name)
-  // Hues
+  muted: :aab4c2,       # secondary text
+  dim: :8a93a2,         # tertiary text (original name)
+  # Hues
   accent: :3c8cff,
   success: :3fb950,
   warn: :d29922,
   danger: :f85149,
-  // Lines
-  outline: :3a404c,     // original name; `border` is its twin
+  # Lines
+  outline: :3a404c,     # original name; `border` is its twin
   border: :3a404c,
   border_strong: :4d5566,
-  // Interaction
+  # Interaction
   hover: :262b34,
   selection: :2c4a7a,
-  // Scales (numbers, not colors)
+  # Scales (numbers, not colors)
   space_sm: 4,
   space: 8,
   space_lg: 16,
@@ -83,87 +83,87 @@ pub let theme = {
   font_md: 14,
   font_lg: 18,
   font_xl: 24,
-  // The face widget text is set in. See the section comment above.
+  # The face widget text is set in. See the section comment above.
   font: "ui",
-  // Elevation: how far off the surface a floating thing sits, as the
-  // `draw_shadow` opts record it expands to. One scale, three steps, so a
-  // card, a menu and a modal read as three heights of the *same* light rather
-  // than three unrelated grey rectangles. `dy` grows faster than `blur` on
-  // purpose — that is what reads as "further away" rather than "blurrier".
-  elevation_1: {blur: 6, spread: 0, dy: 1, a: 40},    // resting: cards, chips
-  elevation_2: {blur: 16, spread: 0, dy: 4, a: 56},   // floating: menus, popovers
-  elevation_3: {blur: 32, spread: 0, dy: 10, a: 72}   // lifted: modals, toasts
+  # Elevation: how far off the surface a floating thing sits, as the
+  # `draw_shadow` opts record it expands to. One scale, three steps, so a
+  # card, a menu and a modal read as three heights of the *same* light rather
+  # than three unrelated grey rectangles. `dy` grows faster than `blur` on
+  # purpose — that is what reads as "further away" rather than "blurrier".
+  elevation_1: {blur: 6, spread: 0, dy: 1, a: 40},    # resting: cards, chips
+  elevation_2: {blur: 16, spread: 0, dy: 4, a: 56},   # floating: menus, popovers
+  elevation_3: {blur: 32, spread: 0, dy: 10, a: 72}   # lifted: modals, toasts
 }
 
-// Field `key` of `rec`, or `fallback` when the record does not carry it. The
-// whole reason a style record can be partial. This is `std`'s `field`, which
-// programs can call directly — a module's body does not see the implicit
-// prelude import, so the ui prelude spells it locally.
+# Field `key` of `rec`, or `fallback` when the record does not carry it. The
+# whole reason a style record can be partial. This is `std`'s `field`, which
+# programs can call directly — a module's body does not see the implicit
+# prelude import, so the ui prelude spells it locally.
 pub fn _get(rec, key, fallback)
   rec[key] ?? fallback
 end
 
-// The face a widget draws in: this call's `style.font` if it names one, else
-// the theme's. Every widget resolves it exactly once, at the top.
+# The face a widget draws in: this call's `style.font` if it names one, else
+# the theme's. Every widget resolves it exactly once, at the top.
 pub fn _face(t, style)
   _get(style, "font", t.font)
 end
 
-// The text style a widget both *measures with* and *draws with*.
-//
-// This is the whole discipline of the widget set's typography: one record,
-// built once, handed to `text_width` and to `draw_text`. The bare
-// `draw_text(s, pos, size, color)` / `text_width(s, size)` pair cannot be used
-// inside a widget, because those two mean different things — the draw goes to
-// the host's default face while the measure falls back to the default *metric
-// table*, so a proportional face is drawn and a monospace one is measured, and
-// everything centred lands ~20% off. Passing one style record to both makes
-// that class of bug unrepresentable.
+# The text style a widget both *measures with* and *draws with*.
+#
+# This is the whole discipline of the widget set's typography: one record,
+# built once, handed to `text_width` and to `draw_text`. The bare
+# `draw_text(s, pos, size, color)` / `text_width(s, size)` pair cannot be used
+# inside a widget, because those two mean different things — the draw goes to
+# the host's default face while the measure falls back to the default *metric
+# table*, so a proportional face is drawn and a monospace one is measured, and
+# everything centred lands ~20% off. Passing one style record to both makes
+# that class of bug unrepresentable.
 pub fn _ts(face, size, color)
   {size: size, font: face, color: color}
 end
 
-// The measure-only half, for the input pass of a widget whose draw half is a
-// separate function (see `text_field_update`). The two must agree on size and
-// face or click-to-place lands the caret in the wrong character.
+# The measure-only half, for the input pass of a widget whose draw half is a
+# separate function (see `text_field_update`). The two must agree on size and
+# face or click-to-place lands the caret in the wrong character.
 pub fn _tm(face, size)
   {size: size, font: face}
 end
 
-// Every key the default theme carries, in order. `theme_set` merges by these
-// keys over the *resolved* current theme, so a partial theme never leaves a
-// widget reading nil.
+# Every key the default theme carries, in order. `theme_set` merges by these
+# keys over the *resolved* current theme, so a partial theme never leaves a
+# widget reading nil.
 let _THEME_KEYS = keys(theme)
 
-// The module cell holding an explicitly-set palette: one slot, shared by every
-// caller and preserved across hot reload. A top-level `state var` is the
-// sanctioned shape for cross-function shared state — the `get` at each read
-// site keeps the sharing visible.
+# The module cell holding an explicitly-set palette: one slot, shared by every
+# caller and preserved across hot reload. A top-level `state var` is the
+# sanctioned shape for cross-function shared state — the `get` at each read
+# site keeps the sharing visible.
 state var _live_theme = theme
 
-// Whether `theme_set` has been called: an explicit theme outranks the host
-// palette until `theme_reset`.
+# Whether `theme_set` has been called: an explicit theme outranks the host
+# palette until `theme_reset`.
 state var _theme_explicit = false
 
-// Cache of the host-defaulted theme, so the palette projection runs once per
-// palette rather than once per widget. `_hp_src` is the palette record it was
-// projected from.
+# Cache of the host-defaulted theme, so the palette projection runs once per
+# palette rather than once per widget. `_hp_src` is the palette record it was
+# projected from.
 state var _hp_cache = theme
 state var _hp_src = nil
 
-// The palette record the host published via petal_ui's `bind_host_palette`
-// (Garden's `palette()` vocabulary: window_bg / panel / text / text_dim /
-// accent / border / sel / hover / green / orange / red …), or {} when the
-// embedder never bound one. Read through the core `binding` builtin so no
-// native has to exist for this to be safe in any embedder.
+# The palette record the host published via petal_ui's `bind_host_palette`
+# (Garden's `palette()` vocabulary: window_bg / panel / text / text_dim /
+# accent / border / sel / hover / green / orange / red …), or {} when the
+# embedder never bound one. Read through the core `binding` builtin so no
+# native has to exist for this to be safe in any embedder.
 fn _host_palette()
   binding(symbol("__ui_host_palette")) ?? {}
 end
 
-// Project a host palette record — Garden's `palette()` / `panel_theme()`,
-// whose keys are the host's semantic names — onto the theme's key names, over
-// `base` for anything the host does not name (the scale numbers always come
-// from `base`).
+# Project a host palette record — Garden's `palette()` / `panel_theme()`,
+# whose keys are the host's semantic names — onto the theme's key names, over
+# `base` for anything the host does not name (the scale numbers always come
+# from `base`).
 fn _project_palette(p, base)
   let out = {}
   for k in keys(base) do
@@ -188,13 +188,13 @@ fn _project_palette(p, base)
   out
 end
 
-// The theme when nothing was set explicitly: the host palette projected onto
-// the theme keys when the host bound one, the built-in default otherwise.
-//
-// Cached against the palette record itself rather than the frame number: the
-// projection is a pure function of the palette, and reading `frame_count()`
-// here would make every widget depend on the frame number, which is exactly
-// the input the frame gate must not see changing on a quiet frame.
+# The theme when nothing was set explicitly: the host palette projected onto
+# the theme keys when the host bound one, the built-in default otherwise.
+#
+# Cached against the palette record itself rather than the frame number: the
+# projection is a pure function of the palette, and reading `frame_count()`
+# here would make every widget depend on the frame number, which is exactly
+# the input the frame gate must not see changing on a quiet frame.
 fn _host_theme()
   let hp = _host_palette()
   if _same_palette(get _hp_src, hp) then
@@ -210,9 +210,9 @@ fn _host_theme()
   end
 end
 
-// Two palette records with the same colours, key for key. Records compare by
-// identity in Petal, and a host may re-allocate the same palette every frame,
-// so compare the colour components.
+# Two palette records with the same colours, key for key. Records compare by
+# identity in Petal, and a host may re-allocate the same palette every frame,
+# so compare the colour components.
 fn _same_palette(a, b)
   if a == nil || b == nil then return false end
   let ka = keys(a)
@@ -228,17 +228,17 @@ fn _same_palette(a, b)
   true
 end
 
-// The live palette a widget paints with: `ui_theme()`, with the module default
-// standing in if a caller ever emptied it.
-//
+# The live palette a widget paints with: `ui_theme()`, with the module default
+# standing in if a caller ever emptied it.
+#
 pub fn _palette()
   let live = ui_theme()
   if len(keys(live)) == 0 then theme else live end
 end
 
-// The live palette. Widgets read this through `_palette`, never `theme`
-// directly. Resolution: explicit `theme_set` > host palette > built-in default
-// (see the section comment above).
+# The live palette. Widgets read this through `_palette`, never `theme`
+# directly. Resolution: explicit `theme_set` > host palette > built-in default
+# (see the section comment above).
 pub fn ui_theme()
   if get _theme_explicit then
     get _live_theme
@@ -247,17 +247,17 @@ pub fn ui_theme()
   end
 end
 
-// Merge `t`'s keys onto the live palette and return the result. Call it once
-// at startup (or every frame — it is idempotent for a fixed `t`). From then on
-// the explicit theme wins over any host palette, until `theme_reset`.
+# Merge `t`'s keys onto the live palette and return the result. Call it once
+# at startup (or every frame — it is idempotent for a fixed `t`). From then on
+# the explicit theme wins over any host palette, until `theme_reset`.
 pub fn theme_set(t)
   let cur = _palette()
   let next = {}
   for k in _THEME_KEYS do
     next[k] = _get(t, k, cur[k])
   end
-  // Carry through any extra keys the app hangs on its theme, so a style record
-  // and a theme record are interchangeable.
+  # Carry through any extra keys the app hangs on its theme, so a style record
+  # and a theme record are interchangeable.
   for k in keys(t) do
     next[k] = t[k]
   end
@@ -265,18 +265,18 @@ pub fn theme_set(t)
   set _theme_explicit = true
 end
 
-// Back to the default resolution: host palette when bound, else the built-in
-// dark palette.
+# Back to the default resolution: host palette when bound, else the built-in
+# dark palette.
 pub fn theme_reset()
   set _live_theme = theme
   set _theme_explicit = false
 end
 
-// Project a host palette record onto the ui theme's key names, over the
-// current resolved theme. Kept for apps that want the projection explicitly —
-//   theme_set(theme_from_palette(palette()))
-// — though in Garden the same happens automatically through the bound host
-// palette (see `ui_theme` above).
+# Project a host palette record onto the ui theme's key names, over the
+# current resolved theme. Kept for apps that want the projection explicitly —
+#   theme_set(theme_from_palette(palette()))
+# — though in Garden the same happens automatically through the bound host
+# palette (see `ui_theme` above).
 pub fn theme_from_palette(p)
   _project_palette(p, _palette())
 end

@@ -1,10 +1,10 @@
 import garden
 import ui
 
-// gpp-test-app — mode `runtime-error-long`: a runtime error with a long message,
-// to exercise the error card's word-wrapping (the old banner ran a message this
-// long straight off the pane). `assert(false, msg)` raises
-// "assertion failed: <msg>" as a frame error.
+# gpp-test-app — mode `runtime-error-long`: a runtime error with a long message,
+# to exercise the error card's word-wrapping (the old banner ran a message this
+# long straight off the pane). `assert(false, msg)` raises
+# "assertion failed: <msg>" as a frame error.
 let P = palette()
 clear(P.window_bg.r, P.window_bg.g, P.window_bg.b)
 

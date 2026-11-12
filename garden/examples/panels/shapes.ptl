@@ -1,8 +1,8 @@
-// Every drawing primitive a panel has, on one screen — the visual reference
-// for the vocabulary in docs/petal-graphical-panels.md, and the fixture the
-// renderer is checked against.
-//
-// Use it from a layout script:   panel("examples/panels/shapes.ptl")
+# Every drawing primitive a panel has, on one screen — the visual reference
+# for the vocabulary in docs/petal-graphical-panels.md, and the fixture the
+# renderer is checked against.
+#
+# Use it from a layout script:   panel("examples/panels/shapes.ptl")
 
 import garden
 import ui
@@ -16,9 +16,9 @@ fn label(text, x, y)
   draw_text(text, x, y, size: 12, r: 150, g: 160, b: 180)
 end
 
-// ── Row 1: strokes ────────────────────────────────────────────────────────
-// A polyline is one shape, so a translucent stroke composites evenly instead
-// of darkening at every join the way overlapping circles or lines do.
+# ── Row 1: strokes ────────────────────────────────────────────────────────
+# A polyline is one shape, so a translucent stroke composites evenly instead
+# of darkening at every join the way overlapping circles or lines do.
 label("polyline", x: 20, y: 16)
 let zig = [[20, 40], [60, 90], [100, 40], [140, 90], [180, 40]]
 draw_polyline(points: zig, r: 90, g: 200, b: 255, a: 120, width: 14)
@@ -29,7 +29,7 @@ for i in range(0, 4) do
   draw_line(x1: lines[i][0], y1: lines[i][1], x2: lines[i + 1][0], y2: lines[i + 1][1], r: 90, g: 200, b: 255, a: 120, width: 14)
 end
 
-// ── Row 2: conics ─────────────────────────────────────────────────────────
+# ── Row 2: conics ─────────────────────────────────────────────────────────
 label("ellipse", x: 20, y: 120)
 draw_ellipse(cx: 70, cy: 165, rx: 48, ry: 24, r: 240, g: 120, b: 90)
 
@@ -39,7 +39,7 @@ draw_ellipse_outline(cx: 210, cy: 165, rx: 48, ry: 24, r: 240, g: 200, b: 90, a:
 label("circle outline", x: 300, y: 120)
 draw_circle_outline(cx: 340, cy: 165, radius: 26, r: 120, g: 220, b: 140, a: 255, width: 4)
 
-// ── Row 3: arcs — one call per donut segment, not a hand-rolled quad fan ──
+# ── Row 3: arcs — one call per donut segment, not a hand-rolled quad fan ──
 label("fill_arc donut", x: 20, y: 210)
 let cx = 80
 let cy = 275
@@ -52,13 +52,13 @@ for i in range(0, 4) do
   a0 = a1
 end
 
-// A pie slice is the same call with no hole.
+# A pie slice is the same call with no hole.
 label("pie", x: 170, y: 210)
 fill_arc(215, 275, 0.0, 50.0, 2.2, 5.6, r: 188, g: 140, b: 255)
 
-// ── Row 4: fills ──────────────────────────────────────────────────────────
-// A five-pointed star: concave, so `fill_poly`'s first-vertex fan would spill
-// between the arms. `fill_polygon` triangulates it properly.
+# ── Row 4: fills ──────────────────────────────────────────────────────────
+# A five-pointed star: concave, so `fill_poly`'s first-vertex fan would spill
+# between the arms. `fill_polygon` triangulates it properly.
 label("fill_polygon (concave)", x: 300, y: 210)
 let star = []
 for i in range(0, 10) do
@@ -76,16 +76,16 @@ for i in range(0, 9) do
 end
 fill_fan(cx: 520, cy: 275, points: rim, r: 120, g: 200, b: 255)
 
-// ── Row 5: rounded frames ────────────────────────────────────────────────
-// Genuinely hollow, at any radius — what two stacked rounded fills can't do.
+# ── Row 5: rounded frames ────────────────────────────────────────────────
+# Genuinely hollow, at any radius — what two stacked rounded fills can't do.
 label("rounded outline", x: 20, y: 330)
 draw_rect_rounded_outline(x: 20, y: 350, w: 160, h: 70, radius: 14, r: 88, g: 166, b: 255, a: 255, width: 3)
 draw_rect_rounded_outline(x: 200, y: 350, w: 160, h: 70, radius: 1, r: 248, g: 81, b: 73, a: 255, width: 2)
 draw_text("radius 14 / radius 1", x: 32, y: 378, size: 12, r: 230, g: 236, b: 243)
 
-// ── Persistence ───────────────────────────────────────────────────────────
-// `panel_store_*` is scoped to this script's path and survives a restart, so a
-// panel can remember something without any file API.
+# ── Persistence ───────────────────────────────────────────────────────────
+# `panel_store_*` is scoped to this script's path and survives a restart, so a
+# panel can remember something without any file API.
 state runs = 0
 if runs == 0 then
   runs = int(panel_store_get("runs") ?? "0") + 1

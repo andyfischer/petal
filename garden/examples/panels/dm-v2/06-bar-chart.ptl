@@ -1,23 +1,23 @@
-// ── Drag mode 6: a bar chart with an auto-scaled axis ────
-//   garden petal-ide examples/panels/dm-v2/06-bar-chart.ptl
-//
-// Bars are `value / axis_max * plot_h` tall, where
-// `axis_max` rounds the largest value up to a multiple of
-// 10 (`ceil`, a step function), spread by `bar_w` and
-// `bar_gap`.
-//
-// What to drag (drag mode on: Cmd+Shift+D):
-// - The TOP of the third bar, up: edits that bar's number
-//   in `data` (a literal inside a list). The data are ints,
-//   so the edit snaps to whole units (4 px each here).
-// - A bar sideways: `bar_gap`, `bar_w` or `left` (the panel
-//   says how many other shapes each moves: `left` moves the
-//   plot and the axes too).
-// - The TALLEST bar, up: barely possible, because the axis
-//   scales to the data; the solver may rescale the axis
-//   instead. Click "never" on its `10` row in the panel and
-//   drag again to see what is left.
-// - The plot BACKGROUND: `left` and `top`.
+# ── Drag mode 6: a bar chart with an auto-scaled axis ────
+#   garden petal-ide examples/panels/dm-v2/06-bar-chart.ptl
+#
+# Bars are `value / axis_max * plot_h` tall, where
+# `axis_max` rounds the largest value up to a multiple of
+# 10 (`ceil`, a step function), spread by `bar_w` and
+# `bar_gap`.
+#
+# What to drag (drag mode on: Cmd+Shift+D):
+# - The TOP of the third bar, up: edits that bar's number
+#   in `data` (a literal inside a list). The data are ints,
+#   so the edit snaps to whole units (4 px each here).
+# - A bar sideways: `bar_gap`, `bar_w` or `left` (the panel
+#   says how many other shapes each moves: `left` moves the
+#   plot and the axes too).
+# - The TALLEST bar, up: barely possible, because the axis
+#   scales to the data; the solver may rescale the axis
+#   instead. Click "never" on its `10` row in the panel and
+#   drag again to see what is left.
+# - The plot BACKGROUND: `left` and `top`.
 
 import ui
 

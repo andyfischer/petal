@@ -1,9 +1,9 @@
-// Package `core` — Arithmetic, rounding, trigonometry and the numeric casts (core/src/builtins/math.rs).
-//
-// Native interface declarations: each `native fn` binds a name to the host
-// native of the same name and gives the checker its parameter names, arity
-// and types. Several declarations of one name are that native's call forms.
-// See docs/usage/ffi.md (Native interfaces).
+# Package `core` — Arithmetic, rounding, trigonometry and the numeric casts (core/src/builtins/math.rs).
+#
+# Native interface declarations: each `native fn` binds a name to the host
+# native of the same name and gives the checker its parameter names, arity
+# and types. Several declarations of one name are that native's call forms.
+# See docs/usage/ffi.md (Native interfaces).
 
 pub native fn abs(x: num)
 pub native fn sqrt(x: num)
@@ -34,9 +34,9 @@ pub native fn hash_int(a: num, b?: num, c?: num, d?: num) -> int
 pub native fn hash01(a: num, b?: num, c?: num, d?: num) -> float
 pub native fn hash_str(text: string, salt?: num) -> int
 
-// The creative-coding set (core/src/builtins/creative_coding.rs):
-// interpolation, range mapping and shaping, distances and vector lengths,
-// random picks.
+# The creative-coding set (core/src/builtins/creative_coding.rs):
+# interpolation, range mapping and shaping, distances and vector lengths,
+# random picks.
 pub native fn clamp(value: num, lo: num, hi: num)
 pub native fn pow(base: num, exp: num)
 pub native fn sign(x: num)

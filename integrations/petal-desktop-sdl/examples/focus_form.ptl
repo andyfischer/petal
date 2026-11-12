@@ -1,11 +1,11 @@
-// === FOCUS FORM ===
-// Dogfoods the focus story: bloom's widgets over `ui`'s runtime focus.
-//   - bloom.text_field (click-to-focus, typing, selection, undo, Return submits)
-//   - bloom's Tab ring (Tab / Shift+Tab move focus in draw order); the list
-//     joins it with `bloom.focusable`
-//   - a focus-gated list_update (keyboard nav only while the list is focused)
-// The runtime holds focus, so exactly one widget has the keyboard at a time.
-// State lives in `state` so it survives hot reload.
+# === FOCUS FORM ===
+# Dogfoods the focus story: bloom's widgets over `ui`'s runtime focus.
+#   - bloom.text_field (click-to-focus, typing, selection, undo, Return submits)
+#   - bloom's Tab ring (Tab / Shift+Tab move focus in draw order); the list
+#     joins it with `bloom.focusable`
+#   - a focus-gated list_update (keyboard nav only while the list is focused)
+# The runtime holds focus, so exactly one widget has the keyboard at a time.
+# State lives in `state` so it survives hot reload.
 
 import ui
 import bloom
@@ -15,7 +15,7 @@ state email = ""
 state roles = list_state()
 state saved = ""
 
-// Colors (kept local so the example is self-contained).
+# Colors (kept local so the example is self-contained).
 let bg = {r: 18, g: 20, b: 28}
 let panel = {r: 29, g: 32, b: 39}
 let ink = {r: 216, g: 222, b: 233}
@@ -29,7 +29,7 @@ draw_text("PROFILE", {x: 40, y: 28}, 28, accent)
 draw_text("Tab / Shift+Tab to move · click a field · type · Return saves",
   {x: 40, y: 64}, 13, dim)
 
-// Two text fields.
+# Two text fields.
 draw_text("Name", {x: 40, y: 100}, 14, dim)
 let nf = bloom.text_field({x: 150, y: 94, w: 380, h: 28}, name, {id: "name"})
 name = nf.text
@@ -38,9 +38,9 @@ draw_text("Email", {x: 40, y: 140}, 14, dim)
 let ef = bloom.text_field({x: 150, y: 134, w: 380, h: 28}, email, {id: "email"})
 email = ef.text
 
-// Focus-gated list: a role picker. Clicking it focuses it; j/k/arrows only
-// move the selection while it holds focus. Announcing it after the two
-// fields puts it third in the Tab ring.
+# Focus-gated list: a role picker. Clicking it focuses it; j/k/arrows only
+# move the selection while it holds focus. Announcing it after the two
+# fields puts it third in the Tab ring.
 let role_names = ["Viewer", "Editor", "Admin", "Owner"]
 let list_r = {x: 150, y: 180, w: 380, h: 120}
 draw_text("Role", {x: 40, y: 186}, 14, dim)
@@ -50,7 +50,7 @@ if mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: list_r) then
 end
 roles = list_update(roles, item_count: len(role_names), visible_rows: 4, r: list_r, active: has_focus("roles"))
 
-// Render the list.
+# Render the list.
 draw_rect(list_r, panel)
 let list_focused = has_focus("roles")
 draw_rect_outline(list_r, if list_focused then accent else outline end)
@@ -62,7 +62,7 @@ for i in range(0, len(role_names)) do
   draw_text(role_names[i], {x: rr.x + 12, y: rr.y + 6}, 15, ink)
 end
 
-// Save: Return from either field, or the Save button.
+# Save: Return from either field, or the Save button.
 let do_save = nf.submitted || ef.submitted
 if bloom.button({x: 150, y: 320, w: 120, h: 34}, "Save", {variant: "primary"}) then
   do_save = true

@@ -1,19 +1,19 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  FLAPPY — a Garden panel app written in Petal.
-//
-//  Exercises: gravity-and-impulse physics with sub-stepped integration,
-//  procedurally generated pipe gaps that tighten as the score climbs,
-//  circle-vs-rect collision, a three-layer parallax backdrop that scrolls
-//  with the run, scoring with a best-score medal, and a four-phase UI
-//  (title → play → dead → over) drawn entirely with the petal-ui surface.
-//
-//  Designed for a 1000x740 viewport.  See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  FLAPPY — a Garden panel app written in Petal.
+#
+#  Exercises: gravity-and-impulse physics with sub-stepped integration,
+#  procedurally generated pipe gaps that tighten as the score climbs,
+#  circle-vs-rect collision, a three-layer parallax backdrop that scrolls
+#  with the run, scoring with a best-score medal, and a four-phase UI
+#  (title → play → dead → over) drawn entirely with the petal-ui surface.
+#
+#  Designed for a 1000x740 viewport.  See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import ui
 import garden
 
-// ── Palette ──────────────────────────────────────────────────────────────
+# ── Palette ──────────────────────────────────────────────────────────────
 
 let C_BG      = :0b0e17
 let C_SKY_TOP = :1a2140
@@ -44,8 +44,8 @@ let C_SILVER  = :c9d3e8
 let C_BRONZE  = :d08a5a
 let C_WARN    = :ff6b7a
 
-// ── Type scale ───────────────────────────────────────────────────────────
-// Five sizes: 10 / 12 / 20 / 30 / 52.
+# ── Type scale ───────────────────────────────────────────────────────────
+# Five sizes: 10 / 12 / 20 / 30 / 52.
 
 let S_TITLE = {size: 30, color: C_TEXT, spacing: 10}
 let S_KICK  = {size: 10, color: C_MUTE, spacing: 4}
@@ -59,17 +59,17 @@ let S_BIG   = {size: 30, color: C_TEXT, spacing: 7}
 let S_SUB   = {size: 12, color: C_DIM}
 let S_BADGE = {size: 10, color: C_TEXT, spacing: 2}
 
-// ── Tunables ─────────────────────────────────────────────────────────────
+# ── Tunables ─────────────────────────────────────────────────────────────
 
-let gravity       = tunable(1650.0) // px/s^2
-let flap_impulse  = tunable(440.0)  // px/s, upward
-let scroll_speed  = tunable(185.0)  // px/s
-let pipe_spacing  = tunable(250.0)  // px between pipe columns
+let gravity       = tunable(1650.0) # px/s^2
+let flap_impulse  = tunable(440.0)  # px/s, upward
+let scroll_speed  = tunable(185.0)  # px/s
+let pipe_spacing  = tunable(250.0)  # px between pipe columns
 let pipe_w        = tunable(64.0)
-let gap_start     = tunable(190.0)  // gap height at score 0
-let gap_min       = tunable(128.0)  // gap height floor
-let gap_shrink    = tunable(4.0)    // px lost per point
-let max_fall      = tunable(720.0)  // terminal velocity
+let gap_start     = tunable(190.0)  # gap height at score 0
+let gap_min       = tunable(128.0)  # gap height floor
+let gap_shrink    = tunable(4.0)    # px lost per point
+let max_fall      = tunable(720.0)  # terminal velocity
 
 let PAD    = 28
 let HEAD   = 104
@@ -77,40 +77,40 @@ let FOOT   = 60
 let BIRD_R = 13.0
 let GROUND_H = 46
 
-// The five phases of a run, each with the word the footer shows for it.
+# The five phases of a run, each with the word the footer shows for it.
 enum Phase
   title(status: "READY"),
   play(status: "IN FLIGHT"),
   paused(status: "PAUSED"),
-  dead(status: "DOWN"),      // falling after a hit, before the card
+  dead(status: "DOWN"),      # falling after a hit, before the card
   over(status: "GAME OVER"),
 end
 
-// ── Persistent state ─────────────────────────────────────────────────────
+# ── Persistent state ─────────────────────────────────────────────────────
 
 state var ready    = false
 state var phase    = Phase.title
-state var by       = 0.0       // bird y
-state var bvy      = 0.0       // bird vertical velocity
-state var bang     = 0.0       // bird tilt, radians
-state var pipes    = []        // {x, gap_y, gap_h, passed}
-state var scroll   = 0.0       // world distance travelled, px
+state var by       = 0.0       # bird y
+state var bvy      = 0.0       # bird vertical velocity
+state var bang     = 0.0       # bird tilt, radians
+state var pipes    = []        # {x, gap_y, gap_h, passed}
+state var scroll   = 0.0       # world distance travelled, px
 state var score    = 0
 state var best     = 0
 state var runs     = 0
 state var flaps    = 0
-state var wing_t   = 0.0       // seconds since the last flap
+state var wing_t   = 0.0       # seconds since the last flap
 state var dead_t   = 0.0
 state var flash    = 0.0
 state var shake    = 0.0
-state var bits     = []        // feathers {x, y, vx, vy, life, max, c, sz}
+state var bits     = []        # feathers {x, y, vx, vy, life, max, c, sz}
 state var pulse    = 0.0
 state var hover_t  = 0.0
-state var pop_t    = 0.0       // score pop animation
+state var pop_t    = 0.0       # score pop animation
 state var last_gap = 0.0
 state var cause    = ""
 
-// ── Pure helpers ─────────────────────────────────────────────────────────
+# ── Pure helpers ─────────────────────────────────────────────────────────
 
 fn tx(s: string, x: num, y: num, style: record)
   draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
@@ -128,7 +128,7 @@ fn gap_for(sc: int) -> num
   max(gap_min, gap_start - float(sc) * gap_shrink)
 end
 
-// `n` feathers at (x, y).
+# `n` feathers at (x, y).
 fn burst(lst, x: num, y: num, n: num, col: record, power: num)
   let out = lst
   for i in range(0, n) do
@@ -144,7 +144,7 @@ fn burst(lst, x: num, y: num, n: num, col: record, power: num)
   out
 end
 
-// ── Geometry ─────────────────────────────────────────────────────────────
+# ── Geometry ─────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
@@ -152,15 +152,15 @@ let field = rect(PAD, HEAD, W - PAD * 2, H - HEAD - FOOT - PAD)
 let cx = field.x + field.w / 2
 let cy = field.y + field.h / 2
 let ft = float(field.y)
-let fb = float(field.y + field.h - GROUND_H)   // top of the ground
+let fb = float(field.y + field.h - GROUND_H)   # top of the ground
 let fl = float(field.x)
 let fr = float(field.x + field.w)
 let bird_x = fl + float(field.w) * 0.30
 
-// ── Level plumbing ───────────────────────────────────────────────────────
+# ── Level plumbing ───────────────────────────────────────────────────────
 
-// A new pipe column at world x `px`. The gap centre wanders from the last
-// one by a bounded step, so consecutive gaps are reachable.
+# A new pipe column at world x `px`. The gap centre wanders from the last
+# one by a bounded step, so consecutive gaps are reachable.
 fn make_pipe(px: num, sc: int)
   let gh = gap_for(sc)
   let lo = ft + 60.0 + gh / 2.0
@@ -184,7 +184,7 @@ fn new_run()
   set dead_t = 0.0
   set flash = 0.0
   set cause = ""
-  // First column well ahead of the bird, then a full screen of them.
+  # First column well ahead of the bird, then a full screen of them.
   let ps = []
   let px = bird_x + 420.0
   for i in range(0, 6) do
@@ -199,7 +199,7 @@ fn flap()
   set flaps += 1
 end
 
-// ── Boot ─────────────────────────────────────────────────────────────────
+# ── Boot ─────────────────────────────────────────────────────────────────
 
 if !ready then
   set ready = true
@@ -212,7 +212,7 @@ set pulse += sdt
 set wing_t += sdt
 set hover_t += sdt
 
-// ── Input ────────────────────────────────────────────────────────────────
+# ── Input ────────────────────────────────────────────────────────────────
 
 if key_pressed("r") then
   new_run()
@@ -241,7 +241,7 @@ if key_pressed("p") || key_pressed("escape") then
   end
 end
 
-// ── Simulation ───────────────────────────────────────────────────────────
+# ── Simulation ───────────────────────────────────────────────────────────
 
 if phase == Phase.play then
   request_frame()
@@ -256,26 +256,26 @@ if phase == Phase.play then
 
     set pipes = for p in pipes do {...p, x: p.x - scroll_speed * h} end
 
-    // Ceiling: bump, don't die.
+    # Ceiling: bump, don't die.
     if by - BIRD_R < ft then
       set by = ft + BIRD_R
       set bvy = max(bvy, 0.0)
     end
 
-    // Ground.
+    # Ground.
     if by + BIRD_R >= fb then
       set by = fb - BIRD_R
       set phase = Phase.dead
       set cause = "ground"
     end
 
-    // Pipes: circle vs the two rects of the nearest column.
+    # Pipes: circle vs the two rects of the nearest column.
     if phase == Phase.play then
       for p in pipes do
         if p.x + pipe_w >= bird_x - BIRD_R && p.x <= bird_x + BIRD_R then
           let top_h = p.gap_y - p.gap_h / 2.0
           let bot_y = p.gap_y + p.gap_h / 2.0
-          // Closest point on each rect to the bird centre.
+          # Closest point on each rect to the bird centre.
           let qx = clamp(bird_x, lo: p.x, hi: p.x + pipe_w)
           let qy_top = clamp(by, lo: ft, hi: top_h)
           let qy_bot = clamp(by, lo: bot_y, hi: fb)
@@ -300,7 +300,7 @@ if phase == Phase.play then
     end
   end
 
-  // Scoring and recycling, once per frame.
+  # Scoring and recycling, once per frame.
   let gained = 0
   set pipes = for p in pipes do
     if !p.passed && p.x + pipe_w < bird_x then
@@ -326,7 +326,7 @@ end
 if phase == Phase.dead then
   request_frame()
   set dead_t -= sdt
-  // The bird drops the rest of the way on its own.
+  # The bird drops the rest of the way on its own.
   if by + BIRD_R < fb then
     set bvy = min(bvy + gravity * sdt, max_fall)
     set by = min(by + bvy * sdt, fb - BIRD_R)
@@ -336,7 +336,7 @@ if phase == Phase.dead then
   end
 end
 
-// Tilt follows the velocity: nose up right after a flap, then dives.
+# Tilt follows the velocity: nose up right after a flap, then dives.
 let want_ang = if phase == Phase.title then 0.0
 elsif phase == Phase.dead || phase == Phase.over then 1.45
 else clamp(bvy / 600.0, lo: -0.45, hi: 1.2) end
@@ -354,14 +354,14 @@ set flash = max(0.0, flash - sdt * 3.0)
 set shake = max(0.0, shake - sdt * 2.8)
 set pop_t = max(0.0, pop_t - sdt)
 
-// ── Draw: chrome ─────────────────────────────────────────────────────────
+# ── Draw: chrome ─────────────────────────────────────────────────────────
 
 clear(C_BG.r, C_BG.g, C_BG.b)
 
 tx("FLAPPY", x: PAD, y: 24, style: S_TITLE)
 tx("PETAL / GARDEN TESTBED 06", x: PAD + 3, y: 62, style: S_KICK)
 
-// Score, centred, with a pop when it changes.
+# Score, centred, with a pop when it changes.
 let pop = if pop_t > 0.0 then 1.0 + ease_out(pop_t / 0.4) * 0.18 else 1.0 end
 tx_center(str(score), cx, y: 8, style: {...S_SCORE, size: int(52.0 * pop)})
 tx_center("SCORE", cx, y: 70, style: S_LABEL)
@@ -377,7 +377,7 @@ tx_right("GAP", right_x: cell1, y: 30, style: S_LABEL)
 tx_right("{int(gap_for(score))}px", right_x: cell1, y: 46, style: S_STAT)
 tx_right("{flaps} FLAPS   ·   {int(scroll)} m", right_x: cell3, y: 76, style: S_HINT)
 
-// ── Draw: field ──────────────────────────────────────────────────────────
+# ── Draw: field ──────────────────────────────────────────────────────────
 
 let shx = if shake > 0.0 then int(sin(pulse * 90.0) * shake * 4.0) else 0 end
 let shy = if shake > 0.0 then int(cos(pulse * 77.0) * shake * 3.0) else 0 end
@@ -385,7 +385,7 @@ let shy = if shake > 0.0 then int(cos(pulse * 77.0) * shake * 3.0) else 0 end
 draw_rect_rounded(field, radius: 16, c: C_SKY_TOP)
 clip_push(field, 16)
 
-// Sky gradient and a low sun.
+# Sky gradient and a low sun.
 draw_rect_gradient(field, C_SKY_TOP, C_SKY_BOT, angle: pi() / 2.0)
 let sun_x = int(fr) - 190 - int(scroll * 0.02) % 60
 let sun_y = int(fb) - 120
@@ -393,7 +393,7 @@ draw_circle({x: sun_x, y: sun_y}, 70, C_SUN, 22)
 draw_circle({x: sun_x, y: sun_y}, 44, C_SUN, 60)
 draw_circle({x: sun_x, y: sun_y}, 30, C_SUN, 200)
 
-// Clouds: parallax at 0.18.
+# Clouds: parallax at 0.18.
 for i in range(0, 7) do
   let span = float(field.w) + 260.0
   let base = float(i) * 173.0 + 40.0
@@ -406,7 +406,7 @@ for i in range(0, 7) do
   draw_ellipse({x: int(x) + s, y: int(y) - s / 3}, s * 2, s, C_CLOUD, 55)
 end
 
-// Two ranges of hills, drawn as one polygon each, parallax 0.35 and 0.6.
+# Two ranges of hills, drawn as one polygon each, parallax 0.35 and 0.6.
 fn hills(par: num, amp: num, freq: num, base_y: num, col: record)
   let pts = [[int(fl) - 2, int(fb) + 2]]
   let n = field.w / 18 + 2
@@ -422,13 +422,13 @@ end
 hills(par: 0.35, amp: 60.0, freq: 0.0065, base_y: fb - 80.0, col: C_HILL_B)
 hills(par: 0.6, amp: 44.0, freq: 0.011, base_y: fb - 34.0, col: C_HILL_F)
 
-// Pipes.
+# Pipes.
 for p in pipes do
   let px = int(p.x) + shx
   let top_h = int(p.gap_y - p.gap_h / 2.0)
   let bot_y = int(p.gap_y + p.gap_h / 2.0)
   let pw = int(pipe_w)
-  // Shaft, cap, highlight — for both halves.
+  # Shaft, cap, highlight — for both halves.
   draw_rect(rect(px, int(ft) - 4, pw, top_h - int(ft) + 4), C_PIPE_D)
   draw_rect(rect(px + 4, int(ft) - 4, pw - 20, top_h - int(ft) + 4), C_PIPE)
   draw_rect(rect(px + 8, int(ft) - 4, 5, top_h - int(ft) + 4), c: C_PIPE_L, a: 120)
@@ -444,7 +444,7 @@ for p in pipes do
   draw_rect(rect(px + 3, bot_y + 2, 5, 18), c: C_PIPE_L, a: 120)
 end
 
-// Ground: a dark band with a scrolling grass edge and stripes.
+# Ground: a dark band with a scrolling grass edge and stripes.
 let gy = int(fb)
 draw_rect(rect(int(fl), gy, field.w, GROUND_H + 4), C_GROUND)
 draw_rect(rect(int(fl), gy, field.w, 7), C_GRASS)
@@ -456,14 +456,14 @@ for i in range(0, n_stripes) do
   fill_triangle({x: sx, y: gy + 10}, {x: sx + 14, y: gy + 10}, {x: sx - 6, y: gy + GROUND_H + 4}, c: C_LINE, a: 120)
 end
 
-// Feathers.
+# Feathers.
 for p in bits do
   let f = p.life / p.max
   draw_circle({x: int(p.x) + shx, y: int(p.y) + shy}, max(1, int(p.sz * f + 0.5)), p.c, int(230.0 * f))
 end
 
-// Bird: body, wing (flaps for 0.25 s after an impulse), eye, beak — all
-// rotated by `bang` about the body centre.
+# Bird: body, wing (flaps for 0.25 s after an impulse), eye, beak — all
+# rotated by `bang` about the body centre.
 let bob = if phase == Phase.title then sin(hover_t * 3.2) * 5.0 else 0.0 end
 let bx = bird_x
 let byy = by + bob
@@ -476,18 +476,18 @@ let body = rot(dx: 0.0, dy: 0.0, a: a)
 draw_circle(body, int(BIRD_R) + 6, C_BIRD, 28)
 draw_circle(center: body, radius: int(BIRD_R), c: C_BIRD_D)
 draw_circle(center: rot(dx: -1.0, dy: -1.5, a: a), radius: int(BIRD_R) - 2, c: C_BIRD)
-// Wing: an ellipse behind the body centre, its y offset animated.
+# Wing: an ellipse behind the body centre, its y offset animated.
 let wing = rot(dx: -4.0, dy: 3.0 - wing_ph * 9.0, a: a)
 draw_ellipse(wing, 8, 5, C_WING, 235)
 draw_ellipse_outline(wing, 8, 5, C_BIRD_D, 160, 1)
-// Eye and beak.
+# Eye and beak.
 let eye = rot(dx: 5.0, dy: -4.0, a: a)
 draw_circle(center: eye, radius: 4, c: C_TEXT)
 draw_circle(center: rot(dx: 6.5, dy: -4.0, a: a), radius: 2, c: C_EYE)
 fill_triangle(rot(dx: 9.0, dy: -1.0, a: a), rot(dx: 19.0, dy: 2.0, a: a), rot(dx: 9.0, dy: 5.0, a: a), c: C_BEAK)
 fill_triangle(rot(dx: 9.0, dy: 2.0, a: a), rot(dx: 17.0, dy: 3.0, a: a), rot(dx: 9.0, dy: 6.0, a: a), c: C_BEAK, a: 140)
 
-// Death flash.
+# Death flash.
 if flash > 0.0 then
   draw_rect(field, c: C_TEXT, a: int(flash * 110.0))
 end
@@ -495,9 +495,9 @@ end
 clip_pop()
 draw_rect_rounded_outline(field, radius: 16, c: C_EDGE, a: 255, width: 1)
 
-// ── Draw: overlay ────────────────────────────────────────────────────────
+# ── Draw: overlay ────────────────────────────────────────────────────────
 
-// What the card says, or nil while the bird is in the air or falling.
+# What the card says, or nil while the bird is in the air or falling.
 let card_text = match phase
   when Phase.title -> {banner: "FLAPPY", sub: "press SPACE or click to flap", accent: C_BIRD}
   when Phase.paused -> {banner: "PAUSED", sub: "press P to resume", accent: C_DIM}
@@ -527,7 +527,7 @@ if card_text != nil then
   tx_center(sub, cx: cx + 9, y: card.y + 74, style: S_SUB)
 
   if phase == Phase.over then
-    // Medal + the run's numbers.
+    # Medal + the run's numbers.
     let medal = if score >= 30 then {c: C_GOLD, t: "GOLD"}
     elsif score >= 15 then {c: C_SILVER, t: "SILVER"}
     elsif score >= 5 then {c: C_BRONZE, t: "BRONZE"}
@@ -546,7 +546,7 @@ if card_text != nil then
   end
 end
 
-// ── Draw: footer ─────────────────────────────────────────────────────────
+# ── Draw: footer ─────────────────────────────────────────────────────────
 
 fn chip(x: num, y: num, cap: string, desc: string) -> int
   let cw = text_width(cap, S_CAP) + 20
@@ -568,7 +568,7 @@ fx += chip(x: fx, y: fy, cap: "R", desc: "restart")
 let status = phase.status
 tx_right("{int(bvy)} px/s   ·   {status}", right_x: W - PAD, y: fy + 7, style: S_HINT)
 
-// ── Observation mirrors (readable in /state → panel.values) ──────────────
+# ── Observation mirrors (readable in /state → panel.values) ──────────────
 
 let obs_phase = phase.name
 let obs_score = score

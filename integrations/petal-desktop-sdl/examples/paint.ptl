@@ -1,11 +1,11 @@
-// Paint — click and drag to draw
-// Keys 1-9: color palette, +/- to change brush size, C to clear
-// D: toggle demo mode, Space: regenerate demo art
+# Paint — click and drag to draw
+# Keys 1-9: color palette, +/- to change brush size, C to clear
+# D: toggle demo mode, Space: regenerate demo art
 
 import ui
 
-// ── Precomputed trig lookup (32 directions around a circle) ──
-// cos and sin values * 1000 (integer math, divide by 1000 later)
+# ── Precomputed trig lookup (32 directions around a circle) ──
+# cos and sin values * 1000 (integer math, divide by 1000 later)
 let cos_tab = [1000, 981, 924, 831, 707, 556, 383, 195, 0, -195, -383, -556, -707, -831, -924, -981, -1000, -981, -924, -831, -707, -556, -383, -195, 0, 195, 383, 556, 707, 831, 924, 981]
 let sin_tab = [0, 195, 383, 556, 707, 831, 924, 981, 1000, 981, 924, 831, 707, 556, 383, 195, 0, -195, -383, -556, -707, -831, -924, -981, -1000, -981, -924, -831, -707, -556, -383, -195]
 
@@ -16,20 +16,20 @@ fn tsin(angle_idx)
   sin_tab[angle_idx % 32]
 end
 
-// ── Brush state ──
+# ── Brush state ──
 state brush_r = 255
 state brush_g = 255
 state brush_b = 255
 state brush_size = 6
 
-// ── Canvas points ──
+# ── Canvas points ──
 state points = []
 
-// ── Demo art state ──
+# ── Demo art state ──
 state demo_drawn = false
 state demo_frame = 0
 
-// ── Color palette (12 colors) ──
+# ── Color palette (12 colors) ──
 let palette = [
   {color: :ffffff, name: "White"},
   {color: :ff3c50, name: "Red"},
@@ -47,11 +47,11 @@ let palette = [
 
 state selected_color = 0
 
-// ── Toolbar dimensions ──
+# ── Toolbar dimensions ──
 let toolbar_h = 52
 let canvas_top = toolbar_h + 2
 
-// ── Overloaded draw functions ──
+# ── Overloaded draw functions ──
 let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
@@ -67,22 +67,22 @@ fn draw_text(text, pos, size, color)
   _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
-// ── Common UI colors ──
+# ── Common UI colors ──
 let ui_dim = {r: 140, g: 140, b: 160}
 let ui_dimmer = {r: 100, g: 100, b: 120}
 let ui_bright = {r: 220, g: 220, b: 240}
 let ui_medium = {r: 200, g: 200, b: 220}
 let ui_subtle = {r: 90, g: 90, b: 110}
 
-// ── Generate demo art on first frame ──
+# ── Generate demo art on first frame ──
 if !demo_drawn then
   demo_drawn = true
 
-  // --- Mandala-style pattern ---
+  # --- Mandala-style pattern ---
   let cx = 400
   let cy = 340
 
-  // Draw concentric ring patterns
+  # Draw concentric ring patterns
   for ring in range(0, 8) do
     let radius = 30 + ring * 28
     let num_dots = 8 + ring * 4
@@ -91,7 +91,7 @@ if !demo_drawn then
       let px = cx + int(float(tcos(angle_idx) * radius) / 1000.0)
       let py = cy + int(float(tsin(angle_idx) * radius) / 1000.0)
 
-      // Color varies by ring and position
+      # Color varies by ring and position
       let cr = int(abs(float((ring * 40 + d * 20) % 256)))
       let cg = int(abs(float((ring * 60 + 100) % 256)))
       let cb = int(abs(float((255 - ring * 30) % 256)))
@@ -99,7 +99,7 @@ if !demo_drawn then
       let dot_size = max(3, 8 - ring)
       points = append(points, {x: px, y: py, r: cr, g: cg, b: cb, size: dot_size})
 
-      // Add connecting petal shapes between dots
+      # Add connecting petal shapes between dots
       if d % 2 == 0 then
         let inner_r = radius - 15
         let ipx = cx + int(float(tcos(angle_idx) * inner_r) / 1000.0)
@@ -109,9 +109,9 @@ if !demo_drawn then
     end
   end
 
-  // --- Spiral arms radiating outward ---
+  # --- Spiral arms radiating outward ---
   for arm in range(0, 6) do
-    let base_angle = arm * 5  // spread across 32 directions
+    let base_angle = arm * 5  # spread across 32 directions
     for step in range(0, 20) do
       let angle_idx = (base_angle + step) % 32
       let dist = 40 + step * 12
@@ -126,8 +126,8 @@ if !demo_drawn then
     end
   end
 
-  // --- Corner decorations ---
-  // Top-left burst
+  # --- Corner decorations ---
+  # Top-left burst
   for i in range(0, 16) do
     let angle_idx = i * 2
     for d in range(1, 6) do
@@ -138,7 +138,7 @@ if !demo_drawn then
     end
   end
 
-  // Top-right burst
+  # Top-right burst
   for i in range(0, 16) do
     let angle_idx = i * 2
     for d in range(1, 6) do
@@ -149,7 +149,7 @@ if !demo_drawn then
     end
   end
 
-  // Bottom-left burst
+  # Bottom-left burst
   for i in range(0, 16) do
     let angle_idx = i * 2
     for d in range(1, 5) do
@@ -160,7 +160,7 @@ if !demo_drawn then
     end
   end
 
-  // Bottom-right burst
+  # Bottom-right burst
   for i in range(0, 16) do
     let angle_idx = i * 2
     for d in range(1, 5) do
@@ -171,16 +171,16 @@ if !demo_drawn then
     end
   end
 
-  // --- Diamond lattice pattern around the mandala ---
+  # --- Diamond lattice pattern around the mandala ---
   for i in range(0, 12) do
     let offset = i * 22
-    // Top edge diamonds
+    # Top edge diamonds
     points = append(points, {x: 200 + offset * 2, y: 90, r: 255, g: 200, b: 100, size: 3})
     points = append(points, {x: 200 + offset * 2, y: 580, r: 100, g: 200, b: 255, size: 3})
   end
 end
 
-// ── Color selection via number keys ──
+# ── Color selection via number keys ──
 if key_pressed("1") then selected_color = 0 end
 if key_pressed("2") then selected_color = 1 end
 if key_pressed("3") then selected_color = 2 end
@@ -191,13 +191,13 @@ if key_pressed("7") then selected_color = 6 end
 if key_pressed("8") then selected_color = 7 end
 if key_pressed("9") then selected_color = 8 end
 
-// Apply selected color
+# Apply selected color
 let sel = palette[selected_color]
 brush_r = sel.color.r
 brush_g = sel.color.g
 brush_b = sel.color.b
 
-// Brush size controls
+# Brush size controls
 if key_pressed("equals") then
   brush_size = min(brush_size + 2, 40)
 end
@@ -205,12 +205,12 @@ if key_pressed("minus") then
   brush_size = max(brush_size - 2, 2)
 end
 
-// Clear canvas
+# Clear canvas
 if key_pressed("c") then
   points = []
 end
 
-// Draw when mouse is held (only below toolbar)
+# Draw when mouse is held (only below toolbar)
 if mouse_down(0) then
   if mouse_y() > toolbar_h then
     if len(points) < 3000 then
@@ -226,15 +226,15 @@ if mouse_down(0) then
   end
 end
 
-// ── Render ──
+# ── Render ──
 
-// Canvas background - subtle gradient effect via horizontal bands
+# Canvas background - subtle gradient effect via horizontal bands
 clear(25, 25, 35)
 
-// Subtle canvas area with slightly lighter background
+# Subtle canvas area with slightly lighter background
 draw_rect(x: 0, y: toolbar_h + 1, w: 800, h: 600 - toolbar_h - 1, r: 28, g: 28, b: 38)
 
-// Very subtle grid dots for visual texture
+# Very subtle grid dots for visual texture
 for gx in range(0, 20) do
   for gy in range(0, 14) do
     let dotx = 20 + gx * 40
@@ -245,76 +245,76 @@ for gx in range(0, 20) do
   end
 end
 
-// Draw all stored points
+# Draw all stored points
 for i in range(0, len(points)) do
   let p = points[i]
   draw_circle(cx: p.x, cy: p.y, radius: p.size, r: p.r, g: p.g, b: p.b)
 end
 
-// Draw cursor preview (only below toolbar)
+# Draw cursor preview (only below toolbar)
 if mouse_y() > toolbar_h then
-  // Outer ring
+  # Outer ring
   draw_circle(cx: mouse_x(), cy: mouse_y(), radius: brush_size + 2, r: min(brush_r + 30, 255), g: min(brush_g + 30, 255), b: min(brush_b + 30, 255))
-  // Inner brush
+  # Inner brush
   draw_circle(cx: mouse_x(), cy: mouse_y(), radius: brush_size, r: brush_r, g: brush_g, b: brush_b)
 end
 
-// ── Toolbar ──
+# ── Toolbar ──
 
-// Toolbar background with gradient effect
+# Toolbar background with gradient effect
 draw_rect(x: 0, y: 0, w: 800, h: toolbar_h, r: 18, g: 18, b: 28)
 draw_rect(x: 0, y: toolbar_h, w: 800, h: 2, r: 50, g: 50, b: 70)
 
-// App title
+# App title
 draw_text("Paint", {x: 12, y: 4}, 22, ui_bright)
 
-// Separator line
+# Separator line
 draw_rect(x: 75, y: 6, w: 2, h: 38, r: 50, g: 50, b: 70)
 
-// ── Color swatches in toolbar ──
+# ── Color swatches in toolbar ──
 for ci in range(0, len(palette)) do
   let c = palette[ci]
   let sx = 88 + ci * 28
   let sy = 6
 
-  // Selection highlight
+  # Selection highlight
   if ci == selected_color then
     draw_rect(x: sx - 2, y: sy - 2, w: 24, h: 24, r: 220, g: 220, b: 255)
   end
 
-  // Swatch
+  # Swatch
   draw_rect(x: sx, y: sy, w: 20, h: 20, r: c.color.r, g: c.color.g, b: c.color.b)
 end
 
-// Separator
+# Separator
 draw_rect(x: 430, y: 6, w: 2, h: 38, r: 50, g: 50, b: 70)
 
-// ── Brush size display ──
+# ── Brush size display ──
 draw_text("Size", {x: 442, y: 4}, 16, ui_dim)
 draw_text(str(brush_size), {x: 442, y: 22}, 18, ui_medium)
 
-// Brush size preview circle
+# Brush size preview circle
 draw_circle(cx: 500, cy: 18, radius: min(brush_size, 15), r: brush_r, g: brush_g, b: brush_b)
 
-// +/- labels
+# +/- labels
 draw_text("-", {x: 522, y: 4}, 20, ui_dim)
 draw_text("+", {x: 540, y: 4}, 20, ui_dim)
 
-// Separator
+# Separator
 draw_rect(x: 560, y: 6, w: 2, h: 38, r: 50, g: 50, b: 70)
 
-// ── Info section ──
+# ── Info section ──
 draw_text("C:Clear", {x: 572, y: 4}, 16, ui_dim)
 draw_text(str(len(points)) ++ "/3000", {x: 572, y: 24}, 14, ui_dimmer)
 
-// Separator
+# Separator
 draw_rect(x: 656, y: 6, w: 2, h: 38, r: 50, g: 50, b: 70)
 
-// Keys help at bottom of toolbar
+# Keys help at bottom of toolbar
 draw_text("Keys: 1-9 colors", {x: 666, y: 4}, 14, ui_dimmer)
 draw_text("+/- size  C clear", {x: 666, y: 22}, 14, ui_dimmer)
 
-// ── Bottom status bar ──
+# ── Bottom status bar ──
 draw_rect(x: 0, y: 588, w: 800, h: 12, r: 18, g: 18, b: 28)
 let col_name = palette[selected_color].name
 draw_text("Brush: " ++ col_name ++ " | Size: " ++ str(brush_size) ++ " | Mouse: " ++ str(mouse_x()) ++ "," ++ str(mouse_y()), {x: 8, y: 589}, 12, ui_subtle)

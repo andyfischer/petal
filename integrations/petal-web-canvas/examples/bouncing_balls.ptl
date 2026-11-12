@@ -1,5 +1,5 @@
-// Bouncing Balls — click to add more balls.
-// Demonstrates state, frame timing, mouse input, and the drawing API.
+# Bouncing Balls — click to add more balls.
+# Demonstrates state, frame timing, mouse input, and the drawing API.
 
 import ui
 
@@ -9,7 +9,7 @@ let sw = float(screen_width())
 let sh = float(screen_height())
 let delta = dt()
 
-// Seed with a few balls on first frame
+# Seed with a few balls on first frame
 if len(balls) == 0 then
   for i in range(0, 12) do
     let f = float(i)
@@ -26,7 +26,7 @@ if len(balls) == 0 then
   end
 end
 
-// Add a ball on click
+# Add a ball on click
 if mouse_pressed(0) then
   let mx = float(mouse_x())
   let my = float(mouse_y())
@@ -43,7 +43,7 @@ end
 
 let gravity = 600.0
 
-// Physics step
+# Physics step
 let new_balls = []
 for b in balls do
   let nvy = b.vy + gravity * delta
@@ -51,7 +51,7 @@ for b in balls do
   let ny = b.y + nvy * delta
   let nvx = b.vx
 
-  // Wall collisions
+  # Wall collisions
   let final_vx = nvx
   let final_x = nx
   if nx - b.r < 0.0 then
@@ -82,11 +82,11 @@ for b in balls do
 end
 balls = new_balls
 
-// === Drawing ===
+# === Drawing ===
 clear(14, 16, 28)
 
 for b in balls do
-  // soft outer halo
+  # soft outer halo
   draw_circle(cx: int(b.x), cy: int(b.y), radius: int(b.r + 3.0), r: b.cr / 4, g: b.cg / 4, b: b.cb / 4)
   draw_circle(cx: int(b.x), cy: int(b.y), radius: int(b.r), r: b.cr, g: b.cg, b: b.cb)
   draw_circle(cx: int(b.x - b.r * 0.3), cy: int(b.y - b.r * 0.3), radius: int(b.r * 0.35),

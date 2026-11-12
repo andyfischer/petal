@@ -1,27 +1,27 @@
-// =====================================================================
-// LEVEL EDITOR  -  Petal + petal-sdl
-// =====================================================================
-// Run:
-//     ./petal-sdl/target/debug/petal-sdl side-scroller/editor.ptl --width 960 --height 600
-//
-// CONTROLS
-//   1..9         choose tool (1 plat, 2 oneway, 3 coin, 4 spike,
-//                              5 goomba, 6 jumper, 7 check,
-//                              8 start,  9 goal)
-//   left-click   place / drag-resize for plat & oneway
-//   right-click  delete object under cursor
-//   arrows       pan camera   (hold shift = fast)
-//   G            toggle grid snap
-//   [ / ]        cycle level slot 1..3
-//   S            save level to its slot file
-//   L            (re)load level from disk
-//   N            new empty level
-//   T            test play - launches game (close window to come back)
-//   ESC          quit
-//
-// The editor carries its own copy of the level format so it runs as a single
-// self-contained script, exactly as game.ptl does.
-// =====================================================================
+# =====================================================================
+# LEVEL EDITOR  -  Petal + petal-sdl
+# =====================================================================
+# Run:
+#     ./petal-sdl/target/debug/petal-sdl side-scroller/editor.ptl --width 960 --height 600
+#
+# CONTROLS
+#   1..9         choose tool (1 plat, 2 oneway, 3 coin, 4 spike,
+#                              5 goomba, 6 jumper, 7 check,
+#                              8 start,  9 goal)
+#   left-click   place / drag-resize for plat & oneway
+#   right-click  delete object under cursor
+#   arrows       pan camera   (hold shift = fast)
+#   G            toggle grid snap
+#   [ / ]        cycle level slot 1..3
+#   S            save level to its slot file
+#   L            (re)load level from disk
+#   N            new empty level
+#   T            test play - launches game (close window to come back)
+#   ESC          quit
+#
+# The editor carries its own copy of the level format so it runs as a single
+# self-contained script, exactly as game.ptl does.
+# =====================================================================
 
 import sdl
 import ui
@@ -40,17 +40,17 @@ state slot_files  = [
   "side-scroller/levels/03_sky_ruins.lvl"
 ]
 state slot_titles = ["First Steps", "Cavern Dive", "Sky Ruins"]
-// `level` and the HUD banner are written from inside functions (`delete_at`,
-// `say`), so they need a cell: a plain `=` in a function builds a local shadow
-// rather than writing the state.
+# `level` and the HUD banner are written from inside functions (`delete_at`,
+# `say`), so they need a cell: a plain `=` in a function builds a local shadow
+# rather than writing the state.
 state var level   = nil
 state loaded_slot = -1
 state var msg     = ""
 state var msg_t   = 0.0
-state drag_start  = nil          // {x,y} when dragging to size a plat/oneway
+state drag_start  = nil          # {x,y} when dragging to size a plat/oneway
 state hover_world = {x: 0, y: 0}
 
-// ----------------------------- HELPERS --------------------------------
+# ----------------------------- HELPERS --------------------------------
 
 fn clamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
@@ -68,9 +68,9 @@ fn say(s: string)
   set msg = s; set msg_t = 2.0
 end
 
-// ----------------------------- LEVEL FORMAT ---------------------------
-// The same .lvl grammar game.ptl parses, plus the serializer that writes it
-// back out.
+# ----------------------------- LEVEL FORMAT ---------------------------
+# The same .lvl grammar game.ptl parses, plus the serializer that writes it
+# back out.
 
 fn empty_level() -> record
   {
@@ -170,7 +170,7 @@ fn serialize_level(L: record) -> string
   join(lines, "\n")
 end
 
-// ----------------------------- LOAD / SAVE ----------------------------
+# ----------------------------- LOAD / SAVE ----------------------------
 
 fn load_slot(idx) -> record
   let path = slot_files[idx]
@@ -193,21 +193,21 @@ fn save_slot(idx)
   if ok then say("Saved {path}") else say("Save failed!") end
 end
 
-// loaded_slot starts at -1, so this also covers the first frame's load.
+# loaded_slot starts at -1, so this also covers the first frame's load.
 if loaded_slot != slot then set level = load_slot(slot); loaded_slot = slot end
 
-// ----------------------------- INPUT ----------------------------------
+# ----------------------------- INPUT ----------------------------------
 
 let dts = dt()
 set msg_t = max(0.0, msg_t - dts)
 
-// pan
+# pan
 let pan_speed = if key_down("shift") then 900.0 else 350.0 end
 if key_down("left")  then cam_x = cam_x - pan_speed * dts end
 if key_down("right") then cam_x = cam_x + pan_speed * dts end
 cam_x = clamp(cam_x, lo: 0.0, hi: float(level.width) - float(SCREEN_W))
 
-// tools
+# tools
 if key_pressed("1") then tool = 1 end
 if key_pressed("2") then tool = 2 end
 if key_pressed("3") then tool = 3 end
@@ -219,7 +219,7 @@ if key_pressed("8") then tool = 8 end
 if key_pressed("9") then tool = 9 end
 if key_pressed("g") then grid_snap = !grid_snap; say(if grid_snap then "Grid ON" else "Grid OFF" end) end
 
-// slot switching
+# slot switching
 if key_pressed("leftbracket") then slot = (slot + len(slot_files) - 1) % len(slot_files) end
 if key_pressed("rightbracket") then slot = (slot + 1) % len(slot_files) end
 
@@ -232,16 +232,16 @@ if key_pressed("n") then
   say("Cleared")
 end
 
-// mouse position in world coords
+# mouse position in world coords
 let mwx = mouse_x() + int(cam_x)
 let mwy = mouse_y()
 hover_world = {x: snap(mwx), y: snap(mwy)}
 
-// ----------------------------- TOOL ACTIONS ---------------------------
+# ----------------------------- TOOL ACTIONS ---------------------------
 
 fn delete_at(wx: num, wy: num) -> bool
-  // Delete the topmost item at (wx, wy): each list is scanned back to front,
-  // so the most recently placed object wins.
+  # Delete the topmost item at (wx, wy): each list is scanned back to front,
+  # so the most recently placed object wins.
   let i = len(get level.plats) - 1
   while i >= 0 do
     let p = get level.plats[i]
@@ -309,7 +309,7 @@ fn filter_index(list: list, idx: num) -> list
   out
 end
 
-// place
+# place
 if mouse_pressed(1) then
   let wx = hover_world.x
   let wy = hover_world.y
@@ -340,7 +340,7 @@ if mouse_pressed(1) then
   end
 end
 
-// release: finalise plat/oneway drag
+# release: finalise plat/oneway drag
 if mouse_down(1) == false && drag_start != nil then
   let wx = hover_world.x
   let wy = hover_world.y
@@ -360,7 +360,7 @@ end
 
 if mouse_pressed(3) then delete_at(mwx, mwy) end
 
-// ----------------------------- DRAW -----------------------------------
+# ----------------------------- DRAW -----------------------------------
 
 fn world_x(wx: num) -> num
   wx - int(cam_x)
@@ -368,7 +368,7 @@ end
 
 clear(level.bg_r, level.bg_g, level.bg_b)
 
-// grid
+# grid
 if grid_snap then
   let gx = -int(cam_x) % grid_size
   let i = 0
@@ -385,11 +385,11 @@ if grid_snap then
   end
 end
 
-// level boundary
+# level boundary
 let bx_end = world_x(level.width)
 draw_line(bx_end, 0, bx_end, SCREEN_H, 200, 80, 80)
 
-// platforms
+# platforms
 for p in level.plats do
   draw_rect(x: world_x(p.x), y: p.y, w: p.w, h: p.h, r: 110, g: 70, b: 40)
   draw_rect(x: world_x(p.x), y: p.y, w: p.w, h: 5, r: 60, g: 170, b: 55)
@@ -425,16 +425,16 @@ for ck in level.checks do
   draw_rect(x: world_x(ck.x) + 9, y: ck.y - 30, w: 14, h: 9, r: 240, g: 80, b: 90)
 end
 
-// start
+# start
 draw_rect(x: world_x(int(level.start.x)) - 4, y: int(level.start.y) - 4, w: 28, h: 36, r: 100, g: 200, b: 100)
 draw_text("S", x: world_x(int(level.start.x)) + 4, y: int(level.start.y) + 4, size: 20, r: 20, g: 60, b: 20)
 
-// goal
+# goal
 draw_rect(x: world_x(int(level.goal.x)) + 8, y: int(level.goal.y) - 80, w: 4, h: 80, r: 230, g: 230, b: 230)
 draw_rect(x: world_x(int(level.goal.x)) + 12, y: int(level.goal.y) - 76, w: 24, h: 16, r: 230, g: 60, b: 60)
 draw_text("G", x: world_x(int(level.goal.x)) + 18, y: int(level.goal.y) - 76, size: 16, r: 255, g: 255, b: 255)
 
-// drag preview
+# drag preview
 if drag_start != nil then
   let wx = hover_world.x
   let wy = hover_world.y
@@ -449,13 +449,13 @@ if drag_start != nil then
   end
 end
 
-// cursor crosshair (in screen coords)
+# cursor crosshair (in screen coords)
 let mx = mouse_x()
 let my = mouse_y()
 draw_line(mx - 8, my, mx + 8, my, 220, 220, 240)
 draw_line(mx, my - 8, mx, my + 8, 220, 220, 240)
 
-// ----------------------------- HUD ------------------------------------
+# ----------------------------- HUD ------------------------------------
 
 draw_rect(x: 0, y: 0, w: SCREEN_W, h: 36, r: 0, g: 0, b: 0)
 draw_rect(x: 0, y: 0, w: SCREEN_W, h: 34, r: 25, g: 30, b: 50)
@@ -486,12 +486,12 @@ for t in tools_row do
   tx = tx + 100
 end
 
-// status
+# status
 let stats = "plats {len(level.plats)}  ow {len(level.oneways)}  coins {len(level.coins)}  spikes {len(level.spikes)}  enemies {len(level.enemies)}  checks {len(level.checks)}"
 draw_rect(x: 0, y: SCREEN_H - 56, w: SCREEN_W, h: 22, r: 0, g: 0, b: 0)
 draw_text(stats, x: 8, y: SCREEN_H - 52, size: 16, r: 200, g: 200, b: 230)
 
-// hover read
+# hover read
 draw_text("@ {hover_world.x},{hover_world.y}", x: SCREEN_W - 200, y: 8, size: 16, r: 200, g: 200, b: 230)
 
 if msg_t > 0.0 then

@@ -1,12 +1,12 @@
-// bloom/display — the components that show rather than take input: badges
-// and pills, cards, the empty state, the keyboard-hint bar, section labels,
-// the scrollbar, the load view and the text spinner.
-//
-// These were `ui`'s (core-libs/petal-ui/prelude/widgets.ptl) until bloom
-// took over the widgets. The calls and the return values are the same, so a
-// port is a change of qualifier; the look is bloom's (labels placed by
-// text-layout, theme tokens, eased hover), and each `opts` record still takes
-// the keys the `ui` style record did.
+# bloom/display — the components that show rather than take input: badges
+# and pills, cards, the empty state, the keyboard-hint bar, section labels,
+# the scrollbar, the load view and the text spinner.
+#
+# These were `ui`'s (core-libs/petal-ui/prelude/widgets.ptl) until bloom
+# took over the widgets. The calls and the return values are the same, so a
+# port is a change of qualifier; the look is bloom's (labels placed by
+# text-layout, theme tokens, eased hover), and each `opts` record still takes
+# the keys the `ui` style record did.
 
 import bloom/theme: theme, ts, tone, hair, stroke, rate
 import bloom/motion: ease_to, ease_flag
@@ -15,11 +15,11 @@ import bloom/button: spinner
 import text_layout: draw_text_line
 import ui
 
-// ── Badge and pill ─────────────────────────────────────────────────────────
+# ── Badge and pill ─────────────────────────────────────────────────────────
 
-// A small rounded label chip at (x, y). Returns the rect it drew, so a row of
-// them can flow. `opts`: {size, bg, fg, gradient, gradient_angle} —
-// `gradient: [c0, c1]` fills the chip with a ramp instead of a flat colour.
+# A small rounded label chip at (x, y). Returns the rect it drew, so a row of
+# them can flow. `opts`: {size, bg, fg, gradient, gradient_angle} —
+# `gradient: [c0, c1]` fills the chip with a ramp instead of a flat colour.
 pub fn badge(x: num, y: num, text: string) -> record
   _badge(x, y, text, {})
 end
@@ -28,10 +28,10 @@ pub fn badge(x: num, y: num, text: string, opts: record) -> record
   _badge(x, y, text, opts)
 end
 
-// `badge`, `pill` and the other names below are also `ui`'s, which this module
-// imports plainly. Inside one variant's own body the short form would escape
-// to `ui`'s set, so both forms go through a private implementation (see
-// bloom/button's `button_impl`).
+# `badge`, `pill` and the other names below are also `ui`'s, which this module
+# imports plainly. Inside one variant's own body the short form would escape
+# to `ui`'s set, so both forms go through a private implementation (see
+# bloom/button's `button_impl`).
 fn _badge(x: num, y: num, text: string, opts: record) -> record
   let t = theme()
   let size = field(opts, "size", t.font_sm)
@@ -47,10 +47,10 @@ fn _badge(x: num, y: num, text: string, opts: record) -> record
   r
 end
 
-// The coloured badge: `color` tints the fill and the text — the status-chip
-// look (pass t.success / t.warn / t.danger / t.accent). Returns its rect.
-// `opts`: {size, on} — `on` is the surface the pill sits on, which the tint is
-// flattened against, so two overlapping pills still read as one wash.
+# The coloured badge: `color` tints the fill and the text — the status-chip
+# look (pass t.success / t.warn / t.danger / t.accent). Returns its rect.
+# `opts`: {size, on} — `on` is the surface the pill sits on, which the tint is
+# flattened against, so two overlapping pills still read as one wash.
 pub fn pill(x: num, y: num, text: string, color: record) -> record
   _pill(x, y, text, color, {})
 end
@@ -69,18 +69,18 @@ fn _pill(x: num, y: num, text: string, color: record, opts: record) -> record
   r
 end
 
-// A chip is as wide as its label plus padding, so the width it reserves comes
-// from the style the label is drawn in.
+# A chip is as wide as its label plus padding, so the width it reserves comes
+# from the style the label is drawn in.
 fn _chip_rect(x: num, y: num, text: string, style: record, size: num) -> record
   rect(x, y, text_width(text, style) + 14, size + 8)
 end
 
-// ── Card ───────────────────────────────────────────────────────────────────
+# ── Card ───────────────────────────────────────────────────────────────────
 
-// A raised surface: a soft shadow, a face and a hairline. Returns the padded
-// content rect. `opts`: {radius, pad, bg, outline, shadow, elevation} —
-// `shadow: false` skips the shadow, `elevation` picks a step of the theme's
-// elevation scale (1 by default).
+# A raised surface: a soft shadow, a face and a hairline. Returns the padded
+# content rect. `opts`: {radius, pad, bg, outline, shadow, elevation} —
+# `shadow: false` skips the shadow, `elevation` picks a step of the theme's
+# elevation scale (1 by default).
 pub fn card(r: record) -> record
   _card(r, {})
 end
@@ -100,10 +100,10 @@ fn _card(r: record, opts: record) -> record
   pad(r, field(opts, "pad", t.space_lg))
 end
 
-// ── Empty state ────────────────────────────────────────────────────────────
+# ── Empty state ────────────────────────────────────────────────────────────
 
-// Centred "nothing here" copy for an empty region: a dim title and, when
-// `hint` is not "", a dimmer line under it. `opts`: {size, fg}.
+# Centred "nothing here" copy for an empty region: a dim title and, when
+# `hint` is not "", a dimmer line under it. `opts`: {size, fg}.
 pub fn empty_state(r: record, title: string, hint: string)
   _empty_state(r, title, hint, {})
 end
@@ -119,8 +119,8 @@ fn _empty_state(r: record, title: string, hint: string, opts: record)
   let hint_ts = ts(t, t.font_sm, mix(t.dim, t.bg, 0.35))
   let cy = r.y + r.h / 2.0
   if len(hint) > 0 then
-    // The pair is centred as a block: the title's line above the middle, the
-    // hint's below, with a small gap between.
+    # The pair is centred as a block: the title's line above the middle, the
+    # hint's below, with a small gap between.
     draw_text_line(title, Rect(r.x, cy - size * 1.3, r.w, size * 1.3), title_ts, "center")
     draw_text_line(hint, Rect(r.x, cy + 4.0, r.w, t.font_sm * 1.4), hint_ts, "center")
   else
@@ -128,19 +128,19 @@ fn _empty_state(r: record, title: string, hint: string, opts: record)
   end
 end
 
-// ── Hint bar ───────────────────────────────────────────────────────────────
+# ── Hint bar ───────────────────────────────────────────────────────────────
 
-// One entry of a hint bar: the key-cap text and what it does.
+# One entry of a hint bar: the key-cap text and what it does.
 pub fn hint(key: string, label: string) -> record
   {key: key, label: label}
 end
 
-// The keyboard-hint bar a full-pane app draws along its bottom edge: key caps
-// in small rounded boxes, labels dim beside them.
-//
-//   hint_bar(bottom, [hint("j/k", "move"), hint("enter", "open")])
-//
-// `opts`: {bg, rule, size, fg, cap, cap_fg}.
+# The keyboard-hint bar a full-pane app draws along its bottom edge: key caps
+# in small rounded boxes, labels dim beside them.
+#
+#   hint_bar(bottom, [hint("j/k", "move"), hint("enter", "open")])
+#
+# `opts`: {bg, rule, size, fg, cap, cap_fg}.
 pub fn hint_bar(r: record, hints: list)
   _hint_bar(r, hints, {})
 end
@@ -164,19 +164,19 @@ fn _hint_bar(r: record, hints: list, opts: record)
     draw_rect_rounded(kr, t.radius_sm, field(opts, "cap", tone(t, t.panel, 0.18)))
     draw_text_line(hn.key, kr, cap_ts, "center")
     x = x + kw + 6
-    // The next cap flows after this label, so the advance is the drawn width.
+    # The next cap flows after this label, so the advance is the drawn width.
     let lw = draw_text_line(hn.label, Rect(x, r.y, text_width(hn.label, label_ts) + 1, r.h),
       label_ts, "left")
     x = x + lw + 16
   end
 end
 
-// ── Section label ──────────────────────────────────────────────────────────
+# ── Section label ──────────────────────────────────────────────────────────
 
-// A section heading that shows which region owns the keyboard: accent with an
-// underline (grown from the left) when `active`, dim otherwise. `(x, y)` is
-// the top-left of the run. Pass `has_focus(id)` as `active`. Returns the
-// run's width. `opts`: {active, inactive, size}.
+# A section heading that shows which region owns the keyboard: accent with an
+# underline (grown from the left) when `active`, dim otherwise. `(x, y)` is
+# the top-left of the run. Pass `has_focus(id)` as `active`. Returns the
+# run's width. `opts`: {active, inactive, size}.
 pub fn section_label(label: string, x: num, y: num, active: bool) -> num
   _section_label(label, x, y, active, {})
 end
@@ -200,13 +200,13 @@ fn _section_label(label: string, x: num, y: num, active: bool, opts: record) -> 
   w
 end
 
-// ── Scrollbar ──────────────────────────────────────────────────────────────
+# ── Scrollbar ──────────────────────────────────────────────────────────────
 
-// A proportional thumb along the right edge of scroll region `r`: `count`
-// rows in all, `rows` visible, `scroll` the top offset (as `list_update` /
-// `scroll_update` keep it). Draws nothing when the content fits. The thumb
-// brightens while the pointer is over the region. `opts`: {track, thumb,
-// width}.
+# A proportional thumb along the right edge of scroll region `r`: `count`
+# rows in all, `rows` visible, `scroll` the top offset (as `list_update` /
+# `scroll_update` keep it). Draws nothing when the content fits. The thumb
+# brightens while the pointer is over the region. `opts`: {track, thumb,
+# width}.
 pub fn scrollbar(r: record, count: num, rows: num, scroll: num)
   scrollbar(r, count, rows, scroll, {})
 end
@@ -226,19 +226,19 @@ pub fn scrollbar(r: record, count: num, rows: num, scroll: num, opts: record)
   end
 end
 
-// ── Load view ──────────────────────────────────────────────────────────────
+# ── Load view ──────────────────────────────────────────────────────────────
 
-// The non-ready states of a `ui` load state (`load_state` / `load_poll`):
-// a spinner while loading, the error while failed, a hint while idle. Returns
-// true when the value is ready and the caller should draw it instead.
-//
-//   state ls = load_state()
-//   ls = load_poll(ls, key, query("diff", sha))
-//   if bloom.load_view(content, ls) then
-//     ...draw ls.value...
-//   end
-//
-// `opts`: {radius, error_title, idle_title}.
+# The non-ready states of a `ui` load state (`load_state` / `load_poll`):
+# a spinner while loading, the error while failed, a hint while idle. Returns
+# true when the value is ready and the caller should draw it instead.
+#
+#   state ls = load_state()
+#   ls = load_poll(ls, key, query("diff", sha))
+#   if bloom.load_view(content, ls) then
+#     ...draw ls.value...
+#   end
+#
+# `opts`: {radius, error_title, idle_title}.
 pub fn load_view(r: record, ls: record) -> bool
   load_view(r, ls, {})
 end
@@ -260,10 +260,10 @@ pub fn load_view(r: record, ls: record, opts: record) -> bool
   end
 end
 
-// ── Text spinner ───────────────────────────────────────────────────────────
+# ── Text spinner ───────────────────────────────────────────────────────────
 
-// The one-character spinner for a line of text: | / - \ cycling on the frame
-// clock. Draw it in the line's own style.
+# The one-character spinner for a line of text: | / - \ cycling on the frame
+# clock. Draw it in the line's own style.
 pub fn spinner_glyph() -> string
   let glyphs = ["|", "/", "-", "\\"]
   glyphs[(frame_count() / 6) % 4]

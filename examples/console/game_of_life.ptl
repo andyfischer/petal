@@ -1,12 +1,12 @@
-// Conway's Game of Life
-// Demonstrates nested loops, 2D lists, and building lists with append.
+# Conway's Game of Life
+# Demonstrates nested loops, 2D lists, and building lists with append.
 
 fn count_neighbors(grid: list, x: num, y: num, width: num, height: num) -> int
   let count = 0
   for dy in range(-1, 2) do
     for dx in range(-1, 2) do
       if dx == 0 && dy == 0 then
-        // skip self
+        # skip self
       else
         let nx = x + dx
         let ny = y + dy
@@ -39,10 +39,10 @@ fn step(grid: list, width: num, height: num) -> list
       let neighbors = count_neighbors(grid, x, y, width, height)
       let cell = grid[y][x]
       if cell == 1 then
-        // Live cell: survives with 2-3 neighbors
+        # Live cell: survives with 2-3 neighbors
         row = append(row, if neighbors == 2 || neighbors == 3 then 1 else 0 end)
       else
-        // Dead cell: born with exactly 3 neighbors
+        # Dead cell: born with exactly 3 neighbors
         row = append(row, if neighbors == 3 then 1 else 0 end)
       end
     end
@@ -51,7 +51,7 @@ fn step(grid: list, width: num, height: num) -> list
   next
 end
 
-// Glider pattern
+# Glider pattern
 let width = 8
 let height = 8
 let grid = [

@@ -1,33 +1,33 @@
-// Petal Quest — artwork.
-//
-// Pure data: every function here returns string art and nothing else, so this
-// module imports nothing and reaches no native. `game.ptl` owns where the
-// tiles land in the pattern table and which palette each is drawn with.
-//
-// Two conventions run through the whole file:
-//
-//  1. **Digits are palette entries, not colors.** `0`/`.` is entry 0 — the
-//     backdrop for a background tile, transparent for a sprite — and 1/2/3 are
-//     the sub-palette's three real colors, darkest to brightest. The same art
-//     therefore reads as stone or as marble depending only on which palette
-//     `game.ptl` draws it with, which is what makes three tilesets out of one
-//     set of shapes affordable.
-//  2. **The three tilesets share one slot layout.** `tileset(n)` always
-//     returns the same 16 entries in the same order (see `T_*` in game.ptl),
-//     so the level legend, the solid-tile range and the column painter are
-//     written once and never mention which world they are in. This is CHR-bank
-//     swapping, and it is the reason a level change costs 16 tile writes.
-//
-// Sprites are authored as one 16x16 (or 32x32) grid and sliced into tiles by
-// `define_meta`, so what is written here is what appears on screen.
+# Petal Quest — artwork.
+#
+# Pure data: every function here returns string art and nothing else, so this
+# module imports nothing and reaches no native. `game.ptl` owns where the
+# tiles land in the pattern table and which palette each is drawn with.
+#
+# Two conventions run through the whole file:
+#
+#  1. **Digits are palette entries, not colors.** `0`/`.` is entry 0 — the
+#     backdrop for a background tile, transparent for a sprite — and 1/2/3 are
+#     the sub-palette's three real colors, darkest to brightest. The same art
+#     therefore reads as stone or as marble depending only on which palette
+#     `game.ptl` draws it with, which is what makes three tilesets out of one
+#     set of shapes affordable.
+#  2. **The three tilesets share one slot layout.** `tileset(n)` always
+#     returns the same 16 entries in the same order (see `T_*` in game.ptl),
+#     so the level legend, the solid-tile range and the column painter are
+#     written once and never mention which world they are in. This is CHR-bank
+#     swapping, and it is the reason a level change costs 16 tile writes.
+#
+# Sprites are authored as one 16x16 (or 32x32) grid and sliced into tiles by
+# `define_meta`, so what is written here is what appears on screen.
 
-// ── Background tilesets ───────────────────────────────────────────────────
-// Slot order, identical for all three worlds:
-//   0 empty      1 ground-top   2 ground-fill  3 brick
-//   4 hard block 5 ledge-left   6 ledge-mid    7 ledge-right
-//   8 deco-A     9 deco-B      10 tuft        11 cloud-left
-//  12 cloud-right 13 pole       14 spikes      15 banner
-// Slots 1-7 are the solid ones; 14 hurts; everything else is scenery.
+# ── Background tilesets ───────────────────────────────────────────────────
+# Slot order, identical for all three worlds:
+#   0 empty      1 ground-top   2 ground-fill  3 brick
+#   4 hard block 5 ledge-left   6 ledge-mid    7 ledge-right
+#   8 deco-A     9 deco-B      10 tuft        11 cloud-left
+#  12 cloud-right 13 pole       14 spikes      15 banner
+# Slots 1-7 are the solid ones; 14 hurts; everything else is scenery.
 
 import nes
 
@@ -42,8 +42,8 @@ let EMPTY = [
   "........"
 ]
 
-// Shapes shared by more than one world. A ledge is three tiles so a floating
-// platform has ends instead of stopping mid-plank.
+# Shapes shared by more than one world. A ledge is three tiles so a floating
+# platform has ends instead of stopping mid-plank.
 let LEDGE_L = [
   "33333333",
   "31111111",
@@ -110,7 +110,7 @@ let SPIKES = [
   "11111111"
 ]
 
-// A pennant on a right-hand pole: the goal marker, one cell wide.
+# A pennant on a right-hand pole: the goal marker, one cell wide.
 let BANNER = [
   "..333311",
   ".3333311",
@@ -144,7 +144,7 @@ let CLOUD_R = [
   "........"
 ]
 
-// World 1 — Green Fields. Grass over speckled dirt, wooden ledges, bushes.
+# World 1 — Green Fields. Grass over speckled dirt, wooden ledges, bushes.
 let FIELD_TOP = [
   "33333333",
   "33333333",
@@ -211,7 +211,7 @@ let TUFT = [
   "12321232"
 ]
 
-// World 2 — the Deep. Fractured stone, crystal seams, stalagmites.
+# World 2 — the Deep. Fractured stone, crystal seams, stalagmites.
 let CAVE_TOP = [
   "33333333",
   "33333333",
@@ -278,7 +278,7 @@ let STALAGMITE = [
   "12321232"
 ]
 
-// The cave has no sky, so its "clouds" are the far wall behind the play area.
+# The cave has no sky, so its "clouds" are the far wall behind the play area.
 let WALL_L = [
   "....1111",
   "...11111",
@@ -301,7 +301,7 @@ let WALL_R = [
   "11111111"
 ]
 
-// World 3 — Sky Castle. Cut marble, stained glass, stars.
+# World 3 — Sky Castle. Cut marble, stained glass, stars.
 let CASTLE_TOP = [
   "33333333",
   "33333333",
@@ -368,9 +368,9 @@ let STARS = [
   ".2....3."
 ]
 
-// The 16 background tiles for world `n` (0, 1 or 2). Any index outside that
-// range falls back to world 0, so a mis-typed level number draws something
-// rather than crashing mid-frame.
+# The 16 background tiles for world `n` (0, 1 or 2). Any index outside that
+# range falls back to world 0, so a mis-typed level number draws something
+# rather than crashing mid-frame.
 pub fn tileset(n: num) -> list
   if n == 1 then
     [EMPTY, CAVE_TOP, CAVE_FILL, CAVE_BRICK, HARD, LEDGE_L, LEDGE_M, LEDGE_R,
@@ -384,10 +384,10 @@ pub fn tileset(n: num) -> list
   end
 end
 
-// ── The hero ──────────────────────────────────────────────────────────────
-// 16x16, palette 4: 1 navy (outline, cap, boots), 2 red (tunic), 3 peach
-// (skin). Eight poses; the run cycle reuses the pass pose twice, which is what
-// gives four beats out of three drawings.
+# ── The hero ──────────────────────────────────────────────────────────────
+# 16x16, palette 4: 1 navy (outline, cap, boots), 2 red (tunic), 3 peach
+# (skin). Eight poses; the run cycle reuses the pass pose twice, which is what
+# gives four beats out of three drawings.
 
 let HERO_IDLE_A = [
   "................",
@@ -541,16 +541,16 @@ let HERO_HURT = [
   "................"
 ]
 
-// The hero's eight poses, in the order `game.ptl` assigns tile slots:
-// idle x2, run x3, jump, fall, hurt.
+# The hero's eight poses, in the order `game.ptl` assigns tile slots:
+# idle x2, run x3, jump, fall, hurt.
 pub fn hero_grids() -> list
   [HERO_IDLE_A, HERO_IDLE_B, HERO_RUN_A, HERO_RUN_B, HERO_RUN_C,
     HERO_JUMP, HERO_FALL, HERO_HURT]
 end
 
-// ── Enemies ───────────────────────────────────────────────────────────────
-// Slime and hopper share palette 5 (greens); bat and boss share palette 7
-// (maroon / red / white), which is also the palette overlay text is drawn in.
+# ── Enemies ───────────────────────────────────────────────────────────────
+# Slime and hopper share palette 5 (greens); bat and boss share palette 7
+# (maroon / red / white), which is also the palette overlay text is drawn in.
 
 let SLIME_A = [
   "................",
@@ -678,10 +678,10 @@ pub fn bat_grids() -> list
   [BAT_A, BAT_B]
 end
 
-// ── The Rift Warden ───────────────────────────────────────────────────────
-// 32x32 — sixteen tiles and sixteen of the sixty-four sprites, which is most
-// of the boss arena's budget and exactly why nothing else lives in there.
-// Two poses: eye open (charging) and eye shut (recovering, the window to hit).
+# ── The Rift Warden ───────────────────────────────────────────────────────
+# 32x32 — sixteen tiles and sixteen of the sixty-four sprites, which is most
+# of the boss arena's budget and exactly why nothing else lives in there.
+# Two poses: eye open (charging) and eye shut (recovering, the window to hit).
 
 let BOSS_OPEN = [
   "................................",
@@ -757,9 +757,9 @@ pub fn boss_grids() -> list
   [BOSS_OPEN, BOSS_SHUT]
 end
 
-// ── Pickups and effects ───────────────────────────────────────────────────
-// Coins are single 8x8 tiles (there are dozens per level and each one costs a
-// sprite), everything else is 16x16.
+# ── Pickups and effects ───────────────────────────────────────────────────
+# Coins are single 8x8 tiles (there are dozens per level and each one costs a
+# sprite), everything else is 16x16.
 
 let COIN_0 = [
   "..2222..",
@@ -827,7 +827,7 @@ let STAR_B = [
   "........"
 ]
 
-// The coin's four beats out of three drawings — full, edge-on, thin, edge-on.
+# The coin's four beats out of three drawings — full, edge-on, thin, edge-on.
 pub fn coin_grids() -> list
   [COIN_0, COIN_1, COIN_2]
 end
@@ -893,15 +893,15 @@ let POOF_C = [
   "................"
 ]
 
-// A one-shot burst: filled, ring, sparks. Used for enemy deaths, boss hits and
-// the powerup flash.
+# A one-shot burst: filled, ring, sparks. Used for enemy deaths, boss hits and
+# the powerup flash.
 pub fn poof_grids() -> list
   [POOF_A, POOF_B, POOF_C]
 end
 
-// ── Title-screen scenery ──────────────────────────────────────────────────
-// The title is not a level, so its hills and its sun are their own tiles
-// rather than a fourth tileset.
+# ── Title-screen scenery ──────────────────────────────────────────────────
+# The title is not a level, so its hills and its sun are their own tiles
+# rather than a fourth tileset.
 
 let HILL_L = [
   "......11",
@@ -947,7 +947,7 @@ let SUN = [
   "..3333.."
 ]
 
-// Four extra title tiles: hill left / mid / right, and the sun.
+# Four extra title tiles: hill left / mid / right, and the sun.
 pub fn title_grids() -> list
   [HILL_L, HILL_M, HILL_R, SUN]
 end

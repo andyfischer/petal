@@ -1,27 +1,27 @@
-// Burrow: the virtual filesystem's seed data and the pure helpers over it.
-//
-// Nothing here touches a disk. The whole tree is a flat list of node records,
-// built once from the SEED lines below, and a node's id is its index in that
-// list for the life of the session:
-//
-//   {id, name, parent, dir, size, mt, from, doc}
-//
-// `parent` is another node's id (-1 for the two roots, GONE once deleted for
-// good), `mt` is minutes since 2024-01-01, `from` is where a trashed node
-// came from, and `doc` names the entry in DOCS that holds its text, if any.
+# Burrow: the virtual filesystem's seed data and the pure helpers over it.
+#
+# Nothing here touches a disk. The whole tree is a flat list of node records,
+# built once from the SEED lines below, and a node's id is its index in that
+# list for the life of the session:
+#
+#   {id, name, parent, dir, size, mt, from, doc}
+#
+# `parent` is another node's id (-1 for the two roots, GONE once deleted for
+# good), `mt` is minutes since 2024-01-01, `from` is where a trashed node
+# came from, and `doc` names the entry in DOCS that holds its text, if any.
 
 pub let HOME = 0
 pub let TRASH = 1
 pub let GONE = -9
 
-// "Now" is fixed, so the dates on screen are the same on every run:
-// Friday 9 October 2026, 2:30 PM.
+# "Now" is fixed, so the dates on screen are the same on every run:
+# Friday 9 October 2026, 2:30 PM.
 pub let TODAY = 1012
 pub let NOW = 1012 * 1440 + 14 * 60 + 30
 
-// path | size | days ago | time of day. A folder is made the first time a
-// path walks through it. Lines under "Trash/" carry a fifth field: the
-// folder they were thrown away from.
+# path | size | days ago | time of day. A folder is made the first time a
+# path walks through it. Lines under "Trash/" carry a fifth field: the
+# folder they were thrown away from.
 let SEED = [
   "Desktop/Screenshot 2026-10-08 at 09.41.12.png|1.8M|1|0941",
   "Desktop/Screenshot 2026-10-06 at 17.03.55.png|2.1M|3|1703",
@@ -119,9 +119,9 @@ let SEED = [
   "Trash/Untitled.docx|12K|3|1619|Documents",
 ]
 
-// Text for the files that have something to read. Keyed by the file's
-// original name; a node points here through `doc`, so a renamed or
-// duplicated file keeps its contents.
+# Text for the files that have something to read. Keyed by the file's
+# original name; a node points here through `doc`, so a renamed or
+# duplicated file keeps its contents.
 let DOCS = [
   ["todo.md", """# This week
 
@@ -397,18 +397,18 @@ fn has_doc(name: string) -> bool
   false
 end
 
-// ── Building the tree ───────────────────────────────────────────────────────
+# ── Building the tree ───────────────────────────────────────────────────────
 
 fn parse_size(s: string) -> int
   let unit = slice(s, -1)
   let n = parse_float(slice(s, 0, len(s) - 1)) ?? 0.0
   let mul = if unit == "G" then 1000000000 elsif unit == "M" then 1000000 else 1000 end
-  // A size that is not a round number of kilobytes reads as a real file's.
+  # A size that is not a round number of kilobytes reads as a real file's.
   int(n * mul) + (len(s) * 137) % 911
 end
 
-// A camera roll long enough to scroll: forty shots over a fortnight, mostly
-// photos, the odd HEIC and clip.
+# A camera roll long enough to scroll: forty shots over a fortnight, mostly
+# photos, the odd HEIC and clip.
 fn camera_roll() -> list
   for i in range(0, 40) do
     let n = 4780 + i
@@ -441,7 +441,7 @@ pub fn seed() -> list
         by_path[path] = known
       end
       parent = known
-      // A folder was last touched when the newest thing in it was.
+      # A folder was last touched when the newest thing in it was.
       if out[parent].mt < mt && parent > 1 then
         out[parent].mt = mt
       end
@@ -454,7 +454,7 @@ pub fn seed() -> list
   out
 end
 
-// The id of the node at a path under Home ("Documents/Taxes"), or -1.
+# The id of the node at a path under Home ("Documents/Taxes"), or -1.
 pub fn find(nodes: list, path: string) -> int
   let at = 0
   for part in split(path, "/") do
@@ -473,10 +473,10 @@ pub fn find(nodes: list, path: string) -> int
   at
 end
 
-// ── Names and kinds ─────────────────────────────────────────────────────────
+# ── Names and kinds ─────────────────────────────────────────────────────────
 
-// "report.final.pdf" → {stem: "report.final", ext: "pdf"}. A leading dot is
-// part of the name, not an extension.
+# "report.final.pdf" → {stem: "report.final", ext: "pdf"}. A leading dot is
+# part of the name, not an extension.
 pub fn split_name(name: string) -> record
   let cs = chars(name)
   let dot = -1
@@ -507,8 +507,8 @@ let KIND_BY_EXT = {
   sh: ["code", "Shell script"], json: ["code", "JSON"], toml: ["code", "TOML"],
 }
 
-// {key, label}: `key` picks the icon and the preview, `label` is the Kind
-// column.
+# {key, label}: `key` picks the icon and the preview, `label` is the Kind
+# column.
 pub fn kind_of(n: record) -> record
   if n.dir then
     return {key: "folder", label: "Folder"}
@@ -521,7 +521,7 @@ pub fn kind_of(n: record) -> record
   end
 end
 
-// ── Formatting ──────────────────────────────────────────────────────────────
+# ── Formatting ──────────────────────────────────────────────────────────────
 
 pub fn fmt_size(bytes: num) -> string
   if bytes < 1000 then
@@ -539,7 +539,7 @@ end
 let MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 let MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
-// Day number (0 = 1 Jan 2024) to {y, m, d}.
+# Day number (0 = 1 Jan 2024) to {y, m, d}.
 fn civil(day: int) -> record
   let y = 2024
   let d = day
@@ -565,8 +565,8 @@ fn clock(minute: int) -> string
   "{h12}:{pad_start(str(minute % 60), 2, "0")} {if h < 12 then "AM" else "PM" end}"
 end
 
-// The list column: "Today, 2:02 PM", "Yesterday, 9:41 AM", "Oct 3, 2026".
-// `long` adds the time to an older date, for the info pane.
+# The list column: "Today, 2:02 PM", "Yesterday, 9:41 AM", "Oct 3, 2026".
+# `long` adds the time to an older date, for the info pane.
 pub fn fmt_date(mt: int, long: bool = false) -> string
   let day = mt / 1440
   let at = clock(mt % 1440)
@@ -581,7 +581,7 @@ pub fn fmt_date(mt: int, long: bool = false) -> string
   end
 end
 
-// A small stable number from a name, for the procedural previews.
+# A small stable number from a name, for the procedural previews.
 let HASH_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789-_. "
 pub fn hash(s: string) -> int
   let h = 7
@@ -591,7 +591,7 @@ pub fn hash(s: string) -> int
   h
 end
 
-// The text behind a node, or "" when it has none.
+# The text behind a node, or "" when it has none.
 pub fn doc_text(n: record) -> string
   for d in DOCS do
     if d[0] == n.doc then

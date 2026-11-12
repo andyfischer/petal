@@ -1,4 +1,4 @@
-// Nested record construction + read-only field access.
+# Nested record construction + read-only field access.
 let company = {
   name: "Acme",
   ceo: { name: "Bob", title: "CEO" },

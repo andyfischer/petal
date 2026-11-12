@@ -1,4 +1,4 @@
-// Hello World
-// The simplest Petal program.
+# Hello World
+# The simplest Petal program.
 
 print("Hello, World!")

@@ -1,46 +1,46 @@
-// sqlite-browser — the drawer for browsing and visualizing a SQLite database.
-//
-// A Petal graphical panel (see docs/petal-graphical-panels.md). Like the git
-// viewers this is a FIXED, GENERIC script that bakes in no data:
-// everything is loaded at runtime through the async `query(kind, arg)` native
-// (petal-query on Petal's pending values), answered by the sqlite-browser
-// subprocess, which opens the database read-only:
-//
-//   query("catalog", "")   → { error, path, name,
-//                              tables: [ { name, kind, rows, cols } … ] }
-//   query("table", name)   → { heading, error, row_count, truncated,
-//                              columns: [ { name, type, pk, notnull } … ],
-//                              lines:   [ { text, style } … ] }
-//
-// The right column has two faces. For a table/view: a SCHEMA strip (column
-// name/type with PK·NN badges) above a monospace, column-aligned DATA GRID —
-// the `lines` are pre-formatted and per-line-styled by the subprocess, dumped
-// into a selectable `text_view`. For the OVERVIEW (left row 0): a horizontal
-// BAR CHART of every object's row count — the "visualizer".
-//
-// The widgets are bloom's (core-runtime/bloom/docs/components.md): the
-// draggable divider is a `splitter`, the chart bars are `progress` bars,
-// headings are `section_label`, the scrollbars `scrollbar`, load/empty states
-// use `spinner`/`spinner_glyph`/`empty_state`, and the bottom edge is a
-// `hint_bar`. The catalog is `ui`'s `list_state`/`list_update` (+
-// `list_row_rect`), and the overview scrolls with `ui`'s `scroll_update`. The
-// widgets pick up Garden's colors automatically through the bound host
-// palette.
-//
-// Two focusable regions — the catalog (left) and the detail (right) — cycle with
-// Tab (or click). j/k, arrows, PageUp/PageDown, Home/End move within the focused
-// region; the wheel scrolls whatever region the pointer is over. A draggable
-// vertical divider resizes the columns. Selection, scroll, focus, and load state
-// need no publishing step: the host observes every named binding and reports it
-// at the debug server's /state → panes[].panel.values, so tests drive this panel
-// without pixels by reading `selected`, `detail_scroll`, `focus_id`, `cat_ready`
-// and friends straight off their `let`/`state` names.
+# sqlite-browser — the drawer for browsing and visualizing a SQLite database.
+#
+# A Petal graphical panel (see docs/petal-graphical-panels.md). Like the git
+# viewers this is a FIXED, GENERIC script that bakes in no data:
+# everything is loaded at runtime through the async `query(kind, arg)` native
+# (petal-query on Petal's pending values), answered by the sqlite-browser
+# subprocess, which opens the database read-only:
+#
+#   query("catalog", "")   → { error, path, name,
+#                              tables: [ { name, kind, rows, cols } … ] }
+#   query("table", name)   → { heading, error, row_count, truncated,
+#                              columns: [ { name, type, pk, notnull } … ],
+#                              lines:   [ { text, style } … ] }
+#
+# The right column has two faces. For a table/view: a SCHEMA strip (column
+# name/type with PK·NN badges) above a monospace, column-aligned DATA GRID —
+# the `lines` are pre-formatted and per-line-styled by the subprocess, dumped
+# into a selectable `text_view`. For the OVERVIEW (left row 0): a horizontal
+# BAR CHART of every object's row count — the "visualizer".
+#
+# The widgets are bloom's (core-runtime/bloom/docs/components.md): the
+# draggable divider is a `splitter`, the chart bars are `progress` bars,
+# headings are `section_label`, the scrollbars `scrollbar`, load/empty states
+# use `spinner`/`spinner_glyph`/`empty_state`, and the bottom edge is a
+# `hint_bar`. The catalog is `ui`'s `list_state`/`list_update` (+
+# `list_row_rect`), and the overview scrolls with `ui`'s `scroll_update`. The
+# widgets pick up Garden's colors automatically through the bound host
+# palette.
+#
+# Two focusable regions — the catalog (left) and the detail (right) — cycle with
+# Tab (or click). j/k, arrows, PageUp/PageDown, Home/End move within the focused
+# region; the wheel scrolls whatever region the pointer is over. A draggable
+# vertical divider resizes the columns. Selection, scroll, focus, and load state
+# need no publishing step: the host observes every named binding and reports it
+# at the debug server's /state → panes[].panel.values, so tests drive this panel
+# without pixels by reading `selected`, `detail_scroll`, `focus_id`, `cat_ready`
+# and friends straight off their `let`/`state` names.
 
 import garden
 import ui
 import bloom
 
-// ── panel-local UI state ─────────────────────────────────────────────────────
+# ── panel-local UI state ─────────────────────────────────────────────────────
 state focus_seeded = false
 if !focus_seeded then
   focus_request("catalog")
@@ -49,11 +49,11 @@ end
 state cat_lst = list_state()
 state detail_scroll = 0
 state over_scroll = 0
-// Where the draggable divider (catalog ↔ detail) sits, as a fraction. bloom's
-// splitter keeps its own drag state.
+# Where the draggable divider (catalog ↔ detail) sits, as a fraction. bloom's
+# splitter keeps its own drag state.
 state sp = 0.30
 
-// data caches (query results, held in `state` so we poll only until ready)
+# data caches (query results, held in `state` so we poll only until ready)
 state cat = {path: "", name: "", tables: []}
 state cat_ready = false
 state cat_err = ""
@@ -63,10 +63,10 @@ state detail_loading = false
 state detail_err = ""
 state prev_sel = -1
 
-// ── palette (the host color scheme via palette(), see docs/writing-gpp-apps.md)
-// One `palette()` call yields the full active scheme, always complete, so the
-// drawer paints in Garden's colors in every theme. The widgets resolve
-// the same palette on their own through `ui_theme()`.
+# ── palette (the host color scheme via palette(), see docs/writing-gpp-apps.md)
+# One `palette()` call yields the full active scheme, always complete, so the
+# drawer paints in Garden's colors in every theme. The widgets resolve
+# the same palette on their own through `ui_theme()`.
 let P = palette()
 let BG     = P.window_bg
 let PANEL  = P.panel
@@ -87,19 +87,19 @@ let BLUE   = P.blue
 
 let FS = 14
 
-// ── geometry ─────────────────────────────────────────────────────────────────
+# ── geometry ─────────────────────────────────────────────────────────────────
 let w = screen_width()
 let h = screen_height()
 let PAD = 12
-let HINT_H = 26                   // keyboard hint bar along the bottom edge
-let ch = h - HINT_H               // content height (everything above the hints)
+let HINT_H = 26                   # keyboard hint bar along the bottom edge
+let ch = h - HINT_H               # content height (everything above the hints)
 let header_h = 44
 let content_top = PAD + header_h
 let LINE_H = 17
 let ROW_H = 38
 
 fn commafmt(n)
-  // Group an integer's digits with commas: 1234567 → "1,234,567".
+  # Group an integer's digits with commas: 1234567 → "1,234,567".
   let s = "{n}"
   if len(s) <= 3 then s
   else
@@ -116,7 +116,7 @@ fn commafmt(n)
   end
 end
 
-// ── data: the catalog (loaded once, refreshed via cache policy on re-query) ──
+# ── data: the catalog (loaded once, refreshed via cache policy on re-query) ──
 if !cat_ready then
   let rd = query("catalog", "")
   if is_ready(rd) then
@@ -129,24 +129,24 @@ if !cat_ready then
 end
 let tables = cat.tables
 let table_count = len(tables)
-// Left entries: row 0 is the Overview, rows 1.. are the tables/views.
+# Left entries: row 0 is the Overview, rows 1.. are the tables/views.
 let left_count = table_count + 1
 
-// largest row count, for bar-chart scaling
+# largest row count, for bar-chart scaling
 let max_rows = 1
 for i in range(0, table_count) do
   if tables[i].rows > max_rows then max_rows = tables[i].rows end
 end
 
-// ── layout + divider input: the splitter ─────────────────────────────────────
-// The splitter both updates its drag state and draws its divider line, so the
-// canvas is cleared first and the panel fill painted right after (the fill
-// stops one pixel short of the divider).
+# ── layout + divider input: the splitter ─────────────────────────────────────
+# The splitter both updates its drag state and draws its divider line, so the
+# canvas is cleared first and the panel fill painted right after (the fill
+# stops one pixel short of the divider).
 clear(BG.r, BG.g, BG.b)
 let content_r = rect(PAD, content_top - 10, w - 2 * PAD, ch - content_top + 10)
 let s = bloom.splitter(content_r, sp, {min_a: 190, min_b: 340})
 sp = s.frac
-// The divider sits `left_w` past PAD (the a-side plus the splitter's 4px gap).
+# The divider sits `left_w` past PAD (the a-side plus the splitter's 4px gap).
 let left_w = s.a.w + 4
 let div_x = PAD + left_w
 draw_rect(rect(0, 0, div_x, ch), PANEL)
@@ -158,7 +158,7 @@ let cat_rect = rect(PAD, content_top + 24, left_w - 10, cat_rows * ROW_H)
 let right_x = div_x + 14
 let right_w = w - right_x - PAD
 
-// ── input: focus ring (Tab, click-to-focus) ───────────────────────────────────
+# ── input: focus ring (Tab, click-to-focus) ───────────────────────────────────
 focus_update(["catalog", "detail"])
 let detail_rect = rect(right_x - 6, content_top, right_w + 6, ch - PAD - content_top)
 if mouse_pressed(0) && !dragging then
@@ -166,13 +166,13 @@ if mouse_pressed(0) && !dragging then
   if point_in(mouse_x(), mouse_y(), detail_rect) then focus_request("detail") end
 end
 
-// ── input: catalog selection, lazy detail fetch on change ──────────────────────
-// `ui`'s list: keyboard nav gated on focus, click-select, and a wheel
-// that scrolls the window freely without dragging the selection along.
+# ── input: catalog selection, lazy detail fetch on change ──────────────────────
+# `ui`'s list: keyboard nav gated on focus, click-select, and a wheel
+# that scrolls the window freely without dragging the selection along.
 cat_lst = list_update(cat_lst, left_count, cat_rows, cat_rect, has_focus("catalog"))
 let selected = cat_lst.selected
 
-// row 0 = Overview (no query); rows 1.. = tables/views
+# row 0 = Overview (no query); rows 1.. = tables/views
 let is_overview = selected == 0
 let want = "@overview"
 if selected > 0 && selected <= table_count then want = tables[selected - 1].name end
@@ -194,9 +194,9 @@ if !is_overview && want != loaded_arg then
 end
 if is_overview && selected != prev_sel then over_scroll = 0; prev_sel = selected end
 
-// ── schema strip geometry (only for a table view) ─────────────────────────────
+# ── schema strip geometry (only for a table view) ─────────────────────────────
 let ncols = len(detail.columns)
-// number of wrapped schema lines, computed during draw; seed a reasonable default
+# number of wrapped schema lines, computed during draw; seed a reasonable default
 let schema_rows = 1
 if ncols > 0 then schema_rows = min(4, max(1, int((ncols + 2) / 3))) end
 let schema_h = 0
@@ -205,16 +205,16 @@ let grid_top = content_top + 26 + schema_h
 let grid_rows = max(1, int(float(ch - PAD - grid_top) / LINE_H))
 let grid_rect = rect(right_x - 6, grid_top, right_w + 6, ch - PAD - grid_top)
 
-// overview scroll region
+# overview scroll region
 let over_rect = rect(right_x - 6, content_top + 60, right_w + 6, ch - PAD - content_top - 60)
 let over_rows = max(1, int(float(over_rect.h) / ROW_H))
 
-// ── input: detail scrolling ───────────────────────────────────────────────────
-// `ui`'s scroll region handles the hover-scoped wheel + PageUp/PageDown;
-// the vim-style extras (j/k, space, home/end) stay app-side. Only the face
-// actually showing gets its scroll region updated — over_rect and grid_rect
-// overlap, so an ungated pair would let the overview's wheel silently disturb
-// a table view's saved scroll position (and vice versa).
+# ── input: detail scrolling ───────────────────────────────────────────────────
+# `ui`'s scroll region handles the hover-scoped wheel + PageUp/PageDown;
+# the vim-style extras (j/k, space, home/end) stay app-side. Only the face
+# actually showing gets its scroll region updated — over_rect and grid_rect
+# overlap, so an ungated pair would let the overview's wheel silently disturb
+# a table view's saved scroll position (and vice versa).
 let detail_lines = len(detail.lines)
 if is_overview then
   over_scroll = scroll_update(over_scroll, table_count, over_rows, over_rect, has_focus("detail"))
@@ -231,19 +231,19 @@ end
 detail_scroll = int(clamp(detail_scroll, 0, max(0, detail_lines - grid_rows)))
 over_scroll = int(clamp(over_scroll, 0, max(0, table_count - over_rows)))
 
-// ── introspection for tests / debug server ─────────────────────────────────────
+# ── introspection for tests / debug server ─────────────────────────────────────
 let focus_id = 0
 if has_focus("detail") then focus_id = 1 end
-// Nothing to publish: the host observes every named binding a frame makes and
-// reports it at /state → panes[].panel.values, with its real type. The values a
-// test drives this panel by — `table_count`, `left_count`, `selected`,
-// `detail_lines`, `detail_scroll`, `left_w`, `cat_ready`, `detail_loading`,
-// `cat_err`, `detail_err` — are already named above; only these two are derived
-// here, because nothing else in the frame names them.
+# Nothing to publish: the host observes every named binding a frame makes and
+# reports it at /state → panes[].panel.values, with its real type. The values a
+# test drives this panel by — `table_count`, `left_count`, `selected`,
+# `detail_lines`, `detail_scroll`, `left_w`, `cat_ready`, `detail_loading`,
+# `cat_err`, `detail_err` — are already named above; only these two are derived
+# here, because nothing else in the frame names them.
 let has_error = len(cat_err) > 0 || len(detail_err) > 0
 
-// ── draw: chrome ───────────────────────────────────────────────────────────────
-// header: database name + path + object count
+# ── draw: chrome ───────────────────────────────────────────────────────────────
+# header: database name + path + object count
 let dbname = cat.name
 if !cat_ready then dbname = "opening database {bloom.spinner_glyph()}" end
 if len(cat_err) > 0 then dbname = "could not open database" end
@@ -259,15 +259,15 @@ if cat_ready && len(cat_err) == 0 then
   let vw = "views"
   if nview == 1 then vw = "view" end
   let sub = "{ntab} {tw} · {nview} {vw}"
-  // The path yields to the right-aligned summary: reserve the width `sub`
-  // actually measures rather than a fixed 24-character guess at it.
+  # The path yields to the right-aligned summary: reserve the width `sub`
+  # actually measures rather than a fixed 24-character guess at it.
   draw_text(ellipsize(cat.path, w - 2 * PAD - text_width(sub, FS) - 16, FS),
     {x: PAD, y: PAD + 21}, FS, DIM)
   draw_text_right(sub, w - PAD, PAD + 21, FS, DIM)
 end
 draw_line({x: 0, y: content_top - 10}, {x: w, y: content_top - 10}, LINE)
 
-// ── draw: catalog section ───────────────────────────────────────────────────────
+# ── draw: catalog section ───────────────────────────────────────────────────────
 bloom.section_label("TABLES · {table_count}", PAD, content_top, has_focus("catalog"))
 if len(cat_err) > 0 then
   draw_text("open error:", {x: PAD + 4, y: cat_rect.y + 4}, FS, RED)
@@ -314,9 +314,9 @@ end
 clip_none()
 bloom.scrollbar(cat_rect, left_count, cat_rows, cat_lst.scroll)
 
-// ── draw: detail — Overview bar chart OR a table's schema + data grid ──────────
+# ── draw: detail — Overview bar chart OR a table's schema + data grid ──────────
 if is_overview then
-  // ── the "visualizer": a horizontal bar chart of every object's row count ──
+  # ── the "visualizer": a horizontal bar chart of every object's row count ──
   draw_text("Row counts", {x: right_x, y: content_top}, FS, ACCENT)
   draw_text_right("largest: {commafmt(max_rows)}", w - PAD, content_top, FS, DIM)
   draw_line({x: right_x, y: content_top + 22}, {x: w - PAD, y: content_top + 22}, LINE)
@@ -340,22 +340,22 @@ if is_overview then
     let cy = ry + ROW_H / 2
     let col = BLUE
     if t.kind == "view" then col = PURPLE end
-    // label (right-aligned into its gutter)
+    # label (right-aligned into its gutter)
     draw_text_right(ellipsize(t.name, bar_label_w - 10, FS), over_rect.x + bar_label_w - 10, cy - 8, FS, MUT)
-    // track + bar: a bloom progress bar, floored so a nonempty table is
-    // always visibly nonzero.
+    # track + bar: a bloom progress bar, floored so a nonempty table is
+    # always visibly nonzero.
     let frac = float(t.rows) / float(max_rows)
     if t.rows > 0 && frac * float(bar_max) < 2.0 then frac = 2.0 / float(max(1, bar_max)) end
     bloom.progress(rect(bar_x, cy - 8, bar_max, 16), frac, {color: col})
-    // value
+    # value
     draw_text(commafmt(t.rows), {x: bar_x + bar_max + 8, y: cy - 8}, FS, DIM)
   end
   clip_none()
   bloom.scrollbar(over_rect, table_count, over_rows, over_scroll)
 else
-  // ── a table/view: heading, schema strip, then the data grid ──
-  // Clipped once and reused: the focus underline below measures the heading
-  // that was actually drawn, not a second copy trimmed to its own budget.
+  # ── a table/view: heading, schema strip, then the data grid ──
+  # Clipped once and reused: the focus underline below measures the heading
+  # that was actually drawn, not a second copy trimmed to its own budget.
   let heading = ellipsize_tail(detail.heading, right_w, FS)
   draw_text(heading, {x: right_x, y: content_top}, FS, ACCENT)
   let sub = "{commafmt(detail.row_count)} rows · {ncols} cols"
@@ -370,14 +370,14 @@ else
 
   if len(detail_err) > 0 then
     draw_text("error:", {x: right_x, y: content_top + 40}, FS, RED)
-    // Sized to the right pane it draws into, not to the whole window — the
-    // window-wide budget let a long error run past the pane edge.
+    # Sized to the right pane it draws into, not to the whole window — the
+    # window-wide budget let a long error run past the pane edge.
     draw_text(ellipsize(detail_err, right_w, FS), {x: right_x, y: content_top + 60}, FS, MUT)
   elsif detail_loading && detail_lines == 0 then
     bloom.spinner(grid_rect.x + grid_rect.w / 2, grid_rect.y + 48, 12)
     draw_text_center("loading table", grid_rect.x + grid_rect.w / 2, grid_rect.y + 72, FS, DIM)
   else
-    // schema strip: flow column chips across up to schema_rows lines
+    # schema strip: flow column chips across up to schema_rows lines
     let sx = right_x
     let sy = content_top + 32
     let line_no = 0
@@ -407,7 +407,7 @@ else
       cursor += cwid
     end
 
-    // the data grid (selectable text_view with per-line styles)
+    # the data grid (selectable text_view with per-line styles)
     if detail_lines == 0 then
       bloom.empty_state(grid_rect, "No rows", "")
     else
@@ -423,7 +423,7 @@ else
   end
 end
 
-// ── draw: keyboard hints ─────────────────────────────────────────────────────
+# ── draw: keyboard hints ─────────────────────────────────────────────────────
 bloom.hint_bar(rect(0, ch, w, HINT_H),
   [bloom.hint("tab", "cycle focus"), bloom.hint("j/k", "move"), bloom.hint("pgup/pgdn", "page"),
    bloom.hint("drag", "resize columns")])

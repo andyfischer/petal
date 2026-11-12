@@ -1,22 +1,22 @@
-// Scheduler (paper §4) with declarative dragging (ui/drag): `between` and
-// `vary`.
-//
-// The model is a list of meetings, each with a start, an end (minutes after
-// 8:00) and a room. The view draws each room as a track and each meeting as
-// a bar on its room's track. Two drags, both written as what they change:
-//
-// - Dragging a bar changes its room. Its states are the meeting in every
-//   room (`choices`), and `between` lets the bar slide along the line those
-//   renderings make — up and down, never sideways, since a room change does
-//   not move it in time — and drop into the nearest room.
-// - Dragging a bar's end handle changes that time. Time is continuous, so
-//   `vary` solves for the number at ["meetings", i, "start"] (or "end")
-//   that puts the handle under the pointer, refusing a step that would make
-//   the meeting shorter than MIN_LEN or leave the day; `on_drop` rounds the
-//   time to five minutes.
-//
-// Meetings that overlap in one room are drawn red: the puzzle is to use as
-// few rooms as possible without a clash.
+# Scheduler (paper §4) with declarative dragging (ui/drag): `between` and
+# `vary`.
+#
+# The model is a list of meetings, each with a start, an end (minutes after
+# 8:00) and a room. The view draws each room as a track and each meeting as
+# a bar on its room's track. Two drags, both written as what they change:
+#
+# - Dragging a bar changes its room. Its states are the meeting in every
+#   room (`choices`), and `between` lets the bar slide along the line those
+#   renderings make — up and down, never sideways, since a room change does
+#   not move it in time — and drop into the nearest room.
+# - Dragging a bar's end handle changes that time. Time is continuous, so
+#   `vary` solves for the number at ["meetings", i, "start"] (or "end")
+#   that puts the handle under the pointer, refusing a step that would make
+#   the meeting shorter than MIN_LEN or leave the day; `on_drop` rounds the
+#   time to five minutes.
+#
+# Meetings that overlap in one room are drawn red: the puzzle is to use as
+# few rooms as possible without a clash.
 import ui
 import ui/drag
 
@@ -47,7 +47,7 @@ fn bar_rect(m)
   rect(time_x(m.start), TRACK_Y + m.room * TRACK_H + (TRACK_H - BAR_H) / 2, (m.end - m.start) * PX, BAR_H)
 end
 
-// A meeting clashes when another in its room overlaps it.
+# A meeting clashes when another in its room overlaps it.
 fn clashes(ms, i)
   let m = ms[i]
   any(range(len(ms)), fn(j) j != i && ms[j].room == m.room && ms[j].start < m.end && m.start < ms[j].end end)
@@ -58,8 +58,8 @@ fn round5(s, i)
   set_in(set_in(s, ["meetings", i, "start"], int(round(m.start / 5) * 5)), ["meetings", i, "end"], int(round(m.end / 5) * 5))
 end
 
-// Dragging one end of meeting i: vary that time, keep the meeting at least
-// MIN_LEN long and inside the day.
+# Dragging one end of meeting i: vary that time, keep the meeting at least
+# MIN_LEN long and inside the day.
 fn end_spec(s, i, field)
   let ok = fn(st)
     let m = st.meetings[i]
@@ -82,7 +82,7 @@ fn view(s)
   for i in range(len(ms)) key ms[i].id do
     let m = ms[i]
     let r = place(m.id, bar_rect(m))
-    // The bar's grip is between its end handles.
+    # The bar's grip is between its end handles.
     let grip = rect(r.x + HANDLE_W + 4, r.y, max(r.w - 2 * HANDLE_W - 8, 4), r.h)
     draggable(m.id, grip, fn() between(choices(s, ["meetings", i, "room"], range(ROOMS))) end)
     let c = if clashes(ms, i) then :e57373 else COLORS[i % len(COLORS)] end
@@ -90,7 +90,7 @@ fn view(s)
       draw_rect_rounded(p, 5, c)
       draw_text(m.id, p.x + HANDLE_W + 4, p.y + 11, 13, :1e1e24)
     end)
-    // The end handles, inset into the bar.
+    # The end handles, inset into the bar.
     for field in ["start", "end"] key field do
       let hx = if field == "start" then r.x + 2 else r.x + r.w - HANDLE_W - 2 end
       let hk = "{m.id}:{field}"

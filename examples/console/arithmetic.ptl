@@ -1,7 +1,7 @@
-// Arithmetic
-// Basic numeric operations and variable binding.
+# Arithmetic
+# Basic numeric operations and variable binding.
 
-// Integer arithmetic
+# Integer arithmetic
 let a = 10
 let b = 3
 print("a =", a, "b =", b)
@@ -11,19 +11,19 @@ print("a * b =", a * b)
 print("a / b =", a / b)
 print("a % b =", a % b)
 
-// Rebinding a name to a new value
+# Rebinding a name to a new value
 a = a + 5
 print("a after rebind:", a)
 
-// Float arithmetic
+# Float arithmetic
 let x = 3.14
 let y = 2.0
 print("x * y =", x * y)
 
-// Mixed arithmetic
+# Mixed arithmetic
 print("a + x =", a + x)
 
-// Built-in math functions
+# Built-in math functions
 print("sqrt(16) =", sqrt(16))
 print("abs(-7) =", abs(-7))
 print("floor(3.9) =", floor(3.9))

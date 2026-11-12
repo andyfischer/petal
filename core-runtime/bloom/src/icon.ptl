@@ -1,26 +1,26 @@
-// bloom/icon — the icon set, drawn as vectors.
-//
-// No font, no atlas, no asset pipeline: every glyph is a handful of strokes in
-// a unit box, scaled into whatever rect it is given. That is what keeps bloom
-// droppable — a host that can draw a line can draw the whole icon set, and an
-// icon inherits its color, weight and size from the control around it instead
-// of from a font file that has to ship beside the script.
-//
-// Coordinates are unit coordinates: (-0.5, -0.5) is the top-left of the glyph
-// box and (0.5, 0.5) the bottom-right, y down.
+# bloom/icon — the icon set, drawn as vectors.
+#
+# No font, no atlas, no asset pipeline: every glyph is a handful of strokes in
+# a unit box, scaled into whatever rect it is given. That is what keeps bloom
+# droppable — a host that can draw a line can draw the whole icon set, and an
+# icon inherits its color, weight and size from the control around it instead
+# of from a font file that has to ship beside the script.
+#
+# Coordinates are unit coordinates: (-0.5, -0.5) is the top-left of the glyph
+# box and (0.5, 0.5) the bottom-right, y down.
 
 import ui
 
-// The drawing and input names used below (`rect`, `draw_rect_rounded`,
-// `mix` and friends) come from the `ui` package. This module imports it
-// itself: an import reaches only the file it is written in.
+# The drawing and input names used below (`rect`, `draw_rect_rounded`,
+# `mix` and friends) come from the `ui` package. This module imports it
+# itself: an import reaches only the file it is written in.
 
-// A point in the glyph box `(cx, cy, s)`.
+# A point in the glyph box `(cx, cy, s)`.
 fn _p(box: record, ux: num, uy: num) -> record
   {x: box.cx + ux * box.s, y: box.cy + uy * box.s}
 end
 
-// Stroke a polyline through unit points, given flat as [x0, y0, x1, y1, ...].
+# Stroke a polyline through unit points, given flat as [x0, y0, x1, y1, ...].
 fn _path(box: record, pts: list, color: record, w: num)
   let i = 0
   while i + 3 < len(pts) do
@@ -29,14 +29,14 @@ fn _path(box: record, pts: list, color: record, w: num)
   end
 end
 
-// The glyph box inscribed in `r`: a centered square, inset so strokes stay
-// inside the rect at any weight.
+# The glyph box inscribed in `r`: a centered square, inset so strokes stay
+# inside the rect at any weight.
 fn _box(r: record) -> record
   let s = min(r.w, r.h) * 0.62
   {cx: r.x + r.w / 2.0, cy: r.y + r.h / 2.0, s: s}
 end
 
-// The stroke weight an icon of this size wants, when the caller does not say.
+# The stroke weight an icon of this size wants, when the caller does not say.
 fn _w(r: record) -> float
   max(1.0, min(r.w, r.h) / 11.0)
 end
@@ -45,8 +45,8 @@ pub fn icon(name: string, r: record, color: record)
   icon(name, r, color, _w(r))
 end
 
-// `name` is one of the glyphs below; an unknown name draws a dot, so a typo is
-// visible in place rather than an invisible hole in a toolbar.
+# `name` is one of the glyphs below; an unknown name draws a dot, so a typo is
+# visible in place rather than an invisible hole in a toolbar.
 pub fn icon(name: string, r: record, color: record, w: num)
   let b = _box(r)
   match name
@@ -76,8 +76,8 @@ pub fn icon(name: string, r: record, color: record, w: num)
   end
 end
 
-// Every glyph the set answers to, in a stable order — the gallery draws this
-// rather than a list it keeps in sync by hand.
+# Every glyph the set answers to, in a stable order — the gallery draws this
+# rather than a list it keeps in sync by hand.
 pub let NAMES = ["check", "close", "plus", "minus", "chevron_down", "chevron_up",
   "chevron_right", "chevron_left", "arrow_right", "search", "menu",
   "more", "dot", "circle", "play", "pause", "folder", "file",
@@ -104,10 +104,10 @@ fn _search(b: record, color: record, w: num)
 end
 
 fn _ring(b: record, color: record, w: num)
-  // No circle-outline overload takes a record, so the ring is a filled disc
-  // with the face punched back out — the caller's own background shows through
-  // only where a component drew one, so components pass a solid `color` and
-  // keep rings small.
+  # No circle-outline overload takes a record, so the ring is a filled disc
+  # with the face punched back out — the caller's own background shows through
+  # only where a component drew one, so components pass a solid `color` and
+  # keep rings small.
   let steps = 20
   let prev = {x: b.cx + b.s * 0.5, y: b.cy}
   for i in range(1, steps + 1) do
@@ -169,8 +169,8 @@ fn _star(b: record, color: record, w: num)
     let rad = if i % 2 == 0 then b.s * 0.5 else b.s * 0.22 end
     pts = append(pts, [b.cx + cos(a) * rad, b.cy + sin(a) * rad])
   end
-  // `fill_polygon`, not `fill_poly`: a star is concave, and the fan fill would
-  // paint over its own notches.
+  # `fill_polygon`, not `fill_poly`: a star is concave, and the fan fill would
+  # paint over its own notches.
   fill_polygon(pts, color.r, color.g, color.b)
 end
 

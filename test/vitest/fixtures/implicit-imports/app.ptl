@@ -1,5 +1,5 @@
-// Entry file: it draws nothing itself, it just calls into a library module
-// that imports `ui` for itself.
+# Entry file: it draws nothing itself, it just calls into a library module
+# that imports `ui` for itself.
 import ./shapes_lib
 
 shapes_lib.banner({ r: 10, g: 20, b: 30 })

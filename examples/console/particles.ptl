@@ -1,30 +1,30 @@
-// Particle System
-// Simulating several independent objects that each remember their own state.
-//
-// Each particle needs its own position and velocity from one frame to the
-// next, and a particle is an entity with an id. A table keyed by that id is a
-// map, and a table the program updates over time lives in a top-level
-// `state var`: one cell for the whole program, read with `get` and written
-// with `set`. The id, not the place the particle happens to be updated from,
-// is what finds its entry, so particle 2 keeps its own trajectory across
-// every frame of the simulation below.
-//
-// A plain `state` inside `update_particle` would not do here. In-function
-// state is keyed by call path, and each pass of the `for frame` loop below is
-// a different path, so every simulated frame would start the particles over.
-// (In a frame-loop host, where each frame is a fresh run of the program, a
-// call-path `state` per particle would work — but the id would still be the
-// better key if particles could be added, removed, or reordered.)
-//
-// Nothing ever leaves this table, because no particle ever dies. A system
-// that retired particles would `remove` their entries (see `remove` in the
-// builtins reference) so the table does not grow without bound.
+# Particle System
+# Simulating several independent objects that each remember their own state.
+#
+# Each particle needs its own position and velocity from one frame to the
+# next, and a particle is an entity with an id. A table keyed by that id is a
+# map, and a table the program updates over time lives in a top-level
+# `state var`: one cell for the whole program, read with `get` and written
+# with `set`. The id, not the place the particle happens to be updated from,
+# is what finds its entry, so particle 2 keeps its own trajectory across
+# every frame of the simulation below.
+#
+# A plain `state` inside `update_particle` would not do here. In-function
+# state is keyed by call path, and each pass of the `for frame` loop below is
+# a different path, so every simulated frame would start the particles over.
+# (In a frame-loop host, where each frame is a fresh run of the program, a
+# call-path `state` per particle would work — but the id would still be the
+# better key if particles could be added, removed, or reordered.)
+#
+# Nothing ever leaves this table, because no particle ever dies. A system
+# that retired particles would `remove` their entries (see `remove` in the
+# builtins reference) so the table does not grow without bound.
 
 state var particles = Map()
 
 fn update_particle(id: num)
-  // A particle's first update creates its entry; `??` only runs the
-  // initializer when the lookup comes back `nil`.
+  # A particle's first update creates its entry; `??` only runs the
+  # initializer when the lookup comes back `nil`.
   let p = get particles[id] ?? {
     x: 0.0,
     y: 0.0,
@@ -37,7 +37,7 @@ fn update_particle(id: num)
   let vx = p.vx
   let vy = p.vy
 
-  // Bounce off boundaries
+  # Bounce off boundaries
   if x > 50.0 || x < 0.0 then
     vx = -vx
     x = x + vx

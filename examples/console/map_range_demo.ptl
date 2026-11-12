@@ -1,13 +1,13 @@
-// map_range Demo
-// `map_range` is the Processing-style value remapper — take a value from one
-// range and produce the corresponding value in another. Combined with `clamp`
-// it's the workhorse of UI layout, color mapping, and response curves.
+# map_range Demo
+# `map_range` is the Processing-style value remapper — take a value from one
+# range and produce the corresponding value in another. Combined with `clamp`
+# it's the workhorse of UI layout, color mapping, and response curves.
 
 print("Temperature -> progress bar")
 print("===========================")
 let temperatures = [32.0, 50.0, 68.0, 86.0, 104.0]
 for t in temperatures do
-  // Map Fahrenheit 32..104 (freezing..hot) into a 0..20 character bar
+  # Map Fahrenheit 32..104 (freezing..hot) into a 0..20 character bar
   let filled = int(map_range(t, in_lo: 32.0, in_hi: 104.0, out_lo: 0.0, out_hi: 20.0))
   let bar = ""
   for _ in range(0, filled) do bar = bar ++ "#" end
@@ -18,8 +18,8 @@ print("")
 
 print("Bounded response curve (clamped)")
 print("================================")
-// Input range 0..10, output range -1..1 — but clamped so values outside the
-// input range don't produce extrapolated output.
+# Input range 0..10, output range -1..1 — but clamped so values outside the
+# input range don't produce extrapolated output.
 for raw in range(-2, 13) do
   let v = float(raw)
   let mapped = map_range(v, in_lo: 0.0, in_hi: 10.0, out_lo: -1.0, out_hi: 1.0)

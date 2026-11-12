@@ -1,7 +1,7 @@
-// The element-tree natives of the wasm host (integrations/petal-web-html/rust/src/lib.rs).
+# The element-tree natives of the wasm host (integrations/petal-web-html/rust/src/lib.rs).
 
-// A unique id per element per render; ids restart at 1 every render.
+# A unique id per element per render; ids restart at 1 every render.
 pub native fn next_id() -> int
 
-// Was the element with this id clicked since the last render?
+# Was the element with this id clicked since the last render?
 pub native fn clicked(id: int) -> bool

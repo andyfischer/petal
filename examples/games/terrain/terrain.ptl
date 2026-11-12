@@ -1,17 +1,17 @@
-// terrain.ptl — procedural terrain generator (console).
-//
-// Builds a heightmap from multi-octave value noise (fractal brownian motion:
-// each octave doubles the frequency and halves the amplitude), normalizes it
-// to 0..1, and renders it as ASCII with bands for deep water, shallow water,
-// beach, grass, forest, rock and snow. A histogram of the terrain-type
-// distribution is printed alongside the map so the output is checkable
-// numerically. Fully deterministic — the noise is a pure integer hash of the
-// lattice coordinates, so no PRNG and no --seed flag are involved.
-//
-// Run:   ./tools/run-petal.ts run examples/games/terrain/terrain.ptl
-// Check: ./tools/run-petal.ts check --strict examples/games/terrain/terrain.ptl
+# terrain.ptl — procedural terrain generator (console).
+#
+# Builds a heightmap from multi-octave value noise (fractal brownian motion:
+# each octave doubles the frequency and halves the amplitude), normalizes it
+# to 0..1, and renders it as ASCII with bands for deep water, shallow water,
+# beach, grass, forest, rock and snow. A histogram of the terrain-type
+# distribution is printed alongside the map so the output is checkable
+# numerically. Fully deterministic — the noise is a pure integer hash of the
+# lattice coordinates, so no PRNG and no --seed flag are involved.
+#
+# Run:   ./tools/run-petal.ts run examples/games/terrain/terrain.ptl
+# Check: ./tools/run-petal.ts check --strict examples/games/terrain/terrain.ptl
 
-// ---------------------------------------------------------------- knobs ----
+# ---------------------------------------------------------------- knobs ----
 
 let map_width = tunable(78)
 let map_height = tunable(28)
@@ -23,7 +23,7 @@ let noise_seed = tunable(1337)
 let sea_level = tunable(0.42)
 let island_falloff = tunable(0.55)
 
-// ---------------------------------------------------------------- bands ----
+# ---------------------------------------------------------------- bands ----
 
 class Band
   name: string,
@@ -31,9 +31,9 @@ class Band
   ceiling: num,
 end
 
-// `ceiling` is the exclusive upper bound of the band, expressed as a fraction
-// of the full 0..1 height range. Sea level splits water from land, so the
-// water bands are placed relative to it and the land bands above it.
+# `ceiling` is the exclusive upper bound of the band, expressed as a fraction
+# of the full 0..1 height range. Sea level splits water from land, so the
+# water bands are placed relative to it and the land bands above it.
 fn terrain_bands(sea: num) -> list
   [
     Band(name: "deep water", glyph: "~", ceiling: sea * 0.55),
@@ -46,20 +46,20 @@ fn terrain_bands(sea: num) -> list
   ]
 end
 
-// ---------------------------------------------------------------- noise ----
+# ---------------------------------------------------------------- noise ----
 
-// A 32-bit-ish integer hash of a lattice point. Petal has no bitwise
-// operators, so this is a modular-multiply mixer; every product below stays
-// under i64 range, which the compiler enforces at runtime.
+# A 32-bit-ish integer hash of a lattice point. Petal has no bitwise
+# operators, so this is a modular-multiply mixer; every product below stays
+# under i64 range, which the compiler enforces at runtime.
 fn hash_2d(ix: int, iy: int, seed: int) -> num
   let p = 2147483647
   let a = (ix + 8192) * 1836311903
   let b = (iy + 8192) * 2971215073
   let c = (seed + 8192) * 433494437
   let h0 = (a + b + c) % p
-  // Squaring is what makes this a hash: an all-affine chain (multiply, add,
-  // mod) composes back down to a single affine map, which would make the
-  // lattice a linear ramp rather than noise. h0 < p, so h0*h0 stays in i64.
+  # Squaring is what makes this a hash: an all-affine chain (multiply, add,
+  # mod) composes back down to a single affine map, which would make the
+  # lattice a linear ramp rather than noise. h0 < p, so h0*h0 stays in i64.
   let h1 = (h0 * h0 + 1103515245) % p
   let h2 = (h1 * h1 + 12345) % p
   float(h2) / float(p)
@@ -73,7 +73,7 @@ fn lerp(a: num, b: num, t: num) -> num
   a + (b - a) * t
 end
 
-// Bilinearly interpolated value noise over the integer lattice.
+# Bilinearly interpolated value noise over the integer lattice.
 fn value_noise(x: num, y: num, seed: int) -> num
   let ix = int(floor(x))
   let iy = int(floor(y))
@@ -84,9 +84,9 @@ fn value_noise(x: num, y: num, seed: int) -> num
   lerp(top, bot, t: fy)
 end
 
-// Fractal brownian motion: `octaves` layers of value noise, frequency scaled
-// by `lacunarity` and amplitude by `persistence` at each step. The result is
-// divided by the total amplitude so it stays inside 0..1.
+# Fractal brownian motion: `octaves` layers of value noise, frequency scaled
+# by `lacunarity` and amplitude by `persistence` at each step. The result is
+# divided by the total amplitude so it stays inside 0..1.
 fn fbm(x: num, y: num) -> num
   var freq = 1.0
   var amp = 1.0
@@ -102,24 +102,24 @@ fn fbm(x: num, y: num) -> num
   get total / get norm
 end
 
-// Radial falloff so the map reads as an island rather than as a noise tile:
-// 1.0 at the centre, dropping toward the edges.
+# Radial falloff so the map reads as an island rather than as a noise tile:
+# 1.0 at the centre, dropping toward the edges.
 fn island_mask(x: int, y: int) -> num
   let nx = (float(x) / float(map_width - 1)) * 2.0 - 1.0
   let ny = (float(y) / float(map_height - 1)) * 2.0 - 1.0
-  // The map is twice as wide as tall in character cells, so squash x to keep
-  // the island round on screen.
+  # The map is twice as wide as tall in character cells, so squash x to keep
+  # the island round on screen.
   let d = sqrt(nx * nx * 0.55 + ny * ny)
   max(0.0, 1.0 - island_falloff * d * d * 1.6)
 end
 
-// -------------------------------------------------------------- heightmap --
+# -------------------------------------------------------------- heightmap --
 
 fn raw_heightmap() -> list
   for y in range(0, map_height) do
     for x in range(0, map_width) do
       let n = fbm(float(x) * base_scale, float(y) * base_scale * 2.0)
-      // Ridge sharpening: bias the noise toward peaks before masking.
+      # Ridge sharpening: bias the noise toward peaks before masking.
       let ridged = n * n * (3.0 - 2.0 * n)
       ridged * island_mask(x, y)
     end
@@ -134,7 +134,7 @@ fn grid_max(grid: list) -> num
   reduce(grid, -1000000.0, fn(acc, row) -> max(acc, reduce(row, -1000000.0, fn(a, v) -> max(a, v))))
 end
 
-// Rescale so the lowest cell is 0.0 and the highest is 1.0.
+# Rescale so the lowest cell is 0.0 and the highest is 1.0.
 fn normalize(grid: list) -> list
   let lo = grid_min(grid)
   let hi = grid_max(grid)
@@ -144,11 +144,11 @@ fn normalize(grid: list) -> list
   end
 end
 
-// ------------------------------------------------------------ classifying --
+# ------------------------------------------------------------ classifying --
 
-// Index into `terrain_bands(sea_level)` for a normalized height.
+# Index into `terrain_bands(sea_level)` for a normalized height.
 fn band_index(h: num, bands: list) -> int
-  // The ceilings ascend, so the band is simply how many `h` has cleared.
+  # The ceilings ascend, so the band is simply how many `h` has cleared.
   min(count(bands, fn(b) -> h >= b.ceiling), len(bands) - 1)
 end
 
@@ -156,7 +156,7 @@ fn band_glyph(h: num, bands: list) -> string
   bands[band_index(h, bands)].glyph
 end
 
-// A one-word summary of a cell, used by the legend line.
+# A one-word summary of a cell, used by the legend line.
 fn slope_hint(idx: int) -> string
   match idx
     when 0 -> "abyssal"
@@ -169,7 +169,7 @@ fn slope_hint(idx: int) -> string
   end
 end
 
-// ---------------------------------------------------------------- render ----
+# ---------------------------------------------------------------- render ----
 
 fn render_row(row: list, bands: list) -> string
   join(for h in row do band_glyph(h, bands) end, "")
@@ -193,7 +193,7 @@ fn count_band(grid: list, bands: list, idx: int) -> int
     acc + count(row, fn(h) -> band_index(h, bands) == idx))
 end
 
-// ------------------------------------------------------------------ main ----
+# ------------------------------------------------------------------ main ----
 
 let bands = terrain_bands(sea_level)
 let heights = normalize(raw_heightmap())
@@ -225,9 +225,9 @@ let land = cell_count - water
 print("water {percent(water, cell_count)}%   land {percent(land, cell_count)}%"
   ++ "   checksum {reduce(counts, 0, fn(a, b) -> a + b)}")
 
-// Sea-level sweep: how the coastline responds to the one knob people actually
-// tune. Each line re-classifies the same heightmap at a different sea level,
-// which is the cheap stand-in for dragging the slider in a live host.
+# Sea-level sweep: how the coastline responds to the one knob people actually
+# tune. Each line re-classifies the same heightmap at a different sea level,
+# which is the cheap stand-in for dragging the slider in a live host.
 print("")
 print("sea-level sweep (same heightmap, re-banded)")
 for step in range(0, 9) do

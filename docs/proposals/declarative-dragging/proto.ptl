@@ -1,5 +1,5 @@
-// Prototype: D2 "closest + floating" on a reorderable list, in today's Petal.
-// The view is a pure function model -> scene (data), so speculation is a call.
+# Prototype: D2 "closest + floating" on a reorderable list, in today's Petal.
+# The view is a pure function model -> scene (data), so speculation is a call.
 import ui
 
 let COLORS = {A: {r: 229, g: 115, b: 115}, B: {r: 255, g: 183, b: 77}, C: {r: 129, g: 199, b: 132}, D: {r: 100, g: 181, b: 246}, E: {r: 186, g: 104, b: 200}}
@@ -10,7 +10,7 @@ fn view(items)
   end
 end
 
-// ── Candidate states: item i reinserted at every index ──
+# ── Candidate states: item i reinserted at every index ──
 fn moves(xs, i)
   let x = xs[i]
   let rest = remove_at(xs, i)
@@ -25,7 +25,7 @@ fn find_key(scene, key)
   out
 end
 
-// ── The engine: speculate once at drag start, then pick per frame ──
+# ── The engine: speculate once at drag start, then pick per frame ──
 fn start_drag(model, key, mx, my)
   let i = 0
   for j in range(0, len(model)) do
@@ -81,7 +81,7 @@ for n in view(preview) key n.key do
   let floating = drag.active && n.key == drag.key
   let tx = if floating then mx - drag.gx else n.x end
   let ty = if floating then my - drag.gy else n.y end
-  // Layout animation: each keyed element eases toward where the view put it.
+  # Layout animation: each keyed element eases toward where the view put it.
   state ax = tx
   state ay = ty
   ax = if floating then tx else approach(ax, tx, 18.0) end

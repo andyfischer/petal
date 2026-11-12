@@ -1,12 +1,12 @@
-// Ring of beads with declarative dragging (ui/drag), after Dragology's first
-// scenario: beads on a ring, dragged into a different cyclic order.
-//
-// Dragging a bead can reach every state with that bead reinserted at another
-// index (`moves`); `closest` picks the one whose ring position is nearest,
-// `floating` keeps the bead under the pointer while the others slide round
-// to make room. A ring has no first bead, so `on_drop` turns each drop state
-// until bead A is back at the top: the whole ring rotates into place after
-// the drop, animated by `place` with nothing extra in the app.
+# Ring of beads with declarative dragging (ui/drag), after Dragology's first
+# scenario: beads on a ring, dragged into a different cyclic order.
+#
+# Dragging a bead can reach every state with that bead reinserted at another
+# index (`moves`); `closest` picks the one whose ring position is nearest,
+# `floating` keeps the bead under the pointer while the others slide round
+# to make room. A ring has no first bead, so `on_drop` turns each drop state
+# until bead A is back at the top: the whole ring rotates into place after
+# the drop, animated by `place` with nothing extra in the app.
 import ui
 import ui/drag
 
@@ -24,7 +24,7 @@ fn bead_rect(i, n)
   rect(CX + R * cos(a) - BEAD / 2, CY + R * sin(a) - BEAD / 2, BEAD, BEAD)
 end
 
-// The same ring, turned so "A" is first.
+# The same ring, turned so "A" is first.
 fn a_first(bs)
   let i = index_of(bs, "A")
   slice(bs, i) ++ slice(bs, 0, i)

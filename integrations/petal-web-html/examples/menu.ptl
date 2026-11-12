@@ -1,15 +1,15 @@
-// menu.ptl — Dropdown + Modal demo for petal-web
-//
-// Uses event injection pattern:
-//   next_id()    — returns a unique int per element per frame
-//   clicked(id)  — true if that element was clicked this frame
-//
-// State lives in app() to avoid the positional-state-key limitation
-// (two calls to the same function would share state).
+# menu.ptl — Dropdown + Modal demo for petal-web
+#
+# Uses event injection pattern:
+#   next_id()    — returns a unique int per element per frame
+#   clicked(id)  — true if that element was clicked this frame
+#
+# State lives in app() to avoid the positional-state-key limitation
+# (two calls to the same function would share state).
 
 import web
 
-// ── Dropdown (stateless) ────────────────────────────────
+# ── Dropdown (stateless) ────────────────────────────────
 
 fn dropdown(label, items, open, btn_id, backdrop_id)
   let menu_items = map(items, fn(item) -> <div class="dropdown-item">{item}</div>)
@@ -29,7 +29,7 @@ fn dropdown(label, items, open, btn_id, backdrop_id)
   </div>
 end
 
-// ── Modal (stateless) ───────────────────────────────────
+# ── Modal (stateless) ───────────────────────────────────
 
 fn modal_view(title, body, visible, open_id, close_id)
   let dialog = if visible then
@@ -50,10 +50,10 @@ fn modal_view(title, body, visible, open_id, close_id)
   </div>
 end
 
-// ── App (owns all state) ────────────────────────────────
+# ── App (owns all state) ────────────────────────────────
 
 fn app()
-  // Allocate stable element IDs
+  # Allocate stable element IDs
   let file_btn_id = next_id()
   let file_backdrop_id = next_id()
   let edit_btn_id = next_id()
@@ -61,7 +61,7 @@ fn app()
   let modal_open_id = next_id()
   let modal_close_id = next_id()
 
-  // Dropdown state
+  # Dropdown state
   state file_open = false
   state edit_open = false
   state modal_visible = false

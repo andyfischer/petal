@@ -1,6 +1,6 @@
-// Nature of Code - Cloth Simulation
-// Inspired by Chapter 3 & 5: Springs + Physics Libraries
-// Verlet integration cloth that responds to mouse and wind
+# Nature of Code - Cloth Simulation
+# Inspired by Chapter 3 & 5: Springs + Physics Libraries
+# Verlet integration cloth that responds to mouse and wind
 
 import ui
 
@@ -23,7 +23,7 @@ let gravity = 600.0
 let stiffness = 0.8
 let tear_dist = rest_dist * 5.0
 
-// Initialize cloth points with Verlet (store current and previous position)
+# Initialize cloth points with Verlet (store current and previous position)
 if cols == 0 then
   cols = cloth_w
   rows_count = cloth_h
@@ -47,28 +47,28 @@ if cols == 0 then
   end
 end
 
-// Toggle tearing mode with space
+# Toggle tearing mode with space
 if key_pressed("space") then
   tearing = !tearing
 end
 
-// Mouse interaction - push cloth
+# Mouse interaction - push cloth
 let mx = float(mouse_x())
 let my = float(mouse_y())
 let mouse_radius = 40.0
 let mouse_strength = 300.0
 
-// Verlet integration
+# Verlet integration
 for i in range(0, len(points)) do
   let p = points[i]
   if !p.pinned then
     let vx = (p.x - p.old_x) * 0.99
     let vy = (p.y - p.old_y) * 0.99
 
-    // Wind
+    # Wind
     let wind = sin(time * 2.0 + p.x * 0.02) * 50.0 + sin(time * 3.5) * 30.0
 
-    // Mouse push
+    # Mouse push
     let dx = p.x - mx
     let dy = p.y - my
     let dist = sqrt(dx * dx + dy * dy)
@@ -82,7 +82,7 @@ for i in range(0, len(points)) do
     let nx = p.x + vx + (wind + push_x) * delta * delta
     let ny = p.y + vy + (gravity + push_y) * delta * delta
 
-    // Floor constraint
+    # Floor constraint
     if ny > sh - 10.0 then
       ny = sh - 10.0
     end
@@ -97,13 +97,13 @@ for i in range(0, len(points)) do
   end
 end
 
-// Constraint satisfaction (multiple iterations for stability)
+# Constraint satisfaction (multiple iterations for stability)
 for iter in range(0, 3) do
   for y in range(0, rows_count) do
     for x in range(0, cols) do
       let idx = y * cols + x
 
-      // Right connection
+      # Right connection
       if points[idx].conn_right then
         let a = points[idx]
         let b = points[idx + 1]
@@ -136,7 +136,7 @@ for iter in range(0, 3) do
         end
       end
 
-      // Down connection
+      # Down connection
       if points[idx].conn_down then
         let a = points[idx]
         let b = points[idx + cols]
@@ -172,16 +172,16 @@ for iter in range(0, 3) do
   end
 end
 
-// === Drawing ===
+# === Drawing ===
 clear(10, 10, 20)
 
-// Draw cloth as connected lines
+# Draw cloth as connected lines
 for y in range(0, rows_count) do
   for x in range(0, cols) do
     let idx = y * cols + x
     let p = points[idx]
 
-    // Horizontal line
+    # Horizontal line
     if p.conn_right then
       let q = points[idx + 1]
       let dist = sqrt((q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y))
@@ -192,7 +192,7 @@ for y in range(0, rows_count) do
       draw_line(int(p.x), int(p.y), int(q.x), int(q.y), cr, min(255, cg), cb)
     end
 
-    // Vertical line
+    # Vertical line
     if p.conn_down then
       let q = points[idx + cols]
       let dist = sqrt((q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y))
@@ -203,14 +203,14 @@ for y in range(0, rows_count) do
       draw_line(int(p.x), int(p.y), int(q.x), int(q.y), cr, min(255, cg), cb)
     end
 
-    // Pinned points
+    # Pinned points
     if p.pinned then
       draw_circle(cx: int(p.x), cy: int(p.y), radius: 4, r: 255, g: 200, b: 50)
     end
   end
 end
 
-// Mouse indicator
+# Mouse indicator
 if mouse_down(0) then
   draw_circle(cx: int(mx), cy: int(my), radius: int(mouse_radius), r: 30, g: 15, b: 15)
 end

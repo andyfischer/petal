@@ -1,21 +1,21 @@
-// Package `core` — the numeric half of `ui/drag`'s `between` and `vary`
-// (core/src/builtins/drag_math.rs, docs/proposals/declarative-dragging.md).
-//
-// The drag engine runs its speculative renderings in Petal and hands these
-// only numbers. `drag_triangulate(points)` is a Delaunay triangulation of
-// `[[x, y], …]` as `[[i, j, k], …]`; `drag_weights(points, tris, x, y)` the
-// barycentric weights of a point over it, one per point, clamped to the hull
-// (no triangles: the projection onto the nearest segment on the line);
-// `gn_step(values, rows, targets, jac, bounds, scale)` one Gauss-Newton
-// step of the DM v2 solver for levers `values` (`drag_solve_step` is its old
-// name, kept for one release); `fd_column(x, base, samples, opts)` one
-// finite-difference column classified by DM v2's rules, or the next point to
-// sample (the `autodiff` package's `deriv`, `jacobian` and `solve_step` are
-// built on these two).
-//
-// Native interface declarations: each `native fn` binds a name to the host
-// native of the same name and gives the checker its parameter names, arity
-// and types. See docs/usage/ffi.md (Native interfaces).
+# Package `core` — the numeric half of `ui/drag`'s `between` and `vary`
+# (core/src/builtins/drag_math.rs, docs/proposals/declarative-dragging.md).
+#
+# The drag engine runs its speculative renderings in Petal and hands these
+# only numbers. `drag_triangulate(points)` is a Delaunay triangulation of
+# `[[x, y], …]` as `[[i, j, k], …]`; `drag_weights(points, tris, x, y)` the
+# barycentric weights of a point over it, one per point, clamped to the hull
+# (no triangles: the projection onto the nearest segment on the line);
+# `gn_step(values, rows, targets, jac, bounds, scale)` one Gauss-Newton
+# step of the DM v2 solver for levers `values` (`drag_solve_step` is its old
+# name, kept for one release); `fd_column(x, base, samples, opts)` one
+# finite-difference column classified by DM v2's rules, or the next point to
+# sample (the `autodiff` package's `deriv`, `jacobian` and `solve_step` are
+# built on these two).
+#
+# Native interface declarations: each `native fn` binds a name to the host
+# native of the same name and gives the checker its parameter names, arity
+# and types. See docs/usage/ffi.md (Native interfaces).
 
 pub native fn drag_triangulate(points: list) -> list
 pub native fn drag_weights(points: list, tris: list, x: num, y: num) -> list

@@ -1,9 +1,9 @@
-// Fern preferences: the schema.
-//
-// Every setting the app shows is one record in SETTINGS. The app is a loop
-// over this list: layout, search, the modified markers, reset, undo, the
-// "Changes" list and persistence all read it, and nothing about a setting is
-// written anywhere else. Adding a preference is adding a line here.
+# Fern preferences: the schema.
+#
+# Every setting the app shows is one record in SETTINGS. The app is a loop
+# over this list: layout, search, the modified markers, reset, undo, the
+# "Changes" list and persistence all read it, and nothing about a setting is
+# written anywhere else. Adding a preference is adding a line here.
 
 pub let SECTIONS = [
   {key: "general", label: "General", icon: "gear",
@@ -18,8 +18,8 @@ pub let SECTIONS = [
     blurb: "What leaves this machine, and what is kept on it."},
 ]
 
-// A group is a titled card of rows inside a section: the nested sub-sections
-// the sidebar lists under the open section.
+# A group is a titled card of rows inside a section: the nested sub-sections
+# the sidebar lists under the open section.
 pub let GROUPS = [
   {sec: 0, name: "Startup", note: ""},
   {sec: 0, name: "Profile", note: "Used to sign commits and to label you in shared sessions."},
@@ -50,12 +50,12 @@ pub let ACCENTS = [
 
 pub let FONTS = ["JetBrains Mono", "Menlo", "Monaco", "Courier New"]
 
-// One setting. `kind` picks the control:
-//   toggle  check  seg  select  slider  stepper  text  swatch  radio  action
-// `parent` + `need` make a row depend on another: it is live only while the
-// parent holds `need` (and the parent is itself live, so chains work).
-// `reveal` rows fold away while their parent is off; the others stay visible
-// and go inert.
+# One setting. `kind` picks the control:
+#   toggle  check  seg  select  slider  stepper  text  swatch  radio  action
+# `parent` + `need` make a row depend on another: it is live only while the
+# parent holds `need` (and the parent is itself live, so chains work).
+# `reveal` rows fold away while their parent is off; the others stay visible
+# and go inert.
 fn S(id: string, g: int, kind: string, label: string, desc: string, def, x: record = {}) -> record
   {id: id, g: g, kind: kind, label: label, desc: desc, def: def,
     opts: field(x, "opts", []), notes: field(x, "notes", []),
@@ -67,7 +67,7 @@ fn S(id: string, g: int, kind: string, label: string, desc: string, def, x: reco
 end
 
 pub let SETTINGS = [
-  // ── General ▸ Startup ────────────────────────────────────────────────────
+  # ── General ▸ Startup ────────────────────────────────────────────────────
   S("start_restore", 0, "toggle", "Reopen last workspace",
     "Pick up where you left off, unsaved buffers included.", true, {tags: "session launch resume"}),
   S("start_screen", 0, "select", "With no workspace open",
@@ -77,7 +77,7 @@ pub let SETTINGS = [
     "Menus and messages. Applies to new windows.", 0,
     {opts: ["English", "Deutsch", "Español", "Français", "Italiano"], tags: "locale translation"}),
 
-  // ── General ▸ Profile ────────────────────────────────────────────────────
+  # ── General ▸ Profile ────────────────────────────────────────────────────
   S("me_name", 1, "text", "Display name", "Shown on commits and to collaborators.", "Robin Vale",
     {hint: "Your name", tags: "author user identity"}),
   S("me_email", 1, "text", "Email", "Used for commit authorship. Never shared.", "robin@fern.dev",
@@ -85,7 +85,7 @@ pub let SETTINGS = [
   S("me_signoff", 1, "toggle", "Sign off commits",
     "Append a Signed-off-by line with the name and email above.", false, {tags: "git dco"}),
 
-  // ── General ▸ Updates ────────────────────────────────────────────────────
+  # ── General ▸ Updates ────────────────────────────────────────────────────
   S("up_auto", 2, "toggle", "Check for updates automatically",
     "Fern looks once a day and never restarts on its own.", true, {tags: "upgrade version"}),
   S("up_channel", 2, "seg", "Release channel", "Nightly builds may lose settings.", 0,
@@ -94,7 +94,7 @@ pub let SETTINGS = [
     "Fetch the update while you work and install on quit.", true,
     {parent: "up_auto", tags: "upgrade install"}),
 
-  // ── Appearance ▸ Theme ───────────────────────────────────────────────────
+  # ── Appearance ▸ Theme ───────────────────────────────────────────────────
   S("th_mode", 3, "seg", "Color mode", "Auto follows the host editor's theme.", 1,
     {opts: ["Light", "Dark", "Auto"], tags: "theme dark light night day scheme"}),
   S("th_accent", 3, "swatch", "Accent color", "Selection, focus rings and primary buttons.", 0,
@@ -103,7 +103,7 @@ pub let SETTINGS = [
     "Stronger borders and text, for bright rooms or tired eyes.", false,
     {tags: "accessibility a11y high contrast"}),
 
-  // ── Appearance ▸ Interface ───────────────────────────────────────────────
+  # ── Appearance ▸ Interface ───────────────────────────────────────────────
   S("ui_density", 4, "seg", "Density", "How much air each row gets.", 1,
     {opts: ["Compact", "Comfortable", "Spacious"], tags: "spacing padding size rows"}),
   S("ui_scale", 4, "slider", "Interface scale", "Text size across the whole window.", 100,
@@ -113,7 +113,7 @@ pub let SETTINGS = [
   S("ui_sidebar", 4, "seg", "Sidebar position", "Where the file tree sits in the editor.", 0,
     {opts: ["Left", "Right"], tags: "file tree explorer layout"}),
 
-  // ── Appearance ▸ Motion ──────────────────────────────────────────────────
+  # ── Appearance ▸ Motion ──────────────────────────────────────────────────
   S("mo_reduce", 5, "toggle", "Reduce motion",
     "Swap slides and springs for instant changes.", false,
     {tags: "animation accessibility a11y"}),
@@ -121,7 +121,7 @@ pub let SETTINGS = [
     {lo: 0.5, hi: 2.0, step: 0.25, unit: "×", places: 2, parent: "mo_reduce", need: false,
       tags: "animation duration fast slow"}),
 
-  // ── Editor ▸ Font ────────────────────────────────────────────────────────
+  # ── Editor ▸ Font ────────────────────────────────────────────────────────
   S("ed_font", 6, "select", "Font family", "Any monospaced face installed on this machine.", 0,
     {opts: FONTS, tags: "typeface mono type"}),
   S("ed_size", 6, "slider", "Font size", "", 13,
@@ -131,7 +131,7 @@ pub let SETTINGS = [
   S("ed_tracking", 6, "slider", "Letter spacing", "Extra space between glyphs.", 0.0,
     {lo: 0.0, hi: 2.0, step: 0.5, unit: " px", places: 1, tags: "tracking kerning type"}),
 
-  // ── Editor ▸ Display ─────────────────────────────────────────────────────
+  # ── Editor ▸ Display ─────────────────────────────────────────────────────
   S("ed_numbers", 7, "seg", "Line numbers", "Relative counts from the cursor line.", 1,
     {opts: ["Off", "On", "Relative"], tags: "gutter margin"}),
   S("ed_current", 7, "toggle", "Highlight current line", "", true, {tags: "cursor row"}),
@@ -149,7 +149,7 @@ pub let SETTINGS = [
   S("ed_wrap_indent", 7, "seg", "Continuation indent", "How far wrapped rows are pushed in.", 1,
     {opts: ["None", "Same", "Deeper"], parent: "ed_wrap", reveal: true, tags: "word wrap hanging"}),
 
-  // ── Editor ▸ Formatting ──────────────────────────────────────────────────
+  # ── Editor ▸ Formatting ──────────────────────────────────────────────────
   S("fm_tab", 8, "stepper", "Tab size", "Columns per indent level.", 2,
     {lo: 1, hi: 8, step: 1, tags: "indent width"}),
   S("fm_spaces", 8, "toggle", "Indent using spaces", "Off inserts a tab character instead.", true,
@@ -163,7 +163,7 @@ pub let SETTINGS = [
   S("fm_newline", 8, "check", "End files with a newline", "", true,
     {parent: "fm_onsave", tags: "format save final eol"}),
 
-  // ── Notifications ▸ Alerts ───────────────────────────────────────────────
+  # ── Notifications ▸ Alerts ───────────────────────────────────────────────
   S("nt_on", 9, "toggle", "Show notifications",
     "The master switch. Everything on this page depends on it.", true, {tags: "alerts toast banner"}),
   S("nt_position", 9, "select", "Position", "The corner alerts slide in from.", 1,
@@ -175,7 +175,7 @@ pub let SETTINGS = [
   S("nt_volume", 9, "slider", "Volume", "", 60,
     {lo: 0, hi: 100, step: 5, unit: "%", parent: "nt_sound", tags: "alerts audio loud quiet"}),
 
-  // ── Notifications ▸ Events ───────────────────────────────────────────────
+  # ── Notifications ▸ Events ───────────────────────────────────────────────
   S("ev_build", 10, "check", "Build finished", "After any task that ran longer than ten seconds.", true,
     {parent: "nt_on", tags: "alerts compile task"}),
   S("ev_tests", 10, "check", "Tests failed", "", true, {parent: "nt_on", tags: "alerts test suite"}),
@@ -184,7 +184,7 @@ pub let SETTINGS = [
   S("ev_mention", 10, "check", "Mentions in shared sessions", "", true,
     {parent: "nt_on", tags: "alerts collaboration"}),
 
-  // ── Notifications ▸ Quiet hours ──────────────────────────────────────────
+  # ── Notifications ▸ Quiet hours ──────────────────────────────────────────
   S("qt_on", 11, "toggle", "Quiet hours", "Hold alerts during a daily window and deliver them after.", false,
     {tags: "do not disturb dnd focus mute schedule"}),
   S("qt_from", 11, "stepper", "From", "", 22,
@@ -194,7 +194,7 @@ pub let SETTINGS = [
   S("qt_urgent", 11, "check", "Let failed tests through", "", true,
     {parent: "qt_on", reveal: true, tags: "do not disturb exception urgent"}),
 
-  // ── Privacy ▸ Telemetry ──────────────────────────────────────────────────
+  # ── Privacy ▸ Telemetry ──────────────────────────────────────────────────
   S("pv_share", 12, "toggle", "Share anonymous diagnostics",
     "Helps find crashes. Never includes file names or contents.", false, {tags: "telemetry analytics usage data"}),
   S("pv_level", 12, "radio", "What to send", "", 0,
@@ -206,7 +206,7 @@ pub let SETTINGS = [
   S("pv_history", 12, "select", "Keep local history for", "Per-file undo snapshots stored on this machine.", 1,
     {opts: ["1 week", "1 month", "3 months", "Forever"], tags: "undo snapshots retention"}),
 
-  // ── Privacy ▸ Storage ────────────────────────────────────────────────────
+  # ── Privacy ▸ Storage ────────────────────────────────────────────────────
   S("act_cache", 13, "action", "Clear cache", "Search indexes, thumbnails and compiled grammars.", "Clear",
     {tags: "disk space delete storage"}),
   S("act_export", 13, "action", "Export settings", "Copy every changed setting to the clipboard as JSON.", "Copy JSON",
@@ -215,7 +215,7 @@ pub let SETTINGS = [
     {tone: "danger", tags: "reset factory defaults"}),
 ]
 
-// id → position in SETTINGS.
+# id → position in SETTINGS.
 pub fn build_index() -> record
   let idx = {}
   for i in range(0, len(SETTINGS)) do
@@ -224,7 +224,7 @@ pub fn build_index() -> record
   idx
 end
 
-// The default value of every setting that holds one (actions do not).
+# The default value of every setting that holds one (actions do not).
 pub fn defaults() -> record
   let d = {}
   for s in SETTINGS do
@@ -235,8 +235,8 @@ pub fn defaults() -> record
   d
 end
 
-// Stored values over the defaults: a key the schema no longer has is dropped,
-// and one the store never saw takes its default.
+# Stored values over the defaults: a key the schema no longer has is dropped,
+# and one the store never saw takes its default.
 pub fn merged(stored: record) -> record
   let d = defaults()
   for k in keys(d) do
@@ -254,7 +254,7 @@ fn two(n: num) -> string
   pad_start(str(int(n)), 2, "0")
 end
 
-// A number the way its row shows it: "13 px", "1.5×", "22:00".
+# A number the way its row shows it: "13 px", "1.5×", "22:00".
 pub fn show_num(s: record, v: num) -> string
   if s.fmt == "hour" then
     "{two(v)}:00"
@@ -263,7 +263,7 @@ pub fn show_num(s: record, v: num) -> string
     let unit_n = int(pow(10.0, float(s.places)))
     let whole = scaled / unit_n
     let frac = pad_start(str(scaled % unit_n), s.places, "0")
-    // Trailing zeros carry no information on a ×0.25 scale.
+    # Trailing zeros carry no information on a ×0.25 scale.
     let trimmed = if s.places == 2 && ends_with(frac, "0") then slice(frac, 0, 1) else frac end
     "{whole}.{trimmed}{s.unit}"
   else
@@ -271,7 +271,7 @@ pub fn show_num(s: record, v: num) -> string
   end
 end
 
-// Any value, for the Changes list and for search: "On", "Dark", "13 px".
+# Any value, for the Changes list and for search: "On", "Dark", "13 px".
 pub fn show_value(s: record, v) -> string
   match s.kind
     when "toggle" | "check" -> if v then "On" else "Off" end
@@ -283,8 +283,8 @@ pub fn show_value(s: record, v) -> string
   end
 end
 
-// Snap a slider or stepper value to its step, inside its range. Ints stay
-// ints, so a stored "13" compares equal to the default 13.
+# Snap a slider or stepper value to its step, inside its range. Ints stay
+# ints, so a stored "13" compares equal to the default 13.
 pub fn snap(s: record, v: num)
   let lo = float(s.lo)
   let stepped = lo + round((float(v) - lo) / float(s.step)) * float(s.step)
@@ -292,7 +292,7 @@ pub fn snap(s: record, v: num)
   if s.places == 0 then int(round(c)) else round(c, s.places) end
 end
 
-// Why a text value is not acceptable, or "" when it is.
+# Why a text value is not acceptable, or "" when it is.
 pub fn problem(s: record, v: string) -> string
   let t = trim(v)
   if s.fmt == "email" then
@@ -312,8 +312,8 @@ pub fn problem(s: record, v: string) -> string
   end
 end
 
-// Whether a setting answers a search. Every word of the query must appear
-// somewhere in its label, description, tags, group or section name.
+# Whether a setting answers a search. Every word of the query must appear
+# somewhere in its label, description, tags, group or section name.
 pub fn matches(s: record, words: list) -> bool
   let g = GROUPS[s.g]
   let hay = lower("{s.label} {s.desc} {s.tags} {g.name} {SECTIONS[g.sec].label} {join(s.opts, " ")}")

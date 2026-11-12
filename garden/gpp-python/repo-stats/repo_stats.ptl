@@ -1,21 +1,21 @@
-// repo-stats — the drawer. A git repository dashboard as a Petal graphical
-// panel, served by the Python app beside it (app.py; see
-// docs/writing-gpp-apps-python.md).
-//
-//   query("stats", "") → {
-//     repo, branch: string,  total, sampled: int,
-//     weeks:   [{label, count} …]      // oldest → newest, one per ISO week
-//     max_week: int,
-//     authors: [{name, count, frac} …],
-//     recent:  [{short, subject, author, when} …] }
-//
-// Built on bloom's components (core-runtime/bloom/docs/components.md): cards
-// for the three sections, pill/badge header stats, load_view and empty_state;
-// and on `ui` for the split_h/cut_* RectCut layout and the load_state record
-// behind the async fetch.
-//
-// Test handles (via /state → panel.values): `ready`, `commit_count`,
-// `author_count`, `week_count`.
+# repo-stats — the drawer. A git repository dashboard as a Petal graphical
+# panel, served by the Python app beside it (app.py; see
+# docs/writing-gpp-apps-python.md).
+#
+#   query("stats", "") → {
+#     repo, branch: string,  total, sampled: int,
+#     weeks:   [{label, count} …]      // oldest → newest, one per ISO week
+#     max_week: int,
+#     authors: [{name, count, frac} …],
+#     recent:  [{short, subject, author, when} …] }
+#
+# Built on bloom's components (core-runtime/bloom/docs/components.md): cards
+# for the three sections, pill/badge header stats, load_view and empty_state;
+# and on `ui` for the split_h/cut_* RectCut layout and the load_state record
+# behind the async fetch.
+#
+# Test handles (via /state → panel.values): `ready`, `commit_count`,
+# `author_count`, `week_count`.
 
 import garden
 import ui
@@ -34,7 +34,7 @@ let split_head = cut_top(page, 40)
 let header = split_head.cut
 let body = cut_top(split_head.rest, 6).rest
 
-// ── Header ───────────────────────────────────────────────────────────────
+# ── Header ───────────────────────────────────────────────────────────────
 let commit_count = 0
 let author_count = 0
 let week_count = 0
@@ -55,7 +55,7 @@ if ready then
   end
 end
 
-// ── Body ─────────────────────────────────────────────────────────────────
+# ── Body ─────────────────────────────────────────────────────────────────
 if bloom.load_view(body, ls) then
   let d = ls.value
   if d.total == 0 then
@@ -65,7 +65,7 @@ if bloom.load_view(body, ls) then
     let lower = cut_top(split_chart.rest, 12).rest
     let halves = split_h(lower, 0.42, 16)
 
-    // Commits per week: one bar per ISO week, hover reads the exact count.
+    # Commits per week: one bar per ISO week, hover reads the exact count.
     let c = bloom.card(split_chart.cut)
     draw_text("Commits per week", {x: c.x, y: c.y}, {size: T.font_sm, color: T.dim, weight: 600, spacing: 0.5})
     let chart = rect(c.x, c.y + 22, c.w, c.h - 40)
@@ -88,7 +88,7 @@ if bloom.load_view(body, ls) then
     draw_text(d.weeks[0].label, {x: chart.x, y: chart.y + chart.h + 6}, T.font_sm, T.dim)
     draw_text_right(d.weeks[n - 1].label, chart.x + chart.w, chart.y + chart.h + 6, T.font_sm, T.dim)
 
-    // Top authors: name + share bar.
+    # Top authors: name + share bar.
     let a = bloom.card(halves.a)
     draw_text("Top authors", {x: a.x, y: a.y}, {size: T.font_sm, color: T.dim, weight: 600, spacing: 0.5})
     let arow_h = 30
@@ -104,7 +104,7 @@ if bloom.load_view(body, ls) then
       end
     end
 
-    // Recent commits.
+    # Recent commits.
     let r = bloom.card(halves.b)
     draw_text("Recent commits", {x: r.x, y: r.y}, {size: T.font_sm, color: T.dim, weight: 600, spacing: 0.5})
     let crow_h = 24

@@ -1,11 +1,11 @@
-// Tower of Hanoi with declarative dragging (ui/drag).
-//
-// The model is three pegs of disk sizes, bottom first. Only a peg's top disk
-// is draggable, and its spec lists the states it can reach: the same board,
-// or the disk on top of any peg whose top disk is larger. `closest` picks
-// the peg nearest the dragged disk, `floating` keeps the disk under the
-// pointer, and the disk settles onto its peg when it is let go. An illegal
-// peg is simply not in the list, so the drag cannot reach it.
+# Tower of Hanoi with declarative dragging (ui/drag).
+#
+# The model is three pegs of disk sizes, bottom first. Only a peg's top disk
+# is draggable, and its spec lists the states it can reach: the same board,
+# or the disk on top of any peg whose top disk is larger. `closest` picks
+# the peg nearest the dragged disk, `floating` keeps the disk under the
+# pointer, and the disk settles onto its peg when it is let go. An illegal
+# peg is simply not in the list, so the drag cannot reach it.
 import ui
 import ui/drag
 
@@ -26,8 +26,8 @@ fn top(pegs, p)
   if len(pegs[p]) == 0 then nil else pegs[p][len(pegs[p]) - 1] end
 end
 
-// Every board the top disk of peg `p` can reach in one legal move, the
-// current board included.
+# Every board the top disk of peg `p` can reach in one legal move, the
+# current board included.
 fn hanoi_moves(pegs, p)
   let disk = top(pegs, p)
   let out = [pegs]

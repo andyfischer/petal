@@ -1,8 +1,8 @@
-// Package `core` — the package's own module: `import core` binds the
-// qualifier `core` over every builtin the package declares, so a script can
-// write `core.len(xs)` where a declaration or an import of its own has taken
-// the bare name. Nothing needs this import to *use* a builtin: every name
-// below is in scope in every file already.
+# Package `core` — the package's own module: `import core` binds the
+# qualifier `core` over every builtin the package declares, so a script can
+# write `core.len(xs)` where a declaration or an import of its own has taken
+# the bare name. Nothing needs this import to *use* a builtin: every name
+# below is in scope in every file already.
 pub import ./basics
 pub import ./classes
 pub import ./collections

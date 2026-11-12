@@ -1,25 +1,25 @@
-// bloom/fields — the text fields and a property inspector's fields.
-//
-// The editing is `ui`'s: `ui.text_field_update` and `ui.text_area_update`
-// hold the caret, the selection, the clipboard and undo, and own the
-// keyboard through the runtime focus. bloom paints them and puts each one in
-// its Tab ring. So a bloom field selects, copies, pastes and undoes like a
-// desktop field, and shares one keyboard owner with any `ui` code beside it.
-//
-// Every field takes its focus id as `opts.id`. A field without one falls
-// back to its placeholder, then to "field" — enough for the one search box
-// of a panel, and wrong for two fields: give each its own id.
-//
-// The inspector fields (`commit_field`, `number_field`, `color_field`) apply
-// only when the edit is done: the result holds the new value on the frame it
-// is committed (Return, or the field losing the keyboard) and the old one,
-// or nil, before. Escape abandons the edit and gives the focus up. Each keeps
-// its edit in widget `state`, keyed per callsite — so in a loop, key it by
-// the row (`for p in props key p.name do … end`).
+# bloom/fields — the text fields and a property inspector's fields.
+#
+# The editing is `ui`'s: `ui.text_field_update` and `ui.text_area_update`
+# hold the caret, the selection, the clipboard and undo, and own the
+# keyboard through the runtime focus. bloom paints them and puts each one in
+# its Tab ring. So a bloom field selects, copies, pastes and undoes like a
+# desktop field, and shares one keyboard owner with any `ui` code beside it.
+#
+# Every field takes its focus id as `opts.id`. A field without one falls
+# back to its placeholder, then to "field" — enough for the one search box
+# of a panel, and wrong for two fields: give each its own id.
+#
+# The inspector fields (`commit_field`, `number_field`, `color_field`) apply
+# only when the edit is done: the result holds the new value on the frame it
+# is committed (Return, or the field losing the keyboard) and the old one,
+# or nil, before. Escape abandons the edit and gives the focus up. Each keeps
+# its edit in widget `state`, keyed per callsite — so in a loop, key it by
+# the row (`for p in props key p.name do … end`).
 
-// The drawing and input names used below come from the `ui` package, which
-// this module imports itself: an import reaches only the file it is written
-// in.
+# The drawing and input names used below come from the `ui` package, which
+# this module imports itself: an import reaches only the file it is written
+# in.
 import bloom/theme: theme, ts, tone, hair, stroke, wash, rate
 import bloom/motion: ease_to, ease_out, age
 import bloom/interact: probe, focusable, pointer_free
@@ -27,38 +27,38 @@ import bloom/overlay: tooltip
 import text_layout: text_baseline
 import ui
 
-// ── Shared ────────────────────────────────────────────────────────────────
+# ── Shared ────────────────────────────────────────────────────────────────
 
-// The focus id a field answers to: `opts.id`, else its placeholder, else
-// "field". An int id is fine; the runtime compares ids as strings.
+# The focus id a field answers to: `opts.id`, else its placeholder, else
+# "field". An int id is fine; the runtime compares ids as strings.
 fn _field_id(opts: record) -> string
   str(field(opts, "id", field(opts, "placeholder", "field")))
 end
 
-// The text style a field measures and draws with: `opts.text_style` whole,
-// or one built from `opts.size` and `opts.color` over the theme. One record
-// for both halves, or click-to-place lands the caret off the glyphs.
+# The text style a field measures and draws with: `opts.text_style` whole,
+# or one built from `opts.size` and `opts.color` over the theme. One record
+# for both halves, or click-to-place lands the caret off the glyphs.
 fn _field_style(t: record, opts: record) -> record
   field(opts, "text_style", ts(t, field(opts, "size", t.font_md), field(opts, "color", t.text)))
 end
 
-// What `ui.text_field_update` / `ui.text_area_update` read from their style.
-// The pointer stays out while a bloom overlay holds input, unless the field
-// sits inside that overlay (a field in a dialog).
+# What `ui.text_field_update` / `ui.text_area_update` read from their style.
+# The pointer stays out while a bloom overlay holds input, unless the field
+# sits inside that overlay (a field in a dialog).
 fn _update_style(t: record, r: record, opts: record, inset: num) -> record
   {...opts, text_style: _field_style(t, opts), inset: inset,
    pointer: field(opts, "pointer", true) && pointer_free(r)}
 end
 
-// The selection tint: the accent over the field's own face.
+# The selection tint: the accent over the field's own face.
 fn _sel_color(t: record, opts: record)
   field(opts, "selection", mix(field(opts, "bg", t.panel), t.accent, 0.35))
 end
 
-// The box every field is drawn in: a hairline that warms toward the accent
-// on hover and takes it fully with the focus, and a focus underline that
-// grows from the center out — the one motion that reads as "this field is
-// taking your keys". `k` is the eased focus amount.
+# The box every field is drawn in: a hairline that warms toward the accent
+# on hover and takes it fully with the focus, and a focus underline that
+# grows from the center out — the one motion that reads as "this field is
+# taking your keys". `k` is the eased focus amount.
 fn _field_box(t: record, r: record, opts: record, hot: num, k: num)
   let radius = field(opts, "radius", t.radius)
   let bg = field(opts, "bg", t.panel)
@@ -72,36 +72,36 @@ fn _field_box(t: record, r: record, opts: record, hot: num, k: num)
   end
 end
 
-// The caret's on/off: a dt-driven blink (it also blinks in a headless trace,
-// where the wall clock stands still), held on while the text is changing.
+# The caret's on/off: a dt-driven blink (it also blinks in a headless trace,
+# where the wall clock stands still), held on while the text is changing.
 fn _caret_on(changed: bool) -> bool
   changed || fract(age() * 1.1) < 0.55
 end
 
-// ── Text field ────────────────────────────────────────────────────────────
+# ── Text field ────────────────────────────────────────────────────────────
 
-// A single-line editor with a caret, a selection, the clipboard and undo.
-// `buf` is the text (keep it in `state`); the field returns the edited one.
-//
-//   state name = ""
-//   let res = bloom.text_field(r, name, {id: "name", placeholder: "Name"})
-//   name = res.text
-//   if res.submitted then … end
-//
-// Mouse: a click focuses and places the caret, shift+click extends the
-// selection, a drag selects, a double click selects a word and a triple
-// click everything; a press elsewhere gives the focus up. Keys: the arrows
-// (alt/ctrl by word, cmd to either end, shift to select), backspace and
-// delete (alt/ctrl by word, cmd to the start), cmd+A/C/X/V, cmd+Z and
-// cmd+shift+Z / cmd+Y, Return (`submitted`) and Escape (`cancelled`).
-//
-// `opts`: id, placeholder, size, color, text_style, inset (theme pad_x),
-// radius, bg, focus, caret, selection, scroll (true: the text scrolls to
-// keep the caret in view), pointer (false keeps the mouse out this frame).
-//
-// Returns `ui.text_field_update`'s record — {text, caret, submitted,
-// changed, anchor, sel_start, sel_end, scroll, overflow, blurred, cancelled}
-// — plus `focused`.
+# A single-line editor with a caret, a selection, the clipboard and undo.
+# `buf` is the text (keep it in `state`); the field returns the edited one.
+#
+#   state name = ""
+#   let res = bloom.text_field(r, name, {id: "name", placeholder: "Name"})
+#   name = res.text
+#   if res.submitted then … end
+#
+# Mouse: a click focuses and places the caret, shift+click extends the
+# selection, a drag selects, a double click selects a word and a triple
+# click everything; a press elsewhere gives the focus up. Keys: the arrows
+# (alt/ctrl by word, cmd to either end, shift to select), backspace and
+# delete (alt/ctrl by word, cmd to the start), cmd+A/C/X/V, cmd+Z and
+# cmd+shift+Z / cmd+Y, Return (`submitted`) and Escape (`cancelled`).
+#
+# `opts`: id, placeholder, size, color, text_style, inset (theme pad_x),
+# radius, bg, focus, caret, selection, scroll (true: the text scrolls to
+# keep the caret in view), pointer (false keeps the mouse out this frame).
+#
+# Returns `ui.text_field_update`'s record — {text, caret, submitted,
+# changed, anchor, sel_start, sel_end, scroll, overflow, blurred, cancelled}
+# — plus `focused`.
 pub fn text_field(r: record, buf: string) -> record
   text_field_impl(r, buf, {})
 end
@@ -110,11 +110,11 @@ pub fn text_field(r: record, buf: string, opts: record) -> record
   text_field_impl(r, buf, opts)
 end
 
-// `text_field` is also a name in the `ui` package, which this module imports
-// plainly. Inside one variant's own body the name means only that variant,
-// so the short form cannot reach the long one directly — it would escape
-// outward to `ui`'s set. Both forms, and the inspector fields, go through
-// this private implementation instead.
+# `text_field` is also a name in the `ui` package, which this module imports
+# plainly. Inside one variant's own body the name means only that variant,
+# so the short form cannot reach the long one directly — it would escape
+# outward to `ui`'s set. Both forms, and the inspector fields, go through
+# this private implementation instead.
 fn text_field_impl(r: record, buf: string, opts: record) -> record
   let t = theme()
   let id = _field_id(opts)
@@ -127,11 +127,11 @@ fn text_field_impl(r: record, buf: string, opts: record) -> record
   {...res, focused: has}
 end
 
-// The paint half, for a caller that runs `ui.text_field_update` itself (to
-// gate the keys, or to share one edit between two views). `res` is what the
-// update returned (or any record with `text` and `caret`; the selection,
-// `scroll` and `overflow` are read when present). `opts` as `text_field`'s —
-// pass the update the same `text_style` and `inset`, or the caret drifts.
+# The paint half, for a caller that runs `ui.text_field_update` itself (to
+# gate the keys, or to share one edit between two views). `res` is what the
+# update returned (or any record with `text` and `caret`; the selection,
+# `scroll` and `overflow` are read when present). `opts` as `text_field`'s —
+# pass the update the same `text_style` and `inset`, or the caret drifts.
 pub fn draw_text_field(r: record, res: record, focused: bool) -> record
   draw_field_impl(r, res, focused, {})
 end
@@ -153,9 +153,9 @@ fn draw_field_impl(r: record, res: record, has: bool, opts: record) -> record
   let radius = field(opts, "radius", t.radius)
   clip_push(pad(r, 2), radius)
   let tx = r.x + inset - field(res, "scroll", 0)
-  // The run sits on the baseline that centers its cap height in the field,
-  // and the caret and the selection span the line's real ink, ascent to
-  // descent, rather than a guessed `size` px around a guessed top.
+  # The run sits on the baseline that centers its cap height in the field,
+  # and the caret and the selection span the line's real ink, ascent to
+  # descent, rather than a guessed `size` px around a guessed top.
   let m = text_metrics(style)
   let base = text_baseline(r, style)
   let ty = base - m.baseline
@@ -182,18 +182,18 @@ fn draw_field_impl(r: record, res: record, has: bool, opts: record) -> record
   res
 end
 
-// ── Text area ─────────────────────────────────────────────────────────────
+# ── Text area ─────────────────────────────────────────────────────────────
 
-// `text_field` for text with line breaks: notes, captions, a chat message.
-// The text wraps to the box, Return starts a new line, and a box whose text
-// is taller than it scrolls with the wheel and follows the caret. Beyond the
-// field's keys: up / down by a row keeping the column, cmd+up / down to
-// either end, home / end to the ends of the row.
-//
-// `opts`: as `text_field`'s, plus line_gap (2). Returns
-// `ui.text_area_update`'s record — {text, caret, changed, anchor, sel_start,
-// sel_end, scroll, overflow, rows, line_h, content_h} — plus `focused`.
-// There is no `submitted`.
+# `text_field` for text with line breaks: notes, captions, a chat message.
+# The text wraps to the box, Return starts a new line, and a box whose text
+# is taller than it scrolls with the wheel and follows the caret. Beyond the
+# field's keys: up / down by a row keeping the column, cmd+up / down to
+# either end, home / end to the ends of the row.
+#
+# `opts`: as `text_field`'s, plus line_gap (2). Returns
+# `ui.text_area_update`'s record — {text, caret, changed, anchor, sel_start,
+# sel_end, scroll, overflow, rows, line_h, content_h} — plus `focused`.
+# There is no `submitted`.
 pub fn text_area(r: record, buf: string) -> record
   text_area_impl(r, buf, {})
 end
@@ -213,9 +213,9 @@ fn text_area_impl(r: record, buf: string, opts: record) -> record
   {...res, focused: has}
 end
 
-// The paint half of `text_area`: the box, the selection, the rows, the caret
-// and, when the text overflows, a scroll thumb. `res` is what
-// `ui.text_area_update` returned.
+# The paint half of `text_area`: the box, the selection, the rows, the caret
+# and, when the text overflows, a scroll thumb. `res` is what
+# `ui.text_area_update` returned.
 pub fn draw_text_area(r: record, res: record, focused: bool) -> record
   draw_area_impl(r, res, focused, {})
 end
@@ -263,7 +263,7 @@ fn draw_area_impl(r: record, res: record, has: bool, opts: record) -> record
   end
   clip_pop()
   if res.overflow then
-    // A thin thumb on the right edge, sized to the share of the text in view.
+    # A thin thumb on the right edge, sized to the share of the text in view.
     let inner_h = r.h - 2 * inset
     let track_h = r.h - 8
     let th = max(12, track_h * inner_h / max(1, res.content_h))
@@ -274,13 +274,13 @@ fn draw_area_impl(r: record, res: record, has: bool, opts: record) -> record
   res
 end
 
-// ── Inspector fields ──────────────────────────────────────────────────────
+# ── Inspector fields ──────────────────────────────────────────────────────
 
-// One line of text that applies on Return or when the field loses the
-// keyboard; Escape reverts. While unfocused it shows `current`. Returns
-// {text, editing}: `text` is nil except on the frame the edit is applied.
-// `opts` is `text_field`'s, plus `start`: take the keyboard as soon as the
-// field shows (a rename opened by a double-click), rather than on a click.
+# One line of text that applies on Return or when the field loses the
+# keyboard; Escape reverts. While unfocused it shows `current`. Returns
+# {text, editing}: `text` is nil except on the frame the edit is applied.
+# `opts` is `text_field`'s, plus `start`: take the keyboard as soon as the
+# field shows (a rename opened by a double-click), rather than on a click.
 pub fn commit_field(r: record, current) -> record
   commit_impl(r, current, {})
 end
@@ -312,21 +312,21 @@ fn commit_impl(r: record, current, opts: record) -> record
       editing = false
     end
   elsif editing then
-    // The keyboard went elsewhere (a click, Tab) mid-edit: apply it.
+    # The keyboard went elsewhere (a click, Tab) mid-edit: apply it.
     editing = false
     out = buf
   end
   {text: out, editing: editing}
 end
 
-// A number box: drag sideways to scrub (shift for fine steps), double-click
-// to type, Return or a click away to apply the typed value, Escape to drop
-// it. Returns {value, changed}: `value` is the new value (the old one when
-// nothing happened), `changed` whether it differs.
-//
-// `opts`: id, step (1.0 per pixel of drag), places (2, decimals shown and
-// typed), min, max, fine (0.1, the shift multiplier), tip (the hover hint;
-// "" for none), size, color, bg, radius.
+# A number box: drag sideways to scrub (shift for fine steps), double-click
+# to type, Return or a click away to apply the typed value, Escape to drop
+# it. Returns {value, changed}: `value` is the new value (the old one when
+# nothing happened), `changed` whether it differs.
+#
+# `opts`: id, step (1.0 per pixel of drag), places (2, decimals shown and
+# typed), min, max, fine (0.1, the shift multiplier), tip (the hover hint;
+# "" for none), size, color, bg, radius.
 pub fn number_field(r: record, value: num) -> record
   number_impl(r, value, {})
 end
@@ -344,7 +344,7 @@ fn number_impl(r: record, value: num, opts: record) -> record
   state last_x = 0
   let out = value
   if has_focus(id) then
-    // Typing: entered by a double-click, or by the focus arriving (Tab).
+    # Typing: entered by a double-click, or by the focus arriving (Tab).
     if !editing then
       buf = fixed(float(value), places)
       editing = true
@@ -362,13 +362,13 @@ fn number_impl(r: record, value: num, opts: record) -> record
     end
   else
     if editing then
-      // The focus went elsewhere while typing (a click, Tab): keep the value.
+      # The focus went elsewhere while typing (a click, Tab): keep the value.
       editing = false
       let v = parse_float(trim(buf))
       if v != nil then out = v end
     end
-    // Still in the Tab ring while it shows its value: Tab lands on it and
-    // it opens for typing.
+    # Still in the Tab ring while it shows its value: Tab lands on it and
+    # it opens for typing.
     focusable(id)
     let p = probe(r)
     let it = interact(r, id)
@@ -380,8 +380,8 @@ fn number_impl(r: record, value: num, opts: record) -> record
     let shown = text_ellipsize(fixed(float(value), places), style, r.w - 6)
     draw_text(shown, {x: r.x + (r.w - text_width(shown, style)) / 2.0,
       y: text_baseline(r, style) - text_metrics(style).baseline}, style)
-    // The drag is measured from the pointer itself, not `mouse_dx()`, so it
-    // scrubs in hosts that report no relative motion.
+    # The drag is measured from the pointer itself, not `mouse_dx()`, so it
+    # scrubs in hosts that report no relative motion.
     if live && it.down && !it.pressed && mouse_x() != last_x then
       let k = if mod_shift() then field(opts, "fine", 0.1) else 1.0 end
       out = float(value) + float(mouse_x() - last_x) * float(field(opts, "step", 1.0)) * k
@@ -402,10 +402,10 @@ fn number_impl(r: record, value: num, opts: record) -> record
   {value: out, changed: out != value}
 end
 
-// A colour chip and its hex, typed: Return or a click away applies, Escape
-// reverts. Returns {color}: nil unless a valid new colour was entered. A nil
-// `color` shows an empty chip and field. `opts` is `commit_field`'s, plus
-// chip_radius and outline.
+# A colour chip and its hex, typed: Return or a click away applies, Escape
+# reverts. Returns {color}: nil unless a valid new colour was entered. A nil
+# `color` shows an empty chip and field. `opts` is `commit_field`'s, plus
+# chip_radius and outline.
 pub fn color_field(r: record, color) -> record
   color_impl(r, color, {})
 end
@@ -427,10 +427,10 @@ fn color_impl(r: record, color, opts: record) -> record
   {color: if same_color(picked, color) then nil else picked end}
 end
 
-// A row of square colour chips, `r.h` on a side, `current` ringed; chips
-// that would overrun `r.w` are left out. Returns the colour clicked (on
-// release, like every bloom control), or nil. `opts`: gap (4), radius,
-// ring, hover.
+# A row of square colour chips, `r.h` on a side, `current` ringed; chips
+# that would overrun `r.w` are left out. Returns the colour clicked (on
+# release, like every bloom control), or nil. `opts`: gap (4), radius,
+# ring, hover.
 pub fn swatches(r: record, colors: list, current) -> any
   swatches_impl(r, colors, current, {})
 end

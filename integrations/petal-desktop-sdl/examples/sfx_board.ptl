@@ -1,7 +1,7 @@
-// === SFX BOARD ===
-// Procedural sound effects: click a pad (or press 1-8) to play a preset,
-// press R for a random synth() zap. Every sound is synthesized on the host,
-// sfxr-style; nothing is loaded from disk.
+# === SFX BOARD ===
+# Procedural sound effects: click a pad (or press 1-8) to play a preset,
+# press R for a random synth() zap. Every sound is synthesized on the host,
+# sfxr-style; nothing is loaded from disk.
 
 import sdl
 import ui
@@ -38,8 +38,8 @@ fn inside(r, x, y)
   x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
 end
 
-// A sound is an event: fire it on the frame the key or button went down.
-// Each pad is panned by its column so the stereo field is audible.
+# A sound is an event: fire it on the frame the key or button went down.
+# Each pad is panned by its column so the stereo field is audible.
 fn play(i)
   let pan = float(i % cols) / float(cols - 1) * 1.2 - 0.6
   sfx(presets[i], {pan: pan})
@@ -55,7 +55,7 @@ end
 
 if key_pressed("r") then
   zaps += 1
-  // Deterministic "random": the seed makes each zap distinct but repeatable.
+  # Deterministic "random": the seed makes each zap distinct but repeatable.
   let f = 300.0 + float((zaps * 7919) % 1200)
   synth({wave: "square", freq: f, slide: -4.0 - float(zaps % 5), duty: 0.25,
          duty_sweep: 0.8, sustain: 0.06, decay: 0.2, hpf_cutoff: 150.0,
@@ -66,7 +66,7 @@ end
 
 flash = max(0.0, flash - dt() * 3.0)
 
-// --- Drawing ---
+# --- Drawing ---
 clear(12, 12, 24)
 draw_text("SFX BOARD", x: pad, y: 28, size: 32, r: 230, g: 230, b: 255)
 draw_text("click a pad or press 1-8  -  R: random synth zap", x: pad, y: 70, size: 16, r: 120, g: 130, b: 170)

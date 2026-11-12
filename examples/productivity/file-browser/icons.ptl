@@ -1,11 +1,11 @@
-// Burrow: icons.
-//
-// Two families. `file_icon` draws a file or folder the way a desktop does: a
-// coloured object with its own palette, the same at 16 px in a list row and
-// at 96 px in the info pane. `glyph` draws a one-colour stroke icon for the
-// chrome (toolbar, sidebar, column headers) in whatever ink the caller is
-// using. No font and no image: every one is a few fills and strokes inside
-// the rect it is given.
+# Burrow: icons.
+#
+# Two families. `file_icon` draws a file or folder the way a desktop does: a
+# coloured object with its own palette, the same at 16 px in a list row and
+# at 96 px in the info pane. `glyph` draws a one-colour stroke icon for the
+# chrome (toolbar, sidebar, column headers) in whatever ink the caller is
+# using. No font and no image: every one is a few fills and strokes inside
+# the rect it is given.
 
 import ui
 
@@ -17,13 +17,13 @@ fn sub(r: record, fx: num, fy: num, fw: num, fh: num) -> Rect
   Rect(r.x + r.w * fx, r.y + r.h * fy, r.w * fw, r.h * fh)
 end
 
-// ── Files and folders ───────────────────────────────────────────────────────
+# ── Files and folders ───────────────────────────────────────────────────────
 
 let PAPER = :f1f3f7
 let PAPER_FOLD = :c3c9d6
 let PAPER_LINE = :aab1c0
 
-// The accent each kind of file wears.
+# The accent each kind of file wears.
 pub fn kind_color(key: string) -> record
   match key
     when "folder" -> :4f9ef5
@@ -41,15 +41,15 @@ pub fn kind_color(key: string) -> record
   end
 end
 
-// `pale` is the folder on a selected row: the same shape in near-white, so it
-// does not vanish into the accent behind it.
+# `pale` is the folder on a selected row: the same shape in near-white, so it
+# does not vanish into the accent behind it.
 pub fn folder(r: record, open: bool = false, pale: bool = false) -> nil
   let rad = max(1.0, r.w * 0.09)
   let back = if pale then :cfe2ff else :2f7fdc end
-  // The tab and the back wall.
+  # The tab and the back wall.
   draw_rect_rounded(sub(r, 0.05, 0.15, 0.40, 0.22), rad, back)
   draw_rect_rounded(sub(r, 0.05, 0.24, 0.90, 0.62), rad, back)
-  // The front panel, a shade lighter, dropped a little when the folder is open.
+  # The front panel, a shade lighter, dropped a little when the folder is open.
   let front = if open then sub(r, 0.05, 0.42, 0.90, 0.44) else sub(r, 0.05, 0.33, 0.90, 0.53) end
   if pale then
     draw_rect_rounded(front, rad, :ffffff)
@@ -77,12 +77,12 @@ pub fn trash(r: record, full: bool) -> nil
   end
 end
 
-// The sheet of paper every document icon starts from.
+# The sheet of paper every document icon starts from.
 fn page(r: record, tint: record) -> nil
   fill_polygon([at(r, 0.19, 0.05), at(r, 0.61, 0.05), at(r, 0.81, 0.25), at(r, 0.81, 0.95), at(r, 0.19, 0.95)], tint)
   fill_polygon([at(r, 0.61, 0.05), at(r, 0.61, 0.25), at(r, 0.81, 0.25)], PAPER_FOLD)
   if r.w >= 30 then
-    // A hairline, so two sheets that overlap still read as two.
+    # A hairline, so two sheets that overlap still read as two.
     draw_polyline([at(r, 0.19, 0.05), at(r, 0.61, 0.05), at(r, 0.81, 0.25), at(r, 0.81, 0.95), at(r, 0.19, 0.95),
       at(r, 0.19, 0.05)], :7c8598, 120, 1)
   end
@@ -96,7 +96,7 @@ fn text_lines(r: record, c: record, rows: list) -> nil
   end
 end
 
-// A file of kind `key` (see fsdata.kind_of), or a folder.
+# A file of kind `key` (see fsdata.kind_of), or a folder.
 pub fn file_icon(key: string, r: record) -> nil
   if key == "folder" then
     folder(r)
@@ -106,8 +106,8 @@ pub fn file_icon(key: string, r: record) -> nil
   let small = r.w < 26
   let w = max(1.1, r.h * 0.05)
   if small && (key == "code" || key == "doc" || key == "audio" || key == "archive") then
-    // At list size there is no room for the drawing: a band of the kind's
-    // colour says the same thing.
+    # At list size there is no room for the drawing: a band of the kind's
+    # colour says the same thing.
     page(r, PAPER)
     draw_rect(sub(r, 0.19, 0.58, 0.62, 0.26), c)
     return nil
@@ -161,7 +161,7 @@ pub fn file_icon(key: string, r: record) -> nil
         {x: f.x + f.w * 0.70, y: f.y + f.h * 0.5}, :ffffff)
     when "archive" ->
       page(r, mix(PAPER, c, 0.30))
-      // A zip running down the middle.
+      # A zip running down the middle.
       for i in range(0, 6) do
         let y = 0.14 + i * 0.105
         let x = if i % 2 == 0 then 0.44 else 0.50 end
@@ -184,7 +184,7 @@ pub fn file_icon(key: string, r: record) -> nil
   nil
 end
 
-// ── Chrome glyphs ───────────────────────────────────────────────────────────
+# ── Chrome glyphs ───────────────────────────────────────────────────────────
 
 pub fn glyph(name: string, r: record, c: record, w: num = 1.5) -> nil
   let cx = r.x + r.w / 2.0
@@ -223,7 +223,7 @@ pub fn glyph(name: string, r: record, c: record, w: num = 1.5) -> nil
       draw_line(at(r, 0.24, 0.24), at(r, 0.76, 0.76), c, 255, w)
       draw_line(at(r, 0.76, 0.24), at(r, 0.24, 0.76), c, 255, w)
     when "info" ->
-      // A sidebar on the right: the info pane's toggle.
+      # A sidebar on the right: the info pane's toggle.
       draw_rect_rounded_outline(sub(r, 0.08, 0.16, 0.84, 0.68), 2.5, c, 255, w)
       draw_line(at(r, 0.62, 0.18), at(r, 0.62, 0.82), c, 255, w)
     when "home" ->
@@ -254,7 +254,7 @@ pub fn glyph(name: string, r: record, c: record, w: num = 1.5) -> nil
       draw_polyline([at(r, 0.32, 0.24), at(r, 0.08, 0.50), at(r, 0.32, 0.76)], c, 255, w)
       draw_polyline([at(r, 0.68, 0.24), at(r, 0.92, 0.50), at(r, 0.68, 0.76)], c, 255, w)
     when "burrow" ->
-      // The app's mark: a den with a way in.
+      # The app's mark: a den with a way in.
       fill_arc({x: cx, y: r.y + r.h * 0.84}, 0, u * 1.24, pi(), 2.0 * pi(), c)
     when _ ->
       draw_circle({x: cx, y: cy}, u * 0.3, c)

@@ -1,19 +1,19 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  APERTURE — a photo adjustment desk for a Garden panel.
-//
-//  There is no image decoder here and no pixel buffer in the host: every
-//  photograph is *synthesised* in Petal from a procedural scene function
-//  sampled on an 80x54 grid, and every adjustment is a real per-sample
-//  colour transform run in Petal. The grid is then painted as one small
-//  quad per sample, so what you see on screen is genuinely the output of
-//  the pipeline rather than a picture of one.
-//
-//  Designed for a 1280x850 viewport. See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  APERTURE — a photo adjustment desk for a Garden panel.
+#
+#  There is no image decoder here and no pixel buffer in the host: every
+#  photograph is *synthesised* in Petal from a procedural scene function
+#  sampled on an 80x54 grid, and every adjustment is a real per-sample
+#  colour transform run in Petal. The grid is then painted as one small
+#  quad per sample, so what you see on screen is genuinely the output of
+#  the pipeline rather than a picture of one.
+#
+#  Designed for a 1280x850 viewport. See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import ui
 
-// ── Chrome palette ───────────────────────────────────────────────────────
+# ── Chrome palette ───────────────────────────────────────────────────────
 let BG       = :0b0d11
 let RAIL     = :12151b
 let CARD     = :191d25
@@ -28,7 +28,7 @@ let GHOST    = :3c4553
 let ACCENT   = :f0b35c
 let COOL     = :78b4f0
 
-// ── Geometry ─────────────────────────────────────────────────────────────
+# ── Geometry ─────────────────────────────────────────────────────────────
 let TOP_H    = 64
 let BOT_H    = 34
 let LEFT_W   = 232
@@ -42,7 +42,7 @@ let THUMB_W  = 24
 let THUMB_H  = 16
 let THUMB_C  = 5
 
-// ── Small numeric helpers ────────────────────────────────────────────────
+# ── Small numeric helpers ────────────────────────────────────────────────
 
 fn fract(x: num)
   x - floor(x)
@@ -80,7 +80,7 @@ fn fbm(x: num, y: num)
   vnoise(x * 4.7 + 9.1, y * 4.7 + 7.7) * 0.1
 end
 
-// ── Float colour (0..1) ──────────────────────────────────────────────────
+# ── Float colour (0..1) ──────────────────────────────────────────────────
 
 fn fc(r: num, g: num, b: num) -> record
   {r: r, g: g, b: b}
@@ -113,8 +113,8 @@ fn pack(c: record) -> int
   r * 65536 + g * 256 + b
 end
 
-// ── The photographs ──────────────────────────────────────────────────────
-// Each is a pure function of (u, v) in 0..1, v = 0 at the top.
+# ── The photographs ──────────────────────────────────────────────────────
+# Each is a pure function of (u, v) in 0..1, v = 0 at the top.
 
 let PHOTOS = [
   {name: "Harbour Dusk",     place: "Sausalito, CA", meta: "f/8 · 1/250 · ISO 100"},
@@ -159,7 +159,7 @@ fn scene_alpine(u: num, v: num) -> record
     let t = v / horizon
     let sky = cmix(fc(0.90, 0.93, 0.96), fc(0.45, 0.57, 0.72), t: pow(t, 0.85))
     var out = sky
-    // three receding ridges, each washed further into the fog
+    # three receding ridges, each washed further into the fog
     for k in range(0, 3) do
       let base = 0.28 + float(k) * 0.12
       let amp = 0.090 - float(k) * 0.022
@@ -174,13 +174,13 @@ fn scene_alpine(u: num, v: num) -> record
         set out = cmix(lit, fc(0.85, 0.89, 0.93), t: fogv)
       end
     end
-    // the fog bank itself, thickest just under the last ridge
+    # the fog bank itself, thickest just under the last ridge
     set out = cmix(out, fc(0.88, 0.91, 0.94), t: exp(-abs(v - (horizon - 0.05)) * 13.0) * 0.75)
     out
   else
     let t = (v - horizon) / (1.0 - horizon)
     var out = cmix(fc(0.80, 0.84, 0.87), fc(0.13, 0.19, 0.18), t: pow(t, 0.55))
-    // far tree line, then a nearer, darker one
+    # far tree line, then a nearer, darker one
     for k in range(0, 2) do
       let n = if k == 0 then 15.0 else 7.0 end
       let idx = floor(u * n) + float(k) * 40.0
@@ -199,8 +199,8 @@ fn scene_alpine(u: num, v: num) -> record
   end
 end
 
-// The reflection below needs the sky/building half only — recursing into
-// scene_neon would bounce between the two branches forever.
+# The reflection below needs the sky/building half only — recursing into
+# scene_neon would bounce between the two branches forever.
 fn scene_neon_upper(u: num, v: num) -> record
   let ground = 0.70
   var out = cmix(fc(0.13, 0.11, 0.19), fc(0.035, 0.036, 0.062), t: pow(clamp(v / ground, lo: 0.0, hi: 1.0), 0.5))
@@ -235,7 +235,7 @@ fn scene_neon(u: num, v: num) -> record
     if v > btop then
       let wall = 0.050 + 0.032 * hash2(bi, 5.0)
       set out = fc(wall * 1.1, wall, wall * 1.35)
-      // parapet and the seam between neighbouring blocks
+      # parapet and the seam between neighbouring blocks
       if v < btop + 0.012 || bf < 0.035 || bf > 0.965 then
         set out = fc(0.014, 0.014, 0.024)
       else
@@ -250,7 +250,7 @@ fn scene_neon(u: num, v: num) -> record
         end
       end
     end
-    // two neon signs
+    # two neon signs
     let d1 = sqrt(pow((u - 0.22) * 1.0, 2.0) + pow((v - 0.40) * 1.9, 2.0))
     let d2 = sqrt(pow((u - 0.79) * 1.0, 2.0) + pow((v - 0.26) * 1.9, 2.0))
     set out = cglow(a: out, c: fc(1.0, 0.22, 0.62), s: exp(-d1 * 9.0) * 1.5)
@@ -263,7 +263,7 @@ fn scene_neon(u: num, v: num) -> record
     end
     out
   else
-    // wet asphalt: a smeared, rippled reflection of the block above
+    # wet asphalt: a smeared, rippled reflection of the block above
     let t = (v - ground) / (1.0 - ground)
     let mirror = ground - t * 0.55 + sin(v * 70.0 + u * 6.0) * 0.010
     let src = scene_neon_upper(u + sin(v * 45.0) * 0.012, clamp(mirror, lo: 0.02, hi: ground - 0.004))
@@ -296,7 +296,7 @@ fn scene_desert(u: num, v: num) -> record
     let ripple = (fbm(u * 13.0, v * 34.0) - 0.5) * 0.11
     set out = cadd(out, fc(ripple, ripple * 0.86, ripple * 0.62))
     set out = cmix(out, fc(0.88, 0.87, 0.81), t: exp(-t * 22.0) * 0.55)
-    // the highway, converging on the vanishing point
+    # the highway, converging on the vanishing point
     let half = 0.007 + t * t * 0.205
     let centre = 0.50 + t * t * 0.045
     let dx = abs(u - centre)
@@ -327,7 +327,7 @@ fn scene_orchard(u: num, v: num) -> record
     var out = cmix(fc(0.62, 0.68, 0.42), fc(0.15, 0.28, 0.14), t: pow(t, 0.55))
     let mow = 0.045 * sin(v * 46.0 + sin(u * 3.0) * 1.5) * (0.3 + t)
     set out = cadd(out, fc(mow * 0.7, mow, mow * 0.4))
-    // five rows of trees, drawn far to near so the near ones occlude
+    # five rows of trees, drawn far to near so the near ones occlude
     for k in range(0, 5) do
       let f = float(k) / 4.0
       let base = horizon + 0.030 + pow(f, 1.55) * 0.66
@@ -347,12 +347,12 @@ fn scene_orchard(u: num, v: num) -> record
           set out = cmix(leaf, fc(0.90, 0.92, 0.84), t: max(0.0, 0.42 - f * 0.55))
         end
       end
-      // trunks, only close enough to resolve
+      # trunks, only close enough to resolve
       if f > 0.45 && dx < 0.09 && v > base && v < base + hgt * 0.28 then
         set out = fc(0.22, 0.16, 0.11)
       end
     end
-    // morning mist hugging the far rows
+    # morning mist hugging the far rows
     set out = cmix(out, fc(0.94, 0.93, 0.86), t: exp(-abs(v - (horizon + 0.03)) * 30.0) * 0.60)
     let gr = (fbm(u * 15.0, v * 28.0) - 0.5) * 0.09 * (0.3 + t)
     cadd(out, fc(gr, gr * 1.1, gr * 0.7))
@@ -368,7 +368,7 @@ fn sample(id: num, u: num, v: num) -> record
   end
 end
 
-// ── The adjustment pipeline ──────────────────────────────────────────────
+# ── The adjustment pipeline ──────────────────────────────────────────────
 
 let SLIDERS = [
   {name: "Exposure",    key: "ev", bipolar: true,  unit: "ev"},
@@ -410,7 +410,7 @@ end
 fn develop(c0: record, a: record, u: num, v: num, gain: num) -> record
   var c = cscale(c0, gain)
 
-  // tone: shadows lift and highlight rolloff, weighted by local luminance
+  # tone: shadows lift and highlight rolloff, weighted by local luminance
   let l0 = lum(c)
   if a.sh != 0.0 then
     let w = (1.0 - l0) * (1.0 - l0)
@@ -421,13 +421,13 @@ fn develop(c0: record, a: record, u: num, v: num, gain: num) -> record
     set c = cadd(c, fc(a.hi * 0.46 * w, a.hi * 0.46 * w, a.hi * 0.46 * w))
   end
 
-  // contrast about mid grey
+  # contrast about mid grey
   if a.co != 0.0 then
     let k = 1.0 + a.co
     set c = fc((c.r - 0.5) * k + 0.5, (c.g - 0.5) * k + 0.5, (c.b - 0.5) * k + 0.5)
   end
 
-  // white balance
+  # white balance
   if a.tp != 0.0 then
     set c = fc(c.r * (1.0 + a.tp * 0.30), c.g * (1.0 + a.tp * 0.04), c.b * (1.0 - a.tp * 0.28))
   end
@@ -435,14 +435,14 @@ fn develop(c0: record, a: record, u: num, v: num, gain: num) -> record
     set c = fc(c.r * (1.0 + a.tn * 0.12), c.g * (1.0 - a.tn * 0.20), c.b * (1.0 + a.tn * 0.14))
   end
 
-  // saturation about the sample's own luminance
+  # saturation about the sample's own luminance
   if a.sa != 0.0 then
     let l = lum(c)
     let s = 1.0 + a.sa
     set c = fc(l + (c.r - l) * s, l + (c.g - l) * s, l + (c.b - l) * s)
   end
 
-  // faded print: blacks lift toward a warm grey, whites pull back
+  # faded print: blacks lift toward a warm grey, whites pull back
   if a.fa > 0.0 then
     let f = a.fa
     set c = fc(c.r * (1.0 - 0.26 * f) + 0.155 * f,
@@ -450,13 +450,13 @@ fn develop(c0: record, a: record, u: num, v: num, gain: num) -> record
       c.b * (1.0 - 0.26 * f) + 0.170 * f)
   end
 
-  // grain: fixed-pattern per sample so it never shimmers between frames
+  # grain: fixed-pattern per sample so it never shimmers between frames
   if a.gr > 0.0 then
     let n = (hash2(floor(u * 260.0), floor(v * 260.0)) - 0.5) * a.gr * 0.30
     set c = cadd(c, fc(n, n * 0.94, n * 1.06))
   end
 
-  // vignette
+  # vignette
   if a.vg > 0.0 then
     let dx = (u - 0.5) * 1.18
     let dy = (v - 0.5)
@@ -467,7 +467,7 @@ fn develop(c0: record, a: record, u: num, v: num, gain: num) -> record
   c
 end
 
-// ── Image builders (cached in state, keyed by a signature string) ────────
+# ── Image builders (cached in state, keyed by a signature string) ────────
 
 fn build_base(id: num, gw: num, gh: num) -> list
   let img = for j in range(0, gh) do
@@ -483,8 +483,8 @@ fn unpack(p: num) -> record
   fc(float(p / 65536) / 255.0, float((p / 256) % 256) / 255.0, float(p % 256) / 255.0)
 end
 
-// Every other sample in each direction: the draft grid a live drag develops,
-// four times cheaper and drawn at double cell size.
+# Every other sample in each direction: the draft grid a live drag develops,
+# four times cheaper and drawn at double cell size.
 fn halve(img: list, gw: num, gh: num) -> list
   let out = for j in range(0, gh / 2) do
     let src = img[j * 2]
@@ -496,8 +496,8 @@ fn halve(img: list, gw: num, gh: num) -> list
   out
 end
 
-// Develops the *cached* negative rather than re-synthesising the scene: the
-// scene functions are the expensive half, and a slider only changes the grade.
+# Develops the *cached* negative rather than re-synthesising the scene: the
+# scene functions are the expensive half, and a slider only changes the grade.
 fn build_dev(base: list, vals: list, gw: num, gh: num) -> list
   let a = adj_of(vals)
   let gain = pow(2.0, a.ev * 1.45)
@@ -512,8 +512,8 @@ fn build_dev(base: list, vals: list, gw: num, gh: num) -> list
   img
 end
 
-// One pass over a developed frame: the 40-bin luminance histogram, the mean
-// level, and how many samples are pinned at either end of the scale.
+# One pass over a developed frame: the 40-bin luminance histogram, the mean
+# level, and how many samples are pinned at either end of the scale.
 fn analyse(img: list) -> record
   var bins = []
   for i in range(0, 40) do
@@ -548,7 +548,7 @@ fn sig_of(id: num, vals: list) -> string
   s
 end
 
-// ── State ────────────────────────────────────────────────────────────────
+# ── State ────────────────────────────────────────────────────────────────
 
 state photo = 0
 state adj = ZERO
@@ -556,8 +556,8 @@ state preset = 0
 state slider_sel = 0
 state split = 0.5
 state peeking = false
-state view = "split"          // "split" | "before" | "after"
-state dragging = -1           // slider index, 100 = split handle, -1 = none
+state view = "split"          # "split" | "before" | "after"
+state dragging = -1           # slider index, 100 = split handle, -1 = none
 state base_sig = ""
 state dev_sig = ""
 state negatives = [[], [], [], [], []]
@@ -572,7 +572,7 @@ state thumb_sig = ""
 state thumbs = []
 state recomputes = 0
 
-// ── Drawing helpers ──────────────────────────────────────────────────────
+# ── Drawing helpers ──────────────────────────────────────────────────────
 
 fn cap(s: string, x: num, y: num, size: num, c: record, sp: num)
   draw_text(s, pos: {x: x, y: y}, style: {size: size, color: c, spacing: sp})
@@ -601,18 +601,18 @@ fn signed(n: num) -> string
   if n > 0 then "+{n}" else "{n}" end
 end
 
-// ── Frame ────────────────────────────────────────────────────────────────
+# ── Frame ────────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
 
 clear(BG.r, BG.g, BG.b)
 
-// keep the caches honest
+# keep the caches honest
 let want_base = sig_of(photo, ZERO)
 if base_sig != want_base then
-  // Scanning a negative is the expensive half, so each one is kept once it
-  // has been read: revisiting a photo in the library is instant.
+  # Scanning a negative is the expensive half, so each one is kept once it
+  # has been read: revisiting a photo in the library is instant.
   if len(negatives[photo]) == 0 then
     negatives[photo] = build_base(id: photo, gw: GRID_W, gh: GRID_H)
   end
@@ -621,8 +621,8 @@ if base_sig != want_base then
   base_mean = analyse(base_img).mean
   base_sig = want_base
 end
-// While a control is being dragged only the quarter-res draft is developed;
-// the full negative is developed once the pointer settles.
+# While a control is being dragged only the quarter-res draft is developed;
+# the full negative is developed once the pointer settles.
 let live = dragging >= 0 && dragging < 100
 let want_dev = sig_of(photo, adj)
 if live then
@@ -644,7 +644,7 @@ if thumb_sig != want_thumb then
   thumb_sig = want_thumb
 end
 
-// ── Top bar ──────────────────────────────────────────────────────────────
+# ── Top bar ──────────────────────────────────────────────────────────────
 draw_rect(x: 0, y: 0, w: W, h: TOP_H, r: RAIL.r, g: RAIL.g, b: RAIL.b)
 hline(x: 0, y: TOP_H - 1, w: W, c: LINE)
 draw_rect(x: 24, y: 22, w: 4, h: 20, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b)
@@ -658,7 +658,7 @@ draw_text_right(cur.name ++ "  ·  " ++ cur.place, right_x: W - 24, y: 17, size:
 let dot_c = if dirty then ACCENT else GHOST end
 draw_circle(cx: W - 24 - text_width(cur.name ++ "  ·  " ++ cur.place, 13) - 14, cy: 23, radius: 4, r: dot_c.r, g: dot_c.g, b: dot_c.b)
 
-// ── Left rail: library ───────────────────────────────────────────────────
+# ── Left rail: library ───────────────────────────────────────────────────
 draw_rect(x: 0, y: TOP_H, w: LEFT_W, h: H - TOP_H - BOT_H, r: RAIL.r, g: RAIL.g, b: RAIL.b)
 draw_rect(x: LEFT_W - 1, y: TOP_H, w: 1, h: H - TOP_H - BOT_H, r: LINE.r, g: LINE.g, b: LINE.b)
 cap("LIBRARY", x: 24, y: TOP_H + 22, size: 10, c: FAINT, sp: 3)
@@ -692,18 +692,18 @@ if clicked_photo >= 0 then
   photo = clicked_photo
 end
 
-// ── Centre: the image ────────────────────────────────────────────────────
+# ── Centre: the image ────────────────────────────────────────────────────
 let IMG_W = GRID_W * CELL
 let IMG_H = GRID_H * CELL
 let cx0 = LEFT_W + (W - LEFT_W - RIGHT_W - IMG_W) / 2
 let cy0 = TOP_H + 30
 
-// matte
+# matte
 draw_rect(x: cx0 - 10, y: cy0 - 10, w: IMG_W + 20, h: IMG_H + 20, r: ELEV.r, g: ELEV.g, b: ELEV.b)
 draw_rect_outline(cx0 - 10, cy0 - 10, IMG_W + 20, IMG_H + 20, LINE.r, LINE.g, LINE.b)
 
 let split_col = iclamp(int(split * float(GRID_W)), lo: 0, hi: GRID_W)
-// Space slams back to the untouched negative without disturbing the mode.
+# Space slams back to the untouched negative without disturbing the mode.
 let peek = peeking
 let shown = if peek then "before" else view end
 let after_img = if live then draft_img else dev_img end
@@ -719,7 +719,7 @@ else
   draw_img(img: after_img, x: cx0, y: cy0, cw: ag, ch: ah, cs: ac, from_col: if live then split_col / 2 else split_col end, to_col: ag)
 end
 
-// split handle
+# split handle
 let sx = cx0 + split_col * CELL
 if shown == "split" then
   draw_rect(x: sx - 1, y: cy0, w: 2, h: IMG_H, r: 240, g: 244, b: 250, a: 210)
@@ -742,7 +742,7 @@ if peek then
   cap("UNTOUCHED NEGATIVE", x: cx0 + 18, y: cy0 + IMG_H - 25, size: 8, c: TEXT, sp: 1)
 end
 
-// ── Centre: view mode + histogram ────────────────────────────────────────
+# ── Centre: view mode + histogram ────────────────────────────────────────
 let strip_y = cy0 + IMG_H + 26
 let MODES = ["before", "split", "after"]
 let MODE_LABELS = ["Before", "Split", "After"]
@@ -804,7 +804,7 @@ if clip_hi > 2 then
   draw_circle(cx: cx0 + IMG_W - 74, cy: hy0 + HH + 12, radius: 3, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b)
 end
 
-// ── Right rail: adjustments ──────────────────────────────────────────────
+# ── Right rail: adjustments ──────────────────────────────────────────────
 let RX = W - RIGHT_W
 draw_rect(x: RX, y: TOP_H, w: RIGHT_W, h: H - TOP_H - BOT_H, r: RAIL.r, g: RAIL.g, b: RAIL.b)
 draw_rect(x: RX, y: TOP_H, w: 1, h: H - TOP_H - BOT_H, r: LINE.r, g: LINE.g, b: LINE.b)
@@ -864,7 +864,7 @@ for i in range(0, len(SLIDERS)) do
   end
 end
 
-// drags
+# drags
 if !mouse_down(0) && dragging >= 0 then
   set new_drag = -1
 end
@@ -875,7 +875,7 @@ if new_drag >= 0 && new_drag < 100 then
   set pending[i] = lo + int(round(t * float(100 - lo)))
 end
 
-// ── Right rail: presets ──────────────────────────────────────────────────
+# ── Right rail: presets ──────────────────────────────────────────────────
 let PRE_Y = ROW_Y + len(SLIDERS) * ROW_H + 22
 hline(x: PX, y: PRE_Y - 14, w: PW, c: LINE_SOFT)
 cap("LOOKS", x: PX, y: PRE_Y, size: 10, c: FAINT, sp: 3)
@@ -901,7 +901,7 @@ draw_rect_rounded(reset_r, radius: 4, c: if hovered(reset_r) then HOVER else CAR
 draw_rect_outline(reset_r, LINE)
 draw_text_center("Reset all adjustments", cx: reset_r.center_x(), y: reset_r.y + 9, size: 11, c: if dirty then TEXT else GHOST end)
 
-// ── Keyboard ─────────────────────────────────────────────────────────────
+# ── Keyboard ─────────────────────────────────────────────────────────────
 if key_pressed("down") then
   slider_sel = min(len(SLIDERS) - 1, slider_sel + 1)
 end
@@ -947,7 +947,7 @@ if clicked_preset >= 0 then
   set pending = PRESETS[clicked_preset].vals
 end
 
-// split drag
+# split drag
 let img_r = rect(cx0, cy0, IMG_W, IMG_H)
 if view == "split" && mouse_pressed(0) && hovered(img_r) then
   set new_drag = 100
@@ -959,7 +959,7 @@ end
 dragging = new_drag
 adj = pending
 
-// ── Bottom bar ───────────────────────────────────────────────────────────
+# ── Bottom bar ───────────────────────────────────────────────────────────
 draw_rect(x: 0, y: H - BOT_H, w: W, h: BOT_H, r: RAIL.r, g: RAIL.g, b: RAIL.b)
 hline(x: 0, y: H - BOT_H, w: W, c: LINE)
 let hints = fit_parts(parts: [

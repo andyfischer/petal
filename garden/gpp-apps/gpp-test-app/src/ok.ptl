@@ -1,13 +1,13 @@
 import garden
 import ui
 
-// gpp-test-app — mode `ok`: a healthy panel that just paints. The baseline the
-// other modes deviate from; proves the app wires up and the pane renders.
-//
-// Nothing is published for tests: the host observes this frame's named bindings
-// at /state → panes[].panel.values, so `mode` ("ok") says which drawer is live
-// and `frame` advancing across two reads says the panel is running — a stronger
-// signal than the constant this used to publish.
+# gpp-test-app — mode `ok`: a healthy panel that just paints. The baseline the
+# other modes deviate from; proves the app wires up and the pane renders.
+#
+# Nothing is published for tests: the host observes this frame's named bindings
+# at /state → panes[].panel.values, so `mode` ("ok") says which drawer is live
+# and `frame` advancing across two reads says the panel is running — a stronger
+# signal than the constant this used to publish.
 let P = palette()
 clear(P.window_bg.r, P.window_bg.g, P.window_bg.b)
 

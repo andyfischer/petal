@@ -1,20 +1,20 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  VECTOR — a vector graphics editor as a Garden Petal panel.
-//
-//  The document is a z-ordered list of shape records living in artboard
-//  coordinates (760 × 540 pt). Every shape carries a full affine box —
-//  position, size and rotation about its own center — so selection handles,
-//  scaling, rotation and layering all operate on the same five numbers.
-//
-//  Designed for a 1400x940 viewport. See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  VECTOR — a vector graphics editor as a Garden Petal panel.
+#
+#  The document is a z-ordered list of shape records living in artboard
+#  coordinates (760 × 540 pt). Every shape carries a full affine box —
+#  position, size and rotation about its own center — so selection handles,
+#  scaling, rotation and layering all operate on the same five numbers.
+#
+#  Designed for a 1400x940 viewport. See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import ui
 import bloom
 
 let TAU = 6.28318530718
 
-// ── Chrome palette ───────────────────────────────────────────────────────
+# ── Chrome palette ───────────────────────────────────────────────────────
 let BG      = :0a0c11
 let PANEL   = :11141c
 let ELEV    = :191d27
@@ -28,7 +28,7 @@ let ACCENT  = :7aa2ff
 let MINT    = :4de0c0
 let BOARD   = :f2f0ec
 
-// ── Fill palette (what you paint shapes with) ────────────────────────────
+# ── Fill palette (what you paint shapes with) ────────────────────────────
 let FILLS = [
   :0f1e38, :1d3a5f, :2f6fed, :7aa2ff, :4de0c0, :79c46b,
   :f6e7b8, :f0a83c, :e2603f, :c0435f, :8b5cf6, :f2f0ec,
@@ -46,7 +46,7 @@ let TOOLS = [
 let DOC_W = 760.0
 let DOC_H = 540.0
 
-// ── Tiny helpers ─────────────────────────────────────────────────────────
+# ── Tiny helpers ─────────────────────────────────────────────────────────
 
 fn n0(v: num) -> string
   str(int(round(v)))
@@ -76,9 +76,9 @@ fn hex_of(c: record) -> string
   "#" ++ hex2(c.r) ++ hex2(c.g) ++ hex2(c.b)
 end
 
-// Garden draws every text run above every quad, so text painted before an
-// open context menu shows through it. Work out the menu box (bloom measures
-// it the same way) and skip the text bands it will cover.
+# Garden draws every text run above every quad, so text painted before an
+# open context menu shows through it. Work out the menu box (bloom measures
+# it the same way) and skip the text bands it will cover.
 let MENU_ITEMS = ["Bring to front", "Bring forward", "Send backward",
   "Send to back", {sep: true}, "Duplicate", "Toggle visibility",
   "Toggle lock", {sep: true}, {label: "Delete", danger: true}]
@@ -98,7 +98,7 @@ fn menu_est(m: record) -> Rect
   end
 end
 
-// True when a text band at [y, y+h) is clear of the open menu.
+# True when a text band at [y, y+h) is clear of the open menu.
 fn clear_of(mr: record, y: num, h: num) -> bool
   !(y < mr.y + mr.h && mr.y < y + h)
 end
@@ -107,9 +107,9 @@ fn snapv(v: num, step: num, on: bool) -> num
   if on then float(int(round(v / step))) * step else v end
 end
 
-// ── Shape model ──────────────────────────────────────────────────────────
-//  {id, name, kind, x, y, w, h, rot, fill, alpha, vis, text, sp}
-//  x/y is the top-left of the *unrotated* box; rot is degrees about center.
+# ── Shape model ──────────────────────────────────────────────────────────
+#  {id, name, kind, x, y, w, h, rot, fill, alpha, vis, text, sp}
+#  x/y is the top-left of the *unrotated* box; rot is degrees about center.
 
 fn mk(id: num, name: string, kind: string, x: num, y: num, w: num, h: num, rot: num, fill: record, alpha: num) -> record
   {id: id, name: name, kind: kind, x: float(x), y: float(y),
@@ -148,7 +148,7 @@ fn kind_label(k: string) -> string
   end
 end
 
-// Unit outline in [-1, 1]^2, later scaled by the half-extents and rotated.
+# Unit outline in [-1, 1]^2, later scaled by the half-extents and rotated.
 fn unit_pts(kind: string) -> list
   if kind == "tri" then
     [[0.0, -1.0], [1.0, 1.0], [-1.0, 1.0]]
@@ -172,7 +172,7 @@ fn unit_pts(kind: string) -> list
   end
 end
 
-// Outline points in panel pixels, for the artboard pinned at (ox, oy).
+# Outline points in panel pixels, for the artboard pinned at (ox, oy).
 fn world_pts(s: record, ox: num, oy: num) -> list
   let c = centerof(s)
   let a = radians(s.rot)
@@ -188,7 +188,7 @@ fn world_pts(s: record, ox: num, oy: num) -> list
   out
 end
 
-// Mouse (panel px) → shape-local offsets from the shape's center.
+# Mouse (panel px) → shape-local offsets from the shape's center.
 fn to_local(s: record, ox: num, oy: num, mx: num, my: num) -> record
   let c = centerof(s)
   let a = radians(s.rot)
@@ -205,7 +205,7 @@ fn hit_shape(s: record, ox: num, oy: num, mx: num, my: num) -> bool
   abs(l.x) <= s.w / 2.0 + pad && abs(l.y) <= s.h / 2.0 + pad
 end
 
-// Axis-aligned bounds of the rotated box, in artboard coordinates.
+# Axis-aligned bounds of the rotated box, in artboard coordinates.
 fn bounds(s: record) -> Rect
   let c = centerof(s)
   let a = radians(s.rot)
@@ -214,7 +214,7 @@ fn bounds(s: record) -> Rect
   rect(c.x - ex, c.y - ey, ex * 2.0, ey * 2.0)
 end
 
-// ── Document helpers (pure — every one returns a new list) ───────────────
+# ── Document helpers (pure — every one returns a new list) ───────────────
 
 fn idx_of(doc: list, id: num) -> int
   let found = -1
@@ -244,7 +244,7 @@ fn selected_idx(doc: list, sel: list) -> list
   out
 end
 
-// Union of the selection's bounds, in artboard coordinates.
+# Union of the selection's bounds, in artboard coordinates.
 fn sel_bounds(doc: list, sel: list) -> Rect
   let first = true
   let x0 = 0.0
@@ -271,7 +271,7 @@ fn sel_bounds(doc: list, sel: list) -> Rect
   rect(x0, y0, x1 - x0, y1 - y0)
 end
 
-// ── The seeded document ──────────────────────────────────────────────────
+# ── The seeded document ──────────────────────────────────────────────────
 
 fn seed_doc() -> list
   let d = []
@@ -299,7 +299,7 @@ fn seed_doc() -> list
   d
 end
 
-// ── Drawing a shape ──────────────────────────────────────────────────────
+# ── Drawing a shape ──────────────────────────────────────────────────────
 
 fn fill_fan(pts: list, cx: num, cy: num, c: record, a: num)
   for i in range(0, len(pts)) do
@@ -342,8 +342,8 @@ fn draw_shape(s: record, ox: num, oy: num)
   end
 end
 
-// ── Selection handles ────────────────────────────────────────────────────
-//  0 nw  1 n  2 ne  3 e  4 se  5 s  6 sw  7 w   ·  8 = rotate
+# ── Selection handles ────────────────────────────────────────────────────
+#  0 nw  1 n  2 ne  3 e  4 se  5 s  6 sw  7 w   ·  8 = rotate
 
 let HDIR = [[-1.0, -1.0], [0.0, -1.0], [1.0, -1.0], [1.0, 0.0],
   [1.0, 1.0], [0.0, 1.0], [-1.0, 1.0], [-1.0, 0.0]]
@@ -379,7 +379,7 @@ fn handle_hit(s: record, ox: num, oy: num, mx: num, my: num, rotatable: bool) ->
   hit
 end
 
-// ── Persistent state ─────────────────────────────────────────────────────
+# ── Persistent state ─────────────────────────────────────────────────────
 
 state doc = seed_doc()
 state sel = [17]
@@ -393,11 +393,11 @@ state drag = {mode: "none", h: -1, sx: 0.0, sy: 0.0, ang0: 0.0, base: [],
   doc0: [], moved: false, kind: "", nx: 0.0, ny: 0.0}
 state scrub = {field: "", x0: 0.0, v0: 0.0, doc0: []}
 state lscroll = 0
-state menu_at = {x: 0, y: 0, tag: -1}   // where the layer menu opened, and on which shape
+state menu_at = {x: 0, y: 0, tag: -1}   # where the layer menu opened, and on which shape
 state ops = 0
 state alpha_grab = false
 
-// ── Frame ────────────────────────────────────────────────────────────────
+# ── Frame ────────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
@@ -418,7 +418,7 @@ let px = W - INSP_W + 22
 let pw = INSP_W - 44
 let insp = rect(W - INSP_W, HEADER_H, INSP_W, H - HEADER_H - STATUS_H)
 
-// header pills
+# header pills
 let ph = 30
 let py = (HEADER_H - ph) / 2
 let btn_snap = rect(W - 24 - 74, py, 74, ph)
@@ -426,7 +426,7 @@ let btn_grid = rect(btn_snap.x - 8 - 66, py, 66, ph)
 let btn_redo = rect(btn_grid.x - 8 - 68, py, 68, ph)
 let btn_undo = rect(btn_redo.x - 8 - 68, py, 68, ph)
 
-// tool rail
+# tool rail
 let tool_rects = []
 let ty = HEADER_H + 22
 for i in range(0, len(TOOLS)) do
@@ -434,7 +434,7 @@ for i in range(0, len(TOOLS)) do
   ty = ty + 58
 end
 
-// inspector geometry
+# inspector geometry
 let iy = HEADER_H + 20
 let lbl_sel = iy
 let name_y = iy + 18
@@ -479,7 +479,7 @@ let blocked = bloom.menu_any_open()
 let one = if len(sel) == 1 then idx_of(doc, sel[0]) else -1 end
 let rotatable = one >= 0 && doc[one].kind != "text"
 
-// ── Undo bookkeeping ─────────────────────────────────────────────────────
+# ── Undo bookkeeping ─────────────────────────────────────────────────────
 
 fn push_hist(hist: list, doc0: list) -> list
   let h = append(hist, doc0)
@@ -489,7 +489,7 @@ fn push_hist(hist: list, doc0: list) -> list
   h
 end
 
-// ── Keyboard ─────────────────────────────────────────────────────────────
+# ── Keyboard ─────────────────────────────────────────────────────────────
 
 for i in range(0, len(TOOLS)) do
   if key_pressed(TOOLS[i].key) && !mod_cmd() then
@@ -521,7 +521,7 @@ end
 let want_undo = key_pressed("u") || (key_pressed("z") && mod_cmd() && !mod_shift())
 let want_redo = key_pressed("y") || (key_pressed("z") && mod_cmd() && mod_shift())
 
-// Arrow nudge
+# Arrow nudge
 let nudge_x = 0.0
 let nudge_y = 0.0
 let step = if mod_shift() then 10.0 else 1.0 end
@@ -544,7 +544,7 @@ if (nudge_x != 0.0 || nudge_y != 0.0) && len(sel) > 0 then
   ops = ops + 1
 end
 
-// ── Selection-editing operations (shared by keys, buttons and the menu) ──
+# ── Selection-editing operations (shared by keys, buttons and the menu) ──
 
 fn apply_order(doc: list, sel: list, mode: string) -> list
   let idxs = selected_idx(doc, sel)
@@ -579,7 +579,7 @@ fn apply_order(doc: list, sel: list, mode: string) -> list
       end
       picked
     elsif mode == "forward" then
-      // walk from the top so a run of selected shapes keeps its order
+      # walk from the top so a run of selected shapes keeps its order
       let k = len(d) - 2
       while k >= 0 do
         if contains(sel, d[k].id) && !contains(sel, d[k + 1].id) then
@@ -671,7 +671,7 @@ fn del_sel(doc: list, sel: list) -> list
   out
 end
 
-// ── Pointer: inspector scrubbers ─────────────────────────────────────────
+# ── Pointer: inspector scrubbers ─────────────────────────────────────────
 
 fn scrub_fields(f_x: record, f_y: record, f_w: record, f_h: record, f_r: record, f_a: record, mx: num, my: num) -> string
   let hit = ""
@@ -718,7 +718,7 @@ if scrub.field != "" && one >= 0 then
   doc = put(doc, i: one, s: s)
 end
 
-// ── Pointer: canvas — press ──────────────────────────────────────────────
+# ── Pointer: canvas — press ──────────────────────────────────────────────
 
 let scrubbing = scrub.field != ""
 
@@ -733,7 +733,7 @@ if !blocked && !scrubbing && over_canvas && mouse_pressed(0) then
         ang0: degrees(atan2(float(my) - (oy + c.y), float(mx) - (ox + c.x))) - s.rot,
         base: [s], doc0: doc, moved: false, kind: "", nx: 0.0, ny: 0.0}
     else
-      // topmost visible shape under the pointer
+      # topmost visible shape under the pointer
       let hitid = -1
       for i in range(0, len(doc)) do
         if doc[i].vis && !doc[i].lock && hit_shape(doc[i], ox, oy, mx, my) then
@@ -772,7 +772,7 @@ if !blocked && !scrubbing && over_canvas && mouse_pressed(0) then
   end
 end
 
-// ── Pointer: canvas — drag ───────────────────────────────────────────────
+# ── Pointer: canvas — drag ───────────────────────────────────────────────
 
 if drag.mode != "none" && mouse_down(0) then
   if abs(float(mx) - drag.sx) + abs(float(my) - drag.sy) > 1.0 then
@@ -802,7 +802,7 @@ if drag.mode == "scale" && mouse_down(0) && drag.moved && one >= 0 then
   let l = to_local(b, ox, oy, mx, my)
   let hw = b.w / 2.0
   let hh = b.h / 2.0
-  // the anchor is the opposite handle, in local coordinates
+  # the anchor is the opposite handle, in local coordinates
   let ax = 0.0 - d[0] * hw
   let ay = 0.0 - d[1] * hh
   let nw = b.w
@@ -852,7 +852,7 @@ if drag.mode == "rotate" && mouse_down(0) && drag.moved && one >= 0 then
   doc = put(doc, i: one, s: s)
 end
 
-// ── Pointer: release ─────────────────────────────────────────────────────
+# ── Pointer: release ─────────────────────────────────────────────────────
 
 if drag.mode != "none" && !mouse_down(0) then
   if drag.mode == "marquee" && drag.moved then
@@ -911,7 +911,7 @@ if drag.mode != "none" && !mouse_down(0) then
     doc0: [], moved: false, kind: "", nx: 0.0, ny: 0.0}
 end
 
-// ── Pointer: rail, header, inspector, layer rows ─────────────────────────
+# ── Pointer: rail, header, inspector, layer rows ─────────────────────────
 
 for i in range(0, len(TOOLS)) do
   if !blocked && ui.clicked(tool_rects[i]) then
@@ -962,7 +962,7 @@ if order_now != "" then
   ops = ops + 1
 end
 
-// layer rows (top of the list = top of the z-stack)
+# layer rows (top of the list = top of the z-stack)
 lscroll = scroll_update(offset: lscroll, total_lines: len(doc), visible_lines: vis_rows, r: list_r)
 let row_rects = []
 for i in range(0, min(vis_rows, len(doc) - lscroll)) do
@@ -1015,7 +1015,7 @@ for i in range(0, len(row_rects)) do
   end
 end
 
-// duplicate / delete
+# duplicate / delete
 let want_dup = key_pressed("d") && len(sel) > 0
 let want_del = (key_pressed("backspace") || key_pressed("delete")) && len(sel) > 0
 if want_dup then
@@ -1035,7 +1035,7 @@ if want_del then
   ops = ops + 1
 end
 
-// ── Undo / redo ──────────────────────────────────────────────────────────
+# ── Undo / redo ──────────────────────────────────────────────────────────
 
 if (want_undo || hit_undo) && len(hist) > 0 then
   fut = append(fut, doc)
@@ -1050,7 +1050,7 @@ if (want_redo || hit_redo) && len(fut) > 0 then
   ops = ops + 1
 end
 
-// prune a selection that no longer exists
+# prune a selection that no longer exists
 let live = []
 for id in sel do
   if idx_of(doc, id) >= 0 then live = append(live, id) end
@@ -1058,18 +1058,18 @@ end
 sel = live
 let one2 = if len(sel) == 1 then idx_of(doc, sel[0]) else -1 end
 
-// ═════════════════════════════════════════════════════════════════════════
-//  DRAW
-// ═════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════════════
+#  DRAW
+# ═════════════════════════════════════════════════════════════════════════
 
 let mr = menu_est(menu_at)
 
 clear(BG.r, BG.g, BG.b)
 
-// ── Canvas well ──────────────────────────────────────────────────────────
+# ── Canvas well ──────────────────────────────────────────────────────────
 draw_rect(canvas, :070910)
 
-// dotted work-surface texture
+# dotted work-surface texture
 let dgx = canvas.x + 16
 while dgx < canvas.x + canvas.w do
   let dgy = canvas.y + 16
@@ -1080,7 +1080,7 @@ while dgx < canvas.x + canvas.w do
   dgx = dgx + 32
 end
 
-// artboard
+# artboard
 draw_rect(x: board.x - 2, y: board.y + 8, w: board.w + 4, h: board.h, r: 0, g: 0, b: 0, a: 110)
 draw_rect(board, BOARD)
 clip(x: board.x, y: board.y, w: board.w, h: board.h)
@@ -1090,7 +1090,7 @@ for s in doc do
   end
 end
 
-// live create preview
+# live create preview
 if drag.mode == "create" && drag.moved then
   let x0 = min(drag.sx, float(mx))
   let y0 = min(drag.sy, float(my))
@@ -1125,9 +1125,9 @@ if grid then
 end
 draw_rect_outline(x: board.x, y: board.y, w: board.w, h: board.h, r: 0, g: 0, b: 0, a: 70)
 
-// ── Selection chrome ─────────────────────────────────────────────────────
+# ── Selection chrome ─────────────────────────────────────────────────────
 
-// hover affordance: the shape a click would pick
+# hover affordance: the shape a click would pick
 let hover_id = -1
 if over_canvas && tool == "select" && drag.mode == "none" && !blocked && !scrubbing then
   for i in range(0, len(doc)) do
@@ -1141,7 +1141,7 @@ if hover_id >= 0 && !contains(sel, hover_id) then
   outline_pts(pts: world_pts(doc[hi], ox, oy), c: ACCENT, a: 90, wd: 1)
 end
 
-// every selected shape gets its rotated bounding box
+# every selected shape gets its rotated bounding box
 for s in doc do
   if contains(sel, s.id) then
     let hs = handle_pts(s, ox, oy)
@@ -1152,7 +1152,7 @@ for s in doc do
   end
 end
 
-// group box for a multi-selection
+# group box for a multi-selection
 if len(sel) > 1 then
   let b = sel_bounds(doc, sel)
   let gx0 = int(ox + b.x) - 6
@@ -1173,7 +1173,7 @@ if len(sel) > 1 then
   end
 end
 
-// handles for a single selection
+# handles for a single selection
 if one2 >= 0 then
   let s = doc[one2]
   let hs = handle_pts(s, ox, oy)
@@ -1193,7 +1193,7 @@ if one2 >= 0 then
   end
 end
 
-// marquee
+# marquee
 if drag.mode == "marquee" && drag.moved then
   let x0 = int(min(drag.sx, float(mx)))
   let y0 = int(min(drag.sy, float(my)))
@@ -1203,7 +1203,7 @@ if drag.mode == "marquee" && drag.moved then
   draw_rect_outline(x: x0, y: y0, w: x1 - x0, h: y1 - y0, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b, a: 200, width: 1)
 end
 
-// ── Header ───────────────────────────────────────────────────────────────
+# ── Header ───────────────────────────────────────────────────────────────
 draw_rect(x: 0, y: 0, w: W, h: HEADER_H, r: PANEL.r, g: PANEL.g, b: PANEL.b)
 seg(x1: 0, y1: HEADER_H, x2: W, y2: HEADER_H, c: :000000, a: 150, wd: 1)
 
@@ -1234,7 +1234,7 @@ pill(btn_redo, label: "Redo", keycap: "Y", on: false, enabled: len(fut) > 0)
 pill(btn_grid, label: "Grid", keycap: "G", on: grid, enabled: true)
 pill(btn_snap, label: "Snap", keycap: "N", on: snap, enabled: true)
 
-// ── Tool rail ────────────────────────────────────────────────────────────
+# ── Tool rail ────────────────────────────────────────────────────────────
 draw_rect(x: 0, y: HEADER_H, w: RAIL_W, h: H - HEADER_H - STATUS_H, r: PANEL.r, g: PANEL.g, b: PANEL.b)
 seg(x1: RAIL_W, y1: HEADER_H, x2: RAIL_W, y2: H - STATUS_H, c: :000000, a: 150, wd: 1)
 
@@ -1289,7 +1289,7 @@ for i in range(0, len(TOOLS)) do
     if on then ACCENT else FAINT end)
 end
 
-// ── Inspector ────────────────────────────────────────────────────────────
+# ── Inspector ────────────────────────────────────────────────────────────
 draw_rect(insp, PANEL)
 seg(x1: insp.x, y1: insp.y, x2: insp.x, y2: insp.y + insp.h, c: :000000, a: 150, wd: 1)
 
@@ -1421,7 +1421,7 @@ for i in range(0, len(row_rects)) do
     elsif hov then
       draw_rect_rounded(r, radius: 6, c: HOVER)
     end
-    // kind chip
+    # kind chip
     let ch = rect(r.x + 10, r.y + 6, 16, 16)
     if s.kind == "ellipse" then
       dot(x: ch.x + 8, y: ch.y + 8, rad: 7, c: s.fill, a: if s.vis then 255 else 90 end)
@@ -1455,7 +1455,7 @@ for i in range(0, len(row_rects)) do
     if clear_of(mr, y: r.y, h: r.h) then
       draw_text(ellipsize(s.name, avail_px: r.w - 112, size: 13), {x: r.x + 34, y: r.y + 7}, 13, namec)
     end
-    // eye toggle
+    # eye toggle
     let eye = rect(r.x + r.w - 30, r.y + 5, 22, 20)
     let ec = if hovered(eye) then TEXT elsif s.vis then DIM else :3d4658 end
     if s.vis then
@@ -1465,7 +1465,7 @@ for i in range(0, len(row_rects)) do
       draw_circle(cx: eye.x + 11, cy: eye.y + 10, radius: 6, r: ec.r, g: ec.g, b: ec.b, a: 140)
       seg(x1: eye.x + 5, y1: eye.y + 15, x2: eye.x + 17, y2: eye.y + 5, c: ec, a: 220, wd: 2)
     end
-    // lock toggle
+    # lock toggle
     let lockr = rect(r.x + r.w - 56, r.y + 5, 22, 20)
     let lc = if hovered(lockr) then TEXT elsif s.lock then :f0a83c else :3d4658 end
     draw_rect_rounded(x: lockr.x + 5, y: lockr.y + 9, w: 12, h: 8, radius: 2, r: lc.r, g: lc.g, b: lc.b,
@@ -1480,7 +1480,7 @@ end
 clip_none()
 bloom.scrollbar(list_r, count: len(doc), rows: vis_rows, scroll: lscroll)
 
-// ── Status bar ───────────────────────────────────────────────────────────
+# ── Status bar ───────────────────────────────────────────────────────────
 draw_rect(x: 0, y: H - STATUS_H, w: W, h: STATUS_H, r: PANEL.r, g: PANEL.g, b: PANEL.b)
 seg(x1: 0, y1: H - STATUS_H, x2: W, y2: H - STATUS_H, c: :000000, a: 150, wd: 1)
 
@@ -1506,7 +1506,7 @@ if clear_of(mr, y: H - STATUS_H, h: STATUS_H) then
   draw_text_right(right, right_x: W - 22, y: H - STATUS_H + 11, size: 12, c: FAINT)
 end
 
-// tool tooltip, drawn last so it floats above the rail
+# tool tooltip, drawn last so it floats above the rail
 if tip >= 0 && drag.mode == "none" then
   let t = TOOLS[tip]
   let r = tool_rects[tip]
@@ -1519,7 +1519,7 @@ if tip >= 0 && drag.mode == "none" then
   draw_text(t.hint, {x: tr.x + 12, y: tr.y + 25}, 11, DIM)
 end
 
-// ── Context menu ─────────────────────────────────────────────────────────
+# ── Context menu ─────────────────────────────────────────────────────────
 
 let picked = bloom.menu("layer", rect(mx, my, 0, 0), MENU_ITEMS, {at: "point"})
 if picked >= 0 then

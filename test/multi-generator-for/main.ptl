@@ -1,5 +1,5 @@
-// The multi-generator `for` (docs/language-guide.md, Several generators):
-// nested loops in one header, one flat list in value position.
+# The multi-generator `for` (docs/language-guide.md, Several generators):
+# nested loops in one header, one flat list in value position.
 let pairs = for a in [1, 2, 3], b in ["x", "y"] do "{a}{b}" end
 print(pairs)
 let below = for a in range(4), b in range(a) do [a, b] end

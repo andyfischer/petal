@@ -1,4 +1,4 @@
-// The control for enum_decl_data.ptl: the same 50 variants with no data.
+# The control for enum_decl_data.ptl: the same 50 variants with no data.
 
 enum Tile
   t00,

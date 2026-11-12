@@ -1,6 +1,6 @@
-// Nature of Code - Noise Landscape
-// Inspired by Perlin Noise concepts from Chapter 0
-// A flowing 2D terrain using layered sine waves to simulate noise
+# Nature of Code - Noise Landscape
+# Inspired by Perlin Noise concepts from Chapter 0
+# A flowing 2D terrain using layered sine waves to simulate noise
 
 import ui
 
@@ -13,7 +13,7 @@ let sw = float(screen_width())
 let sh = float(screen_height())
 time += delta
 
-// Initialize stars
+# Initialize stars
 if len(stars) == 0 then
   for i in range(0, 50) do
     stars = append(stars, {
@@ -25,7 +25,7 @@ if len(stars) == 0 then
   end
 end
 
-// Pseudo-noise function using layered sines
+# Pseudo-noise function using layered sines
 fn noise(x, t)
   let v = sin(x * 0.02 + t) * 0.5
   v += sin(x * 0.05 + t * 1.3 + 2.0) * 0.25
@@ -41,15 +41,15 @@ fn noise2(x, offset)
   v
 end
 
-// === Drawing ===
+# === Drawing ===
 
-// Night sky gradient
+# Night sky gradient
 for i in range(0, 8) do
   let gy = i * int(sh) / 8
   draw_rect(x: 0, y: gy, w: int(sw), h: int(sh) / 8 + 1, r: 5 + i, g: 5 + i * 2, b: 20 + i * 5)
 end
 
-// Moon
+# Moon
 let moon_x = int(sw * 0.8)
 let moon_y = 60
 draw_circle(cx: moon_x, cy: moon_y, radius: 35, r: 30, g: 30, b: 40)
@@ -57,45 +57,45 @@ draw_circle(cx: moon_x, cy: moon_y, radius: 30, r: 50, g: 50, b: 60)
 draw_circle(cx: moon_x, cy: moon_y, radius: 25, r: 80, g: 80, b: 90)
 draw_circle(cx: moon_x + 5, cy: moon_y - 3, radius: 22, r: 10, g: 10, b: 20)
 
-// Stars with twinkling
+# Stars with twinkling
 for s in stars do
   let bright = int(s.bright * (0.5 + 0.5 * abs(sin(time * 2.0 + s.twinkle))))
   draw_circle(cx: int(s.x), cy: int(s.y), radius: 1, r: bright, g: bright, b: min(255, bright + 20))
 end
 
-// --- Draw layered mountain ranges ---
+# --- Draw layered mountain ranges ---
 let num_layers = 6
 
 for layer in range(0, num_layers) do
   let fl = float(layer)
   let layer_frac = fl / float(num_layers)
 
-  // Each layer has different speed, height, and color
+  # Each layer has different speed, height, and color
   let base_y = sh * (0.35 + layer_frac * 0.45)
   let amplitude = 60.0 - fl * 5.0
   let speed = (float(num_layers) - fl) * 0.15
   let detail = 1.0 + fl * 0.5
 
-  // Color: far layers are blue/dark, near layers are green/brown
+  # Color: far layers are blue/dark, near layers are green/brown
   let lr = int(20.0 + fl * 15.0)
   let lg = int(30.0 + fl * 20.0 + (1.0 - layer_frac) * 30.0)
   let lb = int(60.0 - fl * 8.0 + (1.0 - layer_frac) * 40.0)
 
-  // Draw this mountain layer as vertical strips
+  # Draw this mountain layer as vertical strips
   let step = 2
   for xi in range(0, int(sw) / step + 1) do
     let x = float(xi * step)
     let n = noise(x * detail, time * speed + fl * 100.0)
     let height = base_y + n * amplitude
 
-    // Draw vertical strip from mountain top to bottom of screen
+    # Draw vertical strip from mountain top to bottom of screen
     let strip_h = int(sh) - int(height)
     if strip_h > 0 then
       draw_rect(x: int(x), y: int(height), w: step, h: strip_h, r: lr, g: lg, b: lb)
     end
   end
 
-  // Ridge highlight on nearest layers
+  # Ridge highlight on nearest layers
   if layer >= num_layers - 3 then
     for xi in range(0, int(sw) / step) do
       let x = float(xi * step)
@@ -107,21 +107,21 @@ for layer in range(0, num_layers) do
   end
 end
 
-// --- Flowing water at the bottom ---
+# --- Flowing water at the bottom ---
 let water_base = sh - 40.0
 for i in range(0, int(sw) / 2) do
   let x = float(i * 2)
   let wave = sin(x * 0.05 + time * 2.0) * 5.0 + sin(x * 0.12 + time * 3.0) * 2.0
   let wy = int(water_base + wave)
   let depth = int(sh) - wy
-  // Water color with slight variation
+  # Water color with slight variation
   let wr = 10 + int(sin(x * 0.03 + time) * 8.0)
   let wg = 30 + int(sin(x * 0.02 + time * 0.7) * 15.0)
   let wb = 80 + int(sin(x * 0.04 + time * 1.2) * 20.0)
   draw_rect(x: int(x), y: wy, w: 2, h: depth, r: wr, g: wg, b: wb)
 end
 
-// Water surface highlights
+# Water surface highlights
 for i in range(0, 20) do
   let hx = random(0.0, sw)
   let hy = water_base + sin(hx * 0.05 + time * 2.0) * 5.0

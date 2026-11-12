@@ -1,15 +1,15 @@
-// boids.ptl — Craig Reynolds' Boids flocking simulation, in the console.
-//
-// 72 boids in a toroidal 2D field steer by the three classic rules —
-// separation, alignment, cohesion — with a speed clamp and wrap-around edges.
-// Placement is deterministic (a pure index hash, no `random` at all), so two
-// runs are byte-identical. Every SAMPLE_EVERY frames the field is rendered as
-// an ASCII occupancy grid and the mean distance to the flock centroid is
-// printed, so the flock's convergence is both visible and measurable.
-//
-// Run:  ./tools/run-petal.ts run examples/games/boids/boids.ptl
+# boids.ptl — Craig Reynolds' Boids flocking simulation, in the console.
+#
+# 72 boids in a toroidal 2D field steer by the three classic rules —
+# separation, alignment, cohesion — with a speed clamp and wrap-around edges.
+# Placement is deterministic (a pure index hash, no `random` at all), so two
+# runs are byte-identical. Every SAMPLE_EVERY frames the field is rendered as
+# an ASCII occupancy grid and the mean distance to the flock centroid is
+# printed, so the flock's convergence is both visible and measurable.
+#
+# Run:  ./tools/run-petal.ts run examples/games/boids/boids.ptl
 
-// ---------------------------------------------------------------- tuning ---
+# ---------------------------------------------------------------- tuning ---
 
 let BOID_COUNT   = tunable(72)
 let FRAMES       = tunable(150)
@@ -18,8 +18,8 @@ let SAMPLE_EVERY = tunable(30)
 let FIELD_W = tunable(96.0)
 let FIELD_H = tunable(48.0)
 
-let VIEW_RADIUS = tunable(14.0) // cohesion / alignment neighbourhood
-let SEP_RADIUS  = tunable(3.5)  // personal-space neighbourhood
+let VIEW_RADIUS = tunable(14.0) # cohesion / alignment neighbourhood
+let SEP_RADIUS  = tunable(3.5)  # personal-space neighbourhood
 
 let COHESION_W   = tunable(0.012)
 let ALIGNMENT_W  = tunable(0.075)
@@ -35,7 +35,7 @@ let RAMP = [" ", ".", ":", "-", "=", "+", "*", "#", "%", "@"]
 
 let TAU = 6.283185307179586
 
-// ------------------------------------------------------------------ data ---
+# ------------------------------------------------------------------ data ---
 
 class Boid
   x: num,
@@ -44,12 +44,12 @@ class Boid
   vy: num,
 end
 
-// --------------------------------------------------------------- helpers ---
+# --------------------------------------------------------------- helpers ---
 
-// Deterministic value hash in [0, 1). No `random`, so no seed to pin: the
-// initial flock is a pure function of the boid index. Two quadratic mixing
-// rounds mod a prime — a plain LCG stays linear in `i` and lines the boids up
-// on a diagonal.
+# Deterministic value hash in [0, 1). No `random`, so no seed to pin: the
+# initial flock is a pure function of the boid index. Two quadratic mixing
+# rounds mod a prime — a plain LCG stays linear in `i` and lines the boids up
+# on a diagonal.
 fn hash01(i: num, salt: num) -> num
   var s = ((i + 1) * 2654435761 + salt * 40503 + 1013904223) % 2147483647
   for _round in range(0, 2) do
@@ -58,7 +58,7 @@ fn hash01(i: num, salt: num) -> num
   float(s % 1000003) / 1000003.0
 end
 
-// Shortest signed offset on a wrapped axis of length `size`.
+# Shortest signed offset on a wrapped axis of length `size`.
 fn wrap_delta(d: num, size: num) -> num
   if d > size / 2.0 then d - size
   elsif d < 0.0 - size / 2.0 then d + size
@@ -86,9 +86,9 @@ fn make_boids(n: num) -> list
   end
 end
 
-// ------------------------------------------------------------ simulation ---
+# ------------------------------------------------------------ simulation ---
 
-// One boid's next state, given the whole flock.
+# One boid's next state, given the whole flock.
 fn Boid.steer(self: Boid, flock: list) -> Boid
   var sep_x = 0.0
   var sep_y = 0.0
@@ -107,7 +107,7 @@ fn Boid.steer(self: Boid, flock: list) -> Boid
   let sy = self.y
 
   for other in flock do
-    // wrap_delta, inlined: this is the innermost loop of the whole program.
+    # wrap_delta, inlined: this is the innermost loop of the whole program.
     let rx = other.x - sx
     let ry = other.y - sy
     let dx = if rx > half_w then rx - FIELD_W
@@ -126,7 +126,7 @@ fn Boid.steer(self: Boid, flock: list) -> Boid
       set ali_x = ali_x + other.vx
       set ali_y = ali_y + other.vy
       if d2 < sep2 then
-        // Push away, weighted by 1/distance so close crowding dominates.
+        # Push away, weighted by 1/distance so close crowding dominates.
         set sep_x = sep_x - dx / d2
         set sep_y = sep_y - dy / d2
       end
@@ -169,10 +169,10 @@ fn step(flock: list) -> list
   for b in flock do b.steer(flock) end
 end
 
-// ------------------------------------------------------------- reporting ---
+# ------------------------------------------------------------- reporting ---
 
-// Mean distance to the centroid, measured in the wrapped metric via the
-// circular mean of each axis (a plain average is meaningless on a torus).
+# Mean distance to the centroid, measured in the wrapped metric via the
+# circular mean of each axis (a plain average is meaningless on a torus).
 fn cohesion(flock: list) -> num
   let n = float(len(flock))
   var sx = 0.0
@@ -244,7 +244,7 @@ fn report(frame: num, flock: list) -> nil
   nil
 end
 
-// ------------------------------------------------------------------ main ---
+# ------------------------------------------------------------------ main ---
 
 print("Boids — {BOID_COUNT} boids, {FRAMES} frames, field {FIELD_W} x {FIELD_H}")
 print("rules: separation {SEPARATION_W}, alignment {ALIGNMENT_W}, cohesion {COHESION_W}")

@@ -1,10 +1,10 @@
-// Reorderable list with declarative dragging (ui/drag).
-//
-// The view is a function of the list. Each row says where it is (`place`)
-// and what dragging it can reach (`draggable` with a spec): the row moved to
-// any other index, the closest one winning, the row itself following the
-// pointer. Everything else — slop, hit testing, the rows sliding out of the
-// way, the drop settling into its slot, Escape — is the library's.
+# Reorderable list with declarative dragging (ui/drag).
+#
+# The view is a function of the list. Each row says where it is (`place`)
+# and what dragging it can reach (`draggable` with a spec): the row moved to
+# any other index, the closest one winning, the row itself following the
+# pointer. Everything else — slop, hit testing, the rows sliding out of the
+# way, the drop settling into its slot, Escape — is the library's.
 import ui
 import ui/drag
 

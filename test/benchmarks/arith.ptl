@@ -1,6 +1,6 @@
-// Benchmark: straight-line arithmetic in a tight loop — the control for
-// calls.ptl (same work, no function call) and the baseline for raw
-// instruction-dispatch cost.
+# Benchmark: straight-line arithmetic in a tight loop — the control for
+# calls.ptl (same work, no function call) and the baseline for raw
+# instruction-dispatch cost.
 
 let acc = 0
 for i in range(0, 300000) do

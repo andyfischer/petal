@@ -1,57 +1,57 @@
-// bloom/theme — tokens and the painting primitives every bloom component
-// shares.
-//
-// bloom does not own a palette. It *derives* one: `theme()` starts from
-// whatever the host published through the `ui` prelude (Garden binds its
-// editor palette, the SDL and canvas hosts bind theirs, and a bare host falls
-// back to the built-in dark theme), then layers bloom's own tokens — motion
-// speed, the tone ramp, the focus ring — over it, then any override the app
-// set with `theme_set`. So a bloom panel looks native in its host on the first
-// frame with no setup, and an app that wants a look of its own overrides one
-// key rather than a palette.
+# bloom/theme — tokens and the painting primitives every bloom component
+# shares.
+#
+# bloom does not own a palette. It *derives* one: `theme()` starts from
+# whatever the host published through the `ui` prelude (Garden binds its
+# editor palette, the SDL and canvas hosts bind theirs, and a bare host falls
+# back to the built-in dark theme), then layers bloom's own tokens — motion
+# speed, the tone ramp, the focus ring — over it, then any override the app
+# set with `theme_set`. So a bloom panel looks native in its host on the first
+# frame with no setup, and an app that wants a look of its own overrides one
+# key rather than a palette.
 
-// The drawing and input names used below (`rect`, `draw_rect_rounded`,
-// `mix` and friends) come from the `ui` package. This module imports it
-// itself: an import reaches only the file it is written in.
+# The drawing and input names used below (`rect`, `draw_rect_rounded`,
+# `mix` and friends) come from the `ui` package. This module imports it
+# itself: an import reaches only the file it is written in.
 
-// Placement, on the other hand, is a library: text_layout turns the host's
-// font metrics into the `y` a run should be drawn at. bloom draws every label
-// through it, which is what keeps them on the centre line they claim to be on.
+# Placement, on the other hand, is a library: text_layout turns the host's
+# font metrics into the `y` a run should be drawn at. bloom draws every label
+# through it, which is what keeps them on the centre line they claim to be on.
 import text_layout: draw_text_line, draw_text_block, text_baseline, text_top,
                     text_align_x, elide, text_size
 import ui
 
-// bloom's own layer over the host palette. Numbers only — every color comes
-// from the host, so these stay right in a light theme and a dark one.
+# bloom's own layer over the host palette. Numbers only — every color comes
+# from the host, so these stay right in a light theme and a dark one.
 let TOKENS = {
-  // Motion. Multiply every duration by `speed` to slow a whole UI down for a
-  // demo (`theme_set({speed: 3})`) or switch it off for a screenshot.
+  # Motion. Multiply every duration by `speed` to slow a whole UI down for a
+  # demo (`theme_set({speed: 3})`) or switch it off for a screenshot.
   speed: 1.0,
   hover_rate: 18.0,
   press_rate: 34.0,
   open_dur: 0.16,
   press_scale: 0.97,
-  // Shape.
+  # Shape.
   radius: 7,
   radius_sm: 4,
   radius_lg: 12,
   radius_pill: 999,
-  // Rhythm.
+  # Rhythm.
   pad_x: 12,
   pad_y: 7,
   gap: 8,
   row_h: 30,
-  // Ink strengths, as percentages of the tint that produces them.
+  # Ink strengths, as percentages of the tint that produces them.
   hover_pct: 8,
   press_pct: 14,
   ring_pct: 55,
   border_pct: 14,
 }
 
-// The app's override layer, kept per program (and across a hot reload).
+# The app's override layer, kept per program (and across a hot reload).
 state var _over = {}
 
-// The live token set: host palette → bloom tokens → app overrides.
+# The live token set: host palette → bloom tokens → app overrides.
 pub fn theme() -> record
   let base = ui_theme()
   let t = {}
@@ -67,8 +67,8 @@ pub fn theme() -> record
   t
 end
 
-// Override tokens for the whole program. Merges, so an app usually sets one or
-// two keys: `theme_set({accent: #7c5cff, radius: 10})`.
+# Override tokens for the whole program. Merges, so an app usually sets one or
+# two keys: `theme_set({accent: #7c5cff, radius: 10})`.
 pub fn theme_set(rec: record)
   let next = {}
   for k in keys(get _over) do
@@ -84,9 +84,9 @@ pub fn theme_reset()
   set _over = {}
 end
 
-// A duration scaled by the theme's `speed`, and its rate counterpart. Every
-// component asks for its timings through these two, which is what makes
-// `theme_set({speed: 0})` freeze an entire UI for a pixel diff.
+# A duration scaled by the theme's `speed`, and its rate counterpart. Every
+# component asks for its timings through these two, which is what makes
+# `theme_set({speed: 0})` freeze an entire UI for a pixel diff.
 pub fn dur(t: record, seconds: num) -> float
   float(seconds) * float(field(t, "speed", 1.0))
 end
@@ -96,22 +96,22 @@ pub fn rate(t: record, r: num) -> float
   if s <= 0.0 then 100000.0 else float(r) / s end
 end
 
-// ── The late layer ────────────────────────────────────────────────────────
-// A menu's popup belongs *above* everything, but the call that opens it sits
-// where its button is — usually early in the frame. Immediate mode has no
-// z-order to fix that with, so bloom keeps one: a component hands its painting
-// to `defer_paint` as a closure, and the closure runs later.
-//
-// An app that calls `overlays()` as its last line gets exactly correct
-// layering. An app that never calls it still gets its overlays painted — at
-// the first bloom overlay call of the *next* frame, which is where an
-// immediate-mode library would have drawn them anyway. So the ordering rule is
-// an improvement to opt into, never a way to lose a menu.
+# ── The late layer ────────────────────────────────────────────────────────
+# A menu's popup belongs *above* everything, but the call that opens it sits
+# where its button is — usually early in the frame. Immediate mode has no
+# z-order to fix that with, so bloom keeps one: a component hands its painting
+# to `defer_paint` as a closure, and the closure runs later.
+#
+# An app that calls `overlays()` as its last line gets exactly correct
+# layering. An app that never calls it still gets its overlays painted — at
+# the first bloom overlay call of the *next* frame, which is where an
+# immediate-mode library would have drawn them anyway. So the ordering rule is
+# an improvement to opt into, never a way to lose a menu.
 
 state var _late = []
-// Whether a paint has been deferred yet this frame. A plain module `var`, so
-// it is false again on every run with no `frame_count()` read to keep the
-// frame gate from skipping a quiet panel (see `_building` in bloom/interact).
+# Whether a paint has been deferred yet this frame. A plain module `var`, so
+# it is false again on every run with no `frame_count()` read to keep the
+# frame gate from skipping a quiet panel (see `_building` in bloom/interact).
 var _late_begun = false
 
 pub fn defer_paint(f: function)
@@ -122,8 +122,8 @@ pub fn defer_paint(f: function)
   set _late = append(get _late, f)
 end
 
-// Paint everything deferred this frame. Call it last; calling it twice, or
-// when nothing is pending, does nothing.
+# Paint everything deferred this frame. Call it last; calling it twice, or
+# when nothing is pending, does nothing.
 pub fn overlays()
   let queued = get _late
   set _late = []
@@ -132,11 +132,11 @@ pub fn overlays()
   end
 end
 
-// ── Color ─────────────────────────────────────────────────────────────────
+# ── Color ─────────────────────────────────────────────────────────────────
 
-// Lighten (`amt` > 0) or darken (`amt` < 0) toward the theme's own extremes,
-// so one call reads correctly in a dark theme and a light one: "toward the
-// text color" is lighter on dark and darker on light.
+# Lighten (`amt` > 0) or darken (`amt` < 0) toward the theme's own extremes,
+# so one call reads correctly in a dark theme and a light one: "toward the
+# text color" is lighter on dark and darker on light.
 pub fn tone(t: record, c: record, amt: num)
   let a = float(amt)
   if a >= 0.0 then
@@ -146,13 +146,13 @@ pub fn tone(t: record, c: record, amt: num)
   end
 end
 
-// The readable ink for text sitting on `c`.
+# The readable ink for text sitting on `c`.
 pub fn on(t: record, c: record)
   contrast_text(c)
 end
 
-// The fill for a named variant. Components take `variant` rather than a color
-// so a whole UI restyles from the theme.
+# The fill for a named variant. Components take `variant` rather than a color
+# so a whole UI restyles from the theme.
 pub fn variant_fill(t: record, name: string)
   match name
     when "primary" -> t.accent
@@ -174,23 +174,23 @@ pub fn variant_ink(t: record, name: string)
   end
 end
 
-// Whether a variant paints a filled face (and so must not also draw a border).
+# Whether a variant paints a filled face (and so must not also draw a border).
 pub fn variant_solid(name: string)
   name == "primary" || name == "danger" || name == "success" || name == "warn"
 end
 
-// ── Text ──────────────────────────────────────────────────────────────────
+# ── Text ──────────────────────────────────────────────────────────────────
 
-// The one record a component measures *and* draws with. Mixing a bare
-// `draw_text(s, pos, size, color)` with `text_width(s, size)` measures a
-// different face than it paints, and every centered label lands off.
+# The one record a component measures *and* draws with. Mixing a bare
+# `draw_text(s, pos, size, color)` with `text_width(s, size)` measures a
+# different face than it paints, and every centered label lands off.
 pub fn ts(t: record, size: num, color: record) -> record
   {size: size, font: field(t, "font", "ui"), color: color}
 end
 
-// The same, translucent. Alpha rides on the *color* record for styled text —
-// there is no `draw_text(s, pos, style, a)` overload, because the style is
-// where the host looks for it.
+# The same, translucent. Alpha rides on the *color* record for styled text —
+# there is no `draw_text(s, pos, style, a)` overload, because the style is
+# where the host looks for it.
 pub fn ts_a(t: record, size: num, color: record, a: num) -> record
   {size: size, font: field(t, "font", "ui"), color: {r: color.r, g: color.g, b: color.b, a: int(clamp(float(a), 0.0, 255.0))}}
 end
@@ -199,16 +199,16 @@ pub fn ts_bold(t: record, size: num, color: record) -> record
   {size: size, font: field(t, "font", "ui"), color: color, weight: 700}
 end
 
-// Draw `s` inside `r`, aligned. `align` is "left" | "center" | "right"; the
-// text is always vertically centered, which is what every control wants.
-// Returns the run's width, for a caller flowing something after it.
-//
-// "Vertically centered" means the *cap height* is centered, not the line box.
-// The difference is the whole reason this goes through text_layout rather than
-// the `r.y + (r.h - size) / 2` it used to compute: a run's ink does not start
-// at `y` and is not `size` px tall, so that arithmetic put every label in
-// bloom a pixel high at 14 px and three high at 32 — consistently enough that
-// it read as a style rather than as a bug.
+# Draw `s` inside `r`, aligned. `align` is "left" | "center" | "right"; the
+# text is always vertically centered, which is what every control wants.
+# Returns the run's width, for a caller flowing something after it.
+#
+# "Vertically centered" means the *cap height* is centered, not the line box.
+# The difference is the whole reason this goes through text_layout rather than
+# the `r.y + (r.h - size) / 2` it used to compute: a run's ink does not start
+# at `y` and is not `size` px tall, so that arithmetic put every label in
+# bloom a pixel high at 14 px and three high at 32 — consistently enough that
+# it read as a style rather than as a bug.
 pub fn text_in(s: string, r: record, style: record, align: string)
   draw_text_line(s, r, style, align)
 end
@@ -217,11 +217,11 @@ pub fn text_in(s: string, r: record, style: record)
   draw_text_line(s, r, style, "left")
 end
 
-// The same for text that may be more than one line: wrapped to `r`, and cut
-// with an ellipsis if it still does not fit. `opts` is text_layout's — `lines`
-// caps the line count, `lead` opens up the leading, `align`/`valign` place the
-// block. Returns the layout record, whose `h` is what a caller sizing a panel
-// around its text wants.
+# The same for text that may be more than one line: wrapped to `r`, and cut
+# with an ellipsis if it still does not fit. `opts` is text_layout's — `lines`
+# caps the line count, `lead` opens up the leading, `align`/`valign` place the
+# block. Returns the layout record, whose `h` is what a caller sizing a panel
+# around its text wants.
 pub fn text_block_in(s: string, r: record, style: record, opts: record)
   draw_text_block(s, r, style, opts)
 end
@@ -230,21 +230,21 @@ pub fn text_block_in(s: string, r: record, style: record)
   draw_text_block(s, r, style, {valign: "middle"})
 end
 
-// `s` cut to fit `w` px in `style`, with a trailing "…". What a menu label, a
-// list row or a tab does with a name longer than its box.
+# `s` cut to fit `w` px in `style`, with a trailing "…". What a menu label, a
+# list row or a tab does with a name longer than its box.
 pub fn text_cut(s: string, style: record, w: num)
   elide(s, style, w)
 end
 
-// The size `s` takes in a box `w` px wide, `{w, h}` — for a component that
-// sizes itself to its text (a tooltip, a toast, a popover).
+# The size `s` takes in a box `w` px wide, `{w, h}` — for a component that
+# sizes itself to its text (a tooltip, a toast, a popover).
 pub fn text_extent(s: string, style: record, w: num)
   text_size(s, style, w)
 end
 
-// ── Surfaces ──────────────────────────────────────────────────────────────
+# ── Surfaces ──────────────────────────────────────────────────────────────
 
-// A raised panel: shadow, face, hairline border. `level` 0 draws no shadow.
+# A raised panel: shadow, face, hairline border. `level` 0 draws no shadow.
 pub fn surface(t: record, r: record, radius: num, level: num)
   if level > 0 then
     let e = field(t, "elevation_" ++ str(min(level, 3)), {blur: 8, spread: 0, dy: 2, a: 48})
@@ -255,15 +255,15 @@ pub fn surface(t: record, r: record, radius: num, level: num)
   stroke(t, r, radius, hair(t))
 end
 
-// The border color a surface draws against its own background.
+# The border color a surface draws against its own background.
 pub fn hair(t: record)
   over(t.panel, t.text, field(t, "border_pct", 14) * 255 / 100)
 end
 
-// A rounded outline. There is no rounded-outline primitive, so this paints the
-// ring as a rounded rect with the face punched back out of it — the same trick
-// the `ui` prelude's rounded button uses, and the reason `width` is whole
-// pixels.
+# A rounded outline. There is no rounded-outline primitive, so this paints the
+# ring as a rounded rect with the face punched back out of it — the same trick
+# the `ui` prelude's rounded button uses, and the reason `width` is whole
+# pixels.
 pub fn stroke(t: record, r: record, radius: num, color: record)
   stroke(t, r, radius, color, 1, t.panel)
 end
@@ -277,16 +277,16 @@ pub fn stroke(t: record, r: record, radius: num, color: record, width: num, inne
   end
 end
 
-// The interaction wash over a surface, composited (never translucent): two
-// translucent fills over one pixel do not add up to the color the design says.
+# The interaction wash over a surface, composited (never translucent): two
+# translucent fills over one pixel do not add up to the color the design says.
 pub fn wash(t: record, base: record, hot: num, active: num)
   let h = float(field(t, "hover_pct", 8)) / 100.0
   let p = float(field(t, "press_pct", 14)) / 100.0
   mix(base, t.text, h * float(hot) + p * float(active))
 end
 
-// The focus ring: the accent bloomed *outside* the control, so focus never
-// changes a control's size or doubles its border.
+# The focus ring: the accent bloomed *outside* the control, so focus never
+# changes a control's size or doubles its border.
 pub fn focus_ring(t: record, r: record, radius: num, amount: num)
   let a = clamp(float(amount), 0.0, 1.0)
   if a > 0.005 then
@@ -297,7 +297,7 @@ pub fn focus_ring(t: record, r: record, radius: num, amount: num)
   end
 end
 
-// A hairline divider across the middle of `r`, horizontal or vertical.
+# A hairline divider across the middle of `r`, horizontal or vertical.
 pub fn divider(t: record, r: record, axis: string)
   let c = hair(t)
   if axis == "y" then

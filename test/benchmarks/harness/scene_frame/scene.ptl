@@ -1,5 +1,5 @@
-// A game-shaped frame, written the immediate-mode way: the whole world is
-// declared every frame. Sizes come from the host as constants below.
+# A game-shaped frame, written the immediate-mode way: the whole world is
+# declared every frame. Sizes come from the host as constants below.
 import vec2
 
 native fn body(id, opts)
@@ -24,7 +24,7 @@ end
 let CITY = const(map(range(0, N_CITY), city_block))
 let CRATES = const(map(range(0, N_CRATES), crate_decl))
 
-// Static scenery: same arguments every frame.
+# Static scenery: same arguments every frame.
 fn draw_city(city)
   for b in city do
     draw_mesh(b.mesh, {pos: b.pos, scale: b.scale, color: b.color, roughness: b.roughness})
@@ -37,7 +37,7 @@ fn declare_crates(cs)
   nil
 end
 
-// Dynamic: every ship moves every frame.
+# Dynamic: every ship moves every frame.
 fn ship(i, t)
   let a = t * 0.3 + float(i) * 0.021
   let p = vec3(cos(a) * 60.0, 12.0 + sin(t + float(i)) * 2.0, sin(a) * 60.0)

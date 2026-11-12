@@ -1,6 +1,6 @@
-// Color Gradient
-// Steps HSV hue and interpolates between color stops.
-// hsv()/hsl() take hue in [0, 1); hsv_deg()/hsl_deg() take degrees [0, 360).
+# Color Gradient
+# Steps HSV hue and interpolates between color stops.
+# hsv()/hsl() take hue in [0, 1); hsv_deg()/hsl_deg() take degrees [0, 360).
 
 import color
 

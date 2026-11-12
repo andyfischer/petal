@@ -1,61 +1,61 @@
-// Garden built-in Git history browser — the drawer.
-//
-// A Petal graphical panel (see docs/petal-graphical-panels.md). This is a
-// FIXED, GENERIC script: it bakes in no data. Everything is loaded at runtime
-// through the async `query(kind, arg)` native (Garden's React-Query prototype on
-// Petal's pending values, see garden-script/src/query.rs), answered by the
-// host's GitQueryProvider:
-//
-//   query("log", "")      → { repo, branch, worktree_dirty,
-//                             commits: [ { hash, short, author, date, subject } … ] }
-//   query("commit", hash) → { error, body,
-//                             files: [ { path, added, removed,
-//                                        lines: [ { kind, text, old, new } … ] } … ] }
-//
-// A "@full:" prefix on the hash asks for the full-context diff (the whole file
-// around every hunk); the drawer requests it when a hunk header is clicked. The
-// synthetic "@worktree" hash is the uncommitted working-tree diff.
-//
-// While a query is in flight it returns a `Pending` value; the drawer inspects
-// it with `is_loading` / `is_error` / `error_of` and renders a spinner or an
-// error, then caches the resolved value in `state` so it polls only until it
-// lands. The header's ⟳ Refresh button `invalidate`s the log + working-tree
-// keys and re-loads — calling git again for fresh data.
-//
-// The widgets are bloom's (core-runtime/bloom/docs/components.md): the two
-// draggable dividers are `splitter`s, the section headings are
-// `section_label`, the scrollbars `scrollbar`, load/empty states use
-// `spinner`/`spinner_glyph`/`empty_state`, and the bottom edge is a
-// `hint_bar`. The commit and file lists are `ui`'s `list_state`/`list_update`
-// (+ `list_row_rect` for row painting), and long paths wrap with `wrap_px`.
-// This file only composes those and paints the git-specific rows; the widgets
-// pick up Garden's colors automatically through the bound host palette.
-//
-// Three focusable regions — the commit list, the selected commit's file list,
-// and the selected file's diff — cycle focus with Tab (or click). j/k, arrows,
-// PageUp/PageDown, Home/End move within the focused region; the wheel scrolls
-// whatever region the pointer is over. The host observes every named binding a
-// frame makes and reports it at the debug server (/state →
-// panes[].panel.values), so selection, scroll, focus and load state are all
-// readable by their variable names — tests drive this drawer without pixels and
-// the script publishes nothing.
-//
-// Mouse interactions beyond selection:
-//   · click ⟳ Refresh (top-right) to re-run git and reload;
-//   · drag the vertical divider to resize the left column ↔ the diff, and the
-//     horizontal divider to resize the commit list ↔ the file list;
-//   · click a hunk header (▸/▾) in the diff to uncollapse it to full context
-//     (the whole file's source), or collapse it again.
-//
-// Garden renders all panel text at its one monospace size, so every draw_text
-// and text_width here uses size 14 — hierarchy comes from color, not size, and
-// long file names wrap across two lines rather than shrinking.
+# Garden built-in Git history browser — the drawer.
+#
+# A Petal graphical panel (see docs/petal-graphical-panels.md). This is a
+# FIXED, GENERIC script: it bakes in no data. Everything is loaded at runtime
+# through the async `query(kind, arg)` native (Garden's React-Query prototype on
+# Petal's pending values, see garden-script/src/query.rs), answered by the
+# host's GitQueryProvider:
+#
+#   query("log", "")      → { repo, branch, worktree_dirty,
+#                             commits: [ { hash, short, author, date, subject } … ] }
+#   query("commit", hash) → { error, body,
+#                             files: [ { path, added, removed,
+#                                        lines: [ { kind, text, old, new } … ] } … ] }
+#
+# A "@full:" prefix on the hash asks for the full-context diff (the whole file
+# around every hunk); the drawer requests it when a hunk header is clicked. The
+# synthetic "@worktree" hash is the uncommitted working-tree diff.
+#
+# While a query is in flight it returns a `Pending` value; the drawer inspects
+# it with `is_loading` / `is_error` / `error_of` and renders a spinner or an
+# error, then caches the resolved value in `state` so it polls only until it
+# lands. The header's ⟳ Refresh button `invalidate`s the log + working-tree
+# keys and re-loads — calling git again for fresh data.
+#
+# The widgets are bloom's (core-runtime/bloom/docs/components.md): the two
+# draggable dividers are `splitter`s, the section headings are
+# `section_label`, the scrollbars `scrollbar`, load/empty states use
+# `spinner`/`spinner_glyph`/`empty_state`, and the bottom edge is a
+# `hint_bar`. The commit and file lists are `ui`'s `list_state`/`list_update`
+# (+ `list_row_rect` for row painting), and long paths wrap with `wrap_px`.
+# This file only composes those and paints the git-specific rows; the widgets
+# pick up Garden's colors automatically through the bound host palette.
+#
+# Three focusable regions — the commit list, the selected commit's file list,
+# and the selected file's diff — cycle focus with Tab (or click). j/k, arrows,
+# PageUp/PageDown, Home/End move within the focused region; the wheel scrolls
+# whatever region the pointer is over. The host observes every named binding a
+# frame makes and reports it at the debug server (/state →
+# panes[].panel.values), so selection, scroll, focus and load state are all
+# readable by their variable names — tests drive this drawer without pixels and
+# the script publishes nothing.
+#
+# Mouse interactions beyond selection:
+#   · click ⟳ Refresh (top-right) to re-run git and reload;
+#   · drag the vertical divider to resize the left column ↔ the diff, and the
+#     horizontal divider to resize the commit list ↔ the file list;
+#   · click a hunk header (▸/▾) in the diff to uncollapse it to full context
+#     (the whole file's source), or collapse it again.
+#
+# Garden renders all panel text at its one monospace size, so every draw_text
+# and text_width here uses size 14 — hierarchy comes from color, not size, and
+# long file names wrap across two lines rather than shrinking.
 
 import garden
 import ui
 import bloom
 
-// ── panel-local UI state ─────────────────────────────────────────────────────
+# ── panel-local UI state ─────────────────────────────────────────────────────
 state focus_seeded = false
 if !focus_seeded then
   focus_request("commits")
@@ -69,26 +69,26 @@ state loaded_commit = "@none"
 state data = {error: "", body: "", files: []}
 state prev_file = -1
 state diff_expanded = false
-// Where the two draggable dividers sit, as fractions: vertical (left column ↔
-// diff) and horizontal (commit list ↔ file list). bloom's splitter keeps its
-// own drag state.
+# Where the two draggable dividers sit, as fractions: vertical (left column ↔
+# diff) and horizontal (commit list ↔ file list). bloom's splitter keeps its
+# own drag state.
 state sp_v = 0.36
 state sp_h = 0.52
 
-// ── data-loading state (the React-Query cache, held in `state`) ───────────────
-// `log` is fetched once and cached here; `log_ready` stops the poll. Refresh
-// clears `log_ready` (and invalidates the key) to reload. `diff_loading` /
-// `diff_err` track the in-flight state of the selected commit's diff.
+# ── data-loading state (the React-Query cache, held in `state`) ───────────────
+# `log` is fetched once and cached here; `log_ready` stops the poll. Refresh
+# clears `log_ready` (and invalidates the key) to reload. `diff_loading` /
+# `diff_err` track the in-flight state of the selected commit's diff.
 state log = {repo: "", branch: "", worktree_dirty: false, commits: []}
 state log_ready = false
 state log_err = ""
 state diff_loading = false
 state diff_err = ""
 
-// ── palette (the host color scheme via palette(), see docs/writing-gpp-apps.md)
-// One `palette()` call yields the full active scheme, always complete, so this
-// drawer paints in Garden's colors in every theme (light AND dark). The prelude
-// widgets resolve the same palette on their own through `ui_theme()`.
+# ── palette (the host color scheme via palette(), see docs/writing-gpp-apps.md)
+# One `palette()` call yields the full active scheme, always complete, so this
+# drawer paints in Garden's colors in every theme (light AND dark). The prelude
+# widgets resolve the same palette on their own through `ui_theme()`.
 let P = palette()
 let BG     = P.window_bg
 let PANEL  = P.panel
@@ -106,25 +106,25 @@ let GREEN  = P.green
 let RED    = P.red
 let ORANGE = P.orange
 
-let FS = 14                       // the one font size Garden renders panels at
+let FS = 14                       # the one font size Garden renders panels at
 
-// ── geometry ─────────────────────────────────────────────────────────────────
+# ── geometry ─────────────────────────────────────────────────────────────────
 let w = screen_width()
 let h = screen_height()
 let PAD = 12
-let HINT_H = 26                   // keyboard hint bar along the bottom edge
-let ch = h - HINT_H               // content height (everything above the hints)
+let HINT_H = 26                   # keyboard hint bar along the bottom edge
+let ch = h - HINT_H               # content height (everything above the hints)
 let header_h = 38
 let content_top = PAD + header_h
 let COMMIT_ROW = 40
-let FILE_ROW = 40                 // two text lines: wrapped path + diff counts
+let FILE_ROW = 40                 # two text lines: wrapped path + diff counts
 let LINE_H = 17
 let avail_h = ch - content_top - PAD
 
-// ── data: the commit log ─────────────────────────────────────────────────────
-// Poll `query("log", …)` until it resolves, then cache it in `state` and stop.
-// A Pending value flows out of `query` while git runs on a background thread;
-// `is_ready` / `is_error` inspect it without absorbing it.
+# ── data: the commit log ─────────────────────────────────────────────────────
+# Poll `query("log", …)` until it resolves, then cache it in `state` and stop.
+# A Pending value flows out of `query` while git runs on a background thread;
+# `is_ready` / `is_error` inspect it without absorbing it.
 if !log_ready then
   let rd = query("log", "")
   if is_ready(rd) then
@@ -145,16 +145,16 @@ let wt = 0
 if git_worktree then wt = 1 end
 let total_rows = n_commits + wt
 
-// ── layout + divider input: the two splitters ─────────────────────────────────
-// A splitter both updates its drag state and draws its divider line, so the
-// canvas is cleared first and the panel fill painted right after (the fill
-// stops one pixel short of the divider).
+# ── layout + divider input: the two splitters ─────────────────────────────────
+# A splitter both updates its drag state and draws its divider line, so the
+# canvas is cleared first and the panel fill painted right after (the fill
+# stops one pixel short of the divider).
 clear(BG.r, BG.g, BG.b)
 let content_r = rect(PAD, content_top - 10, w - 2 * PAD, ch - content_top + 10)
 let sv = bloom.splitter(content_r, sp_v, {min_a: 220, min_b: 340})
 sp_v = sv.frac
-// The divider sits `left_w` past PAD (the a-side plus the splitter's 4px gap);
-// tests read `left_w` and drag the divider at x = PAD + left_w.
+# The divider sits `left_w` past PAD (the a-side plus the splitter's 4px gap);
+# tests read `left_w` and drag the divider at x = PAD + left_w.
 let left_w = sv.a.w + 4
 let div_x = PAD + left_w
 draw_rect(rect(0, 0, div_x, ch), PANEL)
@@ -165,7 +165,7 @@ sp_h = sh.frac
 let commits_area = sh.a.h + 4
 let dragging = sv.dragging || sh.dragging
 
-// Region rects from the splitter positions.
+# Region rects from the splitter positions.
 let files_label_y = content_top + commits_area + 8
 let commits_rows = max(1, int(float(commits_area - 26) / COMMIT_ROW))
 let commits_rect = rect(PAD, content_top + 24, left_w - 10, commits_rows * COMMIT_ROW)
@@ -179,15 +179,15 @@ let diff_top = content_top + diff_head_h
 let diff_rows = max(1, int(float(ch - PAD - diff_top) / LINE_H))
 let diff_rect = rect(right_x - 6, diff_top, right_w + 6, ch - PAD - diff_top)
 
-// ── input: refresh button geometry (drawn with the header below) ──────────────
+# ── input: refresh button geometry (drawn with the header below) ──────────────
 let refresh_label = "Refresh"
-// Room for a drawn reload glyph (left) + the label; the glyph is geometry, not
-// a font character (Garden's mono font has no ⟳), so it always renders.
+# Room for a drawn reload glyph (left) + the label; the glyph is geometry, not
+# a font character (Garden's mono font has no ⟳), so it always renders.
 let refresh_w = text_width(refresh_label, FS) + 40
 let refresh_r = rect(w - PAD - refresh_w, PAD - 1, refresh_w, 23)
 let refresh_hover = hovered(refresh_r)
 
-// ── input: focus ring (Tab / Shift+Tab, click-to-focus) ──────────────────────
+# ── input: focus ring (Tab / Shift+Tab, click-to-focus) ──────────────────────
 focus_update(["commits", "files", "diff"])
 if mouse_pressed(0) && !dragging && !refresh_hover then
   if point_in(mouse_x(), mouse_y(), commits_rect) then focus_request("commits") end
@@ -195,16 +195,16 @@ if mouse_pressed(0) && !dragging && !refresh_hover then
   if point_in(mouse_x(), mouse_y(), diff_rect) then focus_request("diff") end
 end
 
-// ── input: commit selection, lazy fetch on change ─────────────────────────────
-// The prelude list: keyboard nav gated on focus, click-select, and a wheel
-// that scrolls the window freely without dragging the selection along.
+# ── input: commit selection, lazy fetch on change ─────────────────────────────
+# The prelude list: keyboard nav gated on focus, click-select, and a wheel
+# that scrolls the window freely without dragging the selection along.
 commits_lst = list_update(commits_lst, total_rows, commits_rows, commits_rect, has_focus("commits"))
 let commit_selected = commits_lst.selected
 let commits_scroll = commits_lst.scroll
 
-// ── input: click a hunk header to toggle full-context expansion ────────────────
-// Uses the diff already shown this frame (persisted `data` + file selection);
-// the fetch below re-requests the collapsed/expanded variant accordingly.
+# ── input: click a hunk header to toggle full-context expansion ────────────────
+# Uses the diff already shown this frame (persisted `data` + file selection);
+# the fetch below re-requests the collapsed/expanded variant accordingly.
 if mouse_pressed(0) && !dragging && point_in(mouse_x(), mouse_y(), diff_rect) then
   let pf = files_lst.selected
   if len(data.files) > 0 && pf >= 0 && pf < len(data.files) then
@@ -216,8 +216,8 @@ if mouse_pressed(0) && !dragging && point_in(mouse_x(), mouse_y(), diff_rect) th
   end
 end
 
-// The commit (or working tree) the selection points at, and the fetch key —
-// prefixed with "@full:" when the diff is expanded.
+# The commit (or working tree) the selection points at, and the fetch key —
+# prefixed with "@full:" when the diff is expanded.
 let base_want = ""
 if total_rows > 0 then
   if wt == 1 && commit_selected == 0 then
@@ -226,17 +226,17 @@ if total_rows > 0 then
     base_want = git_commits[commit_selected - wt].hash
   end
 end
-// Selecting a different commit resets expansion back to the collapsed diff.
+# Selecting a different commit resets expansion back to the collapsed diff.
 if base_want != loaded_commit && loaded_commit != "@none" then
   diff_expanded = false
 end
 let want = base_want
 if diff_expanded && base_want != "" then want = "@full:" ++ base_want end
 
-// Fetch the selected commit's diff through `query`. While the key differs from
-// the one in `data` we keep polling: `is_ready` commits it to `state`, a Pending
-// shows the spinner, an error shows the message. Once loaded, `want == loaded_key`
-// so no query runs — the diff is served from `state`.
+# Fetch the selected commit's diff through `query`. While the key differs from
+# the one in `data` we keep polling: `is_ready` commits it to `state`, a Pending
+# shows the spinner, an error shows the message. Once loaded, `want == loaded_key`
+# so no query runs — the diff is served from `state`.
 if want != "" && want != loaded_key then
   let fetched = query("commit", want)
   if is_ready(fetched) then
@@ -245,8 +245,8 @@ if want != "" && want != loaded_key then
     diff_loading = false
     diff_err = ""
     diff_scroll = 0
-    // Only reset the file selection when the underlying commit changed, so
-    // expanding/collapsing keeps you on the same file.
+    # Only reset the file selection when the underlying commit changed, so
+    # expanding/collapsing keeps you on the same file.
     if base_want != loaded_commit then
       files_lst = list_state()
       prev_file = -1
@@ -260,7 +260,7 @@ if want != "" && want != loaded_key then
   end
 end
 
-// ── input: file selection ─────────────────────────────────────────────────────
+# ── input: file selection ─────────────────────────────────────────────────────
 let file_count = len(data.files)
 files_lst = list_update(files_lst, file_count, files_rows, files_rect, has_focus("files"))
 let file_selected = files_lst.selected
@@ -269,9 +269,9 @@ if file_selected != prev_file then
   prev_file = file_selected
 end
 
-// ── input: diff scrolling (wheel over the region; keys when focused) ──────────
-// The prelude scroll region handles the hover-scoped wheel + PageUp/PageDown;
-// the vim-style extras (j/k, space, home/end) stay app-side.
+# ── input: diff scrolling (wheel over the region; keys when focused) ──────────
+# The prelude scroll region handles the hover-scoped wheel + PageUp/PageDown;
+# the vim-style extras (j/k, space, home/end) stay app-side.
 let diff_lines = 0
 if file_count > 0 then diff_lines = len(data.files[file_selected].lines) end
 diff_scroll = scroll_update(diff_scroll, diff_lines, diff_rows, diff_rect, has_focus("diff"))
@@ -284,25 +284,25 @@ if has_focus("diff") then
 end
 diff_scroll = int(clamp(diff_scroll, 0, max(0, diff_lines - diff_rows)))
 
-// ── introspection for tests / debug server ───────────────────────────────────
-// Nothing is published: the host observes every named binding this frame made
-// and reports it at /state → panes[].panel.values. The names above (total_rows,
-// commit_selected, commits_scroll, file_count, file_selected, diff_lines,
-// diff_scroll, left_w, commits_area, diff_expanded, log_ready, diff_loading)
-// are therefore the test-facing API, with their real types. Only `focus` and
-// `has_error` are derived purely for that readout.
+# ── introspection for tests / debug server ───────────────────────────────────
+# Nothing is published: the host observes every named binding this frame made
+# and reports it at /state → panes[].panel.values. The names above (total_rows,
+# commit_selected, commits_scroll, file_count, file_selected, diff_lines,
+# diff_scroll, left_w, commits_area, diff_expanded, log_ready, diff_loading)
+# are therefore the test-facing API, with their real types. Only `focus` and
+# `has_error` are derived purely for that readout.
 let focus = 0
 if has_focus("files") then focus = 1 end
 if has_focus("diff") then focus = 2 end
-// The reply's soft `error` field may be null (no error), so coalesce before
-// `len` — a bare `len(nil)` would abort the frame.
+# The reply's soft `error` field may be null (no error), so coalesce before
+# `len` — a bare `len(nil)` would abort the frame.
 let data_err = data.error ?? ""
 let has_error = len(data_err) > 0
 
-// ── draw: chrome ─────────────────────────────────────────────────────────────
+# ── draw: chrome ─────────────────────────────────────────────────────────────
 draw_line({x: 0, y: content_top - 10}, {x: w, y: content_top - 10}, LINE)
 
-// header: repo · branch pill · refresh button
+# header: repo · branch pill · refresh button
 draw_circle({x: PAD + 7, y: PAD + 10}, 5, ACCENT)
 let header_repo = git_repo
 if !log_ready then header_repo = "loading…" end
@@ -312,11 +312,11 @@ if len(git_branch) > 0 then
   bloom.pill(PAD + 30 + repo_w, PAD, git_branch, ACCENT, {size: FS})
 end
 
-// refresh: a bloom button carrying a drawn reload glyph + the label.
+# refresh: a bloom button carrying a drawn reload glyph + the label.
 let rtc = if refresh_hover then ACCENT else MUT end
 if bloom.button(refresh_r, "") then
-  // Re-run git: drop the log + working-tree caches and clear the "loaded"
-  // markers so the polls above resume. Immutable commit diffs stay cached.
+  # Re-run git: drop the log + working-tree caches and clear the "loaded"
+  # markers so the polls above resume. Immutable commit diffs stay cached.
   invalidate("log", "")
   invalidate("commit", "@worktree")
   invalidate("commit", "@full:@worktree")
@@ -324,22 +324,22 @@ if bloom.button(refresh_r, "") then
   loaded_key = "@none"
   loaded_commit = "@none"
 end
-// A circular-arrow icon built from primitives (the mono font has no ⟳): a ring
-// open at the top right, with an arrowhead, so it reads as a clockwise reload
-// arrow at any font. The ring is an arc rather than a disc with a hole
-// punched in it, so it needs to know nothing about the face under it.
+# A circular-arrow icon built from primitives (the mono font has no ⟳): a ring
+# open at the top right, with an arrowhead, so it reads as a clockwise reload
+# arrow at any font. The ring is an arc rather than a disc with a hole
+# punched in it, so it needs to know nothing about the face under it.
 let ix = refresh_r.x + 15
 let iy = refresh_r.y + 11
-fill_arc({x: ix, y: iy}, 3, 6, 0.0, 4.712, rtc)   // clockwise from +x, leaving the top right
-fill_triangle(ix, iy - 9, ix + 8, iy - 6, ix, iy - 2, rtc.r, rtc.g, rtc.b)  // arrowhead
+fill_arc({x: ix, y: iy}, 3, 6, 0.0, 4.712, rtc)   # clockwise from +x, leaving the top right
+fill_triangle(ix, iy - 9, ix + 8, iy - 6, ix, iy - 2, rtc.r, rtc.g, rtc.b)  # arrowhead
 draw_text(refresh_label, {x: refresh_r.x + 28, y: refresh_r.y + 3}, FS, rtc)
 
-// ── draw: commits section ─────────────────────────────────────────────────────
+# ── draw: commits section ─────────────────────────────────────────────────────
 bloom.section_label("COMMITS · {total_rows}", PAD, content_top, has_focus("commits"))
 
-// Subjects and metadata are clipped by measured width, not by an estimated
-// character count: the panel font is proportional, so `ellipsize` fills the
-// row where dividing by an average glyph width would leave it short or overrun.
+# Subjects and metadata are clipped by measured width, not by an estimated
+# character count: the panel font is proportional, so `ellipsize` fills the
+# row where dividing by an average glyph width would leave it short or overrun.
 let subj_px = commits_rect.w - 18
 
 if total_rows == 0 then
@@ -382,8 +382,8 @@ end
 clip_none()
 bloom.scrollbar(commits_rect, total_rows, commits_rows, commits_scroll)
 
-// ── draw: files section ───────────────────────────────────────────────────────
-// (the horizontal divider itself is drawn by the splitter above)
+# ── draw: files section ───────────────────────────────────────────────────────
+# (the horizontal divider itself is drawn by the splitter above)
 bloom.section_label("FILES · {file_count}", PAD, files_label_y, has_focus("files"))
 
 if file_count == 0 then
@@ -392,7 +392,7 @@ if file_count == 0 then
   if diff_loading then msg = "loading diff {bloom.spinner_glyph()}" end
   draw_text(msg, {x: PAD + 4, y: files_rect.y + 4}, FS, FAINT)
 end
-// Reserve a right strip for the +/- counts; wrap the path across the rest.
+# Reserve a right strip for the +/- counts; wrap the path across the rest.
 let counts_w = 92
 let path_px = files_rect.w - 14 - counts_w
 clip(files_rect.x, files_rect.y, files_rect.w, files_rect.h)
@@ -414,9 +414,9 @@ for i in range(0, fvis) do
   draw_rect(rect(files_rect.x, ry + 4, 3, FILE_ROW - 8), accent)
   let path_c = MUT
   if idx == file_selected then path_c = TEXT end
-  // Wrap the path onto (up to) two measured lines: the first is wrap_px's
-  // first fitting line, the remainder is ellipsized onto the second so the
-  // basename stays readable without a smaller font.
+  # Wrap the path onto (up to) two measured lines: the first is wrap_px's
+  # first fitting line, the remainder is ellipsized onto the second so the
+  # basename stays readable without a smaller font.
   let wls = wrap_px(f.path, path_px, FS)
   draw_text(wls[0], {x: files_rect.x + 12, y: ry + 4}, FS, path_c)
   if len(wls) > 1 then
@@ -431,7 +431,7 @@ end
 clip_none()
 bloom.scrollbar(files_rect, file_count, files_rows, files_lst.scroll)
 
-// ── draw: diff header (selected commit + file) ────────────────────────────────
+# ── draw: diff header (selected commit + file) ────────────────────────────────
 let head_subject = ""
 let head_meta = ""
 if total_rows > 0 then
@@ -461,7 +461,7 @@ if has_focus("diff") then
   draw_rect(rect(right_x, diff_top - 5, head_path_w, 2), ACCENT)
 end
 
-// ── draw: the diff (clipped + scrollable, numbered gutter) ────────────────────
+# ── draw: the diff (clipped + scrollable, numbered gutter) ────────────────────
 if len(diff_err) > 0 then
   draw_text("git error:", {x: right_x, y: diff_top + 8}, FS, RED)
   draw_text(ellipsize(diff_err, right_w, FS), {x: right_x, y: diff_top + 28}, FS, MUT)
@@ -481,14 +481,14 @@ else
     if diff_lines == 0 then
       bloom.empty_state(diff_rect, "No textual diff", "binary or empty file")
     else
-      // Selectable diff: hand the text to a native read-only editor, which the
-      // host draws inside diff_rect so it can be highlighted and copied (Cmd-C).
-      // The editor owns scrolling, so the script no longer paints lines, the
-      // numbered gutter, or a scrollbar. Lines are unified-diff style
-      // (marker + text) so a copied selection is clean, paste-ready diff text.
-      // A parallel style name per line drives the host's line-styling side
-      // channel, restoring add/del/hunk coloring (foreground + a translucent
-      // band) on top of the selectable text.
+      # Selectable diff: hand the text to a native read-only editor, which the
+      # host draws inside diff_rect so it can be highlighted and copied (Cmd-C).
+      # The editor owns scrolling, so the script no longer paints lines, the
+      # numbered gutter, or a scrollbar. Lines are unified-diff style
+      # (marker + text) so a copied selection is clean, paste-ready diff text.
+      # A parallel style name per line drives the host's line-styling side
+      # channel, restoring add/del/hunk coloring (foreground + a translucent
+      # band) on top of the selectable text.
       let dlines = []
       let dstyles = []
       for li in range(0, diff_lines) do
@@ -508,7 +508,7 @@ else
   end
 end
 
-// ── draw: keyboard hints ─────────────────────────────────────────────────────
+# ── draw: keyboard hints ─────────────────────────────────────────────────────
 bloom.hint_bar(rect(0, ch, w, HINT_H),
   [bloom.hint("tab", "cycle focus"), bloom.hint("j/k", "move"), bloom.hint("pgup/pgdn", "page"),
    bloom.hint("drag", "resize panes"), bloom.hint("click @", "full context")])

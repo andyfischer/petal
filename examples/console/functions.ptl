@@ -1,7 +1,7 @@
-// Functions
-// Declaration, implicit return, recursion, and composition.
+# Functions
+# Declaration, implicit return, recursion, and composition.
 
-// The last expression is the return value.
+# The last expression is the return value.
 fn square(n: num) -> num
   n * n
 end
@@ -18,7 +18,7 @@ fn add(a: num, b: num) -> num
 end
 print("3 + 4 =", add(3, 4))
 
-// Recursion
+# Recursion
 fn factorial(n: num) -> num
   if n <= 1 then 1 else n * factorial(n - 1) end
 end
@@ -32,16 +32,16 @@ fn fibonacci(n: num) -> num
 end
 print("fib(10) =", fibonacci(10))
 
-// `?` is allowed in identifiers.
+# `?` is allowed in identifiers.
 fn even?(n: num) -> bool
   n % 2 == 0
 end
 print("4 is even?", even?(4))
 print("7 is even?", even?(7))
 
-// Function composition
+# Function composition
 fn double(n: num) -> num n * 2 end
 fn increment(n: num) -> num n + 1 end
 
-// double then increment: (5 * 2) + 1 = 11
+# double then increment: (5 * 2) + 1 = 11
 print("double then increment 5:", increment(double(5)))

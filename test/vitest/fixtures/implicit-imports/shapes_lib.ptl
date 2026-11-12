@@ -1,7 +1,7 @@
-// A library module. The host names it calls — `draw_rect`'s record overload,
-// `screen_width` — arrive through its own `import ui`; nothing is implicit.
-// `draw_rect(r, c)` here must reach the package's record overload, not the
-// raw native's int arity ("Expected int at arg 1, got record").
+# A library module. The host names it calls — `draw_rect`'s record overload,
+# `screen_width` — arrive through its own `import ui`; nothing is implicit.
+# `draw_rect(r, c)` here must reach the package's record overload, not the
+# raw native's int arity ("Expected int at arg 1, got record").
 
 import ui
 

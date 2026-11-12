@@ -1,23 +1,23 @@
-// ── Drag mode 2: trigonometry, a clock hand and an orbit ─
-//   garden petal-ide examples/panels/dm-v2/02-clock-and-orbit.ptl
-//
-// What to drag (drag mode on: Cmd+Shift+D):
-// - The red TIP of the hand, around the dial: the tip is
-//   `cx + cos(a) * len` with `a` computed from `hours`, so
-//   the solver edits `hours` (it iterates: the goal is
-//   nonlinear in it). Dragging the tip outward along the
-//   hand edits `len` instead. A drag at an angle is a mix:
-//   the panel ranks `hours`, `len` and both together.
-// - The blue MOON: it orbits by `time()`, but the frame you
-//   press on is the one re-run, so the drag is solved at
-//   that instant. It edits `orbit_r` and the planet's
-//   position; `speed` is listed but ranks low (it would only
-//   shift the moon in time). Pause first (toolbar) if you
-//   want it still.
-// - Mark `len` rigid (click its gutter square twice) and
-//   drag the tip outward: the hand cannot grow, so the
-//   whole clock moves (`cx`, `cy`); click the `hours` row's
-//   "only" chip in the panel and drag again: now it turns.
+# ── Drag mode 2: trigonometry, a clock hand and an orbit ─
+#   garden petal-ide examples/panels/dm-v2/02-clock-and-orbit.ptl
+#
+# What to drag (drag mode on: Cmd+Shift+D):
+# - The red TIP of the hand, around the dial: the tip is
+#   `cx + cos(a) * len` with `a` computed from `hours`, so
+#   the solver edits `hours` (it iterates: the goal is
+#   nonlinear in it). Dragging the tip outward along the
+#   hand edits `len` instead. A drag at an angle is a mix:
+#   the panel ranks `hours`, `len` and both together.
+# - The blue MOON: it orbits by `time()`, but the frame you
+#   press on is the one re-run, so the drag is solved at
+#   that instant. It edits `orbit_r` and the planet's
+#   position; `speed` is listed but ranks low (it would only
+#   shift the moon in time). Pause first (toolbar) if you
+#   want it still.
+# - Mark `len` rigid (click its gutter square twice) and
+#   drag the tip outward: the hand cannot grow, so the
+#   whole clock moves (`cx`, `cy`); click the `hours` row's
+#   "only" chip in the panel and drag again: now it turns.
 
 import ui
 
@@ -37,7 +37,7 @@ end
 
 let tip = hand_tip(hours, len)
 
-// The moon: around a planet at (420, 140).
+# The moon: around a planet at (420, 140).
 let px = 420
 let py = 140
 let orbit_r = 60

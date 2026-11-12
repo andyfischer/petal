@@ -1,7 +1,7 @@
-// Lambdas outside the numeric subset. petal2glsl.py should refuse each one
-// with a message that names the construct and where it is:
-// petal-fix-imports-ignore
-//     python3 petal2glsl.py unsupported.ptl --out out/unsupported   (exits 1)
+# Lambdas outside the numeric subset. petal2glsl.py should refuse each one
+# with a message that names the construct and where it is:
+# petal-fix-imports-ignore
+#     python3 petal2glsl.py unsupported.ptl --out out/unsupported   (exits 1)
 
 class Fx
   color: vec3,
@@ -14,23 +14,23 @@ end
 state tint_k = 0.5
 let palette = [vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0)]
 
-// A captured value that only exists at run time (a `state`).
+# A captured value that only exists at run time (a `state`).
 let dynamic_capture = fn(fx: Fx, amount = 0.5) -> fx.color * tint_k * amount
 
-// A list.
+# A list.
 let uses_list = fn(fx: Fx, amount = 0.5) -> lerp(fx.color, palette[0], amount)
 
-// Truthiness: a number as a condition.
+# Truthiness: a number as a condition.
 let truthy = fn(fx: Fx, amount = 0.5) -> if amount then fx.color else fx.color * 0.5 end
 
-// A string.
+# A string.
 let stringy = fn(fx: Fx, label = 1.0) -> fx.color * len("abc")
 
-// A parameter whose type nothing says.
+# A parameter whose type nothing says.
 let untyped = fn(fx: Fx, amount) -> fx.color * amount
 
-// The wrong result type.
+# The wrong result type.
 let wrong_result = fn(fx: Fx, amount = 0.5) -> fx_luma(fx.color) * amount
 
-// A vector mismatch the Petal checker does not see.
+# A vector mismatch the Petal checker does not see.
 let mismatch = fn(fx: Fx, amount = 0.5) -> fx.color + fx.uv

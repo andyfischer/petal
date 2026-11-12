@@ -1,6 +1,6 @@
-// Vec2 Demo
-// Shows off the first-class vec2 type and its operator overloads.
-// Simulates a single "boid" chasing a moving target with a velocity cap.
+# Vec2 Demo
+# Shows off the first-class vec2 type and its operator overloads.
+# Simulates a single "boid" chasing a moving target with a velocity cap.
 
 import vec2
 
@@ -13,9 +13,9 @@ print("Seeking target at {target}")
 print("=====================================")
 
 for step in range(0, 20) do
-  // Desired velocity = direction to target, scaled to max speed
+  # Desired velocity = direction to target, scaled to max speed
   let desired = normalize(target - pos) * max_speed
-  // Steering force = difference between desired and current velocity
+  # Steering force = difference between desired and current velocity
   let steer = limit(desired - vel, 0.2)
   vel = vel + steer
   pos = pos + vel

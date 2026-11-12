@@ -1,36 +1,36 @@
-// petal-ui prelude — module `ui`
-//
-// The petal-ui interface: the declarations of the natives a petal-ui host
-// provides, and the standard interaction primitives written in Petal over the
-// Layer-0 input natives and the Layer-2 draw natives. Embedders register it
-// as the package `ui`; a script writes `import ui` and calls these bare or
-// as `ui.button`, or `import ui: button`.
-// Only declarations marked `pub` are visible to importers; everything else
-// (and any name starting with `_`) is module-private.
-//
-// Rects are records: {x, y, w, h}. Colors are records: {r, g, b} (hex
-// literals like #3c8cff work). Button 0 is the left mouse button.
+# petal-ui prelude — module `ui`
+#
+# The petal-ui interface: the declarations of the natives a petal-ui host
+# provides, and the standard interaction primitives written in Petal over the
+# Layer-0 input natives and the Layer-2 draw natives. Embedders register it
+# as the package `ui`; a script writes `import ui` and calls these bare or
+# as `ui.button`, or `import ui: button`.
+# Only declarations marked `pub` are visible to importers; everything else
+# (and any name starting with `_`) is module-private.
+#
+# Rects are records: {x, y, w, h}. Colors are records: {r, g, b} (hex
+# literals like #3c8cff work). Button 0 is the left mouse button.
 
-// The package's modules, all re-exported here: `import ui` binds every name
-// of each, as if this file declared them.
-//
-//   ui/input    the input, timing and frame natives
-//   ui/draw     the draw natives, geometry, record overloads, clipping,
-//               gradients, shadows, elevation, canvases, fonts, colour,
-//               compositing and the theme
-//   ui/hit      layers, interact, targets, measuring, flow layout and
-//               retained drawing
-//   ui/text     text helpers, text on a path, text ranges and the clipboard
-//   ui/layout   RectCut, motion and pixel-budget word wrap
-//   ui/interaction focus, list and scroll state, text editing, the popover
-//               runtime, drag and drop, the load state and colour text
-//   ui/widgets  the drawn widgets, deprecated: bloom owns the widgets, and
-//               these are re-exported only until the deprecation period ends
-//
-// The modules whose names start with `_` are the package's internals:
-// `_native` (the private native declarations), `_base`, `_style` and
-// `_frame`. Their public names arrive through `ui/draw` and `ui/hit`.
-// `ui/drag` is not re-exported: a script that drags writes `import ui/drag`.
+# The package's modules, all re-exported here: `import ui` binds every name
+# of each, as if this file declared them.
+#
+#   ui/input    the input, timing and frame natives
+#   ui/draw     the draw natives, geometry, record overloads, clipping,
+#               gradients, shadows, elevation, canvases, fonts, colour,
+#               compositing and the theme
+#   ui/hit      layers, interact, targets, measuring, flow layout and
+#               retained drawing
+#   ui/text     text helpers, text on a path, text ranges and the clipboard
+#   ui/layout   RectCut, motion and pixel-budget word wrap
+#   ui/interaction focus, list and scroll state, text editing, the popover
+#               runtime, drag and drop, the load state and colour text
+#   ui/widgets  the drawn widgets, deprecated: bloom owns the widgets, and
+#               these are re-exported only until the deprecation period ends
+#
+# The modules whose names start with `_` are the package's internals:
+# `_native` (the private native declarations), `_base`, `_style` and
+# `_frame`. Their public names arrive through `ui/draw` and `ui/hit`.
+# `ui/drag` is not re-exported: a script that drags writes `import ui/drag`.
 
 pub import ./input
 pub import ./draw

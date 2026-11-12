@@ -1,22 +1,22 @@
-// Petal IDE — IR inspector drawer.
-//
-// A Petal graphical panel (see docs/petal-graphical-panels.md). Like the git
-// viewers it bakes in NO data: it pulls everything from the host through the
-// synchronous `host_data(kind, arg)` native, answered by Garden's IR provider
-// (garden-app/src/petal_ide/mod.rs), which compiles the IDE target editor's
-// LIVE buffer and renders the requested compilation stage:
-//
-//   host_data("stages", "")        → [ { label } … ]   (the menu tabs)
-//   host_data("inspect", <label>)  → { text, error }    (one field empty)
-//
-// The stage menu is bloom's `tabs` (core-runtime/bloom/docs/components.md);
-// click a tab to switch what the body shows. The body is a native, selectable,
-// scrollable text_view region. The source is re-published (and the cache
-// cleared) by the app as you type, so the IR/bytecode/AST update live — and
-// freeze when the toolbar's Pause is on.
-//
-// Colors come from `ui_theme()`, which mirrors Garden's palette automatically
-// (the host binds it every frame).
+# Petal IDE — IR inspector drawer.
+#
+# A Petal graphical panel (see docs/petal-graphical-panels.md). Like the git
+# viewers it bakes in NO data: it pulls everything from the host through the
+# synchronous `host_data(kind, arg)` native, answered by Garden's IR provider
+# (garden-app/src/petal_ide/mod.rs), which compiles the IDE target editor's
+# LIVE buffer and renders the requested compilation stage:
+#
+#   host_data("stages", "")        → [ { label } … ]   (the menu tabs)
+#   host_data("inspect", <label>)  → { text, error }    (one field empty)
+#
+# The stage menu is bloom's `tabs` (core-runtime/bloom/docs/components.md);
+# click a tab to switch what the body shows. The body is a native, selectable,
+# scrollable text_view region. The source is re-published (and the cache
+# cleared) by the app as you type, so the IR/bytecode/AST update live — and
+# freeze when the toolbar's Pause is on.
+#
+# Colors come from `ui_theme()`, which mirrors Garden's palette automatically
+# (the host binds it every frame).
 
 import garden
 import ui
@@ -31,10 +31,10 @@ let TABS_Y = 8
 let TABS_H = 30
 let body_top = TABS_Y + TABS_H
 
-// ── selected stage (persists across frames and live reloads) ──────────────────
-// `stage` and `stage_count` are named so the host's observation channel reports
-// them under meaningful keys — the debug server surfaces every binding by name
-// (docs/debug-server.md), so no publishing call is needed.
+# ── selected stage (persists across frames and live reloads) ──────────────────
+# `stage` and `stage_count` are named so the host's observation channel reports
+# them under meaningful keys — the debug server surfaces every binding by name
+# (docs/debug-server.md), so no publishing call is needed.
 state stage = 0
 
 let stages = host_data("stages", "")
@@ -42,28 +42,28 @@ let stage_count = len(stages)
 if stage >= stage_count then stage = 0 end
 if stage < 0 then stage = 0 end
 
-// ── background + header ───────────────────────────────────────────────────────
+# ── background + header ───────────────────────────────────────────────────────
 draw_rect(rect(0, 0, w, h), T.bg)
 draw_rect(rect(0, 0, w, body_top), T.panel)
 
-// ── stage tabs (the menu): hover fade + sprung accent underline from bloom ────
+# ── stage tabs (the menu): hover fade + sprung accent underline from bloom ────
 let labels = []
 for s in stages do labels = append(labels, s.label) end
 stage = bloom.tabs(rect(PAD, TABS_Y, w - 2 * PAD, TABS_H), labels, stage)
-// The tab bar underlines its own span; run the hairline across the full width.
+# The tab bar underlines its own span; run the hairline across the full width.
 draw_rect(rect(0, body_top, w, 1), T.outline)
 
-// ── body: the selected stage's rendered text (native selectable region) ───────
+# ── body: the selected stage's rendered text (native selectable region) ───────
 let stage_label = if stage_count > 0 then stages[stage].label else "" end
 let d = host_data("inspect", stage_label)
 let has_error = len(d.error) > 0
 let body = if has_error then "compile error:\n\n" ++ d.error else d.text end
-// The rendered stage can be tens of thousands of characters, and observation
-// keeps whatever a name is bound to — so name the *length*, not the text.
+# The rendered stage can be tens of thousands of characters, and observation
+# keeps whatever a name is bound to — so name the *length*, not the text.
 let body_len = len(body)
 
-// A compile error flags itself in the header too, so the state is legible even
-// when the body is scrolled.
+# A compile error flags itself in the header too, so the state is legible even
+# when the body is scrolled.
 if has_error then
   let etag = "compile error"
   bloom.pill(w - PAD - text_width(etag, T.font_sm) - 14, TABS_Y + 5, etag, T.danger)

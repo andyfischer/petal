@@ -1,7 +1,7 @@
-// Fibonacci Sequence
-// Two approaches to computing Fibonacci numbers.
+# Fibonacci Sequence
+# Two approaches to computing Fibonacci numbers.
 
-// Recursive (simple but slow for large n)
+# Recursive (simple but slow for large n)
 fn fib_recursive(n: num) -> int
   if n <= 0 then 0
   elsif n == 1 then 1
@@ -9,7 +9,7 @@ fn fib_recursive(n: num) -> int
   end
 end
 
-// Iterative (fast)
+# Iterative (fast)
 fn fib_iterative(n: num) -> int
   if n <= 0 then return 0 end
   if n == 1 then return 1 end
@@ -36,8 +36,8 @@ for i in range(0, 20) do
   print("fib({i}) = {fib_iterative(i)}")
 end
 
-// `petal test examples/console/fibonacci.ptl` runs these; the prints above
-// are the file's top level, which runs first and is not part of any test.
+# `petal test examples/console/fibonacci.ptl` runs these; the prints above
+# are the file's top level, which runs first and is not part of any test.
 test "the two definitions agree" do
   for i in range(0, 20) do
     expect_eq(fib_recursive(i), fib_iterative(i), "at n = {i}")

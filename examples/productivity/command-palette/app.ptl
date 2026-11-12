@@ -1,26 +1,26 @@
-// ─────────────────────────────────────────────────────────────────────────
-//  COMMAND PALETTE — a Garden panel app written in Petal.
-//
-//  A small notes workspace (five files, a document view, a sidebar, a
-//  status bar) driven entirely through a command palette: Cmd/Ctrl+K opens
-//  it, typing fuzzy-filters forty-odd commands with match highlighting,
-//  arrows / Return / Escape drive it, and some commands switch the palette
-//  into a sub-mode (a line number prompt, a file picker) rather than closing
-//  it. Toasts confirm what ran.
-//
-//  Exercises: keyboard handling (claimed chords, text input, edge keys held
-//  across frames), a subsequence fuzzy matcher with scoring and per-glyph
-//  highlight runs, and overlays (scrim, floating panel, toasts) composited
-//  over live content.
-//
-//  Designed for a 1100x760 viewport.  See README.md.
-// ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+#  COMMAND PALETTE — a Garden panel app written in Petal.
+#
+#  A small notes workspace (five files, a document view, a sidebar, a
+#  status bar) driven entirely through a command palette: Cmd/Ctrl+K opens
+#  it, typing fuzzy-filters forty-odd commands with match highlighting,
+#  arrows / Return / Escape drive it, and some commands switch the palette
+#  into a sub-mode (a line number prompt, a file picker) rather than closing
+#  it. Toasts confirm what ran.
+#
+#  Exercises: keyboard handling (claimed chords, text input, edge keys held
+#  across frames), a subsequence fuzzy matcher with scoring and per-glyph
+#  highlight runs, and overlays (scrim, floating panel, toasts) composited
+#  over live content.
+#
+#  Designed for a 1100x760 viewport.  See README.md.
+# ─────────────────────────────────────────────────────────────────────────
 
 import ui
 import bloom
 import garden
 
-// ── Themes ───────────────────────────────────────────────────────────────
+# ── Themes ───────────────────────────────────────────────────────────────
 
 fn theme_for(name: string) -> record
   if name == "light" then
@@ -41,7 +41,7 @@ fn theme_for(name: string) -> record
   end
 end
 
-// ── Seed documents ───────────────────────────────────────────────────────
+# ── Seed documents ───────────────────────────────────────────────────────
 
 fn seed_files()
   [
@@ -118,8 +118,8 @@ fn seed_files()
   ]
 end
 
-// ── Command catalogue ────────────────────────────────────────────────────
-// {id, cat, label, key}. `key` is the shortcut caption shown on the right.
+# ── Command catalogue ────────────────────────────────────────────────────
+# {id, cat, label, key}. `key` is the shortcut caption shown on the right.
 
 let COMMANDS = [
   {id: "file.new",        cat: "File",    label: "New file",                       key: "Cmd N"},
@@ -168,7 +168,7 @@ let COMMANDS = [
 
 let CATS = ["File", "Go", "Edit", "Insert", "View", "Theme", "Help", "Palette"]
 
-// ── Persistent state ─────────────────────────────────────────────────────
+# ── Persistent state ─────────────────────────────────────────────────────
 
 state var ready      = false
 state var theme_name = "dark"
@@ -185,18 +185,18 @@ state var dirty      = false
 state var saves      = 0
 
 state var open       = false
-state var mode       = "commands"   // commands | goto | files
+state var mode       = "commands"   # commands | goto | files
 state var query      = ""
 state var sel        = 0
 state var list_scroll = 0
-state var recent     = []           // command ids, most recent first
+state var recent     = []           # command ids, most recent first
 state var run_count  = 0
 state var last_cmd   = ""
 state var opens      = 0
-state var toasts     = []           // {msg, kind, t}
+state var toasts     = []           # {msg, kind, t}
 state var pulse      = 0.0
 
-// ── Helpers ──────────────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────────
 
 fn toast(msg: string, kind: string)
   set toasts = append(get toasts, {msg: msg, kind: kind, t: 2.6})
@@ -262,11 +262,11 @@ fn swap_lines(i: int, j: int)
   set cur_line = j
 end
 
-// ── Fuzzy matching ───────────────────────────────────────────────────────
-// Greedy subsequence match of `q` (lowercase char list) in `t`, scored:
-// consecutive matches and word starts score high, gaps cost. Two passes —
-// anchored at the first occurrence and at the first word-start occurrence —
-// and the better wins. Returns {score, pos} or nil.
+# ── Fuzzy matching ───────────────────────────────────────────────────────
+# Greedy subsequence match of `q` (lowercase char list) in `t`, scored:
+# consecutive matches and word starts score high, gaps cost. Two passes —
+# anchored at the first occurrence and at the first word-start occurrence —
+# and the better wins. Returns {score, pos} or nil.
 
 fn is_word_start(tc: list, i: int) -> bool
   if i == 0 then return true end
@@ -296,7 +296,7 @@ fn fuzzy_from(q: list, tc: list, start: int)
     prev = found
     i = found + 1
   end
-  // Shorter labels win ties; a match at the very start wins a little more.
+  # Shorter labels win ties; a match at the very start wins a little more.
   {score: score - n / 12 + (if pos[0] == 0 then 4 else 0 end), pos: pos}
 end
 
@@ -304,7 +304,7 @@ fn fuzzy(q: list, t: string)
   if len(q) == 0 then return {score: 0, pos: []} end
   let tc = chars(lower(t))
   let a = fuzzy_from(q, tc, start: 0)
-  // Second pass: first query char anchored at a word start.
+  # Second pass: first query char anchored at a word start.
   let ws = -1
   for i in range(0, len(tc)) do
     if ws < 0 && tc[i] == q[0] && is_word_start(tc, i) then ws = i end
@@ -316,9 +316,9 @@ fn fuzzy(q: list, t: string)
   else a end
 end
 
-// ── Palette rows ─────────────────────────────────────────────────────────
-// The visible list is a list of rows: {kind: "header", text} or
-// {kind: "cmd", cmd, pos, score} / {kind: "file", ...} / {kind: "line", ...}.
+# ── Palette rows ─────────────────────────────────────────────────────────
+# The visible list is a list of rows: {kind: "header", text} or
+# {kind: "cmd", cmd, pos, score} / {kind: "file", ...} / {kind: "line", ...}.
 
 fn cmd_by_id(id: string)
   let hits = filter(COMMANDS, fn(c) -> c.id == id)
@@ -369,7 +369,7 @@ fn build_rows(mode: string, query: string, recent: list, files: list) -> list
   let rows = []
   for c in COMMANDS do
     let m = fuzzy(q, c.label)
-    // Fall back to matching against "Category: label" so "view zoom" works.
+    # Fall back to matching against "Category: label" so "view zoom" works.
     let m2 = if m == nil then fuzzy(q, c.cat ++ " " ++ c.label) else nil end
     if m != nil then
       let boost = if contains(recent, c.id) then 6 else 0 end
@@ -392,7 +392,7 @@ fn first_selectable(rows: list) -> int
   0
 end
 
-// Step the selection over headers, wrapping.
+# Step the selection over headers, wrapping.
 fn step_sel(rows: list, from: int, dir: int) -> int
   let n = len(rows)
   if n == 0 then return 0 end
@@ -404,7 +404,7 @@ fn step_sel(rows: list, from: int, dir: int) -> int
   from
 end
 
-// ── Running a command ────────────────────────────────────────────────────
+# ── Running a command ────────────────────────────────────────────────────
 
 fn open_palette(m: string)
   set open = true
@@ -565,7 +565,7 @@ fn run_command(id: string)
   nil
 end
 
-// ── Boot ─────────────────────────────────────────────────────────────────
+# ── Boot ─────────────────────────────────────────────────────────────────
 
 if !ready then
   set ready = true
@@ -586,7 +586,7 @@ ui.theme_set({bg: T.bg, panel: T.panel, surface: T.surface, overlay: T.overlay,
   text: T.text, muted: T.muted, dim: T.dim, accent: T.accent,
   outline: T.line, border: T.line, hover: T.hover, selection: T.sel})
 
-// ── Input ────────────────────────────────────────────────────────────────
+# ── Input ────────────────────────────────────────────────────────────────
 
 claim_key("k", "cmd")
 claim_key("k", "ctrl")
@@ -609,8 +609,8 @@ if !open then
   if mod_cmd() && key_pressed("b") then run_command("view.sidebar") end
   if mod_cmd() && key_pressed("t") then run_command("theme.cycle") end
   if mod_cmd() && key_pressed("s") then run_command("file.save") end
-  // Document navigation when the palette is closed (and no chord is held,
-  // so the `k` of Cmd+K does not also move the line).
+  # Document navigation when the palette is closed (and no chord is held,
+  # so the `k` of Cmd+K does not also move the line).
   if !chord then
     if key_pressed("down") || key_pressed("j") then set cur_line += 1 end
     if key_pressed("up") || key_pressed("k") then set cur_line -= 1 end
@@ -629,7 +629,7 @@ else
   end
 end
 
-// Text editing of the query.
+# Text editing of the query.
 if open then
   let typed = text_input()
   if len(typed) > 0 then
@@ -642,7 +642,7 @@ if open then
       if char_len(query) == 0 && mode != "commands" then open_palette("commands") end
       set query = ""
     elsif mod_alt() then
-      // Delete back to the previous word start.
+      # Delete back to the previous word start.
       let s = trim_right(query)
       let cut = char_len(s)
       let cs = chars(s)
@@ -658,7 +658,7 @@ end
 
 let rows = if open then build_rows(mode, query, recent, files) else [] end
 
-// Keep the selection on a selectable row.
+# Keep the selection on a selectable row.
 if open then
   if !selectable(rows, sel) then set sel = first_selectable(rows) end
   if key_pressed("down") || (mod_ctrl() && key_pressed("n")) then set sel = step_sel(rows, from: sel, dir: 1) end
@@ -673,7 +673,7 @@ if open then
   if key_pressed("end") then set sel = step_sel(rows, from: 0, dir: -1) end
 end
 
-// ── Geometry ─────────────────────────────────────────────────────────────
+# ── Geometry ─────────────────────────────────────────────────────────────
 
 let W = screen_width()
 let H = screen_height()
@@ -701,7 +701,7 @@ let S_ROW_H = {size: 14, font: "ui", color: T.accent, weight: 700}
 let S_ROW_M = {size: 12, font: "ui", color: T.muted}
 let S_KEY   = {size: 10, font: "ui", color: T.muted, weight: 700}
 
-// Palette geometry, needed for hit-testing before drawing.
+# Palette geometry, needed for hit-testing before drawing.
 let PW = 640
 let ROW_H = 38
 let INPUT_H = 54
@@ -716,7 +716,7 @@ let input_r = rect(px, py, PW, INPUT_H)
 let list_r = rect(px, py + INPUT_H + 6, PW, list_h - 12)
 let foot_r = rect(px, pal.y + pal.h - FOOT_H, PW, FOOT_H)
 
-// Keep the selected row in view, then honour the wheel over the list.
+# Keep the selected row in view, then honour the wheel over the list.
 if open then
   set list_scroll = ensure_visible(scroll: list_scroll, selected: sel, visible_rows: VISIBLE)
   if scroll_y() != 0.0 && point_in(px: mouse_x(), py: mouse_y(), r: list_r) then
@@ -725,7 +725,7 @@ if open then
   set list_scroll = clamp(list_scroll, lo: 0, hi: max(0, len(rows) - VISIBLE))
 end
 
-// Mouse over the palette rows: hover selects, click runs.
+# Mouse over the palette rows: hover selects, click runs.
 let mouse_row = if open && point_in(px: mouse_x(), py: mouse_y(), r: list_r) then
   list_scroll + (mouse_y() - list_r.y) / ROW_H
 else -1 end
@@ -736,7 +736,7 @@ if open && mouse_row >= 0 && selectable(rows, mouse_row) then
   last_mm = mm
 end
 
-// Activation: Return, or a click on a row, or a click outside closes.
+# Activation: Return, or a click on a row, or a click outside closes.
 let activate = open && (key_pressed("return") ||
   (mouse_pressed(0) && mouse_row >= 0 && selectable(rows, mouse_row)))
 if open && mouse_pressed(0) && !point_in(px: mouse_x(), py: mouse_y(), r: pal) then
@@ -759,7 +759,7 @@ if activate && selectable(rows, sel) then
   end
 end
 
-// Sidebar clicks pick a file (only when the palette is closed).
+# Sidebar clicks pick a file (only when the palette is closed).
 let side_rows = if sidebar then for i in range(0, len(files)) do rect(side.x + 8, side.y + 44 + i * 30, side.w - 16, 28) end else [] end
 if !open && sidebar && mouse_pressed(0) then
   for i in range(0, len(side_rows)) do
@@ -769,11 +769,11 @@ if !open && sidebar && mouse_pressed(0) then
     end
   end
 end
-// The search box in the top bar opens the palette by mouse.
+# The search box in the top bar opens the palette by mouse.
 let search_r = rect(W / 2 - 170, 9, 340, 26)
 if !open && mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: search_r) then open_palette("commands") end
 
-// Document: clicking a line selects it; wheel scrolls.
+# Document: clicking a line selects it; wheel scrolls.
 let f = cur_file()
 let lines = f.lines
 let LINE_H = int(float(zoom) * 1.55)
@@ -791,18 +791,18 @@ if !open && mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: doc_bo
   if li >= 0 && li < len(lines) then set cur_line = li end
 end
 
-// ── Draw: workspace ──────────────────────────────────────────────────────
+# ── Draw: workspace ──────────────────────────────────────────────────────
 
 clear(T.bg.r, T.bg.g, T.bg.b)
 
-// Top bar.
+# Top bar.
 draw_rect(top_bar, T.panel)
 draw_rect(rect(0, TOP_H - 1, W, 1), T.line)
 draw_circle(center: {x: 22, y: 22}, radius: 7, c: T.accent)
 draw_circle(center: {x: 22, y: 22}, radius: 3, c: T.panel)
 draw_text("Beacon notes", pos: {x: 38, y: 14}, style: S_UI_B)
 draw_text(f.name ++ (if dirty then "  •  edited" else "" end), pos: {x: 38 + text_width("Beacon notes", S_UI_B) + 14, y: 14}, style: S_UI_M)
-// The fake search box that opens the palette.
+# The fake search box that opens the palette.
 let search_hov = point_in(px: mouse_x(), py: mouse_y(), r: search_r)
 draw_rect_rounded(search_r, radius: 7, c: if search_hov then T.hover else T.surface end)
 draw_rect_rounded_outline(search_r, radius: 7, c: T.edge, a: 255, width: 1)
@@ -812,7 +812,7 @@ draw_text("Search commands and files", pos: {x: search_r.x + 26, y: search_r.y +
 draw_text_right("Cmd K", right_x: search_r.x + search_r.w - 10, y: search_r.y + 7, style: S_KEY)
 draw_text_right("Theme: {title_case(theme_name)}   Zoom {zoom}px", right_x: W - 16, y: 14, style: S_UI_D)
 
-// Sidebar.
+# Sidebar.
 if sidebar then
   draw_rect(side, T.panel)
   draw_rect(rect(side.x + side.w - 1, side.y, 1, side.h), T.line)
@@ -828,14 +828,14 @@ if sidebar then
     elsif hov then
       draw_rect_rounded(r, radius: 6, c: T.hover)
     end
-    // A tiny document glyph.
+    # A tiny document glyph.
     draw_rect_rounded_outline(rect(r.x + 12, r.y + 7, 10, 13), radius: 2, c: if active then T.accent else T.dim end, a: 255, width: 1)
     draw_rect(rect(r.x + 15, r.y + 11, 4, 1), if active then T.accent else T.dim end)
     draw_rect(rect(r.x + 15, r.y + 14, 4, 1), if active then T.accent else T.dim end)
     draw_text(ellipsize(files[i].name, avail_px: r.w - 70, size: S_UI), pos: {x: r.x + 30, y: r.y + 6}, style: if active then S_UI else S_UI_M end)
     draw_text_right(str(len(files[i].lines)), right_x: r.x + r.w - 10, y: r.y + 8, style: S_UI_D)
   end
-  // Recently used, below the files.
+  # Recently used, below the files.
   let ry = side.y + 44 + len(files) * 30 + 24
   draw_text("RECENT COMMANDS", pos: {x: side.x + 16, y: ry}, style: S_LABEL)
   if len(recent) == 0 then
@@ -849,7 +849,7 @@ if sidebar then
   end
 end
 
-// Document.
+# Document.
 draw_rect(doc, T.bg)
 draw_text(f.name, pos: {x: doc.x + doc_pad, y: doc.y + 18}, style: {...S_UI_B, size: 15})
 draw_text_right("{len(lines)} lines   line {cur_line + 1}", right_x: doc.x + doc.w - doc_pad, y: doc.y + 20, style: S_UI_D)
@@ -877,7 +877,7 @@ if len(lines) == 0 then
 end
 clip_pop()
 
-// Status bar.
+# Status bar.
 if statusbar then
   draw_rect(status, T.panel)
   draw_rect(rect(0, status.y, W, 1), T.line)
@@ -887,9 +887,9 @@ if statusbar then
     right_x: W - 16, y: status.y + 6, style: S_UI_D)
 end
 
-// ── Draw: palette overlay ────────────────────────────────────────────────
+# ── Draw: palette overlay ────────────────────────────────────────────────
 
-// Draw a label with the matched character positions highlighted, as runs.
+# Draw a label with the matched character positions highlighted, as runs.
 fn draw_highlighted(s: string, pos: list, x: num, y: num, base: record, hi: record) -> num
   let cs = chars(s)
   let run = ""
@@ -933,7 +933,7 @@ if open then
   draw_rect_rounded(pal, radius: 12, c: T.overlay)
   draw_rect_rounded_outline(pal, radius: 12, c: T.edge, a: 255, width: 1)
 
-  // Input row: a mode chip, the query, a caret, and the result count.
+  # Input row: a mode chip, the query, a caret, and the result count.
   let chip_text = match mode
     when "files" -> "FILES"
     when "goto" -> "GO TO LINE"
@@ -964,7 +964,7 @@ if open then
   draw_text_right(count_txt, right_x: input_r.x + input_r.w - 18, y: input_r.y + 20, style: S_UI_D)
   draw_rect(rect(input_r.x + 1, input_r.y + INPUT_H - 1, input_r.w - 2, 1), T.line)
 
-  // Rows.
+  # Rows.
   clip_push(list_r)
   if len(rows) == 0 then
     draw_text_center("No matching commands", cx: pal.x + PW / 2, y: list_r.y + 14, style: S_UI_M)
@@ -1005,7 +1005,7 @@ if open then
     bloom.scrollbar(rect(pal.x + PW - 10, list_r.y, 6, list_r.h), count: len(rows), rows: VISIBLE, scroll: list_scroll)
   end
 
-  // Footer hints.
+  # Footer hints.
   draw_rect(rect(foot_r.x + 1, foot_r.y, foot_r.w - 2, 1), T.line)
   let hx = foot_r.x + 18
   fn hint_cap(x: num, cap: string, label: string) -> num
@@ -1022,7 +1022,7 @@ if open then
     right_x: foot_r.x + foot_r.w - 18, y: foot_r.y + 10, style: S_UI_D)
 end
 
-// ── Draw: toasts (always on top) ─────────────────────────────────────────
+# ── Draw: toasts (always on top) ─────────────────────────────────────────
 
 let ty0 = H - STATUS_H - 18
 for i in range(0, len(toasts)) do
@@ -1042,7 +1042,7 @@ for i in range(0, len(toasts)) do
   draw_text(t.msg, pos: {x: tr.x + 30, y: tr.y + 8}, style: {...S_UI, color: {...T.text, a: int(a * 255.0)}})
 end
 
-// ── Observation mirrors (readable in /state → panel.values) ──────────────
+# ── Observation mirrors (readable in /state → panel.values) ──────────────
 
 let obs_open = open
 let obs_mode = mode

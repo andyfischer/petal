@@ -1,21 +1,21 @@
-// Gallery — the bloom components and the `ui` layout and interaction helpers
-// on one panel, in themed sections behind a tab strip. Doubles as a visual
-// fixture: it runs headlessly under petal-ui-run (no Garden natives), and in
-// Garden it picks up the host palette automatically through `ui_theme()`.
-//
-//   panel("examples/panels/gallery.ptl")                      // in a layout
-//   petal-ui-run examples/panels/gallery.ptl --frames 60      // headless
-//
-// See core-runtime/bloom/docs/components.md for the components, and
-// core-libs/petal-ui/docs/reference.md for the layout and list helpers.
-// (Sections are written inline rather than as functions: top-level `state`
-// is assigned all over, and assigning to a captured outer variable from
-// inside a function is an error by design.)
+# Gallery — the bloom components and the `ui` layout and interaction helpers
+# on one panel, in themed sections behind a tab strip. Doubles as a visual
+# fixture: it runs headlessly under petal-ui-run (no Garden natives), and in
+# Garden it picks up the host palette automatically through `ui_theme()`.
+#
+#   panel("examples/panels/gallery.ptl")                      // in a layout
+#   petal-ui-run examples/panels/gallery.ptl --frames 60      // headless
+#
+# See core-runtime/bloom/docs/components.md for the components, and
+# core-libs/petal-ui/docs/reference.md for the layout and list helpers.
+# (Sections are written inline rather than as functions: top-level `state`
+# is assigned all over, and assigning to a captured outer variable from
+# inside a function is an error by design.)
 
 import ui
 import bloom
 
-// ── State ─────────────────────────────────────────────────────────────────
+# ── State ─────────────────────────────────────────────────────────────────
 state tab = 0
 state light = false
 state agree = true
@@ -26,14 +26,14 @@ state volume = 0.65
 state name_buf = "petal"
 state filter_buf = ""
 state files = list_state()
-// The table keeps its own selection and sort; the sort it last reported is
-// kept here, because the caller owns the data and orders the rows.
+# The table keeps its own selection and sort; the sort it last reported is
+# kept here, because the caller owns the data and orders the rows.
 state tbl = {sort_col: -1, sort_asc: true}
 state sp = 0.45
 state ls = load_state()
 state last_action = "—"
 
-// ── Demo data + pure helpers ──────────────────────────────────────────────
+# ── Demo data + pure helpers ──────────────────────────────────────────────
 let FILE_ROWS = [
   ["drag-to-edit.ptl", 56], ["direct-manipulation.ptl", 57], ["gallery.ptl", 240],
   ["plant.ptl", 216], ["shapes.ptl", 93], ["sketch.ptl", 47],
@@ -41,8 +41,8 @@ let FILE_ROWS = [
   ["garden_diff.ptl", 988],
 ]
 
-// Selection sort by column `ci` (string compare via str()): the table
-// reports the sort *request*; the caller owns the data and orders the rows.
+# Selection sort by column `ci` (string compare via str()): the table
+# reports the sort *request*; the caller owns the data and orders the rows.
 fn sorted_rows(rows, ci, asc)
   if ci < 0 then return rows end
   let used = []
@@ -74,7 +74,7 @@ fn label(text, x, y)
   draw_text(text, pos: {x: x, y: y}, style: {size: t.font_sm, color: t.dim, weight: 600, spacing: 0.5})
 end
 
-// ── Theme (applies before anything draws) ─────────────────────────────────
+# ── Theme (applies before anything draws) ─────────────────────────────────
 if light then
   ui.theme_set({bg: :f4f6f9, panel: :ffffff, surface: :ffffff, overlay: :e7ebf1,
              text: :23272e, muted: :4d5561, dim: :7a8390,
@@ -93,7 +93,7 @@ let strip = cut_top(page, 34)
 tab = bloom.tabs(strip.cut, ["Controls", "Data", "Layout", "Overlays", "Theme"], tab)
 let body = cut_bottom(cut_top(strip.rest, 16).rest, 30).rest
 
-// ── Controls ──────────────────────────────────────────────────────────────
+# ── Controls ──────────────────────────────────────────────────────────────
 if tab == 0 then
   let halves = split_h(body, frac: 0.5, gap: 24)
   let left = halves.a
@@ -134,7 +134,7 @@ if tab == 0 then
   draw_text("last action: " ++ last_action, {x: left.x, y: body.y + body.h - 20}, T.font_sm, T.muted)
 end
 
-// ── Data ──────────────────────────────────────────────────────────────────
+# ── Data ──────────────────────────────────────────────────────────────────
 if tab == 1 then
   let s = bloom.splitter(body, sp, {min_a: 180, min_b: 260})
   sp = s.frac
@@ -166,7 +166,7 @@ if tab == 1 then
   let b3 = bloom.pill(b2.x + b2.w + 8, by, "3 warnings", T.warn)
   bloom.pill(b3.x + b3.w + 8, by, "1 error", T.danger)
 
-  // The blessed async pattern: loading for the first moments, then ready.
+  # The blessed async pattern: loading for the first moments, then ready.
   if time() < 1.5 then
     ls = load_begin(ls, "demo")
   elsif !load_ready(ls) then
@@ -179,7 +179,7 @@ if tab == 1 then
   end
 end
 
-// ── Layout ────────────────────────────────────────────────────────────────
+# ── Layout ────────────────────────────────────────────────────────────────
 if tab == 2 then
   label("RECTCUT — cut_top / cut_left / rest", x: body.x, y: body.y)
   let demo = rect(body.x, body.y + 20, body.w, 150)
@@ -210,7 +210,7 @@ if tab == 2 then
   end
 end
 
-// ── Overlays ──────────────────────────────────────────────────────────────
+# ── Overlays ──────────────────────────────────────────────────────────────
 if tab == 3 then
   label("CARD + EMPTY STATE + TOOLTIP", x: body.x, y: body.y)
   let halves = split_h(rect(body.x, body.y + 20, body.w, 170), frac: 0.5, gap: 24)
@@ -221,7 +221,7 @@ if tab == 3 then
   bloom.empty_state(halves.b, "No results", "Try a broader query")
 
   label("DIALOG", x: body.x, y: body.y + 210)
-  // No guard needed: an open dialog captures the pointer.
+  # No guard needed: an open dialog captures the pointer.
   if bloom.button(rect(body.x, body.y + 230, 130, 28), "Open dialog…") then
     bloom.dialog_open("gallery")
   end
@@ -237,11 +237,11 @@ if tab == 3 then
   end
   draw_text("last action: " ++ last_action, {x: body.x, y: body.y + 380}, T.font_sm, T.muted)
 
-  // The tooltip draws late so it sits over the card it annotates.
+  # The tooltip draws late so it sits over the card it annotates.
   bloom.tooltip(halves.a, "Cards return their content rect")
 end
 
-// ── Theme ─────────────────────────────────────────────────────────────────
+# ── Theme ─────────────────────────────────────────────────────────────────
 if tab == 4 then
   label("LIGHT / DARK", x: body.x, y: body.y)
   light = bloom.checkbox(rect(body.x, body.y + 18, 240, 22), "Light theme (theme_set)", light)
@@ -272,19 +272,19 @@ if tab == 4 then
   draw_rect_rounded(rect(body.x + 440, body.y + 304, 60, 36), radius: T.radius_lg, c: T.overlay)
 end
 
-// ── Chrome: hint bar + dialog (last, so the dialog sits on top) ───────────
+# ── Chrome: hint bar + dialog (last, so the dialog sits on top) ───────────
 bloom.hint_bar(rect(0, screen_height() - 26, screen_width(), 26),
                [bloom.hint("tab", "cycle focus"), bloom.hint("j/k", "move"), bloom.hint("esc", "close dialog")])
 
 let m = bloom.dialog("gallery", 380, 190, "A dialog")
 if m.open then
   draw_text("Escape or a click outside closes it.", {x: m.content.x, y: m.content.y}, T.font_md, T.muted)
-  // The dialog holds the pointer, except for what is drawn into it.
+  # The dialog holds the pointer, except for what is drawn into it.
   if bloom.button(rect(m.content.x, m.content.y + 46, 90, 28), "Done", {variant: "primary"}) then
     bloom.dialog_close()
     last_action = "dialog done"
   end
 end
 
-// The late layer: menus and tooltips paint over everything above.
+# The late layer: menus and tooltips paint over everything above.
 bloom.overlays()

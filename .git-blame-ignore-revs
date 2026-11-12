@@ -3,3 +3,18 @@
 
 # chore(migrate): drop `end` lines across the repo's .ptl; respell the docs' fences
 14da971613e2aa13baa6452e7ae35c957f65124f
+
+# chore(migrate): respell colour literals as `:hex` across the repo's .ptl
+33c8a93f98fd3450d2d29e9d7e4641c2551b1f7d
+
+# chore(migrate): respell `//` comments as `#` across the repo's .ptl
+270d4bc0919fdc218903091944e08bb09edf9ca8
+
+# chore(migrate): respell `elsif` as `else if` across the repo's .ptl
+cf830f48b475d340587696d1f3fd07f7c3bee80b
+
+# chore(migrate): drop `end` lines from the user-facing docs' fences
+70ad43a5fb18d1c124f964937625483cc144a4e0
+
+# chore(migrate): respell the Petal fences of the Markdown outside docs/
+6b35655fd60421ae747ef337fb734ce500f24c60

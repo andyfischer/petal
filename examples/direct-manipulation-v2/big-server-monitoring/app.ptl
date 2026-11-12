@@ -47,26 +47,26 @@ import noise
 // ── Palette ──────────────────────────────────────────────────────────────────
 // A single blue-black ground with three surfaces above it. The hairline is the
 // only border in the design — cards are separated by tone and space, not boxes.
-let BG       = #0a0d13
-let SURFACE  = #10141c
-let RAISED   = #171d28
-let HOVER    = #1c2331
-let HAIR     = #222a38
-let GRID     = #19202b
+let BG       = :0a0d13
+let SURFACE  = :10141c
+let RAISED   = :171d28
+let HOVER    = :1c2331
+let HAIR     = :222a38
+let GRID     = :19202b
 
-let TEXT     = #e7edf6
-let BRIGHT   = #ffffff
-let DIM      = #8892a4
-let FAINT    = #565f72
+let TEXT     = :e7edf6
+let BRIGHT   = :ffffff
+let DIM      = :8892a4
+let FAINT    = :565f72
 
-let OK       = #46d39a
-let WARN     = #f0b344
-let CRIT     = #ff5f6d
+let OK       = :46d39a
+let WARN     = :f0b344
+let CRIT     = :ff5f6d
 
-let C_CPU    = #5cc8ff
-let C_MEM    = #a78bfa
-let C_NET    = #46d39a
-let C_LAT    = #f0b344
+let C_CPU    = :5cc8ff
+let C_MEM    = :a78bfa
+let C_NET    = :46d39a
+let C_LAT    = :f0b344
 
 // Spacing scale.
 let S1 = 6
@@ -861,15 +861,15 @@ tx_right(str(NCORE) ++ " cores  ·  " ++ str(COLS) ++ "s", right_x: cores_r.x + 
 fn heat(v: num)
   let t = clamp(v / 100.0, lo: 0.0, hi: 1.0)
   if t < 0.30 then
-    color_lerp(#121822, #1b4a6b, t: t / 0.30)
+    color_lerp(:121822, :1b4a6b, t: t / 0.30)
   elsif t < 0.58 then
-    color_lerp(#1b4a6b, #2fa9c4, t: (t - 0.30) / 0.28)
+    color_lerp(:1b4a6b, :2fa9c4, t: (t - 0.30) / 0.28)
   elsif t < 0.78 then
-    color_lerp(#2fa9c4, #8fd07a, t: (t - 0.58) / 0.20)
+    color_lerp(:2fa9c4, :8fd07a, t: (t - 0.58) / 0.20)
   elsif t < 0.90 then
-    color_lerp(#8fd07a, #f0b344, t: (t - 0.78) / 0.12)
+    color_lerp(:8fd07a, :f0b344, t: (t - 0.78) / 0.12)
   else
-    color_lerp(#f0b344, #ff5f6d, t: (t - 0.90) / 0.10)
+    color_lerp(:f0b344, :ff5f6d, t: (t - 0.90) / 0.10)
   end
 end
 

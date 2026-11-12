@@ -464,7 +464,7 @@ draw_line({x: 0, y: 40}, {x: sw, y: 40}, {r: 0, g: 80, b: 160})
 
 // Score text
 draw_text("SCORE", {x: 20, y: 8}, 14, {r: 0, g: 150, b: 255})
-draw_text(str(score), {x: 20, y: 22}, 22, #ffffff)
+draw_text(str(score), {x: 20, y: 22}, 22, :ffffff)
 
 // Asteroid count
 let acount = len(asteroids)
@@ -482,7 +482,7 @@ end
 if game_over then
   // Dark overlay
   draw_rect(x: 0, y: sh / 2 - 60, w: sw, h: 120, r: 20, g: 0, b: 0)
-  let red = #ff0000
+  let red = :ff0000
   draw_line({x: 0, y: sh / 2 - 60}, {x: sw, y: sh / 2 - 60}, red)
   draw_line({x: 0, y: sh / 2 + 60}, {x: sw, y: sh / 2 + 60}, red)
 

@@ -21,20 +21,20 @@ import vec2
 
 // ── Palette ──────────────────────────────────────────────────────────────
 
-let C_BG     = #05060d
-let C_SPACE  = #080a14
-let C_PANEL  = #0e111c
-let C_CHIP   = #141827
-let C_LINE   = #1d2233
-let C_EDGE   = #2a3147
-let C_TEXT   = #e8ecf8
-let C_DIM    = #7d869e
-let C_MUTE   = #4a5166
-let C_ORBIT  = #3a4460
-let C_ACCENT = #7fb2ff
-let C_GOLD   = #ffd166
-let C_SUN    = #ffb347
-let C_SUN_C  = #fff1c9
+let C_BG     = :05060d
+let C_SPACE  = :080a14
+let C_PANEL  = :0e111c
+let C_CHIP   = :141827
+let C_LINE   = :1d2233
+let C_EDGE   = :2a3147
+let C_TEXT   = :e8ecf8
+let C_DIM    = :7d869e
+let C_MUTE   = :4a5166
+let C_ORBIT  = :3a4460
+let C_ACCENT = :7fb2ff
+let C_GOLD   = :ffd166
+let C_SUN    = :ffb347
+let C_SUN_C  = :fff1c9
 
 // ── Type scale ───────────────────────────────────────────────────────────
 // Five sizes: 10 / 12 / 14 / 20 / 30.
@@ -86,26 +86,26 @@ end
 
 let BODIES = [
   Body(name: "Sun",      parent: -1, kind: "star",   orbit: 0.0,   period: 1.0,     r: 22.0, color: C_SUN,    phase: 0.0,  au: 0.0,   km: 695700.0, note: "A G-type main-sequence star; 99.8% of the system's mass"),
-  Body(name: "Mercury",   parent: 0, kind: "planet", orbit: 62.0,  period: 87.97,   r: 3.0,  color: #b8b0a4,  phase: 0.9,  au: 0.39,  km: 2440.0,   note: "Smallest planet; a day lasts 176 Earth days"),
-  Body(name: "Venus",     parent: 0, kind: "planet", orbit: 88.0,  period: 224.7,   r: 5.0,  color: #e6c48a,  phase: 2.4,  au: 0.72,  km: 6052.0,   note: "Rotates backwards, once every 243 days"),
-  Body(name: "Earth",     parent: 0, kind: "planet", orbit: 120.0, period: 365.25,  r: 5.2,  color: #5ea0ff,  phase: 4.1,  au: 1.00,  km: 6371.0,   note: "The only body known to host life"),
-  Body(name: "Mars",      parent: 0, kind: "planet", orbit: 158.0, period: 687.0,   r: 4.0,  color: #e0704a,  phase: 0.3,  au: 1.52,  km: 3390.0,   note: "Home of Olympus Mons, three times the height of Everest"),
-  Body(name: "Jupiter",   parent: 0, kind: "planet", orbit: 236.0, period: 4333.0,  r: 14.0, color: #d9a877,  phase: 5.2,  au: 5.20,  km: 69911.0,  note: "Twice the mass of every other planet combined"),
-  Body(name: "Saturn",    parent: 0, kind: "planet", orbit: 306.0, period: 10759.0, r: 12.0, color: #e8d3a0,  phase: 1.7,  au: 9.54,  km: 58232.0,  note: "Rings a hundred thousand km across and ten metres thick"),
-  Body(name: "Uranus",    parent: 0, kind: "planet", orbit: 376.0, period: 30687.0, r: 8.0,  color: #9fdbe6,  phase: 3.5,  au: 19.2,  km: 25362.0,  note: "Spins on its side, 98 degrees from its orbit"),
-  Body(name: "Neptune",   parent: 0, kind: "planet", orbit: 440.0, period: 60190.0, r: 8.0,  color: #5a7cff,  phase: 2.0,  au: 30.1,  km: 24622.0,  note: "The windiest planet: gusts over 2000 km/h"),
-  Body(name: "Moon",      parent: 3, kind: "moon",   orbit: 13.0,  period: 27.32,   r: 1.6,  color: #d7d7de,  phase: 1.0,  au: 384.0, km: 1737.0,   note: "Slowly drifting away, 3.8 cm a year"),
-  Body(name: "Phobos",    parent: 4, kind: "moon",   orbit: 8.0,   period: 0.319,   r: 1.0,  color: #b39b8a,  phase: 0.0,  au: 9.4,   km: 11.0,     note: "Orbits faster than Mars rotates"),
-  Body(name: "Deimos",    parent: 4, kind: "moon",   orbit: 12.0,  period: 1.263,   r: 1.0,  color: #b39b8a,  phase: 2.0,  au: 23.5,  km: 6.0,      note: "Smaller than many cities"),
-  Body(name: "Io",        parent: 5, kind: "moon",   orbit: 22.0,  period: 1.769,   r: 1.8,  color: #e9d36a,  phase: 0.5,  au: 422.0, km: 1822.0,   note: "The most volcanically active body known"),
-  Body(name: "Europa",    parent: 5, kind: "moon",   orbit: 28.0,  period: 3.551,   r: 1.6,  color: #cfd6e6,  phase: 2.9,  au: 671.0, km: 1561.0,   note: "A global ocean under a shell of ice"),
-  Body(name: "Ganymede",  parent: 5, kind: "moon",   orbit: 36.0,  period: 7.155,   r: 2.2,  color: #a89f95,  phase: 4.4,  au: 1070.0, km: 2634.0,  note: "Larger than Mercury; has its own magnetic field"),
-  Body(name: "Callisto",  parent: 5, kind: "moon",   orbit: 46.0,  period: 16.69,   r: 2.0,  color: #7f7873,  phase: 1.4,  au: 1883.0, km: 2410.0,  note: "The most heavily cratered surface in the system"),
-  Body(name: "Rhea",      parent: 6, kind: "moon",   orbit: 22.0,  period: 4.518,   r: 1.4,  color: #cfcfd6,  phase: 3.1,  au: 527.0, km: 764.0,    note: "May have a faint ring system of its own"),
-  Body(name: "Titan",     parent: 6, kind: "moon",   orbit: 32.0,  period: 15.95,   r: 2.4,  color: #d9a24a,  phase: 0.8,  au: 1222.0, km: 2575.0,  note: "Rivers and lakes of liquid methane"),
-  Body(name: "Titania",   parent: 7, kind: "moon",   orbit: 18.0,  period: 8.706,   r: 1.4,  color: #b8c4cc,  phase: 1.9,  au: 436.0, km: 788.0,    note: "Largest moon of Uranus, named for Shakespeare"),
-  Body(name: "Oberon",    parent: 7, kind: "moon",   orbit: 25.0,  period: 13.46,   r: 1.4,  color: #a5b0b8,  phase: 4.6,  au: 584.0, km: 761.0,    note: "The outermost of the five major moons"),
-  Body(name: "Triton",    parent: 8, kind: "moon",   orbit: 20.0,  period: -5.877,  r: 1.8,  color: #cfd8e8,  phase: 2.2,  au: 355.0, km: 1353.0,   note: "Retrograde orbit: probably a captured Kuiper belt object"),
+  Body(name: "Mercury",   parent: 0, kind: "planet", orbit: 62.0,  period: 87.97,   r: 3.0,  color: :b8b0a4,  phase: 0.9,  au: 0.39,  km: 2440.0,   note: "Smallest planet; a day lasts 176 Earth days"),
+  Body(name: "Venus",     parent: 0, kind: "planet", orbit: 88.0,  period: 224.7,   r: 5.0,  color: :e6c48a,  phase: 2.4,  au: 0.72,  km: 6052.0,   note: "Rotates backwards, once every 243 days"),
+  Body(name: "Earth",     parent: 0, kind: "planet", orbit: 120.0, period: 365.25,  r: 5.2,  color: :5ea0ff,  phase: 4.1,  au: 1.00,  km: 6371.0,   note: "The only body known to host life"),
+  Body(name: "Mars",      parent: 0, kind: "planet", orbit: 158.0, period: 687.0,   r: 4.0,  color: :e0704a,  phase: 0.3,  au: 1.52,  km: 3390.0,   note: "Home of Olympus Mons, three times the height of Everest"),
+  Body(name: "Jupiter",   parent: 0, kind: "planet", orbit: 236.0, period: 4333.0,  r: 14.0, color: :d9a877,  phase: 5.2,  au: 5.20,  km: 69911.0,  note: "Twice the mass of every other planet combined"),
+  Body(name: "Saturn",    parent: 0, kind: "planet", orbit: 306.0, period: 10759.0, r: 12.0, color: :e8d3a0,  phase: 1.7,  au: 9.54,  km: 58232.0,  note: "Rings a hundred thousand km across and ten metres thick"),
+  Body(name: "Uranus",    parent: 0, kind: "planet", orbit: 376.0, period: 30687.0, r: 8.0,  color: :9fdbe6,  phase: 3.5,  au: 19.2,  km: 25362.0,  note: "Spins on its side, 98 degrees from its orbit"),
+  Body(name: "Neptune",   parent: 0, kind: "planet", orbit: 440.0, period: 60190.0, r: 8.0,  color: :5a7cff,  phase: 2.0,  au: 30.1,  km: 24622.0,  note: "The windiest planet: gusts over 2000 km/h"),
+  Body(name: "Moon",      parent: 3, kind: "moon",   orbit: 13.0,  period: 27.32,   r: 1.6,  color: :d7d7de,  phase: 1.0,  au: 384.0, km: 1737.0,   note: "Slowly drifting away, 3.8 cm a year"),
+  Body(name: "Phobos",    parent: 4, kind: "moon",   orbit: 8.0,   period: 0.319,   r: 1.0,  color: :b39b8a,  phase: 0.0,  au: 9.4,   km: 11.0,     note: "Orbits faster than Mars rotates"),
+  Body(name: "Deimos",    parent: 4, kind: "moon",   orbit: 12.0,  period: 1.263,   r: 1.0,  color: :b39b8a,  phase: 2.0,  au: 23.5,  km: 6.0,      note: "Smaller than many cities"),
+  Body(name: "Io",        parent: 5, kind: "moon",   orbit: 22.0,  period: 1.769,   r: 1.8,  color: :e9d36a,  phase: 0.5,  au: 422.0, km: 1822.0,   note: "The most volcanically active body known"),
+  Body(name: "Europa",    parent: 5, kind: "moon",   orbit: 28.0,  period: 3.551,   r: 1.6,  color: :cfd6e6,  phase: 2.9,  au: 671.0, km: 1561.0,   note: "A global ocean under a shell of ice"),
+  Body(name: "Ganymede",  parent: 5, kind: "moon",   orbit: 36.0,  period: 7.155,   r: 2.2,  color: :a89f95,  phase: 4.4,  au: 1070.0, km: 2634.0,  note: "Larger than Mercury; has its own magnetic field"),
+  Body(name: "Callisto",  parent: 5, kind: "moon",   orbit: 46.0,  period: 16.69,   r: 2.0,  color: :7f7873,  phase: 1.4,  au: 1883.0, km: 2410.0,  note: "The most heavily cratered surface in the system"),
+  Body(name: "Rhea",      parent: 6, kind: "moon",   orbit: 22.0,  period: 4.518,   r: 1.4,  color: :cfcfd6,  phase: 3.1,  au: 527.0, km: 764.0,    note: "May have a faint ring system of its own"),
+  Body(name: "Titan",     parent: 6, kind: "moon",   orbit: 32.0,  period: 15.95,   r: 2.4,  color: :d9a24a,  phase: 0.8,  au: 1222.0, km: 2575.0,  note: "Rivers and lakes of liquid methane"),
+  Body(name: "Titania",   parent: 7, kind: "moon",   orbit: 18.0,  period: 8.706,   r: 1.4,  color: :b8c4cc,  phase: 1.9,  au: 436.0, km: 788.0,    note: "Largest moon of Uranus, named for Shakespeare"),
+  Body(name: "Oberon",    parent: 7, kind: "moon",   orbit: 25.0,  period: 13.46,   r: 1.4,  color: :a5b0b8,  phase: 4.6,  au: 584.0, km: 761.0,    note: "The outermost of the five major moons"),
+  Body(name: "Triton",    parent: 8, kind: "moon",   orbit: 20.0,  period: -5.877,  r: 1.8,  color: :cfd8e8,  phase: 2.2,  au: 355.0, km: 1353.0,   note: "Retrograde orbit: probably a captured Kuiper belt object"),
 ]
 
 let N = len(BODIES)
@@ -479,7 +479,7 @@ for i in range(1, N) do
     draw_circle(p, int(r) + 7, C_ACCENT, if is_sel then 55 else 30 end)
   end
   if b.name == "Saturn" then
-    draw_ellipse_outline(p, int(r * 2.2), int(r * 2.2 * ty * 0.9), #cbb58a, 150, max(1, int(r * 0.35)))
+    draw_ellipse_outline(p, int(r * 2.2), int(r * 2.2 * ty * 0.9), :cbb58a, 150, max(1, int(r * 0.35)))
   end
   // A lit side: the body colour, then a dark crescent on the far side.
   draw_circle(center: p, radius: int(r), c: b.color)

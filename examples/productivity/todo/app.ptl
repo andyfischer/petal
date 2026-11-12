@@ -14,24 +14,24 @@
 import ui
 
 // ── palette ─────────────────────────────────────────────────────────────────
-let BG      = #10131a   // feed ground
-let RAIL    = #0b0e14   // left rail, one step darker
-let SURFACE = #151922   // right inspector
-let CARD    = #1a1f2a
-let CARD_HI = #222836
-let LINE    = #262d3a
-let SOFT    = #1d2330
-let TEXT    = #e9edf4
-let DIM     = #98a3b4
-let FAINT   = #5f6b7c
-let GHOST   = #414c5c
-let AMBER   = #f0a44b   // accent
-let GREEN   = #56c08d
-let RED     = #e8637d
-let BLUE    = #6ba7f5
-let VIOLET  = #a98cf0
-let TEAL    = #3fc2bd
-let INK     = #0b0e14
+let BG      = :10131a   // feed ground
+let RAIL    = :0b0e14   // left rail, one step darker
+let SURFACE = :151922   // right inspector
+let CARD    = :1a1f2a
+let CARD_HI = :222836
+let LINE    = :262d3a
+let SOFT    = :1d2330
+let TEXT    = :e9edf4
+let DIM     = :98a3b4
+let FAINT   = :5f6b7c
+let GHOST   = :414c5c
+let AMBER   = :f0a44b   // accent
+let GREEN   = :56c08d
+let RED     = :e8637d
+let BLUE    = :6ba7f5
+let VIOLET  = :a98cf0
+let TEAL    = :3fc2bd
+let INK     = :0b0e14
 
 // ── metrics ─────────────────────────────────────────────────────────────────
 let W = screen_width()
@@ -270,7 +270,7 @@ fn checkbox(cx: num, cy: num, done: bool, hot: bool)
   else
     let c = if hot then GREEN else GHOST end
     draw_circle({x: cx, y: cy}, 10, c, if hot then 200 else 130 end)
-    draw_circle(center: {x: cx, y: cy}, radius: 8.5, c: if hot then #16202a else BG end)
+    draw_circle(center: {x: cx, y: cy}, radius: 8.5, c: if hot then :16202a else BG end)
     if hot then
       stroke({x: cx - 4.5, y: cy}, {x: cx - 1, y: cy + 3.5}, GREEN, alpha: 150, width: 2)
       stroke({x: cx - 1, y: cy + 3.5}, {x: cx + 5, y: cy - 3.5}, GREEN, alpha: 150, width: 2)
@@ -282,7 +282,7 @@ end
 fn btn(r: record, label: string, kind: num, enabled: bool) -> bool
   let hov = hovered(r) && enabled
   if kind == 1 then
-    let bg = if hov then #ffb765 else AMBER end
+    let bg = if hov then :ffb765 else AMBER end
     draw_rect_rounded(r, radius: r.h / 2, c: bg, a: if enabled then 255 else 90 end)
     draw_text_center(label, cx: r.x + r.w / 2, y: r.y + (r.h - FS) / 2, size: FS, c: INK)
   else
@@ -817,10 +817,10 @@ draw_text("{n_shown}", pos: {x: MX + 26 + text_width(head, FS_XL), y: 27}, style
 
 // search box
 let q_on = focus == "search"
-rr(search_r, radius: 9, fill: if q_on then #0d1118 else CARD end, border: if q_on then AMBER else LINE end)
+rr(search_r, radius: 9, fill: if q_on then :0d1118 else CARD end, border: if q_on then AMBER else LINE end)
 let sc = if q_on then AMBER else FAINT end
 draw_circle(center: {x: search_r.x + 18, y: search_r.y + 14}, radius: 5.5, c: sc)
-draw_circle(center: {x: search_r.x + 18, y: search_r.y + 14}, radius: 3.6, c: if q_on then #0d1118 else CARD end)
+draw_circle(center: {x: search_r.x + 18, y: search_r.y + 14}, radius: 3.6, c: if q_on then :0d1118 else CARD end)
 draw_line({x: search_r.x + 22, y: search_r.y + 18}, {x: search_r.x + 26, y: search_r.y + 22}, c: sc)
 let qx = search_r.x + 36
 if len(q) == 0 && !q_on then
@@ -838,7 +838,7 @@ draw_rect(rect(MX, TOP_H, MAIN_W, 1), LINE)
 
 // ── composer ────────────────────────────────────────────────────────────────
 let c_on = focus == "compose"
-rr(comp_r, radius: 12, fill: if c_on then #0d1118 else SOFT end, border: if c_on then AMBER else LINE end)
+rr(comp_r, radius: 12, fill: if c_on then :0d1118 else SOFT end, border: if c_on then AMBER else LINE end)
 let plus_c = if c_on then AMBER else FAINT end
 draw_circle({x: comp_r.x + 26, y: comp_r.y + 22}, 9, plus_c, 40)
 stroke({x: comp_r.x + 21, y: comp_r.y + 22}, {x: comp_r.x + 31, y: comp_r.y + 22}, plus_c, alpha: 255, width: 1.6)
@@ -918,7 +918,7 @@ for it in items do
     let tx = feed_x + 48
     let right_pad = 132
     let avail = feed_w - 48 - right_pad
-    let tcol = if t.done then FAINT elsif on then #ffffff else TEXT end
+    let tcol = if t.done then FAINT elsif on then :ffffff else TEXT end
     let title = ellipsize(t.title, avail_px: avail, size: FS_ROW)
     let ty = iy + 12
     draw_text(title, pos: {x: tx, y: ty}, style: {size: FS_ROW, color: tcol})
@@ -984,7 +984,7 @@ else
   // title block, editable in place
   let editing_title = focus == "title"
   if editing_title then
-    rr(rect(dx - 8, 92, dw + 16, 66), radius: 10, fill: #0d1118, border: AMBER)
+    rr(rect(dx - 8, 92, dw + 16, 66), radius: 10, fill: :0d1118, border: AMBER)
   elsif point_in(px: mx, py: my, r: title_r) then
     draw_rect_rounded(rect(dx - 8, 92, dw + 16, 66), radius: 10, c: CARD, a: 120)
   end

@@ -18,25 +18,25 @@ import noise
 let TAU = 6.28318530718
 
 // ── Chrome palette ───────────────────────────────────────────────────────
-let BG       = #0b0d12
-let CANVAS   = #0d1017
-let GRID     = #1a1f2b
-let PANEL    = #12151d
-let ELEV     = #1a1f2a
-let HOVER    = #232937
-let OUTLINE  = #262d3b
-let TEXT     = #e9edf4
-let DIM      = #8892a4
-let FAINT    = #59627a
-let ACCENT   = #7aa2ff
-let DANGER   = #e0655f
-let NODE_BG  = #161a24
-let NODE_HOV = #1b2030
+let BG       = :0b0d12
+let CANVAS   = :0d1017
+let GRID     = :1a1f2b
+let PANEL    = :12151d
+let ELEV     = :1a1f2a
+let HOVER    = :232937
+let OUTLINE  = :262d3b
+let TEXT     = :e9edf4
+let DIM      = :8892a4
+let FAINT    = :59627a
+let ACCENT   = :7aa2ff
+let DANGER   = :e0655f
+let NODE_BG  = :161a24
+let NODE_HOV = :1b2030
 
-let C_SOURCE = #4de0c0
-let C_GEN    = #b18cff
-let C_MATH   = #5b9dff
-let C_SINK   = #f0a83c
+let C_SOURCE = :4de0c0
+let C_GEN    = :b18cff
+let C_MATH   = :5b9dff
+let C_SINK   = :f0a83c
 
 fn cat_color(cat: string) -> record
   match cat

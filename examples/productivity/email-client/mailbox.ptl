@@ -88,30 +88,30 @@ end
 pub let ME = "me"
 
 let PEOPLE = {
-  me:      {name: "Noor Halloran",    email: "noor@fernhill.studio",       color: #4b5bd6},
-  maya:    {name: "Maya Okonkwo",     email: "maya@harborandpine.co",      color: #1f9d8f},
-  sofia:   {name: "Sofia Marchetti",  email: "sofia@harborandpine.co",     color: #c2573f},
-  tomas:   {name: "Tomas Lindqvist",  email: "tomas@fernhill.studio",      color: #2f7fd6},
-  priya:   {name: "Priya Raman",      email: "priya@fernhill.studio",      color: #7c5cd6},
-  dana:    {name: "Dana Whitfield",   email: "dana@fernhill.studio",       color: #b8791a},
-  kofi:    {name: "Kofi Mensah",      email: "kofi@fernhill.studio",       color: #2f9e77},
-  jonah:   {name: "Jonah Eze",        email: "jonah.eze@postbox.dev",      color: #d6527a},
-  rafael:  {name: "Rafael Costa",     email: "rafael@costadraws.com",      color: #8a63c9},
-  bram:    {name: "Bram de Vries",    email: "bram@devriesbooks.nl",       color: #5b6b83},
-  lena:    {name: "Lena Brandt",      email: "lena@haldentype.com",        color: #b0518f},
-  ines:    {name: "Ines Halloran",    email: "ines.halloran@postbox.dev",  color: #cf6b4d},
-  aiko:    {name: "Aiko Tanaka",      email: "aiko@tanaka.works",          color: #3a8fb7},
-  ledger:  {name: "Ledgerly Billing", email: "billing@ledgerly.app",       color: #6a7388},
-  skyward: {name: "Skyward Air",      email: "trips@skywardair.com",       color: #2f7fd6},
-  casa:    {name: "Casa do Largo",    email: "reservas@casadolargo.pt",    color: #a7793a},
-  kerning: {name: "The Kerning Weekly", email: "hello@kerningweekly.com",  color: #30343f},
-  forge:   {name: "Forge",            email: "notifications@forge.dev",    color: #3d4455},
-  fnotes:  {name: "Fieldnotes Conf",  email: "speakers@fieldnotes.events", color: #c2573f},
-  bank:    {name: "Northlight Bank",  email: "no-reply@northlight.bank",   color: #23755e},
-  press:   {name: "Halftone Press",   email: "orders@halftonepress.com",   color: #7a5c3e},
-  quay:    {name: "Quay Street Residents", email: "notices@quaystreet.org", color: #5b6b83},
-  promo:   {name: "Prize Desk",       email: "winner@prize-desk.biz",      color: #a3a9b8},
-  webinar: {name: "Growthline",       email: "events@growthline.io",       color: #a3a9b8},
+  me:      {name: "Noor Halloran",    email: "noor@fernhill.studio",       color: :4b5bd6},
+  maya:    {name: "Maya Okonkwo",     email: "maya@harborandpine.co",      color: :1f9d8f},
+  sofia:   {name: "Sofia Marchetti",  email: "sofia@harborandpine.co",     color: :c2573f},
+  tomas:   {name: "Tomas Lindqvist",  email: "tomas@fernhill.studio",      color: :2f7fd6},
+  priya:   {name: "Priya Raman",      email: "priya@fernhill.studio",      color: :7c5cd6},
+  dana:    {name: "Dana Whitfield",   email: "dana@fernhill.studio",       color: :b8791a},
+  kofi:    {name: "Kofi Mensah",      email: "kofi@fernhill.studio",       color: :2f9e77},
+  jonah:   {name: "Jonah Eze",        email: "jonah.eze@postbox.dev",      color: :d6527a},
+  rafael:  {name: "Rafael Costa",     email: "rafael@costadraws.com",      color: :8a63c9},
+  bram:    {name: "Bram de Vries",    email: "bram@devriesbooks.nl",       color: :5b6b83},
+  lena:    {name: "Lena Brandt",      email: "lena@haldentype.com",        color: :b0518f},
+  ines:    {name: "Ines Halloran",    email: "ines.halloran@postbox.dev",  color: :cf6b4d},
+  aiko:    {name: "Aiko Tanaka",      email: "aiko@tanaka.works",          color: :3a8fb7},
+  ledger:  {name: "Ledgerly Billing", email: "billing@ledgerly.app",       color: :6a7388},
+  skyward: {name: "Skyward Air",      email: "trips@skywardair.com",       color: :2f7fd6},
+  casa:    {name: "Casa do Largo",    email: "reservas@casadolargo.pt",    color: :a7793a},
+  kerning: {name: "The Kerning Weekly", email: "hello@kerningweekly.com",  color: :30343f},
+  forge:   {name: "Forge",            email: "notifications@forge.dev",    color: :3d4455},
+  fnotes:  {name: "Fieldnotes Conf",  email: "speakers@fieldnotes.events", color: :c2573f},
+  bank:    {name: "Northlight Bank",  email: "no-reply@northlight.bank",   color: :23755e},
+  press:   {name: "Halftone Press",   email: "orders@halftonepress.com",   color: :7a5c3e},
+  quay:    {name: "Quay Street Residents", email: "notices@quaystreet.org", color: :5b6b83},
+  promo:   {name: "Prize Desk",       email: "winner@prize-desk.biz",      color: :a3a9b8},
+  webinar: {name: "Growthline",       email: "events@growthline.io",       color: :a3a9b8},
 }
 
 // The contacts a recipient field can complete against, in the order a short
@@ -131,7 +131,7 @@ pub fn person(key: string) -> record
   if known != nil then
     known
   else
-    {name: before_at(key), email: key, color: #6a7388}
+    {name: before_at(key), email: key, color: :6a7388}
   end
 end
 
@@ -215,15 +215,15 @@ end
 // ── Labels and mailboxes ─────────────────────────────────────────────────
 
 pub let LABELS = [
-  {key: "clients",  name: "Clients",  color: #1f9d8f},
-  {key: "design",   name: "Design",   color: #7c5cd6},
-  {key: "finance",  name: "Finance",  color: #c98414},
-  {key: "travel",   name: "Travel",   color: #2f7fd6},
-  {key: "personal", name: "Personal", color: #d6527a},
+  {key: "clients",  name: "Clients",  color: :1f9d8f},
+  {key: "design",   name: "Design",   color: :7c5cd6},
+  {key: "finance",  name: "Finance",  color: :c98414},
+  {key: "travel",   name: "Travel",   color: :2f7fd6},
+  {key: "personal", name: "Personal", color: :d6527a},
 ]
 
 pub fn label_of(key: string) -> record
-  let found = {key: key, name: key, color: #6a7388}
+  let found = {key: key, name: key, color: :6a7388}
   for l in LABELS do
     if l.key == key then found = l end
   end

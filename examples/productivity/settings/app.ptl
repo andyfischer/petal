@@ -201,18 +201,18 @@ end
 
 fn palette(dark: bool, accent: record, contrast: bool) -> record
   let base = if dark then
-    {bg: #15171c, rail: #101216, card: #1c1f26, card_hi: #232731, well: #13151a, raised: #2e333f,
-      line: #2c303b, line_soft: #23262f, text: #e9ebf1, muted: #9ba2b2, dim: #666d7c, track: #383d4b,
-      danger: #ee5d62, success: #4ec26b, warn: #dfa641,
-      syn_fn: #e2c07a, syn_str: #94c47c, syn_num: #dd9a6a}
+    {bg: :15171c, rail: :101216, card: :1c1f26, card_hi: :232731, well: :13151a, raised: :2e333f,
+      line: :2c303b, line_soft: :23262f, text: :e9ebf1, muted: :9ba2b2, dim: :666d7c, track: :383d4b,
+      danger: :ee5d62, success: :4ec26b, warn: :dfa641,
+      syn_fn: :e2c07a, syn_str: :94c47c, syn_num: :dd9a6a}
   else
-    {bg: #f4f5f8, rail: #e8eaef, card: #ffffff, card_hi: #f2f4f8, well: #eef0f4, raised: #ffffff,
-      line: #d9dce4, line_soft: #e7e9ee, text: #1b1e26, muted: #596070, dim: #8d94a3, track: #c9ced8,
-      danger: #d6383f, success: #2f9e4c, warn: #b97d12,
-      syn_fn: #a3690f, syn_str: #3b8a48, syn_num: #b4532a}
+    {bg: :f4f5f8, rail: :e8eaef, card: :ffffff, card_hi: :f2f4f8, well: :eef0f4, raised: :ffffff,
+      line: :d9dce4, line_soft: :e7e9ee, text: :1b1e26, muted: :596070, dim: :8d94a3, track: :c9ced8,
+      danger: :d6383f, success: :2f9e4c, warn: :b97d12,
+      syn_fn: :a3690f, syn_str: :3b8a48, syn_num: :b4532a}
   end
-  let ink = if dark then #ffffff else #000000 end
-  let acc = if dark then accent else mix(accent, #000000, 0.12) end
+  let ink = if dark then :ffffff else :000000 end
+  let acc = if dark then accent else mix(accent, :000000, 0.12) end
   let p = if contrast then
     {...base, text: ink, muted: mix(base.muted, ink, 0.5), dim: mix(base.dim, ink, 0.38),
       line: mix(base.line, ink, 0.36), line_soft: mix(base.line_soft, ink, 0.2),
@@ -221,7 +221,7 @@ fn palette(dark: bool, accent: record, contrast: bool) -> record
     base
   end
   {...p, accent: acc, accent_ink: contrast_text(acc), accent_soft: mix(p.card, acc, 0.16),
-    knob: #ffffff, syn_kw: if dark then mix(acc, #ffffff, 0.3) else mix(acc, #000000, 0.18) end}
+    knob: :ffffff, syn_kw: if dark then mix(acc, :ffffff, 0.3) else mix(acc, :000000, 0.18) end}
 end
 
 fn mix_palette(a: record, b: record, t: num) -> record
@@ -795,7 +795,7 @@ for c in cards do
     tl.draw_text_line(g.note, Rect(card_x + 2, ty + 22 * SCALE, card_w, 18 * SCALE), wd.ts(12, T.dim))
   end
   let cr = Rect(card_x, view.y + c.y - scroll_now, card_w, c.h)
-  draw_shadow(cr, {radius: RADIUS + 2, blur: 10, spread: 0, dx: 0, dy: 2, color: #000000, a: int(T.shadow * 0.3)})
+  draw_shadow(cr, {radius: RADIUS + 2, blur: 10, spread: 0, dx: 0, dy: 2, color: :000000, a: int(T.shadow * 0.3)})
   draw_rect_rounded(cr, RADIUS + 2, T.card)
   draw_rect_rounded_outline(cr, RADIUS + 2, T.line_soft)
 end
@@ -838,7 +838,7 @@ clip_pop()
 // A soft edge where the page slides under the heading, and the scrollbar.
 if scroll_now > 0.5 then
   let a = int(min(1.0, scroll_now / 24.0) * (if dark then 70 else 26 end))
-  draw_rect_gradient(Rect(view.x, view.y, view.w, 12), #000000, #000000, pi() / 2.0, a, 0)
+  draw_rect_gradient(Rect(view.x, view.y, view.w, 12), :000000, :000000, pi() / 2.0, a, 0)
   draw_line({x: view.x, y: view.y}, {x: view.x + view.w, y: view.y}, T.line_soft)
 end
 if max_scroll > 0.0 then

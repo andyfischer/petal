@@ -47,8 +47,8 @@ let r = simulate()
 let ground = rigid(380)
 let x_origin = rigid(20)
 
-draw_rect(0, 0, 800, 400, #101418)
+draw_rect(0, 0, 800, 400, :101418)
 for p in r.trail do
-  draw_circle(x_origin + p.x * scale, ground - p.y * scale, 2, #808080)
+  draw_circle(x_origin + p.x * scale, ground - p.y * scale, 2, :808080)
 end
-draw_circle(x_origin + r.x * scale, ground, 6, #e04040)
+draw_circle(x_origin + r.x * scale, ground, 6, :e04040)

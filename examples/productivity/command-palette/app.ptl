@@ -24,20 +24,20 @@ import garden
 
 fn theme_for(name: string) -> record
   if name == "light" then
-    {bg: #f2f3f7, panel: #ffffff, surface: #e9ebf2, overlay: #ffffff,
-      text: #1c2030, muted: #5c6478, dim: #9aa2b6, accent: #3b63f3,
-      line: #dfe2ea, edge: #cdd2de, sel: #e4eaff, hover: #eef1f8,
-      danger: #d93a4e, success: #2f9e5b, warn: #d9892b, scrim: #1c2030}
+    {bg: :f2f3f7, panel: :ffffff, surface: :e9ebf2, overlay: :ffffff,
+      text: :1c2030, muted: :5c6478, dim: :9aa2b6, accent: :3b63f3,
+      line: :dfe2ea, edge: :cdd2de, sel: :e4eaff, hover: :eef1f8,
+      danger: :d93a4e, success: :2f9e5b, warn: :d9892b, scrim: :1c2030}
   elsif name == "midnight" then
-    {bg: #06080f, panel: #0c1020, surface: #111629, overlay: #141a30,
-      text: #e6ecff, muted: #8c96b8, dim: #4f587a, accent: #7c8cff,
-      line: #1a2140, edge: #262e52, sel: #1b2452, hover: #131a36,
-      danger: #ff6b7a, success: #5fd28a, warn: #ffb454, scrim: #000000}
+    {bg: :06080f, panel: :0c1020, surface: :111629, overlay: :141a30,
+      text: :e6ecff, muted: :8c96b8, dim: :4f587a, accent: :7c8cff,
+      line: :1a2140, edge: :262e52, sel: :1b2452, hover: :131a36,
+      danger: :ff6b7a, success: :5fd28a, warn: :ffb454, scrim: :000000}
   else
-    {bg: #12141b, panel: #191c25, surface: #20242f, overlay: #232836,
-      text: #eef0f6, muted: #9aa2b4, dim: #5e6578, accent: #5b8cff,
-      line: #262a36, edge: #323744, sel: #26324e, hover: #1f2330,
-      danger: #ff6b7a, success: #5fd28a, warn: #ffb454, scrim: #000000}
+    {bg: :12141b, panel: :191c25, surface: :20242f, overlay: :232836,
+      text: :eef0f6, muted: :9aa2b4, dim: :5e6578, accent: :5b8cff,
+      line: :262a36, edge: :323744, sel: :26324e, hover: :1f2330,
+      danger: :ff6b7a, success: :5fd28a, warn: :ffb454, scrim: :000000}
   end
 end
 

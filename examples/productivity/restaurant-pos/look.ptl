@@ -11,26 +11,26 @@ import ui
 
 // ── Palette ─────────────────────────────────────────────────────────────────
 
-pub let PAPER   = #f3eee6        // the floor everything sits on
-pub let CARD    = #fffdf9
-pub let WELL    = #ece5da        // inset fields, stepper wells
-pub let SUNK    = #e6dfd3
-pub let LINE    = #e1d8cb
-pub let RULE    = #ece6dc
-pub let INK     = #2b241f
-pub let SOFT    = #5b5149
-pub let MUTED   = #8c8177
-pub let FAINT   = #b4aa9f
-pub let BAR     = #2a2320        // the top bar
-pub let BAR_UP  = #3a312c
-pub let BAR_INK = #f5eee4
-pub let BAR_MUT = #a99c8f
-pub let ACCENT  = #c4532f        // terracotta
-pub let ACCENT_D = #a8401f
-pub let SAGE    = #4f8a5f
-pub let AMBER   = #c98a1b
-pub let RED     = #c23b33
-pub let WHITE   = #ffffff
+pub let PAPER   = :f3eee6        // the floor everything sits on
+pub let CARD    = :fffdf9
+pub let WELL    = :ece5da        // inset fields, stepper wells
+pub let SUNK    = :e6dfd3
+pub let LINE    = :e1d8cb
+pub let RULE    = :ece6dc
+pub let INK     = :2b241f
+pub let SOFT    = :5b5149
+pub let MUTED   = :8c8177
+pub let FAINT   = :b4aa9f
+pub let BAR     = :2a2320        // the top bar
+pub let BAR_UP  = :3a312c
+pub let BAR_INK = :f5eee4
+pub let BAR_MUT = :a99c8f
+pub let ACCENT  = :c4532f        // terracotta
+pub let ACCENT_D = :a8401f
+pub let SAGE    = :4f8a5f
+pub let AMBER   = :c98a1b
+pub let RED     = :c23b33
+pub let WHITE   = :ffffff
 
 // ── Type ────────────────────────────────────────────────────────────────────
 // Interface text in Inter; money in the monospace face so a column of prices
@@ -160,7 +160,7 @@ end
 // ── Chrome ──────────────────────────────────────────────────────────────────
 
 pub fn surface(r: record, radius: num = 14) -> nil
-  draw_shadow(r, {radius: radius, blur: 18, dy: 4, color: #5a4632, a: 30})
+  draw_shadow(r, {radius: radius, blur: 18, dy: 4, color: :5a4632, a: 30})
   draw_rect_rounded(r, radius, CARD)
   draw_rect_rounded_outline(r, radius, LINE)
 end
@@ -197,7 +197,7 @@ pub fn solid(r: record, label: string, tone: record, enabled: bool = true, o: re
   let radius = field(o, "radius", 12)
   let size = field(o, "size", 16)
   let face = if !enabled then SUNK
-  else mix(mix(tone, #ffffff, 0.08 * h), #000000, if down then 0.14 else 0.0 end)
+  else mix(mix(tone, :ffffff, 0.08 * h), :000000, if down then 0.14 else 0.0 end)
   end
   if enabled then
     draw_shadow(r, {radius: radius, blur: 14, dy: 4, color: tone, a: int(55 + 35 * h)})
@@ -244,7 +244,7 @@ pub fn chip(r: record, label: string, on: bool, tone: record, o: record = {}) ->
   draw_rect_rounded(r, radius, face)
   let edge = mix(mix(LINE, tone, 0.25 * h), tone, k)
   draw_rect_rounded_outline(r, radius, edge, 255, 1.0 + k)
-  let ink = if !enabled then FAINT else mix(INK, mix(tone, #000000, 0.25), k) end
+  let ink = if !enabled then FAINT else mix(INK, mix(tone, :000000, 0.25), k) end
   // A wide chip leads with its check; a narrow one wears it on the corner.
   let corner = r.w < 120
   let lead = if k > 0.02 && !corner then 24 else 0 end
@@ -288,7 +288,7 @@ pub fn segmented(r: record, labels: list, index: num, o: record = {}) -> int
   state pos = float(index)
   pos = glide(pos, index, 26.0)
   let thumb = Rect(r.x + inset + pos * cell, r.y + inset, cell, r.h - inset * 2.0)
-  draw_shadow(thumb, {radius: radius - 3, blur: 8, dy: 2, color: #5a4632, a: 40})
+  draw_shadow(thumb, {radius: radius - 3, blur: 8, dy: 2, color: :5a4632, a: 40})
   draw_rect_rounded(thumb, radius - 3, CARD)
   let chosen = int(index)
   for i in range(0, n) do

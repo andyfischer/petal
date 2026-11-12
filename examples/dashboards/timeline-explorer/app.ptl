@@ -20,21 +20,21 @@ import garden
 // A near-black blue ground with two surface steps. Six lane hues of matched
 // lightness, and one warm accent that is only ever used for "you are here":
 // the selection, the pointer's date flag and the overview window.
-let BG      = #0a0d13
-let PANEL   = #0e121a
-let RAISED  = #161b26
-let HOVER   = #1b2230
-let LINE    = #1e2532
-let LINE_HI = #2d3647
-let GRID    = #131822
-let TEXT    = #e9ecf3
-let SOFT    = #bcc3d0
-let DIM     = #8992a3
-let FAINT   = #586174
-let ACCENT  = #ffd27a
+let BG      = :0a0d13
+let PANEL   = :0e121a
+let RAISED  = :161b26
+let HOVER   = :1b2230
+let LINE    = :1e2532
+let LINE_HI = :2d3647
+let GRID    = :131822
+let TEXT    = :e9ecf3
+let SOFT    = :bcc3d0
+let DIM     = :8992a3
+let FAINT   = :586174
+let ACCENT  = :ffd27a
 
 let CAT_NAME = ["Crewed flight", "Space stations", "The Moon", "Deep space", "Observatories", "Orbit & launch"]
-let CAT_COL  = [#f0a55c, #56c7bd, #b7a2f7, #ee7480, #73a6ff, #8ecf6c]
+let CAT_COL  = [:f0a55c, :56c7bd, :b7a2f7, :ee7480, :73a6ff, :8ecf6c]
 let ORG_NAME = ["United States", "USSR / Russia", "Europe", "China", "India", "Japan", "Commercial", "International"]
 let IMP_NAME = ["", "Landmark", "Notable", "Detail"]
 
@@ -2028,7 +2028,7 @@ if hover >= 0 && hover != sel && drag != "band" && !(drag == "pan" && drag_moved
   let th = 46.0
   let tx0 = clamp(mx + 14.0, px + 4.0, px + pw - tw - 4.0)
   let ty0 = if my + 18.0 + th > lanes_bot then my - th - 12.0 else my + 18.0 end
-  draw_shadow(rect(tx0, ty0, tw, th), 8, 16, #000000, 120)
+  draw_shadow(rect(tx0, ty0, tw, th), 8, 16, :000000, 120)
   draw_rect_rounded(rect(tx0, ty0, tw, th), 8, RAISED)
   draw_rect_rounded_outline(rect(tx0, ty0, tw, th), 8, LINE_HI, 255, 1)
   draw_rect_rounded(rect(tx0, ty0 + 8.0, 3, th - 16.0), 1.5, CAT_COL[e.cat])

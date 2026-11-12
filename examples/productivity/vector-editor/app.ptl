@@ -15,23 +15,23 @@ import bloom
 let TAU = 6.28318530718
 
 // ── Chrome palette ───────────────────────────────────────────────────────
-let BG      = #0a0c11
-let PANEL   = #11141c
-let ELEV    = #191d27
-let HOVER   = #232936
-let OUTLINE = #2a3140
-let HAIR    = #1d2230
-let TEXT    = #e9edf6
-let DIM     = #8b95a9
-let FAINT   = #58627a
-let ACCENT  = #7aa2ff
-let MINT    = #4de0c0
-let BOARD   = #f2f0ec
+let BG      = :0a0c11
+let PANEL   = :11141c
+let ELEV    = :191d27
+let HOVER   = :232936
+let OUTLINE = :2a3140
+let HAIR    = :1d2230
+let TEXT    = :e9edf6
+let DIM     = :8b95a9
+let FAINT   = :58627a
+let ACCENT  = :7aa2ff
+let MINT    = :4de0c0
+let BOARD   = :f2f0ec
 
 // ── Fill palette (what you paint shapes with) ────────────────────────────
 let FILLS = [
-  #0f1e38, #1d3a5f, #2f6fed, #7aa2ff, #4de0c0, #79c46b,
-  #f6e7b8, #f0a83c, #e2603f, #c0435f, #8b5cf6, #f2f0ec,
+  :0f1e38, :1d3a5f, :2f6fed, :7aa2ff, :4de0c0, :79c46b,
+  :f6e7b8, :f0a83c, :e2603f, :c0435f, :8b5cf6, :f2f0ec,
 ]
 
 let TOOLS = [
@@ -275,27 +275,27 @@ end
 
 fn seed_doc() -> list
   let d = []
-  let bg = mk(id: 1, name: "Night backdrop", kind: "rect", x: 0, y: 0, w: 760, h: 540, rot: 0, fill: #0f1e38, alpha: 255)
+  let bg = mk(id: 1, name: "Night backdrop", kind: "rect", x: 0, y: 0, w: 760, h: 540, rot: 0, fill: :0f1e38, alpha: 255)
   bg.lock = true
   d = append(d, bg)
-  d = append(d, mk(id: 2, name: "Glow · outer", kind: "ellipse", x: 471, y: 11, w: 240, h: 240, rot: 0, fill: #f6e7b8, alpha: 4))
-  d = append(d, mk(id: 3, name: "Glow · mid", kind: "ellipse", x: 491, y: 31, w: 200, h: 200, rot: 0, fill: #f6e7b8, alpha: 5))
-  d = append(d, mk(id: 4, name: "Glow · inner", kind: "ellipse", x: 510, y: 50, w: 162, h: 162, rot: 0, fill: #f6e7b8, alpha: 7))
-  d = append(d, mk(id: 5, name: "Moon", kind: "ellipse", x: 528, y: 68, w: 126, h: 126, rot: 0, fill: #f6e7b8, alpha: 255))
-  d = append(d, mk(id: 6, name: "Ridge · far", kind: "tri", x: -40, y: 174, w: 560, h: 256, rot: 0, fill: #1d3a5f, alpha: 255))
-  d = append(d, mk(id: 7, name: "Ridge · near", kind: "tri", x: 286, y: 222, w: 520, h: 208, rot: 0, fill: #14283f, alpha: 255))
-  d = append(d, mk(id: 8, name: "Lake", kind: "rect", x: 0, y: 422, w: 760, h: 118, rot: 0, fill: #0a1729, alpha: 255))
-  d = append(d, mk(id: 9, name: "Moonpath · near", kind: "rect", x: 545, y: 432, w: 92, h: 14, rot: 0, fill: #f6e7b8, alpha: 12))
-  d = append(d, mk(id: 10, name: "Moonpath · mid", kind: "rect", x: 555, y: 466, w: 72, h: 11, rot: 0, fill: #f6e7b8, alpha: 9))
-  d = append(d, mk(id: 11, name: "Moonpath · far", kind: "rect", x: 564, y: 498, w: 54, h: 9, rot: 0, fill: #f6e7b8, alpha: 6))
-  d = append(d, mk(id: 12, name: "Star · alpha", kind: "star", x: 108, y: 66, w: 30, h: 30, rot: 12, fill: #f6e7b8, alpha: 220))
-  d = append(d, mk(id: 13, name: "Star · beta", kind: "star", x: 236, y: 40, w: 20, h: 20, rot: -8, fill: #f6e7b8, alpha: 170))
-  d = append(d, mk(id: 14, name: "Star · gamma", kind: "star", x: 402, y: 96, w: 15, h: 15, rot: 20, fill: #f6e7b8, alpha: 140))
-  d = append(d, mk(id: 15, name: "Pine", kind: "tri", x: 198, y: 320, w: 64, h: 102, rot: 0, fill: #071c12, alpha: 255))
-  d = append(d, mk(id: 16, name: "Rule", kind: "line", x: 48, y: 452, w: 214, h: 3, rot: 0, fill: #4de0c0, alpha: 255))
-  d = append(d, mktext(id: 17, name: "Title", x: 46, y: 384, w: 300, h: 54, fill: #f2f0ec, txt: "AURORA", sp: 6))
-  d = append(d, mktext(id: 18, name: "Caption", x: 48, y: 468, w: 300, h: 18, fill: #4de0c0, txt: "field notes · vol. 04", sp: 2))
-  d = append(d, mk(id: 19, name: "Seal", kind: "star", x: 630, y: 342, w: 88, h: 88, rot: 18, fill: #e2603f, alpha: 230))
+  d = append(d, mk(id: 2, name: "Glow · outer", kind: "ellipse", x: 471, y: 11, w: 240, h: 240, rot: 0, fill: :f6e7b8, alpha: 4))
+  d = append(d, mk(id: 3, name: "Glow · mid", kind: "ellipse", x: 491, y: 31, w: 200, h: 200, rot: 0, fill: :f6e7b8, alpha: 5))
+  d = append(d, mk(id: 4, name: "Glow · inner", kind: "ellipse", x: 510, y: 50, w: 162, h: 162, rot: 0, fill: :f6e7b8, alpha: 7))
+  d = append(d, mk(id: 5, name: "Moon", kind: "ellipse", x: 528, y: 68, w: 126, h: 126, rot: 0, fill: :f6e7b8, alpha: 255))
+  d = append(d, mk(id: 6, name: "Ridge · far", kind: "tri", x: -40, y: 174, w: 560, h: 256, rot: 0, fill: :1d3a5f, alpha: 255))
+  d = append(d, mk(id: 7, name: "Ridge · near", kind: "tri", x: 286, y: 222, w: 520, h: 208, rot: 0, fill: :14283f, alpha: 255))
+  d = append(d, mk(id: 8, name: "Lake", kind: "rect", x: 0, y: 422, w: 760, h: 118, rot: 0, fill: :0a1729, alpha: 255))
+  d = append(d, mk(id: 9, name: "Moonpath · near", kind: "rect", x: 545, y: 432, w: 92, h: 14, rot: 0, fill: :f6e7b8, alpha: 12))
+  d = append(d, mk(id: 10, name: "Moonpath · mid", kind: "rect", x: 555, y: 466, w: 72, h: 11, rot: 0, fill: :f6e7b8, alpha: 9))
+  d = append(d, mk(id: 11, name: "Moonpath · far", kind: "rect", x: 564, y: 498, w: 54, h: 9, rot: 0, fill: :f6e7b8, alpha: 6))
+  d = append(d, mk(id: 12, name: "Star · alpha", kind: "star", x: 108, y: 66, w: 30, h: 30, rot: 12, fill: :f6e7b8, alpha: 220))
+  d = append(d, mk(id: 13, name: "Star · beta", kind: "star", x: 236, y: 40, w: 20, h: 20, rot: -8, fill: :f6e7b8, alpha: 170))
+  d = append(d, mk(id: 14, name: "Star · gamma", kind: "star", x: 402, y: 96, w: 15, h: 15, rot: 20, fill: :f6e7b8, alpha: 140))
+  d = append(d, mk(id: 15, name: "Pine", kind: "tri", x: 198, y: 320, w: 64, h: 102, rot: 0, fill: :071c12, alpha: 255))
+  d = append(d, mk(id: 16, name: "Rule", kind: "line", x: 48, y: 452, w: 214, h: 3, rot: 0, fill: :4de0c0, alpha: 255))
+  d = append(d, mktext(id: 17, name: "Title", x: 46, y: 384, w: 300, h: 54, fill: :f2f0ec, txt: "AURORA", sp: 6))
+  d = append(d, mktext(id: 18, name: "Caption", x: 48, y: 468, w: 300, h: 18, fill: :4de0c0, txt: "field notes · vol. 04", sp: 2))
+  d = append(d, mk(id: 19, name: "Seal", kind: "star", x: 630, y: 342, w: 88, h: 88, rot: 18, fill: :e2603f, alpha: 230))
   d
 end
 
@@ -1067,7 +1067,7 @@ let mr = menu_est(menu_at)
 clear(BG.r, BG.g, BG.b)
 
 // ── Canvas well ──────────────────────────────────────────────────────────
-draw_rect(canvas, #070910)
+draw_rect(canvas, :070910)
 
 // dotted work-surface texture
 let dgx = canvas.x + 16
@@ -1112,13 +1112,13 @@ if grid then
   let gx = board.x + 40
   while gx < board.x + board.w do
     let major = (gx - board.x) % 200 == 0
-    seg(x1: gx, y1: board.y, x2: gx, y2: board.y + board.h, c: #ffffff, a: if major then 20 else 9 end, wd: 1)
+    seg(x1: gx, y1: board.y, x2: gx, y2: board.y + board.h, c: :ffffff, a: if major then 20 else 9 end, wd: 1)
     gx = gx + 40
   end
   let gy = board.y + 40
   while gy < board.y + board.h do
     let major = (gy - board.y) % 200 == 0
-    seg(x1: board.x, y1: gy, x2: board.x + board.w, y2: gy, c: #ffffff, a: if major then 20 else 9 end, wd: 1)
+    seg(x1: board.x, y1: gy, x2: board.x + board.w, y2: gy, c: :ffffff, a: if major then 20 else 9 end, wd: 1)
     gy = gy + 40
   end
   clip_none()
@@ -1180,14 +1180,14 @@ if one2 >= 0 then
   let rot_ok = s.kind != "text"
   if rot_ok then
     seg(x1: hs[1].x, y1: hs[1].y, x2: hs[8].x, y2: hs[8].y, c: ACCENT, a: 200, wd: 1)
-    dot(x: hs[8].x, y: hs[8].y, rad: 6, c: #0a0c11, a: 255)
+    dot(x: hs[8].x, y: hs[8].y, rad: 6, c: :0a0c11, a: 255)
     dot(x: hs[8].x, y: hs[8].y, rad: 5, c: ACCENT, a: 255)
   end
   for i in range(0, 8) do
     let p = hs[i]
     let hot = drag.mode == "scale" && drag.h == i
     let over = abs(float(mx) - p.x) <= 7.0 && abs(float(my) - p.y) <= 7.0
-    let fillc = if hot || over then ACCENT else #ffffff end
+    let fillc = if hot || over then ACCENT else :ffffff end
     draw_rect(x: int(p.x) - 4, y: int(p.y) - 4, w: 9, h: 9, r: 10, g: 14, b: 22, a: 255)
     draw_rect(x: int(p.x) - 3, y: int(p.y) - 3, w: 7, h: 7, r: fillc.r, g: fillc.g, b: fillc.b, a: 255)
   end
@@ -1205,7 +1205,7 @@ end
 
 // ── Header ───────────────────────────────────────────────────────────────
 draw_rect(x: 0, y: 0, w: W, h: HEADER_H, r: PANEL.r, g: PANEL.g, b: PANEL.b)
-seg(x1: 0, y1: HEADER_H, x2: W, y2: HEADER_H, c: #000000, a: 150, wd: 1)
+seg(x1: 0, y1: HEADER_H, x2: W, y2: HEADER_H, c: :000000, a: 150, wd: 1)
 
 fill_poly(points: [[26, 20], [42, 20], [34, 44]], r: ACCENT.r, g: ACCENT.g, b: ACCENT.b, a: 235)
 dot(x: 34, y: 24, rad: 5, c: MINT, a: 255)
@@ -1220,8 +1220,8 @@ fn pill(r: record, label: string, keycap: string, on: bool, enabled: bool)
   let fill = if on then ACCENT elsif hov then HOVER else ELEV end
   draw_rect_rounded(r.inset(-1), radius: 8, c: if on then ACCENT else OUTLINE end)
   draw_rect_rounded(r, radius: 7, c: fill)
-  let fg = if on then #0b0d12 elsif enabled then TEXT else FAINT end
-  let kc = if on then #0b0d12 elsif enabled then FAINT else #333b4a end
+  let fg = if on then :0b0d12 elsif enabled then TEXT else FAINT end
+  let kc = if on then :0b0d12 elsif enabled then FAINT else :333b4a end
   let tw = text_width(label, 12)
   let kw = text_width(keycap, 10)
   let tx = r.x + (r.w - (tw + 7 + kw)) / 2
@@ -1236,7 +1236,7 @@ pill(btn_snap, label: "Snap", keycap: "N", on: snap, enabled: true)
 
 // ── Tool rail ────────────────────────────────────────────────────────────
 draw_rect(x: 0, y: HEADER_H, w: RAIL_W, h: H - HEADER_H - STATUS_H, r: PANEL.r, g: PANEL.g, b: PANEL.b)
-seg(x1: RAIL_W, y1: HEADER_H, x2: RAIL_W, y2: H - STATUS_H, c: #000000, a: 150, wd: 1)
+seg(x1: RAIL_W, y1: HEADER_H, x2: RAIL_W, y2: H - STATUS_H, c: :000000, a: 150, wd: 1)
 
 fn tool_icon(id: string, r: record, c: record)
   let cx = r.x + r.w / 2
@@ -1291,15 +1291,15 @@ end
 
 // ── Inspector ────────────────────────────────────────────────────────────
 draw_rect(insp, PANEL)
-seg(x1: insp.x, y1: insp.y, x2: insp.x, y2: insp.y + insp.h, c: #000000, a: 150, wd: 1)
+seg(x1: insp.x, y1: insp.y, x2: insp.x, y2: insp.y + insp.h, c: :000000, a: 150, wd: 1)
 
 fn field(r: record, label: string, value: string, active: bool, hot: bool, showtext: bool)
-  draw_rect_rounded(r, radius: 7, c: if active then (if hot then HOVER else ELEV end) else #14171f end)
+  draw_rect_rounded(r, radius: 7, c: if active then (if hot then HOVER else ELEV end) else :14171f end)
   draw_rect_rounded(r.inset(-1), radius: 8, c: if hot then ACCENT else OUTLINE end)
-  draw_rect_rounded(r, radius: 7, c: if active then (if hot then HOVER else ELEV end) else #14171f end)
+  draw_rect_rounded(r, radius: 7, c: if active then (if hot then HOVER else ELEV end) else :14171f end)
   if showtext then
-    draw_text(label, {x: r.x + 10, y: r.y + 10}, 11, if active then FAINT else #333b4a end)
-    draw_text_right(value, right_x: r.x + r.w - 10, y: r.y + 9, size: 14, c: if active then TEXT else #3a4354 end)
+    draw_text(label, {x: r.x + 10, y: r.y + 10}, 11, if active then FAINT else :333b4a end)
+    draw_text_right(value, right_x: r.x + r.w - 10, y: r.y + 9, size: 14, c: if active then TEXT else :3a4354 end)
   end
 end
 
@@ -1314,7 +1314,7 @@ elsif len(sel) > 1 then
   draw_text("multiple selection   ·   align & stack", {x: px, y: kind_y}, 11, DIM)
 else
   draw_text("Nothing selected", {x: px, y: name_y}, 17, FAINT)
-  draw_text("click a shape, or drag a marquee", {x: px, y: kind_y}, 11, #444d5f)
+  draw_text("click a shape, or drag a marquee", {x: px, y: kind_y}, 11, :444d5f)
 end
 seg(x1: px, y1: div1, x2: px + pw, y2: div1, c: HAIR, a: 255, wd: 1)
 
@@ -1346,18 +1346,18 @@ for i in range(0, len(FILLS)) do
   draw_rect_rounded(r, radius: 5, c: c)
 end
 
-if clear_of(mr, y: align_lbl, h: 14) then caps("ALIGN", x: px, y: align_lbl, c: if len(sel) > 1 then FAINT else #333b4a end) end
+if clear_of(mr, y: align_lbl, h: 14) then caps("ALIGN", x: px, y: align_lbl, c: if len(sel) > 1 then FAINT else :333b4a end) end
 if len(sel) <= 1 then
-  if clear_of(mr, y: align_lbl, h: 14) then draw_text_right("needs 2+", right_x: px + pw, y: align_lbl - 1, size: 11, c: #333b4a) end
+  if clear_of(mr, y: align_lbl, h: 14) then draw_text_right("needs 2+", right_x: px + pw, y: align_lbl - 1, size: 11, c: :333b4a) end
 end
 for i in range(0, len(ALIGN)) do
   let r = align_rects[i]
   let on = len(sel) > 1
   let hov = on && hovered(r)
-  draw_rect_rounded(r, radius: 6, c: if hov then HOVER else #14171f end)
+  draw_rect_rounded(r, radius: 6, c: if hov then HOVER else :14171f end)
   draw_rect_rounded(r.inset(-1), radius: 7, c: OUTLINE)
-  draw_rect_rounded(r, radius: 6, c: if hov then HOVER else #14171f end)
-  let c = if on then (if hov then TEXT else DIM end) else #333b4a end
+  draw_rect_rounded(r, radius: 6, c: if hov then HOVER else :14171f end)
+  let c = if on then (if hov then TEXT else DIM end) else :333b4a end
   let cx = r.x + r.w / 2
   let cy = r.y + r.h / 2
   let m = ALIGN[i]
@@ -1391,17 +1391,17 @@ end
 seg(x1: px, y1: div2, x2: px + pw, y2: div2, c: HAIR, a: 255, wd: 1)
 if clear_of(mr, y: layers_lbl, h: 14) then
   caps("LAYERS", x: px, y: layers_lbl, c: FAINT)
-  draw_text_right("top first", right_x: px + pw, y: layers_lbl - 1, size: 11, c: #444d5f)
+  draw_text_right("top first", right_x: px + pw, y: layers_lbl - 1, size: 11, c: :444d5f)
 end
 
 for i in range(0, len(ORDERS)) do
   let r = order_rects[i]
   let on = len(sel) > 0
   let hov = on && hovered(r)
-  draw_rect_rounded(r, radius: 6, c: if hov then HOVER else #14171f end)
+  draw_rect_rounded(r, radius: 6, c: if hov then HOVER else :14171f end)
   draw_rect_rounded(r.inset(-1), radius: 7, c: OUTLINE)
-  draw_rect_rounded(r, radius: 6, c: if hov then HOVER else #14171f end)
-  let c = if on then (if hov then TEXT else DIM end) else #333b4a end
+  draw_rect_rounded(r, radius: 6, c: if hov then HOVER else :14171f end)
+  let c = if on then (if hov then TEXT else DIM end) else :333b4a end
   if clear_of(mr, y: r.y, h: r.h) then
     draw_text_center(ORDERS[i].t, cx: r.x + r.w / 2, y: r.y + 7, size: 12, c: c)
   end
@@ -1416,7 +1416,7 @@ for i in range(0, len(row_rects)) do
     let on = contains(sel, s.id)
     let hov = hovered(r)
     if on then
-      draw_rect_rounded(r, radius: 6, c: #1e2a44)
+      draw_rect_rounded(r, radius: 6, c: :1e2a44)
       draw_rect_rounded(rect(r.x, r.y, 3, r.h), radius: 2, c: ACCENT)
     elsif hov then
       draw_rect_rounded(r, radius: 6, c: HOVER)
@@ -1451,13 +1451,13 @@ for i in range(0, len(row_rects)) do
       draw_rect(x: ch.x + 1, y: ch.y + 3, w: 14, h: 11, r: s.fill.r, g: s.fill.g, b: s.fill.b,
         a: if s.vis then 255 else 90 end)
     end
-    let namec = if !s.vis then #4a5468 elsif on then TEXT else #c3ccdb end
+    let namec = if !s.vis then :4a5468 elsif on then TEXT else :c3ccdb end
     if clear_of(mr, y: r.y, h: r.h) then
       draw_text(ellipsize(s.name, avail_px: r.w - 112, size: 13), {x: r.x + 34, y: r.y + 7}, 13, namec)
     end
     // eye toggle
     let eye = rect(r.x + r.w - 30, r.y + 5, 22, 20)
-    let ec = if hovered(eye) then TEXT elsif s.vis then DIM else #3d4658 end
+    let ec = if hovered(eye) then TEXT elsif s.vis then DIM else :3d4658 end
     if s.vis then
       draw_circle(cx: eye.x + 11, cy: eye.y + 10, radius: 6, r: ec.r, g: ec.g, b: ec.b, a: 200)
       draw_circle(cx: eye.x + 11, cy: eye.y + 10, radius: 3, r: PANEL.r, g: PANEL.g, b: PANEL.b, a: 255)
@@ -1467,7 +1467,7 @@ for i in range(0, len(row_rects)) do
     end
     // lock toggle
     let lockr = rect(r.x + r.w - 56, r.y + 5, 22, 20)
-    let lc = if hovered(lockr) then TEXT elsif s.lock then #f0a83c else #3d4658 end
+    let lc = if hovered(lockr) then TEXT elsif s.lock then :f0a83c else :3d4658 end
     draw_rect_rounded(x: lockr.x + 5, y: lockr.y + 9, w: 12, h: 8, radius: 2, r: lc.r, g: lc.g, b: lc.b,
       a: if s.lock then 235 else 120 end)
     if s.lock then
@@ -1482,7 +1482,7 @@ bloom.scrollbar(list_r, count: len(doc), rows: vis_rows, scroll: lscroll)
 
 // ── Status bar ───────────────────────────────────────────────────────────
 draw_rect(x: 0, y: H - STATUS_H, w: W, h: STATUS_H, r: PANEL.r, g: PANEL.g, b: PANEL.b)
-seg(x1: 0, y1: H - STATUS_H, x2: W, y2: H - STATUS_H, c: #000000, a: 150, wd: 1)
+seg(x1: 0, y1: H - STATUS_H, x2: W, y2: H - STATUS_H, c: :000000, a: 150, wd: 1)
 
 let hint = if drag.mode == "scale" then "Scaling — ⇧ keeps the aspect, ⌥ scales about the center"
 elsif drag.mode == "rotate" then "Rotating — ⇧ snaps to 15°"
@@ -1512,7 +1512,7 @@ if tip >= 0 && drag.mode == "none" then
   let r = tool_rects[tip]
   let tw = max(text_width(t.name, 13), text_width(t.hint, 11)) + 24
   let tr = rect(RAIL_W + 12, r.y + 4, tw, 44)
-  draw_rect_rounded(rect(tr.x + 2, tr.y + 3, tr.w, tr.h), radius: 8, c: #000000, a: 90)
+  draw_rect_rounded(rect(tr.x + 2, tr.y + 3, tr.w, tr.h), radius: 8, c: :000000, a: 90)
   draw_rect_rounded(tr.inset(-1), radius: 9, c: OUTLINE)
   draw_rect_rounded(tr, radius: 8, c: ELEV)
   draw_text(t.name, {x: tr.x + 12, y: tr.y + 7}, 13, TEXT)

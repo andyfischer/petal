@@ -14,5 +14,5 @@ state x = 40.0
 let speed = 2.0
 x += speed
 
-draw_rect(0, 0, 400, 200, #101418)
-draw_circle(x, 100, 10, #f0a040)
+draw_rect(0, 0, 400, 200, :101418)
+draw_circle(x, 100, 10, :f0a040)

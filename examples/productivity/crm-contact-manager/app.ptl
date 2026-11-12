@@ -12,24 +12,24 @@
 import ui
 
 // ── palette ─────────────────────────────────────────────────────────────────
-let BG      = #14181e   // table / page ground
-let RAIL    = #0f1319   // left rail, one step darker
-let SURFACE = #181d25   // right inspector
-let CARD    = #1c222b   // raised chips, fields, headers
-let CARD_HI = #232a35
-let LINE    = #262d38
-let LINE_SOFT = #1f2530
-let TEXT    = #e7ecf3
-let DIM     = #93a0b2
-let FAINT   = #626e7e
-let ACCENT  = #6d8dff
-let TEAL    = #2fc0a0
-let AMBER   = #e3a83f
-let ROSE    = #e8607c
-let VIOLET  = #a884f5
-let WHITE   = #ffffff
+let BG      = :14181e   // table / page ground
+let RAIL    = :0f1319   // left rail, one step darker
+let SURFACE = :181d25   // right inspector
+let CARD    = :1c222b   // raised chips, fields, headers
+let CARD_HI = :232a35
+let LINE    = :262d38
+let LINE_SOFT = :1f2530
+let TEXT    = :e7ecf3
+let DIM     = :93a0b2
+let FAINT   = :626e7e
+let ACCENT  = :6d8dff
+let TEAL    = :2fc0a0
+let AMBER   = :e3a83f
+let ROSE    = :e8607c
+let VIOLET  = :a884f5
+let WHITE   = :ffffff
 
-let AV = [#6d8dff, #2fc0a0, #e3a83f, #e8607c, #a884f5, #48b7e8]
+let AV = [:6d8dff, :2fc0a0, :e3a83f, :e8607c, :a884f5, :48b7e8]
 
 // ── metrics ─────────────────────────────────────────────────────────────────
 let W = screen_width()
@@ -220,9 +220,9 @@ fn btn(r: record, label: string, kind: num, on: bool) -> bool
   // kind: 0 = quiet, 1 = primary
   let hov = hovered(r)
   if kind == 1 then
-    let bg = if hov then #829eff else ACCENT end
+    let bg = if hov then :829eff else ACCENT end
     draw_rect_rounded(r, radius: 8, c: bg)
-    draw_text_center(label, cx: r.x + r.w / 2, y: r.y + (r.h - FS) / 2, size: FS, c: #10141a)
+    draw_text_center(label, cx: r.x + r.w / 2, y: r.y + (r.h - FS) / 2, size: FS, c: :10141a)
   else
     let bg = if hov then CARD_HI else CARD end
     rr(r, radius: 8, fill: bg, border: LINE)
@@ -564,7 +564,7 @@ draw_rect(rect(RAIL_W, 0, 1, H), LINE)
 
 // brand
 draw_rect_rounded(rect(24, 19, 22, 22), radius: 6, c: ACCENT)
-draw_text("M", pos: {x: 31, y: 24}, style: {size: FS, color: #0f1319})
+draw_text("M", pos: {x: 31, y: 24}, style: {size: FS, color: :0f1319})
 draw_text("meridian", pos: {x: 56, y: 21}, style: {size: FS_H, color: TEXT, spacing: 0.2})
 
 draw_text("SEGMENTS", pos: {x: 24, y: TOP_H + 26}, style: {size: FS_MICRO, color: FAINT, spacing: 1.4})
@@ -602,10 +602,10 @@ draw_rect(rect(0, TOP_H, W, 1), LINE)
 
 // search box
 let q_focus = focus == "q"
-rr(search_r, radius: 9, fill: if q_focus then #10141b else CARD end, border: if q_focus then ACCENT else LINE end)
+rr(search_r, radius: 9, fill: if q_focus then :10141b else CARD end, border: if q_focus then ACCENT else LINE end)
 draw_circle({x: search_r.x + 17, y: search_r.y + 14}, 5, FAINT, 0)
 draw_circle(center: {x: search_r.x + 17, y: search_r.y + 14}, radius: 5.5, c: if q_focus then ACCENT else FAINT end)
-draw_circle(center: {x: search_r.x + 17, y: search_r.y + 14}, radius: 3.6, c: if q_focus then #10141b else CARD end)
+draw_circle(center: {x: search_r.x + 17, y: search_r.y + 14}, radius: 3.6, c: if q_focus then :10141b else CARD end)
 draw_line({x: search_r.x + 21, y: search_r.y + 18}, {x: search_r.x + 25, y: search_r.y + 22},
   c: if q_focus then ACCENT else FAINT end)
 let qx = search_r.x + 34
@@ -717,7 +717,7 @@ if n_rows > VISIBLE then
   draw_rect_rounded(track, radius: 3, c: LINE)
   let th = max(28, int(track.h * VISIBLE / n_rows))
   let ty = track.y + int((track.h - th) * scroll / max(1, n_rows - VISIBLE))
-  draw_rect_rounded(rect(track.x, ty, track.w, th), radius: 3, c: #4c5768)
+  draw_rect_rounded(rect(track.x, ty, track.w, th), radius: 3, c: :4c5768)
 end
 
 // ── footer ──────────────────────────────────────────────────────────────────
@@ -750,7 +750,7 @@ else
       let fr = field_rect(i, x: dx, y: form_top, w: dw)
       let f_on = focus == ring[i]
       draw_text(labels[i], pos: {x: dx, y: fr.y - 15}, style: {size: FS_MICRO, color: FAINT, spacing: 1.2})
-      rr(fr, radius: 8, fill: if f_on then #10141b else CARD end, border: if f_on then ACCENT else LINE end)
+      rr(fr, radius: 8, fill: if f_on then :10141b else CARD end, border: if f_on then ACCENT else LINE end)
       draw_text(ellipsize(vals[i], avail_px: dw - 22, size: FS), pos: {x: fr.x + 10, y: fr.y + 9}, style: {size: FS, color: TEXT})
       if f_on && int(time() * 2) % 2 == 0 then
         let cxp = fr.x + 10 + text_width(vals[i], FS) + 1

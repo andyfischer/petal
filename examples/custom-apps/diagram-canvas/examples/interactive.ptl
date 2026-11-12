@@ -22,15 +22,15 @@ let down = mouse_down(1)
 let node_r = 35
 
 // Color palette
-let bg = #161823
-let title_color = #8c8caa
-let conn_inactive = #3c3c50
-let conn_active = #50b478
-let active_outer = #32a050
-let active_inner = #3cbe64
-let inactive_outer = #463c41
-let inactive_inner = #554b50
-let label_color = #dcdceb
+let bg = :161823
+let title_color = :8c8caa
+let conn_inactive = :3c3c50
+let conn_active = :50b478
+let active_outer = :32a050
+let active_inner = :3cbe64
+let inactive_outer = :463c41
+let inactive_inner = :554b50
+let label_color = :dcdceb
 
 // Connections between nodes (indices)
 let connections = [

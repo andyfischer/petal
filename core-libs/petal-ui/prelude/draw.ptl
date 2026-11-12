@@ -633,7 +633,7 @@ end
 // is solid at: "bottom" (the default — a caption band), "top", "left",
 // "right".
 pub fn draw_scrim(r, style)
-  let c = _get(style, "color", #000000)
+  let c = _get(style, "color", :000000)
   let a = _get(style, "a", 190)
   let edge = _get(style, "edge", "bottom")
   // The fade runs *away* from the solid edge, so the angle is the direction
@@ -741,7 +741,7 @@ end
 //   draw_rect_rounded(card, 8, t.panel)
 
 pub fn draw_shadow(rect, opts)
-  let c = opts["color"] ?? #000000
+  let c = opts["color"] ?? :000000
   _native_shadow(rect.x, rect.y, rect.w, rect.h,
                  opts["radius"] ?? 0, opts["blur"] ?? 8, opts["spread"] ?? 0,
                  opts["dx"] ?? 0, opts["dy"] ?? 0,
@@ -797,7 +797,7 @@ pub fn draw_elevation(r, radius, level, style)
     spread: _get(style, "spread", e.spread),
     dx: _get(style, "dx", 0),
     dy: _get(style, "dy", e.dy),
-    color: _get(style, "color", #000000),
+    color: _get(style, "color", :000000),
     a: _get(style, "a", e.a)
   })
 end
@@ -836,7 +836,7 @@ pub fn draw_scroll_shadow(header_rect, frac, style)
   let f = clamp(float(frac), 0.0, 1.0)
   if f > 0.004 then
     let h = _get(style, "height", 8)
-    let c = _get(style, "color", #000000)
+    let c = _get(style, "color", :000000)
     let peak = int(float(_get(style, "a", 70)) * f)
     let band = rect(header_rect.x, header_rect.y + header_rect.h, header_rect.w, h)
     // Downward: opaque at the header's edge, gone `h` px later.
@@ -1073,7 +1073,7 @@ end
 // A foreground that stays readable on `bg`: near-black on light surfaces,
 // near-white on dark ones.
 pub fn contrast_text(bg)
-  if luma(bg) > 140 then #14161c else #f2f5fa end
+  if luma(bg) > 140 then :14161c else :f2f5fa end
 end
 
 // ── Compositing ───────────────────────────────────────────────────────────

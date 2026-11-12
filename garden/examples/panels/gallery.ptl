@@ -76,10 +76,10 @@ end
 
 // ── Theme (applies before anything draws) ─────────────────────────────────
 if light then
-  ui.theme_set({bg: #f4f6f9, panel: #ffffff, surface: #ffffff, overlay: #e7ebf1,
-             text: #23272e, muted: #4d5561, dim: #7a8390,
-             outline: #d4d9e0, border: #d4d9e0, border_strong: #b9c1cc,
-             hover: #eaeef4, selection: #cfe1fb})
+  ui.theme_set({bg: :f4f6f9, panel: :ffffff, surface: :ffffff, overlay: :e7ebf1,
+             text: :23272e, muted: :4d5561, dim: :7a8390,
+             outline: :d4d9e0, border: :d4d9e0, border_strong: :b9c1cc,
+             hover: :eaeef4, selection: :cfe1fb})
 else
   ui.theme_reset()
 end

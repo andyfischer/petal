@@ -12,7 +12,7 @@ import ui/drag
 let PEG_X = [110, 270, 430]
 let BASE_Y = 280
 let DISK_H = 22
-let DISK_COLORS = [#e57373, #ffb74d, #81c784, #64b5f6, #ba68c8]
+let DISK_COLORS = [:e57373, :ffb74d, :81c784, :64b5f6, :ba68c8]
 
 state pegs = [[4, 3, 2, 1], [], []]
 state moves_made = 0
@@ -45,9 +45,9 @@ end
 
 fn view(pegs)
   for p in range(0, 3) do
-    draw_rect(PEG_X[p] - 4, BASE_Y - 130, 8, 130, #5a6070)
+    draw_rect(PEG_X[p] - 4, BASE_Y - 130, 8, 130, :5a6070)
   end
-  draw_rect(40, BASE_Y, 460, 10, #5a6070)
+  draw_rect(40, BASE_Y, 460, 10, :5a6070)
   for p in range(0, 3) do
     for h in range(0, len(pegs[p])) do
       let size = pegs[p][h]
@@ -69,4 +69,4 @@ if d.dropped && d.drop != pegs then
   moves_made += 1
 end
 let solved = len(pegs[2]) == 4
-draw_text(if solved then "Solved in {moves_made} moves" else "Moves: {moves_made}" end, 40, 30, 16, #c8ccd8)
+draw_text(if solved then "Solved in {moves_made} moves" else "Moves: {moves_made}" end, 40, 30, 16, :c8ccd8)

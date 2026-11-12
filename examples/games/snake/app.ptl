@@ -10,22 +10,22 @@
 import ui
 
 // ── Palette ──────────────────────────────────────────────────────────────────
-let BG        = #0a0c11
-let CARD      = #131722
-let CARD_HI   = #182031
-let BOARD     = #0f131d
-let GRID      = #1b2231
-let EDGE      = #2a3446
-let TEXT      = #e8eef7
-let DIM       = #79879c
-let FAINT     = #4d596b
-let HEAD      = #b9f8cf
-let BODY_HI   = #48d97e
-let BODY_LO   = #17754a
-let APPLE     = #ff6b81
-let GOLD      = #ffc247
-let DANGER    = #ff7a7a
-let ACCENT    = #6aa8ff
+let BG        = :0a0c11
+let CARD      = :131722
+let CARD_HI   = :182031
+let BOARD     = :0f131d
+let GRID      = :1b2231
+let EDGE      = :2a3446
+let TEXT      = :e8eef7
+let DIM       = :79879c
+let FAINT     = :4d596b
+let HEAD      = :b9f8cf
+let BODY_HI   = :48d97e
+let BODY_LO   = :17754a
+let APPLE     = :ff6b81
+let GOLD      = :ffc247
+let DANGER    = :ff7a7a
+let ACCENT    = :6aa8ff
 
 // ── Board geometry ───────────────────────────────────────────────────────────
 let COLS = 32
@@ -350,7 +350,7 @@ let pulse = (sin(time() * 3.4) + 1.0) * 0.5
 let fr = cell_rect(ox: bx, oy: by, c: food, inset: 0)
 draw_circle({x: fr.x + CELL / 2, y: fr.y + CELL / 2}, 12 + int(pulse * 3.0), APPLE, 34)
 draw_circle(center: {x: fr.x + CELL / 2, y: fr.y + CELL / 2}, radius: 8, c: APPLE)
-draw_circle(center: {x: fr.x + CELL / 2 - 2, y: fr.y + CELL / 2 - 3}, radius: 2, c: mix(APPLE, #ffffff, t: 0.7))
+draw_circle(center: {x: fr.x + CELL / 2 - 2, y: fr.y + CELL / 2 - 3}, radius: 2, c: mix(APPLE, :ffffff, t: 0.7))
 
 if bonus >= 0 then
   let gr = cell_rect(ox: bx, oy: by, c: bonus, inset: 0)
@@ -360,7 +360,7 @@ if bonus >= 0 then
   let ga = int(90.0 + pulse * 90.0)
   draw_circle({x: gx, y: gy}, 14, GOLD, int(float(ga) * 0.35 * fade))
   draw_circle({x: gx, y: gy}, 9, GOLD, int(255.0 * fade))
-  draw_circle({x: gx - 2, y: gy - 3}, 2, #fff3d0, int(255.0 * fade))
+  draw_circle({x: gx - 2, y: gy - 3}, 2, :fff3d0, int(255.0 * fade))
   // A countdown bar under the apple, shrinking as its time runs out.
   let tw = int(float(CELL - 6) * (bonus_left / 7.0))
   draw_rect(rect(gr.x + 3, gr.y + CELL - 3, tw, 2), c: GOLD, a: 200)
@@ -410,22 +410,22 @@ let ex = if dir == 1 then 4 elsif dir == 3 then -4 else 0 end
 let ey = if dir == 2 then 4 elsif dir == 0 then -4 else 0 end
 let px = if dir == 0 || dir == 2 then 5 else 0 end
 let py = if dir == 1 || dir == 3 then 5 else 0 end
-draw_circle(center: {x: hcx + ex + px, y: hcy + ey + py}, radius: 2, c: #0b2318)
-draw_circle(center: {x: hcx + ex - px, y: hcy + ey - py}, radius: 2, c: #0b2318)
+draw_circle(center: {x: hcx + ex + px, y: hcy + ey + py}, radius: 2, c: :0b2318)
+draw_circle(center: {x: hcx + ex - px, y: hcy + ey - py}, radius: 2, c: :0b2318)
 
 if flash > 0.0 then
-  draw_rect_rounded(rect(bx, by, board_w, board_h), radius: 11, c: #ffffff, a: int(flash * 26.0))
+  draw_rect_rounded(rect(bx, by, board_w, board_h), radius: 11, c: :ffffff, a: int(flash * 26.0))
 end
 
 // ── Overlays ─────────────────────────────────────────────────────────────────
 fn overlay(r: record, kicker: string, title: string, line1: string, line2: string, accent: record)
-  draw_rect_rounded(r, radius: 11, c: #06080c, a: 205)
+  draw_rect_rounded(r, radius: 11, c: :06080c, a: 205)
   let cx = r.x + r.w / 2
   let cy = r.y + r.h / 2
   let tw = max(text_width(title, 44), text_width(kicker, 11) + 40)
   let card_r = rect(cx - tw / 2 - 34, cy - 92, tw + 68, 116)
-  draw_rect_rounded(card_r, radius: 12, c: #111827, a: 240)
-  draw_rect_outline(card_r, c: mix(#111827, accent, t: 0.45), a: 150)
+  draw_rect_rounded(card_r, radius: 12, c: :111827, a: 240)
+  draw_rect_outline(card_r, c: mix(:111827, accent, t: 0.45), a: 150)
   draw_text_center(kicker, cx, y: cy - 74, size: 11, c: mix(DIM, accent, t: 0.5))
   draw_text_center(title, cx, y: cy - 52, size: 44, c: accent)
   draw_text_center(line1, cx, y: cy + 44, size: 16, c: TEXT)
@@ -471,7 +471,7 @@ draw_line(x1: sc.x + 18, y1: sc.y + 100, x2: sc.x + side_w - 18, y2: sc.y + 100,
 
 // Speed meter across the bottom of the score card
 let meter = rect(sc.x + 18, sc.y + 130, side_w - 36, 6)
-draw_rect_rounded(meter, radius: 3, c: #0c1017)
+draw_rect_rounded(meter, radius: 3, c: :0c1017)
 draw_rect_rounded(rect(meter.x, meter.y, meter.w * (lvl + 1) / 10, 6), radius: 3,
   c: mix(BODY_HI, DANGER, t: float(lvl) / 9.0))
 draw_text("SPEED LEVEL {lvl}", pos: {x: meter.x, y: sc.y + 110}, style: {size: 11, color: DIM, spacing: 2})
@@ -528,7 +528,7 @@ for i in range(0, n) do
   let full = side_w - 56
   let bwid = max(3, full * v / hmax)
   let c = if v >= best then GOLD else mix(BODY_LO, BODY_HI, t: float(v) / float(hmax)) end
-  draw_rect_rounded(rect(side.x + 2, ry, full, 12), radius: 6, c: #0c1017)
+  draw_rect_rounded(rect(side.x + 2, ry, full, 12), radius: 6, c: :0c1017)
   draw_rect_rounded(rect(side.x + 2, ry, bwid, 12), radius: 6, c: c)
   draw_text_right("{v}", right_x: side.x + side_w, y: ry, size: 11, c: if v >= best then GOLD else DIM end)
 end

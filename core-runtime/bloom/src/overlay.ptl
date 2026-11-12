@@ -69,7 +69,7 @@ fn tooltip_impl(anchor: record, text: string, opts: record)
     // Through the late layer, so a tooltip on a control drawn early still
     // lands on top of the panel drawn after it.
     defer_paint(fn()
-      draw_shadow(r, {radius: t.radius_sm, blur: 14, spread: 0, dx: 0, dy: 4, color: #000000, a: int(60.0 * k)})
+      draw_shadow(r, {radius: t.radius_sm, blur: 14, spread: 0, dx: 0, dy: 4, color: :000000, a: int(60.0 * k)})
       draw_rect_rounded(r, t.radius_sm, tone(t, t.overlay, 0.05), int(245.0 * k))
       draw_text_block(text, pad(r, t.pad_x, t.pad_y), ts_a(t, size, ink, 255.0 * k),
         {align: "center", valign: "middle"})
@@ -136,7 +136,7 @@ pub fn toasts(r: record, opts: record)
     end
     let br = Rect(tx, ty, w, h)
     let accent = _kind_color(t, item.kind)
-    draw_shadow(br, {radius: t.radius, blur: 20, spread: 0, dx: 0, dy: 6, color: #000000, a: int(60.0 * k)})
+    draw_shadow(br, {radius: t.radius, blur: 20, spread: 0, dx: 0, dy: 6, color: :000000, a: int(60.0 * k)})
     draw_rect_rounded(br, t.radius, tone(t, t.panel, 0.10), int(250.0 * k))
     draw_rect_rounded(Rect(br.x, br.y, 3.0, br.h), 2, accent, int(255.0 * k))
     icon(_kind_icon(item.kind), Rect(br.x + t.gap + 4.0, br.y + (h - 16.0) / 2.0, 16, 16), accent)
@@ -215,7 +215,7 @@ pub fn dialog(id: string, w: num, h: num, title: string, opts: record) -> record
     // The backdrop is genuinely translucent (there is content under it that
     // this code did not paint), which is the one case where compositing a tint
     // is not an option.
-    draw_rect(Rect(0, 0, screen_width(), screen_height()), #000000, int(120.0 * e))
+    draw_rect(Rect(0, 0, screen_width(), screen_height()), :000000, int(120.0 * e))
     let sw = float(screen_width())
     let sh = float(screen_height())
     // Pops in with a slight overshoot; leaves without one, because a dialog
@@ -227,7 +227,7 @@ pub fn dialog(id: string, w: num, h: num, title: string, opts: record) -> record
     if open then
       capture(id, box)
     end
-    draw_shadow(box, {radius: t.radius_lg, blur: 40, spread: 0, dx: 0, dy: 18, color: #000000, a: int(90.0 * e)})
+    draw_shadow(box, {radius: t.radius_lg, blur: 40, spread: 0, dx: 0, dy: 18, color: :000000, a: int(90.0 * e)})
     draw_rect_rounded(box, t.radius_lg, tone(t, t.panel, 0.06), int(255.0 * e))
     stroke(t, box, t.radius_lg, hair(t), 1, tone(t, t.panel, 0.06))
     let head_h = if title == "" then 0.0 else float(t.row_h) + 8.0 end
@@ -294,7 +294,7 @@ pub fn popover(id: string, anchor: record, w: num, h: num) -> record
     if open then
       capture(id, box)
     end
-    draw_shadow(box, {radius: t.radius_lg, blur: 26, spread: 0, dx: 0, dy: 10, color: #000000, a: int(70.0 * e)})
+    draw_shadow(box, {radius: t.radius_lg, blur: 26, spread: 0, dx: 0, dy: 10, color: :000000, a: int(70.0 * e)})
     draw_rect_rounded(box, t.radius_lg, tone(t, t.panel, 0.06), int(255.0 * e))
     stroke(t, box, t.radius_lg, hair(t), 1, tone(t, t.panel, 0.06))
     if open && key_pressed("escape") then

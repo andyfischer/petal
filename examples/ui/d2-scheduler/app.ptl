@@ -29,7 +29,7 @@ let TRACK_Y = 70
 let TRACK_H = 56
 let BAR_H = 36
 let HANDLE_W = 10
-let COLORS = [#64b5f6, #81c784, #ffb74d, #ba68c8, #4dd0e1]
+let COLORS = [:64b5f6, :81c784, :ffb74d, :ba68c8, :4dd0e1]
 
 state sched = {meetings: [
   {id: "standup", start: 30, end: 90, room: 0},
@@ -71,12 +71,12 @@ end
 fn view(s)
   for r in range(ROOMS) do
     let y = TRACK_Y + r * TRACK_H
-    draw_rect(X0, y + 2, DAY * PX, TRACK_H - 4, #262931)
-    draw_text("Room {r + 1}", 10, y + TRACK_H / 2 - 7, 13, #8a8f9c)
+    draw_rect(X0, y + 2, DAY * PX, TRACK_H - 4, :262931)
+    draw_text("Room {r + 1}", 10, y + TRACK_H / 2 - 7, 13, :8a8f9c)
   end
   for h in range(0, DAY + 1, 60) do
-    draw_line({x: time_x(h), y: TRACK_Y - 6}, {x: time_x(h), y: TRACK_Y + ROOMS * TRACK_H}, #3a3e48, 255, 1)
-    draw_text("{8 + h / 60}:00", time_x(h) - 14, TRACK_Y - 24, 12, #8a8f9c)
+    draw_line({x: time_x(h), y: TRACK_Y - 6}, {x: time_x(h), y: TRACK_Y + ROOMS * TRACK_H}, :3a3e48, 255, 1)
+    draw_text("{8 + h / 60}:00", time_x(h) - 14, TRACK_Y - 24, 12, :8a8f9c)
   end
   let ms = s.meetings
   for i in range(len(ms)) key ms[i].id do
@@ -85,10 +85,10 @@ fn view(s)
     // The bar's grip is between its end handles.
     let grip = rect(r.x + HANDLE_W + 4, r.y, max(r.w - 2 * HANDLE_W - 8, 4), r.h)
     draggable(m.id, grip, fn() between(choices(s, ["meetings", i, "room"], range(ROOMS))) end)
-    let c = if clashes(ms, i) then #e57373 else COLORS[i % len(COLORS)] end
+    let c = if clashes(ms, i) then :e57373 else COLORS[i % len(COLORS)] end
     place(m.id, r, fn(p)
       draw_rect_rounded(p, 5, c)
-      draw_text(m.id, p.x + HANDLE_W + 4, p.y + 11, 13, #1e1e24)
+      draw_text(m.id, p.x + HANDLE_W + 4, p.y + 11, 13, :1e1e24)
     end)
     // The end handles, inset into the bar.
     for field in ["start", "end"] key field do
@@ -96,7 +96,7 @@ fn view(s)
       let hk = "{m.id}:{field}"
       let hr = place(hk, rect(hx, r.y + 4, HANDLE_W, BAR_H - 8))
       draggable(hk, hr, fn() end_spec(s, i, field) end)
-      draw_rect_rounded(hr, 3, #1e1e24, 120)
+      draw_rect_rounded(hr, 3, :1e1e24, 120)
     end
   end
   nil
@@ -107,7 +107,7 @@ let d = drag_session(sched, view)
 view(d.preview)
 let used = len(filter(range(ROOMS), fn(r) any(d.preview.meetings, fn(m) m.room == r end) end))
 let bad = any(range(len(d.preview.meetings)), fn(i) clashes(d.preview.meetings, i) end)
-draw_text("Rooms in use: {used}" ++ (if bad then "  (clash)" else "" end), 10, 20, 14, #c8ccd8)
+draw_text("Rooms in use: {used}" ++ (if bad then "  (clash)" else "" end), 10, 20, 14, :c8ccd8)
 if d.dropped && d.drop != sched then
   sched = d.drop
   edits += 1

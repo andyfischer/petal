@@ -41,20 +41,20 @@ let node_w = 150
 let node_h = 55
 
 // Color palette
-let bg = #191c26
-let title_color = #a0a0c8
-let conn_color = #50506e
-let shadow_color = #0f0f19
-let name_color = #e6e6f5
-let role_color = #8c96b4
+let bg = :191c26
+let title_color = :a0a0c8
+let conn_color = :50506e
+let shadow_color = :0f0f19
+let name_color = :e6e6f5
+let role_color = :8c96b4
 
 // Node colors by level
-let ceo_bg = #463264
-let ceo_border = #7850b4
-let vp_bg = #324155
-let vp_border = #506e96
-let default_bg = #32374b
-let default_border = #5a5f82
+let ceo_bg = :463264
+let ceo_border = :7850b4
+let vp_bg = :324155
+let vp_border = :506e96
+let default_bg = :32374b
+let default_border = :5a5f82
 
 // Overloaded draw functions: accept point/color records
 let _draw_line = draw_line

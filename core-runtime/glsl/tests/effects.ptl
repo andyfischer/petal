@@ -67,7 +67,7 @@ let sharpen = fn(fx: Fx, amount = 0.5)
   fx.color + (fx.color - around) * amount * 2.0
 end
 
-let color_grade = fn(fx: Fx, amount = 0.35, shadows = #1a2a6c, highlights = #ffb45a, balance = 0.5, fade = 0.0)
+let color_grade = fn(fx: Fx, amount = 0.35, shadows = :1a2a6c, highlights = :ffb45a, balance = 0.5, fade = 0.0)
   let l = fx_luma(fx.color)
   let tint = linear_to_srgb(lerp(shadows, highlights, smoothstep(balance - 0.35, balance + 0.35, l)))
   let c = fx.color + (tint - fx_luma(tint)) * amount * 0.6
@@ -75,7 +75,7 @@ let color_grade = fn(fx: Fx, amount = 0.35, shadows = #1a2a6c, highlights = #ffb
   c * (1.0 - fade * 0.15) + fade * 0.08
 end
 
-let duotone = fn(fx: Fx, dark = #1b1040, light = #ffd9a0, amount = 0.6)
+let duotone = fn(fx: Fx, dark = :1b1040, light = :ffd9a0, amount = 0.6)
   let two = lerp(linear_to_srgb(dark), linear_to_srgb(light), fx_luma(fx.color))
   lerp(fx.color, two, amount)
 end
@@ -92,7 +92,7 @@ let pixelate = fn(fx: Fx, size = 4.0)
   src((floor(fx.uv / px) + 0.5) * px)
 end
 
-let outline = fn(fx: Fx, amount = 0.8, width = 1.5, threshold = 0.04, color = #05030a)
+let outline = fn(fx: Fx, amount = 0.8, width = 1.5, threshold = 0.04, color = :05030a)
   let px = width / fx.resolution
   let d = scene_depth(fx.uv)
   let dx = abs(scene_depth(fx.uv + vec2(px.x, 0.0)) - scene_depth(fx.uv - vec2(px.x, 0.0)))

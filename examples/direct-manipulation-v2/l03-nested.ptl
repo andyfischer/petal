@@ -32,10 +32,10 @@ end
 
 fn draw_cell(col, row)
   let c = cell_center(col, row)
-  draw_circle(c.x, c.y, cell * 0.4, #50a0f0)
+  draw_circle(c.x, c.y, cell * 0.4, :50a0f0)
 end
 
-draw_rect(0, 0, 400, 300, #101418)
+draw_rect(0, 0, 400, 300, :101418)
 for row in range(0, 2) do
   for col in range(0, 3) do
     draw_cell(col, row)

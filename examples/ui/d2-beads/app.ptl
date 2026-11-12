@@ -14,7 +14,7 @@ let CX = 220
 let CY = 210
 let R = 130
 let BEAD = 40
-let COLORS = {A: #e57373, B: #ffb74d, C: #fff176, D: #81c784, E: #64b5f6, F: #ba68c8}
+let COLORS = {A: :e57373, B: :ffb74d, C: :fff176, D: :81c784, E: :64b5f6, F: :ba68c8}
 
 state beads = ["A", "B", "C", "D", "E", "F"]
 state turns = 0
@@ -31,7 +31,7 @@ fn a_first(bs)
 end
 
 fn view(beads)
-  draw_circle(CX, CY, R, #3a3f4c)
+  draw_circle(CX, CY, R, :3a3f4c)
   for i in range(0, len(beads)) key beads[i] do
     let b = beads[i]
     let r = place(b, bead_rect(i, len(beads)))
@@ -40,14 +40,14 @@ fn view(beads)
     end)
     place(b, r, fn(p)
       draw_circle(p.x + BEAD / 2, p.y + BEAD / 2, BEAD / 2, COLORS[b])
-      draw_text(b, p.x + 15, p.y + 12, 16, #1e1e24)
+      draw_text(b, p.x + 15, p.y + 12, 16, :1e1e24)
     end)
   end
   nil
 end
 
 clear(24, 24, 32)
-draw_text("Drag a bead round the ring", 20, 20, 14, #c8ccd8)
+draw_text("Drag a bead round the ring", 20, 20, 14, :c8ccd8)
 let d = drag_session(beads, view)
 view(d.preview)
 if d.dropped then

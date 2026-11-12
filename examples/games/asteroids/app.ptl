@@ -14,21 +14,21 @@ import ui
 
 // ── Palette ──────────────────────────────────────────────────────────────
 
-let C_BG     = #05070d
-let C_FIELD  = #090c16
-let C_LINE   = #1c2233
-let C_EDGE   = #2a3248
-let C_TEXT   = #e9edf7
-let C_DIM    = #7a869c
-let C_MUTE   = #4a5266
-let C_CHIP   = #12161f
-let C_SHIP   = #9fe8ff
-let C_FLAME  = #ffb04d
-let C_SHOT   = #fff3c4
-let C_ROCK   = #c9d3e8
-let C_WARN   = #e8607a
-let C_GOLD   = #ffd166
-let C_VIOLET = #a58cf0
+let C_BG     = :05070d
+let C_FIELD  = :090c16
+let C_LINE   = :1c2233
+let C_EDGE   = :2a3248
+let C_TEXT   = :e9edf7
+let C_DIM    = :7a869c
+let C_MUTE   = :4a5266
+let C_CHIP   = :12161f
+let C_SHIP   = :9fe8ff
+let C_FLAME  = :ffb04d
+let C_SHOT   = :fff3c4
+let C_ROCK   = :c9d3e8
+let C_WARN   = :e8607a
+let C_GOLD   = :ffd166
+let C_VIOLET = :a58cf0
 
 // ── Type scale ───────────────────────────────────────────────────────────
 // Five sizes in the whole app: 10 / 12 / 20 / 30 / 44.

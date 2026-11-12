@@ -20,25 +20,25 @@ import json
 
 // ── Palette ──────────────────────────────────────────────────────────────
 
-let C_BG      = #0d0f15
-let C_TABLE   = #141824
-let C_TABLE_H = #1b2031
-let C_RAIL    = #161a26
-let C_WELL    = #10131c
-let C_LINE    = #232939
-let C_EDGE    = #2d3447
-let C_TEXT    = #eceff6
-let C_DIM     = #8b93a8
-let C_MUTE    = #5b6379
-let C_GOLD    = #e7b75a
-let C_GOLD_L  = #f6d894
-let C_MISS    = #ec6a5c
-let C_BACK_A  = #3c43a3
-let C_BACK_B  = #22276a
-let C_BACK_LN = #6a70d0
-let C_FACE    = #f6f1e7
-let C_FACE_ED = #e2d8c6
-let C_INK     = #1d2030
+let C_BG      = :0d0f15
+let C_TABLE   = :141824
+let C_TABLE_H = :1b2031
+let C_RAIL    = :161a26
+let C_WELL    = :10131c
+let C_LINE    = :232939
+let C_EDGE    = :2d3447
+let C_TEXT    = :eceff6
+let C_DIM     = :8b93a8
+let C_MUTE    = :5b6379
+let C_GOLD    = :e7b75a
+let C_GOLD_L  = :f6d894
+let C_MISS    = :ec6a5c
+let C_BACK_A  = :3c43a3
+let C_BACK_B  = :22276a
+let C_BACK_LN = :6a70d0
+let C_FACE    = :f6f1e7
+let C_FACE_ED = :e2d8c6
+let C_INK     = :1d2030
 
 // ── Type scale ───────────────────────────────────────────────────────────
 // Everything is Inter (`ui`). Six sizes: 11 / 12 / 13 / 16 / 24 / 28.
@@ -191,22 +191,22 @@ let U_SPARK = for k in range(0, 8) do
 end
 
 let DESIGNS = [
-  {g: "sun",      c: #ef7630, name: "Sun"},
-  {g: "moon",     c: #4c6ee0, name: "Moon"},
-  {g: "star",     c: #8a5cf2, name: "Star"},
-  {g: "heart",    c: #e2434f, name: "Heart"},
-  {g: "gem",      c: #139e9e, name: "Gem"},
-  {g: "drop",     c: #2f8fe0, name: "Drop"},
-  {g: "bolt",     c: #e3a712, name: "Bolt"},
-  {g: "flower",   c: #d8468e, name: "Bloom"},
-  {g: "leaf",     c: #3a9d52, name: "Leaf"},
-  {g: "crown",    c: #b8841c, name: "Crown"},
-  {g: "mountain", c: #3e6e8c, name: "Peak"},
-  {g: "eye",      c: #7a5230, name: "Eye"},
-  {g: "flake",    c: #26a6d4, name: "Frost"},
-  {g: "clover",   c: #1f7a45, name: "Clover"},
-  {g: "wave",     c: #1f5fbf, name: "Tide"},
-  {g: "planet",   c: #a24fd0, name: "Ringed"},
+  {g: "sun",      c: :ef7630, name: "Sun"},
+  {g: "moon",     c: :4c6ee0, name: "Moon"},
+  {g: "star",     c: :8a5cf2, name: "Star"},
+  {g: "heart",    c: :e2434f, name: "Heart"},
+  {g: "gem",      c: :139e9e, name: "Gem"},
+  {g: "drop",     c: :2f8fe0, name: "Drop"},
+  {g: "bolt",     c: :e3a712, name: "Bolt"},
+  {g: "flower",   c: :d8468e, name: "Bloom"},
+  {g: "leaf",     c: :3a9d52, name: "Leaf"},
+  {g: "crown",    c: :b8841c, name: "Crown"},
+  {g: "mountain", c: :3e6e8c, name: "Peak"},
+  {g: "eye",      c: :7a5230, name: "Eye"},
+  {g: "flake",    c: :26a6d4, name: "Frost"},
+  {g: "clover",   c: :1f7a45, name: "Clover"},
+  {g: "wave",     c: :1f5fbf, name: "Tide"},
+  {g: "planet",   c: :a24fd0, name: "Ringed"},
 ]
 
 // ── Glyph drawing ────────────────────────────────────────────────────────
@@ -240,11 +240,11 @@ fn gstroke(T: record, pts: list, c: record, w: num)
 end
 
 fn lighten(c: record, t: num) -> record
-  mix(c, #ffffff, t)
+  mix(c, :ffffff, t)
 end
 
 fn darken(c: record, t: num) -> record
-  mix(c, #000000, t)
+  mix(c, :000000, t)
 end
 
 fn glyph(D: record, T: record)
@@ -283,8 +283,8 @@ fn glyph(D: record, T: record)
         let a = float(k) * pi() / 3.0 - pi() / 2.0
         gdisc(T, x: cos(a) * 0.5, y: sin(a) * 0.5, r: 0.36, c: c)
       end
-      gdisc(T, x: 0.0, y: 0.0, r: 0.3, c: #f3c34a)
-      gdisc(T, 0.0, 0.0, 0.12, darken(#f3c34a, 0.2))
+      gdisc(T, x: 0.0, y: 0.0, r: 0.3, c: :f3c34a)
+      gdisc(T, 0.0, 0.0, 0.12, darken(:f3c34a, 0.2))
     end
     when "leaf" do
       gpoly(T, pts: U_LEAF, c: c)
@@ -296,20 +296,20 @@ fn glyph(D: record, T: record)
       gdisc(T, x: -0.95, y: -0.5, r: 0.13, c: c)
       gdisc(T, x: 0.0, y: -0.74, r: 0.13, c: c)
       gdisc(T, x: 0.95, y: -0.5, r: 0.13, c: c)
-      gdisc(T, 0.0, 0.72, 0.08, #e2434f)
+      gdisc(T, 0.0, 0.72, 0.08, :e2434f)
     end
     when "mountain" do
       gpoly(T, pts: U_MT_BACK, c: lighten(c, 0.35))
       gpoly(T, pts: U_MT_FRONT, c: c)
-      gpoly(T, pts: U_MT_SNOW, c: #ffffff)
-      gdisc(T, 0.62, -0.62, 0.16, #ef7630)
+      gpoly(T, pts: U_MT_SNOW, c: :ffffff)
+      gdisc(T, 0.62, -0.62, 0.16, :ef7630)
     end
     when "eye" do
       gpoly(T, pts: U_EYE, c: c)
       gpoly(T, pts: U_EYE_IN, c: T.bg)
       gdisc(T, x: 0.0, y: 0.0, r: 0.36, c: c)
       gdisc(T, x: 0.0, y: 0.0, r: 0.16, c: C_INK)
-      gdisc(T, -0.1, -0.1, 0.06, #ffffff)
+      gdisc(T, -0.1, -0.1, 0.06, :ffffff)
     end
     when "flake" do
       for s in U_FLAKE do gstroke(T, pts: s, c: c, w: 0.11) end
@@ -421,7 +421,7 @@ fn burst(lst: list, x: num, y: num, n: int, col: record, power: num) -> list
 end
 
 fn confetti(lst: list, x0: num, x1: num, y: num, n: int) -> list
-  let cols = [C_GOLD, C_GOLD_L, #ef7630, #e2434f, #8a5cf2, #26a6d4, #3a9d52, #d8468e]
+  let cols = [C_GOLD, C_GOLD_L, :ef7630, :e2434f, :8a5cf2, :26a6d4, :3a9d52, :d8468e]
   let out = lst
   for i in range(0, n) do
     out = append(out, {

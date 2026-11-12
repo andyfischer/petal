@@ -15,34 +15,34 @@ import garden
 
 // ── Palette ──────────────────────────────────────────────────────────────
 
-let C_BG      = #0b0e17
-let C_SKY_TOP = #1a2140
-let C_SKY_BOT = #4a3a6a
-let C_SUN     = #ffb26b
-let C_HILL_F  = #23324a
-let C_HILL_B  = #1a2538
-let C_CLOUD   = #6f6a9a
-let C_GROUND  = #2e2a3d
-let C_GRASS   = #5fb36a
-let C_GRASS_D = #3f8a4c
-let C_PIPE    = #6cc36f
-let C_PIPE_D  = #3d8b45
-let C_PIPE_L  = #a9e6a3
-let C_BIRD    = #ffd166
-let C_BIRD_D  = #e29a2e
-let C_WING    = #fff0b8
-let C_BEAK    = #ff7a45
-let C_EYE     = #1b1b2a
-let C_TEXT    = #eef1fa
-let C_DIM     = #8b93ab
-let C_MUTE    = #5a6178
-let C_CHIP    = #141828
-let C_LINE    = #232a40
-let C_EDGE    = #2f3852
-let C_GOLD    = #ffd166
-let C_SILVER  = #c9d3e8
-let C_BRONZE  = #d08a5a
-let C_WARN    = #ff6b7a
+let C_BG      = :0b0e17
+let C_SKY_TOP = :1a2140
+let C_SKY_BOT = :4a3a6a
+let C_SUN     = :ffb26b
+let C_HILL_F  = :23324a
+let C_HILL_B  = :1a2538
+let C_CLOUD   = :6f6a9a
+let C_GROUND  = :2e2a3d
+let C_GRASS   = :5fb36a
+let C_GRASS_D = :3f8a4c
+let C_PIPE    = :6cc36f
+let C_PIPE_D  = :3d8b45
+let C_PIPE_L  = :a9e6a3
+let C_BIRD    = :ffd166
+let C_BIRD_D  = :e29a2e
+let C_WING    = :fff0b8
+let C_BEAK    = :ff7a45
+let C_EYE     = :1b1b2a
+let C_TEXT    = :eef1fa
+let C_DIM     = :8b93ab
+let C_MUTE    = :5a6178
+let C_CHIP    = :141828
+let C_LINE    = :232a40
+let C_EDGE    = :2f3852
+let C_GOLD    = :ffd166
+let C_SILVER  = :c9d3e8
+let C_BRONZE  = :d08a5a
+let C_WARN    = :ff6b7a
 
 // ── Type scale ───────────────────────────────────────────────────────────
 // Five sizes: 10 / 12 / 20 / 30 / 52.

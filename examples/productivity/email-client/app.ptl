@@ -23,29 +23,29 @@ import garden
 // ── Palette ──────────────────────────────────────────────────────────────
 // A dark rail against light paper: navigation recedes, mail reads like print.
 
-let RAIL      = #141826
-let RAIL_HOT  = #1e2435      // hover
-let RAIL_ON   = #283150      // the current mailbox
-let RAIL_RULE = #232a3c
-let RAIL_TEXT = #d4d9e6
-let RAIL_DIM  = #8d95aa
-let RAIL_FAINT = #5d6579
+let RAIL      = :141826
+let RAIL_HOT  = :1e2435      // hover
+let RAIL_ON   = :283150      // the current mailbox
+let RAIL_RULE = :232a3c
+let RAIL_TEXT = :d4d9e6
+let RAIL_DIM  = :8d95aa
+let RAIL_FAINT = :5d6579
 
-let LIST_BG   = #f3f4f7
-let PAPER     = #ffffff
-let INK       = #171b26
-let INK_2     = #3d4455
-let MUTED     = #6c7487
-let FAINT     = #a0a7b6
-let RULE      = #e3e6ed
-let RULE_SOFT = #eceef3
-let ACCENT    = #4b5bd6
-let ACCENT_HI = #5f6fe6
-let ACCENT_SOFT = #e8ebfc
-let MARK      = #ffe27a      // a search hit
-let GOLD      = #e9a514      // a star
-let DANGER    = #d4445c
-let WHITE     = #ffffff
+let LIST_BG   = :f3f4f7
+let PAPER     = :ffffff
+let INK       = :171b26
+let INK_2     = :3d4455
+let MUTED     = :6c7487
+let FAINT     = :a0a7b6
+let RULE      = :e3e6ed
+let RULE_SOFT = :eceef3
+let ACCENT    = :4b5bd6
+let ACCENT_HI = :5f6fe6
+let ACCENT_SOFT = :e8ebfc
+let MARK      = :ffe27a      // a search hit
+let GOLD      = :e9a514      // a star
+let DANGER    = :d4445c
+let WHITE     = :ffffff
 
 // ── Type ─────────────────────────────────────────────────────────────────
 
@@ -237,12 +237,12 @@ end
 
 fn kind_color(kind: string) -> record
   match kind
-    when "pdf" -> #d4445c
-    when "img" -> #2f9e77
-    when "doc" -> #2f7fd6
-    when "sheet" -> #1f9d8f
-    when "zip" -> #b8791a
-    when _ -> #6c7487
+    when "pdf" -> :d4445c
+    when "img" -> :2f9e77
+    when "doc" -> :2f7fd6
+    when "sheet" -> :1f9d8f
+    when "zip" -> :b8791a
+    when _ -> :6c7487
   end
 end
 
@@ -420,7 +420,7 @@ fn draw_row(t: record, r: record, v: string, is_sel: bool, is_checked: bool, hot
   let card = rect(r.x + 8, r.y + 3, r.w - 16, r.h - 6)
   let ground = if is_sel then PAPER elsif is_checked then ACCENT_SOFT elsif hot then tint(LIST_BG, INK, 4) else LIST_BG end
   if is_sel then
-    draw_shadow(card, {radius: 12, blur: 14, dy: 3, color: #1a2040, a: 26})
+    draw_shadow(card, {radius: 12, blur: 14, dy: 3, color: :1a2040, a: 26})
     draw_rect_rounded(card, 12, PAPER)
     draw_rect_rounded(card.x, card.y + 14, 3, card.h - 28, 2, ACCENT)
   elsif is_checked || hot then
@@ -900,17 +900,17 @@ clear(LIST_BG.r, LIST_BG.g, LIST_BG.b)
 
 draw_rect(0, 0, RAIL_W, H, RAIL)
 
-draw_rect_gradient_rounded(rect(20, 20, 30, 30), 9, ACCENT_HI, #3a47b8, 1.2)
+draw_rect_gradient_rounded(rect(20, 20, 30, 30), 9, ACCENT_HI, :3a47b8, 1.2)
 icons.icon("sent", rect(27, 27, 16, 16), WHITE, 1.6)
 draw_text("Plume", {x: 60, y: 22}, {size: 19, color: WHITE, font: "ui", weight: 700, spacing: 0.2})
 
 let compose_r = rect(16, 70, RAIL_W - 32, 42)
 let compose_hot = hit(compose_r, m_main)
 draw_shadow(compose_r, {radius: 11, blur: 16, dy: 4, color: ACCENT, a: 70})
-draw_rect_gradient_rounded(compose_r, 11, if compose_hot then #6b7af0 else ACCENT_HI end, ACCENT, 1.57)
+draw_rect_gradient_rounded(compose_r, 11, if compose_hot then :6b7af0 else ACCENT_HI end, ACCENT, 1.57)
 icons.icon("compose", rect(compose_r.x + 14, compose_r.y + 13, 16, 16), WHITE, 1.6)
 draw_text("Compose", {x: compose_r.x + 40, y: text_layout.text_line_y(compose_r, sb(14, WHITE))}, sb(14, WHITE))
-keycap(compose_r.x + compose_r.w - 32, compose_r.y + 11, "C", #6b79e6, WHITE)
+keycap(compose_r.x + compose_r.w - 32, compose_r.y + 11, "C", :6b79e6, WHITE)
 if compose_hot && press then act = "compose" end
 
 draw_text("MAILBOXES", {x: 24, y: 136}, caps(RAIL_FAINT))
@@ -1359,17 +1359,17 @@ end
 if toast_on then
   request_frame()
   let a = int(255.0 * clamp(toast.left / 0.35, 0.0, 1.0))
-  draw_shadow(toast_r, {radius: 12, blur: 22, dy: 8, color: #0b0e1a, a: a / 4})
-  draw_rect_rounded(toast_r, 12, #1b2033, a)
+  draw_shadow(toast_r, {radius: 12, blur: 22, dy: 8, color: :0b0e1a, a: a / 4})
+  draw_rect_rounded(toast_r, 12, :1b2033, a)
   let msg_w = if toast.can_undo then toast_r.w - 118 else toast_r.w - 32 end
   let ts = st(13, WHITE)
   draw_text(ellipsize(toast.msg, msg_w, ts), {x: toast_r.x + 16, y: text_layout.text_line_y(toast_r, ts)}, {...ts, color: {...WHITE, a: a}})
   if toast.can_undo then
     let ur = rect(toast_r.x + toast_r.w - 96, toast_r.y + 7, 88, 30)
     let hot = hit(ur, !compose)
-    if hot then draw_rect_rounded(ur, 8, #2b3350, a) end
+    if hot then draw_rect_rounded(ur, 8, :2b3350, a) end
     label_line("Undo", rect(ur.x + 8, ur.y, 40, ur.h), sb(13, {r: 157, g: 170, b: 255, a: a}), "left")
-    keycap(ur.x + 54, ur.y + 5, "Z", #2b3350, RAIL_TEXT)
+    keycap(ur.x + 54, ur.y + 5, "Z", :2b3350, RAIL_TEXT)
     if hot && press then act = "undo" end
   end
 end
@@ -1377,8 +1377,8 @@ end
 // ── Compose ──────────────────────────────────────────────────────────────
 
 if compose then
-  draw_rect(0, 0, W, H, #0e1220, int(120.0 * modal_a))
-  draw_shadow(mr, {radius: 16, blur: 44, dy: 18, color: #0b0e1a, a: 90})
+  draw_rect(0, 0, W, H, :0e1220, int(120.0 * modal_a))
+  draw_shadow(mr, {radius: 16, blur: 44, dy: 18, color: :0b0e1a, a: 90})
   draw_rect_rounded(mr, 16, PAPER)
 
   let heading = if c_draft != 0 then "Continue draft" else "New message" end
@@ -1464,8 +1464,8 @@ if tip != "" then
     let w = text_width(tip, ts) + 20
     let tx = clamp(mouse_x() - w / 2, 8, W - w - 8)
     let tr = rect(tx, mouse_y() + 22, w, 26)
-    draw_shadow(tr, {radius: 7, blur: 12, dy: 4, color: #0b0e1a, a: 60})
-    draw_rect_rounded(tr, 7, #1b2033)
+    draw_shadow(tr, {radius: 7, blur: 12, dy: 4, color: :0b0e1a, a: 60})
+    draw_rect_rounded(tr, 7, :1b2033)
     label_line(tip, tr, ts, "center")
   end
 end

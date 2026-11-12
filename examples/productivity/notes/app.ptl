@@ -16,24 +16,24 @@
 import ui
 
 // ── palette ─────────────────────────────────────────────────────────────────
-let RAIL_BG   = #e7e1d5
-let LIST_BG   = #f1ece2
-let PAPER     = #fbf8f2
-let CARD_HOV  = #e9e3d7
-let INK       = #2a2622
-let INK_SOFT  = #635b50
-let FAINT     = #9a9081
-let GHOST     = #b9b1a2
-let RULE      = #d9d1c1
-let RULE_SOFT = #e6dfd1
-let ACCENT    = #b2543a
-let SAGE      = #4c7360
-let GOLD      = #b3861f
-let BLUE      = #4a6f96
-let VIOLET    = #7a6ba8
-let SELBG     = #d2dbe6
-let MATCH     = #f3dfa4
-let WHITE     = #ffffff
+let RAIL_BG   = :e7e1d5
+let LIST_BG   = :f1ece2
+let PAPER     = :fbf8f2
+let CARD_HOV  = :e9e3d7
+let INK       = :2a2622
+let INK_SOFT  = :635b50
+let FAINT     = :9a9081
+let GHOST     = :b9b1a2
+let RULE      = :d9d1c1
+let RULE_SOFT = :e6dfd1
+let ACCENT    = :b2543a
+let SAGE      = :4c7360
+let GOLD      = :b3861f
+let BLUE      = :4a6f96
+let VIOLET    = :7a6ba8
+let SELBG     = :d2dbe6
+let MATCH     = :f3dfa4
+let WHITE     = :ffffff
 
 // ── metrics ─────────────────────────────────────────────────────────────────
 let W = screen_width()
@@ -853,8 +853,8 @@ for i in range(0, len(shown)) do
         let bw = text_width(a.label, FS_TINY) + 22
         let br = rect(bx, cr.y + CARD_H + 4, bw, 24)
         let bhot = hovered(br)
-        let bc = if a.danger then #a8402f else INK_SOFT end
-        draw_rect_rounded(br, radius: 12, c: if bhot then (if a.danger then #a8402f else ACCENT end) else RULE end,
+        let bc = if a.danger then :a8402f else INK_SOFT end
+        draw_rect_rounded(br, radius: 12, c: if bhot then (if a.danger then :a8402f else ACCENT end) else RULE end,
           a: if bhot then 28 else 90 end)
         draw_text_center(a.label, cx: br.x + br.w / 2, y: br.y + 6, size: FS_TINY,
           c: if bhot then bc else INK_SOFT end)

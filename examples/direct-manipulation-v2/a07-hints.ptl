@@ -18,5 +18,5 @@ let y = rigid(80)
 let r = tunable(10, 4, 20, 2)
 let dy = 0
 
-draw_rect(0, 0, 400, 200, #101418)
-draw_circle(x, y + dy, r, #60d0a0)
+draw_rect(0, 0, 400, 200, :101418)
+draw_circle(x, y + dy, r, :60d0a0)

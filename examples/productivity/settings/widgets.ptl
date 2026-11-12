@@ -82,7 +82,7 @@ fn fade(c: record, e: num) -> record
 end
 
 fn knob_shadow(r: record, radius: num, e: num) -> nil
-  draw_shadow(r, {radius: radius, blur: 5, spread: 0, dx: 0, dy: 1, color: #000000,
+  draw_shadow(r, {radius: radius, blur: 5, spread: 0, dx: 0, dy: 1, color: :000000,
     a: int((get _t).shadow * 0.9 * e)})
 end
 

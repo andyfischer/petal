@@ -19,10 +19,10 @@ let cx = tunable(200)
 let spread = tunable(160)
 let count = 12
 
-draw_rect(0, 0, 400, 300, #05060d)
+draw_rect(0, 0, 400, 300, :05060d)
 for i in range(0, count) do
   let x = cx + (random() - 0.5) * spread
   let y = 150 + (random() - 0.5) * 120
-  draw_circle(x, y, 4 + random_int(0, 3), #ffe8a0)
+  draw_circle(x, y, 4 + random_int(0, 3), :ffe8a0)
 end
-draw_circle(cx, 150, 10, #ff8040)
+draw_circle(cx, 150, 10, :ff8040)

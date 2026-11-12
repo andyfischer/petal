@@ -11,15 +11,15 @@ fn mouse_over(rect: record) -> bool
 end
 
 // Color palette
-let bg = #1e1e2d
-let line_color = #64648c
-let node_bg = #3c3c55
-let node_border = #64648c
-let text_color = #c8c8dc
-let title_color = #a0a0c8
-let label_color = #b4b464
-let highlight_border = #508cdc
-let highlight_bg = #325aa0
+let bg = :1e1e2d
+let line_color = :64648c
+let node_bg = :3c3c55
+let node_border = :64648c
+let text_color = :c8c8dc
+let title_color = :a0a0c8
+let label_color = :b4b464
+let highlight_border = :508cdc
+let highlight_bg = :325aa0
 
 // Overloaded draw functions: accept point/color records
 let _draw_line = draw_line
@@ -95,7 +95,7 @@ for n in nodes do
   if mouse_over(node_rect) then
     draw_rect(x: n.x - 2, y: n.y - 2, w: n.w + 4, h: n.h + 4, r: highlight_border.r, g: highlight_border.g, b: highlight_border.b)
     draw_rect(x: n.x, y: n.y, w: n.w, h: n.h, r: highlight_bg.r, g: highlight_bg.g, b: highlight_bg.b)
-    draw_text(n.label, {x: n.x + 10, y: n.y + 12}, 16, #ffffff)
+    draw_text(n.label, {x: n.x + 10, y: n.y + 12}, 16, :ffffff)
   else
     draw_rect(x: n.x, y: n.y, w: n.w, h: n.h, r: node_bg.r, g: node_bg.g, b: node_bg.b)
     draw_rect_outline(n.x, n.y, n.w, n.h, node_border.r, node_border.g, node_border.b)

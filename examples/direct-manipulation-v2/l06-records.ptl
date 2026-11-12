@@ -15,9 +15,9 @@ import ui
 let origin = {x: 0, y: 0}
 
 let shapes = [
-  {kind: "circle", x: 80, y: 80, r: 20, color: #e05050},
-  {kind: "rect", x: 160, y: 60, w: 50, h: 40, color: #50a050},
-  {kind: "circle", x: 300, y: 200, r: 12, color: #5050e0},
+  {kind: "circle", x: 80, y: 80, r: 20, color: :e05050},
+  {kind: "rect", x: 160, y: 60, w: 50, h: 40, color: :50a050},
+  {kind: "circle", x: 300, y: 200, r: 12, color: :5050e0},
 ]
 
 fn draw_shape(s)
@@ -30,7 +30,7 @@ fn draw_shape(s)
   end
 end
 
-draw_rect(0, 0, 400, 300, #101418)
+draw_rect(0, 0, 400, 300, :101418)
 for s in shapes do
   draw_shape(s)
 end

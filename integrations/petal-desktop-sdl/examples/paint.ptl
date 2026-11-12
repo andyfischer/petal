@@ -31,18 +31,18 @@ state demo_frame = 0
 
 // ── Color palette (12 colors) ──
 let palette = [
-  {color: #ffffff, name: "White"},
-  {color: #ff3c50, name: "Red"},
-  {color: #ff8c32, name: "Orange"},
-  {color: #ffdc32, name: "Yellow"},
-  {color: #50dc50, name: "Green"},
-  {color: #32c8b4, name: "Teal"},
-  {color: #3c8cff, name: "Blue"},
-  {color: #8c50ff, name: "Purple"},
-  {color: #ff64c8, name: "Pink"},
-  {color: #b48250, name: "Brown"},
-  {color: #a0a0a0, name: "Gray"},
-  {color: #141414, name: "Black"}
+  {color: :ffffff, name: "White"},
+  {color: :ff3c50, name: "Red"},
+  {color: :ff8c32, name: "Orange"},
+  {color: :ffdc32, name: "Yellow"},
+  {color: :50dc50, name: "Green"},
+  {color: :32c8b4, name: "Teal"},
+  {color: :3c8cff, name: "Blue"},
+  {color: :8c50ff, name: "Purple"},
+  {color: :ff64c8, name: "Pink"},
+  {color: :b48250, name: "Brown"},
+  {color: :a0a0a0, name: "Gray"},
+  {color: :141414, name: "Black"}
 ]
 
 state selected_color = 0

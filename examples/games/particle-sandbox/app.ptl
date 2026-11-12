@@ -29,18 +29,18 @@ import noise
 
 // ── Palette ──────────────────────────────────────────────────────────────
 
-let C_BG     = #06070d
-let C_STAGE  = #090b15
-let C_PANEL  = #0e111c
-let C_CHIP   = #151a2a
-let C_LINE   = #1d2233
-let C_EDGE   = #2a3147
-let C_TEXT   = #e8ecf8
-let C_DIM    = #7d869e
-let C_MUTE   = #4a5166
-let C_ACCENT = #6fd3ff
-let C_WARM   = #ff8a5c
-let C_GOLD   = #ffd166
+let C_BG     = :06070d
+let C_STAGE  = :090b15
+let C_PANEL  = :0e111c
+let C_CHIP   = :151a2a
+let C_LINE   = :1d2233
+let C_EDGE   = :2a3147
+let C_TEXT   = :e8ecf8
+let C_DIM    = :7d869e
+let C_MUTE   = :4a5166
+let C_ACCENT = :6fd3ff
+let C_WARM   = :ff8a5c
+let C_GOLD   = :ffd166
 
 // ── Type scale: 10 / 11 / 13 / 20 / 28 ───────────────────────────────────
 
@@ -82,13 +82,13 @@ let HEAD   = 76
 let SIDE_W = 248
 
 let TOOLS = [
-  {name: "Attract", key: "1", color: #6fd3ff, hint: "pull particles in"},
-  {name: "Repel",   key: "2", color: #ff7a6b, hint: "push particles away"},
-  {name: "Vortex",  key: "3", color: #b99cff, hint: "swirl around the cursor"},
-  {name: "Grab",    key: "4", color: #ffd166, hint: "carry what the brush holds"},
-  {name: "Emit",    key: "5", color: #7ff0b0, hint: "spray new particles"},
-  {name: "Erase",   key: "6", color: #ff5fa2, hint: "delete under the brush"},
-  {name: "Well",    key: "7", color: #9fb4ff, hint: "drop or remove a gravity well"},
+  {name: "Attract", key: "1", color: :6fd3ff, hint: "pull particles in"},
+  {name: "Repel",   key: "2", color: :ff7a6b, hint: "push particles away"},
+  {name: "Vortex",  key: "3", color: :b99cff, hint: "swirl around the cursor"},
+  {name: "Grab",    key: "4", color: :ffd166, hint: "carry what the brush holds"},
+  {name: "Emit",    key: "5", color: :7ff0b0, hint: "spray new particles"},
+  {name: "Erase",   key: "6", color: :ff5fa2, hint: "delete under the brush"},
+  {name: "Well",    key: "7", color: :9fb4ff, hint: "drop or remove a gravity well"},
 ]
 let T_ATTRACT = 0
 let T_REPEL   = 1
@@ -115,8 +115,8 @@ fn ramp(stops: list, count: int) -> list
 end
 
 fn build_lut() -> record
-  let ice = ramp([#2c3aa6, #3f74ff, #4fd2ff, #d9fbff, #ffffff], LN)
-  let ember = ramp([#8a2a1c, #e8482a, #ff8a3c, #ffd166, #fff6d6], LN)
+  let ice = ramp([:2c3aa6, :3f74ff, :4fd2ff, :d9fbff, :ffffff], LN)
+  let ember = ramp([:8a2a1c, :e8482a, :ff8a3c, :ffd166, :fff6d6], LN)
   let spectrum = for i in range(0, LN) do hsv(float(i) / float(LN), 0.58, 1.0) end
   let cols = []
   for c in ice do cols = append(cols, c) end

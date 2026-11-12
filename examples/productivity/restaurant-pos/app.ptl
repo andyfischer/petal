@@ -445,7 +445,7 @@ for k in range(0, 3) do
   draw_ellipse(px - 4.0, py - 2.0, 3.6, 2.0, lk.BAR_INK)
   draw_ellipse(px + 3.0, py + 3.0, 2.0, 3.6, lk.BAR_INK)
 end
-draw_circle({x: mark.x + 8.0, y: mark.y - 9.0}, 2.6, #9fb7d6)
+draw_circle({x: mark.x + 8.0, y: mark.y - 9.0}, 2.6, :9fb7d6)
 lk.txt("Juniper & Ash", Rect(PAD + 54, 14, 200, 28), lk.serif(21, lk.BAR_INK))
 lk.txt("DINING ROOM  /  DINNER", Rect(PAD + 55, 42, 200, 18), lk.caps(lk.BAR_MUT))
 
@@ -473,10 +473,10 @@ for i in range(0, len(mn.TABLES)) do
   lk.txt(sub, Rect(r.x, r.y + 32, r.w, 16), lk.ui(11, if on then lk.BAR_INK else lk.BAR_MUT end), "center")
   if len(unsent(tt)) > 0 then
     draw_circle({x: r.x + r.w - 10, y: r.y + 10}, 6.0, if on then lk.ACCENT else base end)
-    draw_circle({x: r.x + r.w - 10, y: r.y + 10}, 4.5, #f0b445)
+    draw_circle({x: r.x + r.w - 10, y: r.y + 10}, 4.5, :f0b445)
   end
   if len(tt.paid) > 0 then
-    draw_circle_outline({x: r.x + 11, y: r.y + 10}, 4.5, #7fc495, 255, 2.0)
+    draw_circle_outline({x: r.x + 11, y: r.y + 10}, 4.5, :7fc495, 255, 2.0)
   end
   if lk.press(r) && !on then
     set cur = i
@@ -489,7 +489,7 @@ end
 // The clock and who is signed in.
 let rx = W - PAD
 let av = {x: rx - 22, y: TOP_H / 2.0}
-draw_circle(av, 21.0, #6b7f5e)
+draw_circle(av, 21.0, :6b7f5e)
 lk.txt("MR", Rect(av.x - 21, av.y - 21, 42, 42), lk.uib(14, lk.BAR_INK), "center")
 lk.txt(SERVER, Rect(rx - 160, 16, 106, 24), lk.uib(14, lk.BAR_INK), "right")
 lk.txt("Server, section B", Rect(rx - 160, 40, 106, 18), lk.ui(11, lk.BAR_MUT), "right")
@@ -552,7 +552,7 @@ for i in range(0, len(items)) do
   let fl = if flash.item == it.id then clamp(1.0 - flash.age / 0.6, lo: 0.0, hi: 1.0) else 0.0 end
   if fl > 0.0 then lk.mark_busy() end
   let lift = 2.0 * h - (if down then 2.0 else 0.0 end)
-  draw_shadow(Rect(r.x, r.y + 2, r.w, r.h), {radius: 16, blur: 12 + 10 * h, dy: 3 + lift, color: #5a4632,
+  draw_shadow(Rect(r.x, r.y + 2, r.w, r.h), {radius: 16, blur: 12 + 10 * h, dy: 3 + lift, color: :5a4632,
     a: int(28 + 30 * h)})
   let face = if out then mix(lk.PAPER, lk.CARD, 0.4) else mix(mix(lk.CARD, c_now.tone, 0.04 * h + 0.16 * fl), lk.SUNK,
     if down then 0.5 else 0.0 end) end
@@ -582,7 +582,7 @@ for i in range(0, len(items)) do
     let tw = text_width(label, lk.caps(tone)) + 18
     let pr = Rect(r.x + r.w - tw - 12, r.y + r.h - 36, tw, 22)
     draw_rect_rounded(pr, 11, mix(lk.CARD, tone, 0.14))
-    lk.txt(label, pr, lk.caps(mix(tone, #000000, 0.15)), "center")
+    lk.txt(label, pr, lk.caps(mix(tone, :000000, 0.15)), "center")
   end
   let cnt = counts_here[i]
   if cnt > 0 then
@@ -630,7 +630,7 @@ for k in range(0, min(fit_tk, len(tickets))) do
   clip_pop()
   lk.txt("#{tk.no}", Rect(r.x + 14, r.y + 6, 80, 22), lk.mono(14, lk.INK))
   lk.txt("Table {tk.table}", Rect(r.x + 14, r.y + 25, 120, 16), lk.uib(12, lk.SOFT))
-  lk.txt(mins_text(age), Rect(r.x, r.y + 6, r.w - 14, 22), lk.mono(15, mix(tone, #000000, 0.15)), "right")
+  lk.txt(mins_text(age), Rect(r.x, r.y + 6, r.w - 14, 22), lk.mono(15, mix(tone, :000000, 0.15)), "right")
   lk.txt(upper(tk.stations), Rect(r.x, r.y + 25, r.w - 14, 16), lk.caps(lk.MUTED, 9), "right")
   let iy = r.y + 56
   let bump_r = Rect(r.x + 10, r.y + r.h - 52, r.w - 20, 42)
@@ -650,7 +650,7 @@ for k in range(0, min(fit_tk, len(tickets))) do
     end
     if itm.note != "" then
       lk.txt(lk.fit(upper(itm.note), lk.caps(lk.AMBER, 9), r.w - 50), Rect(r.x + 34, iy - 2, r.w - 46, 16),
-        lk.caps(mix(lk.AMBER, #000000, 0.1), 9))
+        lk.caps(mix(lk.AMBER, :000000, 0.1), 9))
       iy += 16
     end
   end
@@ -771,7 +771,7 @@ for rw in rows do
   if rw.kind == "head" then
     let tone = if rw.label == "SENT TO KITCHEN" then lk.SAGE else lk.ACCENT end
     draw_circle({x: ox + 26, y: y + 18}, 4.0, tone)
-    lk.txt(rw.label, Rect(ox + 38, y + 8, 200, 20), lk.caps(mix(tone, #000000, 0.1), 10))
+    lk.txt(rw.label, Rect(ox + 38, y + 8, 200, 20), lk.caps(mix(tone, :000000, 0.1), 10))
     lk.dashed(ox + 44 + text_width(rw.label, lk.caps(tone, 10)), ox + ow - 22, y + 18, lk.LINE)
     continue
   end
@@ -792,7 +792,7 @@ for rw in rows do
   let qtone = if voided then lk.FAINT elsif l.sent then lk.SAGE else lk.ACCENT end
   let qb = Rect(r.x + 14, r.y + 12, 36, 28)
   draw_rect_rounded(qb, 8, mix(lk.CARD, qtone, 0.13))
-  lk.txt(str(l.qty), qb, lk.mono(15, mix(qtone, #000000, 0.2)), "center")
+  lk.txt(str(l.qty), qb, lk.mono(15, mix(qtone, :000000, 0.2)), "center")
   let name_s = lk.uib(15, if voided then lk.FAINT else lk.INK end)
   let nm = lk.fit(it.name, name_s, text_w)
   let nw = lk.txt(nm, Rect(r.x + LX, r.y + 12, text_w, 28), name_s)
@@ -820,7 +820,7 @@ for rw in rows do
     let nr = Rect(r.x + LX, my + 3, text_width(l.note, lk.uib(12, lk.AMBER)) + 22, 19)
     draw_rect_rounded(nr, 6, mix(lk.CARD, lk.AMBER, 0.14))
     draw_rect_rounded(Rect(nr.x + 6, nr.y + 5, 3, 9), 1, lk.AMBER)
-    lk.txt(l.note, Rect(nr.x + 14, nr.y, nr.w - 14, nr.h), lk.uib(12, mix(lk.AMBER, #000000, 0.3)))
+    lk.txt(l.note, Rect(nr.x + 14, nr.y, nr.w - 14, nr.h), lk.uib(12, mix(lk.AMBER, :000000, 0.3)))
     my += 22
   end
   if on then
@@ -933,9 +933,9 @@ fn sheet_frame(w: num, h: num, k: num) -> Rect
   if k > 0.5 then
     draw_backdrop_blur(Rect(0, 0, W2, H2), 3)
   end
-  draw_rect(0, 0, W2, H2, #1d1714, int(150.0 * k))
+  draw_rect(0, 0, W2, H2, :1d1714, int(150.0 * k))
   let r = Rect((W2 - w) / 2.0, (H2 - h) / 2.0 + (1.0 - k) * 24.0, w, h)
-  draw_shadow(r, {radius: 22, blur: 40, dy: 14, color: #1d1714, a: int(110.0 * k)})
+  draw_shadow(r, {radius: 22, blur: 40, dy: 14, color: :1d1714, a: int(110.0 * k)})
   draw_rect_rounded(r, 22, lk.CARD)
   r
 end
@@ -983,7 +983,7 @@ if sheet == "mods" then
   draw_rect(r.x, r.y, r.w, 6, tone)
   clip_pop()
   let x0 = r.x + 32
-  lk.txt(mn.CATS[it.cat].name, Rect(x0, r.y + 22, 300, 16), lk.caps(mix(tone, #000000, 0.1), 10))
+  lk.txt(mn.CATS[it.cat].name, Rect(x0, r.y + 22, 300, 16), lk.caps(mix(tone, :000000, 0.1), 10))
   lk.txt(it.name, Rect(x0, r.y + 38, GW - 200, 38), lk.serif(28, lk.INK))
   lk.txt(it.blurb, Rect(x0, r.y + 76, GW - 160, 20), lk.ui(14, lk.MUTED))
   lk.txt(lk.usd(it.cents), Rect(x0, r.y + 42, GW - 64, 30), lk.mono(20, lk.SOFT), "right")
@@ -1007,7 +1007,7 @@ if sheet == "mods" then
     let rw = text_width(upper(rl), lk.caps(rt, 9)) + 18
     let rr = Rect(x0 + gw + 12, gy + 3, rw, 19)
     draw_rect_rounded(rr, 9, mix(lk.CARD, rt, 0.12))
-    lk.txt(upper(rl), rr, lk.caps(mix(rt, #000000, 0.15), 9), "center")
+    lk.txt(upper(rl), rr, lk.caps(mix(rt, :000000, 0.15), 9), "center")
     gy += 34
     let per = min(len(g.opts), if len(g.opts) == 5 then 5 else 4 end)
     let cw = (GW - (per - 1) * 10.0) / per
@@ -1143,7 +1143,7 @@ if sheet == "send" then
   for s in st do
     let tone = station_tone(s)
     draw_rect_rounded(Rect(x0, yy + 8, 4, 18), 2, tone)
-    lk.txt(upper(s), Rect(x0 + 14, yy + 6, 200, 22), lk.caps(mix(tone, #000000, 0.1), 11))
+    lk.txt(upper(s), Rect(x0 + 14, yy + 6, 200, 22), lk.caps(mix(tone, :000000, 0.1), 11))
     yy += 40
     for l in filter(fresh, fn(x) -> station_of(x) == s) do
       lk.txt("{l.qty}", Rect(x0 + 14, yy, 28, 24), lk.mono(16, lk.ACCENT))
@@ -1155,7 +1155,7 @@ if sheet == "send" then
         yy += 18
       end
       if l.note != "" then
-        lk.txt(upper(l.note), Rect(x0 + 44, yy - 2, SW - 110, 18), lk.caps(mix(lk.AMBER, #000000, 0.2), 10))
+        lk.txt(upper(l.note), Rect(x0 + 44, yy - 2, SW - 110, 18), lk.caps(mix(lk.AMBER, :000000, 0.2), 10))
         yy += 20
       end
       yy += 4
@@ -1333,7 +1333,7 @@ if sheet == "pay" then
         end
         lk.txt("Guest {k + 1}", Rect(pr.x + 30, pr.y, 100, 30), lk.uib(14, if p.state == "later" then lk.MUTED else lk.INK end))
         let st = if p.state == "paid" then "paid by {lower(p.method)}" elsif p.state == "now" then "paying now" else "waiting" end
-        lk.txt(st, Rect(pr.x + 120, pr.y, 140, 30), lk.ui(13, mix(tone, #000000, 0.1)))
+        lk.txt(st, Rect(pr.x + 120, pr.y, 140, 30), lk.ui(13, mix(tone, :000000, 0.1)))
         lk.txt(lk.usd(p.amount), Rect(pr.x, pr.y, pr.w - 12, 30), lk.mono(14, if p.state == "later" then lk.MUTED else lk.INK end),
           "right")
         yy += 32
@@ -1360,7 +1360,7 @@ if sheet == "pay" then
       let pr = Rect(rx0, ry, RW, 250)
       draw_rect_rounded(pr, 16, lk.PAPER)
       let dev = Rect(pr.x + pr.w / 2.0 - 60, pr.y + 30, 120, 150)
-      draw_shadow(dev, {radius: 16, blur: 16, dy: 6, color: #3a2c22, a: 60})
+      draw_shadow(dev, {radius: 16, blur: 16, dy: 6, color: :3a2c22, a: 60})
       draw_rect_rounded(dev, 16, lk.BAR)
       draw_rect_rounded(Rect(dev.x + 14, dev.y + 16, dev.w - 28, 64), 8, lk.BAR_UP)
       lk.txt(lk.usd(charge), Rect(dev.x + 14, dev.y + 16, dev.w - 28, 64), lk.mono(14, lk.BAR_INK), "center")
@@ -1368,7 +1368,7 @@ if sheet == "pay" then
         let cxa = dev.x + dev.w / 2.0
         let rad = 9.0 + k * 8.0
         let pulse = 0.5 + 0.5 * sin(time() * 3.0 - k * 0.9)
-        fill_arc({x: cxa - 18.0, y: dev.y + 118.0}, rad, rad + 2.6, -0.75, 0.75, mix(lk.BAR_MUT, #9fd4ae, pulse))
+        fill_arc({x: cxa - 18.0, y: dev.y + 118.0}, rad, rad + 2.6, -0.75, 0.75, mix(lk.BAR_MUT, :9fd4ae, pulse))
       end
       lk.txt("Tap, insert or swipe", Rect(pr.x, pr.y + 194, pr.w, 22), lk.uib(15, lk.INK), "center")
       lk.txt("The reader is showing the guest {lk.usd(charge)}", Rect(pr.x, pr.y + 216, pr.w, 18), lk.ui(12, lk.MUTED),
@@ -1489,8 +1489,8 @@ if sheet == "pay" then
       let cr = Rect(cxr - 210, cyr + 146, 420, 110)
       draw_rect_rounded(cr, 18, mix(lk.CARD, lk.SAGE, 0.10))
       draw_rect_rounded_outline(cr, 18, mix(lk.LINE, lk.SAGE, 0.5))
-      lk.txt("CHANGE DUE", Rect(cr.x, cr.y + 16, cr.w, 18), lk.caps(mix(lk.SAGE, #000000, 0.1), 11), "center")
-      lk.txt(lk.usd(res.change), Rect(cr.x, cr.y + 38, cr.w, 56), lk.mono(44, mix(lk.SAGE, #000000, 0.2)), "center")
+      lk.txt("CHANGE DUE", Rect(cr.x, cr.y + 16, cr.w, 18), lk.caps(mix(lk.SAGE, :000000, 0.1), 11), "center")
+      lk.txt(lk.usd(res.change), Rect(cr.x, cr.y + 38, cr.w, 56), lk.mono(44, mix(lk.SAGE, :000000, 0.2)), "center")
       lk.txt("from {lk.usd(res.tendered)}", Rect(cr.x, cr.y + 118, cr.w, 22), lk.ui(13, lk.MUTED), "center")
     else
       // The slip the reader would print: a made-up card and auth code,
@@ -1504,7 +1504,7 @@ if sheet == "pay" then
       draw_rect_rounded_outline(cr, 18, lk.LINE)
       let chip_r = Rect(cr.x + 26, cr.y + 30, 64, 46)
       draw_rect_rounded(chip_r, 8, lk.BAR)
-      draw_rect_rounded(Rect(chip_r.x + 10, chip_r.y + 12, 16, 12), 3, #d8b36a)
+      draw_rect_rounded(Rect(chip_r.x + 10, chip_r.y + 12, 16, 12), 3, :d8b36a)
       lk.txt("{brand} ending {last4}", Rect(cr.x + 110, cr.y + 26, 280, 26), lk.uib(17, lk.INK))
       lk.txt("Auth {auth}  /  contactless", Rect(cr.x + 110, cr.y + 54, 280, 22), lk.mono(13, lk.MUTED))
     end
@@ -1564,7 +1564,7 @@ for k in range(0, if sheet == "" then len(toasts) else 0 end) do
   // (a frame with no time in it) must be legible straight away.
   let a = a_out
   let tr = Rect(MENU_X + (MENU_W - w) / 2.0, H - PAD - 64 - k * 56 + (1.0 - a_in) * 10.0, w, 46)
-  draw_shadow(tr, {radius: 23, blur: 20, dy: 6, color: #1d1714, a: int(90 * a)})
+  draw_shadow(tr, {radius: 23, blur: 20, dy: 6, color: :1d1714, a: int(90 * a)})
   draw_rect_rounded(tr, 23, lk.BAR, int(245 * a))
   draw_circle({x: tr.x + 24, y: tr.y + 23}, 9.0, tone, int(255 * a))
   if t.kind == "ok" then

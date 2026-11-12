@@ -604,21 +604,21 @@ state armed = false      // esc pressed, waiting for the `z` that undoes
 
 // ══ 4. palette + metrics ══════════════════════════════════════════════════
 
-let BG = #0e1015
-let SURFACE = #161a23
-let PANEL = #1a1f2a
-let BAND = #12161e
-let LINE = #232a37
-let LINE_SOFT = #1c222d
-let TEXT = #e3e9f2
-let DIM = #78849a
-let FAINT = #4d5769
-let ACCENT = #4fd1a5
-let ACCENT_DK = #1e6b58
-let FORMULA = #8fe3c6
-let NEG = #ef8f8a
-let ERRC = #ff7d7d
-let AMBER = #f0b34a
+let BG = :0e1015
+let SURFACE = :161a23
+let PANEL = :1a1f2a
+let BAND = :12161e
+let LINE = :232a37
+let LINE_SOFT = :1c222d
+let TEXT = :e3e9f2
+let DIM = :78849a
+let FAINT = :4d5769
+let ACCENT = :4fd1a5
+let ACCENT_DK = :1e6b58
+let FORMULA = :8fe3c6
+let NEG = :ef8f8a
+let ERRC = :ff7d7d
+let AMBER = :f0b34a
 
 let W = screen_width()
 let H = screen_height()
@@ -929,7 +929,7 @@ draw_text(sub, pos: {x: PAD + text_width("fy26-plan", 24) + 16, y: 53}, style: {
 
 // The mode chip.
 let mode_label = if armed then "UNDO?" elsif editing then "EDIT" else "READY" end
-let mode_col = if armed then #8ab4ff elsif editing then AMBER else ACCENT end
+let mode_col = if armed then :8ab4ff elsif editing then AMBER else ACCENT end
 draw_rect_rounded(chip_r, radius: 11, c: PANEL)
 draw_rect_outline(chip_r, c: mode_col, a: 90)
 draw_circle(cx: chip_r.x + 13, cy: chip_r.y + 11, radius: 3, r: mode_col.r, g: mode_col.g, b: mode_col.b)
@@ -938,7 +938,7 @@ draw_text(mode_label, pos: {x: chip_r.x + 22, y: chip_r.y + 6}, style: {size: 11
 // The undo pill — the mouse half of `esc z`, dimmed when there is no history.
 let can_undo = len(undo) > 0
 let undo_hot = can_undo && hovered(undo_r)
-draw_rect_rounded(undo_r, radius: 11, c: if undo_hot then #232b39 else PANEL end)
+draw_rect_rounded(undo_r, radius: 11, c: if undo_hot then :232b39 else PANEL end)
 draw_rect_outline(undo_r, if can_undo then LINE else LINE_SOFT end)
 let undo_txt = if can_undo then "undo " ++ str(len(undo)) else "undo" end
 draw_text_center(undo_txt, cx: undo_r.center_x(), y: undo_r.y + 6, size: 11,
@@ -1013,7 +1013,7 @@ for i in range(0, VIS) do
         // A flat tint, not white-at-low-alpha: the renderer composites in
         // linear space, so even `a: 10` white over this background lands
         // around #383838 — far brighter than the 4% it reads as.
-        draw_rect(cr, #1d2431)
+        draw_rect(cr, :1d2431)
       end
 
       let v = val_at(r, c)
@@ -1067,7 +1067,7 @@ draw_rect_outline(rect(PAD, GRID_Y, SW, GRID_H), LINE)
 if sel_r >= scroll && sel_r < scroll + VIS then
   let ar = cell_rect(sel_r, sel_c)
   if editing then
-    draw_rect(ar, #0b0d12)
+    draw_rect(ar, :0b0d12)
     draw_rect_outline(ar, c: ACCENT, a: 255, width: 2)
     let avail = ar.w - 16
     let shown = ellipsize_tail(buf, avail_px: avail, size: 13)

@@ -13,22 +13,22 @@ import ui
 
 // ── Palette ──────────────────────────────────────────────────────────────
 
-let C_BG     = #080a11
-let C_COURT  = #12151f
-let C_FIELD  = #0d101a
-let C_LINE   = #1f2434
-let C_EDGE   = #2b3247
-let C_TEXT   = #e7ebf5
-let C_DIM    = #78849b
-let C_MUTE   = #495164
-let C_CHIP   = #161a26
-let C_PADDLE = #7fd0ff
-let C_BALL   = #f7f9ff
-let C_WARN   = #e0576b
+let C_BG     = :080a11
+let C_COURT  = :12151f
+let C_FIELD  = :0d101a
+let C_LINE   = :1f2434
+let C_EDGE   = :2b3247
+let C_TEXT   = :e7ebf5
+let C_DIM    = :78849b
+let C_MUTE   = :495164
+let C_CHIP   = :161a26
+let C_PADDLE = :7fd0ff
+let C_BALL   = :f7f9ff
+let C_WARN   = :e0576b
 
 // Brick rows are sampled from this ramp, hot at the top (toughest) to cool
 // at the bottom, so a row's value is readable from its hue alone.
-let BRICK_STOPS = [#e0576b, #e5854e, #d4bd5c, #5fbf9b, #4f8fd6]
+let BRICK_STOPS = [:e0576b, :e5854e, :d4bd5c, :5fbf9b, :4f8fd6]
 
 // ── Type scale ───────────────────────────────────────────────────────────
 // Five sizes in the whole app: 10 / 12 / 20 / 30 / 44.
@@ -68,10 +68,10 @@ let FOOT = 60
 let LAYOUTS = ["SOLID WALL", "OPEN ARCH", "WEAVE", "PILLARS"]
 
 let POWERS = [
-  {key: "wide",  name: "WIDE PADDLE", short: "WIDE",  c: #6fd6ff},
-  {key: "multi", name: "MULTIBALL",   short: "MULTI", c: #ffd166},
-  {key: "slow",  name: "SLOW BALL",   short: "SLOW",  c: #a58cf0},
-  {key: "life",  name: "EXTRA LIFE",  short: "+LIFE", c: #6fe0a0},
+  {key: "wide",  name: "WIDE PADDLE", short: "WIDE",  c: :6fd6ff},
+  {key: "multi", name: "MULTIBALL",   short: "MULTI", c: :ffd166},
+  {key: "slow",  name: "SLOW BALL",   short: "SLOW",  c: :a58cf0},
+  {key: "life",  name: "EXTRA LIFE",  short: "+LIFE", c: :6fe0a0},
 ]
 
 // ── Persistent state ─────────────────────────────────────────────────────
@@ -463,7 +463,7 @@ if phase == "play" && left == 0 then
   set banner = "LEVEL {level} CLEAR"
   set subbanner = "press SPACE or click for level {level + 1}"
   set score = score + 250 + lives * 100
-  set bits = burst(bits, x: float(cx), y: float(court.y + court.h / 2), n: 60, col: #ffd166, dirx: 0.0, diry: 0.0, power: 2.0)
+  set bits = burst(bits, x: float(cx), y: float(court.y + court.h / 2), n: 60, col: :ffd166, dirx: 0.0, diry: 0.0, power: 2.0)
 end
 
 if phase == "play" && len(balls) == 0 then
@@ -597,7 +597,7 @@ let cmult = 1 + combo / 6
 tx_right("COMBO", right_x: cell3, y: 30, style: S_LABEL)
 tx_right(if combo == 0 then "—" elsif cmult > 1 then "{combo}  ×{cmult}" else str(combo) end,
   right_x: cell3, y: 46,
-  style: if cmult > 1 then {...S_STAT, color: #ffd166} elsif combo > 0 then S_STAT else S_STATD end)
+  style: if cmult > 1 then {...S_STAT, color: :ffd166} elsif combo > 0 then S_STAT else S_STATD end)
 tx_right("BEST COMBO {best_combo}   ·   {broken} BRICKS BROKEN", right_x: cell3, y: 76, style: S_HINT)
 
 // ── Draw: court ──────────────────────────────────────────────────────────
@@ -648,13 +648,13 @@ for row in range(0, ROWS) do
       if hp < full then
         // A hairline where the armour ran out, so a chipped brick is legible
         // even where the two tones are close.
-        draw_rect(rect(q.x + lit, q.y + 2, 1, q.h - 4), c: #000000, a: 90)
+        draw_rect(rect(q.x + lit, q.y + 2, 1, q.h - 4), c: :000000, a: 90)
       end
       // A bevel across the top gives the row a lit edge.
-      draw_rect_rounded(rect(q.x + 3, q.y + 2, q.w - 6, 2), radius: 1, c: #ffffff, a: 40)
+      draw_rect_rounded(rect(q.x + 3, q.y + 2, q.w - 6, 2), radius: 1, c: :ffffff, a: 40)
       let f = brick_hit[idx]
       if f > 0.0 then
-        draw_rect_rounded(q, radius: 4, c: #ffffff, a: int(f * 190.0))
+        draw_rect_rounded(q, radius: 4, c: :ffffff, a: int(f * 190.0))
       end
     end
   end
@@ -691,9 +691,9 @@ let pr = rect(int(padx) + sx, pad_y + sy, pw, PADH)
 draw_rect_rounded(pr.inset(-7), radius: 13, c: C_PADDLE, a: int(16.0 + flash_pad * 55.0))
 draw_rect_rounded(pr.inset(-3), radius: 10, c: C_PADDLE, a: int(26.0 + flash_pad * 80.0))
 draw_rect_rounded(pr, radius: 7, c: C_PADDLE)
-draw_rect_rounded(rect(pr.x + 10, pr.y + 4, pr.w - 20, 3), radius: 2, c: #ffffff, a: 90)
+draw_rect_rounded(rect(pr.x + 10, pr.y + 4, pr.w - 20, 3), radius: 2, c: :ffffff, a: 90)
 // Grip marks, so the paddle centre (the flat return) is readable.
-draw_rect(rect(pr.center_x() - 1, pr.y + 9, 2, 3), c: #0b1018, a: 150)
+draw_rect(rect(pr.center_x() - 1, pr.y + 9, 2, 3), c: :0b1018, a: 150)
 
 // Balls
 for b in balls do
@@ -702,7 +702,7 @@ for b in balls do
   draw_circle({x: bx, y: by}, BR + 12, C_BALL, 12)
   draw_circle({x: bx, y: by}, BR + 5, C_BALL, 34)
   draw_circle(center: {x: bx, y: by}, radius: BR, c: C_BALL)
-  draw_circle({x: bx - 2, y: by - 2}, 2, #ffffff, 230)
+  draw_circle({x: bx - 2, y: by - 2}, 2, :ffffff, 230)
 end
 
 // Aim guide while the ball is parked for a serve. Not drawn on the title
@@ -768,7 +768,7 @@ if phase != "play" then
   draw_rect_outline(card, c: C_EDGE, a: 255, width: 1)
   let accent = match phase
     when "over" -> C_WARN
-    when "cleared" -> #ffd166
+    when "cleared" -> :ffd166
     when "paused" -> C_DIM
     when _ -> C_PADDLE end
   draw_rect_rounded(rect(card.x + 22, ccy - 28, 3, 56), radius: 2, c: accent, a: 200)

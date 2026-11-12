@@ -14,23 +14,23 @@
 import ui
 
 // ── Palette ──────────────────────────────────────────────────────────────────
-let BG        = #0e1014
-let CARD      = #171a21
-let CARD_EDGE = #232833
-let KEY       = #1e222b
-let KEY_HOVER = #282e39
-let KEY_FN    = #171b22
-let KEY_FN_HI = #212632
-let TEXT      = #e8ecf3
-let DIM       = #7e8899
-let FAINT     = #4c5563
-let RULE      = #232833
-let AMBER     = #f2a65a
-let AMBER_HI  = #ffc98a
-let TEAL      = #6fb7c9
-let RED       = #e0776b
-let INK       = #14161b
-let SCROLL    = #3b4351
+let BG        = :0e1014
+let CARD      = :171a21
+let CARD_EDGE = :232833
+let KEY       = :1e222b
+let KEY_HOVER = :282e39
+let KEY_FN    = :171b22
+let KEY_FN_HI = :212632
+let TEXT      = :e8ecf3
+let DIM       = :7e8899
+let FAINT     = :4c5563
+let RULE      = :232833
+let AMBER     = :f2a65a
+let AMBER_HI  = :ffc98a
+let TEAL      = :6fb7c9
+let RED       = :e0776b
+let INK       = :14161b
+let SCROLL    = :3b4351
 
 // ── Type scale ───────────────────────────────────────────────────────────────
 // Four sizes, and only four. Bold degrades to regular in a Garden panel, so the

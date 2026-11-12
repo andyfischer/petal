@@ -21,19 +21,19 @@ import garden
 import ./scenes
 
 // ── Palette ──────────────────────────────────────────────────────────────
-let BG      = #0a0c10
-let CARD    = #12151c
-let WELL    = #181c25
-let WELL_HI = #20252f
-let LINE    = #262c38
-let LINE_S  = #1c212a
-let TEXT    = #eef1f6
-let DIM     = #a3abba
-let FAINT   = #697284
-let GHOST   = #3b4352
-let ACCENT  = #f2b766
-let HEAD    = #ff5d55
-let SNAPC   = #ffd166
+let BG      = :0a0c10
+let CARD    = :12151c
+let WELL    = :181c25
+let WELL_HI = :20252f
+let LINE    = :262c38
+let LINE_S  = :1c212a
+let TEXT    = :eef1f6
+let DIM     = :a3abba
+let FAINT   = :697284
+let GHOST   = :3b4352
+let ACCENT  = :f2b766
+let HEAD    = :ff5d55
+let SNAPC   = :ffd166
 
 // ── Text styles ──────────────────────────────────────────────────────────
 let S_BRAND = {size: 15, font: "ui", weight: 700, color: TEXT, spacing: 2.4}
@@ -47,7 +47,7 @@ let S_BTN   = {size: 11, font: "ui", weight: 600, color: DIM}
 let S_TCBIG = {size: 22, font: "mono", color: TEXT}
 let S_TC    = {size: 11, font: "mono", color: DIM}
 let S_RULER = {size: 9, font: "mono", color: FAINT}
-let S_CLIP  = {size: 10, font: "ui", weight: 600, color: #f4f6fa}
+let S_CLIP  = {size: 10, font: "ui", weight: 600, color: :f4f6fa}
 let S_KEY   = {size: 9, font: "mono", color: DIM}
 
 // ── Model ────────────────────────────────────────────────────────────────
@@ -58,29 +58,29 @@ let SNAP_PX = 8
 // Media: the bin. `dur` is the source length in frames; titles are
 // generated, so theirs is generous.
 let MEDIA = const([
-  {name: "Harbour at Dusk", file: "A014_C003_dusk.mov", kind: "video", scene: "harbor", dur: 336, color: #4c8dff},
-  {name: "Lighthouse Beam", file: "A016_C011_beam.mov", kind: "video", scene: "lighthouse", dur: 288, color: #4c8dff},
-  {name: "Mara — Interview", file: "B002_C001_mara.mov", kind: "video", scene: "interview", dur: 528, color: #4c8dff},
-  {name: "Old Town at Night", file: "A021_C004_town.mov", kind: "video", scene: "city", dur: 240, color: #4c8dff},
-  {name: "Coast Road", file: "C007_C002_road.mov", kind: "video", scene: "road", dur: 216, color: #4c8dff},
-  {name: "Cliffs — Drone", file: "DJI_0412.mp4", kind: "video", scene: "cliffs", dur: 384, color: #4c8dff},
-  {name: "Main Title", file: "Title · Harbour Lights", kind: "title", scene: "title", dur: 1440, color: #f2b766},
-  {name: "Lower Third — Mara", file: "Title · Name strap", kind: "title", scene: "lower", dur: 1440, color: #f2b766},
-  {name: "End Card", file: "Title · Release", kind: "title", scene: "endcard", dur: 1440, color: #f2b766},
-  {name: "VO — Mara, take 3", file: "mara_vo_t03.wav", kind: "audio", scene: "vo", dur: 576, color: #4fc28a},
-  {name: "Score — Tidewater", file: "tidewater_v4_mix.wav", kind: "audio", scene: "score", dur: 1200, color: #d46fd8},
-  {name: "Gulls & Surf", file: "amb_harbour_gulls.wav", kind: "audio", scene: "gulls", dur: 720, color: #46b8c8},
+  {name: "Harbour at Dusk", file: "A014_C003_dusk.mov", kind: "video", scene: "harbor", dur: 336, color: :4c8dff},
+  {name: "Lighthouse Beam", file: "A016_C011_beam.mov", kind: "video", scene: "lighthouse", dur: 288, color: :4c8dff},
+  {name: "Mara — Interview", file: "B002_C001_mara.mov", kind: "video", scene: "interview", dur: 528, color: :4c8dff},
+  {name: "Old Town at Night", file: "A021_C004_town.mov", kind: "video", scene: "city", dur: 240, color: :4c8dff},
+  {name: "Coast Road", file: "C007_C002_road.mov", kind: "video", scene: "road", dur: 216, color: :4c8dff},
+  {name: "Cliffs — Drone", file: "DJI_0412.mp4", kind: "video", scene: "cliffs", dur: 384, color: :4c8dff},
+  {name: "Main Title", file: "Title · Harbour Lights", kind: "title", scene: "title", dur: 1440, color: :f2b766},
+  {name: "Lower Third — Mara", file: "Title · Name strap", kind: "title", scene: "lower", dur: 1440, color: :f2b766},
+  {name: "End Card", file: "Title · Release", kind: "title", scene: "endcard", dur: 1440, color: :f2b766},
+  {name: "VO — Mara, take 3", file: "mara_vo_t03.wav", kind: "audio", scene: "vo", dur: 576, color: :4fc28a},
+  {name: "Score — Tidewater", file: "tidewater_v4_mix.wav", kind: "audio", scene: "score", dur: 1200, color: :d46fd8},
+  {name: "Gulls & Surf", file: "amb_harbour_gulls.wav", kind: "audio", scene: "gulls", dur: 720, color: :46b8c8},
 ])
 
 // Tracks, top to bottom as drawn. Picture tracks composite bottom-up
 // (V1 first), so a clip on V2 covers V1 and a title on V3 sits over both.
 let TRACKS = const([
-  {code: "V3", name: "Titles", kind: "video", h: 42, color: #f2b766},
-  {code: "V2", name: "B-roll", kind: "video", h: 46, color: #8b7cf6},
-  {code: "V1", name: "Main", kind: "video", h: 46, color: #4c8dff},
-  {code: "A1", name: "Dialogue", kind: "audio", h: 38, color: #4fc28a},
-  {code: "A2", name: "Music", kind: "audio", h: 38, color: #d46fd8},
-  {code: "A3", name: "Ambience", kind: "audio", h: 38, color: #46b8c8},
+  {code: "V3", name: "Titles", kind: "video", h: 42, color: :f2b766},
+  {code: "V2", name: "B-roll", kind: "video", h: 46, color: :8b7cf6},
+  {code: "V1", name: "Main", kind: "video", h: 46, color: :4c8dff},
+  {code: "A1", name: "Dialogue", kind: "audio", h: 38, color: :4fc28a},
+  {code: "A2", name: "Music", kind: "audio", h: 38, color: :d46fd8},
+  {code: "A3", name: "Ambience", kind: "audio", h: 38, color: :46b8c8},
 ])
 let N_TRK = 6
 let BIN_TABS = ["All", "Video", "Titles", "Audio"]
@@ -893,7 +893,7 @@ fn label(s: string, r: record, style: record, align: string) -> nil
 end
 
 fn panel_card(r: Rect) -> nil
-  draw_shadow(r, {radius: 10, blur: 18, spread: 0, dx: 0, dy: 6, color: #000000, a: 90})
+  draw_shadow(r, {radius: 10, blur: 18, spread: 0, dx: 0, dy: 6, color: :000000, a: 90})
   draw_rect_rounded(r, 10, CARD)
   draw_rect_rounded_outline(r, 10, LINE_S)
 end
@@ -949,7 +949,7 @@ end
 fn transport_btn(r: Rect, hot: bool, primary: bool) -> nil
   if primary then
     draw_shadow(r, {radius: r.w / 2, blur: 14, spread: 0, dx: 0, dy: 3, color: ACCENT, a: if hot then 110 else 60 end})
-    draw_circle(r.x + r.w / 2, r.y + r.h / 2, r.w / 2, if hot then #ffc781 else ACCENT end)
+    draw_circle(r.x + r.w / 2, r.y + r.h / 2, r.w / 2, if hot then :ffc781 else ACCENT end)
   else
     if hot then draw_rect_rounded(r, 8, WELL_HI) end
   end
@@ -958,7 +958,7 @@ end
 // ── Bin ──────────────────────────────────────────────────────────────────
 fn draw_thumb(m: record, r: Rect, t: num) -> nil
   if m.kind == "audio" then
-    draw_rect_rounded(r, 4, tint(#0d1017, m.color, 14))
+    draw_rect_rounded(r, 4, tint(:0d1017, m.color, 14))
     let n = int(r.w / 3)
     for k in range(0, n) do
       let a = scenes.audio_amp(m.scene, 40 + k * 7)
@@ -966,17 +966,17 @@ fn draw_thumb(m: record, r: Rect, t: num) -> nil
       draw_rect(r.x + 2 + k * 3, r.y + r.h / 2 - h / 2, 2, h, m.color, 200)
     end
   elsif m.kind == "title" then
-    draw_rect_rounded(r, 4, #101320)
+    draw_rect_rounded(r, 4, :101320)
     for k in range(0, int(r.w / 6) + 1) do
       for j in range(0, int(r.h / 6) + 1) do
-        if (k + j) % 2 == 0 then draw_rect(r.x + k * 6, r.y + j * 6, min(6, r.w - k * 6), min(6, r.h - j * 6), #161a28) end
+        if (k + j) % 2 == 0 then draw_rect(r.x + k * 6, r.y + j * 6, min(6, r.w - k * 6), min(6, r.h - j * 6), :161a28) end
       end
     end
     scenes.draw_footage(m.scene, r, 1.6, 4.0, false)
   else
     scenes.draw_footage(m.scene, r, t, m.dur / float(FPS), false)
   end
-  draw_rect_rounded_outline(r, 4, #000000, 120)
+  draw_rect_rounded_outline(r, 4, :000000, 120)
 end
 
 fn draw_bin(items: list, hov: int, tab: int, scroll: num, dragging: int) -> nil
@@ -1029,8 +1029,8 @@ fn draw_monitor(air: list, ph: num, play: bool, endf: int, lv: list, pk: list, m
   let now = if mode != "" then "{mode}  ·  {MEDIA[top.m].name}" elsif top == nil then "Gap" else "{TRACKS[top.t].code}  {MEDIA[top.m].name}" end
   label(now, rect(R_MON.x, R_MON.y + 8, R_MON.w - 16, 22), {...S_SMALL, color: if top == nil then FAINT else DIM end}, "right")
 
-  draw_shadow(R_SCR, {radius: 2, blur: 22, spread: 0, dx: 0, dy: 8, color: #000000, a: 160})
-  draw_rect(R_SCR, #000000)
+  draw_shadow(R_SCR, {radius: 2, blur: 22, spread: 0, dx: 0, dy: 8, color: :000000, a: 160})
+  draw_rect(R_SCR, :000000)
   for c in air do
     let m = MEDIA[c.m]
     scenes.draw_footage(m.scene, R_SCR, (c.i + ph - c.s) / float(FPS), (c.i + c.n) / float(FPS), true)
@@ -1039,27 +1039,27 @@ fn draw_monitor(air: list, ph: num, play: bool, endf: int, lv: list, pk: list, m
     label("No picture at {tc(ph)}", R_SCR, {...S_SMALL, color: GHOST}, "center")
   end
   // Action-safe guides, faint, like a monitor overlay.
-  draw_rect_outline(R_SCR.x + R_SCR.w * 0.05, R_SCR.y + R_SCR.h * 0.05, R_SCR.w * 0.9, R_SCR.h * 0.9, #ffffff, 18)
+  draw_rect_outline(R_SCR.x + R_SCR.w * 0.05, R_SCR.y + R_SCR.h * 0.05, R_SCR.w * 0.9, R_SCR.h * 0.9, :ffffff, 18)
   if mode != "" then
     // Trim view: the frame at the edge being dragged, framed in the accent.
     draw_rect_outline(R_SCR, ACCENT, 255, 2)
     let tag = if mode == "Trim in" then "IN" else "OUT" end
     let tw = text_width(tag, S_CAP) + 14
     draw_rect_rounded(R_SCR.x + 10, R_SCR.y + 10, tw, 18, 4, ACCENT)
-    label(tag, rect(R_SCR.x + 10, R_SCR.y + 10, tw, 18), {...S_CAP, color: #1a1206}, "center")
+    label(tag, rect(R_SCR.x + 10, R_SCR.y + 10, tw, 18), {...S_CAP, color: :1a1206}, "center")
   end
 
   // Meters: two channels, -60..0 dB, green to amber to red.
   let mr = R_METER
   for ch in range(0, 2) do
     let r = rect(mr.x + ch * 9, mr.y, 7, mr.h - 14)
-    draw_rect_rounded(r, 2, #07090d)
+    draw_rect_rounded(r, 2, :07090d)
     let v = lv[ch]
     let segs = int(r.h / 4)
     let lit = int(v * segs)
     for k in range(0, lit) do
       let u = k / float(segs)
-      let c = if u > 0.88 then #ff5d55 elsif u > 0.7 then #f2b766 else #4fc28a end
+      let c = if u > 0.88 then :ff5d55 elsif u > 0.7 then :f2b766 else :4fc28a end
       draw_rect(r.x + 1, r.y + r.h - 2 - (k + 1) * 4 + 1, 5, 3, c)
     end
     if pk[ch] > 0.02 then
@@ -1080,7 +1080,7 @@ fn draw_monitor(air: list, ph: num, play: bool, endf: int, lv: list, pk: list, m
   transport_btn(R_NEXT, point_in(mx, my, R_NEXT), false)
   icon_edit(R_PREV.x + 18, R_PREV.y + 16, 12, -1, DIM)
   icon_step(R_BACK.x + 18, R_BACK.y + 16, 12, -1, DIM)
-  if play then icon_pause(R_PLAY.x + 20, R_PLAY.y + 20, 16, #1a1206) else icon_play(R_PLAY.x + 21, R_PLAY.y + 20, 16, #1a1206) end
+  if play then icon_pause(R_PLAY.x + 20, R_PLAY.y + 20, 16, :1a1206) else icon_play(R_PLAY.x + 21, R_PLAY.y + 20, 16, :1a1206) end
   icon_step(R_FWD.x + 18, R_FWD.y + 16, 12, 1, DIM)
   icon_edit(R_NEXT.x + 18, R_NEXT.y + 16, 12, 1, DIM)
   let fr = "24 fps  ·  1920×1080"
@@ -1130,7 +1130,7 @@ fn draw_inspector(d: record, sel_id: int, ph: num, endf: int) -> nil
   let pv = rect(x, R_INS.y + 76, INS_W - 32, (INS_W - 32) * 9 / 16)
   let at = if ph >= c.s && ph < c.s + c.n then ph else float(c.s) end
   if m.kind == "audio" then
-    draw_rect_rounded(pv, 6, tint(#0d1017, m.color, 10))
+    draw_rect_rounded(pv, 6, tint(:0d1017, m.color, 10))
     let n = int(pv.w / 3)
     let span = c.n / float(n)
     for j in range(0, n) do
@@ -1140,7 +1140,7 @@ fn draw_inspector(d: record, sel_id: int, ph: num, endf: int) -> nil
       draw_rect(pv.x + 1 + j * 3, pv.y + pv.h / 2 - h / 2, 2, h, m.color, if past then 255 else 120 end)
     end
   else
-    draw_rect_rounded(pv, 6, #000000)
+    draw_rect_rounded(pv, 6, :000000)
     clip_push(pv, 6)
     scenes.draw_footage(m.scene, pv, (c.i + at - c.s) / float(FPS), (c.i + c.n) / float(FPS), true)
     clip_pop()
@@ -1197,7 +1197,7 @@ fn draw_ruler(v: record, d: record, ph: num, endf: int) -> nil
   for mk in d.markers do
     let x = fx(v, mk.f)
     fill_polygon([[x, R_RULER.y + R_RULER.h], [x - 5, R_RULER.y + R_RULER.h - 6], [x - 5, R_RULER.y + R_RULER.h - 13],
-      [x + 5, R_RULER.y + R_RULER.h - 13], [x + 5, R_RULER.y + R_RULER.h - 6]], #6fb3f2)
+      [x + 5, R_RULER.y + R_RULER.h - 13], [x + 5, R_RULER.y + R_RULER.h - 6]], :6fb3f2)
   end
   // A marker under the pointer names itself.
   for mk in d.markers do
@@ -1205,8 +1205,8 @@ fn draw_ruler(v: record, d: record, ph: num, endf: int) -> nil
     if abs(mouse_x() - x) <= 6 && point_in(mouse_x(), mouse_y(), R_RULER) then
       let w = text_width(mk.name, S_TINY) + 12
       let bx = if x + 8 + w > R_RULER.x + R_RULER.w then x - 8 - w else x + 8 end
-      draw_rect_rounded(bx, R_RULER.y + 3, w, 16, 4, #1d3550)
-      label(mk.name, rect(bx, R_RULER.y + 3, w, 16), {...S_TINY, color: #cfe4fb}, "center")
+      draw_rect_rounded(bx, R_RULER.y + 3, w, 16, 4, :1d3550)
+      label(mk.name, rect(bx, R_RULER.y + 3, w, 16), {...S_TINY, color: :cfe4fb}, "center")
     end
   end
   clip_pop()
@@ -1267,7 +1267,7 @@ fn draw_filmstrip(v: record, c: record, m: record, r: Rect) -> nil
     if x > lo then
       let src = c.i + f_at(v, x) - c.s
       scenes.draw_footage(m.scene, rect(x, r.y + 14, tw, th), src / float(FPS), m.dur / float(FPS), false)
-      draw_rect(x + tw - 1, r.y + 14, 1, th, #000000, 140)
+      draw_rect(x + tw - 1, r.y + 14, 1, th, :000000, 140)
     end
     x += tw
   end
@@ -1276,9 +1276,9 @@ end
 fn draw_clip(v: record, c: record, r: Rect, selected: bool, hot: bool, edge: string, ghost: bool, dead: bool) -> nil
   let m = MEDIA[c.m]
   let col = m.color
-  let body = tint(#0c0f15, col, if m.kind == "audio" then 20 else 26 end)
+  let body = tint(:0c0f15, col, if m.kind == "audio" then 20 else 26 end)
   if ghost then
-    draw_shadow(r, {radius: 6, blur: 16, spread: 0, dx: 0, dy: 6, color: #000000, a: 160})
+    draw_shadow(r, {radius: 6, blur: 16, spread: 0, dx: 0, dy: 6, color: :000000, a: 160})
   end
   clip_push(r, 5)
   draw_rect(r, body)
@@ -1287,28 +1287,28 @@ fn draw_clip(v: record, c: record, r: Rect, selected: bool, hot: bool, edge: str
   elsif m.kind == "audio" then
     draw_waveform(v, c, m, r, tint(body, col, 70))
   else
-    draw_rect_gradient(rect(r.x, r.y + 13, r.w, r.h - 13), tint(#0c0f15, col, 34), tint(#0c0f15, col, 18), 0)
+    draw_rect_gradient(rect(r.x, r.y + 13, r.w, r.h - 13), tint(:0c0f15, col, 34), tint(:0c0f15, col, 18), 0)
     draw_text("T", {x: r.x + 7, y: r.y + 15}, {size: 16, font: "ui", weight: 700, color: tint(body, col, 60)})
     if r.w > 60 then
       draw_text(text_ellipsize(m.file, S_TINY, r.w - 30), {x: r.x + 24, y: r.y + 20}, {...S_TINY, color: tint(body, col, 55)})
     end
   end
-  draw_rect(r.x, r.y, r.w, 13, tint(#0c0f15, col, if selected then 75 elsif hot then 55 else 45 end))
+  draw_rect(r.x, r.y, r.w, 13, tint(:0c0f15, col, if selected then 75 elsif hot then 55 else 45 end))
   if r.w > 26 then
     let name_x = max(r.x + 5, float(TX0 + 4))
     let avail = r.x + r.w - name_x - 6
     if avail > 18 then
-      draw_text(text_ellipsize(m.name, S_CLIP, avail), {x: name_x, y: r.y}, {...S_CLIP, color: if selected then #0c0f15 else #f4f6fa end})
+      draw_text(text_ellipsize(m.name, S_CLIP, avail), {x: name_x, y: r.y}, {...S_CLIP, color: if selected then :0c0f15 else :f4f6fa end})
     end
   end
   if dead then draw_rect(r, BG, 150) end
   clip_pop()
   if selected then
-    draw_rect_rounded_outline(r, 5, #ffffff, 255, 2)
+    draw_rect_rounded_outline(r, 5, :ffffff, 255, 2)
   elsif hot then
     draw_rect_rounded_outline(r, 5, tint(body, col, 80), 255, 1)
   else
-    draw_rect_rounded_outline(r, 5, #000000, 110, 1)
+    draw_rect_rounded_outline(r, 5, :000000, 110, 1)
   end
   // Trim grips: a bracket on the edge under the pointer.
   if edge == "l" then
@@ -1342,7 +1342,7 @@ fn draw_toolbar(btns: list, can_undo: bool, can_redo: bool, has_sel: bool, snap:
   draw_rect_rounded(R_ZOOM.x, R_ZOOM.y + 4, R_ZOOM.w, 4, 2, WELL_HI)
   draw_rect_rounded(R_ZOOM.x, R_ZOOM.y + 4, R_ZOOM.w * u, 4, 2, tint(WELL, ACCENT, 60))
   draw_circle(R_ZOOM.x + R_ZOOM.w * u, R_ZOOM.y + 6, 6, TEXT)
-  draw_circle_outline(R_ZOOM.x + R_ZOOM.w * u, R_ZOOM.y + 6, 6, #000000, 90, 1)
+  draw_circle_outline(R_ZOOM.x + R_ZOOM.w * u, R_ZOOM.y + 6, 6, :000000, 90, 1)
 end
 
 fn draw_timeline(v: record, d: record, sel_id: int, hid: int, hedge: string, dr: record, dead: list, snap_f: int, ph: num, endf: int) -> nil
@@ -1352,7 +1352,7 @@ fn draw_timeline(v: record, d: record, sel_id: int, hid: int, hedge: string, dr:
     let tr = TRACKS[t]
     let lane = rect(TX0, TY[t], TW, tr.h - 2)
     let target = dr.kind == "move" && dr.moved && dr.t == t || dr.kind == "bin" && dr.ok && dr.t == t
-    draw_rect(lane, if target then tint(WELL, tr.color, 8) else tint(CARD, #000000, 25) end)
+    draw_rect(lane, if target then tint(WELL, tr.color, 8) else tint(CARD, :000000, 25) end)
     if t == 2 then draw_rect(TX0, TY[t] + tr.h, TW, 1, LINE) end
   end
   let ex = fx(v, endf)
@@ -1364,7 +1364,7 @@ fn draw_timeline(v: record, d: record, sel_id: int, hid: int, hedge: string, dr:
   clip_push(rect(TX0, TRK_Y0 - 2, TW, TRK_END - TRK_Y0 + 4))
   // Marker lines run faintly through the tracks.
   for mk in d.markers do
-    draw_rect(fx(v, mk.f), TRK_Y0, 1, TRK_END - TRK_Y0, #6fb3f2, 40)
+    draw_rect(fx(v, mk.f), TRK_Y0, 1, TRK_END - TRK_Y0, :6fb3f2, 40)
   end
   for c in d.clips do
     let r = clip_rect(v, c)
@@ -1425,16 +1425,16 @@ clear(BG.r, BG.g, BG.b)
 // Top bar.
 let brand_x = M + 4
 draw_rect_rounded(brand_x, 14, 22, 22, 5, ACCENT)
-draw_rect(brand_x + 5, 19, 3, 12, #1a1206)
-draw_rect(brand_x + 10, 19, 3, 12, #1a1206)
-draw_rect(brand_x + 15, 19, 3, 12, #1a1206)
+draw_rect(brand_x + 5, 19, 3, 12, :1a1206)
+draw_rect(brand_x + 10, 19, 3, 12, :1a1206)
+draw_rect(brand_x + 15, 19, 3, 12, :1a1206)
 label("SPLICE", rect(brand_x + 32, 10, 100, 30), S_BRAND, "left")
 draw_rect(brand_x + 112, 16, 1, 18, LINE)
 label("Harbour Lights", rect(brand_x + 126, 10, 200, 30), S_TITLE, "left")
 label("Teaser cut  ·  Sequence 01", rect(brand_x + 126 + text_width("Harbour Lights", S_TITLE) + 12, 11, 260, 30), S_SUB, "left")
 let cx = W - M - 4
 let chips = [[if snap_on then "Snapping on" else "Snapping off" end, if snap_on then ACCENT else FAINT end],
-  ["{plural(len(undo), "edit")}", #6fb3f2], [if playing then "Playing" else "Paused" end, if playing then #4fc28a else FAINT end]]
+  ["{plural(len(undo), "edit")}", :6fb3f2], [if playing then "Playing" else "Paused" end, if playing then :4fc28a else FAINT end]]
 for ch in chips do
   let w = text_width(ch[0], S_TINY) + 14
   cx -= w
@@ -1471,7 +1471,7 @@ if drag.kind == "scrub" || drag.kind == "trim_l" || drag.kind == "trim_r" || dra
   let lx = fx(V, f)
   let bx = if lx + 10 + bw > TX0 + TW then lx - 10 - bw else lx + 10 end
   let br = rect(bx, RULER_Y + 3, bw, 19)
-  draw_rect_rounded(br, 5, #05070a)
+  draw_rect_rounded(br, 5, :05070a)
   draw_rect_rounded_outline(br, 5, if drag.kind == "scrub" then HEAD else ACCENT end)
   label(s, br, {...S_TC, color: TEXT}, "center")
 end
@@ -1480,11 +1480,11 @@ end
 if drag.kind == "bin" && drag.moved && !drag.ok then
   let m = MEDIA[drag.m]
   let r = rect(mx + 10, my + 8, 96, 54)
-  draw_shadow(r, {radius: 6, blur: 18, spread: 0, dx: 0, dy: 8, color: #000000, a: 170})
+  draw_shadow(r, {radius: 6, blur: 18, spread: 0, dx: 0, dy: 8, color: :000000, a: 170})
   draw_thumb(m, r, 3.0)
   let nm = text_ellipsize(m.name, S_TINY, 120)
   let nw = text_width(nm, S_TINY) + 12
-  draw_rect_rounded(r.x, r.y + r.h + 4, nw, 17, 4, #05070a, 220)
+  draw_rect_rounded(r.x, r.y + r.h + 4, nw, 17, 4, :05070a, 220)
   label(nm, rect(r.x, r.y + r.h + 4, nw, 17), {...S_TINY, color: TEXT}, "center")
 end
 
@@ -1495,8 +1495,8 @@ if age < 2.2 && toast.text != "" then
   let w = text_width(toast.text, S_BODY) + 28
   let r = rect(R_SCR.x + (R_SCR.w - w) / 2, R_SCR.y + R_SCR.h - 44, w, 30)
   layer(r, {a: int(255 * a)}, fn()
-    draw_rect_rounded(rect(0, 0, r.w, r.h), 8, #10131a, 235)
-    draw_rect_rounded_outline(rect(0, 0, r.w, r.h), 8, #3a4252)
+    draw_rect_rounded(rect(0, 0, r.w, r.h), 8, :10131a, 235)
+    draw_rect_rounded_outline(rect(0, 0, r.w, r.h), 8, :3a4252)
     label(toast.text, rect(0, 0, r.w, r.h), S_BODY, "center")
   end)
 end

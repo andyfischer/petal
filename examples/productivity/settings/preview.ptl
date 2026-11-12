@@ -218,7 +218,7 @@ fn draw_alert(area: record, t: record, v: record, words: record) -> nil
   let slide = (1.0 - show) * (if right then 24.0 else -24.0 end)
   let r = Rect(ax + slide, ay, w, h)
   let a = int(255 * show)
-  draw_shadow(r, {radius: t.radius, blur: 16, spread: 0, dx: 0, dy: 5, color: #000000, a: int(t.shadow * 0.7 * show)})
+  draw_shadow(r, {radius: t.radius, blur: 16, spread: 0, dx: 0, dy: 5, color: :000000, a: int(t.shadow * 0.7 * show)})
   draw_rect_rounded(r, t.radius, t.raised, a)
   draw_rect_rounded_outline(r, t.radius, t.line, a)
   // Held alerts go grey: still there, not asking for attention.
@@ -258,7 +258,7 @@ pub fn draw(r: record, t0: record, v: record, x: record) -> nil
   let t = {...t0, paper: if t0.dark then t0.well else t0.card end, chrome: if t0.dark then t0.card else t0.well end}
   let words = WORDS[v.start_lang]
   let radius = t.radius + 2
-  draw_shadow(r, {radius: radius, blur: 26, spread: 0, dx: 0, dy: 9, color: #000000, a: int(t.shadow * 0.7)})
+  draw_shadow(r, {radius: radius, blur: 26, spread: 0, dx: 0, dy: 9, color: :000000, a: int(t.shadow * 0.7)})
   draw_rect_rounded(r, radius, t.paper)
   clip_push(r, radius)
 
@@ -268,7 +268,7 @@ pub fn draw(r: record, t0: record, v: record, x: record) -> nil
   draw_rect(bar, t.chrome)
   draw_line({x: r.x, y: r.y + bar_h}, {x: r.x + r.w, y: r.y + bar_h}, t.line_soft)
   for i in range(0, 3) do
-    draw_circle({x: r.x + 16.0 + i * 15.0, y: r.y + bar_h / 2.0}, 4.5, [#ee6a5f, #f5bd4f, #61c454][i], if t.dark then 215 else 255 end)
+    draw_circle({x: r.x + 16.0 + i * 15.0, y: r.y + bar_h / 2.0}, 4.5, [:ee6a5f, :f5bd4f, :61c454][i], if t.dark then 215 else 255 end)
   end
   tl.draw_text_line("garden.ptl", bar, {size: 11.5, font: "ui", color: t.muted}, "center")
   // Whoever the Profile page says you are.

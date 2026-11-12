@@ -55,13 +55,13 @@ end
 // `station` is the line in the kitchen the item prints to.
 
 pub let CATS = const([
-  {name: "Starters", short: "Starters", tone: #7f9a3f, station: "Cold"},
-  {name: "Mains", short: "Mains", tone: #c4532f, station: "Grill"},
-  {name: "Pasta", short: "Pasta", tone: #d39a26, station: "Saute"},
-  {name: "Sides", short: "Sides", tone: #4f9277, station: "Saute"},
-  {name: "Desserts", short: "Desserts", tone: #a2577f, station: "Pastry"},
-  {name: "Drinks", short: "Drinks", tone: #3a8aa0, station: "Bar"},
-  {name: "Cocktails & Wine", short: "Bar", tone: #5b5fb0, station: "Bar"},
+  {name: "Starters", short: "Starters", tone: :7f9a3f, station: "Cold"},
+  {name: "Mains", short: "Mains", tone: :c4532f, station: "Grill"},
+  {name: "Pasta", short: "Pasta", tone: :d39a26, station: "Saute"},
+  {name: "Sides", short: "Sides", tone: :4f9277, station: "Saute"},
+  {name: "Desserts", short: "Desserts", tone: :a2577f, station: "Pastry"},
+  {name: "Drinks", short: "Drinks", tone: :3a8aa0, station: "Bar"},
+  {name: "Cocktails & Wine", short: "Bar", tone: :5b5fb0, station: "Bar"},
 ])
 
 fn item(id: num, cat: num, name: string, cents: num, blurb: string, groups: list = [], tag: string = "") -> record

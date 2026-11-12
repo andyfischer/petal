@@ -20,20 +20,20 @@ import color
 // One near-black ground, two surface steps, a hairline that separates cards
 // without boxing them in, and eight categorical hues for the breakdown.
 
-let BG       = #0c0e13
-let SURFACE  = #14171e
-let RAISED   = #1a1e27
-let HAIRLINE = #262c38
-let GRID     = #1e232d
-let TEXT     = #e8edf5
-let DIM      = #8b95a6
-let FAINT    = #59616f
-let POS      = #58cf99
-let NEG      = #ef7d8e
-let ACCENT   = #6ea8ff
-let AMBER    = #f2b661
-let STEEL    = #7e93b8
-let WHITE    = #ffffff
+let BG       = :0c0e13
+let SURFACE  = :14171e
+let RAISED   = :1a1e27
+let HAIRLINE = :262c38
+let GRID     = :1e232d
+let TEXT     = :e8edf5
+let DIM      = :8b95a6
+let FAINT    = :59616f
+let POS      = :58cf99
+let NEG      = :ef7d8e
+let ACCENT   = :6ea8ff
+let AMBER    = :f2b661
+let STEEL    = :7e93b8
+let WHITE    = :ffffff
 
 // Spacing scale.
 let S1 = 6
@@ -178,48 +178,48 @@ let YEAR = "2025"
 // (fractional means "only some months"), `jit` the spread around `avg`.
 
 let CATS = [
-  {name: "Housing", color: #6ea8ff, merchants: [
+  {name: "Housing", color: :6ea8ff, merchants: [
     {name: "Bayview Property Mgmt", avg: 2150.0, freq: 1.0,  jit: 0.005},
     {name: "Rentersure",            avg: 33.0,   freq: 1.0,  jit: 0.02},
     {name: "Storage Post",          avg: 89.0,   freq: 1.0,  jit: 0.01},
   ]},
-  {name: "Groceries", color: #58cf99, merchants: [
+  {name: "Groceries", color: :58cf99, merchants: [
     {name: "Whole Foods",           avg: 84.0,   freq: 3.0,  jit: 0.34},
     {name: "Trader Joe's",          avg: 61.0,   freq: 2.4,  jit: 0.30},
     {name: "Corner Market",         avg: 23.0,   freq: 3.2,  jit: 0.45},
     {name: "Sunrise Produce",       avg: 31.0,   freq: 1.4,  jit: 0.28},
   ]},
-  {name: "Dining", color: #f2b661, merchants: [
+  {name: "Dining", color: :f2b661, merchants: [
     {name: "Blue Bottle Coffee",    avg: 7.4,    freq: 6.0,  jit: 0.22},
     {name: "Nori Ramen",            avg: 28.0,   freq: 1.6,  jit: 0.24},
     {name: "Taqueria Norte",        avg: 19.0,   freq: 2.1,  jit: 0.30},
     {name: "Pizzeria Vela",         avg: 41.0,   freq: 1.0,  jit: 0.26},
     {name: "Cafe Marlow",           avg: 15.0,   freq: 2.0,  jit: 0.35},
   ]},
-  {name: "Transport", color: #ef7d8e, merchants: [
+  {name: "Transport", color: :ef7d8e, merchants: [
     {name: "Metro Transit",         avg: 2.75,   freq: 8.0,  jit: 0.05},
     {name: "Shell",                 avg: 47.0,   freq: 1.5,  jit: 0.20},
     {name: "Lyft",                  avg: 17.0,   freq: 2.4,  jit: 0.40},
     {name: "CityBike",              avg: 12.0,   freq: 1.0,  jit: 0.10},
   ]},
-  {name: "Utilities", color: #b08bf5, merchants: [
+  {name: "Utilities", color: :b08bf5, merchants: [
     {name: "Pacific Power",         avg: 96.0,   freq: 1.0,  jit: 0.12},
     {name: "Cascade Water",         avg: 41.0,   freq: 0.5,  jit: 0.10},
     {name: "Fiberline Internet",    avg: 79.0,   freq: 1.0,  jit: 0.01},
     {name: "Talkmobile",            avg: 55.0,   freq: 1.0,  jit: 0.02},
   ]},
-  {name: "Shopping", color: #4fc3d9, merchants: [
+  {name: "Shopping", color: :4fc3d9, merchants: [
     {name: "Amazon",                avg: 46.0,   freq: 3.0,  jit: 0.55},
     {name: "Uniqlo",                avg: 68.0,   freq: 0.5,  jit: 0.30},
     {name: "Ikea",                  avg: 129.0,  freq: 0.35, jit: 0.50},
     {name: "Powell's Books",        avg: 27.0,   freq: 1.0,  jit: 0.35},
   ]},
-  {name: "Health", color: #9fd35f, merchants: [
+  {name: "Health", color: :9fd35f, merchants: [
     {name: "Greenleaf Pharmacy",    avg: 24.0,   freq: 1.2,  jit: 0.40},
     {name: "Dr. Amara Osei",        avg: 45.0,   freq: 0.4,  jit: 0.10},
     {name: "Peak Fitness",          avg: 39.0,   freq: 1.0,  jit: 0.0},
   ]},
-  {name: "Subscriptions", color: #f08fc4, merchants: [
+  {name: "Subscriptions", color: :f08fc4, merchants: [
     {name: "Netflix",               avg: 17.99,  freq: 1.0,  jit: 0.0},
     {name: "Spotify",               avg: 11.99,  freq: 1.0,  jit: 0.0},
     {name: "iCloud+",               avg: 2.99,   freq: 1.0,  jit: 0.0},
@@ -287,7 +287,7 @@ fn shade(c: record, i: num, n: num) -> record
     c
   else
     let hi = color_lerp(c, WHITE, t: 0.34)
-    let lo = color_lerp(c, #1b2130, t: 0.52)
+    let lo = color_lerp(c, :1b2130, t: 0.52)
     color_lerp(hi, lo, t: float(i) / float(n - 1))
   end
 end
@@ -390,7 +390,7 @@ fn build_view(txns: list, income: list, ci: num, mi: num, mo: num, sort_mode: nu
       {label: CATS[ci].merchants[mi].name, value: bucket[mi],
         color: CATS[ci].color, key: mi},
       {label: "rest of " ++ CATS[ci].name, value: max(0.0, here - bucket[mi]),
-        color: color_lerp(CATS[ci].color, #1b2130, t: 0.66), key: -1},
+        color: color_lerp(CATS[ci].color, :1b2130, t: 0.66), key: -1},
     ]
   end
 

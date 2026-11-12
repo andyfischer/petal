@@ -18,35 +18,35 @@ import garden
 let TAU = 6.28318530718
 
 // ── Palette ──────────────────────────────────────────────────────────────
-let BG      = #090b10
-let CANVAS  = #0b0e14
-let GRID    = #1b2230
-let PANEL   = #10141c
-let ELEV    = #171c27
-let HOVER   = #1f2634
-let LINE    = #222a38
-let TEXT    = #e8ecf3
-let DIM     = #97a1b3
-let FAINT   = #5d677b
-let ACCENT  = #8ab4ff
-let EDGE    = #8490a8
-let GOOD    = #4fd1a1
-let WARN    = #f5b547
-let BAD     = #ff6b6b
+let BG      = :090b10
+let CANVAS  = :0b0e14
+let GRID    = :1b2230
+let PANEL   = :10141c
+let ELEV    = :171c27
+let HOVER   = :1f2634
+let LINE    = :222a38
+let TEXT    = :e8ecf3
+let DIM     = :97a1b3
+let FAINT   = :5d677b
+let ACCENT  = :8ab4ff
+let EDGE    = :8490a8
+let GOOD    = :4fd1a1
+let WARN    = :f5b547
+let BAD     = :ff6b6b
 
 // ── The dataset ──────────────────────────────────────────────────────────
 //  g: group index · k: kind · rps: requests/s · p99: ms · err: % · st: health
 //  (0 healthy, 1 degraded, 2 failing)
 
 let GROUPS = [
-  {name: "Edge", team: "Web Platform", c: #f2b441},
-  {name: "Identity", team: "Identity & Access", c: #a78bfa},
-  {name: "Commerce", team: "Checkout", c: #ff7d92},
-  {name: "Catalog", team: "Discovery", c: #2dd4bf},
-  {name: "Fulfilment", team: "Logistics", c: #5aa9ff},
-  {name: "Messaging", team: "Engagement", c: #9bd75a},
-  {name: "Platform", team: "Core Infrastructure", c: #d6a77a},
-  {name: "External", team: "Third party", c: #8d98ad},
+  {name: "Edge", team: "Web Platform", c: :f2b441},
+  {name: "Identity", team: "Identity & Access", c: :a78bfa},
+  {name: "Commerce", team: "Checkout", c: :ff7d92},
+  {name: "Catalog", team: "Discovery", c: :2dd4bf},
+  {name: "Fulfilment", team: "Logistics", c: :5aa9ff},
+  {name: "Messaging", team: "Engagement", c: :9bd75a},
+  {name: "Platform", team: "Core Infrastructure", c: :d6a77a},
+  {name: "External", team: "Third party", c: :8d98ad},
 ]
 
 let NODES = [
@@ -1159,7 +1159,7 @@ clip(canvas.x, canvas.y, canvas.w, canvas.h)
 
 // A soft pool of light under the graph, then a dot grid that pans and zooms
 // with the camera so motion always has something to read against.
-draw_circle_gradient({x: to_sx(cam, canvas, 0.0), y: to_sy(cam, canvas, 0.0)}, 620.0 * z, #141a26, CANVAS, 255, 0)
+draw_circle_gradient({x: to_sx(cam, canvas, 0.0), y: to_sy(cam, canvas, 0.0)}, 620.0 * z, :141a26, CANVAS, 255, 0)
 let gstep = if z < 0.45 then 192.0 elsif z < 0.9 then 96.0 else 48.0 end
 let gx = floor(to_wx(cam, canvas, canvas.x) / gstep) * gstep
 while to_sx(cam, canvas, gx) < float(canvas.x + canvas.w) do
@@ -1264,7 +1264,7 @@ for level in range(0, 3) do
           node_fill(nd.k, cx, cy, r, gc, 255)
           if nd.k != "ext" then
             // a soft top-left sheen gives the flat fill a little volume
-            draw_circle_gradient({x: cx - r * 0.3, y: cy - r * 0.34}, r * 0.62, #ffffff, #ffffff, 58, 0)
+            draw_circle_gradient({x: cx - r * 0.3, y: cy - r * 0.34}, r * 0.62, :ffffff, :ffffff, 58, 0)
           end
           if level == 2 then
             node_ring(nd.k, cx, cy, r + 3.0, TEXT, 255, 2)
@@ -1549,7 +1549,7 @@ txt_r(if alpha < ALPHA_MIN || frozen then temp_label else temp_label ++ " " ++ s
   mono(11, if frozen then WARN elsif alpha < ALPHA_MIN then GOOD else ACCENT end))
 draw_rect_rounded(temp_r, 2, ELEV)
 if alpha > 0.0 then
-  draw_rect_gradient_rounded(rect(temp_r.x, temp_r.y, max(5, int(float(sw) * clamp(alpha, 0.0, 1.0))), 5), 2, ACCENT, #ff9d6b, 0.0)
+  draw_rect_gradient_rounded(rect(temp_r.x, temp_r.y, max(5, int(float(sw) * clamp(alpha, 0.0, 1.0))), 5), 2, ACCENT, :ff9d6b, 0.0)
 end
 sy = sy + 38
 

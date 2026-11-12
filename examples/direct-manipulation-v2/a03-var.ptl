@@ -17,9 +17,9 @@ let x0 = 20
 let gap = 10
 let widths = [40, 60, 30, 80]
 
-draw_rect(0, 0, 400, 200, #101418)
+draw_rect(0, 0, 400, 200, :101418)
 var x = x0
 for w in widths do
-  draw_rect(x, 80, w, 40, #6090d0)
+  draw_rect(x, 80, w, 40, :6090d0)
   set x = x + w + gap
 end

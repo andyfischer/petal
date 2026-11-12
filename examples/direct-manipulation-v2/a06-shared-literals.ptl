@@ -25,9 +25,9 @@ fn key_rect(i)
   {x: ox + col * unit * 6, y: oy + row * unit * 6, w: unit * 5, h: unit * 5}
 end
 
-draw_rect(0, 0, 400, 300, #101418)
+draw_rect(0, 0, 400, 300, :101418)
 for i in range(0, 12) do
   let k = key_rect(i)
-  draw_rect(k.x, k.y, k.w, k.h, #303848)
-  draw_text(str(i), k.x + unit, k.y + unit, 14, #e0e0e0)
+  draw_rect(k.x, k.y, k.w, k.h, :303848)
+  draw_text(str(i), k.x + unit, k.y + unit, 14, :e0e0e0)
 end

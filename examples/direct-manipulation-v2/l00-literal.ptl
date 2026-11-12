@@ -11,5 +11,5 @@
 
 import ui
 
-draw_rect(0, 0, 400, 300, #101418)
-draw_circle(120, 80, 20, #e05050)
+draw_rect(0, 0, 400, 300, :101418)
+draw_circle(120, 80, 20, :e05050)

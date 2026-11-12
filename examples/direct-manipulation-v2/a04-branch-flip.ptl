@@ -22,7 +22,7 @@ let r = 12
 let px = if x > wall - r then wall - r else x end
 let bar_w = if x > 150 then 60 else 90 end
 
-draw_rect(0, 0, 400, 200, #101418)
-draw_rect(wall, 40, 6, 120, #808890)
-draw_circle(px, 100, r, #e05050)
-draw_rect(20, 170, bar_w, 8, #50a0e0)
+draw_rect(0, 0, 400, 200, :101418)
+draw_rect(wall, 40, 6, 120, :808890)
+draw_circle(px, 100, r, :e05050)
+draw_rect(20, 170, bar_w, 8, :50a0e0)

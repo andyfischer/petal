@@ -323,8 +323,8 @@ test "lerp: two records, field by field" do
 end
 
 test "lerp: colors, vectors, lists and records inside a record" do
-  let a = {tint: #000000, at: vec2(0, 0), up: vec3(0, 0, 0), curve: [0, 10], look: {bloom: 0.0}}
-  let b = {tint: #ffffff, at: vec2(4, 8), up: vec3(2, 4, 6), curve: [10, 20], look: {bloom: 1.0}}
+  let a = {tint: :000000, at: vec2(0, 0), up: vec3(0, 0, 0), curve: [0, 10], look: {bloom: 0.0}}
+  let b = {tint: :ffffff, at: vec2(4, 8), up: vec3(2, 4, 6), curve: [10, 20], look: {bloom: 1.0}}
   let m = lerp(a, b, 0.5)
   expect_eq(m.tint, {r: 128, g: 128, b: 128})
   expect_eq(m.at, vec2(2, 4))
@@ -346,7 +346,7 @@ test "lerp: the fields are the first record's" do
 end
 
 test "lerp: a color is still a color, and numbers still numbers" do
-  expect_eq(lerp(#000000, #ffffff, 0.5), {r: 128, g: 128, b: 128})
+  expect_eq(lerp(:000000, :ffffff, 0.5), {r: 128, g: 128, b: 128})
   expect_eq(lerp(0, 10, 0.3), 3.0)
   expect_eq(lerp([0.0, 10.0], [1.0, 20.0], 0.5), [0.5, 15.0])
 end

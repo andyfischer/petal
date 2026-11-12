@@ -40,7 +40,7 @@ state last_menu = "—"
 state notes = "Line one\nand a second line"
 state title = "Untitled"
 state size_px = 14
-state tint = #7c5cff
+state tint = :7c5cff
 state tab = 0
 state density = 1
 state split = 0.4
@@ -349,7 +349,7 @@ if section == 7 then
   if cf.color != nil then
     tint = cf.color
   end
-  let picked = bloom.swatches(rect(x + 160, y + 148, 200, 30), [#7c5cff, #3c8cff, #3fb950, #d29922, #f85149], tint)
+  let picked = bloom.swatches(rect(x + 160, y + 148, 200, 30), [:7c5cff, :3c8cff, :3fb950, :d29922, :f85149], tint)
   if picked != nil then
     tint = picked
   end

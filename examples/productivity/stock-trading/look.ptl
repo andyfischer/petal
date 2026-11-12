@@ -10,27 +10,27 @@ import ui
 
 // ── Palette ─────────────────────────────────────────────────────────────────
 
-pub let BG      = #090c12
-pub let PANEL   = #10141c
-pub let RAISED  = #171c27
-pub let WELL    = #0b0f16
-pub let LINE    = #212838
-pub let SOFT    = #181e2a
-pub let GRID    = #161b26
-pub let TEXT    = #e7ecf3
-pub let MUTED   = #8d98aa
-pub let DIM     = #566072
-pub let UP      = #2ec48d
-pub let DOWN    = #f2606f
-pub let ACCENT  = #5b9dff
-pub let AMBER   = #f1b455
-pub let VIOLET  = #a98ff5
-pub let INK     = #06110c      // text on a filled up/down face
+pub let BG      = :090c12
+pub let PANEL   = :10141c
+pub let RAISED  = :171c27
+pub let WELL    = :0b0f16
+pub let LINE    = :212838
+pub let SOFT    = :181e2a
+pub let GRID    = :161b26
+pub let TEXT    = :e7ecf3
+pub let MUTED   = :8d98aa
+pub let DIM     = :566072
+pub let UP      = :2ec48d
+pub let DOWN    = :f2606f
+pub let ACCENT  = :5b9dff
+pub let AMBER   = :f1b455
+pub let VIOLET  = :a98ff5
+pub let INK     = :06110c      // text on a filled up/down face
 
 // One hue per listing, for the allocation bar. Neither the up green nor the
 // down red is among them.
-pub let HUES = [#5b9dff, #a98ff5, #f1b455, #4fc3d9, #f08fc4, #8fd0a8, #c9a27a, #7f8cf0, #e0d06a, #58b7a6, #d38be0,
-  #9aa7bd]
+pub let HUES = [:5b9dff, :a98ff5, :f1b455, :4fc3d9, :f08fc4, :8fd0a8, :c9a27a, :7f8cf0, :e0d06a, :58b7a6, :d38be0,
+  :9aa7bd]
 
 // ── Type ────────────────────────────────────────────────────────────────────
 // Labels are set in the interface face, every number in the monospace one, so
@@ -171,7 +171,7 @@ end
 pub fn button(r: record, label: string, tone: record, enabled: bool) -> bool
   let hot = ease_flag(enabled && hovered(r))
   let down = enabled && hovered(r) && mouse_down(0)
-  let face = if enabled then mix(mix(tone, #ffffff, 0.10 * hot), #000000, if down then 0.12 else 0.0 end)
+  let face = if enabled then mix(mix(tone, :ffffff, 0.10 * hot), :000000, if down then 0.12 else 0.0 end)
   else mix(RAISED, tone, 0.10) end
   if enabled then
     draw_shadow(r, {radius: 8, blur: 12, dy: 3, color: tone, a: int(40 + 40 * hot)})

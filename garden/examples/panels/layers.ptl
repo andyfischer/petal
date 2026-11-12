@@ -30,9 +30,9 @@ end
 // ── The material bar ──────────────────────────────────────────────────────
 // What is behind it, blurred, under a tint — the iOS navigation bar. The
 // hairline sits on the content-facing edge.
-draw_material(rect(0, 0, w, 56), {kind: "regular", tint: #1c1f28, hairline: "bottom"})
+draw_material(rect(0, 0, w, 56), {kind: "regular", tint: :1c1f28, hairline: "bottom"})
 draw_text("Layers", x: 16, y: 20, size: 18, r: 240, g: 242, b: 248)
-draw_material(rect(w - 150, 12, 136, 32), {kind: "thin", radius: 16, tint: #ffffff, a: 60})
+draw_material(rect(w - 150, 12, 136, 32), {kind: "thin", radius: 16, tint: :ffffff, a: 60})
 label("search", x: w - 130, y: 22)
 
 // ── Group opacity ─────────────────────────────────────────────────────────
@@ -61,6 +61,6 @@ draw_circle(cx: halo.x + 70, cy: halo.y + 70, radius: 28, r: 120, g: 255, b: 170
 
 // ── A frosted sheet over everything drawn so far ──────────────────────────
 let sheet = rect(24, h - 120, w - 48, 96)
-draw_material(sheet, {kind: "thick", radius: 16, tint: #ffffff, a: 200})
+draw_material(sheet, {kind: "thick", radius: 16, tint: :ffffff, a: 200})
 draw_text("thick material, radius 16", x: sheet.x + 16, y: sheet.y + 16, size: 14, r: 30, g: 34, b: 44)
 label("snapshot → blur → tint, clipped to the rounded rect", x: sheet.x + 16, y: sheet.y + 44)

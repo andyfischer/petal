@@ -62,12 +62,12 @@ end
 
 // --- Neon brick colors by row ---
 fn brick_color(row)
-  if row == 0 then #ff2850
-  elsif row == 1 then #ff7814
-  elsif row == 2 then #ffdc14
-  elsif row == 3 then #14ff64
-  elsif row == 4 then #14a0ff
-  else #b43cff
+  if row == 0 then :ff2850
+  elsif row == 1 then :ff7814
+  elsif row == 2 then :ffdc14
+  elsif row == 3 then :14ff64
+  elsif row == 4 then :14a0ff
+  else :b43cff
   end
 end
 

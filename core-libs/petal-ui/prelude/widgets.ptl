@@ -84,7 +84,7 @@ pub fn button(r, label, style)
   if len(grad) < 2 then
     let bg = mix(_get(style, "bg", t.panel), _get(style, "hover", t.hover), hov)
     if press then
-      bg = mix(bg, #000000, 0.18)
+      bg = mix(bg, :000000, 0.18)
     end
     if rad > 0 then
       draw_rect_rounded(face, max(0, rad - 1), bg)
@@ -99,7 +99,7 @@ pub fn button(r, label, style)
     for c in grad do
       let s = mix(c, t.text, hov * 0.10)
       if press then
-        s = mix(s, #000000, 0.18)
+        s = mix(s, :000000, 0.18)
       end
       stops = append(stops, s)
     end
@@ -692,7 +692,7 @@ pub fn context_menu(m, items, style)
         let sid = _get(style, "id", nil)
         if sid != nil then ui_target(sid, r) end
       end
-      draw_elevation(r, rad, 2, {color: _get(style, "shadow", #000000)})
+      draw_elevation(r, rad, 2, {color: _get(style, "shadow", :000000)})
       draw_rect(r, bg)
       draw_rect_outline(r, outline)
       let rule = _get(style, "rule", hairline(bg, fg_on))
@@ -1436,7 +1436,7 @@ end
 pub fn draw_modal_backdrop(style)
   _modal_layer()
   draw_rect(rect(0, 0, screen_width(), screen_height()),
-            _get(style, "shadow", #000000), _get(style, "dim", alpha_pct(47)))
+            _get(style, "shadow", :000000), _get(style, "dim", alpha_pct(47)))
 end
 
 // The dialog chrome: shadow, rounded panel, title. Returns the content rect.
@@ -1451,7 +1451,7 @@ pub fn draw_modal(r, title, style)
   // Elevation 3 — the top of the scale, because a modal is the frontmost
   // thing on screen. The old offset rectangle read as a second, misaligned
   // dialog behind this one.
-  draw_elevation(r, t.radius_lg, 3, {color: _get(style, "shadow", #000000)})
+  draw_elevation(r, t.radius_lg, 3, {color: _get(style, "shadow", :000000)})
   draw_rect_rounded(r, t.radius_lg, _get(style, "outline", t.border_strong))
   draw_rect_rounded(pad(r, 1), t.radius_lg - 1, _get(style, "bg", t.panel))
   let size = _get(style, "size", t.font_lg)

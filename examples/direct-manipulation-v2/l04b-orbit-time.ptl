@@ -21,6 +21,6 @@ let speed = 0.8
 let phase = 0.0
 
 let a = phase + time() * speed
-draw_rect(0, 0, 400, 400, #05060d)
-draw_circle(cx, cy, 20, #ffb347)
-draw_circle(cx + cos(a) * orbit_r, cy + sin(a) * orbit_r, 8, #7fb2ff)
+draw_rect(0, 0, 400, 400, :05060d)
+draw_circle(cx, cy, 20, :ffb347)
+draw_circle(cx + cos(a) * orbit_r, cy + sin(a) * orbit_r, 8, :7fb2ff)

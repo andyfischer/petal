@@ -25,24 +25,24 @@ import json
 
 // ── Palette ──────────────────────────────────────────────────────────────
 
-let PAPER    = #f4f1ea      // sidebar
-let CANVAS   = #fbfaf6      // main surface
-let SURFACE  = #ffffff      // cards, popover
-let RULE     = #e6e1d6      // hour lines, dividers
-let RULE_2   = #efebe2      // half-hour lines
-let INK      = #1d2027
-let INK_2    = #4a4f5a
-let MUTED    = #7d828c
-let FAINT    = #a9adb4
-let TODAY    = #e5484d
-let HILITE   = #ece7dc      // hover wash on paper
+let PAPER    = :f4f1ea      // sidebar
+let CANVAS   = :fbfaf6      // main surface
+let SURFACE  = :ffffff      // cards, popover
+let RULE     = :e6e1d6      // hour lines, dividers
+let RULE_2   = :efebe2      // half-hour lines
+let INK      = :1d2027
+let INK_2    = :4a4f5a
+let MUTED    = :7d828c
+let FAINT    = :a9adb4
+let TODAY    = :e5484d
+let HILITE   = :ece7dc      // hover wash on paper
 
 let CALS = [
-  {name: "Work",     color: #3b78d8},
-  {name: "Personal", color: #2a9a73},
-  {name: "Family",   color: #e27434},
-  {name: "Fitness",  color: #cf4d8c},
-  {name: "Travel",   color: #7b5bd3},
+  {name: "Work",     color: :3b78d8},
+  {name: "Personal", color: :2a9a73},
+  {name: "Family",   color: :e27434},
+  {name: "Fitness",  color: :cf4d8c},
+  {name: "Travel",   color: :7b5bd3},
 ]
 
 let MONTHS = ["January", "February", "March", "April", "May", "June", "July",
@@ -1127,7 +1127,7 @@ fn ev_colors(e: record, selected: bool, hot: bool) -> record
   let c = cal_color(e.cal)
   let past = e.day < DEMO_TODAY || (e.day == DEMO_TODAY && !e.allday && e.start + e.dur <= DEMO_NOW)
   if selected then
-    {fill: c, edge: mix(c, #000000, t: 0.18), ink: #ffffff, sub: mix(c, #ffffff, t: 0.78)}
+    {fill: c, edge: mix(c, :000000, t: 0.18), ink: :ffffff, sub: mix(c, :ffffff, t: 0.78)}
   else
     let wash = if hot then 26 elsif past then 11 else 17 end
     let ink = mix(c, INK, t: 0.55)
@@ -1163,7 +1163,7 @@ end
 fn draw_block(e: record, r: record, selected: bool, hot: bool, ghost: bool)
   let k = ev_colors(e, selected, hot)
   if selected then
-    draw_shadow(r, {radius: 6, blur: 14, spread: 0, dx: 0, dy: 4, color: #1d2027, a: 50})
+    draw_shadow(r, {radius: 6, blur: 14, spread: 0, dx: 0, dy: 4, color: :1d2027, a: 50})
   end
   if ghost then
     draw_rect_rounded(r, radius: 6, c: k.fill, a: 150)
@@ -1211,7 +1211,7 @@ end
 fn draw_allday(e: record, r: record, selected: bool, hot: bool, cont_l: bool, cont_r: bool)
   let k = ev_colors(e, selected, hot)
   if selected then
-    draw_shadow(r, {radius: 5, blur: 10, spread: 0, dx: 0, dy: 3, color: #1d2027, a: 45})
+    draw_shadow(r, {radius: 5, blur: 10, spread: 0, dx: 0, dy: 3, color: :1d2027, a: 45})
     draw_rect_rounded(r, radius: 5, c: k.fill)
   else
     draw_rect_rounded(r, radius: 5, c: tint(bg: SURFACE, fg: cal_color(e.cal), pct: if hot then 34 else 24 end))
@@ -1239,8 +1239,8 @@ draw_text_center(str(civil(DEMO_TODAY).d), cx: SB_X + 13, y: 34, style: stb(11, 
 draw_text("Almanac", pos: {x: SB_X + 36, y: 27}, style: stb(19, INK))
 
 let nb_hot = hovered(NEW_BTN)
-draw_rect_rounded(NEW_BTN, radius: 8, c: if nb_hot then mix(INK, #000000, t: 0.2) else INK end)
-text_layout.draw_text_line("+  New event", r: NEW_BTN, style: stb(13, #ffffff), align: "center")
+draw_rect_rounded(NEW_BTN, radius: 8, c: if nb_hot then mix(INK, :000000, t: 0.2) else INK end)
+text_layout.draw_text_line("+  New event", r: NEW_BTN, style: stb(13, :ffffff), align: "center")
 
 // Mini month.
 let mc = civil(mini_first)
@@ -1287,10 +1287,10 @@ for i in range(0, 42) do
   let col = if in_month then INK_2 else FAINT end
   if z == DEMO_TODAY then
     draw_circle(cx, cy, 12, TODAY)
-    col = #ffffff
+    col = :ffffff
   elsif z == focus_day then
     draw_circle(cx, cy, 12, INK)
-    col = #ffffff
+    col = :ffffff
   elsif hovered(c) then
     draw_circle(cx, cy, 12, HILITE)
   end
@@ -1317,7 +1317,7 @@ for i in range(0, len(CALS)) do
     draw_rect_rounded_outline(box, radius: 4, c: c, a: 255, width: 1.5)
   else
     draw_rect_rounded(box, radius: 4, c: c)
-    draw_polyline([[box.x + 3.5, box.y + 7.5], [box.x + 6, box.y + 10], [box.x + 10.5, box.y + 4.5]], #ffffff, 255, 1.8)
+    draw_polyline([[box.x + 3.5, box.y + 7.5], [box.x + 6, box.y + 10], [box.x + 10.5, box.y + 4.5]], :ffffff, 255, 1.8)
   end
   draw_text(CALS[i].name, pos: {x: r.x + 32, y: r.y + 6}, style: st(13, if hidden[i] then FAINT else INK end))
   draw_text_right(str(week_counts[i]), right_x: r.x + r.w - 8, y: r.y + 7, style: st(11, FAINT))
@@ -1380,12 +1380,12 @@ end
 draw_text(caption, pos: {x: MX0 + PAD + 1, y: 56}, style: st(12, MUTED))
 
 // Segmented view switch.
-draw_rect_rounded(SEG_R, radius: 9, c: #efebe3)
+draw_rect_rounded(SEG_R, radius: 9, c: :efebe3)
 let vi = index_of(VIEWS, view)
 for i in range(0, 3) do
   let c = seg_cell(i)
   if i == vi then
-    draw_shadow(c, {radius: 7, blur: 4, spread: 0, dx: 0, dy: 1, color: #000000, a: 30})
+    draw_shadow(c, {radius: 7, blur: 4, spread: 0, dx: 0, dy: 1, color: :000000, a: 30})
     draw_rect_rounded(c, radius: 7, c: SURFACE)
   end
   let col = if i == vi then INK elsif hovered(c) then INK_2 else MUTED end
@@ -1394,7 +1394,7 @@ end
 
 // Prev / Today / Next.
 for r in [PREV_R, TODAY_R, NEXT_R] do
-  draw_rect_rounded(r, radius: 8, c: if hovered(r) then #efebe3 else SURFACE end)
+  draw_rect_rounded(r, radius: 8, c: if hovered(r) then :efebe3 else SURFACE end)
   draw_rect_rounded_outline(r, radius: 8, c: RULE, a: 255, width: 1)
 end
 text_layout.draw_text_line("Today", r: TODAY_R, style: stb(12, INK), align: "center")
@@ -1421,7 +1421,7 @@ if view != "month" then
     let is_today = z == DEMO_TODAY
     let lab = if n == 1 then upper(DAYS_LONG[weekday(z)]) else upper(DAYS_SHORT[weekday(z)]) end
     let lab_st = {size: 10, color: if is_today then TODAY else MUTED end, font: "ui", weight: 700, spacing: 1.2}
-    let num_st = if is_today then stb(20, #ffffff) else st(20, if weekday(z) >= 5 then MUTED else INK end) end
+    let num_st = if is_today then stb(20, :ffffff) else st(20, if weekday(z) >= 5 then MUTED else INK end) end
     let dn = str(civil(z).d)
     if n == 1 then
       draw_text(lab, pos: {x: x + 12, y: HEAD_H + 8}, style: lab_st)
@@ -1459,10 +1459,10 @@ if view != "month" then
     let z = P.days[ci]
     let x = GX + ci * cw
     if weekday(z) >= 5 then
-      draw_rect(rect(x, gt, cw, H - gt), #f7f5ef)
+      draw_rect(rect(x, gt, cw, H - gt), :f7f5ef)
     end
     if z == DEMO_TODAY && n > 1 then
-      draw_rect(rect(x, gt, cw, H - gt), #fdf6f2)
+      draw_rect(rect(x, gt, cw, H - gt), :fdf6f2)
     end
   end
   let h0 = max(0, int(scroll_px / HOUR_H))
@@ -1525,7 +1525,7 @@ if view != "month" then
   end
   if ti >= 0 && ny >= gt then
     let lab = clock(DEMO_NOW)
-    let ls = stb(10, #ffffff)
+    let ls = stb(10, :ffffff)
     let lw = text_width(lab, ls) + 10
     draw_rect_rounded(rect(GX - 6 - lw, ny - 8, lw, 16), radius: 8, c: TODAY)
     draw_text(lab, pos: {x: GX - 1 - lw, y: ny - 7}, style: ls)
@@ -1541,7 +1541,7 @@ if view != "month" then
   // A time tag riding with the pointer during a drag.
   if P.pv != nil && drag.moved && drag.mode != "amove" then
     let tag = if drag.mode == "resize" then dur_label(P.pv.dur) else time_range(P.pv.start, P.pv.dur) end
-    let ts = stb(11, #ffffff)
+    let ts = stb(11, :ffffff)
     let tw = text_width(tag, ts) + 16
     let tr = rect(min(mx + 14, W - tw - 6), my + 16, tw, 22)
     draw_rect_rounded(tr, radius: 6, c: INK, a: 230)
@@ -1553,7 +1553,7 @@ end
 if view == "day" then
   let ax = AG_X
   let aw = AGENDA_W - 1
-  draw_rect(rect(ax, HEAD_H, aw, H - HEAD_H), #f7f4ee)
+  draw_rect(rect(ax, HEAD_H, aw, H - HEAD_H), :f7f4ee)
   draw_rect(rect(ax - 1, HEAD_H, 1, H - HEAD_H), RULE)
   let ag = agenda_events(evs: events, z: focus_day, hid: hidden)
   let timed = filter(ag, fn(e) -> !e.allday)
@@ -1574,7 +1574,7 @@ if view == "day" then
   let bar = rect(x, HEAD_H + 96, aw - 44, 10)
   let b0 = hm(7, 0)
   let b1 = hm(22, 0)
-  draw_rect_rounded(bar, radius: 5, c: #ebe6dc)
+  draw_rect_rounded(bar, radius: 5, c: :ebe6dc)
   for e in timed do
     let s0 = clamp(e.start, lo: b0, hi: b1)
     let s1 = clamp(e.start + e.dur, lo: b0, hi: b1)
@@ -1645,14 +1645,14 @@ if view == "month" then
     let zc = civil(c.day)
     let in_month = zc.m == fm
     if !in_month then
-      draw_rect(r, #f6f3ec)
+      draw_rect(r, :f6f3ec)
     elsif weekday(c.day) >= 5 then
-      draw_rect(r, #f9f7f2)
+      draw_rect(r, :f9f7f2)
     end
     if c.day == focus_day then
-      draw_rect(r, #f3eee4)
+      draw_rect(r, :f3eee4)
     end
-    let ds = if c.day == DEMO_TODAY then stb(12, #ffffff) elsif in_month then st(12, INK) else st(12, FAINT) end
+    let ds = if c.day == DEMO_TODAY then stb(12, :ffffff) elsif in_month then st(12, INK) else st(12, FAINT) end
     let label = if zc.d == 1 then "{month_short(zc.m)} 1" else str(zc.d) end
     if c.day == DEMO_TODAY then
       draw_circle(r.x + 17, r.y + 16, 11, TODAY)
@@ -1690,13 +1690,13 @@ if view == "month" then
       elsif is_hot then
         draw_rect_rounded(r, radius: 4, c: HILITE)
       end
-      let dot = if is_sel then #ffffff else cal_color(e.cal) end
+      let dot = if is_sel then :ffffff else cal_color(e.cal) end
       draw_circle(r.x + 6, r.y + 9, 3, dot)
       let tm = clock(e.start)
       let tms = st(11, if is_sel then k.sub else MUTED end)
       let tmw = text_width(tm, tms)
       draw_text(tm, pos: {x: r.x + 14, y: r.y + 2}, style: tms)
-      let ts2 = st(11, if is_sel then #ffffff else INK end)
+      let ts2 = st(11, if is_sel then :ffffff else INK end)
       draw_text(ellipsize(e.title, avail_px: r.w - tmw - 24, size: ts2), pos: {x: r.x + 19 + tmw, y: r.y + 2}, style: ts2)
     end
   end
@@ -1731,10 +1731,10 @@ if pop_open then
   let tf = pq.title
   let has = has_focus("title")
   if has then
-    draw_rect_rounded(tf, radius: 7, c: #f7f5f0)
+    draw_rect_rounded(tf, radius: 7, c: :f7f5f0)
     draw_rect_rounded_outline(tf, radius: 7, c: c, a: 255, width: 1.5)
   elsif hovered(tf) then
-    draw_rect_rounded(tf, radius: 7, c: #f7f5f0)
+    draw_rect_rounded(tf, radius: 7, c: :f7f5f0)
   end
   let tst = st(17, INK)
   if pe.title == "" then
@@ -1781,7 +1781,7 @@ if pop_open then
 
   let btn = fn(r, label, ink, enabled)
     let hot = enabled && hovered(r)
-    draw_rect_rounded(r, radius: 7, c: if hot then #efebe3 else #f7f5f0 end)
+    draw_rect_rounded(r, radius: 7, c: if hot then :efebe3 else :f7f5f0 end)
     text_layout.draw_text_line(label, r, style: stb(12, if enabled then ink else FAINT end), align: "center")
   end
   btn(pq.shorter, label: "- 15m", ink: INK_2, enabled: !pe.allday && pe.dur > 15)

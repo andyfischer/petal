@@ -14,6 +14,6 @@ import ui
 let cx = tunable(140)
 let cy = tunable(90)
 
-draw_rect(0, 0, 400, 300, #101418)
-draw_circle(cx, cy, 24, #4080e0)
-draw_rect(cx - 30, cy + 40, 60, 8, #4080e0)
+draw_rect(0, 0, 400, 300, :101418)
+draw_circle(cx, cy, 24, :4080e0)
+draw_rect(cx - 30, cy + 40, 60, 8, :4080e0)

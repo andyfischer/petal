@@ -249,7 +249,7 @@ pub fn surface(t: record, r: record, radius: num, level: num)
   if level > 0 then
     let e = field(t, "elevation_" ++ str(min(level, 3)), {blur: 8, spread: 0, dy: 2, a: 48})
     draw_shadow(r, {radius: radius, blur: field(e, "blur", 8), spread: field(e, "spread", 0),
-      dx: 0, dy: field(e, "dy", 2), color: #000000, a: field(e, "a", 48)})
+      dx: 0, dy: field(e, "dy", 2), color: :000000, a: field(e, "a", 48)})
   end
   draw_rect_rounded(r, radius, t.panel)
   stroke(t, r, radius, hair(t))

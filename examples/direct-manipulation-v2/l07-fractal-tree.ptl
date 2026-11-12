@@ -23,14 +23,14 @@ let spread = 0.45
 fn branch(x, y, angle, len, depth)
   let x2 = x + cos(angle) * len
   let y2 = y - sin(angle) * len
-  draw_line(x, y, x2, y2, #806040, 255, 2)
+  draw_line(x, y, x2, y2, :806040, 255, 2)
   if depth == 0 then
-    draw_circle(x2, y2, 3, #40c040)
+    draw_circle(x2, y2, 3, :40c040)
   else
     branch(x2, y2, angle + spread, len * shrink, depth - 1)
     branch(x2, y2, angle - spread, len * shrink, depth - 1)
   end
 end
 
-draw_rect(0, 0, 400, 400, #101418)
+draw_rect(0, 0, 400, 400, :101418)
 branch(200, 380, pi() / 2, trunk, 5)

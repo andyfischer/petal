@@ -8,7 +8,7 @@
 import ui
 import ui/drag
 
-let COLORS = {A: #e57373, B: #ffb74d, C: #81c784, D: #64b5f6, E: #ba68c8}
+let COLORS = {A: :e57373, B: :ffb74d, C: :81c784, D: :64b5f6, E: :ba68c8}
 let ROW_H = 44
 let GAP = 8
 
@@ -26,14 +26,14 @@ fn view(items)
     draggable(k, r, fn() closest(moves(items, i)) |> floating() end)
     place(k, r, fn(p)
       draw_rect_rounded(p, 6, COLORS[k])
-      draw_text("Item {k}", p.x + 14, p.y + 14, 16, #1e1e24)
+      draw_text("Item {k}", p.x + 14, p.y + 14, 16, :1e1e24)
     end)
   end
   nil
 end
 
 clear(24, 24, 32)
-draw_text("Drag a row to reorder. Esc cancels.", 40, 24, 14, #c8ccd8)
+draw_text("Drag a row to reorder. Esc cancels.", 40, 24, 14, :c8ccd8)
 let d = drag_session(items, view)
 view(d.preview)
 if d.dropped then

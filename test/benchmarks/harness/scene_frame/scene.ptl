@@ -13,11 +13,11 @@ fn city_block(i)
   let x = float(i % 50) * 12.0
   let z = float(i / 50) * 12.0
   let h = 4.0 + float((i * 7919) % 13)
-  {mesh: "block{i % 8}", pos: vec3(x, h * 0.5, z), scale: vec3(10.0, h, 10.0), color: #8899aa, roughness: 0.8}
+  {mesh: "block{i % 8}", pos: vec3(x, h * 0.5, z), scale: vec3(10.0, h, 10.0), color: :8899aa, roughness: 0.8}
 end
 
 fn crate_decl(i)
-  {id: "crate{i}", opts: {shape: "box", size: 1.0, mass: 0.0, static: true, color: #a0703c,
+  {id: "crate{i}", opts: {shape: "box", size: 1.0, mass: 0.0, static: true, color: :a0703c,
                           pos: vec3(float(i % 20) * 2.0, 0.5, float(i / 20) * 2.0)}}
 end
 
@@ -41,9 +41,9 @@ end
 fn ship(i, t)
   let a = t * 0.3 + float(i) * 0.021
   let p = vec3(cos(a) * 60.0, 12.0 + sin(t + float(i)) * 2.0, sin(a) * 60.0)
-  body(1000 + i, {shape: "box", size: 2.0, mass: 5.0, kinematic: true, color: #ff8800,
+  body(1000 + i, {shape: "box", size: 2.0, mass: 5.0, kinematic: true, color: :ff8800,
                   roughness: 0.4, metallic: 0.2, pos: p})
-  draw_mesh("ship_hull", {pos: p, rot: a, color: #ff8800, metallic: 0.2, emissive: 0.0})
+  draw_mesh("ship_hull", {pos: p, rot: a, color: :ff8800, metallic: 0.2, emissive: 0.0})
   nil
 end
 

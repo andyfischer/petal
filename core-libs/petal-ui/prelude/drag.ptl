@@ -1151,14 +1151,14 @@ end
 // which for closest / snap_radius / when_far / drop_target reads only the
 // table: zero speculative runs.
 
-let _DBG_COLORS = [#4fc3f7, #ffb74d, #81c784, #f06292, #ba68c8, #fff176, #4db6ac, #e57373]
-let _DBG_ON = #ffffff
-let _DBG_DIM = #9aa0ac
-let _DBG_ZONE = #ff5252
-let _DBG_BG = #15161c
+let _DBG_COLORS = [:4fc3f7, :ffb74d, :81c784, :f06292, :ba68c8, :fff176, :4db6ac, :e57373]
+let _DBG_ON = :ffffff
+let _DBG_DIM = :9aa0ac
+let _DBG_ZONE = :ff5252
+let _DBG_BG = :15161c
 
 fn _dbg_color(id)
-  if id == nil || id < 1 then #808080 else _DBG_COLORS[(id - 1) % len(_DBG_COLORS)] end
+  if id == nil || id < 1 then :808080 else _DBG_COLORS[(id - 1) % len(_DBG_COLORS)] end
 end
 
 fn _is_leaf(spec)

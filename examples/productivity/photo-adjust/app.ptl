@@ -14,19 +14,19 @@
 import ui
 
 // ── Chrome palette ───────────────────────────────────────────────────────
-let BG       = #0b0d11
-let RAIL     = #12151b
-let CARD     = #191d25
-let ELEV     = #1f242e
-let HOVER    = #262d39
-let LINE     = #2b3240
-let LINE_SOFT = #212734
-let TEXT     = #e9edf5
-let DIM      = #97a1b2
-let FAINT    = #626c7d
-let GHOST    = #3c4553
-let ACCENT   = #f0b35c
-let COOL     = #78b4f0
+let BG       = :0b0d11
+let RAIL     = :12151b
+let CARD     = :191d25
+let ELEV     = :1f242e
+let HOVER    = :262d39
+let LINE     = :2b3240
+let LINE_SOFT = :212734
+let TEXT     = :e9edf5
+let DIM      = :97a1b2
+let FAINT    = :626c7d
+let GHOST    = :3c4553
+let ACCENT   = :f0b35c
+let COOL     = :78b4f0
 
 // ── Geometry ─────────────────────────────────────────────────────────────
 let TOP_H    = 64

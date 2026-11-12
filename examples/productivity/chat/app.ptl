@@ -24,33 +24,33 @@ import garden
 // ── Palette ──────────────────────────────────────────────────────────────
 // A deep ink sidebar against warm paper: navigation recedes, talk reads.
 
-let SIDE = #191b29
-let SIDE_HOT = #24273a
-let SIDE_RULE = #2a2d41
-let SIDE_TEXT = #d3d5e6
-let SIDE_DIM = #9094ad
-let SIDE_FAINT = #62667f
+let SIDE = :191b29
+let SIDE_HOT = :24273a
+let SIDE_RULE = :2a2d41
+let SIDE_TEXT = :d3d5e6
+let SIDE_DIM = :9094ad
+let SIDE_FAINT = :62667f
 
-let PAPER = #ffffff
-let WASH = #f7f7fa
-let INK = #1c1e2a
-let INK_2 = #3f4354
-let MUTED = #6c7083
-let FAINT = #a2a6b4
-let RULE = #e6e7ee
-let RULE_SOFT = #efeff4
-let ACCENT = #5b5fd6
-let ACCENT_HI = #6c70e4
-let ACCENT_SOFT = #eceefd
-let MENTION_BG = #fff6dc
-let MENTION_BAR = #e6a817
-let MENTION_INK = #9a5b00
-let CODE_BG = #f2f1f6
-let CODE_INK = #c3305b
-let RED = #e5484d
-let GREEN = #2fb37a
-let FRESH = #e3e6ff
-let WHITE = #ffffff
+let PAPER = :ffffff
+let WASH = :f7f7fa
+let INK = :1c1e2a
+let INK_2 = :3f4354
+let MUTED = :6c7083
+let FAINT = :a2a6b4
+let RULE = :e6e7ee
+let RULE_SOFT = :efeff4
+let ACCENT = :5b5fd6
+let ACCENT_HI = :6c70e4
+let ACCENT_SOFT = :eceefd
+let MENTION_BG = :fff6dc
+let MENTION_BAR = :e6a817
+let MENTION_INK = :9a5b00
+let CODE_BG = :f2f1f6
+let CODE_INK = :c3305b
+let RED = :e5484d
+let GREEN = :2fb37a
+let FRESH = :e3e6ff
+let WHITE = :ffffff
 
 // ── Type ─────────────────────────────────────────────────────────────────
 
@@ -280,7 +280,7 @@ fn draw_rich_row(text: string, row: record, spans: list, x: num, y: num, style: 
       draw_text(seg, {x: cx, y: y}, {...style, color: CODE_INK})
       cx += 3
     elsif kind == "me" then
-      draw_rect_rounded(cx - 2, y + 1, w + 4, LINE - 2, 4, #fde7a6)
+      draw_rect_rounded(cx - 2, y + 1, w + 4, LINE - 2, 4, :fde7a6)
       draw_text(seg, {x: cx, y: y}, {...style, color: MENTION_INK})
     elsif kind == "mention" then
       draw_rect_rounded(cx - 2, y + 1, w + 4, LINE - 2, 4, ACCENT_SOFT)
@@ -915,7 +915,7 @@ if hot_id != 0 && !blocking then
   let it = find(items, fn(x) -> x.kind == "msg" && x.m.id == hot_id)
   let y = base_y + it.y
   let br = rect(FX + FW - 24 - BAR_W, max(FR.y + 4, y - 18), BAR_W, 36)
-  draw_shadow(br, {radius: 10, blur: 12, dy: 3, color: #1c1e2a, a: 34})
+  draw_shadow(br, {radius: 10, blur: 12, dy: 3, color: :1c1e2a, a: 34})
   draw_rect_rounded(br, 10, PAPER)
   draw_rect_rounded_outline(br, 10, RULE, 255, 1)
   for k in range(0, 5) do
@@ -941,8 +941,8 @@ if !stuck then
   let pw = text_width(label, ls) + 46
   jump_r = rect(FX + (FW - pw) / 2, FR.y + FR.h - 46, pw, 34)
   let over = hit(jump_r, !blocking)
-  draw_shadow(jump_r, {radius: 17, blur: 12, dy: 3, color: #1c1e2a, a: 40})
-  draw_rect_rounded(jump_r, 17, if unseen_here > 0 then (if over then ACCENT_HI else ACCENT end) elsif over then #2e3144 else INK end)
+  draw_shadow(jump_r, {radius: 17, blur: 12, dy: 3, color: :1c1e2a, a: 40})
+  draw_rect_rounded(jump_r, 17, if unseen_here > 0 then (if over then ACCENT_HI else ACCENT end) elsif over then :2e3144 else INK end)
   // A down arrow drawn as strokes.
   let ax = jump_r.x + 19
   let ay = jump_r.y + 17
@@ -1069,7 +1069,7 @@ end
 
 draw_rect(0, 0, SIDE_W, H, SIDE)
 // The workspace.
-draw_rect_gradient_rounded(rect(18, 16, 34, 34), 9, #f08a4b, #d9488f, 0.8)
+draw_rect_gradient_rounded(rect(18, 16, 34, 34), 9, :f08a4b, :d9488f, 0.8)
 text_layout.draw_text_line("F", rect(18, 16, 34, 34), sb(17, WHITE), "center")
 draw_text("Fernwood Labs", {x: 62, y: 15}, sb(16, WHITE))
 draw_circle({x: 67, y: 42}, 4, GREEN)
@@ -1139,7 +1139,7 @@ if toast.left > 0.0 then
   let ts = st(13, WHITE)
   let tw2 = text_width(toast.msg, ts) + 32
   let tr = rect(FX + (FW - tw2) / 2, HEADER_H + 14, tw2, 34)
-  draw_shadow(tr, {radius: 10, blur: 12, dy: 3, color: #1c1e2a, a: 36})
+  draw_shadow(tr, {radius: 10, blur: 12, dy: 3, color: :1c1e2a, a: 36})
   draw_rect_rounded(tr, 10, INK, int(min(1.0, toast.left * 3.0) * 255.0))
   text_layout.draw_text_line(toast.msg, tr, ts, "center")
   request_frame()

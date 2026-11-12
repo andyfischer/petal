@@ -33,7 +33,7 @@ end
 
 let tip = hand_tip(hours, len)
 
-draw_rect(0, 0, 400, 400, #101418)
-draw_circle(cx, cy, 90, #202830)
-draw_line(cx, cy, tip.x, tip.y, #f0f0f0, 255, 3)
-draw_circle(tip.x, tip.y, 6, #f04040)
+draw_rect(0, 0, 400, 400, :101418)
+draw_circle(cx, cy, 90, :202830)
+draw_line(cx, cy, tip.x, tip.y, :f0f0f0, 255, 3)
+draw_circle(tip.x, tip.y, 6, :f04040)

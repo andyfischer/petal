@@ -20,21 +20,21 @@ import bloom
 import garden
 
 // ── Palette ──────────────────────────────────────────────────────────────
-let BG      = #0d0f14
-let PANEL   = #13161d
-let WELL    = #181c25
-let WELL_HI = #1f2430
-let CELL    = #1e232e
-let CELL_B  = #272d3a
-let LINE    = #2a303d
-let LINE_S  = #1f2430
-let TEXT    = #eef0f6
-let DIM     = #a2aabb
-let FAINT   = #6b7486
-let GHOST   = #434b5b
-let ACCENT  = #ffd166
-let HEAD    = #f6f2e4
-let DANGER  = #ff6b5e
+let BG      = :0d0f14
+let PANEL   = :13161d
+let WELL    = :181c25
+let WELL_HI = :1f2430
+let CELL    = :1e232e
+let CELL_B  = :272d3a
+let LINE    = :2a303d
+let LINE_S  = :1f2430
+let TEXT    = :eef0f6
+let DIM     = :a2aabb
+let FAINT   = :6b7486
+let GHOST   = :434b5b
+let ACCENT  = :ffd166
+let HEAD    = :f6f2e4
+let DANGER  = :ff6b5e
 
 // ── Model constants ──────────────────────────────────────────────────────
 let STEPS  = 32          // two bars of sixteenths
@@ -42,14 +42,14 @@ let N_TRK  = 8
 let ROWS   = 24          // two octaves in the piano roll
 
 let TRACKS = [
-  {name: "Kick",       kind: "drum", base: 0,  decay: 7.0,  color: #ff6b5e},
-  {name: "Snare",      kind: "drum", base: 0,  decay: 9.0,  color: #ff9f5a},
-  {name: "Clap",       kind: "drum", base: 0,  decay: 11.0, color: #ffd166},
-  {name: "Closed Hat", kind: "drum", base: 0,  decay: 20.0, color: #7ddc9a},
-  {name: "Open Hat",   kind: "drum", base: 0,  decay: 6.0,  color: #4fd1c5},
-  {name: "Rim",        kind: "drum", base: 0,  decay: 16.0, color: #62b0ff},
-  {name: "Bass",       kind: "mel",  base: 36, decay: 5.0,  color: #a78bfa},
-  {name: "Lead",       kind: "mel",  base: 60, decay: 5.0,  color: #f58ad2},
+  {name: "Kick",       kind: "drum", base: 0,  decay: 7.0,  color: :ff6b5e},
+  {name: "Snare",      kind: "drum", base: 0,  decay: 9.0,  color: :ff9f5a},
+  {name: "Clap",       kind: "drum", base: 0,  decay: 11.0, color: :ffd166},
+  {name: "Closed Hat", kind: "drum", base: 0,  decay: 20.0, color: :7ddc9a},
+  {name: "Open Hat",   kind: "drum", base: 0,  decay: 6.0,  color: :4fd1c5},
+  {name: "Rim",        kind: "drum", base: 0,  decay: 16.0, color: :62b0ff},
+  {name: "Bass",       kind: "mel",  base: 36, decay: 5.0,  color: :a78bfa},
+  {name: "Lead",       kind: "mel",  base: 60, decay: 5.0,  color: :f58ad2},
 ]
 
 let NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -999,9 +999,9 @@ for i in range(0, 4) do
   draw_text(PAT_KEYS[i], {x: r.x + 10, y: r.y + 6},
     {size: 16, font: "ui", weight: 700, color: if is_cur then BG else TEXT end})
   draw_text(if is_q then "NEXT" else upper(pats[i].name) end, {x: r.x + 10, y: r.y + 30},
-    {...S_CAP, size: 8, color: if is_cur then #5c4a12 elsif is_q then ACCENT else FAINT end})
+    {...S_CAP, size: 8, color: if is_cur then :5c4a12 elsif is_q then ACCENT else FAINT end})
   draw_text_right(str(count_events(pats[i])), r.x + r.w - 9, r.y + 9,
-    {...S_MONO, size: 9, color: if is_cur then #7a6218 else GHOST end})
+    {...S_MONO, size: 9, color: if is_cur then :7a6218 else GHOST end})
 end
 
 // Output scope: the envelopes, rendered as a waveform.
@@ -1254,13 +1254,13 @@ if sel_mel then
     if pc == 0 then draw_rect(rect(GX, ry + PR_ROW - 1, GW, 1), LINE) end
     // Keyboard.
     let key_lit = p == hov_pitch || sel_note >= 0 && sel_note < len(ns) && ns[sel_note].p == p
-    let kc = if key_lit then mix(if black then #20242d else #c9cdd8 end, st.color, 0.6)
-    elsif black then #20242d
-    else #c9cdd8
+    let kc = if key_lit then mix(if black then :20242d else :c9cdd8 end, st.color, 0.6)
+    elsif black then :20242d
+    else :c9cdd8
     end
     draw_rect(rect(kx, ry, if black then KEYS_W * 62 / 100 else KEYS_W end, PR_ROW - 1), kc)
     if pc == 0 then
-      draw_text_right(note_name(st.base + p), kx + KEYS_W - 4, ry + (PR_ROW - 12) / 2, {size: 8, font: "ui", weight: 700, color: #3a4050})
+      draw_text_right(note_name(st.base + p), kx + KEYS_W - 4, ry + (PR_ROW - 12) / 2, {size: 8, font: "ui", weight: 700, color: :3a4050})
     end
   end
   for s in range(0, STEPS + 1) do

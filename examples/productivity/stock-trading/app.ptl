@@ -1037,7 +1037,7 @@ lk.hline(0, TOP_H, W, lk.LINE)
 let logo = Rect(PAD + 2, 14, 28, 28)
 draw_rect_gradient_rounded(logo, 8, lk.ACCENT, lk.VIOLET, 0.9)
 draw_polyline([{x: logo.x + 6, y: logo.y + 19}, {x: logo.x + 11, y: logo.y + 12}, {x: logo.x + 16, y: logo.y + 16},
-  {x: logo.x + 22, y: logo.y + 8}], #ffffff, 255, 2.0)
+  {x: logo.x + 22, y: logo.y + 8}], :ffffff, 255, 2.0)
 txt("MERIDIAN", Rect(logo.x + 38, 10, 120, 20), {size: 13, font: "ui", color: lk.TEXT, weight: 600, spacing: 2.2})
 txt("Paper trading desk", Rect(logo.x + 38, 28, 140, 16), lk.ui(11, lk.DIM))
 

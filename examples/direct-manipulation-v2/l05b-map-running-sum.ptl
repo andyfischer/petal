@@ -21,7 +21,7 @@ let layout = reduce(widths, {x: x0, boxes: []}, fn(acc, w)
   {x: acc.x + w + gap, boxes: append(acc.boxes, {x: acc.x, w: w})}
 end)
 
-draw_rect(0, 0, 400, 200, #101418)
+draw_rect(0, 0, 400, 200, :101418)
 for b in layout.boxes do
-  draw_rect(b.x, 80, b.w, 40, #6090d0)
+  draw_rect(b.x, 80, b.w, 40, :6090d0)
 end

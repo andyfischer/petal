@@ -15,26 +15,26 @@ import ui
 // ── Palette ──────────────────────────────────────────────────────────────────
 // One ink-blue ground, three surface steps above it, and a hairline that is
 // just visible enough to separate cards without drawing a box around them.
-let BG        = #0d1015
-let SURFACE   = #151a22
-let RAISED    = #1b212b
-let HAIRLINE  = #242b38
-let GRID      = #1c222c
-let TEXT      = #e9eef6
-let DIM       = #8d97a7
-let FAINT     = #5b6474
-let POS       = #4fcb8f
-let NEG       = #f2718c
+let BG        = :0d1015
+let SURFACE   = :151a22
+let RAISED    = :1b212b
+let HAIRLINE  = :242b38
+let GRID      = :1c222c
+let TEXT      = :e9eef6
+let DIM       = :8d97a7
+let FAINT     = :5b6474
+let POS       = :4fcb8f
+let NEG       = :f2718c
 
-let C_REV     = #6ea8ff
-let C_USERS   = #4fcb8f
-let C_CONV    = #f5b356
-let C_CHURN   = #c78cf5
+let C_REV     = :6ea8ff
+let C_USERS   = :4fcb8f
+let C_CONV    = :f5b356
+let C_CHURN   = :c78cf5
 
-let WHITE     = #ffffff
-let CH_A      = #6ea8ff
-let CH_B      = #4fcb8f
-let CH_C      = #f5b356
+let WHITE     = :ffffff
+let CH_A      = :6ea8ff
+let CH_B      = :4fcb8f
+let CH_C      = :f5b356
 
 // Spacing scale: everything in the layout is one of these.
 let S1 = 6
@@ -277,10 +277,10 @@ let SOURCES = [
 ]
 
 let PLANS = [
-  {name: "Free", pct: 52.0, color: #3c4658},
-  {name: "Starter", pct: 24.0, color: #6ea8ff},
-  {name: "Pro", pct: 17.0, color: #7b8cf7},
-  {name: "Enterprise", pct: 7.0, color: #c78cf5},
+  {name: "Free", pct: 52.0, color: :3c4658},
+  {name: "Starter", pct: 24.0, color: :6ea8ff},
+  {name: "Pro", pct: 17.0, color: :7b8cf7},
+  {name: "Enterprise", pct: 7.0, color: :c78cf5},
 ]
 
 let PAGES = [
@@ -646,7 +646,7 @@ for i in range(0, 4) do
   let pad = S3
   text_at(m.label, x: r.x + pad, y: r.y + pad, style: {size: 10, color: DIM, spacing: 1.5})
   text_at(fmt_headline(head, m.unit), x: r.x + pad, y: r.y + pad + 20,
-    style: {size: 28, color: if is_sel then TEXT else #cdd5e1 end})
+    style: {size: 28, color: if is_sel then TEXT else :cdd5e1 end})
   delta_chip(x: r.x + pad, y: r.y + r.h - pad - 20, d: mdelta, invert: m.key == "chn")
 
   // Sparkline occupies the lower-right quadrant of the card.
@@ -841,7 +841,7 @@ for i in range(0, len(PLANS)) do
   end
   draw_rect_rounded(rect(lg_x, ly + 3.0, 8, 8), radius: 2, c: p.color)
   let pct_s = dec(p.pct, 0) ++ "%"
-  let name_style = {size: 12, color: if on then TEXT else #c3cbd8 end}
+  let name_style = {size: 12, color: if on then TEXT else :c3cbd8 end}
   let name_avail = donut_body.x + donut_body.w - (lg_x + 16.0) - text_w(pct_s, name_style) - 12.0
   text_at(ellipsize(p.name, avail_px: name_avail, size: 12), x: lg_x + 16.0, y: ly, style: name_style)
   text_right(pct_s, right_x: donut_body.x + donut_body.w, y: ly,
@@ -932,13 +932,13 @@ for i in range(0, src_n) do
     draw_rect_rounded(rr, radius: 6, c: WHITE, a: 10)
   end
   let ty = rr.y + rowh / 2.0 - 15.0
-  text_at(s.name, x: src_body.x, y: ty, style: {size: 12, color: if hot then TEXT else #c3cbd8 end})
+  text_at(s.name, x: src_body.x, y: ty, style: {size: 12, color: if hot then TEXT else :c3cbd8 end})
   text_right(commas(s.v), right_x: src_body.x + src_body.w, y: ty, style: {size: 12, color: DIM})
   let bar_y = ty + 19.0
   let bar_w = src_body.w
   draw_rect_rounded(x: src_body.x, y: bar_y, w: bar_w, h: 5, radius: 2.5, r: GRID.r, g: GRID.g, b: GRID.b, a: 255)
   let fillw = bar_w * float(s.v) / float(src_max)
-  let c = if s.d >= 0.0 then C_REV else #7c8698 end
+  let c = if s.d >= 0.0 then C_REV else :7c8698 end
   draw_rect_rounded(x: src_body.x, y: bar_y, w: max(4.0, fillw), h: 5, radius: 2.5,
     r: c.r, g: c.g, b: c.b, a: if hot then 255 else 205 end)
 end
@@ -964,7 +964,7 @@ for i in range(0, pg_n) do
   let vw = text_w(vtxt, {size: 12, color: DIM})
   let avail = pg_body.w - dw - vw - 30.0
   text_at(ellipsize(p.path, avail_px: avail, size: 12), x: pg_body.x, y: ty,
-    style: {size: 12, color: if hot then TEXT else #c3cbd8 end})
+    style: {size: 12, color: if hot then TEXT else :c3cbd8 end})
   text_right(vtxt, right_x: pg_body.x + pg_body.w - dw - 14.0, y: ty, style: {size: 12, color: DIM})
   text_right(dtxt, right_x: pg_body.x + pg_body.w, y: ty, style: {size: 10, color: dcol})
   if i < pg_n - 1 then
@@ -989,9 +989,9 @@ text_right("{nsamp} points  ·  {chart_mode}  ·  {w}×{h}", right_x: content_x 
 for p in pills do
   let on = p.i == range_i
   let hot = hovered(p.r)
-  let bg = if on then #2b3546 elsif hot then RAISED else SURFACE end
+  let bg = if on then :2b3546 elsif hot then RAISED else SURFACE end
   draw_rect_rounded(p.r, radius: 8, c: bg)
-  draw_rect_outline(p.r, c: if on then #47597a else HAIRLINE end, a: 255, width: 1)
-  let fg = if on then TEXT elsif hot then #c3cbd8 else DIM end
+  draw_rect_outline(p.r, c: if on then :47597a else HAIRLINE end, a: 255, width: 1)
+  let fg = if on then TEXT elsif hot then :c3cbd8 else DIM end
   text_center(RANGES[p.i].label, cx: p.r.x + p.r.w / 2.0, y: p.r.y + 8, style: {size: 12, color: fg})
 end

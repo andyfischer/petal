@@ -15,17 +15,17 @@ pub let ME = "jordan"
 // ── People ───────────────────────────────────────────────────────────────
 
 let PEOPLE = const({
-  jordan: {name: "Jordan Lee", role: "Product engineer", color: #4f6bed, away: false},
-  maya: {name: "Maya Chen", role: "Design lead", color: #d9488f, away: false},
-  theo: {name: "Theo Okafor", role: "Sync engine", color: #2f9e77, away: false},
-  priya: {name: "Priya Natarajan", role: "Product manager", color: #c2711b, away: false},
-  lars: {name: "Lars Becker", role: "Platform", color: #7b5bd6, away: true},
-  ines: {name: "Ines Duarte", role: "Marketing", color: #d4445c, away: false},
-  kenji: {name: "Kenji Watanabe", role: "Support", color: #1f8fb8, away: true},
+  jordan: {name: "Jordan Lee", role: "Product engineer", color: :4f6bed, away: false},
+  maya: {name: "Maya Chen", role: "Design lead", color: :d9488f, away: false},
+  theo: {name: "Theo Okafor", role: "Sync engine", color: :2f9e77, away: false},
+  priya: {name: "Priya Natarajan", role: "Product manager", color: :c2711b, away: false},
+  lars: {name: "Lars Becker", role: "Platform", color: :7b5bd6, away: true},
+  ines: {name: "Ines Duarte", role: "Marketing", color: :d4445c, away: false},
+  kenji: {name: "Kenji Watanabe", role: "Support", color: :1f8fb8, away: true},
 })
 
 pub fn person(key: string) -> record
-  field(PEOPLE, key, {name: key, role: "", color: #8a8f9c, away: true})
+  field(PEOPLE, key, {name: key, role: "", color: :8a8f9c, away: true})
 end
 
 pub fn first_name(key: string) -> string

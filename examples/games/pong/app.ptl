@@ -13,18 +13,18 @@ import ui
 
 // ── Palette ──────────────────────────────────────────────────────────────
 
-let C_BG      = #0a0c12
-let C_COURT   = #171b27
-let C_FIELD   = #11141e
-let C_LINE    = #232838
-let C_EDGE    = #2e3548
-let C_TEXT    = #e2e7f2
-let C_DIM     = #6f7a91
-let C_MUTE    = #4a5265
-let C_CHIP    = #171b26
-let C_YOU     = #ffb454
-let C_CPU     = #56c8ff
-let C_BALL    = #f6f8fd
+let C_BG      = :0a0c12
+let C_COURT   = :171b27
+let C_FIELD   = :11141e
+let C_LINE    = :232838
+let C_EDGE    = :2e3548
+let C_TEXT    = :e2e7f2
+let C_DIM     = :6f7a91
+let C_MUTE    = :4a5265
+let C_CHIP    = :171b26
+let C_YOU     = :ffb454
+let C_CPU     = :56c8ff
+let C_BALL    = :f6f8fd
 
 // ── Type scale ───────────────────────────────────────────────────────────
 
@@ -150,7 +150,7 @@ fn draw_paddle(r: record, col: record, glow: num)
   draw_rect_rounded(rect(r.x - 7, r.y - 7, r.w + 14, r.h + 14), radius: 13, c: col, a: int(18.0 + glow * 60.0))
   draw_rect_rounded(rect(r.x - 3, r.y - 3, r.w + 6, r.h + 6), radius: 9, c: col, a: int(26.0 + glow * 80.0))
   draw_rect_rounded(r, radius: 6, c: col)
-  draw_rect_rounded(rect(r.x + 4, r.y + 9, r.w - 8, r.h - 18), radius: 3, c: #ffffff, a: 60)
+  draw_rect_rounded(rect(r.x + 4, r.y + 9, r.w - 8, r.h - 18), radius: 3, c: :ffffff, a: 60)
 end
 
 fn stat_cell(right_x: num, y: num, label: string, value: string, style: record)
@@ -495,7 +495,7 @@ if phase != "over" then
   draw_circle({x: int(bx), y: int(by + bob)}, BR + 15, C_BALL, 12)
   draw_circle({x: int(bx), y: int(by + bob)}, BR + 7, C_BALL, 30)
   draw_circle(center: {x: int(bx), y: int(by + bob)}, radius: BR, c: C_BALL)
-  draw_circle({x: int(bx) - 2, y: int(by + bob) - 2}, 3, #ffffff, 220)
+  draw_circle({x: int(bx) - 2, y: int(by + bob) - 2}, 3, :ffffff, 220)
 end
 
 clip_none()

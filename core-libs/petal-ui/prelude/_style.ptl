@@ -52,26 +52,26 @@ import io
 
 pub let theme = {
   // Surfaces
-  bg: #14161c,          // window / canvas floor
-  panel: #1d2027,       // raised panel (original name; `surface` is its twin)
-  surface: #1d2027,     // card / widget surface
-  overlay: #262b34,     // floating layer: tooltips, key caps, badges
+  bg: :14161c,          // window / canvas floor
+  panel: :1d2027,       // raised panel (original name; `surface` is its twin)
+  surface: :1d2027,     // card / widget surface
+  overlay: :262b34,     // floating layer: tooltips, key caps, badges
   // Text
-  text: #d8dee9,
-  muted: #aab4c2,       // secondary text
-  dim: #8a93a2,         // tertiary text (original name)
+  text: :d8dee9,
+  muted: :aab4c2,       // secondary text
+  dim: :8a93a2,         // tertiary text (original name)
   // Hues
-  accent: #3c8cff,
-  success: #3fb950,
-  warn: #d29922,
-  danger: #f85149,
+  accent: :3c8cff,
+  success: :3fb950,
+  warn: :d29922,
+  danger: :f85149,
   // Lines
-  outline: #3a404c,     // original name; `border` is its twin
-  border: #3a404c,
-  border_strong: #4d5566,
+  outline: :3a404c,     // original name; `border` is its twin
+  border: :3a404c,
+  border_strong: :4d5566,
   // Interaction
-  hover: #262b34,
-  selection: #2c4a7a,
+  hover: :262b34,
+  selection: :2c4a7a,
   // Scales (numbers, not colors)
   space_sm: 4,
   space: 8,

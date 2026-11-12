@@ -41,18 +41,18 @@ import garden
 
 // ── Chrome palette ───────────────────────────────────────────────────────
 
-let C_BG     = #07080c
-let C_STAGE  = #0a0b11
-let C_PANEL  = #0e1017
-let C_CHIP   = #161924
-let C_LINE   = #1e2230
-let C_EDGE   = #2b3042
-let C_TEXT   = #ecebe6
-let C_DIM    = #868b9c
-let C_MUTE   = #50556a
-let C_ACCENT = #f2b45c
-let C_COOL   = #7cc4ff
-let C_INSIDE = #05050a
+let C_BG     = :07080c
+let C_STAGE  = :0a0b11
+let C_PANEL  = :0e1017
+let C_CHIP   = :161924
+let C_LINE   = :1e2230
+let C_EDGE   = :2b3042
+let C_TEXT   = :ecebe6
+let C_DIM    = :868b9c
+let C_MUTE   = :50556a
+let C_ACCENT = :f2b45c
+let C_COOL   = :7cc4ff
+let C_INSIDE = :05050a
 
 // ── Type scale: 10 / 11 / 13 / 20 / 28 ───────────────────────────────────
 
@@ -145,24 +145,24 @@ let PLACES = [
 // Cyclic palettes: stops at phase p in [0, 1), wrapping back to the first.
 let PALS = [
   {name: "Aurora", stops: [
-    {p: 0.0,    c: #000764}, {p: 0.16,   c: #206bcb}, {p: 0.42, c: #edffff},
-    {p: 0.6425, c: #ffaa00}, {p: 0.8575, c: #1a0700},
+    {p: 0.0,    c: :000764}, {p: 0.16,   c: :206bcb}, {p: 0.42, c: :edffff},
+    {p: 0.6425, c: :ffaa00}, {p: 0.8575, c: :1a0700},
   ]},
   {name: "Ember", stops: [
-    {p: 0.0,  c: #140609}, {p: 0.2,  c: #6a1030}, {p: 0.4, c: #d8401e},
-    {p: 0.56, c: #ffa02a}, {p: 0.7,  c: #fff0c0}, {p: 0.86, c: #6b3f86},
+    {p: 0.0,  c: :140609}, {p: 0.2,  c: :6a1030}, {p: 0.4, c: :d8401e},
+    {p: 0.56, c: :ffa02a}, {p: 0.7,  c: :fff0c0}, {p: 0.86, c: :6b3f86},
   ]},
   {name: "Glacier", stops: [
-    {p: 0.0,  c: #030818}, {p: 0.22, c: #0b3a6e}, {p: 0.44, c: #1fa2c9},
-    {p: 0.6,  c: #d6f8ff}, {p: 0.74, c: #7fa8e8}, {p: 0.9,  c: #1a2a5c},
+    {p: 0.0,  c: :030818}, {p: 0.22, c: :0b3a6e}, {p: 0.44, c: :1fa2c9},
+    {p: 0.6,  c: :d6f8ff}, {p: 0.74, c: :7fa8e8}, {p: 0.9,  c: :1a2a5c},
   ]},
   {name: "Orchid", stops: [
-    {p: 0.0,  c: #0b0416}, {p: 0.2,  c: #3d1a78}, {p: 0.4, c: #c13b9b},
-    {p: 0.56, c: #ffa5b4}, {p: 0.68, c: #fff3e0}, {p: 0.84, c: #2f9a95},
+    {p: 0.0,  c: :0b0416}, {p: 0.2,  c: :3d1a78}, {p: 0.4, c: :c13b9b},
+    {p: 0.56, c: :ffa5b4}, {p: 0.68, c: :fff3e0}, {p: 0.84, c: :2f9a95},
   ]},
   {name: "Graphite", stops: [
-    {p: 0.0,  c: #0c0c10}, {p: 0.3,  c: #4d5868}, {p: 0.52, c: #ece7dc},
-    {p: 0.72, c: #b39a78}, {p: 0.88, c: #2a2630},
+    {p: 0.0,  c: :0c0c10}, {p: 0.3,  c: :4d5868}, {p: 0.52, c: :ece7dc},
+    {p: 0.72, c: :b39a78}, {p: 0.88, c: :2a2630},
   ]},
 ]
 let BANDS = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0]
@@ -1381,7 +1381,7 @@ let progress = float(have_samples) / float(max(want_samples, 1))
 
 // Tile overlay: the cache made visible. One outline per tile, tinted by level.
 if show_tiles then
-  let LOD_COL = [C_MUTE, #ff6b6b, #ffb454, #ffe27a, #7ff0b0]
+  let LOD_COL = [C_MUTE, :ff6b6b, :ffb454, :ffe27a, :7ff0b0]
   for ty in range(ty0, ty1 + 1) do
     for tx_i in range(tx0, tx1 + 1) do
       let s = slot_of(tx_i, ty)
@@ -1459,7 +1459,7 @@ let pct_s = "{int(progress * 100.0)}%"
 let sw = text_width(status_s, S_LABEL) + (if complete then 0 else text_width(pct_s, S_MONO) + 12 end) + 40
 let stat_pill = rect(cv.x + CW - 14 - sw, cv.y + CH - 42, sw, 28)
 hud_pill(stat_pill)
-draw_circle({x: stat_pill.x + 14, y: stat_pill.y + 14}, 3, if complete then #7ff0b0 else C_ACCENT end, 255)
+draw_circle({x: stat_pill.x + 14, y: stat_pill.y + 14}, 3, if complete then :7ff0b0 else C_ACCENT end, 255)
 tx(status_s, x: stat_pill.x + 26, y: stat_pill.y + 8, style: {...S_LABEL, color: C_TEXT})
 if !complete then
   tx_right(pct_s, right_x: stat_pill.x + sw - 14, y: stat_pill.y + 6, style: {...S_MONO, color: C_ACCENT})
@@ -1472,7 +1472,7 @@ if scale <= MIN_SCALE * 4.0 then
   let ww = text_width(warn, S_LABEL) + 28
   let wp = rect(cv.x + CW - 14 - ww, cv.y + 14, ww, 28)
   hud_pill(wp)
-  tx(warn, x: wp.x + 14, y: wp.y + 8, style: {...S_LABEL, color: #ff8a6b})
+  tx(warn, x: wp.x + 14, y: wp.y + 8, style: {...S_LABEL, color: :ff8a6b})
 end
 
 clip_pop()
@@ -1547,7 +1547,7 @@ section(if kind == K_JULIA then "SEED" else "LOCATOR" end, y_map,
 draw_rect_rounded(map_r, radius: 8, c: C_BG)
 clip_push(map_r, 8)
 let MAP_RAMP = for q in range(0, 14) do
-  if q == 13 then #05060a else mix(C_PANEL, #5f7fb8, pow(float(q) / 12.0, 1.3)) end
+  if q == 13 then :05060a else mix(C_PANEL, :5f7fb8, pow(float(q) / 12.0, 1.3)) end
 end
 for i in range(0, mm.n) do
   let c = MAP_RAMP[mm.c[i]]

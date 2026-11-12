@@ -38,14 +38,14 @@ pub let GROUPS = [
 ]
 
 pub let ACCENTS = [
-  {name: "Indigo", c: #6c7bff},
-  {name: "Azure", c: #3a9bf5},
-  {name: "Teal", c: #17b3a3},
-  {name: "Moss", c: #4cae5b},
-  {name: "Amber", c: #e2a336},
-  {name: "Ember", c: #ee7440},
-  {name: "Rose", c: #e6557e},
-  {name: "Violet", c: #a274f0},
+  {name: "Indigo", c: :6c7bff},
+  {name: "Azure", c: :3a9bf5},
+  {name: "Teal", c: :17b3a3},
+  {name: "Moss", c: :4cae5b},
+  {name: "Amber", c: :e2a336},
+  {name: "Ember", c: :ee7440},
+  {name: "Rose", c: :e6557e},
+  {name: "Violet", c: :a274f0},
 ]
 
 pub let FONTS = ["JetBrains Mono", "Menlo", "Monaco", "Courier New"]

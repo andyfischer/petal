@@ -43,7 +43,7 @@ pub fn switch(r: record, on: bool, opts: record) -> bool
   // squash reads better than a scale.
   let stretch = 1.0 + 0.22 * p.active
   draw_rect_rounded(Rect(kx, track.y + pad_px, kd * stretch, kd), int(kd / 2),
-    mix(#ffffff, t.text, 0.06), if enabled then 255 else 120 end)
+    mix(:ffffff, t.text, 0.06), if enabled then 255 else 120 end)
   if p.hot > 0.01 then
     draw_circle({x: kx + kd / 2.0, y: track.y + track_h / 2.0}, kd * 0.95, on_c, int(30.0 * p.hot))
   end
@@ -80,7 +80,7 @@ fn checkbox_impl(r: record, label: string, on: bool, opts: record) -> bool
   let sq = scale_rect(box, 1.0 - 0.08 * p.active)
   stroke(t, sq, t.radius_sm, mix(hair(t), t.accent, k), 1, face)
   if k > 0.02 then
-    let c = over(t.accent, #ffffff, 235)
+    let c = over(t.accent, :ffffff, 235)
     let w = max(1.5, bs * 0.13)
     let a = {x: sq.x + bs * 0.24, y: sq.y + bs * 0.52}
     let b = {x: sq.x + bs * 0.43, y: sq.y + bs * 0.70}
@@ -184,7 +184,7 @@ fn slider_impl(r: record, value: num, lo: num, hi: num, opts: record)
   let kx = track.x + track.w * frac
   let cy = track.y + track_h / 2.0
   draw_circle({x: kx, y: cy}, kr + 5.0, t.accent, int(45.0 * grow))
-  draw_circle({x: kx, y: cy}, kr, mix(#ffffff, t.text, 0.05))
+  draw_circle({x: kx, y: cy}, kr, mix(:ffffff, t.text, 0.05))
   if field(opts, "readout", true) && grow > 0.02 then
     let s = field(opts, "format", "") ++ str(round(v, field(opts, "places", 2)))
     let style = ts(t, t.font_sm, t.text)

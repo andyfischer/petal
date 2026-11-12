@@ -24,11 +24,11 @@ import garden
 // ── palette and type ────────────────────────────────────────────────────────
 
 let C = {
-  bg: #1b1d22, side: #15171b, bar: #1f2228, well: #131519, raised: #2a2d36,
-  line: #2c2f38, line_soft: #24272e, zebra: #1e2026, hover: #262932,
-  text: #e7e9ef, muted: #9aa1b0, dim: #6b7281,
-  accent: #2f7cf6, accent_hi: #6aa5ff, idle: #343946, on_accent: #ffffff, on_accent_soft: #d5e4ff,
-  danger: #f0646a,
+  bg: :1b1d22, side: :15171b, bar: :1f2228, well: :131519, raised: :2a2d36,
+  line: :2c2f38, line_soft: :24272e, zebra: :1e2026, hover: :262932,
+  text: :e7e9ef, muted: :9aa1b0, dim: :6b7281,
+  accent: :2f7cf6, accent_hi: :6aa5ff, idle: :343946, on_accent: :ffffff, on_accent_soft: :d5e4ff,
+  danger: :f0646a,
 }
 
 fn ts(size: num, color: record) -> record
@@ -1444,7 +1444,7 @@ fn draw_row(n: record, r: record, o: record) -> nil
       let x0 = text_width(slice(shown, 0, hit), ns)
       let x1 = text_width(slice(shown, 0, hit + len(o.mark)), ns)
       draw_rect_rounded(Rect(nr.x + 6 + x0 - 2, r.y + 5, x1 - x0 + 4, r.h - 10), 3,
-        if o.on then mix(SEL, #ffffff, 0.25) else mix(C.bg, #f2c14e, 0.32) end)
+        if o.on then mix(SEL, :ffffff, 0.25) else mix(C.bg, :f2c14e, 0.32) end)
     end
     tl.draw_text_line(shown, Rect(nr.x + 6, r.y, nr.w - 6, r.h), ns)
   end
@@ -1495,14 +1495,14 @@ fn draw_tile(n: record, r: record, o: record) -> nil
     let tw = if wide then 68.0 else 54.0 end
     let th = if wide then 46.0 else 54.0 end
     let f = Rect(art.x + (art.w - tw) / 2.0, art.y + (art.h - th) / 2.0, tw, th)
-    draw_shadow(f, {radius: 4, blur: 8, spread: 0, dx: 0, dy: 2, color: #000000, a: 90})
-    draw_rect_rounded(Rect(f.x - 2, f.y - 2, f.w + 4, f.h + 4), 5, #f4f5f8)
+    draw_shadow(f, {radius: 4, blur: 8, spread: 0, dx: 0, dy: 2, color: :000000, a: 90})
+    draw_rect_rounded(Rect(f.x - 2, f.y - 2, f.w + 4, f.h + 4), 5, :f4f5f8)
     pk.picture(n.name, o.h, f, 3)
     if o.key == "video" then
-      draw_rect_rounded(f, 3, #000000, 80)
-      draw_circle({x: f.x + f.w / 2.0, y: f.y + f.h / 2.0}, 11, #ffffff, 230)
+      draw_rect_rounded(f, 3, :000000, 80)
+      draw_circle({x: f.x + f.w / 2.0, y: f.y + f.h / 2.0}, 11, :ffffff, 230)
       fill_triangle({x: f.x + f.w / 2.0 - 3.5, y: f.y + f.h / 2.0 - 5.5}, {x: f.x + f.w / 2.0 - 3.5, y: f.y + f.h / 2.0 + 5.5},
-        {x: f.x + f.w / 2.0 + 6, y: f.y + f.h / 2.0}, #1b1d22)
+        {x: f.x + f.w / 2.0 + 6, y: f.y + f.h / 2.0}, :1b1d22)
     end
   else
     ic.file_icon(o.key, Rect(art.x + 6, art.y + 6, 60, 60))
@@ -1761,7 +1761,7 @@ fn draw_side_row(s: record, name: string, glyph_name: string, o: record) -> nil
       let cs = tsb(10.5, if o.cur && o.strong then C.on_accent else C.muted end)
       let cw = max(20, text_width(str(o.count), cs) + 12)
       let cr = Rect(r.x + r.w - cw - 8, r.y + r.h / 2.0 - 9, cw, 18)
-      draw_rect_rounded(cr, 9, if o.cur && o.strong then mix(C.accent, #ffffff, 0.2) else C.raised end)
+      draw_rect_rounded(cr, 9, if o.cur && o.strong then mix(C.accent, :ffffff, 0.2) else C.raised end)
       tl.draw_text_line(str(o.count), cr, cs, "center")
     end
   end
@@ -1916,7 +1916,7 @@ if len(drag_ids) > 0 then
   let style = tsb(12, C.on_accent)
   let tw = min(220, text_width(label, style)) + 4
   let chip = Rect(mx + 14, my + 10, tw + 42, 28)
-  draw_shadow(chip, {radius: 8, blur: 14, spread: 0, dx: 0, dy: 4, color: #000000, a: 110})
+  draw_shadow(chip, {radius: 8, blur: 14, spread: 0, dx: 0, dy: 4, color: :000000, a: 110})
   draw_rect_rounded(chip, 8, if drop_id >= 0 then C.accent else C.raised end)
   ic.file_icon(fs.kind_of(n).key, Rect(chip.x + 8, chip.y + 5, 18, 18))
   tl.draw_text_line(tl.elide(label, style, tw), Rect(chip.x + 32, chip.y, tw + 4, chip.h), style)
@@ -1930,8 +1930,8 @@ if ql >= 0 then
   let k = fs.kind_of(n)
   let ease = 1.0 - (1.0 - ql_t) * (1.0 - ql_t)
   let ql_r = Rect(ql_r.x, ql_r.y + 12.0 * (1.0 - ease), ql_r.w, ql_r.h)
-  draw_rect(Rect(0, 0, W, H), #000000, int(70 + 60 * ease))
-  draw_shadow(ql_r, {radius: 12, blur: 40, spread: 0, dx: 0, dy: 14, color: #000000, a: 150})
+  draw_rect(Rect(0, 0, W, H), :000000, int(70 + 60 * ease))
+  draw_shadow(ql_r, {radius: 12, blur: 40, spread: 0, dx: 0, dy: 14, color: :000000, a: 150})
   draw_rect_rounded(ql_r, 12, C.bar)
   draw_rect_rounded_outline(ql_r, 12, C.line)
   let close_r = Rect(ql_r.x + 12, ql_r.y + 12, 26, 26)

@@ -19,42 +19,42 @@ import garden
 
 // ── Palette ──────────────────────────────────────────────────────────────
 // Editor side: ink on slate. Preview side: type on paper.
-let SLATE      = #171a23
-let SLATE_HI   = #1d2130
-let GUTTER     = #141720
-let RAIL_BG    = #12141c
-let RAIL_ROW   = #1c2030
-let OUTLINE    = #262b3a
-let TEXT       = #e6e9f0
-let DIM        = #8b93a7
-let FAINT      = #5b6379
-let ACCENT     = #8ab4ff
-let ACCENT_INK = #4c6fd6
-let SELBG      = #2b3d6a
-let CARET      = #ffd479
+let SLATE      = :171a23
+let SLATE_HI   = :1d2130
+let GUTTER     = :141720
+let RAIL_BG    = :12141c
+let RAIL_ROW   = :1c2030
+let OUTLINE    = :262b3a
+let TEXT       = :e6e9f0
+let DIM        = :8b93a7
+let FAINT      = :5b6379
+let ACCENT     = :8ab4ff
+let ACCENT_INK = :4c6fd6
+let SELBG      = :2b3d6a
+let CARET      = :ffd479
 
-let SYN_HEAD   = #ffb86b
-let SYN_MARK   = #6d7891
-let SYN_BOLD   = #f2f4f8
-let SYN_ITAL   = #c9b6ff
-let SYN_CODE   = #9be7a5
-let SYN_LINK   = #8ab4ff
-let SYN_QUOTE  = #9aa6bf
-let SYN_LIST   = #ffd479
-let SYN_FENCE  = #6d7891
+let SYN_HEAD   = :ffb86b
+let SYN_MARK   = :6d7891
+let SYN_BOLD   = :f2f4f8
+let SYN_ITAL   = :c9b6ff
+let SYN_CODE   = :9be7a5
+let SYN_LINK   = :8ab4ff
+let SYN_QUOTE  = :9aa6bf
+let SYN_LIST   = :ffd479
+let SYN_FENCE  = :6d7891
 
-let PAPER      = #fbfaf6
-let PAPER_LOW  = #f1efe8
-let INK        = #23272f
-let INK_SOFT   = #4f5563
-let INK_FAINT  = #8a8f9b
-let RULE       = #e2dfd5
-let CODE_BG    = #eeece5
-let CODE_INK   = #3b4252
-let QUOTE_BAR  = #c9b8e8
-let LINK       = #3358c4
-let CHECK      = #4c9a6a
-let TABLE_HEAD = #f2f0ea
+let PAPER      = :fbfaf6
+let PAPER_LOW  = :f1efe8
+let INK        = :23272f
+let INK_SOFT   = :4f5563
+let INK_FAINT  = :8a8f9b
+let RULE       = :e2dfd5
+let CODE_BG    = :eeece5
+let CODE_INK   = :3b4252
+let QUOTE_BAR  = :c9b8e8
+let LINK       = :3358c4
+let CHECK      = :4c9a6a
+let TABLE_HEAD = :f2f0ea
 
 // ── Metrics ──────────────────────────────────────────────────────────────
 let W = screen_width()
@@ -1704,7 +1704,7 @@ for p in left_parts do
   draw_text(p, pos: {x: lx, y: sy + 7}, style: {size: FS_TINY, color: DIM})
   lx = lx + text_width(p, FS_TINY) + 22
 end
-let save_c = if dirty then CARET elsif now - flash < 2.0 then #7fd39a else FAINT end
+let save_c = if dirty then CARET elsif now - flash < 2.0 then :7fd39a else FAINT end
 draw_circle(center: {x: lx + 4, y: sy + 13}, radius: 3, c: save_c)
 draw_text(if dirty then "unsaved" elsif now - flash < 2.0 then "saved" else "up to date" end,
   pos: {x: lx + 14, y: sy + 7}, style: {size: FS_TINY, color: save_c})

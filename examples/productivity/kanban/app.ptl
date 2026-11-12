@@ -23,52 +23,52 @@ end
 
 // ── Palette ──────────────────────────────────────────────────────────────
 
-let BG        = #0b0d12
-let SURFACE   = #12151d
-let CARD_BG   = #1a1f2a
-let CARD_HOV  = #222937
-let CARD_LIFT = #2a3342
-let RULE      = #232a37
-let TEXT      = #e9edf4
-let DIM       = #838d9c
-let FAINT     = #59626f
-let ACCENT    = #5b9dff
-let DANGER    = #e0655f
-let GOOD      = #3fae7a
+let BG        = :0b0d12
+let SURFACE   = :12151d
+let CARD_BG   = :1a1f2a
+let CARD_HOV  = :222937
+let CARD_LIFT = :2a3342
+let RULE      = :232a37
+let TEXT      = :e9edf4
+let DIM       = :838d9c
+let FAINT     = :59626f
+let ACCENT    = :5b9dff
+let DANGER    = :e0655f
+let GOOD      = :3fae7a
 
 let LANES = [
-  {name: "BACKLOG",     color: #6c7a90, limit: 0},
-  {name: "IN PROGRESS", color: #5b9dff, limit: 3},
-  {name: "REVIEW",      color: #d9a441, limit: 2},
-  {name: "SHIPPED",     color: #3fae7a, limit: 0},
+  {name: "BACKLOG",     color: :6c7a90, limit: 0},
+  {name: "IN PROGRESS", color: :5b9dff, limit: 3},
+  {name: "REVIEW",      color: :d9a441, limit: 2},
+  {name: "SHIPPED",     color: :3fae7a, limit: 0},
 ]
 
 fn tag_color(t: string) -> record
   match t
-    when "render" -> #d98a4a
-    when "input" -> #5b9dff
-    when "vm" -> #e0655f
-    when "prelude" -> #3fae7a
-    when "docs" -> #a98ce0
-    when "tooling" -> #46b1c9
+    when "render" -> :d98a4a
+    when "input" -> :5b9dff
+    when "vm" -> :e0655f
+    when "prelude" -> :3fae7a
+    when "docs" -> :a98ce0
+    when "tooling" -> :46b1c9
     when _ -> DIM
   end
 end
 
 fn who_color(w: string) -> record
   match w
-    when "AF" -> #5b9dff
-    when "EK" -> #d98a4a
-    when "JN" -> #3fae7a
-    when "MR" -> #a98ce0
+    when "AF" -> :5b9dff
+    when "EK" -> :d98a4a
+    when "JN" -> :3fae7a
+    when "MR" -> :a98ce0
     when _ -> DIM
   end
 end
 
 fn pri_color(p: num) -> record
   if p == 2 then DANGER
-  elsif p == 1 then #d9a441
-  else #3d4653
+  elsif p == 1 then :d9a441
+  else :3d4653
   end
 end
 
@@ -207,7 +207,7 @@ end
 
 fn draw_card(r: record, card: record, mode: string)
   if mode == "lift" then
-    draw_rect_rounded(rect(r.x + 2, r.y + 9, r.w, r.h), radius: 12, c: #000000, a: 120)
+    draw_rect_rounded(rect(r.x + 2, r.y + 9, r.w, r.h), radius: 12, c: :000000, a: 120)
   end
   let bg = if mode == "lift" then CARD_LIFT
   elsif mode == "hover" then CARD_HOV
@@ -307,7 +307,7 @@ fn view(cs: list, sc: list, sel: string)
 
     clip(x: surf.x, y: surf.y, w: surf.w, h: surf.h)
     if cnt == 0 then
-      draw_text_center("empty", cx: x + COL_W / 2, y: SURF_TOP + 26, size: 11, c: #333b47)
+      draw_text_center("empty", cx: x + COL_W / 2, y: SURF_TOP + 26, size: 11, c: :333b47)
     end
     // Cards ease to new slots relative to the scroll, so the wheel moves
     // them at once while a reorder animates.

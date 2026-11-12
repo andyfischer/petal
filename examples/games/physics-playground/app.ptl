@@ -20,27 +20,27 @@ import garden
 
 // ── Palette: a drafting table at night ───────────────────────────────────
 
-let C_BG     = #0b0e14
-let C_STAGE  = #10141d
-let C_GRID   = #151a26
-let C_GRID2  = #1a2030
-let C_EDGE   = #283044
-let C_CARD   = #121722
-let C_LINE   = #1f2636
-let C_WELL   = #0d111a
-let C_TEXT   = #e8ecf4
-let C_DIM    = #8b94a7
-let C_MUTE   = #566075
-let C_ACC    = #ffb454
-let C_WARN   = #ff6b6b
-let C_BAR    = #3b4763
-let C_BAR_HI = #5a688a
-let C_ROD    = #b7c0d2
-let C_SPRING = #6fd6a8
-let C_WHITE  = #ffffff
+let C_BG     = :0b0e14
+let C_STAGE  = :10141d
+let C_GRID   = :151a26
+let C_GRID2  = :1a2030
+let C_EDGE   = :283044
+let C_CARD   = :121722
+let C_LINE   = :1f2636
+let C_WELL   = :0d111a
+let C_TEXT   = :e8ecf4
+let C_DIM    = :8b94a7
+let C_MUTE   = :566075
+let C_ACC    = :ffb454
+let C_WARN   = :ff6b6b
+let C_BAR    = :3b4763
+let C_BAR_HI = :5a688a
+let C_ROD    = :b7c0d2
+let C_SPRING = :6fd6a8
+let C_WHITE  = :ffffff
 
 // Body colours, by index: coral, amber, mint, sky, violet, rose, steel.
-let HUES = [#ff7a6b, #ffb454, #6fd6a8, #6cb8ff, #a48cf2, #f283b6, #9aa4b8]
+let HUES = [:ff7a6b, :ffb454, :6fd6a8, :6cb8ff, :a48cf2, :f283b6, :9aa4b8]
 
 // ── Type scale: 10 / 11 / 12 / 14 / 24 ───────────────────────────────────
 

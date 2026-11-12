@@ -240,7 +240,7 @@ end
 fn _paint_menu(t: record, grown: record, rows: list, e: num, size: num)
   let a = int(255.0 * e)
   draw_shadow(grown, {radius: t.radius_lg, blur: 26, spread: 0, dx: 0, dy: 10,
-    color: #000000, a: int(70.0 * e)})
+    color: :000000, a: int(70.0 * e)})
   draw_rect_rounded(grown, t.radius_lg, tone(t, t.panel, 0.06), a)
   stroke(t, grown, t.radius_lg, hair(t), 1, tone(t, t.panel, 0.06))
   clip_push(grown, t.radius_lg)
@@ -254,7 +254,7 @@ fn _paint_menu(t: record, grown: record, rows: list, e: num, size: num)
           int(230.0 * e * row.sel))
       end
       let ink = if m.disabled then t.dim else
-        if m.danger then t.danger else mix(t.text, over(t.accent, #ffffff, 255), row.sel * 0.9) end
+        if m.danger then t.danger else mix(t.text, over(t.accent, :ffffff, 255), row.sel * 0.9) end
       end
       var tx = row.r.x + t.pad_x
       if m.icon != "" then
@@ -353,7 +353,7 @@ pub fn menu_bar(r: record, menus: list, opts: record)
     if k > 0.01 then
       draw_rect_rounded(br, t.radius_sm, mix(t.panel, t.accent, 0.85 * k), int(210.0 * k))
     end
-    text_in(label, br, ts(t, size, if k > 0.5 then over(t.accent, #ffffff, 255) else t.text end), "center")
+    text_in(label, br, ts(t, size, if k > 0.5 then over(t.accent, :ffffff, 255) else t.text end), "center")
     let picked = menu(id, br, field(m, "items", []), opts)
     if picked >= 0 then
       set out = {menu: i, item: picked}

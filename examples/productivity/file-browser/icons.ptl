@@ -19,25 +19,25 @@ end
 
 // ── Files and folders ───────────────────────────────────────────────────────
 
-let PAPER = #f1f3f7
-let PAPER_FOLD = #c3c9d6
-let PAPER_LINE = #aab1c0
+let PAPER = :f1f3f7
+let PAPER_FOLD = :c3c9d6
+let PAPER_LINE = :aab1c0
 
 // The accent each kind of file wears.
 pub fn kind_color(key: string) -> record
   match key
-    when "folder" -> #4f9ef5
-    when "image" -> #2fb38a
-    when "text" -> #8c95a6
-    when "doc" -> #4a8fe8
-    when "pdf" -> #e5544b
-    when "sheet" -> #35a965
-    when "audio" -> #e8589b
-    when "video" -> #f08a3c
-    when "archive" -> #c1975a
-    when "disk" -> #8e9bb3
-    when "code" -> #8f74ee
-    when _ -> #9aa1b0
+    when "folder" -> :4f9ef5
+    when "image" -> :2fb38a
+    when "text" -> :8c95a6
+    when "doc" -> :4a8fe8
+    when "pdf" -> :e5544b
+    when "sheet" -> :35a965
+    when "audio" -> :e8589b
+    when "video" -> :f08a3c
+    when "archive" -> :c1975a
+    when "disk" -> :8e9bb3
+    when "code" -> :8f74ee
+    when _ -> :9aa1b0
   end
 end
 
@@ -45,30 +45,30 @@ end
 // does not vanish into the accent behind it.
 pub fn folder(r: record, open: bool = false, pale: bool = false) -> nil
   let rad = max(1.0, r.w * 0.09)
-  let back = if pale then #cfe2ff else #2f7fdc end
+  let back = if pale then :cfe2ff else :2f7fdc end
   // The tab and the back wall.
   draw_rect_rounded(sub(r, 0.05, 0.15, 0.40, 0.22), rad, back)
   draw_rect_rounded(sub(r, 0.05, 0.24, 0.90, 0.62), rad, back)
   // The front panel, a shade lighter, dropped a little when the folder is open.
   let front = if open then sub(r, 0.05, 0.42, 0.90, 0.44) else sub(r, 0.05, 0.33, 0.90, 0.53) end
   if pale then
-    draw_rect_rounded(front, rad, #ffffff)
+    draw_rect_rounded(front, rad, :ffffff)
   else
-    draw_rect_gradient_rounded(front, rad, #6db8fb, #4a9df2, pi() / 2.0)
+    draw_rect_gradient_rounded(front, rad, :6db8fb, :4a9df2, pi() / 2.0)
   end
   if r.w >= 40 then
-    draw_line(at(r, 0.09, 0.345), at(r, 0.91, 0.345), #a9d6ff, 150, 1)
+    draw_line(at(r, 0.09, 0.345), at(r, 0.91, 0.345), :a9d6ff, 150, 1)
   end
 end
 
 pub fn trash(r: record, full: bool) -> nil
-  let c = #9aa3b5
+  let c = :9aa3b5
   let w = max(1.2, r.w * 0.075)
   draw_line(at(r, 0.16, 0.26), at(r, 0.84, 0.26), c, 255, w)
   draw_polyline([at(r, 0.38, 0.26), at(r, 0.42, 0.13), at(r, 0.58, 0.13), at(r, 0.62, 0.26)], c, 255, w)
   let body = [at(r, 0.24, 0.26), at(r, 0.30, 0.88), at(r, 0.70, 0.88), at(r, 0.76, 0.26)]
   if full then
-    fill_polygon(body, #9aa3b5, 70)
+    fill_polygon(body, :9aa3b5, 70)
   end
   draw_polyline(body, c, 255, w)
   if r.w >= 28 then
@@ -84,7 +84,7 @@ fn page(r: record, tint: record) -> nil
   if r.w >= 30 then
     // A hairline, so two sheets that overlap still read as two.
     draw_polyline([at(r, 0.19, 0.05), at(r, 0.61, 0.05), at(r, 0.81, 0.25), at(r, 0.81, 0.95), at(r, 0.19, 0.95),
-      at(r, 0.19, 0.05)], #7c8598, 120, 1)
+      at(r, 0.19, 0.05)], :7c8598, 120, 1)
   end
 end
 
@@ -116,12 +116,12 @@ pub fn file_icon(key: string, r: record) -> nil
     when "image" ->
       page(r, PAPER)
       let f = sub(r, 0.27, 0.40, 0.46, 0.40)
-      draw_rect(f, mix(c, #ffffff, 0.55))
+      draw_rect(f, mix(c, :ffffff, 0.55))
       fill_polygon([{x: f.x, y: f.y + f.h}, {x: f.x + f.w * 0.36, y: f.y + f.h * 0.38},
         {x: f.x + f.w * 0.60, y: f.y + f.h * 0.72}, {x: f.x + f.w * 0.76, y: f.y + f.h * 0.52},
         {x: f.x + f.w, y: f.y + f.h}], c)
       if !small then
-        draw_circle({x: f.x + f.w * 0.76, y: f.y + f.h * 0.24}, f.w * 0.09, #f7c948)
+        draw_circle({x: f.x + f.w * 0.76, y: f.y + f.h * 0.24}, f.w * 0.09, :f7c948)
       end
     when "text" ->
       page(r, PAPER)
@@ -135,7 +135,7 @@ pub fn file_icon(key: string, r: record) -> nil
       draw_rect(sub(r, 0.19, 0.60, 0.62, 0.24), c)
       if !small then
         draw_text_center("PDF", r.x + r.w * 0.5, r.y + r.h * 0.63,
-          {size: max(7.0, r.h * 0.15), font: "ui", weight: 700, color: #ffffff})
+          {size: max(7.0, r.h * 0.15), font: "ui", weight: 700, color: :ffffff})
         text_lines(r, PAPER_LINE, [0.6])
       end
     when "sheet" ->
@@ -158,22 +158,22 @@ pub fn file_icon(key: string, r: record) -> nil
       let f = sub(r, 0.27, 0.42, 0.46, 0.36)
       draw_rect_rounded(f, max(1.0, r.w * 0.04), c)
       fill_triangle({x: f.x + f.w * 0.38, y: f.y + f.h * 0.26}, {x: f.x + f.w * 0.38, y: f.y + f.h * 0.74},
-        {x: f.x + f.w * 0.70, y: f.y + f.h * 0.5}, #ffffff)
+        {x: f.x + f.w * 0.70, y: f.y + f.h * 0.5}, :ffffff)
     when "archive" ->
       page(r, mix(PAPER, c, 0.30))
       // A zip running down the middle.
       for i in range(0, 6) do
         let y = 0.14 + i * 0.105
         let x = if i % 2 == 0 then 0.44 else 0.50 end
-        draw_rect(sub(r, x, y, 0.07, 0.07), mix(c, #000000, 0.25))
+        draw_rect(sub(r, x, y, 0.07, 0.07), mix(c, :000000, 0.25))
       end
-      draw_rect_rounded(sub(r, 0.42, 0.76, 0.17, 0.11), max(1.0, r.w * 0.02), mix(c, #000000, 0.25))
+      draw_rect_rounded(sub(r, 0.42, 0.76, 0.17, 0.11), max(1.0, r.w * 0.02), mix(c, :000000, 0.25))
     when "disk" ->
-      draw_rect_rounded(sub(r, 0.12, 0.20, 0.76, 0.62), max(1.5, r.w * 0.09), #d6dbe6)
-      draw_rect_rounded(sub(r, 0.12, 0.60, 0.76, 0.22), max(1.5, r.w * 0.09), #aeb6c6)
-      draw_rect(sub(r, 0.12, 0.60, 0.76, 0.08), #aeb6c6)
-      draw_circle(at(r, 0.74, 0.71), max(1.0, r.w * 0.035), #58d68d)
-      draw_circle_outline(at(r, 0.42, 0.40), r.w * 0.12, #8e9bb3, 255, w)
+      draw_rect_rounded(sub(r, 0.12, 0.20, 0.76, 0.62), max(1.5, r.w * 0.09), :d6dbe6)
+      draw_rect_rounded(sub(r, 0.12, 0.60, 0.76, 0.22), max(1.5, r.w * 0.09), :aeb6c6)
+      draw_rect(sub(r, 0.12, 0.60, 0.76, 0.08), :aeb6c6)
+      draw_circle(at(r, 0.74, 0.71), max(1.0, r.w * 0.035), :58d68d)
+      draw_circle_outline(at(r, 0.42, 0.40), r.w * 0.12, :8e9bb3, 255, w)
     when "code" ->
       page(r, PAPER)
       draw_polyline([at(r, 0.42, 0.48), at(r, 0.31, 0.62), at(r, 0.42, 0.76)], c, 255, w * 1.25)

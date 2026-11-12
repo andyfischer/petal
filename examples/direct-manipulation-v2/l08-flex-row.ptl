@@ -38,10 +38,10 @@ fn layout_row(items, x)
   end
 end
 
-draw_rect(0, 0, 400, 60, #101418)
+draw_rect(0, 0, 400, 60, :101418)
 for b in layout_row(labels, x0) do
-  draw_rect(b.x, y0, b.w, height, #2a3147)
+  draw_rect(b.x, y0, b.w, height, :2a3147)
 end
 for b in layout_row(labels, x0) do
-  draw_text(b.label, b.x + pad, y0 + 6, font_size, #e8ecf8)
+  draw_text(b.label, b.x + pad, y0 + 6, font_size, :e8ecf8)
 end

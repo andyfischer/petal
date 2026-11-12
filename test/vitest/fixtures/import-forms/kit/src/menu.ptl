@@ -3,4 +3,3 @@ import ./counter
 
 pub fn open()
   "menu " ++ str(counter.bump())
-end

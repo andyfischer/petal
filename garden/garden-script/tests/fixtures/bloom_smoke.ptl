@@ -49,4 +49,3 @@ bloom.overlays()
 # The icon set, drawn once each.
 for i in range(0, len(icons.NAMES)) do
   icons.icon(icons.NAMES[i], rect(10 + i * 16, 330, 14, 14), bloom.theme().muted)
-end

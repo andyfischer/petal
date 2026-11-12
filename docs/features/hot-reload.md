@@ -222,16 +222,16 @@ looked incremental was recompiled anyway) why.
 These are value changes:
 
 ```petal
-let SPEED = tunable(4.0)        // 4.0 -> 5.5
+let SPEED = tunable(4.0)        # 4.0 -> 5.5
 let POST = tunable({
-  bloom: 0.2,                   // any field, at any depth
-  effects: [{amount: 0.3}],     // any element
-  tint: rgb(255, 0, 80),        // any argument of a constructor call
-  accent: :ff2e88,              // a color, component by component
-  offset: -1.5,                 // -1.5 -> 1.5: see below
+  bloom: 0.2,                   # any field, at any depth
+  effects: [{amount: 0.3}],     # any element
+  tint: rgb(255, 0, 80),        # any argument of a constructor call
+  accent: :ff2e88,              # a color, component by component
+  offset: -1.5,                 # -1.5 -> 1.5: see below
 })
 fn area(w)
-  (w + 2) * 10                  // literals in code, too
+  (w + 2) * 10                  # literals in code, too
 end
 ```
 

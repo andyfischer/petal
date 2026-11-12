@@ -10,5 +10,4 @@ print(type(c), c.area())
 # The importer may extend an imported class too.
 fn Circle.diameter(c: Circle) -> int
   2 * c.radius
-end
 print(c.diameter())

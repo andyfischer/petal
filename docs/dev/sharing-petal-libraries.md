@@ -73,10 +73,10 @@ is still there by its qualifier.
 A module name is a path of identifier segments joined by `/`:
 
 ```petal ignore
-import bloom/menu                // binds `menu`
-import petal/menu as pmenu       // the two coexist; `as` names the second
-import bloom/menu: open, close   // selective, and it may wrap across lines
-import ./palette                 // a file beside the importer
+import bloom/menu                # binds `menu`
+import petal/menu as pmenu       # the two coexist; `as` names the second
+import bloom/menu: open, close   # selective, and it may wrap across lines
+import ./palette                 # a file beside the importer
 ```
 
 The last segment is the qualifier, `as` overrides it, and the module's
@@ -89,8 +89,8 @@ set of module-level `var`s and `state`. See
 ### The facade is `pub import`
 
 ```petal ignore
-pub import ./button               // every export, whole overload sets
-pub import ./theme: accent        // a selection — a missing name is an error
+pub import ./button               # every export, whole overload sets
+pub import ./theme: accent        # a selection — a missing name is an error
 ```
 
 A plain `pub import` also binds the names locally (the facade can use them),

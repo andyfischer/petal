@@ -84,7 +84,6 @@ enum Phase
   paused(status: "PAUSED"),
   dead(status: "DOWN"),      # falling after a hit, before the card
   over(status: "GAME OVER"),
-end
 
 # ── Persistent state ─────────────────────────────────────────────────────
 
@@ -114,19 +113,15 @@ state var cause    = ""
 
 fn tx(s: string, x: num, y: num, style: record)
   draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
-end
 
 fn tx_right(s: string, right_x: num, y: num, style: record)
   draw_text(s, pos: {x: int(right_x) - text_width(s, style), y: int(y)}, style: style)
-end
 
 fn tx_center(s: string, cx: num, y: num, style: record)
   draw_text(s, pos: {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style: style)
-end
 
 fn gap_for(sc: int) -> num
   max(gap_min, gap_start - float(sc) * gap_shrink)
-end
 
 # `n` feathers at (x, y).
 fn burst(lst, x: num, y: num, n: num, col: record, power: num)
@@ -140,9 +135,7 @@ fn burst(lst, x: num, y: num, n: num, col: record, power: num)
       life: random(0.35, 0.9), max: 0.9,
       c: col, sz: random(1.6, 3.4),
     })
-  end
   out
-end
 
 # ── Geometry ─────────────────────────────────────────────────────────────
 
@@ -170,7 +163,6 @@ fn make_pipe(px: num, sc: int)
   let gy = clamp(target, lo, hi)
   set last_gap = gy
   {x: px, gap_y: gy, gap_h: gh, passed: false}
-end
 
 fn new_run()
   set phase = Phase.title
@@ -189,22 +181,18 @@ fn new_run()
   let px = bird_x + 420.0
   for i in range(0, 6) do
     ps = append(ps, make_pipe(px + float(i) * pipe_spacing, 0))
-  end
   set pipes = ps
-end
 
 fn flap()
   set bvy = -flap_impulse
   set wing_t = 0.0
   set flaps += 1
-end
 
 # ── Boot ─────────────────────────────────────────────────────────────────
 
 if !ready then
   set ready = true
   new_run()
-end
 
 let raw_dt = dt()
 let sdt = min(raw_dt, 0.06)
@@ -216,7 +204,6 @@ set hover_t += sdt
 
 if key_pressed("r") then
   new_run()
-end
 
 let clicked_field = mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: field)
 let go = key_pressed("space") || key_pressed("up") || key_pressed("w") || clicked_field
@@ -230,16 +217,12 @@ if go then
     when Phase.play -> flap()
     when Phase.over -> new_run()
     when Phase.paused | Phase.dead -> nil
-  end
-end
 
 if key_pressed("p") || key_pressed("escape") then
   if phase == Phase.play then
     set phase = Phase.paused
   else if phase == Phase.paused then
     set phase = Phase.play
-  end
-end
 
 # ── Simulation ───────────────────────────────────────────────────────────
 
@@ -260,14 +243,12 @@ if phase == Phase.play then
     if by - BIRD_R < ft then
       set by = ft + BIRD_R
       set bvy = max(bvy, 0.0)
-    end
 
     # Ground.
     if by + BIRD_R >= fb then
       set by = fb - BIRD_R
       set phase = Phase.dead
       set cause = "ground"
-    end
 
     # Pipes: circle vs the two rects of the nearest column.
     if phase == Phase.play then
@@ -284,10 +265,6 @@ if phase == Phase.play then
           if d_top < BIRD_R * BIRD_R * 0.85 || d_bot < BIRD_R * BIRD_R * 0.85 then
             set phase = Phase.dead
             set cause = "pipe"
-          end
-        end
-      end
-    end
 
     if phase == Phase.dead then
       set dead_t = 1.1
@@ -297,8 +274,6 @@ if phase == Phase.play then
       set bits = burst(bits, x: bird_x, y: by, n: 26, col: C_BIRD, power: 1.2)
       set bits = burst(bits, x: bird_x, y: by, n: 10, col: C_WING, power: 0.9)
       t_left = 0.0
-    end
-  end
 
   # Scoring and recycling, once per frame.
   let gained = 0
@@ -308,20 +283,15 @@ if phase == Phase.play then
       {...p, passed: true}
     else
       p
-    end
-  end
   if gained > 0 then
     set score += gained
     set pop_t = 0.4
-  end
   let live = filter(pipes, fn(p) -> p.x + pipe_w > fl - 20.0)
   if len(live) < len(pipes) then
     let far = reduce(live, 0.0, fn(m, p) -> max(m, p.x))
     set pipes = append(live, make_pipe(far + pipe_spacing, score))
   else
     set pipes = live
-  end
-end
 
 if phase == Phase.dead then
   request_frame()
@@ -330,11 +300,8 @@ if phase == Phase.dead then
   if by + BIRD_R < fb then
     set bvy = min(bvy + gravity * sdt, max_fall)
     set by = min(by + bvy * sdt, fb - BIRD_R)
-  end
   if dead_t <= 0.0 then
     set phase = Phase.over
-  end
-end
 
 # Tilt follows the velocity: nose up right after a flap, then dives.
 let want_ang = if phase == Phase.title then 0.0
@@ -347,7 +314,6 @@ set bits = for p in bits do
   if nl <= 0.0 then continue end
   {...p, x: p.x + p.vx * sdt, y: p.y + p.vy * sdt,
     vx: p.vx * 0.96, vy: p.vy * 0.96 + 260.0 * sdt, life: nl}
-end
 if len(bits) > 0 then request_frame() end
 
 set flash = max(0.0, flash - sdt * 3.0)
@@ -404,7 +370,6 @@ for i in range(0, 7) do
   draw_ellipse({x: int(x), y: int(y)}, s * 3, s, C_CLOUD, 55)
   draw_ellipse({x: int(x) - s, y: int(y) - s / 2}, s * 2, s, C_CLOUD, 55)
   draw_ellipse({x: int(x) + s, y: int(y) - s / 3}, s * 2, s, C_CLOUD, 55)
-end
 
 # Two ranges of hills, drawn as one polygon each, parallax 0.35 and 0.6.
 fn hills(par: num, amp: num, freq: num, base_y: num, col: record)
@@ -415,10 +380,8 @@ fn hills(par: num, amp: num, freq: num, base_y: num, col: record)
     let w = (x + get scroll * par) * freq
     let y = base_y - (sin(w) * 0.6 + sin(w * 2.3 + 1.7) * 0.25 + sin(w * 0.5) * 0.15) * amp
     pts = append(pts, [int(x), int(y)])
-  end
   pts = append(pts, [int(fr) + 2, int(fb) + 2])
   fill_polygon(pts, col)
-end
 hills(par: 0.35, amp: 60.0, freq: 0.0065, base_y: fb - 80.0, col: C_HILL_B)
 hills(par: 0.6, amp: 44.0, freq: 0.011, base_y: fb - 34.0, col: C_HILL_F)
 
@@ -442,7 +405,6 @@ for p in pipes do
   draw_rect_rounded(rect(px - 5, bot_y - 2, pw + 10, 26), radius: 4, c: C_PIPE_D)
   draw_rect_rounded(rect(px - 1, bot_y, pw + 2 - 12, 22), radius: 3, c: C_PIPE)
   draw_rect(rect(px + 3, bot_y + 2, 5, 18), c: C_PIPE_L, a: 120)
-end
 
 # Ground: a dark band with a scrolling grass edge and stripes.
 let gy = int(fb)
@@ -454,13 +416,11 @@ let n_stripes = field.w / 28 + 2
 for i in range(0, n_stripes) do
   let sx = int(fl) + i * 28 - stripe_off
   fill_triangle({x: sx, y: gy + 10}, {x: sx + 14, y: gy + 10}, {x: sx - 6, y: gy + GROUND_H + 4}, c: C_LINE, a: 120)
-end
 
 # Feathers.
 for p in bits do
   let f = p.life / p.max
   draw_circle({x: int(p.x) + shx, y: int(p.y) + shy}, max(1, int(p.sz * f + 0.5)), p.c, int(230.0 * f))
-end
 
 # Bird: body, wing (flaps for 0.25 s after an impulse), eye, beak — all
 # rotated by `bang` about the body centre.
@@ -469,7 +429,6 @@ let bx = bird_x
 let byy = by + bob
 fn rot(dx: num, dy: num, a: num)
   {x: int(bx + dx * cos(a) - dy * sin(a)) + shx, y: int(byy + dx * sin(a) + dy * cos(a)) + shy}
-end
 let a = bang
 let wing_ph = if wing_t < 0.25 then sin(wing_t / 0.25 * pi()) else 0.0 end
 let body = rot(dx: 0.0, dy: 0.0, a: a)
@@ -490,7 +449,6 @@ fill_triangle(rot(dx: 9.0, dy: 2.0, a: a), rot(dx: 17.0, dy: 3.0, a: a), rot(dx:
 # Death flash.
 if flash > 0.0 then
   draw_rect(field, c: C_TEXT, a: int(flash * 110.0))
-end
 
 clip_pop()
 draw_rect_rounded_outline(field, radius: 16, c: C_EDGE, a: 255, width: 1)
@@ -509,7 +467,6 @@ let card_text = match phase
       accent: if record_run then C_GOLD else C_WARN end,
     }
   when Phase.play | Phase.dead -> nil
-end
 
 if card_text != nil then
   let banner = card_text.banner
@@ -539,12 +496,9 @@ if card_text != nil then
     tx(medal.t, x: card.x + 68, y: my + 2, style: {...S_BADGE, color: medal.c})
     let why = if cause == "pipe" then "hit a pipe" else "hit the ground" end
     tx_right("{score} PTS   ·   {why}", right_x: card.x + card.w - 26, y: my + 2, style: S_HINT)
-  end
   if phase == Phase.title then
     tx_center("each flap is one impulse  ·  the gap shrinks as you score", cx, y: card.y + card_h + 16,
       style: {size: 12, color: C_MUTE})
-  end
-end
 
 # ── Draw: footer ─────────────────────────────────────────────────────────
 
@@ -556,7 +510,6 @@ fn chip(x: num, y: num, cap: string, desc: string) -> int
   tx(cap, x: x + 10, y: y + 6, style: S_CAP)
   tx(desc, x: x + cw + 10, y: y + 6, style: S_HINT)
   cw + 10 + text_width(desc, S_HINT) + 24
-end
 
 let fy = field.y + field.h + 18
 let fx = PAD

@@ -906,10 +906,10 @@ Full proposal with corpus survey:
 [proposals/dm-v2-hints.md](../proposals/dm-v2-hints.md). The summary:
 
 ```petal
-tunable(x)                       // x's literal is a preferred DM target
-tunable(x, min, max)             // ... and stays within [min, max]
+tunable(x)                       # x's literal is a preferred DM target
+tunable(x, min, max)             # ... and stays within [min, max]
 tunable(x, min: 0, max: 255, step: 1)
-rigid(x)                         // x's literal never moves; x is a feedback barrier
+rigid(x)                         # x's literal never moves; x is a feedback barrier
 ```
 
 - **Runtime**: both are the identity on their first argument (duals pass
@@ -1340,9 +1340,9 @@ Each example carries its goals and expectations in header comments the
 harness reads:
 
 ```petal
-// dm-goal: channel=draw_commands emit=2 native-arg=0 by=+25 native-arg=1 by=-10
-// dm-expect: changes ⊆ {gap, x0}      (the intended parameters; the top alternative must use only these)
-// dm-allow: ...                       (optional client filter)
+# dm-goal: channel=draw_commands emit=2 native-arg=0 by=+25 native-arg=1 by=-10
+# dm-expect: changes ⊆ {gap, x0}      (the intended parameters; the top alternative must use only these)
+# dm-allow: ...                       (optional client filter)
 ```
 
 The ladder, from trivial to complex:

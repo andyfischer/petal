@@ -51,7 +51,6 @@ state var leaves = Map()
 if key_pressed("r") || mouse_pressed(0) then
   set segments = Map()
   set leaves = Map()
-end
 var next_segments = Map()
 var next_leaves = Map()
 
@@ -104,13 +103,11 @@ fn leaf(id, tip, bend)
     g: int(130.0 + tint * 70.0),
     b: int(45.0 + tint * 35.0),
   })
-end
 
 fn bud(lineage, tip)
   let spread = leaf_spread_angle / 2.0
   leaf(id: lineage ++ ":0", tip: tip, bend: -spread)
   leaf(id: lineage ++ ":1", tip: tip, bend: spread)
-end
 
 # ── One segment ───────────────────────────────────────────────────────────
 # `base` carries what the parent hands down: where its end landed, the two
@@ -123,7 +120,6 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
   set segment_count += 1
   if get segment_count > MAX_SEGMENTS || depth > MAX_DEPTH then
     return nil
-  end
 
   # Everything a segment remembers. The `random`s run once, the frame this id
   # is first reached, so a segment's crookedness is fixed for its whole life.
@@ -189,7 +185,6 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
     1
   else
     0
-  end
 
   set next_segments[id] = {
     age: age, length: length, radius: radius, wiggle: wiggle,
@@ -213,8 +208,6 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
       depth: depth + 1, base: handoff, bend: spread, ratio: 1.0 - fork_share, parent_end_radius: end_radius, dist_before: 0.0)
   else
     bud(lineage, handoff)
-  end
-end
 
 # ── Draw ──────────────────────────────────────────────────────────────────
 
@@ -242,7 +235,6 @@ set leaves = get next_leaves
 # the same two-pass order the Flash renderer used.
 for blade in leaf_blades do
   fill_poly(points: blade.points, r: blade.r, g: blade.g, b: blade.b)
-end
 
 let hud = "segments {segment_count}   leaves {len(leaf_blades)}   —  r or click to regrow"
 draw_text(hud, x: 10, y: 10, size: 13, r: 150, g: 160, b: 180)

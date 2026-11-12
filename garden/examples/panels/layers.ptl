@@ -15,7 +15,6 @@ clear(18, 20, 26)
 
 fn label(text, x, y)
   draw_text(text, x, y, size: 12, r: 150, g: 160, b: 180)
-end
 
 # ── The content: stripes that scroll under the bar ────────────────────────
 # Drawn first, because the material *samples* what is already there.
@@ -25,7 +24,6 @@ for i in range(0, 14) do
   let shade = if i % 2 == 0 then 1 else 0 end
   draw_rect(x: 0, y: y, w: w, h: 48, r: 40 + shade * 30, g: 90 + shade * 40, b: 160 + shade * 60)
   draw_text("row " ++ str(i), x: 16, y: y + 16, size: 14, r: 230, g: 235, b: 245)
-end
 
 # ── The material bar ──────────────────────────────────────────────────────
 # What is behind it, blurred, under a tint — the iOS navigation bar. The
@@ -43,7 +41,7 @@ label("layer at a = 115", x: card.x, y: card.y - 18)
 layer(card, opts: {a: 115}, body: fn()
   draw_circle(cx: 50, cy: 55, radius: 45, r: 255, g: 120, b: 80)
   draw_circle(cx: 120, cy: 55, radius: 45, r: 90, g: 200, b: 255)
-end)
+)
 
 label("same shapes at a=115 each", x: 230, y: 72)
 draw_circle(cx: 280, cy: 145, radius: 45, r: 255, g: 120, b: 80, a: 115)
@@ -56,7 +54,7 @@ let halo = rect(440, 80, 140, 140)
 label("layer with blur 14", x: halo.x, y: halo.y - 18)
 layer(halo, opts: {blur: 14}, body: fn()
   draw_circle(cx: 70, cy: 70, radius: 36, r: 120, g: 255, b: 170)
-end)
+)
 draw_circle(cx: halo.x + 70, cy: halo.y + 70, radius: 28, r: 120, g: 255, b: 170)
 
 # ── A frosted sheet over everything drawn so far ──────────────────────────

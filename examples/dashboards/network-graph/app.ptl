@@ -163,16 +163,12 @@ fn kind_label(k: string) -> string
     when "queue" -> "Queue"
     when "edge" -> "Gateway"
     when _ -> "External API"
-  end
-end
 
 fn status_label(st: int) -> string
   if st == 2 then "failing" else if st == 1 then "degraded" else "healthy" end
-end
 
 fn status_color(st: int) -> record
   if st == 2 then BAD else if st == 1 then WARN else GOOD end
-end
 
 # ── Graph structure, built once ──────────────────────────────────────────
 
@@ -180,35 +176,27 @@ fn name_index(name: string) -> int
   let found = -1
   for i in range(0, len(NODES)) do
     if NODES[i].n == name then found = i end
-  end
   assert(found >= 0, "unknown service in LINKS: " ++ name)
   found
-end
 
 fn build_graph() -> record
   let n = len(NODES)
   let edges = for s in LINKS do
     let p = split(s, ">")
     {a: name_index(p[0]), b: name_index(p[1])}
-  end
   let out = for i in range(0, n) do
     for e in edges do
       if e.a != i then continue end
       e.b
-    end
-  end
   let inn = for i in range(0, n) do
     for e in edges do
       if e.b != i then continue end
       e.a
-    end
-  end
   let deg = for i in range(0, n) do len(out[i]) + len(inn[i]) end
   let und = for i in range(0, n) do
     let xs = out[i]
     for j in inn[i] do xs = append(xs, j) end
     xs
-  end
   # Springs as seen from each node: the other end, a rest-length multiplier
   # (short inside a group, long across groups — that is what makes clusters)
   # and a strength that shrinks on hubs so they are not crushed.
@@ -217,22 +205,17 @@ fn build_graph() -> record
       {j: j,
         l: if NODES[i].g == NODES[j].g then 0.78 else 1.42 end,
         s: 1.0 / float(min(deg[i], deg[j]))}
-    end
-  end
   let rad = for i in range(0, n) do 7.0 + 2.4 * sqrt(float(deg[i])) end
   let wide = for e in edges do
     let w = float(min(NODES[e.a].rps, NODES[e.b].rps))
     clamp(0.35 + log(w) / 6.2, 1.0, 1.9)
-  end
   let order = sort(range(0, n), fn(a, b) -> deg[b] - deg[a])
   {n: n, edges: edges, out: out, inn: inn, und: und, deg: deg, nbr: nbr, rad: rad, wide: wide, order: order}
-end
 
 # ── Force simulation ─────────────────────────────────────────────────────
 
 fn lcg(s: int) -> int
   (s * 1103515245 + 12345) % 2147483648
-end
 
 # Starting positions. Shuffle 0 seats each group on its own spoke of a wheel
 # (a warm start the simulation only has to relax); any other shuffle throws
@@ -254,10 +237,7 @@ fn seed_layout(n: int, shuffle: int) -> record
       let rr = 40.0 + sqrt(b) * 460.0
       px = append(px, cos(a * TAU) * rr)
       py = append(py, sin(a * TAU) * rr * 0.8)
-    end
-  end
   {px: px, py: py, vx: for i in range(0, n) do 0.0 end, vy: for i in range(0, n) do 0.0 end}
-end
 
 # One step, d3-style: forces become velocity scaled by `alpha` (the layout's
 # temperature), velocity decays, position follows. Everything is accumulated
@@ -297,12 +277,8 @@ fn sim_step(G: record, S: record, pins: list, act: list, alpha: num, F: record) 
             if d2 < minr * minr then
               let d = sqrt(d2)
               f = f + (minr - d) / d * 1.6
-            end
             fx = fx + dx * f
             fy = fy + dy * f
-          end
-        end
-      end
       # springs along every call this node takes part in
       for e in G.nbr[i] do
         if act[e.j] then
@@ -312,18 +288,13 @@ fn sim_step(G: record, S: record, pins: list, act: list, alpha: num, F: record) 
           let k = (d - F.len * e.l) / d * e.s * 0.85
           fx = fx + dx * k
           fy = fy + dy * k
-        end
-      end
       let vx = clamp((S.vx[i] + fx * alpha) * 0.58, -34.0, 34.0)
       let vy = clamp((S.vy[i] + fy * alpha) * 0.58, -34.0, 34.0)
       nx = append(nx, xi + vx)
       ny = append(ny, yi + vy)
       nvx = append(nvx, vx)
       nvy = append(nvy, vy)
-    end
-  end
   {px: nx, py: ny, vx: nvx, vy: nvy}
-end
 
 let ALPHA_DECAY = 0.986
 let ALPHA_MIN = 0.02
@@ -339,8 +310,6 @@ fn bfs(adj: list, starts: list, act: list, maxd: int) -> list
     if act[s] && depth[s] < 0 then
       depth[s] = 0
       q = append(q, s)
-    end
-  end
   let h = 0
   while h < len(q) do
     let u = q[h]
@@ -350,12 +319,7 @@ fn bfs(adj: list, starts: list, act: list, maxd: int) -> list
         if depth[v] < 0 && act[v] then
           depth[v] = depth[u] + 1
           q = append(q, v)
-        end
-      end
-    end
-  end
   depth
-end
 
 # Shortest undirected path between two nodes as a list of indices, or [].
 fn shortest_path(adj: list, a: int, b: int, act: list) -> list
@@ -370,9 +334,6 @@ fn shortest_path(adj: list, a: int, b: int, act: list) -> list
       if prev[v] == -2 && act[v] then
         prev[v] = u
         q = append(q, v)
-      end
-    end
-  end
   if prev[b] == -2 then
     []
   else
@@ -381,76 +342,57 @@ fn shortest_path(adj: list, a: int, b: int, act: list) -> list
     while prev[cur] >= 0 do
       cur = prev[cur]
       path = append(path, cur)
-    end
     reverse(path)
-  end
-end
 
 fn count_pos(xs: list) -> int
   let c = 0
   for v in xs do
     if v > 0 then c = c + 1 end
-  end
   c
-end
 
 # ── Formatting & small draw helpers ──────────────────────────────────────
 
 fn ts(size: num, c: record) -> record
   {size: int(size), font: "ui", color: c}
-end
 
 fn tb(size: num, c: record) -> record
   {size: int(size), font: "ui", color: c, weight: 700}
-end
 
 fn mono(size: num, c: record) -> record
   {size: int(size), font: "mono", color: c}
-end
 
 fn txt(s: string, x: num, y: num, st: record)
   draw_text(s, {x: x, y: y}, st)
-end
 
 fn txt_r(s: string, right: num, y: num, st: record)
   draw_text(s, {x: right - text_width(s, st), y: y}, st)
-end
 
 fn txt_c(s: string, cx: num, y: num, st: record)
   draw_text(s, {x: cx - text_width(s, st) / 2, y: y}, st)
-end
 
 fn caps(s: string, x: num, y: num, c: record)
   draw_text(s, {x: x, y: y}, {size: 10, font: "ui", color: c, spacing: 2})
-end
 
 fn hline(x: num, y: num, w: num, c: record)
   draw_rect(x, y, w, 1, c)
-end
 
 fn rr_outline(r: Rect, radius: num, c: record, a: num, wd: num)
   draw_rect_rounded_outline(int(r.x), int(r.y), int(r.w), int(r.h), int(radius), c, int(a), max(1, int(wd)))
-end
 
 fn fmt_rps(v: num) -> string
   if v >= 1000 then str(round(float(v) / 1000.0, 1)) ++ "k" else str(v) end
-end
 
 fn fmt_ms(v: num) -> string
   if v >= 1000 then str(round(float(v) / 1000.0, 2)) ++ " s" else str(v) ++ " ms" end
-end
 
 fn plural(n: int, one: string, many: string) -> string
   if n == 1 then "1 " ++ one else str(n) ++ " " ++ many end
-end
 
 # A regular polygon's corners, first corner at angle `a0`.
 fn ngon(cx: num, cy: num, r: num, sides: int, a0: num) -> list
   for i in range(0, sides) do
     let a = a0 + TAU * float(i) / float(sides)
     [cx + cos(a) * r, cy + sin(a) * r]
-  end
-end
 
 # Each kind has its own silhouette, so the graph reads without the legend:
 # services are discs, data stores squares, queues diamonds, gateways
@@ -468,9 +410,7 @@ fn node_fill(kind: string, cx: num, cy: num, r: num, c: record, a: num)
     draw_circle_outline(cx, cy, r - 1.0, c, int(a), max(2, int(r * 0.34)))
   else
     draw_circle({x: cx, y: cy}, r, c, int(a))
-  end
   nil
-end
 
 fn node_ring(kind: string, cx: num, cy: num, r: num, c: record, a: num, wd: num)
   let w = max(1, int(wd))
@@ -483,9 +423,7 @@ fn node_ring(kind: string, cx: num, cy: num, r: num, c: record, a: num, wd: num)
     draw_polygon_outline(ngon(cx, cy, r * 1.1, 6, 0.0), c, int(a), w)
   else
     draw_circle_outline(cx, cy, r, c, int(a), w)
-  end
   nil
-end
 
 # A small pill button in the app's own chrome. True on click.
 fn pill_btn(r: Rect, label: string, active: bool, live: bool) -> bool
@@ -496,7 +434,6 @@ fn pill_btn(r: Rect, label: string, active: bool, live: bool) -> bool
   let st = ts(12, if active || hov then TEXT else DIM end)
   txt_c(label, r.x + r.w / 2, r.y + (r.h - 12) / 2 - 2, st)
   hov && mouse_pressed(0)
-end
 
 # A segmented control; returns the (possibly new) active index.
 fn segmented(r: Rect, labels: list, active: int, live: bool) -> int
@@ -511,13 +448,10 @@ fn segmented(r: Rect, labels: list, active: int, live: bool) -> int
       draw_rect_rounded(cell, 5, over(ELEV, ACCENT, 0.26))
     else if hov then
       draw_rect_rounded(cell, 5, HOVER)
-    end
     txt_c(labels[i], cell.x + cell.w / 2, cell.y + (cell.h - 11) / 2 - 2, ts(11, if i == active || hov then TEXT else DIM end))
     if hov && mouse_pressed(0) then pick = i end
-  end
   rr_outline(r, 7, LINE, 255, 1)
   pick
-end
 
 # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -557,16 +491,12 @@ let ZOOM_MAX = 3.5
 
 fn to_sx(cam: record, cv: Rect, wx: num) -> num
   float(cv.x) + float(cv.w) / 2.0 + (wx - cam.x) * cam.z
-end
 fn to_sy(cam: record, cv: Rect, wy: num) -> num
   float(cv.y) + float(cv.h) / 2.0 + (wy - cam.y) * cam.z
-end
 fn to_wx(cam: record, cv: Rect, sx: num) -> num
   cam.x + (float(sx) - float(cv.x) - float(cv.w) / 2.0) / cam.z
-end
 fn to_wy(cam: record, cv: Rect, sy: num) -> num
   cam.y + (float(sy) - float(cv.y) - float(cv.h) / 2.0) / cam.z
-end
 
 # Zoom by `factor` keeping the world point under (sx, sy) where it is.
 fn zoom_about(cam: record, cv: Rect, sx: num, sy: num, factor: num) -> record
@@ -575,7 +505,6 @@ fn zoom_about(cam: record, cv: Rect, sx: num, sy: num, factor: num) -> record
   let wy = to_wy(cam, cv, sy)
   {x: wx - (float(sx) - float(cv.x) - float(cv.w) / 2.0) / nz,
     y: wy - (float(sy) - float(cv.y) - float(cv.h) / 2.0) / nz, z: nz}
-end
 
 # World-space bounding box of the nodes flagged in `mask`.
 fn bounds_of(px: list, py: list, rad: list, mask: list) -> record
@@ -598,11 +527,7 @@ fn bounds_of(px: list, py: list, rad: list, mask: list) -> record
         x1 = max(x1, px[i] + r)
         y0 = min(y0, py[i] - r)
         y1 = max(y1, py[i] + r)
-      end
-    end
-  end
   {x0: x0, y0: y0, x1: x1, y1: y1, any: any}
-end
 
 fn fit_cam(b: record, cv: Rect, zmax: num) -> record
   if !b.any then
@@ -612,14 +537,11 @@ fn fit_cam(b: record, cv: Rect, zmax: num) -> record
     let zx = (float(cv.w) - padw * 2.0) / max(40.0, b.x1 - b.x0)
     let zy = (float(cv.h) - padw * 2.0) / max(40.0, b.y1 - b.y0)
     {x: (b.x0 + b.x1) / 2.0, y: (b.y0 + b.y1) / 2.0, z: clamp(min(zx, zy), ZOOM_MIN, zmax)}
-  end
-end
 
 # Where the camera should glide to so that every node in `mask` is in view.
 fn fit_target(px: list, py: list, rad: list, mask: list, cv: Rect) -> record
   let fz = fit_cam(bounds_of(px, py, rad, mask), cv, 1.25)
   {on: true, x: fz.x, y: fz.y, z: fz.z}
-end
 
 # ── Persistent state ─────────────────────────────────────────────────────
 
@@ -633,9 +555,7 @@ fn settle(G: record, S: record, steps: int, F: record) -> record
   for k in range(0, steps) do
     out = sim_step(G, out, pins, act, a, F)
     a = a * 0.975
-  end
   out
-end
 
 state G = build_graph()
 # Open on a layout that has already found its shape; the last of the cooling
@@ -686,25 +606,20 @@ let fres = text_field_update("search", field_r, query, {size: 13, font: "ui", in
 if fres.text != query then
   query = fres.text
   qsel = 0
-end
 let typing = has_focus("search")
 if key_pressed("slash") && !was_typing && !blocked then
   focus_request("search")
-end
 
 let q = lower(query)
 let matches = if q == "" then [] else
   let starts = for i in G.order do
     if !act[i] || index_of(NODES[i].n, q) != 0 then continue end
     i
-  end
   let rest = for i in G.order do
     if !act[i] || index_of(NODES[i].n, q) <= 0 then continue end
     i
-  end
   for i in rest do starts = append(starts, i) end
   starts
-end
 let match_flag = for i in all_idx do contains(matches, i) end
 let drop_n = if typing then min(len(matches), 7) else 0 end
 let drop_r = rect(search_r.x, search_r.y + search_r.h + 6, search_r.w, drop_n * 28 + 12)
@@ -725,7 +640,6 @@ let wmy = to_wy(cam, canvas, my)
 
 fn node_scale(z: num) -> num
   pow(z, 0.55)
-end
 
 fn hit_node(G: record, px: list, py: list, act: list, wx: num, wy: num, z: num) -> int
   let best = -1
@@ -739,11 +653,7 @@ fn hit_node(G: record, px: list, py: list, act: list, wx: num, wy: num, z: num) 
       if d2 <= rr * rr && d2 < bd then
         best = i
         bd = d2
-      end
-    end
-  end
   best
-end
 
 let hit = if over_canvas && !over_mini then hit_node(G, px, py, act, wmx, wmy, cam.z) else -1 end
 
@@ -751,11 +661,9 @@ let hit = if over_canvas && !over_mini then hit_node(G, px, py, act, wmx, wmy, c
 
 fn toggle_in(xs: list, v: int) -> list
   if contains(xs, v) then filter(xs, fn(x) -> x != v) else append(xs, v) end
-end
 
 fn focus_target(px: list, py: list, i: int, z: num) -> record
   {on: true, x: px[i], y: py[i], z: z}
-end
 
 let want_fit = false
 let want_reheat = false
@@ -770,7 +678,6 @@ let pin_toggle = []           # nodes whose pin flips this frame
 if typing then
   if key_pressed("escape") then
     if query != "" then query = "" else focus_request(nil) end
-  end
   if key_pressed("down") then qsel = min(qsel + 1, max(0, drop_n - 1)) end
   if key_pressed("up") then qsel = max(qsel - 1, 0) end
   if fres.submitted && len(matches) > 0 then
@@ -778,8 +685,6 @@ if typing then
     sel = [pick]
     want_focus = pick
     focus_request(nil)
-  end
-end
 
 if keys_ok then
   if key_pressed("escape") then
@@ -796,20 +701,15 @@ if keys_ok then
         alpha = drag.snap.alpha
       else if drag.mode == "pan" && drag.moved then
         cam = {...cam, x: drag.cx, y: drag.cy}
-      end
       drag = {...drag, mode: "none"}
     else if len(sel) > 0 then
       sel = []
     else
       query = ""
-    end
-  end
   if key_pressed("a") && mod_cmd() then
     sel = for i in all_idx do
       if !act[i] then continue end
       i
-    end
-  end
   if !mod_cmd() then
     if key_pressed("f") then want_fit = true end
     if key_pressed("r") then want_reheat = true end
@@ -827,30 +727,23 @@ if keys_ok then
       let fz = fit_cam(b, canvas, max(cam.z, 1.4))
       cam_to = {on: true, x: fz.x, y: fz.y, z: fz.z}
       auto_fit = false
-    end
     if key_pressed("e") && len(sel) > 0 then
       # grow the selection by one hop
       let d = bfs(G.und, sel, act, 1)
       sel = for i in all_idx do
         if d[i] < 0 then continue end
         i
-      end
-    end
     if key_pressed("equals") then
       cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 1.25)
       cam_to = {...cam_to, on: false}
       auto_fit = false
-    end
     if key_pressed("minus") then
       cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 0.8)
       cam_to = {...cam_to, on: false}
       auto_fit = false
-    end
     if key_pressed("0") then
       cam_to = {on: true, x: cam.x, y: cam.y, z: 1.0}
       auto_fit = false
-    end
-  end
 
   # Arrow keys walk the selection to the nearest node in that direction.
   let ax = 0.0
@@ -866,7 +759,6 @@ if keys_ok then
       if near >= 0 then
         sel = [near]
         want_focus = near
-      end
     else
       let from = last(sel)
       let best = -1
@@ -883,17 +775,9 @@ if keys_ok then
             if score < bscore then
               best = i
               bscore = score
-            end
-          end
-        end
-      end
       if best >= 0 then
         sel = [best]
         want_focus = best
-      end
-    end
-  end
-end
 
 # ── Mouse: wheel zoom ────────────────────────────────────────────────────
 
@@ -903,14 +787,12 @@ if over_canvas && wheel != 0.0 then
   cam = zoom_about(cam, canvas, mx, my, exp(0.0 - clamp(float(wheel), -6.0, 6.0) * 0.14))
   cam_to = {...cam_to, on: false}
   auto_fit = false
-end
 
 # ── Mouse: press ─────────────────────────────────────────────────────────
 
 # A gesture whose release never reached the panel must not wedge the canvas.
 if drag.mode != "none" && !mouse_down(0) && !mouse_down(2) && !mouse_released(0) && !mouse_released(2) then
   drag = {...drag, mode: "none"}
-end
 
 if drag.mode == "none" && !ui_block then
   if over_mini && mouse_pressed(0) then
@@ -931,22 +813,17 @@ if drag.mode == "none" && !ui_block then
           sel = [hit]
           cam_to = focus_target(px, py, hit, max(cam.z, 1.7))
           auto_fit = false
-        end
         let starts = for i in sel do {i: i, x: px[i], y: py[i]} end
         drag = {...drag, mode: "node", id: hit, wx: wmx, wy: wmy, starts: starts, moved: false, shift: false,
           snap: {px: px, py: py, vx: vx, vy: vy, pins: pins, alpha: alpha}}
-      end
     else if mod_shift() then
       drag = {...drag, mode: "marquee", wx: wmx, wy: wmy, moved: false, shift: true}
     else
       drag = {...drag, mode: "pan", sx: float(mx), sy: float(my), cx: cam.x, cy: cam.y, moved: false, shift: false}
-    end
   else if over_canvas && mouse_pressed(1) then
     if hit >= 0 && !contains(sel, hit) then sel = [hit] end
     menu_tag = if hit >= 0 then {what: "node", id: hit} else {what: "canvas", id: -1} end
     bloom.menu_open_at("graph", mx, my)
-  end
-end
 
 # ── Mouse: drag ──────────────────────────────────────────────────────────
 
@@ -958,8 +835,6 @@ if drag.mode == "pan" && (mouse_down(0) || mouse_down(2)) then
     cam = {...cam, x: drag.cx - ddx / cam.z, y: drag.cy - ddy / cam.z}
     cam_to = {...cam_to, on: false}
     auto_fit = false
-  end
-end
 
 if drag.mode == "node" && mouse_down(0) then
   let ddx = wmx - drag.wx
@@ -968,7 +843,6 @@ if drag.mode == "node" && mouse_down(0) then
     drag = {...drag, moved: true}
     cam_to = {...cam_to, on: false}
     auto_fit = false
-  end
   if drag.moved then
     # The dragged nodes follow the pointer and stay where they are dropped.
     for st in drag.starts do
@@ -977,14 +851,10 @@ if drag.mode == "node" && mouse_down(0) then
       vx[st.i] = 0.0
       vy[st.i] = 0.0
       pins[st.i] = true
-    end
     alpha = max(alpha, 0.3)
-  end
-end
 
 if drag.mode == "marquee" && mouse_down(0) then
   if abs(wmx - drag.wx) + abs(wmy - drag.wy) > 2.0 then drag = {...drag, moved: true} end
-end
 
 # ── Mouse: release ───────────────────────────────────────────────────────
 
@@ -1002,12 +872,7 @@ if mouse_released(0) || mouse_released(2) then
       for i in all_idx do
         if act[i] && px[i] >= x0 && px[i] <= x1 && py[i] >= y0 && py[i] <= y1 && !contains(sel, i) then
           sel = append(sel, i)
-        end
-      end
-    end
-  end
   drag = {...drag, mode: "none"}
-end
 
 # ── Simulation ───────────────────────────────────────────────────────────
 
@@ -1015,11 +880,9 @@ if len(pin_toggle) > 0 then
   let all_pinned = len(filter(pin_toggle, fn(i) -> !pins[i])) == 0
   for i in pin_toggle do pins[i] = !all_pinned end
   alpha = max(alpha, 0.25)
-end
 if want_unpin_all then
   pins = for i in all_idx do false end
   alpha = max(alpha, 0.4)
-end
 if want_reheat then alpha = 1.0 end
 if want_scatter then
   shuffle = shuffle + 1
@@ -1031,7 +894,6 @@ if want_scatter then
   pins = for i in all_idx do false end
   alpha = 1.0
   want_fit = true
-end
 
 let raw_dt = dt()
 let hot = alpha >= ALPHA_MIN && !frozen
@@ -1042,7 +904,6 @@ if hot then
   for k in range(0, steps_now) do
     S = sim_step(G, S, pins, act, alpha, force)
     alpha = alpha * ALPHA_DECAY
-  end
   px = S.px
   py = S.py
   vx = S.vx
@@ -1051,14 +912,12 @@ if hot then
   if drag.mode == "node" && drag.moved then alpha = max(alpha, 0.3) end
   if alpha < ALPHA_MIN then alpha = 0.0 end
   request_frame()
-end
 
 # ── Camera animation ─────────────────────────────────────────────────────
 
 if want_fit then
   cam_to = fit_target(px, py, G.rad, act, canvas)
   auto_fit = true
-end
 if want_focus >= 0 then
   # Only move if the node is outside the comfortable middle of the view.
   let fsx = to_sx(cam, canvas, px[want_focus])
@@ -1067,23 +926,18 @@ if want_focus >= 0 then
   if !point_in(fsx, fsy, comfy) then
     cam_to = focus_target(px, py, want_focus, cam.z)
     auto_fit = false
-  end
-end
 # While the layout is still finding its shape, keep the whole graph framed —
 # until the user takes the camera, after which it is theirs.
 if auto_fit && hot && drag.mode == "none" then
   cam_to = fit_target(px, py, G.rad, act, canvas)
   auto_fit = true
-end
 if cam_to.on then
   let k = 1.0 - exp(0.0 - min(raw_dt, 0.1) * 9.0)
   cam = {x: cam.x + (cam_to.x - cam.x) * k, y: cam.y + (cam_to.y - cam.y) * k, z: cam.z + (cam_to.z - cam.z) * k}
   if abs(cam_to.x - cam.x) < 0.3 && abs(cam_to.y - cam.y) < 0.3 && abs(cam_to.z - cam.z) < 0.002 then
     cam = {x: cam_to.x, y: cam_to.y, z: cam_to.z}
     cam_to = {...cam_to, on: false}
-  end
   request_frame()
-end
 
 # Minimap drag: put the view centre under the pointer.
 let mb = bounds_of(px, py, G.rad, act)
@@ -1099,7 +953,6 @@ if drag.mode == "mini" && mouse_down(0) then
   cam = {...cam, x: mcx + (float(mx) - mini_cx) / mscale, y: mcy + (float(my) - mini_cy) / mscale}
   cam_to = {...cam_to, on: false}
   auto_fit = false
-end
 
 let z = cam.z
 
@@ -1118,7 +971,6 @@ else if mode == 2 then
   bfs(G.out, focus, act, 99)
 else
   bfs(G.und, focus, act, 1)
-end
 let path = if len(sel) == 2 then shortest_path(G.und, sel[0], sel[1], act) else [] end
 let on_path = for i in all_idx do contains(path, i) end
 
@@ -1139,17 +991,13 @@ let emph = for i in all_idx do
     if NODES[i].g == group_hover then 1 else 0 end
   else
     1
-  end
-end
 let lit_n = len(filter(all_idx, fn(i) -> act[i] && emph[i] > 0))
 
 fn edge_on_path(path: list, a: int, b: int) -> bool
   let hit = false
   for i in range(0, len(path) - 1) do
     if (path[i] == a && path[i + 1] == b) || (path[i] == b && path[i + 1] == a) then hit = true end
-  end
   hit
-end
 
 # ── Draw: canvas ─────────────────────────────────────────────────────────
 
@@ -1168,9 +1016,7 @@ while to_sx(cam, canvas, gx) < float(canvas.x + canvas.w) do
   while to_sy(cam, canvas, gy) < float(canvas.y + canvas.h) do
     draw_rect(gsx, to_sy(cam, canvas, gy), 2, 2, GRID)
     gy = gy + gstep
-  end
   gx = gx + gstep
-end
 
 # screen positions, once
 let sxs = for i in all_idx do to_sx(cam, canvas, px[i]) end
@@ -1220,20 +1066,12 @@ for pass in range(0, 2) do
             fill_triangle(bx, by,
               bx - ux * ah - uy * ah * 0.5, by - uy * ah + ux * ah * 0.5,
               bx - ux * ah + uy * ah * 0.5, by - uy * ah - ux * ah * 0.5, c, a)
-          end
           if lit && flow_on then
             # two packets riding each lit call, caller to callee
             for kk in range(0, 2) do
               let ft = fract(flow_t + float(kk) * 0.5 + float(ei) * 0.137)
               draw_circle({x: ax + (bx - ax) * ft, y: ay + (by - ay) * ft}, clamp(2.4 * z, 1.8, 4.0), TEXT, 230)
-            end
-          end
-        end
         if lit then lit_edges = lit_edges + 1 end
-      end
-    end
-  end
-end
 
 # nodes, dim ones first so the lit neighbourhood sits on top
 let pulse = 0.5 + 0.5 * sin(time() * 3.2)
@@ -1253,19 +1091,16 @@ for level in range(0, 3) do
         else
           if level == 2 || is_hover then
             draw_circle_gradient({x: cx, y: cy}, r * 2.6 + 6.0, gc, gc, if level == 2 then 110 else 70 end, 0)
-          end
           if nd.st > 0 then
             # an unhealthy service wears a breathing halo in its status colour
             let sc = status_color(nd.st)
             let pr = r + 4.0 + pulse * (if nd.st == 2 then 5.0 else 2.5 end)
             draw_circle_outline(cx, cy, pr, sc, int(200.0 - pulse * 120.0), 2)
             unhealthy_live = true
-          end
           node_fill(nd.k, cx, cy, r, gc, 255)
           if nd.k != "ext" then
             # a soft top-left sheen gives the flat fill a little volume
             draw_circle_gradient({x: cx - r * 0.3, y: cy - r * 0.34}, r * 0.62, :ffffff, :ffffff, 58, 0)
-          end
           if level == 2 then
             node_ring(nd.k, cx, cy, r + 3.0, TEXT, 255, 2)
           else if on_path[i] then
@@ -1274,16 +1109,9 @@ for level in range(0, 3) do
             node_ring(nd.k, cx, cy, r + 2.5, TEXT, 150, 1.5)
           else if q != "" && match_flag[i] then
             node_ring(nd.k, cx, cy, r + 3.0, ACCENT, 255, 2)
-          end
-        end
         if pins[i] then
           # a pinned node carries a small dark stud
           draw_circle({x: cx, y: cy}, max(1.6, r * 0.24), BG, if level == 0 then 120 else 235 end)
-        end
-      end
-    end
-  end
-end
 if unhealthy_live && motion then request_frame() end
 
 # labels — greedy, most connected first, skipping any that would collide
@@ -1323,32 +1151,19 @@ if label_mode != 2 || has_focus then
               let bad = false
               for p in placed do
                 if cand.x < p.x + p.w && p.x < cand.x + cand.w && cand.y < p.y + p.h && p.y < cand.y + cand.h then bad = true end
-              end
               if !bad then
                 for j in all_idx do
                   if j != i && act[j] && emph[j] > 0 then
                     let rj = srs[j] + 2.0
                     if cand.x < sxs[j] + rj && sxs[j] - rj < cand.x + cand.w && cand.y < sys[j] + rj && sys[j] - rj < cand.y + cand.h then bad = true end
-                  end
-                end
-              end
               if !bad then
                 lr = cand
                 clash = false
-              end
-            end
-          end
           if (!clash || must) && lr.x + lr.w > canvas.x && lr.x < canvas.x + canvas.w && lr.y + lr.h > canvas.y && lr.y < canvas.y + canvas.h then
             draw_rect_rounded(lr, 4, CANVAS, if forced then 225 else 170 end)
             txt(name, lr.x + 5.0, lr.y + 1.0, st)
             placed = append(placed, lr)
             labels_drawn = labels_drawn + 1
-          end
-        end
-      end
-    end
-  end
-end
 
 # marquee
 if drag.mode == "marquee" && drag.moved then
@@ -1359,7 +1174,6 @@ if drag.mode == "marquee" && drag.moved then
   let mr = rect(x0, y0, x1 - x0, y1 - y0)
   draw_rect(mr, ACCENT, 26)
   draw_rect_outline(mr, ACCENT, 210, 1)
-end
 
 # hover card
 if hit >= 0 && drag.mode == "none" && !blocked && !(len(sel) == 1 && sel[0] == hit) then
@@ -1382,7 +1196,6 @@ if hit >= 0 && drag.mode == "none" && !blocked && !(len(sel) == 1 && sel[0] == h
   txt(l1, hx + 20, hy + 10, tb(13, TEXT))
   txt(l2, hx + 14, hy + 31, ts(11, DIM))
   txt(l3, hx + 14, hy + 49, mono(11, if nd.st > 0 then status_color(nd.st) else DIM end))
-end
 
 # empty state — every group switched off
 if len(filter(act, fn(a) -> a)) == 0 then
@@ -1393,7 +1206,6 @@ if len(filter(act, fn(a) -> a)) == 0 then
   txt_c("Every group is hidden", ecx, ecy - 22, tb(16, TEXT))
   txt_c("Click a group in the sidebar to bring it back,", ecx, ecy + 6, ts(12, DIM))
   txt_c("or right-click here and choose Show all groups.", ecx, ecy + 24, ts(12, DIM))
-end
 
 clip_none()
 
@@ -1404,20 +1216,16 @@ if pill_btn(b_out, "−", false, chrome_live) then
   cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 0.8)
   cam_to = {...cam_to, on: false}
   auto_fit = false
-end
 if pill_btn(b_pct, str(int(round(z * 100.0))) ++ "%", false, chrome_live) then
   cam_to = {on: true, x: cam.x, y: cam.y, z: 1.0}
   auto_fit = false
-end
 if pill_btn(b_in, "+", false, chrome_live) then
   cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 1.25)
   cam_to = {...cam_to, on: false}
   auto_fit = false
-end
 if pill_btn(b_fit, "Fit", false, chrome_live) then
   cam_to = fit_target(px, py, G.rad, act, canvas)
   auto_fit = true
-end
 
 # kinds legend, floating along the top of the canvas
 draw_rect_rounded(lg_r, 8, PANEL)
@@ -1428,7 +1236,6 @@ for kd in kinds do
   node_fill(kd[0], lgx + 6, lgy + 8, 5.0, DIM, 255)
   txt(kd[1], lgx + 19, lgy, ts(11, FAINT))
   lgx = lgx + 19 + text_width(kd[1], ts(11, FAINT)) + 20
-end
 draw_circle({x: lgx + 6, y: lgy + 8}, 3.5, DIM, 255)
 draw_circle_outline(lgx + 6, lgy + 8, 7, WARN, 255, 2)
 txt("Unhealthy", lgx + 21, lgy, ts(11, FAINT))
@@ -1447,9 +1254,6 @@ for i in all_idx do
       draw_circle({x: ux, y: uy}, 3.5, TEXT, 255)
     else
       draw_circle({x: ux, y: uy}, 2.0, c, if emph[i] == 0 then 70 else 235 end)
-    end
-  end
-end
 # the part of the world the canvas is showing
 let vw = float(canvas.w) / z * mscale
 let vh = float(canvas.h) / z * mscale
@@ -1480,21 +1284,17 @@ for gi in range(0, len(GROUPS)) do
   if hov then
     draw_rect_rounded(rr, 6, HOVER)
     if !off then next_group_hover = gi end
-  end
   if off then
     draw_circle_outline(sxl + 6, sy + 14, 5, FAINT, 255, 1)
   else
     draw_circle({x: sxl + 6, y: sy + 14}, 5, g.c, 255)
-  end
   txt(g.name, sxl + 22, sy + 6, ts(13, if off then FAINT else TEXT end))
   let cnt = len(filter(NODES, fn(nd) -> nd.g == gi))
   txt_r(if off then "hidden" else str(cnt) end, sxl + sw, sy + 7, if off then ts(11, FAINT) else mono(11, DIM) end)
   if hov && mouse_pressed(0) then
     hidden = toggle_in(hidden, gi)
     alpha = max(alpha, 0.5)
-  end
   sy = sy + 30
-end
 group_hover = next_group_hover
 
 sy = sy + 10
@@ -1510,7 +1310,6 @@ let mode_note = if mode == 0 then "A selection lights its direct callers and cal
 for line in wrap_px(mode_note, sw, ts(11, FAINT)) do
   txt(line, sxl, sy, ts(11, FAINT))
   sy = sy + 16
-end
 
 sy = sy + 12
 hline(sxl, sy, sw, LINE)
@@ -1539,7 +1338,6 @@ sy = sy + 48
 if nrep != force.rep || nlen != force.len || ngrav != force.grav then
   force = {rep: nrep, len: nlen, grav: ngrav}
   alpha = max(alpha, 0.5)
-end
 
 # temperature
 let temp_r = rect(sxl, sy + 18, sw, 5)
@@ -1550,14 +1348,12 @@ txt_r(if alpha < ALPHA_MIN || frozen then temp_label else temp_label ++ " " ++ s
 draw_rect_rounded(temp_r, 2, ELEV)
 if alpha > 0.0 then
   draw_rect_gradient_rounded(rect(temp_r.x, temp_r.y, max(5, int(float(sw) * clamp(alpha, 0.0, 1.0))), 5), 2, ACCENT, :ff9d6b, 0.0)
-end
 sy = sy + 38
 
 let bw3 = (sw - 12) / 3
 if pill_btn(rect(sxl, sy, bw3, 28), "Reheat", false, side_live) then alpha = 1.0 end
 if pill_btn(rect(sxl + bw3 + 6, sy, bw3, 28), "Scatter", false, side_live) then
   queued = "scatter"
-end
 if pill_btn(rect(sxl + (bw3 + 6) * 2, sy, bw3, 28), if frozen then "Resume" else "Freeze" end, frozen, side_live) then frozen = !frozen end
 sy = sy + 38
 
@@ -1586,10 +1382,8 @@ fn node_row(r: Rect, i: int, live: bool, act: list, right: string) -> string
   txt(nd.n, r.x + 30, r.y + (r.h - 13) / 2 - 2, ts(13, if !on then FAINT else if hov then TEXT else DIM end))
   if nd.st > 0 && on then
     draw_circle({x: r.x + 36 + text_width(nd.n, ts(13, DIM)), y: r.y + r.h / 2}, 3, status_color(nd.st), 255)
-  end
   txt_r(if on then right else "hidden" end, r.x + r.w - 8, r.y + (r.h - 11) / 2 - 2, mono(11, FAINT))
   if hov && mouse_pressed(0) then "click" else if hov then "hover" else "" end
-end
 
 fn metric_tile(r: Rect, label: string, value: string, unit: string, c: record)
   draw_rect_rounded(r, 8, ELEV)
@@ -1597,7 +1391,6 @@ fn metric_tile(r: Rect, label: string, value: string, unit: string, c: record)
   txt(value, r.x + 12, r.y + 26, mono(19, c))
   txt(unit, r.x + 16 + text_width(value, mono(19, c)), r.y + 34, ts(11, FAINT))
   nil
-end
 
 let picked_row = -1
 
@@ -1655,7 +1448,6 @@ if len(sel) == 1 then
   if len(outs) == 0 then
     txt("Nothing — this is a leaf.", ix, iy + 2, ts(12, FAINT))
     iy = iy + 26
-  end
   for k in range(0, out_rows) do
     let j = outs[k]
     if k == out_rows - 1 && len(outs) > out_rows then
@@ -1664,9 +1456,7 @@ if len(sel) == 1 then
       let res = node_row(rect(ix - 8, iy, iw + 16, 26), j, insp_live, act, fmt_ms(NODES[j].p99))
       if res == "click" then picked_row = j end
       if res != "" then next_link_hover = j end
-    end
     iy = iy + 26
-  end
   iy = iy + 12
   caps("CALLED BY", ix, iy, FAINT)
   txt_r(str(len(inns)), ix + iw, iy - 1, mono(11, FAINT))
@@ -1674,7 +1464,6 @@ if len(sel) == 1 then
   if len(inns) == 0 then
     txt("Nothing — this is an entry point.", ix, iy + 2, ts(12, FAINT))
     iy = iy + 26
-  end
   for k in range(0, in_rows) do
     let j = inns[k]
     if k == in_rows - 1 && len(inns) > in_rows then
@@ -1683,9 +1472,7 @@ if len(sel) == 1 then
       let res = node_row(rect(ix - 8, iy, iw + 16, 26), j, insp_live, act, fmt_ms(NODES[j].p99))
       if res == "click" then picked_row = j end
       if res != "" then next_link_hover = j end
-    end
     iy = iy + 26
-  end
 
   # actions, pinned to the bottom
   let by = insp.y + insp.h - 46
@@ -1693,18 +1480,14 @@ if len(sel) == 1 then
   if pill_btn(rect(ix, by, bw, 28), if pins[i] then "Unpin" else "Pin" end, pins[i], insp_live) then
     pins[i] = !pins[i]
     alpha = max(alpha, 0.25)
-  end
   if pill_btn(rect(ix + bw + 8, by, bw, 28), "Focus", false, insp_live) then
     cam_to = focus_target(px, py, i, max(z, 1.7))
     auto_fit = false
-  end
   if pill_btn(rect(ix + (bw + 8) * 2, by, bw, 28), "Expand", false, insp_live) then
     let d = bfs(G.und, sel, act, 1)
     sel = for k in all_idx do
       if d[k] < 0 then continue end
       k
-    end
-  end
 else if len(sel) > 1 then
   caps("SELECTION", ix, iy, FAINT)
   iy = iy + 22
@@ -1728,14 +1511,12 @@ else if len(sel) > 1 then
       txt("No route between them through", ix, iy + 2, ts(12, FAINT))
       txt("the groups that are showing.", ix, iy + 19, ts(12, FAINT))
       iy = iy + 44
-    end
     for k in range(0, min(len(path), 12)) do
       let j = path[k]
       let res = node_row(rect(ix - 8, iy, iw + 16, 26), j, insp_live, act, if k == 0 then "from" else if k == len(path) - 1 then "to" else str(k) end)
       if res == "click" then picked_row = j end
       if res != "" then next_link_hover = j end
       iy = iy + 26
-    end
   else
     caps("MEMBERS", ix, iy, FAINT)
     iy = iy + 20
@@ -1749,10 +1530,7 @@ else if len(sel) > 1 then
         let res = node_row(rect(ix - 8, iy, iw + 16, 26), j, insp_live, act, fmt_rps(NODES[j].rps))
         if res == "click" then picked_row = j end
         if res != "" then next_link_hover = j end
-      end
       iy = iy + 26
-    end
-  end
 
   let by = insp.y + insp.h - 46
   let bw = (iw - 16) / 3
@@ -1760,12 +1538,10 @@ else if len(sel) > 1 then
   if pill_btn(rect(ix, by, bw, 28), if all_pinned then "Unpin" else "Pin" end, all_pinned, insp_live) then
     for i in sel do pins[i] = !all_pinned end
     alpha = max(alpha, 0.25)
-  end
   if pill_btn(rect(ix + bw + 8, by, bw, 28), "Frame", false, insp_live) then
     let fz = fit_cam(bounds_of(px, py, G.rad, for i in all_idx do contains(sel, i) end), canvas, 1.8)
     cam_to = {on: true, x: fz.x, y: fz.y, z: fz.z}
     auto_fit = false
-  end
   if pill_btn(rect(ix + (bw + 8) * 2, by, bw, 28), "Clear", false, insp_live) then sel = [] end
 else
   caps("OVERVIEW", ix, iy, FAINT)
@@ -1798,12 +1574,9 @@ else
       if res != "" then next_link_hover = i end
       iy = iy + 26
       shown = shown + 1
-    end
-  end
   if shown == 0 then
     txt(if live_n == 0 then "No services are visible." else "Every visible service is healthy." end, ix, iy + 2, ts(12, FAINT))
     iy = iy + 26
-  end
   iy = iy + 12
   if live_n > 0 then caps("MOST CONNECTED", ix, iy, FAINT) end
   iy = iy + 20
@@ -1816,9 +1589,6 @@ else
       if res != "" then next_link_hover = i end
       iy = iy + 26
       hubs = hubs + 1
-    end
-  end
-end
 
 link_hover = next_link_hover
 if picked_row >= 0 then
@@ -1828,8 +1598,6 @@ if picked_row >= 0 then
   if !point_in(fsx, fsy, rect(canvas.x + 90, canvas.y + 70, canvas.w - 180, canvas.h - 220)) then
     cam_to = focus_target(px, py, picked_row, z)
     auto_fit = false
-  end
-end
 
 # ── Draw: header ─────────────────────────────────────────────────────────
 
@@ -1859,7 +1627,6 @@ for ch in chips do
   draw_circle({x: chx + 4, y: 30}, 4, ch[1], 255)
   txt(ch[0], chx + 16, 22, ts(12, DIM))
   chx = chx + text_width(ch[0], ts(12, DIM)) + 16 + 22
-end
 
 # search field
 let SF = {size: 13, font: "ui", color: TEXT}
@@ -1871,11 +1638,9 @@ if query == "" then
   txt(if typing then "Type a service name…" else "Find a service" end, field_r.x, field_r.y + 8, ts(13, FAINT))
 else
   txt(query, field_r.x, field_r.y + 8, SF)
-end
 if typing && fract(time() * 1.1) < 0.6 then
   let cx = field_r.x + text_width(char_slice(query, 0, fres.caret), SF) + 1
   draw_rect(cx, field_r.y + 8, 1, 16, ACCENT)
-end
 if typing then request_frame() end
 let key_r = rect(search_r.x + search_r.w - 28, search_r.y + 6, 20, 20)
 if query != "" then
@@ -1885,16 +1650,13 @@ if query != "" then
   if hov && mouse_pressed(0) then
     query = ""
     focus_request(nil)
-  end
 else
   draw_rect_rounded(key_r, 5, PANEL)
   rr_outline(key_r, 5, LINE, 255, 1)
   txt_c("/", key_r.x + 10, key_r.y + 3, mono(11, FAINT))
-end
 # a press anywhere outside the field and its dropdown lets go of the keyboard
 if typing && mouse_pressed(0) && !point_in(mx, my, search_r) && !over_drop then
   focus_request(nil)
-end
 
 # ── Draw: status bar ─────────────────────────────────────────────────────
 
@@ -1907,7 +1669,6 @@ else if q != "" then
   plural(len(matches), "match", "matches") ++ " for “" ++ query ++ "”"
 else
   str(len(filter(act, fn(a) -> a))) ++ " services  ·  " ++ str(len(filter(G.edges, fn(e) -> act[e.a] && act[e.b]))) ++ " calls"
-end
 txt(left_t, 22, sb.y + 7, ts(12, DIM))
 
 let hint = if drag.mode == "node" && drag.moved then
@@ -1926,7 +1687,6 @@ else if over_canvas then
   "drag pan  ·  wheel zoom  ·  shift-drag box select  ·  / search"
 else
   "F fit  ·  R reheat  ·  S scatter  ·  space freeze  ·  1 2 3 highlight  ·  L labels"
-end
 txt_c(hint, canvas.x + canvas.w / 2, sb.y + 7, ts(12, FAINT))
 
 let live_t = if frozen then "❚❚ frozen" else if hot then "● simulating" else "○ settled" end
@@ -1954,9 +1714,6 @@ if drop_n > 0 then
       cam_to = focus_target(px, py, i, z)
       auto_fit = false
       focus_request(nil)
-    end
-  end
-end
 
 # ── Context menu: the last draw call ─────────────────────────────────────
 
@@ -1971,11 +1728,9 @@ let items = if node_menu then
 else
   ["Fit to view", "Reheat layout", "Scatter", {sep: true},
     {label: "Unpin all", disabled: pin_n == 0}, {label: "Show all groups", disabled: len(hidden) == 0}]
-end
 let picked_ix = bloom.menu("graph", canvas, items, {at: "point", size: 13})
 let picked = if picked_ix < 0 then {index: -1, label: ""} else
   {index: picked_ix, label: if type(items[picked_ix]) == "string" then items[picked_ix] else items[picked_ix].label end}
-end
 if picked.index >= 0 then
   if node_menu then
     let id = m_tag.id
@@ -1992,16 +1747,13 @@ if picked.index >= 0 then
       sel = for k in all_idx do
         if d[k] < 0 then continue end
         k
-      end
     else if picked.label == "Select group" then
       sel = for k in all_idx do
         if NODES[k].g != NODES[id].g then continue end
         k
-      end
     else if picked.label == "Hide group" then
       hidden = toggle_in(hidden, NODES[id].g)
       alpha = max(alpha, 0.5)
-    end
   else
     if picked.label == "Fit to view" then
       cam_to = fit_target(px, py, G.rad, act, canvas)
@@ -2016,16 +1768,12 @@ if picked.index >= 0 then
     else if picked.label == "Show all groups" then
       hidden = []
       alpha = max(alpha, 0.5)
-    end
-  end
-end
 
 # ── Observables for the debug server ─────────────────────────────────────
 #  Read these from GET /state → panes[0].panel.values.
 
 fn names_of(xs: list) -> list
   map(xs, fn(i) -> NODES[i].n)
-end
 
 # every visible node's place on screen, pane-local, so a test can click one
 fn screen_nodes(act: list, sxs: list, sys: list, srs: list) -> list
@@ -2033,10 +1781,7 @@ fn screen_nodes(act: list, sxs: list, sys: list, srs: list) -> list
   for i in range(0, len(act)) do
     if act[i] then
       out = append(out, {n: NODES[i].n, x: int(round(sxs[i])), y: int(round(sys[i])), r: int(round(srs[i]))})
-    end
-  end
   out
-end
 
 let obs_sel = names_of(sel)
 let obs_mode = mode

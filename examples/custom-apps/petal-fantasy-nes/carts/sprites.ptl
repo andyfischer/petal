@@ -42,7 +42,6 @@ let body = [
 
 fn walker(legs: list) -> list
   flat([body, legs])
-end
 
 let stand = walker([
   "....oo....oo....",
@@ -134,7 +133,6 @@ let labels = ["NONE", "X", "Y", "XY"]
 for i in range(0, len(flips)) do
   draw_meta(24 + i * 44, 64, meta(hero_a.base, 2, 2, 5), flips[i])
   map_text(int((24 + i * 44) / 8), 10, labels[i], 0)
-end
 
 # ── Band 3: behind-background priority ────────────────────────────────────
 # `behind_bg` puts a sprite behind every non-transparent background pixel.
@@ -163,7 +161,6 @@ map_text(1, 19, "ASKED {asked}  DREW {drawn}  REST DROPPED", 0)
 
 for i in range(0, asked) do
   sprite(4 + i * 5, 160, 14, 6)
-end
 
 # ── The 8-per-scanline drop-out ───────────────────────────────────────────
 # Real hardware also gives up after 8 sprites on any one scanline, which is
@@ -173,7 +170,6 @@ end
 state var scanline_limit = false
 if btnp("a") then
   set scanline_limit = !scanline_limit
-end
 set_sprite_limit(scanline_limit)
 
 map_text(1, 22, "A: 8-PER-SCANLINE LIMIT " ++ (if scanline_limit then "ON " else "OFF" end), 0)

@@ -52,8 +52,6 @@ if ready then
   let b2 = bloom.badge(b1.x + b1.w + 8, header.y + 6, str(d.total) ++ " commits")
   if d.sampled < d.total then
     bloom.badge(b2.x + b2.w + 8, header.y + 6, "charting last " ++ str(d.sampled))
-  end
-end
 
 # ── Body ─────────────────────────────────────────────────────────────────
 if bloom.load_view(body, ls) then
@@ -81,9 +79,7 @@ if bloom.load_view(body, ls) then
       if hovered(rect(bar.x, chart.y, bar.w, chart.h)) then
         color = T.accent
         draw_text_center(str(wk.count) ++ " · wk " ++ wk.label, bar.x + bar.w / 2, chart.y - 4, T.font_sm, T.muted)
-      end
       draw_rect(bar, color)
-    end
     draw_line({x: chart.x, y: chart.y + chart.h}, {x: chart.x + chart.w, y: chart.y + chart.h}, T.border)
     draw_text(d.weeks[0].label, {x: chart.x, y: chart.y + chart.h + 6}, T.font_sm, T.dim)
     draw_text_right(d.weeks[n - 1].label, chart.x + chart.w, chart.y + chart.h + 6, T.font_sm, T.dim)
@@ -101,8 +97,6 @@ if bloom.load_view(body, ls) then
         let track = rect(a.x, ry + T.font_md + 4, a.w, 4)
         draw_rect(track, T.hover)
         draw_rect(rect(track.x, track.y, int(float(track.w) * au.frac), 4), T.accent)
-      end
-    end
 
     # Recent commits.
     let r = bloom.card(halves.b)
@@ -117,7 +111,3 @@ if bloom.load_view(body, ls) then
         let when_w = text_width(cm.when, T.font_sm) + 8
         draw_text(ellipsize(cm.subject, r.w - hash_w - when_w - 12, T.font_md), {x: r.x + hash_w, y: ry}, T.font_md, T.text)
         draw_text_right(cm.when, r.x + r.w, ry + 1, T.font_sm, T.dim)
-      end
-    end
-  end
-end

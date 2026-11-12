@@ -44,8 +44,6 @@ fn cat_color(cat: string) -> record
     when "gen" -> C_GEN
     when "math" -> C_MATH
     when _ -> C_SINK
-  end
-end
 
 fn cat_label(cat: string) -> string
   match cat
@@ -53,8 +51,6 @@ fn cat_label(cat: string) -> string
     when "gen" -> "GENERATORS"
     when "math" -> "MATH"
     when _ -> "SINKS"
-  end
-end
 
 # ── Node catalogue ───────────────────────────────────────────────────────
 #  ins    — connectable input ports, each with a default used when unwired
@@ -62,7 +58,6 @@ end
 
 fn port(name: string, lo: num, hi: num, def: num) -> record
   {name: name, lo: float(lo), hi: float(hi), def: float(def)}
-end
 
 let KINDS = [
   {id: "number", label: "Number", cat: "source", desc: "A constant you set by hand.",
@@ -103,9 +98,7 @@ fn kind_of(id: string) -> record
   let out = KINDS[0]
   for k in KINDS do
     if k.id == id then out = k end
-  end
   out
-end
 
 # ── Node geometry (world units) ──────────────────────────────────────────
 
@@ -123,26 +116,20 @@ fn preview_h(kind: string) -> num
     when "number" -> 34.0
     when "time" -> 34.0
     when _ -> 0.0
-  end
-end
 
 fn node_h(n: record) -> num
   let k = kind_of(n.kind)
   let rows = float(len(k.ins))
   HDR_H + rows * ROW_H + preview_h(n.kind) + (if rows > 0.0 then 8.0 else 4.0 end)
-end
 
 fn node_rect(n: record) -> Rect
   rect(n.x, n.y, NODE_W, node_h(n))
-end
 
 fn in_port(n: record, i: num) -> record
   {x: n.x, y: n.y + HDR_H + float(i) * ROW_H + ROW_H / 2.0}
-end
 
 fn out_port(n: record) -> record
   {x: n.x + NODE_W, y: n.y + HDR_H / 2.0}
-end
 
 # ── Graph helpers (pure: every one returns a new value) ──────────────────
 
@@ -150,66 +137,50 @@ fn idx_of(nodes: list, id: num) -> int
   let found = -1
   for i in range(0, len(nodes)) do
     if found < 0 && nodes[i].id == id then found = i end
-  end
   found
-end
 
 fn link_into(links: list, id: num, port_i: num) -> int
   let found = -1
   for i in range(0, len(links)) do
     if found < 0 && links[i].to == id && links[i].port == port_i then found = i end
-  end
   found
-end
 
 fn make_node(id: num, kind: string, x: num, y: num) -> record
   let k = kind_of(kind)
   {id: id, kind: kind, x: float(x), y: float(y),
     ins: for p in k.ins do p.def end,
     params: for p in k.params do p.def end}
-end
 
 fn put(nodes: list, i: num, n: record) -> list
   for j in range(0, len(nodes)) do
     if j == i then n else nodes[j] end
-  end
-end
 
 fn without(nodes: list, ids: list) -> list
   let out = []
   for n in nodes do
     if !contains(ids, n.id) then out = append(out, n) end
-  end
   out
-end
 
 fn links_without_nodes(links: list, ids: list) -> list
   let out = []
   for l in links do
     if !contains(ids, l.from) && !contains(ids, l.to) then out = append(out, l) end
-  end
   out
-end
 
 fn links_without_node(links: list, id: num) -> list
   let out = []
   for l in links do
     if l.from != id && l.to != id then out = append(out, l) end
-  end
   out
-end
 
 fn links_without_into(links: list, id: num, port_i: num) -> list
   let out = []
   for l in links do
     if !(l.to == id && l.port == port_i) then out = append(out, l) end
-  end
   out
-end
 
 fn add_link(links: list, from: num, to: num, port_i: num) -> list
   append(links_without_into(links, id: to, port_i: port_i), {from: from, to: to, port: port_i})
-end
 
 # Move the given ids to the end of the list so they draw on top.
 fn raise(nodes: list, ids: list) -> list
@@ -217,10 +188,8 @@ fn raise(nodes: list, ids: list) -> list
   let top = []
   for n in nodes do
     if contains(ids, n.id) then top = append(top, n) else rest = append(rest, n) end
-  end
   for n in top do rest = append(rest, n) end
   rest
-end
 
 # Does wiring `from` into `to` close a loop? Walk upstream from `from`.
 fn reaches(links: list, from: num, target: num, depth: num) -> bool
@@ -230,10 +199,7 @@ fn reaches(links: list, from: num, target: num, depth: num) -> bool
   for l in links do
     if l.to == from && !hit then
       hit = reaches(links, from: l.from, target: target, depth: depth + 1)
-    end
-  end
   hit
-end
 
 # ── Evaluation ───────────────────────────────────────────────────────────
 #  Recursive, memoized per frame, and a cycle guard so a loop yields 0.
@@ -251,8 +217,6 @@ fn ev_input(idx: int, i: int) -> num
   else
     let src = idx_of(get EV_NODES, (get EV_LINKS)[li].from)
     if src < 0 then 0.0 else ev_node(src) end
-  end
-end
 
 fn ev_node(idx: int) -> num
   let m = get EV_MEMO[idx]
@@ -272,19 +236,15 @@ fn ev_node(idx: int) -> num
     when "div" do
       let b = ev_input(idx, 1)
       if abs(b) < 0.000001 then 0.0 else ev_input(idx, 0) / b end
-    end
     when "clamp" -> clamp(ev_input(idx, 0), lo: min(p[0], p[1]), hi: max(p[0], p[1]))
     when "lerp" -> lerp(ev_input(idx, 0), ev_input(idx, 1), t: ev_input(idx, 2))
     when "map" do
       if abs(p[1] - p[0]) < 0.000001 then p[2]
       else map_range(ev_input(idx, 0), in_lo: p[0], in_hi: p[1], out_lo: p[2], out_hi: p[3]) end
-    end
     when "color" -> ev_input(idx, 0) * 0.299 + ev_input(idx, 1) * 0.587 + ev_input(idx, 2) * 0.114
     when _ -> ev_input(idx, 0)
-  end
   set EV_MEMO[idx] = {done: true, busy: false, val: v}
   v
-end
 
 # Output value of every node, aligned with `nodes`.
 fn eval_all(nodes: list, links: list, t: num) -> list
@@ -293,7 +253,6 @@ fn eval_all(nodes: list, links: list, t: num) -> list
   set EV_T = t
   set EV_MEMO = for n in nodes do {done: false, busy: false, val: 0.0} end
   for i in range(0, len(nodes)) do ev_node(i) end
-end
 
 # Every input value of one node (wired or default), for the inspector.
 fn input_values(nodes: list, links: list, vals: list, n: record) -> list
@@ -305,9 +264,6 @@ fn input_values(nodes: list, links: list, vals: list, n: record) -> list
     else
       let src = idx_of(nodes, links[li].from)
       if src < 0 then 0.0 else vals[src] end
-    end
-  end
-end
 
 # ── Scope history: one slot per node ─────────────────────────────────────
 #  The draw loop is keyed by node id, because raising a node reorders it and
@@ -318,9 +274,7 @@ fn scope_push(v: num, playing: bool) -> list
   if playing then
     samples = append(samples, v)
     if len(samples) > 160 then samples = slice(samples, start: len(samples) - 160, end: len(samples)) end
-  end
   samples
-end
 
 # ── Formatting & small draw helpers ──────────────────────────────────────
 
@@ -331,37 +285,28 @@ fn fmt(v: num) -> string
     str(round(v, 1))
   else
     str(round(v, 2))
-  end
-end
 
 fn ts(size: num, c: record) -> record
   {size: int(size), font: "ui", color: c}
-end
 
 fn mono(size: num, c: record) -> record
   {size: int(size), font: "mono", color: c}
-end
 
 fn caps(s: string, x: num, y: num, c: record)
   draw_text(s, pos: {x: x, y: y}, style: {size: 10, font: "ui", color: c, spacing: 2})
-end
 
 fn clamp01(v: num) -> num
   clamp(v, lo: 0.0, hi: 1.0)
-end
 
 # The prelude has no record overloads for these two outlines.
 fn rr_outline(r: Rect, radius: num, c: record, a: num, wd: num)
   draw_rect_rounded_outline(x: int(r.x), y: int(r.y), w: int(r.w), h: int(r.h), radius: int(radius), r: c.r, g: c.g, b: c.b, a: int(a), width: max(1, int(wd)))
-end
 
 fn circ_outline(cx: num, cy: num, rad: num, c: record, a: num, wd: num)
   draw_circle_outline(cx: int(cx), cy: int(cy), radius: max(1, int(rad)), r: c.r, g: c.g, b: c.b, a: int(a), width: max(1, int(wd)))
-end
 
 fn to_rgb(v: num) -> int
   int(round(clamp01(v) * 255.0))
-end
 
 # Cubic bezier between two ports, sampled into a polyline.
 fn bezier_pts(x0: num, y0: num, x1: num, y1: num, n: int) -> list
@@ -374,8 +319,6 @@ fn bezier_pts(x0: num, y0: num, x1: num, y1: num, n: int) -> list
     let x = u * u * u * x0 + 3.0 * u * u * t * cx0 + 3.0 * u * t * t * cx1 + t * t * t * x1
     let y = u * u * u * y0 + 3.0 * u * u * t * y0 + 3.0 * u * t * t * y1 + t * t * t * y1
     [x, y]
-  end
-end
 
 fn bezier_at(x0: num, y0: num, x1: num, y1: num, t: num) -> record
   let d = max(48.0, abs(x1 - x0) * 0.5)
@@ -384,7 +327,6 @@ fn bezier_at(x0: num, y0: num, x1: num, y1: num, t: num) -> record
   let u = 1.0 - t
   {x: u * u * u * x0 + 3.0 * u * u * t * cx0 + 3.0 * u * t * t * cx1 + t * t * t * x1,
     y: u * u * u * y0 + 3.0 * u * u * t * y0 + 3.0 * u * t * t * y1 + t * t * t * y1}
-end
 
 # A small pill button drawn in the app's own chrome. True on click.
 fn pill_btn(r: Rect, label: string, active: bool) -> bool
@@ -395,7 +337,6 @@ fn pill_btn(r: Rect, label: string, active: bool) -> bool
   let st = ts(12, if active then TEXT else DIM end)
   draw_text(label, pos: {x: r.x + (r.w - text_width(label, st)) / 2, y: r.y + (r.h - 12) / 2 - 1}, style: st)
   ui.clicked(r)
-end
 
 # ── The seeded patch ─────────────────────────────────────────────────────
 
@@ -421,7 +362,6 @@ fn seed_nodes() -> list
   let n12 = make_node(id: 12, kind: "add", x: 520, y: 470)
   n12.ins = [0.0, 0.3]
   [n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12]
-end
 
 fn seed_links() -> list
   [
@@ -438,7 +378,6 @@ fn seed_links() -> list
     {from: 11, to: 12, port: 0},
     {from: 12, to: 9, port: 2},
   ]
-end
 
 # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -464,7 +403,6 @@ fn zoom_about(cam: record, canvas: Rect, sx: num, sy: num, factor: num) -> recor
   let wy = to_wy(cam, canvas, sy)
   {x: wx - (float(sx) - float(canvas.x)) / nz,
     y: wy - (float(sy) - float(canvas.y)) / nz, zoom: nz}
-end
 
 fn fit_all(nodes: list, canvas: Rect) -> record
   if len(nodes) == 0 then
@@ -479,15 +417,12 @@ fn fit_all(nodes: list, canvas: Rect) -> record
       y0 = min(y0, n.y)
       x1 = max(x1, n.x + NODE_W)
       y1 = max(y1, n.y + node_h(n))
-    end
     let pad_w = 28.0
     let zx = (float(canvas.w) - pad_w * 2.0) / max(1.0, x1 - x0)
     let zy = (float(canvas.h) - pad_w * 2.0) / max(1.0, y1 - y0)
     let nz = clamp(min(zx, zy), lo: 0.35, hi: 1.5)
     {x: (x0 + x1) / 2.0 - float(canvas.w) / 2.0 / nz,
       y: (y0 + y1) / 2.0 - float(canvas.h) / 2.0 / nz, zoom: nz}
-  end
-end
 
 # ── Persistent state ─────────────────────────────────────────────────────
 
@@ -498,23 +433,18 @@ end
 
 fn nums_to_str(xs: list) -> string
   if len(xs) == 0 then "-" else join(map(xs, fn(v) -> str(v)), ",") end
-end
 
 fn str_to_nums(s: string) -> list
   if s == "-" then [] else map(split(s, ","), fn(t) -> parse_float(t) ?? 0.0) end
-end
 
 fn save_patch(nodes: list, links: list, next_id: num) -> string
   let lines = ["V1 " ++ str(next_id)]
   for n in nodes do
     lines = append(lines, "N " ++ str(n.id) ++ " " ++ n.kind ++ " " ++ str(n.x) ++ " " ++ str(n.y) ++
       " " ++ nums_to_str(n.ins) ++ " " ++ nums_to_str(n.params))
-  end
   for l in links do
     lines = append(lines, "L " ++ str(l.from) ++ " " ++ str(l.to) ++ " " ++ str(l.port))
-  end
   join(lines, "\n")
-end
 
 fn parse_patch(raw: string) -> record
   let nodes = []
@@ -530,10 +460,7 @@ fn parse_patch(raw: string) -> record
         ins: str_to_nums(f[5]), params: str_to_nums(f[6])})
     else if len(f) == 4 && f[0] == "L" then
       links = append(links, {from: parse_int(f[1]) ?? 0, to: parse_int(f[2]) ?? 0, port: parse_int(f[3]) ?? 0})
-    end
-  end
   {nodes: nodes, links: links, next_id: next_id}
-end
 
 fn load_patch() -> record
   let raw = panel_store_get("patch")
@@ -542,8 +469,6 @@ fn load_patch() -> record
   else
     let p = parse_patch(raw)
     {nodes: p.nodes, links: p.links, next_id: p.next_id, fresh: false}
-  end
-end
 
 state saved = load_patch()
 state nodes = saved.nodes
@@ -578,20 +503,15 @@ let step = min(raw_dt, 0.1)
 if playing then
   clock = clock + step
   request_frame()
-end
 
 fn to_sx(cam: record, canvas: Rect, wx: num) -> num
   float(canvas.x) + (wx - cam.x) * cam.zoom
-end
 fn to_sy(cam: record, canvas: Rect, wy: num) -> num
   float(canvas.y) + (wy - cam.y) * cam.zoom
-end
 fn to_wx(cam: record, canvas: Rect, sx: num) -> num
   cam.x + (float(sx) - float(canvas.x)) / cam.zoom
-end
 fn to_wy(cam: record, canvas: Rect, sy: num) -> num
   cam.y + (float(sy) - float(canvas.y)) / cam.zoom
-end
 
 let wmx = to_wx(cam, canvas, sx: mx)
 let wmy = to_wy(cam, canvas, sy: my)
@@ -609,20 +529,14 @@ fn hit_test(nodes: list, wx: num, wy: num, z: num) -> record
     let o = out_port(n)
     if abs(wx - o.x) <= reach && abs(wy - o.y) <= reach then
       out = {kind: "out", node: n.id, port: 0}
-    end
     for j in range(0, len(k.ins)) do
       let p = in_port(n, j)
       if out.kind == "none" && abs(wx - p.x) <= reach && abs(wy - p.y) <= reach then
         out = {kind: "in", node: n.id, port: j}
-      end
-    end
     if out.kind == "none" && point_in(px: wx, py: wy, r: node_rect(n)) then
       out = {kind: "node", node: n.id, port: -1}
-    end
     i = i - 1
-  end
   out
-end
 
 let hit = if over_canvas then hit_test(nodes, wx: wmx, wy: wmy, z: z) else {kind: "none", node: -1, port: -1} end
 
@@ -632,11 +546,9 @@ fn push_hist(hist: list, nodes: list, links: list) -> list
   let h = append(hist, {nodes: nodes, links: links})
   if len(h) > 60 then h = slice(h, start: len(h) - 60, end: len(h)) end
   h
-end
 
 fn note(flash: record, text: string, now: num) -> record
   {text: text, until: now + 2.2}
-end
 
 # ── Keyboard ─────────────────────────────────────────────────────────────
 
@@ -648,21 +560,16 @@ let want_fit = key_pressed("f") && !mod_cmd()
 
 if key_pressed("a") && mod_cmd() then
   sel = for n in nodes do n.id end
-end
 if key_pressed("escape") && !blocked then
   if drag.mode != "none" then
     drag = {...drag, mode: "none"}
   else
     sel = []
-  end
-end
 if key_pressed("p") && !mod_cmd() then playing = !playing end
 if key_pressed("equals") then
   cam = zoom_about(cam, canvas, sx: canvas.x + canvas.w / 2, sy: canvas.y + canvas.h / 2, factor: 1.2)
-end
 if key_pressed("minus") then
   cam = zoom_about(cam, canvas, sx: canvas.x + canvas.w / 2, sy: canvas.y + canvas.h / 2, factor: 1.0 / 1.2)
-end
 if key_pressed("0") then cam = {...cam, zoom: 1.0} end
 if want_fit then cam = fit_all(nodes, canvas) end
 
@@ -679,9 +586,7 @@ if (nudge_x != 0.0 || nudge_y != 0.0) && len(sel) > 0 && !blocked then
   fut = []
   nodes = for n in nodes do
     if contains(sel, n.id) then {...n, x: n.x + nudge_x, y: n.y + nudge_y} else n end
-  end
   ops = ops + 1
-end
 
 # ── Editing operations (shared by keys, buttons and the menu) ────────────
 
@@ -696,8 +601,6 @@ fn dup_sel(nodes: list, links: list, sel: list, start_id: num) -> record
       ids = append(ids, nid)
       remap = append(remap, [n.id, nid])
       nid = nid + 1
-    end
-  end
   let nl = links
   for l in links do
     if contains(sel, l.from) && contains(sel, l.to) then
@@ -706,12 +609,8 @@ fn dup_sel(nodes: list, links: list, sel: list, start_id: num) -> record
       for pr in remap do
         if pr[0] == l.from then nf = pr[1] end
         if pr[0] == l.to then nt = pr[1] end
-      end
       nl = append(nl, {from: nf, to: nt, port: l.port})
-    end
-  end
   {nodes: out, links: nl, sel: ids, next: nid}
-end
 
 if want_delete && len(sel) > 0 then
   hist = push_hist(hist, nodes, links)
@@ -721,7 +620,6 @@ if want_delete && len(sel) > 0 then
   flash = note(flash, text: "Deleted {len(sel)} node" ++ (if len(sel) == 1 then "" else "s" end), now: time())
   sel = []
   ops = ops + 1
-end
 
 if want_dup && len(sel) > 0 then
   hist = push_hist(hist, nodes, links)
@@ -732,7 +630,6 @@ if want_dup && len(sel) > 0 then
   sel = d.sel
   next_id = d.next
   ops = ops + 1
-end
 
 if want_undo && len(hist) > 0 then
   fut = append(fut, {nodes: nodes, links: links})
@@ -742,7 +639,6 @@ if want_undo && len(hist) > 0 then
   links = h.links
   sel = filter(sel, fn(id) -> idx_of(h.nodes, id) >= 0)
   ops = ops + 1
-end
 if want_redo && len(fut) > 0 then
   hist = append(hist, {nodes: nodes, links: links})
   let f = last(fut)
@@ -751,7 +647,6 @@ if want_redo && len(fut) > 0 then
   links = f.links
   sel = filter(sel, fn(id) -> idx_of(f.nodes, id) >= 0)
   ops = ops + 1
-end
 
 # ── Mouse: wheel ─────────────────────────────────────────────────────────
 
@@ -763,9 +658,6 @@ if over_canvas && !blocked then
       cam = zoom_about(cam, canvas, sx: mx, sy: my, factor: if sy > 0.0 then 1.1 else 1.0 / 1.1 end)
     else
       cam = {...cam, x: cam.x - sx * 18.0 / z, y: cam.y - sy * 18.0 / z}
-    end
-  end
-end
 
 # ── Mouse: press ─────────────────────────────────────────────────────────
 
@@ -775,7 +667,6 @@ let space_held = key_down("space")
 # wedge the canvas: with no button held there is nothing to be dragging.
 if drag.mode != "none" && drag.mode != "place" && !mouse_down(0) && !mouse_down(2) && !mouse_released(0) && !mouse_released(2) then
   drag = {...drag, mode: "none"}
-end
 
 if over_canvas && !blocked && drag.mode == "none" then
   if mouse_pressed(2) || (mouse_pressed(0) && (space_held || mod_alt())) then
@@ -795,41 +686,32 @@ if over_canvas && !blocked && drag.mode == "none" then
         ops = ops + 1
       else
         drag = {...drag, mode: "link", node: hit.node, port: hit.port, dir: "in", moved: false}
-      end
     else if hit.kind == "node" then
       if mod_shift() then
         if contains(sel, hit.node) then
           sel = filter(sel, fn(id) -> id != hit.node)
         else
           sel = append(sel, hit.node)
-        end
       else if !contains(sel, hit.node) then
         sel = [hit.node]
-      end
       nodes = raise(nodes, sel)
       let starts = for n in nodes do
         if contains(sel, n.id) then {id: n.id, x: n.x, y: n.y} else continue end
-      end
       drag = {...drag, mode: "node", x0: wmx, y0: wmy, starts: starts, moved: false}
     else
       drag = {...drag, mode: "marquee", x0: wmx, y0: wmy, moved: false}
-    end
   else if mouse_pressed(1) then
     if hit.kind == "node" && !contains(sel, hit.node) then
       sel = [hit.node]
-    end
     let tag = if hit.kind == "node" then {what: "node", id: hit.node} else {what: "canvas", id: -1} end
     menu_at = {x: mx, y: my, tag: tag}
     bloom.menu_open_at("ctx", mx, my)
-  end
-end
 
 # ── Mouse: drag ──────────────────────────────────────────────────────────
 
 if drag.mode == "pan" && mouse_down(0) || drag.mode == "pan" && mouse_down(2) then
   cam = {...cam, x: drag.cx - (float(mx) - drag.x0) / z, y: drag.cy - (float(my) - drag.y0) / z}
   drag = {...drag, moved: true}
-end
 
 if drag.mode == "node" && mouse_down(0) then
   let dx = wmx - drag.x0
@@ -838,7 +720,6 @@ if drag.mode == "node" && mouse_down(0) then
     hist = push_hist(hist, nodes, links)
     fut = []
     drag = {...drag, moved: true}
-  end
   if drag.moved then
     let snap = mod_shift()
     nodes = for n in nodes do
@@ -851,12 +732,7 @@ if drag.mode == "node" && mouse_down(0) then
         if snap then
           nx = float(int(round(nx / 16.0))) * 16.0
           ny = float(int(round(ny / 16.0))) * 16.0
-        end
         {...n, x: nx, y: ny}
-      end
-    end
-  end
-end
 
 if drag.mode == "place" && !mouse_down(0) && over_canvas then
   hist = push_hist(hist, nodes, links)
@@ -867,7 +743,6 @@ if drag.mode == "place" && !mouse_down(0) && over_canvas then
   next_id = next_id + 1
   ops = ops + 1
   drag = {...drag, mode: "none"}
-end
 
 # ── Mouse: release ───────────────────────────────────────────────────────
 
@@ -882,7 +757,6 @@ if mouse_released(0) || mouse_released(2) then
         ok = true
       else
         flash = note(flash, text: "That wire would make a loop", now: time())
-      end
     else if drag.dir == "in" && hit.kind == "out" && hit.node != drag.node then
       if !reaches(links, from: hit.node, target: drag.node, depth: 0) then
         hist = push_hist(hist, nodes, links)
@@ -891,8 +765,6 @@ if mouse_released(0) || mouse_released(2) then
         ok = true
       else
         flash = note(flash, text: "That wire would make a loop", now: time())
-      end
-    end
     if ok then ops = ops + 1 end
   else if drag.mode == "marquee" then
     let x0 = min(drag.x0, wmx)
@@ -903,23 +775,16 @@ if mouse_released(0) || mouse_released(2) then
       let inside = for n in nodes do
         let r = node_rect(n)
         if r.x < x1 && x0 < r.x + r.w && r.y < y1 && y0 < r.y + r.h then n.id else continue end
-      end
       if mod_shift() then
         for id in inside do
           if !contains(sel, id) then sel = append(sel, id) end
-        end
       else
         sel = inside
-      end
     else if !mod_shift() then
       sel = []
-    end
-  end
   if drag.mode == "node" && drag.moved then ops = ops + 1 end
   if drag.mode != "place" then
     drag = {...drag, mode: "none"}
-  end
-end
 
 # ── Evaluate ─────────────────────────────────────────────────────────────
 
@@ -944,9 +809,7 @@ while to_sx(cam, canvas, wx: gwx) < float(canvas.x + canvas.w) do
     let major = (int(round(gwx / gstep)) % 4 == 0) && (int(round(gwy / gstep)) % 4 == 0)
     draw_rect(x: int(sx), y: int(sy), w: 2, h: 2, r: GRID.r, g: GRID.g, b: GRID.b, a: if major then 255 else 150 end)
     gwy = gwy + gstep
-  end
   gwx = gwx + gstep
-end
 
 # links
 let flow_t = clock * 0.35
@@ -969,10 +832,6 @@ for l in links do
         let t = (flow_t + float(k) * 0.5) % 1.0
         let q = bezier_at(x0, y0, x1, y1, t)
         draw_circle(q, max(1.5, 3.0 * z), c, if lit then 255 else 170 end)
-      end
-    end
-  end
-end
 
 # the wire being dragged
 if drag.mode == "link" then
@@ -990,9 +849,6 @@ if drag.mode == "link" then
       let fx = if hit.kind == "out" then to_sx(cam, canvas, wx: out_port(nodes[idx_of(nodes, hit.node)]).x) else float(mx) end
       let fy = if hit.kind == "out" then to_sy(cam, canvas, wy: out_port(nodes[idx_of(nodes, hit.node)]).y) else float(my) end
       draw_polyline(points: bezier_pts(x0: fx, y0: fy, x1: to_sx(cam, canvas, wx: p.x), y1: to_sy(cam, canvas, wy: p.y), n: 28), r: ACCENT.r, g: ACCENT.g, b: ACCENT.b, a: 220, width: max(1.0, 2.0 * z))
-    end
-  end
-end
 
 # nodes
 fn draw_scope(r: Rect, samples: list, c: record)
@@ -1003,11 +859,9 @@ fn draw_scope(r: Rect, samples: list, c: record)
     for s in samples do
       lo = min(lo, s)
       hi = max(hi, s)
-    end
     if hi - lo < 0.001 then
       lo = lo - 0.5
       hi = hi + 0.5
-    end
     let pad_y = 6.0
     let n = len(samples)
     let pts = for i in range(0, n) do
@@ -1015,18 +869,14 @@ fn draw_scope(r: Rect, samples: list, c: record)
       let x = float(r.x) + 4.0 + t * (float(r.w) - 8.0)
       let y = float(r.y) + float(r.h) - pad_y - (samples[i] - lo) / (hi - lo) * (float(r.h) - pad_y * 2.0)
       [x, y]
-    end
     # zero line when it is inside the window
     if lo < 0.0 && hi > 0.0 then
       let zy = float(r.y) + float(r.h) - pad_y - (0.0 - lo) / (hi - lo) * (float(r.h) - pad_y * 2.0)
       draw_line(x1: r.x + 4, y1: int(zy), x2: r.x + r.w - 4, y2: int(zy), r: FAINT.r, g: FAINT.g, b: FAINT.b, a: 120, width: 1)
-    end
     draw_polyline(points: pts, r: c.r, g: c.g, b: c.b, a: 230, width: 1.5)
     let last_p = pts[n - 1]
     draw_circle(center: {x: last_p[0], y: last_p[1]}, radius: 2.5, c: c)
-  end
   nil
-end
 
 fn draw_gauge(r: Rect, v: num, lo: num, hi: num, c: record)
   let cx = float(r.x) + float(r.w) / 2.0
@@ -1037,9 +887,7 @@ fn draw_gauge(r: Rect, v: num, lo: num, hi: num, c: record)
   fill_arc(cx, cy, rad - 7.0, rad, a0, a0 * 2.0, r: ELEV.r, g: ELEV.g, b: ELEV.b, a: 255)
   if frac > 0.002 then
     fill_arc(cx, cy, rad - 7.0, rad, a0, a0 + frac * a0, r: c.r, g: c.g, b: c.b, a: 255)
-  end
   nil
-end
 
 for n in nodes key n.id do
   let k = kind_of(n.kind)
@@ -1060,7 +908,6 @@ for n in nodes key n.id do
     draw_shadow(sr, {radius: rad, blur: 22, spread: 2, dx: 0, dy: 8, color: BG, a: 200})
   else
     draw_shadow(sr, {radius: rad, blur: 12, spread: 0, dx: 0, dy: 4, color: BG, a: 140})
-  end
   draw_rect_rounded(sr, radius: rad, c: if hov then NODE_HOV else NODE_BG end)
   # header band
   let hdr = rect(sx, sy, sw, HDR_H * z)
@@ -1094,10 +941,8 @@ for n in nodes key n.id do
     let pr = PORT_R * z
     if port_hot then
       draw_circle({x: px, y: py}, pr + 4.0 * z, c, 60)
-    end
     draw_circle(center: {x: px, y: py}, radius: pr, c: if wired then c else NODE_BG end)
     circ_outline(cx: px, cy: py, rad: pr, c: c, a: 255, wd: max(1.0, 1.5 * z))
-  end
 
   # output port
   let o = out_port(n)
@@ -1107,7 +952,6 @@ for n in nodes key n.id do
   (drag.mode == "link" && drag.dir == "in" && drag.node != n.id)
   if out_hot then
     draw_circle({x: ox, y: oy}, PORT_R * z + 4.0 * z, c, 60)
-  end
   draw_circle(center: {x: ox, y: oy}, radius: PORT_R * z, c: c)
 
   # preview area
@@ -1132,15 +976,11 @@ for n in nodes key n.id do
       let bs = mono(big, if n.kind == "display" then c else TEXT end)
       let bt = fmt(v)
       draw_text(bt, pos: {x: pr.x + (pr.w - text_width(bt, bs)) / 2.0, y: pr.y + (pr.h - float(big)) / 2.0 - 1.0}, style: bs)
-    end
-  end
 
   if selected then
     rr_outline(sr.inset(-1), radius: rad + 1.0, c: ACCENT, a: 255, wd: max(1.0, 1.5 * z))
   else
     rr_outline(sr, radius: rad, c: OUTLINE, a: 255, wd: 1)
-  end
-end
 
 # marquee
 if drag.mode == "marquee" then
@@ -1151,7 +991,6 @@ if drag.mode == "marquee" then
   let mr = rect(x0, y0, x1 - x0, y1 - y0)
   draw_rect(mr, c: ACCENT, a: 28)
   draw_rect_outline(mr, c: ACCENT, a: 200, width: 1)
-end
 
 # ghost of a node being placed from the palette
 if drag.mode == "place" && over_canvas then
@@ -1159,14 +998,12 @@ if drag.mode == "place" && over_canvas then
   let gr = rect(float(mx) - NODE_W * z / 2.0, float(my) - HDR_H * z / 2.0, NODE_W * z, HDR_H * z)
   draw_rect_rounded(gr, radius: 8.0 * z, c: cat_color(k.cat), a: 40)
   rr_outline(gr, radius: 8.0 * z, c: cat_color(k.cat), a: 160, wd: 1)
-end
 
 # empty-canvas hint
 if len(nodes) == 0 then
   let es = ts(14, FAINT)
   let et = "Drag a node in from the palette, or right-click to add one."
   draw_text(et, pos: {x: canvas.x + (canvas.w - text_width(et, es)) / 2, y: canvas.y + canvas.h / 2 - 8}, style: es)
-end
 
 clip_none()
 
@@ -1184,11 +1021,9 @@ for k in KINDS do
     caps(cat_label(k.cat), x: palette.x + 18, y: py, c: FAINT)
     py = py + 20
     last_cat = k.cat
-  end
   let rr = rect(palette.x + 10, py, palette.w - 20, 28)
   pal_rows = append(pal_rows, {kind: k.id, r: rr})
   py = py + 30
-end
 
 for pr in pal_rows do
   let k = kind_of(pr.kind)
@@ -1200,11 +1035,8 @@ for pr in pal_rows do
   if hov then
     let plus = ts(13, FAINT)
     draw_text("+", pos: {x: pr.r.x + pr.r.w - 10 - text_width("+", plus), y: pr.r.y + 6}, style: plus)
-  end
   if mouse_pressed(0) && hovered(pr.r) && !blocked && drag.mode == "none" then
     drag = {...drag, mode: "place", kind: pr.kind, x0: float(mx), y0: float(my), moved: false}
-  end
-end
 
 # A press-and-release inside the palette without leaving it drops the node
 # at the centre of the view; dragging onto the canvas drops it there.
@@ -1219,7 +1051,6 @@ if drag.mode == "place" && !mouse_down(0) && !over_canvas then
   next_id = next_id + 1
   ops = ops + 1
   drag = {...drag, mode: "none"}
-end
 
 # palette footer: legend
 let leg_y = palette.y + palette.h - 96
@@ -1228,7 +1059,6 @@ caps("TIPS", x: palette.x + 18, y: leg_y, c: FAINT)
 let tips = ["drag a row onto the canvas", "wire output → input", "shift-drag snaps to grid", "scroll pans · ⌘-scroll zooms"]
 for i in range(0, len(tips)) do
   draw_text(tips[i], pos: {x: palette.x + 18, y: leg_y + 20 + i * 17}, style: ts(11, FAINT))
-end
 
 # ── Draw: inspector ──────────────────────────────────────────────────────
 
@@ -1260,7 +1090,6 @@ if one >= 0 then
   for line in desc_lines do
     draw_text(line, pos: {x: ix, y: iy}, style: ts(12, DIM))
     iy = iy + 17
-  end
   iy = iy + 10
   draw_rect(x: ix, y: iy, w: iw, h: 1, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
   iy = iy + 16
@@ -1281,10 +1110,7 @@ if one >= 0 then
       if nv != np[i] then
         np[i] = nv
         changed = true
-      end
       iy = iy + 46
-    end
-  end
 
   # inputs
   let ni = n.ins
@@ -1313,31 +1139,23 @@ if one >= 0 then
           fut = []
           links = links_without_into(links, id: n.id, port_i: i)
           ops = ops + 1
-        end
       else
         let sr = rect(ix, iy + 20, iw, 18)
         let nv = if blocked then ni[i] else bloom.slider(sr, value: ni[i], lo: p.lo, hi: p.hi, opts: {color: DIM, readout: false}) end
         if nv != ni[i] then
           ni[i] = nv
           changed = true
-        end
-      end
       iy = iy + 46
-    end
-  end
 
   if changed then
     if !param_dirty then
       hist = push_hist(hist, nodes, links)
       fut = []
       param_dirty = true
-    end
     nodes = put(nodes, i: one, n: {...n, params: np, ins: ni})
-  end
   if !mouse_down(0) && param_dirty then
     param_dirty = false
     ops = ops + 1
-  end
 
   # output
   iy = iy + 6
@@ -1363,7 +1181,6 @@ if one >= 0 then
     sel = d.sel
     next_id = d.next
     ops = ops + 1
-  end
   if pill_btn(rect(ix + bw + 8, iy, bw, 28), label: "Delete", active: false) && !blocked then
     hist = push_hist(hist, nodes, links)
     fut = []
@@ -1371,7 +1188,6 @@ if one >= 0 then
     nodes = without(nodes, [n.id])
     sel = []
     ops = ops + 1
-  end
 else if len(sel) > 1 then
   caps("SELECTION", x: ix, y: iy, c: FAINT)
   iy = iy + 20
@@ -1381,7 +1197,6 @@ else if len(sel) > 1 then
   for line in lines do
     draw_text(line, pos: {x: ix, y: iy}, style: ts(12, DIM))
     iy = iy + 17
-  end
   iy = iy + 16
   let bw = (iw - 8) / 2
   if pill_btn(rect(ix, iy, bw, 28), label: "Duplicate", active: false) && !blocked then
@@ -1393,7 +1208,6 @@ else if len(sel) > 1 then
     sel = d.sel
     next_id = d.next
     ops = ops + 1
-  end
   if pill_btn(rect(ix + bw + 8, iy, bw, 28), label: "Delete", active: false) && !blocked then
     hist = push_hist(hist, nodes, links)
     fut = []
@@ -1401,7 +1215,6 @@ else if len(sel) > 1 then
     nodes = without(nodes, sel)
     sel = []
     ops = ops + 1
-  end
 else
   caps("PATCH", x: ix, y: iy, c: FAINT)
   iy = iy + 20
@@ -1417,7 +1230,6 @@ else
     draw_text(s.k, pos: {x: ix, y: iy}, style: ts(12, DIM))
     draw_text(s.v, pos: {x: ix + iw - text_width(s.v, mono(12, TEXT)), y: iy}, style: mono(12, TEXT))
     iy = iy + 22
-  end
   iy = iy + 10
   draw_rect(x: ix, y: iy, w: iw, h: 1, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
   iy = iy + 16
@@ -1439,8 +1251,6 @@ else
     draw_text(kv[0], pos: {x: ix, y: iy}, style: ts(11, DIM))
     draw_text(kv[1], pos: {x: ix + iw - text_width(kv[1], ts(11, FAINT)), y: iy}, style: ts(11, FAINT))
     iy = iy + 19
-  end
-end
 
 # ── Draw: header ─────────────────────────────────────────────────────────
 
@@ -1469,7 +1279,6 @@ if pill_btn(b_undo, label: "Undo", active: false) && !blocked && len(hist) > 0 t
   links = h.links
   sel = filter(sel, fn(id) -> idx_of(h.nodes, id) >= 0)
   ops = ops + 1
-end
 if pill_btn(b_redo, label: "Redo", active: false) && !blocked && len(fut) > 0 then
   hist = append(hist, {nodes: nodes, links: links})
   let f = last(fut)
@@ -1478,7 +1287,6 @@ if pill_btn(b_redo, label: "Redo", active: false) && !blocked && len(fut) > 0 th
   links = f.links
   sel = filter(sel, fn(id) -> idx_of(f.nodes, id) >= 0)
   ops = ops + 1
-end
 if pill_btn(b_fit, label: "Fit", active: false) && !blocked then cam = fit_all(nodes, canvas) end
 if pill_btn(b_zoom, label: str(int(round(z * 100.0))) ++ "%", active: false) && !blocked then cam = {...cam, zoom: 1.0} end
 
@@ -1510,7 +1318,6 @@ else if over_canvas then
   "right-click to add a node here"
 else
   ""
-end
 let hint_s = ts(12, FAINT)
 draw_text(hint, pos: {x: (W - text_width(hint, hint_s)) / 2, y: sb.y + 8}, style: hint_s)
 
@@ -1521,7 +1328,6 @@ else
   let ps = ts(12, if playing then C_SOURCE else FAINT end)
   let pt = if playing then "● live" else "○ paused" end
   draw_text(pt, pos: {x: W - 22 - text_width(pt, ps), y: sb.y + 8}, style: ps)
-end
 
 # ── Context menu: the last draw call ─────────────────────────────────────
 
@@ -1536,7 +1342,6 @@ else
   out = append(out, "Fit to view")
   out = append(out, "Reset demo patch")
   out
-end
 let chosen = bloom.menu("ctx", canvas, items, {at: "point"})
 # Separators cannot be chosen, so a chosen item is one of the plain labels.
 let picked = {label: if chosen >= 0 then items[chosen] else "" end}
@@ -1563,7 +1368,6 @@ if chosen >= 0 then
       links = links_without_nodes(links, sel)
       nodes = without(nodes, sel)
       sel = []
-    end
     ops = ops + 1
   else
     if picked.label == "Fit to view" then
@@ -1590,11 +1394,6 @@ if chosen >= 0 then
           sel = [n.id]
           next_id = next_id + 1
           ops = ops + 1
-        end
-      end
-    end
-  end
-end
 
 # ── Persist ──────────────────────────────────────────────────────────────
 
@@ -1602,4 +1401,3 @@ state saved_ops = -1
 if ops != saved_ops then
   panel_store_set("patch", save_patch(nodes, links, next_id))
   saved_ops = ops
-end

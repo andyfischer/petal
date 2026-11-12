@@ -26,17 +26,14 @@ let PEOPLE = const({
 
 pub fn person(key: string) -> record
   field(PEOPLE, key, {name: key, role: "", color: :8a8f9c, away: true})
-end
 
 pub fn first_name(key: string) -> string
   if key == ME then "You" else split(person(key).name, " ")[0] end
-end
 
 pub fn initials(key: string) -> string
   let parts = split(person(key).name, " ")
   let a = char_slice(parts[0], 0, 1)
   if len(parts) > 1 then a ++ char_slice(parts[len(parts) - 1], 0, 1) else a end
-end
 
 # ── Channels ─────────────────────────────────────────────────────────────
 
@@ -55,17 +52,14 @@ pub let CHANNELS = const([
 
 pub fn channel(id: string) -> record
   find(CHANNELS, fn(c) -> c.id == id) ?? CHANNELS[0]
-end
 
 pub fn channel_index(id: string) -> int
   let ids = map(CHANNELS, fn(c) -> c.id)
   max(0, index_of(ids, id))
-end
 
 # The other person in a direct message.
 pub fn dm_peer(c: record) -> string
   find(c.members, fn(k) -> k != ME) ?? ME
-end
 
 # ── Time ─────────────────────────────────────────────────────────────────
 
@@ -75,26 +69,21 @@ pub fn clock_text(minute: int) -> string
   let h12 = if h % 12 == 0 then 12 else h % 12 end
   let ampm = if h < 12 then "AM" else "PM" end
   "{h12}:{pad_start(str(m), 2, "0")} {ampm}"
-end
 
 # ── Seeded history ───────────────────────────────────────────────────────
 # day 0 is yesterday, day 1 today.
 
 fn m(ch: string, who: string, day: int, at: int, text: string, reacts: list, thread: list) -> record
   {id: 0, ch: ch, who: who, day: day, at: at, text: text, reacts: reacts, thread: thread, born: -1.0}
-end
 
 fn r(e: string, who: list) -> record
   {e: e, who: who}
-end
 
 fn t(who: string, at: int, text: string) -> record
   {who: who, at: at, text: text, born: -1.0}
-end
 
 fn hm(h: int, mi: int) -> int
   h * 60 + mi
-end
 
 let SEED = const([
   m("general", "priya", 0, hm(15, 0), "Please welcome @kenji to the support team! He's spent four years at Northwind and already knows our docs better than we do 👋", [r("👋", ["maya", "theo", "lars", "ines", "jordan"]), r("🎉", ["maya", "ines"])], []),
@@ -152,9 +141,7 @@ pub fn seed_messages() -> list
   let out = []
   for i in range(0, len(SEED)) do
     out = append(out, {...SEED[i], id: i + 1})
-  end
   out
-end
 
 # What has been read when the app opens: everything except the newest
 # message in #general and in #design.
@@ -164,9 +151,7 @@ pub fn seed_seen(msgs: list) -> record
     let n = count(msgs, fn(x) -> x.ch == c.id)
     let unread = if c.id == "general" || c.id == "design" then 1 else 0 end
     seen = {...seen, [c.id]: n - unread}
-  end
   seen
-end
 
 # ── The afternoon's script ───────────────────────────────────────────────
 # `at` is seconds after 2:32 PM. Each line is announced by its author typing
@@ -175,7 +160,6 @@ end
 
 fn ev(at: num, ch: string, who: string, typing: num, text: string) -> record
   {at: at, ch: ch, who: who, typing: typing, text: text, thread: ""}
-end
 
 pub let SCRIPT = const([
   ev(6.0, "launch", "theo", 3.0, "Staging smoke tests passed on `release/2.0` ✅"),
@@ -207,7 +191,6 @@ let GENERIC = const(["Makes sense to me.", "👍 on it.", "Noted — I'll follow
 
 pub fn pick(seed: int, salt: int, n: int) -> int
   hash_int(seed, salt) % max(1, n)
-end
 
 pub fn reply_for(text: string, seed: int, who: string) -> string
   let low = lower(text)
@@ -215,11 +198,9 @@ pub fn reply_for(text: string, seed: int, who: string) -> string
   if ends_with(trim(low), "?") then
     let qs = last(POOLS).lines
     return qs[pick(seed, hash_str(who) % 1000, len(qs))]
-  end
   let pool = find(POOLS, fn(p) -> any(p.keys, fn(k) -> index_of(low, k) >= 0))
   let lines = if pool != nil then pool.lines else GENERIC end
   lines[pick(seed, hash_str(who) % 1000, len(lines))]
-end
 
 # Who answers you in a channel: whoever you named, else anyone there but
 # you, preferring whoever spoke last.
@@ -229,24 +210,20 @@ pub fn responder(c: record, text: string, last_other: string, seed: int) -> stri
   let named = addressed(c, text)
   if named != "" then return named end
   if last_other != "" && pick(seed, 3, 3) > 0 then last_other else others[pick(seed, 5, len(others))] end
-end
 
 # The teammate in `c` that `text` names, by @handle or first name; "" for none.
 pub fn addressed(c: record, text: string) -> string
   let low = lower(text)
   let named = find(c.members, fn(k) -> k != ME && (index_of(low, "@" ++ k) >= 0 || index_of(low, lower(first_name(k))) >= 0))
   named ?? ""
-end
 
 # Someone else who will leave a reaction on your message.
 pub fn reactor(c: record, not_who: string, seed: int) -> string
   let others = filter(c.members, fn(k) -> k != ME && k != not_who)
   if len(others) == 0 then "" else others[pick(seed, 11, len(others))] end
-end
 
 pub let QUICK = const(["👍", "🎉", "👀", "🙌"])
 
 # Whether `text` mentions you.
 pub fn mentions_me(text: string) -> bool
   index_of(lower(text), "@jordan") >= 0
-end

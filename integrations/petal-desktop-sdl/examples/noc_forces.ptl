@@ -27,8 +27,6 @@ if len(objects) == 0 then
       mass: mass,
       hue: int(random(0.0, 360.0))
     })
-  end
-end
 
 # Wind from mouse click
 if mouse_down(0) then
@@ -38,14 +36,11 @@ if mouse_down(0) then
     wind_x = -200.0
   else
     wind_x = 200.0
-  end
   wind_timer = 0.3
-end
 
 wind_timer -= delta
 if wind_timer < 0.0 then
   wind_x = wind_x * 0.95
-end
 
 # Apply forces and update
 let new_objects = []
@@ -63,9 +58,6 @@ for obj in objects do
     if abs(obj.vx) > 0.1 then
       if obj.vx > 0.0 then friction_x = -friction_coeff * obj.mass * gravity / obj.mass
       else friction_x = friction_coeff * obj.mass * gravity / obj.mass
-      end
-    end
-  end
 
   # Air drag (proportional to velocity squared)
   let speed = sqrt(obj.vx * obj.vx + obj.vy * obj.vy)
@@ -75,7 +67,6 @@ for obj in objects do
   if speed > 0.1 then
     drag_x = -drag_coeff * obj.vx * speed
     drag_y = -drag_coeff * obj.vy * speed
-  end
 
   # Sum accelerations
   let ax = wind_ax + friction_x + drag_x
@@ -92,7 +83,6 @@ for obj in objects do
     ny = ground_y - radius
     nvy = -nvy * 0.6
     if abs(nvy) < 20.0 then nvy = 0.0 end
-  end
 
   # Wall bounce
   if nx < radius then nx = radius; nvx = abs(nvx) * 0.7 end
@@ -105,7 +95,6 @@ for obj in objects do
     x: nx, y: ny, vx: nvx, vy: nvy,
     mass: obj.mass, hue: obj.hue
   })
-end
 objects = new_objects
 
 # === Drawing ===
@@ -116,7 +105,6 @@ for i in range(0, 8) do
   let gy = i * int(sh) / 8
   let gb = 30 + i * 3
   draw_rect(x: 0, y: gy, w: int(sw), h: int(sh) / 8 + 1, r: 20, g: 20, b: gb)
-end
 
 # Wind indicator
 if abs(wind_x) > 5.0 then
@@ -131,7 +119,6 @@ if abs(wind_x) > 5.0 then
   draw_line(arrow_x + arrow_len * dir, arrow_y,
     arrow_x + arrow_len * dir - 10 * dir, arrow_y + 5, 200, 200, 100)
   draw_text("WIND", x: arrow_x - 15, y: arrow_y - 20, size: 12, r: 200, g: 200, b: 100)
-end
 
 # Ground
 draw_rect(x: 0, y: int(ground_y), w: int(sw), h: int(sh) - int(ground_y), r: 40, g: 50, b: 35)
@@ -176,8 +163,6 @@ for obj in objects do
       int(obj.x + obj.vx / vd * vlen),
       int(obj.y + obj.vy / vd * vlen),
       200, 200, 200)
-  end
-end
 
 draw_text("Forces: Gravity, Wind & Friction", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
 draw_text("Click left/right to apply wind", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)

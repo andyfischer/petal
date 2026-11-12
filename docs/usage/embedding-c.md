@@ -279,7 +279,7 @@ vm.native("raycast", petal::fx::ReadsHostData, [&](petal::Call& c) {
 
 ```petal ignore
 import vec2
-import engine        // your interface package: it declares raycast
+import engine        # your interface package: it declares raycast
 let hit = raycast(pos, vec3(0, -1, 0), 2.0)
 let grounded = hit != nil && hit.dist < 0.6
 ```
@@ -350,7 +350,7 @@ vm.emitter("body", "physics", "declare_body");    // custom tag
 
 ```petal ignore
 import vec2
-import engine        // your interface package: it declares draw_mesh and sfx
+import engine        # your interface package: it declares draw_mesh and sfx
 draw_mesh("cube", vec3(0, 1, 0), rot, 1.0, {color: :cc3333})
 sfx("jump", {volume: 0.8})
 ```
@@ -1064,10 +1064,10 @@ host: the values a settings screen lists, a `--set NAME=VALUE` overrides,
 and a drag moves. The value can be any data:
 
 ```petal
-let SPEED = tunable(4.0, 0, 10)                       // a number, with bounds
+let SPEED = tunable(4.0, 0, 10)                       # a number, with bounds
 let START = tunable("title", options: ["title", "play"])
 let DEBUG = tunable(false)
-pub let LOOK = tunable({bloom: 0.3, tint: :ff2e88})   // every number a knob
+pub let LOOK = tunable({bloom: 0.3, tint: :ff2e88})   # every number a knob
 ```
 
 `let X = tunable(v) * 2`, `var X = tunable(v)` and a `tunable` below the top

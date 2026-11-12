@@ -17,12 +17,10 @@ enum K
   w(code: 6, label: "w"),
   x(code: 7, label: "x"),
   y(code: 8, label: "y"),
-end
 
 enum Op
   move(dx, dy),
   rest,
-end
 
 let N = 200000
 
@@ -31,19 +29,15 @@ fn empty_loop()
   var sum = 0
   for i in range(0, N) do
     set sum = sum + 1
-  end
   sum
-end
 
 # A record field read: the figure the enum reads are compared to.
 fn record_read()
-  let r = { code: 5, label: "v" }
+  let r = {code: 5, label: "v"}
   var sum = 0
   for i in range(0, N) do
     set sum = sum + r.code
-  end
   sum
-end
 
 # `k.code` with the variant in a local.
 fn local_read()
@@ -51,18 +45,14 @@ fn local_read()
   var sum = 0
   for i in range(0, N) do
     set sum = sum + k.code
-  end
   sum
-end
 
 # `K.v.code`, written out at the read.
 fn path_read()
   var sum = 0
   for i in range(0, N) do
     set sum = sum + K.v.code
-  end
   sum
-end
 
 # A payload field read by name.
 fn payload_read()
@@ -70,9 +60,7 @@ fn payload_read()
   var sum = 0
   for i in range(0, N) do
     set sum = sum + op.dy
-  end
   sum
-end
 
 # `K.all`, read and dropped.
 fn all_read()
@@ -80,9 +68,7 @@ fn all_read()
   for i in range(0, N) do
     let all = K.all
     set sum = sum + 1
-  end
   sum
-end
 
 # `k.code` over every variant: a read site that sees all of them.
 fn all_walk()
@@ -90,10 +76,7 @@ fn all_walk()
   for i in range(0, N / 8) do
     for k in K.all do
       set sum = sum + k.code
-    end
-  end
   sum
-end
 
 print(empty_loop())
 print(record_read())

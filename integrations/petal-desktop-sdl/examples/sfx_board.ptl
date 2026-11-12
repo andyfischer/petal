@@ -32,26 +32,21 @@ fn pad_rect(i)
   let col = i % cols
   let row = i / cols
   {x: pad + col * (cell_w + pad), y: top + row * (cell_h + pad), w: cell_w, h: cell_h}
-end
 
 fn inside(r, x, y)
   x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
-end
 
 # A sound is an event: fire it on the frame the key or button went down.
 # Each pad is panned by its column so the stereo field is audible.
 fn play(i)
   let pan = float(i % cols) / float(cols - 1) * 1.2 - 0.6
   sfx(presets[i], {pan: pan})
-end
 
 for i in range(0, len(presets)) do
   if key_pressed(str(i + 1)) || (mouse_pressed(0) && inside(pad_rect(i), x: mx, y: my)) then
     play(i)
     last = presets[i]
     flash = 1.0
-  end
-end
 
 if key_pressed("r") then
   zaps += 1
@@ -62,7 +57,6 @@ if key_pressed("r") then
          volume: 0.35, seed: zaps})
   last = "synth #{zaps} ({int(f)} Hz)"
   flash = 1.0
-end
 
 flash = max(0.0, flash - dt() * 3.0)
 
@@ -81,9 +75,7 @@ for i in range(0, len(presets)) do
   draw_rect_outline(r.x, r.y, r.w, r.h, c.r, c.g, c.b)
   draw_text("{i + 1}", x: r.x + 12, y: r.y + 10, size: 18, r: c.r, g: c.g, b: c.b)
   draw_text(presets[i], x: r.x + 12, y: r.y + r.h - 36, size: 22, r: 240, g: 240, b: 250)
-end
 
 if last != "" then
   let a = 140 + int(115.0 * flash)
   draw_text("last: {last}", x: pad, y: sh - 40, size: 18, r: a, g: a, b: a)
-end

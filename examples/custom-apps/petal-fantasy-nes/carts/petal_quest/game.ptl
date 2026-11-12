@@ -160,14 +160,11 @@ fn game() -> record
   if g == nil then
     g = new_game()
     set _pq_game = g
-  end
   g
-end
 
 fn put_game(g: record) -> int
   set _pq_game = g
   0
-end
 
 # A fresh run: three lives, no score, back at world 1.
 fn new_game() -> record
@@ -187,14 +184,12 @@ fn new_game() -> record
     opts: {music: true, sfx: true, crt: false, scale: 3},
     bonus: 0
   }
-end
 
 fn new_hero(x: num, y: num) -> record
   {x: float(x), y: float(y), vx: 0.0, vy: 0.0,
     face: 1, ground: false, coyote: 0, buffer: 0,
     mode: "live",              # live | hurt | dying
     timer: 0, invuln: 0, star: 0, anim_t: 0.0}
-end
 
 # ── Sound effects ─────────────────────────────────────────────────────────
 # Nine effects, driven straight onto the chip.
@@ -261,7 +256,6 @@ fn sfx_bank() -> record
       pitch: [0.0, -2.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0,
         -10.0, -11.0, -12.0, -13.0, -14.0, -15.0, -16.0, -17.0]}
   }
-end
 
 state var _pq_sfx = nil
 
@@ -270,16 +264,13 @@ fn sfx_state() -> record
   if s == nil then
     s = {p2: {name: "", t: 0}, noise: {name: "", t: 0}, frame: -1, bank: sfx_bank()}
     set _pq_sfx = s
-  end
   s
-end
 
 # Trigger an effect. Unknown names are ignored, and the SOUND option is
 # checked here rather than at forty call sites.
 fn sfx(name: string) -> int
   if !game().opts.sfx then
     return 0
-  end
   let s = sfx_state()
   let d = s.bank[name] ?? nil
   if d != nil then
@@ -288,10 +279,7 @@ fn sfx(name: string) -> int
     if !held then
       s[d.ch] = {name: name, t: 0}
       set _pq_sfx = s
-    end
-  end
   0
-end
 
 # Advance both effect channels and write the chip. Must run *after*
 # `music_tick()`: the last write of the frame is the one the APU hears, and
@@ -300,7 +288,6 @@ fn sfx_tick() -> int
   let s = sfx_state()
   if s.frame == frame_count() then
     return 0
-  end
   s.frame = frame_count()
   for ch in ["p2", "noise"] do
     let v = s[ch]
@@ -315,14 +302,9 @@ fn sfx_tick() -> int
           apu_pulse(1, n, d.duty, d.vol[v.t])
         else
           apu_noise(noise_period(n), d.vol[v.t], d.mode)
-        end
         s[ch] = {name: v.name, t: v.t + 1}
-      end
-    end
-  end
   set _pq_sfx = s
   0
-end
 
 # The three tunes, built once. `song_gameplay()` parses tracker text, so
 # rebuilding it every frame would cost more than the rest of the cart.
@@ -332,9 +314,7 @@ fn tunes() -> record
     let g = song_gameplay()
     t = {title: song_title(), play: g, boss: boss_song(g)}
     set _pq_tunes = t
-  end
   t
-end
 
 # The boss variation: the gameplay loop a fourth lower and a step faster.
 # Patterns 0-3 are tonal and 4 is the drum kit, which must not be transposed
@@ -346,8 +326,6 @@ fn boss_song(g: record) -> record
       pats = append(pats, transpose_rows(g.patterns[i], -5))
     else
       pats = append(pats, g.patterns[i])
-    end
-  end
   song({
     name: "boss",
     ticks: max(2, g.ticks - 1),
@@ -356,7 +334,6 @@ fn boss_song(g: record) -> record
     order: g.order,
     loop_at: 0
   })
-end
 
 # ── Artwork ───────────────────────────────────────────────────────────────
 # `define_art` and `define_meta` do their string-to-digits work in Petal, so
@@ -375,54 +352,43 @@ fn define_group(i: num, world: num) -> int
     let hs = gfx.hero_grids()
     for p in range(0, 4) do
       define_meta(T_HERO + p * 4, hs[p], PAL_HERO)
-    end
   else if i == 2 then
     let hs = gfx.hero_grids()
     for p in range(4, 8) do
       define_meta(T_HERO + p * 4, hs[p], PAL_HERO)
-    end
   else if i == 3 then
     let ss = gfx.slime_grids()
     let js = gfx.hopper_grids()
     for p in range(0, 2) do
       define_meta(T_SLIME + p * 4, ss[p], PAL_ENEMY)
       define_meta(T_HOP + p * 4, js[p], PAL_ENEMY)
-    end
   else if i == 4 then
     let bs = gfx.bat_grids()
     for p in range(0, 2) do
       define_meta(T_BAT + p * 4, bs[p], PAL_BOSS)
-    end
   else if i == 5 then
     let ks = gfx.boss_grids()
     for p in range(0, 2) do
       define_meta(T_BOSS + p * 16, ks[p], PAL_BOSS)
-    end
   else if i == 6 then
     define_art_run(T_COIN, gfx.coin_grids())
     define_art_run(T_HEART, gfx.pickup_grids())
     let ps = gfx.poof_grids()
     for p in range(0, 3) do
       define_meta(T_POOF + p * 4, ps[p], PAL_ITEM)
-    end
   else
     define_art_run(T_TITLE, gfx.title_grids())
-  end
   0
-end
 
 fn ensure_art(world: num) -> int
   let a = get _pq_art
   if a == nil || a.world != world then
     for i in range(0, ART_GROUPS) do
       define_group(i, world)
-    end
     set _pq_art = {world: world}
   else
     define_group(frame_count() % ART_GROUPS, world)
-  end
   0
-end
 
 # ── Palettes ──────────────────────────────────────────────────────────────
 # Background 0-3 come from the level; sprites 4-7 are fixed, so an enemy
@@ -435,16 +401,13 @@ fn set_sprite_palettes() -> int
   palette(PAL_ITEM, maroon, orange, yellow)
   palette(PAL_BOSS, maroon, red, white)
   0
-end
 
 fn set_level_palettes(lv: record) -> int
   set_backdrop(lv.backdrop)
   for i in range(0, 4) do
     palette(i, lv.pal[i][0], lv.pal[i][1], lv.pal[i][2])
-  end
   set_sprite_palettes()
   0
-end
 
 # ── Building a level ──────────────────────────────────────────────────────
 # The chunk strings become three parallel int grids — tile, palette, kind —
@@ -472,8 +435,6 @@ fn terrain_slot(ch: string) -> int
     when "^" -> B_SPIKE
     when "F" -> B_BANNER
     when _ -> B_AIR
-  end
-end
 
 # Which background sub-palette each slot is drawn in, per world. Three lists
 # of sixteen, hand-picked: the same shape is stone in the caves and marble in
@@ -487,16 +448,12 @@ fn slot_palettes(world: num) -> list
     [0, 0, 0, 1, 1, 1, 1, 1, 1, 3, 3, 2, 2, 2, 1, 1]
   else
     [0, 0, 0, 1, 1, 1, 1, 1, 3, 1, 3, 2, 2, 2, 1, 3]
-  end
-end
 
 fn slot_kind(slot: num) -> int
   if slot >= B_LEDGE_L && slot <= B_LEDGE_R then K_ONEWAY
   else if slot >= B_TOP && slot <= B_HARD then K_SOLID
   else if slot == B_SPIKE then K_HURT
   else K_AIR
-  end
-end
 
 # One legend character -> a spawned object, or nil for terrain.
 fn object_kind(ch: string)
@@ -510,8 +467,6 @@ fn object_kind(ch: string)
     when "S" -> "star"
     when "K" -> "boss"
     when _ -> nil
-  end
-end
 
 fn build_level(n: num, src: record, rev: num) -> record
   let chunks = src.chunks
@@ -525,7 +480,6 @@ fn build_level(n: num, src: record, rev: num) -> record
     tiles = append(tiles, [])
     cpal = append(cpal, [])
     sol = append(sol, [])
-  end
 
   let spawn = {x: 32.0, y: 32.0}
   let spawns = []            # enemies and pickups, as templates
@@ -562,17 +516,11 @@ fn build_level(n: num, src: record, rev: num) -> record
             boss_at = {x: wx - 8.0, y: wy - 24.0}
           else
             spawns = append(spawns, {kind: obj, x: wx, y: wy - 8.0})
-          end
-        end
         if slot == B_BANNER then
           goal_x = min(goal_x, float((ci * CHUNK_W + c) * 8))
-        end
-      end
       tiles[r] = trow
       cpal[r] = prow
       sol[r] = srow
-    end
-  end
 
   {
     id: n,
@@ -593,7 +541,6 @@ fn build_level(n: num, src: record, rev: num) -> record
     boss_x: src.boss,
     goal_x: goal_x
   }
-end
 
 # The built level, rebuilt when the level number changes — or when the level
 # *data* changes under a hot reload. `maps.level(n)` only wraps module-level
@@ -607,9 +554,7 @@ fn level_cache(n: num) -> record
   if c == nil || c.id != n || c.chunks != src.chunks || c.world != src.world then
     c = build_level(n, src, rev: if c == nil then 1 else c.rev + 1 end)
     set _pq_level = c
-  end
   c
-end
 
 # ── Collision ─────────────────────────────────────────────────────────────
 # The prelude's `solid_at` reads the background map, which here holds only a
@@ -627,8 +572,6 @@ fn cell_kind(lv: record, cx: num, cy: num)
     K_AIR                    # below the level: the pit
   else
     lv.sol[r][cx]
-  end
-end
 
 # Does a box overlap any fully solid cell?
 fn box_solid(lv: record, x: num, y: num, w: num, h: num) -> bool
@@ -641,11 +584,7 @@ fn box_solid(lv: record, x: num, y: num, w: num, h: num) -> bool
     for cx in range(x0, x1 + 1) do
       if cell_kind(lv, cx, cy) == K_SOLID then
         hit = true
-      end
-    end
-  end
   hit
-end
 
 fn box_hurts(lv: record, x: num, y: num, w: num, h: num) -> bool
   let x0 = int(floor(x / 8.0))
@@ -657,11 +596,7 @@ fn box_hurts(lv: record, x: num, y: num, w: num, h: num) -> bool
     for cx in range(x0, x1 + 1) do
       if cell_kind(lv, cx, cy) == K_HURT then
         hit = true
-      end
-    end
-  end
   hit
-end
 
 # A one-way ledge blocks only a box whose feet were above it and are now
 # inside it — which is the whole of "you can jump up through a platform and
@@ -670,22 +605,17 @@ end
 fn oneway_block(lv: record, x: num, w: num, old_bottom: num, new_bottom: num) -> bool
   if new_bottom <= old_bottom then
     return false
-  end
   let cy = int(floor((new_bottom - 0.01) / 8.0))
   let top = float(cy * 8)
   if old_bottom > top then
     return false
-  end
   let x0 = int(floor(x / 8.0))
   let x1 = int(floor((x + w - 1) / 8.0))
   let hit = false
   for cx in range(x0, x1 + 1) do
     if cell_kind(lv, cx, cy) == K_ONEWAY then
       hit = true
-    end
-  end
   hit
-end
 
 # Move a box through the level, one pixel at a time, X then Y. Returns where
 # it ended up plus which axes were blocked — the caller kills that axis's
@@ -706,9 +636,7 @@ fn move_body(lv: record, x: num, y: num, w: num, h: num, dx: num, dy: num, drop:
       hx = true
     else
       cx = nx
-    end
     rem = rem - s
-  end
 
   step = float(sign(dy))
   rem = abs(dy)
@@ -721,19 +649,15 @@ fn move_body(lv: record, x: num, y: num, w: num, h: num, dx: num, dy: num, drop:
       hy = true
     else
       cy = ny
-    end
     rem = rem - s
-  end
 
   {x: cx, y: cy, hx: hx, hy: hy, ground: hy && dy > 0.0}
-end
 
 # Is there ground directly under this box? A one-pixel probe, which is what
 # coyote time and the walkers' ledge test both want.
 fn grounded(lv: record, x: num, y: num, w: num, h: num) -> bool
   box_solid(lv, x, y + 1.0, w, h) ||
   oneway_block(lv, x, w, old_bottom: y + float(h), new_bottom: y + float(h) + 1.0)
-end
 
 # ── Painting the map ──────────────────────────────────────────────────────
 # The map is 64 cells wide and wraps; a level is up to 144. So the map is a
@@ -750,10 +674,7 @@ fn paint_column(lv: record, c: num) -> int
     let mx = pmod(c, 64)
     for r in range(0, LEVEL_ROWS) do
       set_tile(mx, r + ROW0, lv.tiles[r][c], lv.cpal[r][c])
-    end
-  end
   0
-end
 
 fn repaint_all(lv: record, cam: num) -> int
   let c0 = int(floor(cam / 8.0))
@@ -761,10 +682,8 @@ fn repaint_all(lv: record, cam: num) -> int
   let hi = min(lv.cols - 1, c0 + PAINT_AHEAD)
   for c in range(lo, hi + 1) do
     paint_column(lv, c)
-  end
   set _pq_paint = {id: lv.rev, lo: lo, hi: hi}
   0
-end
 
 fn paint_window(lv: record, cam: num) -> int
   let p = get _pq_paint
@@ -778,19 +697,15 @@ fn paint_window(lv: record, cam: num) -> int
     let phi = p.hi
     for c in range(phi + 1, hi + 1) do
       paint_column(lv, c)
-    end
     for c in range(lo, min(plo, hi + 1)) do
       paint_column(lv, c)
-    end
     plo = min(plo, lo)
     phi = max(phi, hi)
     # The window is 64 cells; anything older than that has been overwritten
     # by the wrap and must be repainted if the camera ever comes back.
     plo = max(plo, phi - 63)
     set _pq_paint = {id: lv.rev, lo: plo, hi: phi}
-  end
   0
-end
 
 # ── The HUD ───────────────────────────────────────────────────────────────
 # Map rows 0-3, held still at scroll x = 0 by `lock_top(32)` while the play
@@ -815,16 +730,13 @@ fn draw_hud(g: record, lv: record) -> int
     # rule between the status bar and the play area.
     map_text_center(3, lv.name, PAL_HUD)
     set _pq_hud = {key: key}
-  end
   0
-end
 
 # Force the next `draw_hud` to redraw, after something else has written over
 # the status rows (a title screen, a pause banner).
 fn dirty_hud() -> int
   set _pq_hud = nil
   0
-end
 
 # ── Starting a level ──────────────────────────────────────────────────────
 
@@ -839,7 +751,6 @@ fn start_level(g: record, from_checkpoint: bool) -> record
     # chunk and let gravity find the floor.
     x = float(cp * CHUNK_W * 8 + 24)
     y = float(ROW0 * 8 + 8)
-  end
   g.hero = new_hero(x, y)
   g.hero.invuln = INVULN
   g.ents = spawn_entities(lv)
@@ -851,11 +762,9 @@ fn start_level(g: record, from_checkpoint: bool) -> record
   if !from_checkpoint then
     g.checkpoint = 0
     g.coins = 0
-  end
   repaint_all(lv, max(0.0, x - 128.0))
   dirty_hud()
   g
-end
 
 fn spawn_entities(lv: record) -> list
   let out = []
@@ -864,23 +773,16 @@ fn spawn_entities(lv: record) -> list
       out = append(out, {kind: s.kind, x: s.x, y: s.y, hx: s.x, hy: s.y,
         vx: if s.kind == "walker" then -0.45 else 0.0 end,
         vy: 0.0, face: -1, t: 0, alive: true})
-    end
-  end
   out
-end
 
 fn spawn_items(lv: record) -> list
   let out = []
   for c in lv.coins do
     out = append(out, {kind: "coin", x: c.x, y: c.y, taken: false})
-  end
   for s in lv.spawns do
     if s.kind == "life" || s.kind == "star" then
       out = append(out, {kind: s.kind, x: s.x, y: s.y + 8.0, taken: false})
-    end
-  end
   out
-end
 
 # ── The hero ──────────────────────────────────────────────────────────────
 # The part that has to feel right. Three things do most of that work:
@@ -898,7 +800,6 @@ end
 
 fn hero_box(h: record) -> record
   {x: h.x, y: h.y, w: HERO_BW, h: HERO_BH}
-end
 
 fn update_hero(g: record, lv: record, boss_lock: num) -> record
   let h = g.hero
@@ -909,7 +810,6 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
     h.y = h.y + h.vy
     g.hero = h
     return g
-  end
 
   let ctl = h.mode == "live"
   let dx = if ctl then btn_dx() else 0 end
@@ -924,22 +824,18 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
     h.vx = approach(h.vx, 0.0, FRICTION)
   else
     h.vx = approach(h.vx, 0.0, FRICTION * 0.25)
-  end
   if abs(h.vx) > top && h.ground then
     h.vx = approach(h.vx, float(sign(h.vx)) * top, FRICTION)
-  end
 
   # Coyote time and the jump buffer, both counted down in frames.
   if h.ground then
     h.coyote = COYOTE
   else if h.coyote > 0 then
     h.coyote = h.coyote - 1
-  end
   if ctl && btnp("a") then
     h.buffer = BUFFER
   else if h.buffer > 0 then
     h.buffer = h.buffer - 1
-  end
 
   if h.buffer > 0 && h.coyote > 0 && h.mode == "live" then
     h.vy = JUMP_V
@@ -947,7 +843,6 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
     h.coyote = 0
     h.ground = false
     sfx("jump")
-  end
 
   # Variable jump height: while A is not held, the *rise* is capped rather
   # than scaled. Scaling it every frame would compound to a dead stop in two
@@ -955,7 +850,6 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
   # gravity, which is what a short hop should feel like.
   if h.vy < JUMP_V * JUMP_CUT && !btn("a") && h.mode == "live" then
     h.vy = JUMP_V * JUMP_CUT
-  end
 
   h.vy = min(h.vy + GRAV, MAX_FALL)
 
@@ -968,30 +862,24 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
   if m.hy then
     if h.vy > 0.0 && !was_ground then
       sfx("land")
-    end
     h.vy = 0.0
-  end
   h.ground = m.ground || grounded(lv, x: h.x, y: h.y, w: HERO_BW, h: HERO_BH)
 
   # The boss arena is fenced by the camera, not by tiles.
   if boss_lock > 0.0 then
     h.x = clamp(h.x, lo: boss_lock + 8.0, hi: boss_lock + 256.0 - 8.0 - float(HERO_BW))
-  end
   h.x = clamp(h.x, lo: 0.0, hi: float(lv.cols * 8 - HERO_BW))
 
   if h.mode == "hurt" then
     h.timer = h.timer - 1
     if h.timer <= 0 then
       h.mode = "live"
-    end
-  end
   if h.invuln > 0 then h.invuln = h.invuln - 1 end
   if h.star > 0 then h.star = h.star - 1 end
   h.anim_t = h.anim_t + 1.0 / 60.0
 
   g.hero = h
   g
-end
 
 # Which of the eight poses to draw, from the state the hero is in.
 fn hero_pose(h: record)
@@ -1003,8 +891,6 @@ fn hero_pose(h: record)
     anim([2, 3, 4, 3], 5.0 + abs(h.vx) * 3.0, h.anim_t)
   else
     anim([0, 1], 1.6, h.anim_t)
-  end
-end
 
 fn draw_hero(h: record) -> int
   # Blink while invulnerable, but never on the frame the player is actually
@@ -1014,9 +900,7 @@ fn draw_hero(h: record) -> int
     let pal = if h.star > 0 && pmod(frame_count(), 6) < 3 then PAL_ITEM else PAL_HERO end
     let m = meta(T_HERO + hero_pose(h) * 4, 2, 2, pal)
     draw_meta_world(h.x - HERO_OX, h.y - HERO_OY, m, flip(h.face < 0, false))
-  end
   0
-end
 
 # ── Damage, death and respawn ─────────────────────────────────────────────
 
@@ -1024,7 +908,6 @@ fn hurt_hero(g: record, from_x: num) -> record
   let h = g.hero
   if h.mode != "live" || h.invuln > 0 || h.star > 0 then
     return g
-  end
   g.lives = g.lives - 1
   h.mode = "hurt"
   h.timer = 26
@@ -1035,9 +918,7 @@ fn hurt_hero(g: record, from_x: num) -> record
   sfx("hit")
   if g.lives <= 0 then
     g = kill_hero(g)
-  end
   g
-end
 
 # The death animation: a hop, then a fall through everything. Respawn (or
 # game over) happens when the timer runs out.
@@ -1050,12 +931,10 @@ fn kill_hero(g: record) -> record
   g.hero = h
   sfx("hit")
   g
-end
 
 fn lose_life(g: record) -> record
   g.lives = g.lives - 1
   kill_hero(g)
-end
 
 # ── Enemies ───────────────────────────────────────────────────────────────
 # Three behaviours, each written to be legible at a glance from across the
@@ -1069,8 +948,6 @@ fn ent_box(e: record) -> record
     {x: e.x + 2.0, y: e.y + 3.0, w: 12, h: 13}
   else
     {x: e.x + 2.0, y: e.y + 5.0, w: 12, h: 11}
-  end
-end
 
 fn update_walker(e: record, lv: record) -> record
   e.vy = min(e.vy + GRAV, MAX_FALL)
@@ -1081,13 +958,11 @@ fn update_walker(e: record, lv: record) -> record
   let edge = !grounded(lv, x: m.x + (if e.vx < 0.0 then -2.0 else 2.0 end), y: m.y, w: b.w, h: b.h)
   if m.hx || (m.ground && edge) then
     e.vx = -e.vx
-  end
   e.face = sign(e.vx)
   e.x = m.x - 2.0
   e.y = m.y - 5.0
   if m.hy then e.vy = 0.0 end
   e
-end
 
 fn update_jumper(e: record, lv: record, hero: record) -> record
   e.vy = min(e.vy + GRAV, MAX_FALL)
@@ -1101,15 +976,12 @@ fn update_jumper(e: record, lv: record, hero: record) -> record
       e.vy = -4.3
       e.vx = if hero.x < e.x then -0.95 else 0.95 end
       e.face = sign(e.vx)
-    end
-  end
   let m = move_body(lv, x: b.x, y: b.y, w: b.w, h: b.h, dx: e.vx, dy: e.vy, drop: false)
   if m.hx then e.vx = -e.vx * 0.5 end
   if m.hy then e.vy = 0.0 end
   e.x = m.x - 2.0
   e.y = m.y - 3.0
   e
-end
 
 fn update_flyer(e: record, lv: record, hero: record) -> record
   e.t = e.t + 1
@@ -1119,13 +991,11 @@ fn update_flyer(e: record, lv: record, hero: record) -> record
   let target = e.hx
   if abs(hero.x - e.hx) < 128.0 then
     target = hero.x
-  end
   e.vx = approach(e.vx, clamp((target - e.x) * 0.02, lo: -1.1, hi: 1.1), 0.06)
   e.x = e.x + e.vx
   e.y = e.hy + sin(float(e.t) * 0.05) * 22.0
   e.face = if e.vx < 0.0 then -1 else 1 end
   e
-end
 
 fn update_entities(g: record, lv: record, cam: num) -> record
   let es = g.ents
@@ -1139,13 +1009,9 @@ fn update_entities(g: record, lv: record, cam: num) -> record
         e = update_jumper(e, lv, hero)
       else
         e = update_flyer(e, lv, hero)
-      end
       es[i] = e
-    end
-  end
   g.ents = es
   g
-end
 
 fn ent_tile(e: record)
   let base = if e.kind == "walker" then T_SLIME
@@ -1153,17 +1019,13 @@ fn ent_tile(e: record)
   else T_BAT end
   let fps = if e.kind == "flyer" then 8.0 else 3.5 end
   base + anim([0, 1], fps, time() + float(int(e.hx)) * 0.01) * 4
-end
 
 fn draw_entities(g: record, cam: num) -> int
   for e in g.ents do
     if e.alive && e.x > cam - 24.0 && e.x < cam + 264.0 then
       let pal = if e.kind == "flyer" then PAL_BOSS else PAL_ENEMY end
       draw_meta_world(e.x, e.y, meta(ent_tile(e), 2, 2, pal), flip(e.face < 0, false))
-    end
-  end
   0
-end
 
 # Hero vs enemies: landing on one kills it, touching one any other way hurts.
 # The stomp test is "falling, and the hero's feet are in the enemy's top
@@ -1178,7 +1040,6 @@ fn kill_entity(g: record, i: num) -> record
   g.poofs = append(g.poofs, {x: e.x, y: e.y, t: 0})
   sfx("stomp")
   g
-end
 
 fn collide_entities(g: record) -> record
   let hb = hero_box(g.hero)
@@ -1198,12 +1059,7 @@ fn collide_entities(g: record) -> record
           g = kill_entity(g, i)
         else
           g = hurt_hero(g, e.x)
-        end
-      end
-    end
-  end
   g
-end
 
 # ── Pickups ───────────────────────────────────────────────────────────────
 
@@ -1221,7 +1077,6 @@ fn collide_items(g: record) -> record
         sfx("coin")
         if g.coins % 25 == 0 then
           g.lives = g.lives + 1
-        end
       else if it.kind == "life" then
         g.lives = g.lives + 1
         g.poofs = append(g.poofs, {x: it.x - 4.0, y: it.y - 4.0, t: 0})
@@ -1232,12 +1087,8 @@ fn collide_items(g: record) -> record
         g.hero = h
         g.poofs = append(g.poofs, {x: it.x - 4.0, y: it.y - 4.0, t: 0})
         sfx("power")
-      end
-    end
-  end
   g.items = its
   g
-end
 
 fn draw_items(g: record, cam: num) -> int
   let coin_t = anim([0, 1, 2, 1], 8.0)
@@ -1249,11 +1100,7 @@ fn draw_items(g: record, cam: num) -> int
         sprite_world(it.x, it.y, T_HEART, PAL_BOSS)
       else
         sprite_world(it.x, it.y, T_STAR + anim([0, 1], 10.0), PAL_ITEM)
-      end
-    end
-  end
   0
-end
 
 # ── Effects ───────────────────────────────────────────────────────────────
 # One 16x16 burst, three frames, eighteen frames long. Used for every death
@@ -1266,19 +1113,14 @@ fn update_poofs(g: record) -> record
     p.t = p.t + 1
     if p.t < 18 then
       out = append(out, p)
-    end
-  end
   g.poofs = out
   g
-end
 
 fn draw_poofs(g: record) -> int
   for p in g.poofs do
     let f = clamp(int(p.t / 6), lo: 0, hi: 2)
     draw_meta_world(p.x, p.y, meta(T_POOF + f * 4, 2, 2, PAL_ITEM), 0)
-  end
   0
-end
 
 # ── The Rift Warden ───────────────────────────────────────────────────────
 # The boss is a three-beat loop the player can read: it drifts with its eye
@@ -1287,11 +1129,9 @@ end
 
 fn new_boss(at: record) -> record
   {x: at.x, y: at.y, vx: 0.7, hp: BOSS_HP, phase: "open", t: 0, flash: 0}
-end
 
 fn boss_box(bs: record) -> record
   {x: bs.x + 4.0, y: bs.y + 6.0, w: 24, h: 22}
-end
 
 fn update_boss(g: record, cam: num) -> record
   let bs = g.boss
@@ -1307,7 +1147,6 @@ fn update_boss(g: record, cam: num) -> record
   else if bs.x > cam + 200.0 then
     bs.x = cam + 200.0
     bs.vx = -abs(bs.vx)
-  end
 
   if bs.phase == "open" then
     bs.y = approach(bs.y, 48.0, 0.6)
@@ -1320,11 +1159,9 @@ fn update_boss(g: record, cam: num) -> record
       g.shots = append(g.shots, {x: bs.x + 12.0, y: bs.y + 20.0,
         vx: dx / d * 1.9, vy: dy / d * 1.9})
       sfx("select")
-    end
     if bs.t > 150 then
       bs.phase = "shut"
       bs.t = 0
-    end
   else if bs.phase == "shut" then
     # Sinks to stomping height and holds there — the window. 145 is chosen
     # against the hero's numbers, not by eye: his jump apexes with his feet
@@ -1334,18 +1171,14 @@ fn update_boss(g: record, cam: num) -> record
     if bs.t > 110 then
       bs.phase = "open"
       bs.t = 0
-    end
   else
     bs.y = approach(bs.y, 40.0, 2.2)
     if bs.t > 40 then
       bs.phase = "open"
       bs.t = 0
-    end
-  end
 
   g.boss = bs
   g
-end
 
 fn collide_boss(g: record) -> record
   let bs = g.boss
@@ -1371,13 +1204,9 @@ fn collide_boss(g: record) -> record
         sfx("boom")
         g.score = g.score + SCORE_BOSS * 2
         set_scene("victory")
-      end
     else
       g = hurt_hero(g, bs.x)
-    end
-  end
   g
-end
 
 fn update_shots(g: record, cam: num) -> record
   let out = []
@@ -1389,11 +1218,8 @@ fn update_shots(g: record, cam: num) -> record
       g = hurt_hero(g, s.x)
     else if s.x > cam - 8.0 && s.x < cam + 264.0 && s.y > 24.0 && s.y < 240.0 then
       out = append(out, s)
-    end
-  end
   g.shots = out
   g
-end
 
 fn draw_boss(g: record, cam: num) -> int
   let bs = g.boss
@@ -1405,16 +1231,12 @@ fn draw_boss(g: record, cam: num) -> int
   # the thing it describes.
   for i in range(0, bs.hp) do
     sprite_world(cam + 108.0 + float(i * 10), 40.0, T_HEART, PAL_BOSS)
-  end
   0
-end
 
 fn draw_shots(g: record) -> int
   for s in g.shots do
     sprite_world(s.x, s.y, T_STAR + anim([0, 1], 12.0), PAL_ITEM)
-  end
   0
-end
 
 # ── The game scene ────────────────────────────────────────────────────────
 
@@ -1423,7 +1245,6 @@ fn game_frame() -> int
 
   if scene_entered() then
     g = start_level(g, g.checkpoint > 0)
-  end
 
   let lv = level_cache(g.level)
 
@@ -1433,13 +1254,11 @@ fn game_frame() -> int
   if btnp("start") && g.hero.mode == "live" then
     g.paused = !g.paused
     sfx("select")
-  end
 
   if g.paused then
     if btnp("select") then
       g.paused = false
       set_scene("title")
-    end
     put_game(g)
     # A paused frame still has to push the scroll split and the status bar —
     # the PPU is state, not a display list, but the per-scanline overrides
@@ -1455,7 +1274,6 @@ fn game_frame() -> int
     text_sprites_center(144, "SELECT - QUIT", PAL_HUD)
     draw_game_sprites(g, cam_x())
     return 0
-  end
 
   # The boss arena locks the camera; everywhere else it follows the hero.
   let arena = lv.boss_x >= 0 && g.hero.x > lv.boss_x
@@ -1465,11 +1283,9 @@ fn game_frame() -> int
     if g.boss == nil && lv.boss_at != nil then
       g.boss = new_boss(lv.boss_at)
       music_play(tunes().boss)
-    end
   else
     cam = clamp(g.hero.x + float(HERO_BW) / 2.0 - 128.0, lo: 0.0,
       hi: float(max(0, lv.cols * 8 - 256)))
-  end
 
   g = update_hero(g, lv, boss_lock: if arena then cam else -1.0 end)
 
@@ -1480,27 +1296,21 @@ fn game_frame() -> int
     if g.boss != nil then
       g = update_boss(g, cam)
       g = collide_boss(g)
-    end
     # Spikes, and the checkpoint the hero has walked past.
     if box_hurts(lv, x: g.hero.x, y: g.hero.y, w: HERO_BW, h: HERO_BH) then
       g = hurt_hero(g, g.hero.x - float(g.hero.face) * 16.0)
-    end
     let chunk = int(g.hero.x / float(CHUNK_W * 8))
     if chunk > g.checkpoint then
       g.checkpoint = chunk
-    end
     # The banner ends the level.
     if lv.boss_x < 0 && g.hero.x + float(HERO_BW) > lv.goal_x then
       g.score = g.score + SCORE_GOAL
       g.bonus = g.coins * 50
       sfx("goal")
       set_scene("clear")
-    end
     # The pit.
     if g.hero.y > 248.0 && g.hero.mode != "dying" then
       g = lose_life(g)
-    end
-  end
   g = update_shots(g, cam)
   g = update_poofs(g)
 
@@ -1510,8 +1320,6 @@ fn game_frame() -> int
       set_scene("gameover")
     else
       g = start_level(g, true)
-    end
-  end
 
   put_game(g)
 
@@ -1522,7 +1330,6 @@ fn game_frame() -> int
   draw_hud(g, lv)
   draw_game_sprites(g, cam)
   0
-end
 
 # Sprite order is priority order — the first pushed is the one that survives
 # a crowded scanline, so the hero goes first and the scenery last.
@@ -1530,13 +1337,11 @@ fn draw_game_sprites(g: record, cam: num) -> int
   draw_hero(g.hero)
   if g.boss != nil then
     draw_boss(g, cam)
-  end
   draw_shots(g)
   draw_entities(g, cam)
   draw_items(g, cam)
   draw_poofs(g)
   0
-end
 
 # ── Title screen ──────────────────────────────────────────────────────────
 # Painted into the map once on entry, then animated: the cloud band shifts a
@@ -1550,44 +1355,35 @@ fn paint_title() -> int
     set_tile(x, 22, T_TITLE + 1, 3)
     for y in range(23, 30) do
       set_tile(x, y, B_FILL, 0)
-    end
     set_tile(x, 21, B_AIR, 0)
-  end
   for i in range(0, 4) do
     let bx = 2 + i * 8
     set_tile(bx, 21, T_TITLE, 3)
     set_tile(bx + 1, 21, T_TITLE + 1, 3)
     set_tile(bx + 2, 21, T_TITLE + 2, 3)
-  end
   # The banner and pole, borrowed from the tileset, as a decoration.
   set_tile(29, 20, B_BANNER, 1)
   for y in range(21, 22) do
     set_tile(29, y, 13, 2)
-  end
   # The sun, in palette 1 — the only background palette on this screen with a
   # yellow in it, which is also what makes the title lettering gold.
   set_tile(28, 8, T_TITLE + 3, 1)
   0
-end
 
 fn title_clouds(t: num) -> int
   # Two cloud tiles per puff, four puffs, sliding right to left.
   for x in range(0, 32) do
     set_tile(x, 7, B_AIR, 0)
     set_tile(x, 10, B_AIR, 0)
-  end
   for i in range(0, 4) do
     let x = pmod(28 - i * 9 - t, 34) - 1
     set_tile(x, 7, 11, 2)
     set_tile(x + 1, 7, 12, 2)
-  end
   for i in range(0, 3) do
     let x = pmod(4 + i * 11 + t, 34) - 1
     set_tile(x, 10, 11, 2)
     set_tile(x + 1, 10, 12, 2)
-  end
   0
-end
 
 fn title_frame() -> int
   let g = game()
@@ -1604,8 +1400,6 @@ fn title_frame() -> int
     if g.lives <= 0 then
       g = new_game()
       put_game(g)
-    end
-  end
 
   set_scroll(0, 0)
   title_clouds(int(scene_time() * 3.0))
@@ -1630,7 +1424,6 @@ fn title_frame() -> int
   else if m.chosen == 2 then
     sfx("select")
     set_scene("howto")
-  end
 
   # The cast, idling on the ridge: proof the sprites work before you press a
   # button, and a place for the eye to rest.
@@ -1644,13 +1437,11 @@ fn title_frame() -> int
     meta(T_BAT + anim([0, 1], 8.0) * 4, 2, 2, PAL_BOSS), 0)
   sprite(150, 150, T_COIN + anim([0, 1, 2, 1], 8.0), PAL_ITEM)
   0
-end
 
 # ── Options ───────────────────────────────────────────────────────────────
 
 fn on_off(b: bool) -> string
   if b then "ON" else "OFF" end
-end
 
 # Both text screens share one look: a dark ground so the white body text
 # carries, and palette 1 (gold) reserved for the heading.
@@ -1665,13 +1456,11 @@ fn paint_page() -> int
   dirty_hud()
   set_scroll(0, 0)
   0
-end
 
 fn options_frame() -> int
   let g = game()
   if scene_entered() then
     paint_page()
-  end
   set_scroll(0, 0)
   map_text_center(4, "OPTIONS", 1)
 
@@ -1696,18 +1485,14 @@ fn options_frame() -> int
       g.opts.scale = 2 + pmod(g.opts.scale - 1, 3)
     else if m.chosen == 4 then
       set_scene("title")
-    end
     put_game(g)
     sfx("select")
-  end
   if m.cancelled then
     set_scene("title")
-  end
 
   set_crt(g.opts.crt)
   set_scale(g.opts.scale)
   0
-end
 
 # ── How to play ───────────────────────────────────────────────────────────
 
@@ -1725,14 +1510,11 @@ fn howto_frame() -> int
     map_text(1, 18, "COINS ARE POINTS: 25 = A LIFE", 2)
     map_text(1, 20, "THE STAR MAKES YOU UNTOUCHABLE", 2)
     map_text(1, 22, "REACH THE BANNER TO CLEAR IT", 2)
-  end
   map_text_center(26, if blink(1.5) then "PRESS ANY BUTTON" else "" end, 1)
   if btnp("a") || btnp("b") || btnp("start") then
     sfx("select")
     set_scene("title")
-  end
   0
-end
 
 # ── Level clear, game over, victory ───────────────────────────────────────
 
@@ -1742,7 +1524,6 @@ fn clear_frame() -> int
   if scene_entered() then
     music_stop()
     dirty_hud()
-  end
   # The level stays on screen behind the banner text: the player earned it.
   set_scroll(cam_x(), 0)
   lock_top(32)
@@ -1753,7 +1534,6 @@ fn clear_frame() -> int
   text_sprites_center(112, "COINS x{pad_num(g.coins, 2)}", PAL_HUD)
   if scene_time() > 1.2 then
     text_sprites_center(128, "BONUS {pad_num(g.bonus, 5)}", PAL_HUD)
-  end
   if scene_time() > 3.0 then
     g.score = g.score + g.bonus
     g.bonus = 0
@@ -1764,17 +1544,13 @@ fn clear_frame() -> int
       set_scene("victory")
     else
       set_scene("game")
-    end
-  end
   0
-end
 
 fn gameover_frame() -> int
   let g = game()
   if scene_entered() then
     paint_page()
     music_stop()
-  end
   map_text_center(12, "GAME OVER", 1)
   map_text_center(15, "SCORE {pad_num(g.score, 6)}", 2)
   map_text_center(20, if blink(1.5) then "PRESS START" else "" end, 2)
@@ -1783,9 +1559,7 @@ fn gameover_frame() -> int
     ng.opts = g.opts
     put_game(ng)
     set_scene("title")
-  end
   0
-end
 
 fn victory_frame() -> int
   let g = game()
@@ -1802,10 +1576,7 @@ fn victory_frame() -> int
     for x in range(0, 32) do
       for y in range(24, 30) do
         set_tile(x, y, B_FILL, 0)
-      end
       set_tile(x, 23, B_TOP, 0)
-    end
-  end
   map_text_center(4, "THE RIFT IS CLOSED", 1)
   map_text_center(7, "PETAL QUEST COMPLETE", 2)
   map_text_center(11, "SCORE {pad_num(g.score, 6)}", 2)
@@ -1821,15 +1592,12 @@ fn victory_frame() -> int
     let x = 24.0 + float(i) * 38.0
     let y = 176.0 - sin(p * 3.14159) * 60.0
     sprite(int(x), int(y), T_COIN + anim([0, 1, 2, 1], 8.0), PAL_ITEM)
-  end
   if t > 4.0 && (btnp("start") || btnp("a")) then
     let ng = new_game()
     ng.opts = g.opts
     put_game(ng)
     set_scene("title")
-  end
   0
-end
 
 # ── Audio for the frame ───────────────────────────────────────────────────
 # One place decides what should be playing, so the options toggle and the
@@ -1848,16 +1616,13 @@ fn audio_frame() -> int
   else if sc == "game" then
     if g.boss == nil then
       music_play(tunes().play)
-    end
     if !music_playing() then music_resume() end
   else if sc == "victory" then
     music_play(tunes().title)
     if !music_playing() then music_resume() end
-  end
   music_tick()
   sfx_tick()
   0
-end
 
 # ── The frame ─────────────────────────────────────────────────────────────
 # Everything above is definitions; this is the whole of what runs.
@@ -1872,7 +1637,6 @@ let world_now = if scene() == "game" || scene() == "clear" then
   level_cache(g0.level).world
 else
   0
-end
 ensure_art(world_now)
 
 let sc = scene()
@@ -1884,6 +1648,5 @@ match sc
   when "gameover" -> gameover_frame()
   when "victory" -> victory_frame()
   when _ -> title_frame()
-end
 
 audio_frame()

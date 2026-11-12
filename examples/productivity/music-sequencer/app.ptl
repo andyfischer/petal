@@ -66,13 +66,9 @@ fn lane(s: string) -> list
       when "x" -> 78
       when "o" -> 42
       when _ -> 0
-    end
-  end
-end
 
 fn nt(s: int, n: int, p: int) -> record
   {s: s, len: n, p: p, v: 80}
-end
 
 fn seed_patterns() -> list
   [
@@ -136,7 +132,6 @@ fn seed_patterns() -> list
         [nt(0, 6, 16), nt(6, 2, 14), nt(8, 8, 12), nt(16, 6, 14), nt(22, 2, 12), nt(24, 8, 11)],
       ]},
   ]
-end
 
 fn seed_mix() -> list
   [
@@ -149,7 +144,6 @@ fn seed_mix() -> list
     {mute: false, solo: false, vol: 0.82},
     {mute: false, solo: false, vol: 0.64},
   ]
-end
 
 # ── State ────────────────────────────────────────────────────────────────
 state pats = seed_patterns()
@@ -248,104 +242,77 @@ let S_BTN   = {size: 10, font: "ui", weight: 700, color: DIM}
 # ── Geometry helpers ─────────────────────────────────────────────────────
 fn step_x(s: num) -> num
   GX + s * STEP_W
-end
 
 fn step_at(x: num) -> int
   clamp(int(floor((x - GX) / float(STEP_W))), 0, STEPS - 1)
-end
 
 fn row_y(t: int) -> int
   LANES_Y + t * ROW_H
-end
 
 fn row_rect(t: int) -> Rect
   rect(M, row_y(t), W - M * 2, ROW_H)
-end
 
 fn head_rect(t: int) -> Rect
   rect(M, row_y(t), HEAD_W, ROW_H)
-end
 
 fn mute_rect(t: int) -> Rect
   rect(M + 96, row_y(t) + 6, 20, 18)
-end
 
 fn solo_rect(t: int) -> Rect
   rect(M + 120, row_y(t) + 6, 20, 18)
-end
 
 fn vol_rect(t: int) -> Rect
   rect(M + 150, row_y(t) + 6, HEAD_W - 150 - 14, 18)
-end
 
 fn pat_rect(i: int) -> Rect
   rect(PAT_X + i * (PAT_W + 4), TB_Y, PAT_W, TB_H)
-end
 
 fn pitch_at(y: num) -> int
   clamp(ROWS - 1 - int(floor((y - BODY_Y) / float(PR_ROW))), 0, ROWS - 1)
-end
 
 fn note_rect(n: record) -> Rect
   rect(step_x(n.s) + 1, BODY_Y + (ROWS - 1 - n.p) * PR_ROW + 1, n.len * STEP_W - 2, PR_ROW - 1)
-end
 
 fn vel_at(y: num) -> int
   clamp(int((VEL_TOP + VEL_H - y) * 100 / VEL_H), 5, 100)
-end
 
 fn is_black(pc: int) -> bool
   pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10
-end
 
 fn pos_label(s: int) -> string
   "{s / 16 + 1}.{s % 16 / 4 + 1}.{s % 4 + 1}"
-end
 
 fn note_name(midi: int) -> string
   "{NOTE_NAMES[midi % 12]}{midi / 12 - 1}"
-end
 
 # ── Pure pattern edits ───────────────────────────────────────────────────
 fn lane_text(l: list) -> string
   let out = ""
   for v in l do
     out = out ++ (if v >= 90 then "X" else if v >= 60 then "x" else if v > 0 then "o" else "." end)
-  end
   out
-end
 
 fn lane_hits(l: list) -> int
   let n = 0
   for v in l do
     if v > 0 then n += 1 end
-  end
   n
-end
 
 fn lane_fill(l: list, every: int) -> list
   for i in range(0, STEPS) do
     if i % every == 0 then (if l[i] > 0 then l[i] else 78 end) else 0 end
-  end
-end
 
 fn lane_shift(l: list, by: int) -> list
   for i in range(0, STEPS) do
     l[(i - by + STEPS) % STEPS]
-  end
-end
 
 fn lane_mirror(l: list) -> list
   for i in range(0, STEPS) do
     l[i % 16]
-  end
-end
 
 fn notes_shift(ns: list, by: int) -> list
   for n in ns do
     {s: (n.s + by + STEPS) % STEPS, len: min(n.len, STEPS - (n.s + by + STEPS) % STEPS), p: n.p, v: n.v}
-  end
-end
 
 fn notes_mirror(ns: list) -> list
   let out = []
@@ -354,17 +321,12 @@ fn notes_mirror(ns: list) -> list
       let first = {s: n.s, len: min(n.len, 16 - n.s), p: n.p, v: n.v}
       out = append(out, first)
       out = append(out, {s: first.s + 16, len: first.len, p: n.p, v: n.v})
-    end
-  end
   out
-end
 
 fn list_without(xs: list, k: int) -> list
   for i in range(0, len(xs)) do
     if i == k then continue end
     xs[i]
-  end
-end
 
 # Index of the note under a step/pitch, or -1. Later notes win (drawn on top).
 fn note_hit(ns: list, s: int, p: int) -> int
@@ -372,35 +334,26 @@ fn note_hit(ns: list, s: int, p: int) -> int
   for i in range(0, len(ns)) do
     if ns[i].p == p && s >= ns[i].s && s < ns[i].s + ns[i].len then
       out = i
-    end
-  end
   out
-end
 
 fn note_starting(ns: list, s: int) -> int
   let out = -1
   for i in range(0, len(ns)) do
     if ns[i].s == s then out = i end
-  end
   out
-end
 
 fn count_events(p: record) -> int
   let n = 0
   for l in p.drums do
     for v in l do
       if v > 0 then n += 1 end
-    end
-  end
   n + len(p.notes[0]) + len(p.notes[1])
-end
 
 # ── Playback: which events start inside [a, b) ───────────────────────────
 # Swing delays every second sixteenth by a fraction of a step, so a step's
 # trigger time is not always its integer index.
 fn trig_time(s: int, sw: num) -> float
   if s % 2 == 1 then s + sw * 0.5 else float(s) end
-end
 
 fn triggers(p: record, a: num, b: num, sw: num) -> list
   let out = []
@@ -412,27 +365,17 @@ fn triggers(p: record, a: num, b: num, sw: num) -> list
       for t in range(0, 6) do
         if p.drums[t][s] > 0 then
           out = append(out, {t: t, v: p.drums[t][s]})
-        end
-      end
       for k in range(0, 2) do
         for n in p.notes[k] do
           if n.s == s then
             out = append(out, {t: 6 + k, v: n.v})
-          end
-        end
-      end
-    end
-  end
   out
-end
 
 fn gated(ns: list, at: num) -> bool
   let out = false
   for n in ns do
     if at >= n.s && at < n.s + n.len then out = true end
-  end
   out
-end
 
 # ═════════════════════════════════════════════════════════════════════════
 #  INPUT
@@ -457,13 +400,11 @@ if !blocked then
         pats = last(redo)
         redo = drop_last(redo)
         sel_note = -1
-      end
     else if len(undo) > 0 then
       redo = append(redo, pats)
       pats = last(undo)
       undo = drop_last(undo)
       sel_note = -1
-    end
     snap = pats
   else if !mod_cmd() then
     if key_pressed("space") then playing = !playing end
@@ -474,7 +415,6 @@ if !blocked then
       loops = 0
       queued = -1
       levels = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # stop silences the tails
-    end
     if key_pressed("l") then loop_on = !loop_on end
     if key_pressed("m") then mixer[sel_trk].mute = !mixer[sel_trk].mute end
     if key_pressed("s") then mixer[sel_trk].solo = !mixer[sel_trk].solo end
@@ -491,11 +431,9 @@ if !blocked then
     if key_pressed("up") then
       sel_trk = (sel_trk - 1 + N_TRK) % N_TRK
       sel_note = -1
-    end
     if key_pressed("down") then
       sel_trk = (sel_trk + 1) % N_TRK
       sel_note = -1
-    end
     sel_mel = TRACKS[sel_trk].kind == "mel"
 
     for i in range(0, 4) do
@@ -508,9 +446,6 @@ if !blocked then
           sel_note = -1
         else
           queued = -1
-        end
-      end
-    end
 
     if key_pressed("x") then
       if sel_mel then
@@ -523,39 +458,28 @@ if !blocked then
           let n = min(last_len, STEPS - cur_step)
           pats[cur].notes[k] = append(pats[cur].notes[k], {s: cur_step, len: n, p: last_pitch, v: 80})
           sel_note = len(pats[cur].notes[k]) - 1
-        end
       else
         pats[cur].drums[sel_trk][cur_step] = if pats[cur].drums[sel_trk][cur_step] > 0 then 0 else 78 end
-      end
       changed = true
-    end
     if key_pressed("v") && !sel_mel then
       let v = pats[cur].drums[sel_trk][cur_step]
       pats[cur].drums[sel_trk][cur_step] = if v == 0 then 78 else if v < 60 then 78 else if v < 90 then 100 else 42 end
       changed = true
-    end
     if key_pressed("c") then
       if sel_mel then
         pats[cur].notes[sel_trk - 6] = []
         sel_note = -1
       else
         pats[cur].drums[sel_trk] = for i in range(0, STEPS) do 0 end
-      end
       changed = true
-    end
     if (key_pressed("delete") || key_pressed("backspace")) && sel_mel && sel_note >= 0 then
       if sel_note < len(pats[cur].notes[sel_trk - 6]) then
         pats[cur].notes[sel_trk - 6] = list_without(pats[cur].notes[sel_trk - 6], sel_note)
         changed = true
-      end
       sel_note = -1
-    end
     if key_pressed("escape") && drag.kind == "" then
       sel_note = -1
       queued = -1
-    end
-  end
-end
 
 # ── Mouse: hover targets ─────────────────────────────────────────────────
 let free = !blocked && drag.kind == ""
@@ -575,14 +499,10 @@ if !blocked && drag.kind == "" && mouse_pressed(1) then
       bloom.menu_open_at("lane", mx, my)
       sel_trk = t
       sel_note = -1
-    end
-  end
   if hov_note >= 0 then
     pats[cur].notes[sel_trk - 6] = list_without(pats[cur].notes[sel_trk - 6], hov_note)
     sel_note = -1
     changed = true
-  end
-end
 
 # ── Mouse: left press starts exactly one gesture ─────────────────────────
 if free && mouse_pressed(0) then
@@ -617,7 +537,6 @@ if free && mouse_pressed(0) then
     if TRACKS[hov_trk].kind == "drum" then
       let v = if pats[cur].drums[hov_trk][hov_step] > 0 then 0 else 78 end
       drag = {kind: "paint", trk: hov_trk, val: v, a: hov_step, b: 0, idx: -1, y0: my, v0: 0}
-    end
   else if over_vel then
     cur_step = hov_step
     drag = {kind: "vel", trk: sel_trk, val: vel_at(my), a: hov_step, b: 0, idx: -1, y0: my, v0: 0}
@@ -634,14 +553,12 @@ if free && mouse_pressed(0) then
         drag = {kind: "note_resize", trk: sel_trk, val: 0, a: -1, b: 1, idx: hov_note, y0: my, v0: 0}
       else
         drag = {kind: "note_move", trk: sel_trk, val: 0, a: hov_step - n.s, b: 0, idx: hov_note, y0: my, v0: 0}
-      end
     else
       let n = min(last_len, STEPS - hov_step)
       pats[cur].notes[k] = append(pats[cur].notes[k], {s: hov_step, len: n, p: hov_pitch, v: 80})
       sel_note = len(pats[cur].notes[k]) - 1
       changed = true
       drag = {kind: "note_new", trk: sel_trk, val: n, a: hov_step, b: 0, idx: sel_note, y0: my, v0: 0}
-    end
   else
     for i in range(0, 4) do
       if point_in(mx, my, pat_rect(i)) then
@@ -653,9 +570,6 @@ if free && mouse_pressed(0) then
           sel_note = -1
         else
           queued = -1
-        end
-      end
-    end
     for t in range(0, N_TRK) do
       if point_in(mx, my, mute_rect(t)) then
         mixer[t].mute = !mixer[t].mute
@@ -666,17 +580,12 @@ if free && mouse_pressed(0) then
       else if point_in(mx, my, head_rect(t)) then
         sel_trk = t
         sel_note = -1
-      end
-    end
-  end
-end
 
 # Remember where the gesture began. `snap` rather than `pats`: drawing a new
 # note has already appended it by now.
 if mouse_pressed(0) && drag.kind != "" then
   g0 = {pats: snap, mixer: mixer, undo: undo, redo: redo, bpm: bpm, swing: swing,
     la: loop_a, lb: loop_b, lon: loop_on, pos: pos}
-end
 # `escape` with the button still down abandons the gesture: the pattern, the
 # undo stack and whichever dial was being dragged go back to how they were.
 if drag.kind != "" && key_pressed("escape") then
@@ -693,7 +602,6 @@ if drag.kind != "" && key_pressed("escape") then
   if drag.kind == "note_new" then sel_note = -1 end
   cancels += 1
   drag = {kind: "", trk: 0, val: 0, a: 0, b: 0, idx: -1, y0: 0, v0: 0}
-end
 
 # ── Mouse: the gesture in flight ─────────────────────────────────────────
 # A note gesture holds an index into the lane; if a key or a queued pattern
@@ -701,8 +609,6 @@ end
 if drag.kind == "note_new" || drag.kind == "note_resize" || drag.kind == "note_move" then
   if drag.idx >= len(pats[cur].notes[drag.trk - 6]) then
     drag = {kind: "", trk: 0, val: 0, a: 0, b: 0, idx: -1, y0: 0, v0: 0}
-  end
-end
 if drag.kind != "" && mouse_down(0) || drag.kind != "" && mouse_released(0) then
   let s_now = step_at(mx)
   if drag.kind == "paint" then
@@ -716,8 +622,6 @@ if drag.kind != "" && mouse_down(0) || drag.kind != "" && mouse_released(0) then
       if old != want then
         pats[cur].drums[drag.trk][s] = want
         changed = true
-      end
-    end
     drag.a = s_now
     cur_step = s_now
   else if drag.kind == "vel" then
@@ -731,9 +635,6 @@ if drag.kind != "" && mouse_down(0) || drag.kind != "" && mouse_released(0) then
         if pats[cur].drums[drag.trk][s] != want then
           pats[cur].drums[drag.trk][s] = want
           changed = true
-        end
-      end
-    end
     drag.a = s_now
     drag.val = v_now
     cur_step = s_now
@@ -762,7 +663,6 @@ if drag.kind != "" && mouse_down(0) || drag.kind != "" && mouse_released(0) then
     if want != n.len then
       pats[cur].notes[k][drag.idx].len = want
       changed = true
-    end
     last_len = want
   else if drag.kind == "note_move" then
     let k = drag.trk - 6
@@ -773,13 +673,9 @@ if drag.kind != "" && mouse_down(0) || drag.kind != "" && mouse_released(0) then
       pats[cur].notes[k][drag.idx].s = ns
       pats[cur].notes[k][drag.idx].p = np
       changed = true
-    end
     last_pitch = np
-  end
-end
 if !mouse_down(0) && drag.kind != "" then
   drag = {kind: "", trk: 0, val: 0, a: 0, b: 0, idx: -1, y0: 0, v0: 0}
-end
 
 # ── Wheel: fine velocity on a step or note, tempo on the tempo block ─────
 let wheel = scroll_y()
@@ -796,8 +692,6 @@ if wheel != 0 && !blocked && drag.kind == "" then
   else if hov_note >= 0 then
     pats[cur].notes[sel_trk - 6][hov_note].v = clamp(pats[cur].notes[sel_trk - 6][hov_note].v + dv, 5, 100)
     changed = true
-  end
-end
 
 # ── Undo bookkeeping: one snapshot per gesture ───────────────────────────
 if changed && (gesture || pats != snap) then
@@ -805,9 +699,7 @@ if changed && (gesture || pats != snap) then
     undo = append(undo, snap)
     if len(undo) > 60 then undo = slice(undo, 1, len(undo)) end
     redo = []
-  end
   if mouse_down(0) then gesture = true end
-end
 if !mouse_down(0) then gesture = false end
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -816,10 +708,8 @@ if !mouse_down(0) then gesture = false end
 let any_solo = false
 for mr in mixer do
   if mr.solo then any_solo = true end
-end
 let audible = for mr in mixer do
   !mr.mute && (!any_solo || mr.solo)
-end
 
 # The frame delta comes from the panel clock rather than `dt()`: under the
 # debug server's `/tick` that clock advances by exactly the ticked `dt` and
@@ -834,7 +724,6 @@ let wrapped = false
 for t in range(0, N_TRK) do
   levels[t] = levels[t] * exp(0.0 - fdt * TRACKS[t].decay)
   if levels[t] < 0.004 then levels[t] = 0.0 end
-end
 
 if playing then
   let remaining = fdt * rate
@@ -848,8 +737,6 @@ if playing then
         hits[ev.t] = hits[ev.t] + 1
         fired += 1
         levels[ev.t] = max(levels[ev.t], ev.v / 100.0 * (0.25 + 0.75 * mixer[ev.t].vol))
-      end
-    end
     remaining = remaining - (seg_end - pos)
     pos = seg_end
     if pos >= hi - 0.00001 then
@@ -861,23 +748,16 @@ if playing then
         queued = -1
         sel_note = -1
         drag = {kind: "", trk: 0, val: 0, a: 0, b: 0, idx: -1, y0: 0, v0: 0}
-      end
-    end
-  end
   elapsed = elapsed + fdt
   # A held note keeps its lane's meter up for as long as it sounds.
   for k in range(0, 2) do
     if audible[6 + k] && gated(pats[cur].notes[k], pos) then
       levels[6 + k] = max(levels[6 + k], 0.55 * (0.25 + 0.75 * mixer[6 + k].vol))
-    end
-  end
   request_frame()
-end
 
 let ringing = false
 for lv in levels do
   if lv > 0.0 then ringing = true end
-end
 if ringing then request_frame() end
 
 let play_step = clamp(int(floor(pos)), 0, STEPS - 1)
@@ -891,14 +771,12 @@ sel_mel = TRACKS[sel_trk].kind == "mel"
 fn label(s: string, r: record, style: record, align: string)
   text_layout.draw_text_line(s, r, style, align)
   nil
-end
 
 fn well(r: record, hot: bool, on: bool)
   let bg = if on then WELL_HI else if hot then WELL_HI else WELL end
   draw_rect_rounded(r, 8, bg)
   draw_rect_rounded_outline(r, 8, if on then GHOST else LINE end)
   nil
-end
 
 fn key_cap(x: num, y: num, k: string, what: string) -> num
   let cs = {size: 10, font: "mono", color: DIM}
@@ -909,7 +787,6 @@ fn key_cap(x: num, y: num, k: string, what: string) -> num
   let ls = {size: 11, font: "ui", color: FAINT}
   draw_text(what, {x: x + kw + 6, y: text_layout.text_line_y(rect(x, y, 10, 18), ls)}, ls)
   x + kw + 6 + text_width(what, ls) + 16
-end
 
 clear(BG.r, BG.g, BG.b)
 
@@ -932,7 +809,6 @@ if playing then
   draw_rect_rounded(rect(pcx + 2, pcy - 8, 5, 16), 1, BG)
 else
   fill_triangle(pcx - 5, pcy - 9, pcx - 5, pcy + 9, pcx + 9, pcy, TEXT)
-end
 
 # Stop.
 well(R_STOP, free && point_in(mx, my, R_STOP), false)
@@ -967,7 +843,6 @@ draw_text("bpm", {x: R_BPM.x + 14 + text_width(str(bpm), S_NUM), y: R_BPM.y + 29
 for br in [R_BPM_UP, R_BPM_DN] do
   let bh = free && point_in(mx, my, br)
   draw_rect_rounded(br, 4, if bh then LINE else CELL end)
-end
 let ux = R_BPM_UP.x + R_BPM_UP.w / 2
 fill_triangle(ux - 4, R_BPM_UP.y + 11, ux + 4, R_BPM_UP.y + 11, ux, R_BPM_UP.y + 5, DIM)
 fill_triangle(ux - 4, R_BPM_DN.y + 5, ux + 4, R_BPM_DN.y + 5, ux, R_BPM_DN.y + 11, DIM)
@@ -995,14 +870,12 @@ for i in range(0, 4) do
     draw_rect_rounded_outline(r, 8, mix(LINE, ACCENT, 0.35 + 0.65 * pulse), 255, 2)
   else if !is_cur then
     draw_rect_rounded_outline(r, 8, LINE)
-  end
   draw_text(PAT_KEYS[i], {x: r.x + 10, y: r.y + 6},
     {size: 16, font: "ui", weight: 700, color: if is_cur then BG else TEXT end})
   draw_text(if is_q then "NEXT" else upper(pats[i].name) end, {x: r.x + 10, y: r.y + 30},
     {...S_CAP, size: 8, color: if is_cur then :5c4a12 else if is_q then ACCENT else FAINT end})
   draw_text_right(str(count_events(pats[i])), r.x + r.w - 9, r.y + 9,
     {...S_MONO, size: 9, color: if is_cur then :7a6218 else GHOST end})
-end
 
 # Output scope: the envelopes, rendered as a waveform.
 well(R_SCOPE, false, false)
@@ -1015,7 +888,6 @@ let tm = time()
 let total_lv = 0.0
 for t in range(0, N_TRK) do
   total_lv = total_lv + levels[t]
-end
 draw_line(sc_x0, sc_cy, sc_x0 + sc_w, sc_cy, LINE)
 let sc_pts = for i in range(0, sc_n + 1) do
   let u = i / float(sc_n)
@@ -1029,7 +901,6 @@ let sc_pts = for i in range(0, sc_n + 1) do
     levels[6] * sin(u * 15.0 + tm * 22.0) * 0.9 +
     levels[7] * sin(u * 38.0 + tm * 55.0) * 0.7
   {x: sc_x0 + sc_w * u, y: sc_cy + clamp(y * 8.0, -10.0, 10.0)}
-end
 draw_polyline(sc_pts, if total_lv > 0.01 then ACCENT else GHOST end, 255, 1.5)
 
 # ── Ruler: loop band above, time band below ──────────────────────────────
@@ -1060,8 +931,6 @@ for s in range(0, STEPS) do
     draw_rect(rect(x + int(swing * 0.5 * STEP_W), ty0 + TIME_H - 5, 1, 5), mix(LINE, ACCENT, 0.55))
   else
     draw_rect(rect(x, ty0 + TIME_H - 5, 1, 5), LINE)
-  end
-end
 draw_rect(rect(GX, ty0 + TIME_H, GW, 1), LINE)
 
 # ── Lanes ────────────────────────────────────────────────────────────────
@@ -1069,8 +938,6 @@ draw_rect(rect(GX, ty0 + TIME_H, GW, 1), LINE)
 for beat in range(0, 8) do
   if beat % 2 == 0 then
     draw_rect(rect(step_x(beat * 4), LANES_Y, STEP_W * 4, LANES_H), PANEL)
-  end
-end
 # Outside the loop the timeline is dimmed rather than hidden.
 for t in range(0, N_TRK) do
   let y = row_y(t)
@@ -1085,7 +952,6 @@ for t in range(0, N_TRK) do
     draw_rect_rounded(rect(hr.x, hr.y + 1, hr.w, hr.h - 2), 6, WELL_HI)
   else if free && point_in(mx, my, hr) then
     draw_rect_rounded(rect(hr.x, hr.y + 1, hr.w, hr.h - 2), 6, WELL)
-  end
   draw_rect_rounded(rect(hr.x + 6, hr.y + 8, 3, hr.h - 16), 1, col)
   label(tr.name, rect(hr.x + 18, hr.y, 76, hr.h),
     {...S_NAME, color: if !on_air then FAINT else if is_sel then TEXT else DIM end}, "left")
@@ -1107,7 +973,6 @@ for t in range(0, N_TRK) do
   let lv_w = int((vr.w - 2) * clamp(levels[t], 0.0, 1.0))
   if lv_w > 1 then
     draw_rect_rounded(rect(vr.x + 1, vy - 2, lv_w, 4), 2, col)
-  end
   let kx = vr.x + 2 + int((vr.w - 4) * mixer[t].vol)
   draw_rect_rounded(rect(kx - 2, vy - 7, 4, 14), 2, if drag.kind == "vol" && drag.trk == t then HEAD else DIM end)
 
@@ -1128,16 +993,12 @@ for t in range(0, N_TRK) do
       else
         let empty = if s % 4 == 0 then CELL_B else CELL end
         draw_rect_rounded(cr, 4, if in_loop then empty else mix(empty, BG, 0.5) end)
-      end
-    end
   else
     # A melodic lane is an overview: every note as a bar at its pitch.
     draw_rect_rounded(rect(GX + 1, y + 3, GW - 2, ROW_H - 6), 4, CELL)
     for s in range(1, STEPS) do
       if s % 4 == 0 then
         draw_rect(rect(step_x(s), y + 3, 1, ROW_H - 6), if s % 16 == 0 then LINE else LINE_S end)
-      end
-    end
     # The lane's own pitch range is stretched over the row, so a bass line
     # that lives inside a fifth still reads as a contour.
     let p_lo = ROWS
@@ -1145,7 +1006,6 @@ for t in range(0, N_TRK) do
     for n in pat.notes[t - 6] do
       p_lo = min(p_lo, n.p)
       p_hi = max(p_hi, n.p)
-    end
     let p_span = max(4, p_hi - p_lo)
     for n in pat.notes[t - 6] do
       let ny = y + ROW_H - 9 - (ROW_H - 15) * (n.p - p_lo) / p_span
@@ -1153,22 +1013,16 @@ for t in range(0, N_TRK) do
       let sounding = playing && on_air && pos >= n.s && pos < n.s + n.len
       let nc = if sounding then mix(col, HEAD, 0.6) else if in_loop then col else mix(col, BG, 0.5) end
       draw_rect_rounded(rect(step_x(n.s) + 2, ny, n.len * STEP_W - 4, 3), 1, nc)
-    end
-  end
   if is_sel then
     draw_rect_rounded_outline(rect(GX - 2, y + 1, GW + 4, ROW_H - 2), 6, GHOST)
-  end
-end
 
 # Hover and keyboard cursor on the lane grid.
 if free && over_lanes && TRACKS[hov_trk].kind == "drum" then
   draw_rect_rounded_outline(rect(step_x(hov_step) + 1, row_y(hov_trk) + 3, STEP_W - 2, ROW_H - 6), 4, DIM)
-end
 if sel_mel then
   draw_rect(rect(step_x(cur_step), row_y(sel_trk) + 3, STEP_W, ROW_H - 6), TEXT, 22)
 else
   draw_rect_rounded_outline(rect(step_x(cur_step), row_y(sel_trk) + 2, STEP_W, ROW_H - 4), 5, TEXT, 255, 1.5)
-end
 
 # ── Detail editor ────────────────────────────────────────────────────────
 let st = TRACKS[sel_trk]
@@ -1181,7 +1035,6 @@ draw_text(det_kind, {x: M + 26 + text_width(st.name, {size: 14, font: "ui", weig
 
 let det_hint = if sel_mel then "drag empty space to draw   drag a note to move   right edge resizes   right-click deletes"
 else "drag across the bars to shape them   wheel for fine steps   right-click a lane for fills"
-end
 draw_text_right(det_hint, W - M, DET_Y + 10, {size: 11, font: "ui", color: FAINT})
 
 # Inspector: the column beside the editor says what is selected, in numbers.
@@ -1204,14 +1057,12 @@ if sel_mel then
       p_lo = min(p_lo, n.p)
       p_hi = max(p_hi, n.p)
       longest = max(longest, n.len)
-    end
     insp = [
       {k: "NOTES", v: str(len(ns))},
       {k: "RANGE", v: if len(ns) == 0 then "none" else "{note_name(st.base + p_lo)} to {note_name(st.base + p_hi)}" end},
       {k: "LONGEST", v: if longest == 0 then "none" else if longest == 1 then "1 step" else "{longest} steps" end},
       {k: "LEVEL", v: "{int(round(mixer[sel_trk].vol * 100.0))}%"},
     ]
-  end
 else
   let cnt = 0
   let sum = 0
@@ -1223,8 +1074,6 @@ else
       sum += v
       if v >= 90 then acc += 1 end
       if v < 60 then gho += 1 end
-    end
-  end
   insp = [
     {k: "HITS", v: "{cnt} of {STEPS}"},
     {k: "AVERAGE", v: if cnt == 0 then "none" else str(sum / cnt) end},
@@ -1232,13 +1081,11 @@ else
     {k: "GHOSTS", v: str(gho)},
     {k: "LEVEL", v: "{int(round(mixer[sel_trk].vol * 100.0))}%"},
   ]
-end
 for i in range(0, len(insp)) do
   let iy = BODY_Y + 2 + i * 46
   if iy + 34 > BODY_Y + BODY_H then continue end
   draw_text(insp[i].k, {x: M + 6, y: iy}, S_CAP)
   draw_text(insp[i].v, {x: M + 6, y: iy + 13}, {size: 15, font: "ui", weight: 600, color: TEXT})
-end
 
 if sel_mel then
   # Piano roll --------------------------------------------------------------
@@ -1257,26 +1104,20 @@ if sel_mel then
     let kc = if key_lit then mix(if black then :20242d else :c9cdd8 end, st.color, 0.6)
     else if black then :20242d
     else :c9cdd8
-    end
     draw_rect(rect(kx, ry, if black then KEYS_W * 62 / 100 else KEYS_W end, PR_ROW - 1), kc)
     if pc == 0 then
       draw_text_right(note_name(st.base + p), kx + KEYS_W - 4, ry + (PR_ROW - 12) / 2, {size: 8, font: "ui", weight: 700, color: :3a4050})
-    end
-  end
   for s in range(0, STEPS + 1) do
     let gc = if s % 16 == 0 then GHOST else if s % 4 == 0 then LINE else LINE_S end
     draw_rect(rect(step_x(s), BODY_Y, 1, PR_H), gc)
-  end
   if loop_on then
     if loop_a > 0 then draw_rect(rect(GX, BODY_Y, step_x(loop_a) - GX, PR_H), BG, 120) end
     if loop_b < STEPS then draw_rect(rect(step_x(loop_b), BODY_Y, GX + GW - step_x(loop_b), PR_H), BG, 120) end
-  end
   draw_rect(rect(step_x(cur_step), BODY_Y, STEP_W, PR_H), TEXT, 12)
   # Ghost of the note a click would create.
   if free && over_roll && hov_note < 0 then
     let gl = min(last_len, STEPS - hov_step)
     draw_rect_rounded_outline(note_rect({s: hov_step, len: gl, p: hov_pitch, v: 80}), 3, mix(BG, st.color, 0.6))
-  end
   for i in range(0, len(ns)) do
     let n = ns[i]
     let nr = note_rect(n)
@@ -1286,36 +1127,28 @@ if sel_mel then
     draw_rect_rounded(rect(nr.x, nr.y, 3, nr.h), 1, mix(body, BG, 0.35))
     if nr.w >= 34 && PR_ROW >= 12 then
       draw_text(note_name(st.base + n.p), {x: nr.x + 7, y: nr.y + (nr.h - 12) / 2}, {size: 8, font: "ui", weight: 700, color: mix(body, BG, 0.75)})
-    end
     if i == sel_note then
       draw_rect_rounded_outline(rect(nr.x - 1, nr.y - 1, nr.w + 2, nr.h + 2), 4, HEAD, 255, 1.5)
       draw_rect_rounded(rect(nr.x + nr.w - 4, nr.y + 2, 2, nr.h - 4), 1, HEAD)
     else if i == hov_note && free then
       draw_rect_rounded_outline(nr, 3, DIM)
-    end
-  end
   if len(ns) == 0 && !over_roll then
     draw_text_center("No notes in this lane", GX + GW / 2, BODY_Y + PR_H / 2 - 18, {size: 14, font: "ui", weight: 600, color: DIM})
     draw_text_center("Click to add one, or drag to draw its length", GX + GW / 2, BODY_Y + PR_H / 2 + 4, {size: 11, font: "ui", color: FAINT})
-  end
 else
   # Velocity lane -----------------------------------------------------------
   draw_rect_rounded(rect(GX, BODY_Y, GW, BODY_H), 6, WELL)
   for beat in range(0, 8) do
     if beat % 2 == 0 then
       draw_rect(rect(step_x(beat * 4), BODY_Y + 1, STEP_W * 4, BODY_H - 2), PANEL)
-    end
-  end
   for q in range(0, 5) do
     let gy = VEL_TOP + VEL_H - VEL_H * q / 4
     draw_rect(rect(GX, gy, GW, 1), if q == 0 then GHOST else LINE_S end)
     draw_text_right(str(q * 25), GX - 14, gy - 6, S_MONO)
-  end
   draw_text_right("VEL", GX - 14, BODY_Y - 2, S_CAP)
   if loop_on then
     if loop_a > 0 then draw_rect(rect(GX, BODY_Y, step_x(loop_a) - GX, BODY_H), BG, 110) end
     if loop_b < STEPS then draw_rect(rect(step_x(loop_b), BODY_Y, GX + GW - step_x(loop_b), BODY_H), BG, 110) end
-  end
   for s in range(0, STEPS) do
     let v = pat.drums[sel_trk][s]
     let bx = step_x(s) + 5
@@ -1330,17 +1163,12 @@ else
       draw_rect_rounded(rect(bx, VEL_TOP + VEL_H - bh, bw, 3), 1, if hot || lit then HEAD else st_col end)
       if hot || s == cur_step then
         draw_text_center(str(v), bx + bw / 2, max(BODY_Y + 2, VEL_TOP + VEL_H - bh - 15), {size: 10, font: "mono", color: TEXT})
-      end
     else
       draw_circle(bx + bw / 2, VEL_TOP + VEL_H - 6, 2, if hot then DIM else GHOST end)
-    end
-  end
   draw_rect_rounded_outline(rect(step_x(cur_step) + 1, BODY_Y + 1, STEP_W - 2, BODY_H - 2), 5, GHOST)
   if lane_hits(pat.drums[sel_trk]) == 0 then
     draw_text_center("No hits in this lane", GX + GW / 2, BODY_Y + BODY_H / 2 - 18, {size: 14, font: "ui", weight: 600, color: DIM})
     draw_text_center("Click a step in the lane above, or press x at the cursor", GX + GW / 2, BODY_Y + BODY_H / 2 + 4, {size: 11, font: "ui", color: FAINT})
-  end
-end
 
 # ── Playhead: one line through the ruler, the lanes and the editor ───────
 let ph_x = int(step_x(pos))
@@ -1358,7 +1186,6 @@ let n_events = count_events(pat)
 let status = if queued >= 0 then "Pattern {PAT_KEYS[queued]} queued, starts when the loop comes round"
 else if playing then "Playing {PAT_KEYS[cur]}  {pat.name}"
 else "Pattern {PAT_KEYS[cur]}  {pat.name}   {n_events} events"
-end
 let hx = M
 hx = key_cap(hx, fy + 8, "space", "play")
 hx = key_cap(hx, fy + 8, "return", "stop")
@@ -1371,7 +1198,6 @@ hx = key_cap(hx, fy + 8, "1-4", "pattern")
 hx = key_cap(hx, fy + 8, "l", "loop")
 if hx + 190 < W - M - text_width(status, S_BODY) then
   hx = key_cap(hx, fy + 8, "cmd z", "undo")
-end
 draw_text_right(status, W - M, text_layout.text_line_y(rect(0, fy, 10, FOOT_H), S_BODY),
   {...S_BODY, color: if queued >= 0 then ACCENT else DIM end})
 
@@ -1433,17 +1259,13 @@ if picked >= 0 then
     let l = pats[cur].drums[t]
     if picked == 0 then
       pats[cur].drums[t] = for i in range(0, STEPS) do 0 end
-    end
     if picked == 2 then pats[cur].drums[t] = lane_fill(l, every: 4) end
     if picked == 3 then pats[cur].drums[t] = lane_fill(l, every: 2) end
     if picked == 4 then pats[cur].drums[t] = lane_fill(l, every: 1) end
     if picked == 6 then pats[cur].drums[t] = lane_shift(l, by: -1) end
     if picked == 7 then pats[cur].drums[t] = lane_shift(l, by: 1) end
     if picked == 9 then pats[cur].drums[t] = lane_mirror(l) end
-  end
   if pats != before then
     undo = append(undo, before)
     if len(undo) > 60 then undo = slice(undo, 1, len(undo)) end
     redo = []
-  end
-end

@@ -89,14 +89,12 @@ let BLANK_ROW = "00000000"
 fn glyph_index(ch: string) -> int
   let i = index_of(FONT_CHARS, upper(ch))
   if i < 0 then index_of(FONT_CHARS, " ") else i end
-end
 
 # A glyph padded into an 8x8 cell: one column of left bearing, one blank row
 # of leading under the baseline.
 fn small_tile(pattern: string) -> list
   let rows = for r in split(pattern, " ") do "0" ++ r ++ "00" end
   append(rows, BLANK_ROW)
-end
 
 # The same glyph at 2x, centered in a 16x16 block and cut into the four tiles
 # the map needs (top-left, top-right, bottom-left, bottom-right).
@@ -104,7 +102,6 @@ fn big_glyph(ch: string) -> list
   let pattern = FONT_GLYPHS[glyph_index(ch)]
   let wide = for r in split(pattern, " ") do
     "000" ++ join(for i in range(0, 5) do char_at(r, i) ++ char_at(r, i) end, "") ++ "000"
-  end
   let doubled = flat(for r in wide do [r, r] end)
   let empty = BLANK_ROW ++ BLANK_ROW
   let rows = concat([empty], concat(doubled, [empty]))
@@ -114,24 +111,19 @@ fn big_glyph(ch: string) -> list
     for y in range(8, 16) do slice(rows[y], start: 0, end: 8) end,
     for y in range(8, 16) do slice(rows[y], start: 8, end: 16) end,
   ]
-end
 
 # ── Drawing helpers ───────────────────────────────────────────────────────
 
 fn text_at(cx: num, cy: num, text: string, pal: num)
   for i in range(0, len(text)) do
     set_tile(cx + i, cy, FONT_BASE + glyph_index(char_at(text, i)), pal)
-  end
-end
 
 fn centered(text: string) -> int
   int((32 - len(text)) / 2)
-end
 
 # Double-size text is two cells per character, so it centers differently.
 fn centered_big(text: string) -> int
   int((32 - len(text) * 2) / 2)
-end
 
 # Two rows of double-size text. Each character owns four tiles of its own, so
 # the same letter twice costs two definitions — at eleven characters that is
@@ -145,14 +137,10 @@ fn big_text(cx: num, cy: num, text: string, top_pal: num, bottom_pal: num)
     set_tile(x + 1, cy, base + 1, top_pal)
     set_tile(x, cy + 1, base + 2, bottom_pal)
     set_tile(x + 1, cy + 1, base + 3, bottom_pal)
-  end
-end
 
 fn rule_at(cy: num, pal: num)
   for x in range(2, 30) do
     set_tile(x, cy, TILE_RULE, pal)
-  end
-end
 
 # ── Palettes ──────────────────────────────────────────────────────────────
 # Black backdrop, one palette per role: body text, the highlighted row, the
@@ -223,7 +211,6 @@ set_scroll(0, 0)
 for x in range(0, 32) do
   set_tile(x, 0, TILE_BAR, 3)
   set_tile(x, 29, TILE_BAR, 3)
-end
 
 let TITLE = "FANTASY NES"
 big_text(cx: centered_big(TITLE), cy: 3, text: TITLE, top_pal: 2, bottom_pal: 3)
@@ -243,20 +230,16 @@ let frame = frame_count()
 if count > 0 then
   if pad_pressed(0, "up") then
     set selected = (selected + count - 1) % count
-  end
   if pad_pressed(0, "down") then
     set selected = (selected + 1) % count
-  end
   # A cart may have been deleted while the menu was up; the list is rescanned
   # on every load, so the selection has to be re-clamped rather than trusted.
   set selected = clamp(selected, lo: 0, hi: count - 1)
 
   if pad_pressed(0, "start") || pad_pressed(0, "a") then
     launch_cart(cart_path(selected))
-  end
 else
   set selected = 0
-end
 
 if count == 0 then
   text_at(cx: centered("NO CARTS FOUND"), cy: 13, text: "NO CARTS FOUND", pal: 0)
@@ -271,7 +254,6 @@ else
     0
   else
     clamp(selected - (LIST_ROWS / 2), lo: 0, hi: count - LIST_ROWS)
-  end
   let last = min(count, first + LIST_ROWS)
 
   for i in range(first, last) do
@@ -281,23 +263,19 @@ else
     # right edge of the map (a write past the last cell is dropped anyway).
     let name = upper(cart_name(i))
     text_at(cx: LIST_X, cy: row, text: if len(name) > 24 then slice(name, start: 0, end: 24) else name end, pal: pal)
-  end
 
   # More entries above or below the window than fit: mark the edges. Kept one
   # column clear of the cursor, which lives at LIST_X - 2.
   if first > 0 then
     text_at(cx: LIST_X - 3, cy: LIST_TOP, text: "-", pal: 0)
-  end
   if last < count then
     text_at(cx: LIST_X - 3, cy: LIST_TOP + LIST_ROWS - 1, text: "-", pal: 0)
-  end
 
   # The cursor is the one moving thing on the screen; the two-frame bob is
   # what keeps the boot screen from looking frozen.
   let bob = if (frame / 16) % 2 == 0 then 0 else 1 end
   let cursor_row = LIST_TOP + selected - first
   sprite((LIST_X - 2) * 8 + bob, cursor_row * 8, TILE_CURSOR, 4)
-end
 
 # ── Footer ────────────────────────────────────────────────────────────────
 
@@ -306,4 +284,3 @@ text_at(cx: centered(HELP), cy: 26, text: HELP, pal: 0)
 
 if count > 0 && (frame / 24) % 2 == 0 then
   text_at(cx: centered("PRESS START"), cy: 27, text: "PRESS START", pal: 1)
-end

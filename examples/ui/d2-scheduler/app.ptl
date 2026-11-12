@@ -41,22 +41,18 @@ state edits = 0
 
 fn time_x(t)
   X0 + t * PX
-end
 
 fn bar_rect(m)
   rect(time_x(m.start), TRACK_Y + m.room * TRACK_H + (TRACK_H - BAR_H) / 2, (m.end - m.start) * PX, BAR_H)
-end
 
 # A meeting clashes when another in its room overlaps it.
 fn clashes(ms, i)
   let m = ms[i]
   any(range(len(ms)), fn(j) j != i && ms[j].room == m.room && ms[j].start < m.end && m.start < ms[j].end end)
-end
 
 fn round5(s, i)
   let m = s.meetings[i]
   set_in(set_in(s, ["meetings", i, "start"], int(round(m.start / 5) * 5)), ["meetings", i, "end"], int(round(m.end / 5) * 5))
-end
 
 # Dragging one end of meeting i: vary that time, keep the meeting at least
 # MIN_LEN long and inside the day.
@@ -64,20 +60,16 @@ fn end_spec(s, i, field)
   let ok = fn(st)
     let m = st.meetings[i]
     m.start >= 0 && m.end <= DAY && m.end - m.start >= MIN_LEN
-  end
   vary(s, ["meetings", i, field], {constraint: ok}) |> on_drop(fn(st) round5(st, i) end)
-end
 
 fn view(s)
   for r in range(ROOMS) do
     let y = TRACK_Y + r * TRACK_H
     draw_rect(X0, y + 2, DAY * PX, TRACK_H - 4, :262931)
     draw_text("Room {r + 1}", 10, y + TRACK_H / 2 - 7, 13, :8a8f9c)
-  end
   for h in range(0, DAY + 1, 60) do
     draw_line({x: time_x(h), y: TRACK_Y - 6}, {x: time_x(h), y: TRACK_Y + ROOMS * TRACK_H}, :3a3e48, 255, 1)
     draw_text("{8 + h / 60}:00", time_x(h) - 14, TRACK_Y - 24, 12, :8a8f9c)
-  end
   let ms = s.meetings
   for i in range(len(ms)) key ms[i].id do
     let m = ms[i]
@@ -89,7 +81,7 @@ fn view(s)
     place(m.id, r, fn(p)
       draw_rect_rounded(p, 5, c)
       draw_text(m.id, p.x + HANDLE_W + 4, p.y + 11, 13, :1e1e24)
-    end)
+    )
     # The end handles, inset into the bar.
     for field in ["start", "end"] key field do
       let hx = if field == "start" then r.x + 2 else r.x + r.w - HANDLE_W - 2 end
@@ -97,10 +89,7 @@ fn view(s)
       let hr = place(hk, rect(hx, r.y + 4, HANDLE_W, BAR_H - 8))
       draggable(hk, hr, fn() end_spec(s, i, field) end)
       draw_rect_rounded(hr, 3, :1e1e24, 120)
-    end
-  end
   nil
-end
 
 clear(24, 24, 32)
 let d = drag_session(sched, view)
@@ -111,4 +100,3 @@ draw_text("Rooms in use: {used}" ++ (if bad then "  (clash)" else "" end), 10, 2
 if d.dropped && d.drop != sched then
   sched = d.drop
   edits += 1
-end

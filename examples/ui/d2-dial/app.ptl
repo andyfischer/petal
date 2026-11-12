@@ -17,7 +17,6 @@ state turns = 0
 
 fn knob_at(a)
   {x: C.x + cos(a) * R - KNOB, y: C.y + sin(a) * R - KNOB, w: 2 * KNOB, h: 2 * KNOB}
-end
 
 fn view(dial)
   draw_circle_outline(C, R, :5a6070, 255, 4)
@@ -25,14 +24,12 @@ fn view(dial)
     let t = i * 2 * pi() / 12
     draw_line({x: C.x + cos(t) * (R - 14), y: C.y + sin(t) * (R - 14)},
       {x: C.x + cos(t) * (R - 4), y: C.y + sin(t) * (R - 4)}, :8a8f9c, 255, 2)
-  end
   let k = place("knob", knob_at(dial.angle))
   draggable("knob", k, fn() vary(dial, ["angle"]) end)
   let mid = {x: k.x + KNOB, y: k.y + KNOB}
   draw_line(C, mid, :f0b429, 255, 3)
   draw_circle(mid, KNOB, :f0b429)
   nil
-end
 
 let d = drag_session(dial, view)
 view(d.preview)
@@ -42,4 +39,3 @@ draw_text("Drag the knob around the dial.", 16, 16, 14, :c8ccd8)
 if d.dropped then
   dial = d.drop
   turns += 1
-end

@@ -14,12 +14,10 @@ fn city_block(i)
   let z = float(i / 50) * 12.0
   let h = 4.0 + float((i * 7919) % 13)
   {mesh: "block{i % 8}", pos: vec3(x, h * 0.5, z), scale: vec3(10.0, h, 10.0), color: :8899aa, roughness: 0.8}
-end
 
 fn crate_decl(i)
   {id: "crate{i}", opts: {shape: "box", size: 1.0, mass: 0.0, static: true, color: :a0703c,
                           pos: vec3(float(i % 20) * 2.0, 0.5, float(i / 20) * 2.0)}}
-end
 
 let CITY = const(map(range(0, N_CITY), city_block))
 let CRATES = const(map(range(0, N_CRATES), crate_decl))
@@ -28,14 +26,11 @@ let CRATES = const(map(range(0, N_CRATES), crate_decl))
 fn draw_city(city)
   for b in city do
     draw_mesh(b.mesh, {pos: b.pos, scale: b.scale, color: b.color, roughness: b.roughness})
-  end
   nil
-end
 
 fn declare_crates(cs)
   for c in cs do body(c.id, c.opts) end
   nil
-end
 
 # Dynamic: every ship moves every frame.
 fn ship(i, t)
@@ -45,7 +40,6 @@ fn ship(i, t)
                   roughness: 0.4, metallic: 0.2, pos: p})
   draw_mesh("ship_hull", {pos: p, rot: a, color: :ff8800, metallic: 0.2, emissive: 0.0})
   nil
-end
 
 state frame = 0
 frame += 1

@@ -36,14 +36,9 @@ fn simulate()
       set vy = vy - g * dt_sim
       if y < 0 then
         set landed = true
-      end
-    end
     if i % 20 == 0 then
       set trail = append(trail, {x: x, y: y})
-    end
-  end
   {x: x, y: y, trail: trail}
-end
 
 let r = simulate()
 let ground = 380
@@ -51,5 +46,4 @@ let ground = 380
 draw_rect(0, 0, 800, 400, :101418)
 for p in r.trail do
   draw_circle(20 + p.x * scale, ground - p.y * scale, 2, :808080)
-end
 draw_circle(20 + r.x * scale, ground, 6, :e04040)

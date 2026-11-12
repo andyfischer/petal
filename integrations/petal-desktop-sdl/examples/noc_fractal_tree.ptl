@@ -27,7 +27,7 @@ if needs_rebuild then
 
   # Stack-based tree generation
   # Each entry: {x, y, angle, length, depth}
-  let stack = [{ x: sw / 2.0, y: sh - 20.0, angle: -PI / 2.0, len: 120.0, depth: 0 }]
+  let stack = [{x: sw / 2.0, y: sh - 20.0, angle: -PI / 2.0, len: 120.0, depth: 0}]
 
   let max_depth = 9
 
@@ -84,7 +84,6 @@ if needs_rebuild then
           len: cl * shrink * 0.8,
           depth: cd + 1
         })
-      end
     else
       # Leaf at tip
       leaves = append(leaves, {
@@ -92,9 +91,6 @@ if needs_rebuild then
         size: random(3.0, 7.0),
         hue: random(0.0, 1.0)
       })
-    end
-  end
-end
 
 # === Drawing ===
 
@@ -105,7 +101,6 @@ for i in range(0, 12) do
   let sky_g = 20 + i * 4
   let sky_b = 50 + i * 8
   draw_rect(x: 0, y: gy, w: int(sw), h: int(sh) / 12 + 1, r: sky_r, g: sky_g, b: sky_b)
-end
 
 # Ground
 draw_rect(x: 0, y: int(sh) - 20, w: int(sw), h: 20, r: 30, g: 50, b: 25)
@@ -127,8 +122,6 @@ for b in branches do
   for t in range(0, b.thickness) do
     let offset = t - half_t
     draw_line(x1 + offset, y1, x2 + offset, y2, b.r, b.g, b.b)
-  end
-end
 
 # Draw leaves
 for leaf in leaves do
@@ -147,7 +140,6 @@ for leaf in leaves do
   # Leaf glow
   draw_circle(cx: lx, cy: ly, radius: ls + 2, r: lr / 4, g: lg / 4, b: lb / 4)
   draw_circle(cx: lx, cy: ly, radius: ls, r: min(255, lr), g: min(255, lg), b: min(255, lb))
-end
 
 # Stars in sky (subtle)
 for i in range(0, 20) do
@@ -155,7 +147,6 @@ for i in range(0, 20) do
   let sy = int(30.0 + sin(float(i) * 3.7) * 60.0)
   let bright = int(abs(sin(time + float(i))) * 80.0) + 30
   draw_circle(cx: sx, cy: sy, radius: 1, r: bright, g: bright, b: min(255, bright + 30))
-end
 
 draw_text("Fractal Tree", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
 draw_text("Swaying in the wind", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)

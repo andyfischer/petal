@@ -53,19 +53,15 @@ let TYPE_SIZES = [10, 12, 15, 21, 28]
 
 fn text_w(s: string, style: record) -> int
   text_width(s, style)
-end
 
 fn text_at(s: string, x: num, y: num, style: record)
   draw_text(s, pos: {x: x, y: y}, style: style)
-end
 
 fn text_right(s: string, right_x: num, y: num, style: record)
   draw_text(s, pos: {x: right_x - text_w(s, style), y: y}, style: style)
-end
 
 fn text_center(s: string, cx: num, y: num, style: record)
   draw_text(s, pos: {x: cx - text_w(s, style) / 2.0, y: y}, style: style)
-end
 
 # ── Number formatting ────────────────────────────────────────────────────────
 
@@ -79,11 +75,8 @@ fn commas(n: num) -> string
     c = c + 1
     if c % 3 == 0 && i > 0 then
       out = "," ++ out
-    end
     i = i - 1
-  end
   out
-end
 
 # Fixed-point decimal without a printf: scale, round, then split the integer
 # back apart. `str(float)` would give us 12.300000000000001.
@@ -91,7 +84,6 @@ fn dec(x: num, places: num) -> string
   let mul = 1
   for i in range(0, places) do
     mul = mul * 10
-  end
   let neg = x < 0.0
   let scaled = int(round(abs(x) * float(mul)))
   let whole = scaled / mul
@@ -101,11 +93,8 @@ fn dec(x: num, places: num) -> string
     let fs = str(frac_part)
     while len(fs) < places do
       fs = "0" ++ fs
-    end
     s = s ++ "." ++ fs
-  end
   if neg then "-" ++ s else s end
-end
 
 # Compact axis/label form: 18,204 -> 18.2k
 fn compact(x: num) -> string
@@ -118,8 +107,6 @@ fn compact(x: num) -> string
     dec(x / 1000.0, 2) ++ "k"
   else
     dec(x, 0)
-  end
-end
 
 # ── Deterministic pseudo-random ──────────────────────────────────────────────
 # Seeded so the dashboard shows the same "real" numbers on every launch and
@@ -129,11 +116,9 @@ fn hashi(n: num) -> num
   let x = (n * 374761393 + 668265263) % 2147483647
   x = (x + 2147483647) % 2147483647
   (x * 1103515245 + 12345) % 2147483647
-end
 
 fn rand01(n: num) -> float
   float(hashi(n) % 100000) / 100000.0
-end
 
 # ── Calendar ─────────────────────────────────────────────────────────────────
 # Day 1..90 of a 2025 that starts on a Wednesday: Jan(31) Feb(28) Mar(31).
@@ -145,12 +130,9 @@ fn day_label(d: num) -> string
     "Feb {d - 31}"
   else
     "Mar {d - 59}"
-  end
-end
 
 fn weekday(i: num) -> num
   (i + 2) % 7
-end
 
 # ── Series ───────────────────────────────────────────────────────────────────
 
@@ -165,9 +147,7 @@ fn make_series(seed: num, base: num, growth: num, wobble: num, weekend_dip: num)
     let n1 = (rand01(seed * 977 + i) - 0.5) * 2.0
     let n2 = sin(float(i) * 0.37 + float(seed)) * 0.5
     trend * week * (1.0 + wobble * (n1 * 0.62 + n2 * 0.38))
-  end
   out
-end
 
 fn build_metrics() -> list
   [
@@ -184,7 +164,6 @@ fn build_metrics() -> list
       note: "30-day rolling logo churn",
       data: make_series(seed: 41, base: 2.42, growth: -0.31, wobble: 0.13, weekend_dip: 0.05)},
   ]
-end
 
 let RANGES = [
   {label: "7D", days: 7, tick: 1},
@@ -194,46 +173,36 @@ let RANGES = [
 
 fn tail(xs: list, n: num) -> list
   slice(xs, start: len(xs) - n, end: len(xs))
-end
 
 fn series_min(xs: list)
   let m = xs[0]
   for v in xs do
     if v < m then m = v end
-  end
   m
-end
 
 fn series_max(xs: list)
   let m = xs[0]
   for v in xs do
     if v > m then m = v end
-  end
   m
-end
 
 fn series_sum(xs: list) -> float
   let s = 0.0
   for v in xs do
     s = s + v
-  end
   s
-end
 
 fn resample(xs: list, n: num) -> list
   let m = len(xs)
   if m == n then
     return xs
-  end
   let out = for i in range(0, n) do
     let t = if n <= 1 then 0.0 else float(i) / float(n - 1) end
     let p = t * float(m - 1)
     let a = int(floor(p))
     let b = min(m - 1, a + 1)
     lerp(xs[a], xs[b], t: p - float(a))
-  end
   out
-end
 
 fn fmt_value(v: num, unit: string) -> string
   if unit == "usd" then
@@ -242,8 +211,6 @@ fn fmt_value(v: num, unit: string) -> string
     dec(v, 2) ++ "%"
   else
     commas(int(round(v)))
-  end
-end
 
 fn fmt_axis(v: num, unit: string) -> string
   if unit == "usd" then
@@ -252,8 +219,6 @@ fn fmt_axis(v: num, unit: string) -> string
     dec(v, 1) ++ "%"
   else
     compact(v)
-  end
-end
 
 fn fmt_headline(v: num, unit: string) -> string
   if unit == "usd" then
@@ -262,8 +227,6 @@ fn fmt_headline(v: num, unit: string) -> string
     dec(v, 2) ++ "%"
   else
     compact(v)
-  end
-end
 
 # ── Static supporting datasets ───────────────────────────────────────────────
 
@@ -301,9 +264,7 @@ fn channel_matrix() -> list
     let b = (1900.0 + rand01(810 + d) * 700.0) * weekend
     let c = (1050.0 + rand01(920 + d) * 520.0) * weekend
     [a, b, c]
-  end
   out
-end
 
 # ── Card chrome ──────────────────────────────────────────────────────────────
 
@@ -312,7 +273,6 @@ fn card_bg(r: record, raised: bool)
   draw_rect_rounded(x: r.x, y: r.y + 2, w: r.w, h: r.h, radius: 12, r: 0, g: 0, b: 0, a: 60)
   draw_rect_rounded(r, radius: 12, c: fill)
   draw_rect_outline(r, c: HAIRLINE, a: 255, width: 1)
-end
 
 # Draws the card's title row; the rect returned is the content area below it.
 fn card_head(r: record, title: string, right_note: string) -> Rect
@@ -321,9 +281,7 @@ fn card_head(r: record, title: string, right_note: string) -> Rect
   text_at(title, x: r.x + pad, y: r.y + pad, style: ts)
   if len(right_note) > 0 then
     text_right(right_note, right_x: r.x + r.w - pad, y: r.y + pad, style: {size: 10, color: FAINT})
-  end
   rect(r.x + pad, r.y + pad + 26, r.w - pad * 2, r.h - pad * 2 - 26)
-end
 
 fn delta_chip(x: num, y: num, d: num, invert: bool) -> int
   let good = if invert then d < 0.0 else d > 0.0 end
@@ -335,7 +293,6 @@ fn delta_chip(x: num, y: num, d: num, invert: bool) -> int
   draw_rect_rounded(rect(x, y, w, 20), radius: 6, c: col, a: 26)
   text_at(s, x: x + 7, y: y + 4, style: st)
   w
-end
 
 # ── Chart geometry ───────────────────────────────────────────────────────────
 
@@ -348,21 +305,16 @@ fn nice_step(span: num, target: num) -> float
   else if norm <= 2.5 then 2.5
   else if norm <= 5.0 then 5.0
   else 10.0
-  end
   mult * mag
-end
 
 fn y_of(v: num, lo: num, hi: num, plot: record)
   plot.y + plot.h * (1.0 - (v - lo) / max(hi - lo, 0.000001))
-end
 
 fn x_of(i: num, n: num, plot: record)
   if n <= 1 then
     plot.x + plot.w / 2.0
   else
     plot.x + plot.w * float(i) / float(n - 1)
-  end
-end
 
 # A filled area under a polyline. fill_poly is convex-only, so the region is
 # emitted one vertical trapezoid per segment; the vertical gradient comes from
@@ -387,18 +339,13 @@ fn area_band(ys: list, plot: record, color: record, a_top: num, a_bot: num, band
         [x1, plot.y + plot.h],
         [x0, plot.y + plot.h],
       ], r: color.r, g: color.g, b: color.b, a: a)
-    end
-  end
   clip_none()
-end
 
 fn polyline(ys: list, plot: record, color: record, width: num)
   for i in range(0, len(ys) - 1) do
     draw_line(x1: x_of(i, n: len(ys), plot: plot), y1: ys[i],
       x2: x_of(i: i + 1, n: len(ys), plot: plot), y2: ys[i + 1],
       r: color.r, g: color.g, b: color.b, a: 255, width: width)
-  end
-end
 
 # ── Sparkline (KPI cards) ────────────────────────────────────────────────────
 
@@ -418,14 +365,11 @@ fn sparkline(r: record, xs: list, color: record, alpha: num)
       [x1, plot.y + plot.h],
       [x0, plot.y + plot.h],
     ], r: color.r, g: color.g, b: color.b, a: int(28.0 * alpha))
-  end
   for i in range(0, n - 1) do
     draw_line(x1: x_of(i, n, plot), y1: ys[i], x2: x_of(i + 1, n, plot), y2: ys[i + 1],
       r: color.r, g: color.g, b: color.b, a: int(220.0 * alpha), width: 1.6)
-  end
   draw_circle(cx: x_of(n - 1, n, plot), cy: ys[n - 1], radius: 2.6, r: color.r, g: color.g, b: color.b,
     a: int(255.0 * alpha))
-end
 
 # ── Responsive grid ──────────────────────────────────────────────────────────
 # Columns are chosen from the available width, so the same call lays four KPI
@@ -435,21 +379,17 @@ end
 # float division and staircases the whole grid. Column counts have to stay int.
 fn iclamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
-end
 
 fn grid_cols(avail_w: num, count: num, min_w: num, gap: num) -> num
   let fit = int((avail_w + gap) / (min_w + gap))
   iclamp(fit, lo: 1, hi: count)
-end
 
 fn grid_cols_even4(avail_w: num, min_w: num, gap: num) -> num
   let c = grid_cols(avail_w, 4, min_w, gap)
   if c == 3 then 2 else c end
-end
 
 fn grid_rows(count: num, cols: num) -> num
   (count + cols - 1) / cols
-end
 
 fn grid_cells(x: num, y: num, w: num, count: num, cols: num, gap: num, row_h: num) -> list
   let cw = (w - gap * (cols - 1)) / cols
@@ -457,9 +397,7 @@ fn grid_cells(x: num, y: num, w: num, count: num, cols: num, gap: num, row_h: nu
     let c = i % cols
     let rw = i / cols
     rect(x + c * (cw + gap), y + rw * (row_h + gap), cw, row_h)
-  end
   cells
-end
 
 # ═════════════════════════════════════════════════════════════════════════════
 # State
@@ -501,7 +439,6 @@ if key_pressed("right") then range_i = min(range_i + 1, len(RANGES) - 1) end
 if key_pressed("left") then range_i = max(range_i - 1, 0) end
 if key_pressed("t") then
   chart_mode = if chart_mode == "area" then "bars" else "area" end
-end
 if key_pressed("h") then show_readout = !show_readout end
 
 # ── Header ───────────────────────────────────────────────────────────────────
@@ -532,10 +469,8 @@ while ri >= 0 do
   pills = append(pills, {i: ri, r: rect(pill_x, pill_y, pw, pill_h)})
   pill_x = pill_x - S1
   ri = ri - 1
-end
 for p in pills do
   if clicked(p.r) then range_i = p.i end
-end
 
 let live_x = content_x + content_w
 let live_s = {size: 10, color: FAINT}
@@ -559,12 +494,10 @@ let head_val = if metric.unit == "count" || metric.unit == "usd" then
   series_sum(win)
 else
   series_sum(win) / float(len(win))
-end
 let delta_pct = (cur - first) / max(abs(first), 0.000001) * 100.0
 
 if prev_sel != sel || prev_range != range_i then
   tween = 0.0
-end
 tween = min(1.0, tween + dt() * 3.4)
 
 # Headline easing (frame-rate independent).
@@ -572,7 +505,6 @@ let ease = min(1.0, dt() * 9.0)
 shown_head = lerp(shown_head, head_val, t: ease)
 if abs(shown_head - head_val) < abs(head_val) * 0.004 then
   shown_head = head_val
-end
 
 # ── Layout solve ─────────────────────────────────────────────────────────────
 # Everything under the header divides the height that is actually left, so the
@@ -615,7 +547,6 @@ let donut_r = if two_up then
   rect(content_x + content_w - donut_w, row2_y, donut_w, row2_h)
 else
   r3_cells[3]
-end
 
 # ── KPI card row ─────────────────────────────────────────────────────────────
 
@@ -626,12 +557,10 @@ for i in range(0, 4) do
   let hot = hovered(r)
   if mouse_pressed(0) && hot then
     sel = i
-  end
   card_bg(r, is_sel || hot)
   if is_sel then
     draw_rect_outline(r, c: m.color, a: 150, width: 1)
     draw_rect_rounded(rect(r.x, r.y + 12, 3, r.h - 24), radius: 2, c: m.color)
-  end
 
   let mw = tail(m.data, rng.days)
   let mcur = mw[len(mw) - 1]
@@ -641,7 +570,6 @@ for i in range(0, 4) do
     series_sum(mw) / float(len(mw))
   else
     series_sum(mw)
-  end
 
   let pad = S3
   text_at(m.label, x: r.x + pad, y: r.y + pad, style: {size: 10, color: DIM, spacing: 1.5})
@@ -654,7 +582,6 @@ for i in range(0, 4) do
   let sp = rect(r.x + r.w - pad - sp_w, r.y + r.h - pad - 46, sp_w, 44)
   sparkline(sp, xs: resample(mw, min(len(mw), 46)), color: m.color,
     alpha: if is_sel then 1.0 else 0.55 end)
-end
 
 # ── Main chart + donut row ───────────────────────────────────────────────────
 
@@ -702,7 +629,6 @@ while gv <= hi do
   draw_line(x1: plot.x, y1: gy, x2: plot.x + plot.w, y2: gy, r: GRID.r, g: GRID.g, b: GRID.b, a: 255, width: 1)
   text_right(fmt_axis(gv, metric.unit), right_x: plot.x - S2, y: gy - 6, style: {size: 10, color: FAINT})
   gv = gv + step
-end
 
 # The series
 let ys = for t in shown_norm do plot.y + plot.h * (1.0 - t) end
@@ -719,9 +645,6 @@ else
     if bh > 1.0 then
       draw_rect_rounded(x: bx, y: by, w: bw, h: bh, radius: min(3.0, bw / 2.0),
         r: metric.color.r, g: metric.color.g, b: metric.color.b, a: 210)
-    end
-  end
-end
 
 # baseline
 draw_line(x1: plot.x, y1: plot.y + plot.h, x2: plot.x + plot.w, y2: plot.y + plot.h,
@@ -735,7 +658,6 @@ while xt < nsamp do
   text_center(day_label(d), cx: x_of(i: xt, n: nsamp, plot: plot), y: plot.y + plot.h + 9,
     style: {size: 10, color: FAINT})
   xt = xt + max(1, int(float(nsamp) / 6.0))
-end
 
 # Hover crosshair + readout
 let over_plot = point_in(px: mouse_x(), py: mouse_y(), r: plot)
@@ -745,7 +667,6 @@ if over_plot then
   hover_i = iclamp(int(round(t * float(nsamp - 1))), lo: 0, hi: nsamp - 1)
 else if !show_readout then
   hover_i = -1
-end
 
 if show_readout && hover_i >= 0 && hover_i < nsamp then
   let hx = x_of(i: hover_i, n: nsamp, plot: plot)
@@ -770,7 +691,6 @@ if show_readout && hover_i >= 0 && hover_i < nsamp then
   draw_rect_outline(x: tx, y: ty, w: tw, h: th, r: metric.color.r, g: metric.color.g, b: metric.color.b, a: 110, width: 1)
   text_at(l1, x: tx + 11, y: ty + 9, style: s1)
   text_at(l2, x: tx + 11, y: ty + 24, style: s2)
-end
 
 prev_norm = shown_norm
 prev_lo = lo
@@ -817,9 +737,7 @@ for pi_ in range(0, len(PLANS)) do
       [dcx + cos(a1) * ro, dcy + sin(a1) * ro],
       [dcx + cos(a1) * riq, dcy + sin(a1) * riq],
     ], r: p.color.r, g: p.color.g, b: p.color.b, a: alpha)
-  end
   ang = ang + sweep
-end
 
 # donut center label
 let center_top = if plan_hover >= 0 then PLANS[plan_hover].name else "PAID" end
@@ -838,7 +756,6 @@ for i in range(0, len(PLANS)) do
   if on then
     draw_rect_rounded(x: lg_x - 8.0, y: ly - 5.0, w: donut_body.w - (lg_x - donut_body.x) + 6.0,
       h: lg_step - 6.0, radius: 6, r: 255, g: 255, b: 255, a: 10)
-  end
   draw_rect_rounded(rect(lg_x, ly + 3.0, 8, 8), radius: 2, c: p.color)
   let pct_s = dec(p.pct, 0) ++ "%"
   let name_style = {size: 12, color: if on then TEXT else :c3cbd8 end}
@@ -846,7 +763,6 @@ for i in range(0, len(PLANS)) do
   text_at(ellipsize(p.name, avail_px: name_avail, size: 12), x: lg_x + 16.0, y: ly, style: name_style)
   text_right(pct_s, right_x: donut_body.x + donut_body.w, y: ly,
     style: {size: 12, color: if on then TEXT else DIM end})
-end
 
 let stat_y = donut_body.y + donut_body.h - 34
 draw_line(x1: donut_body.x, y1: stat_y - 12, x2: donut_body.x + donut_body.w, y2: stat_y - 12,
@@ -871,11 +787,9 @@ let stack_max = 0.0
 for row in channels do
   let t = row[0] + row[1] + row[2]
   if t > stack_max then stack_max = t end
-end
 for g in range(1, 3) do
   let gy = sc_plot.y + sc_plot.h * float(g) / 3.0
   draw_line(x1: sc_plot.x, y1: gy, x2: sc_plot.x + sc_plot.w, y2: gy, r: GRID.r, g: GRID.g, b: GRID.b, a: 255, width: 1)
-end
 draw_line(x1: sc_plot.x, y1: sc_plot.y + sc_plot.h, x2: sc_plot.x + sc_plot.w, y2: sc_plot.y + sc_plot.h,
   r: HAIRLINE.r, g: HAIRLINE.g, b: HAIRLINE.b, a: 255, width: 1)
 let colw = sc_plot.w / 7.0
@@ -888,7 +802,6 @@ for d in range(0, 7) do
   if hot_col then
     draw_rect_rounded(x: cx0 + 1.0, y: sc_plot.y - 6.0, w: colw - 2.0, h: sc_plot.h + 30.0, radius: 6,
       r: 255, g: 255, b: 255, a: 9)
-  end
   let acc = 0.0
   for k in range(0, 3) do
     let v = row[k]
@@ -898,7 +811,6 @@ for d in range(0, 7) do
     let a = if hot_col then 255 else 215 end
     draw_rect(x: bx, y: y0, w: bw, h: max(1.0, y1 - y0 - 1.5), r: c.r, g: c.g, b: c.b, a: a)
     acc = acc + v
-  end
   let lab_col = if hot_col then TEXT else FAINT end
   text_center(WEEKDAYS[d], cx: cx0 + colw / 2.0, y: sc_plot.y + sc_plot.h + 8,
     style: {size: 10, color: lab_col})
@@ -906,8 +818,6 @@ for d in range(0, 7) do
     text_center(compact(acc), cx: cx0 + colw / 2.0,
       y: sc_plot.y + sc_plot.h * (1.0 - acc / stack_max) - 15.0,
       style: {size: 10, color: TEXT})
-  end
-end
 # legend strip
 let lgy = sc.y + sc.h - S3 - 11
 let lgx = sc_body.x
@@ -915,7 +825,6 @@ for k in range(0, 3) do
   draw_rect_rounded(rect(lgx, lgy + 3, 8, 8), radius: 2, c: ch_cols[k])
   text_at(ch_names[k], x: lgx + 14, y: lgy, style: {size: 10, color: DIM})
   lgx = lgx + 14 + text_w(ch_names[k], {size: 10, color: DIM}) + S3
-end
 
 # (b) ranked horizontal bars — traffic sources
 let src_c = r3_cells[1]
@@ -930,7 +839,6 @@ for i in range(0, src_n) do
   let hot = hovered(rr)
   if hot then
     draw_rect_rounded(rr, radius: 6, c: WHITE, a: 10)
-  end
   let ty = rr.y + rowh / 2.0 - 15.0
   text_at(s.name, x: src_body.x, y: ty, style: {size: 12, color: if hot then TEXT else :c3cbd8 end})
   text_right(commas(s.v), right_x: src_body.x + src_body.w, y: ty, style: {size: 12, color: DIM})
@@ -941,7 +849,6 @@ for i in range(0, src_n) do
   let c = if s.d >= 0.0 then C_REV else :7c8698 end
   draw_rect_rounded(x: src_body.x, y: bar_y, w: max(4.0, fillw), h: 5, radius: 2.5,
     r: c.r, g: c.g, b: c.b, a: if hot then 255 else 205 end)
-end
 
 # (c) table — top pages
 let pg = r3_cells[2]
@@ -955,7 +862,6 @@ for i in range(0, pg_n) do
   let hot = hovered(rr)
   if hot then
     draw_rect_rounded(rr, radius: 6, c: WHITE, a: 10)
-  end
   let ty = rr.y + prowh / 2.0 - 8.0
   let dcol = if p.d >= 0.0 then POS else NEG end
   let dtxt = (if p.d >= 0.0 then "+" else "−" end) ++ dec(abs(p.d), 1) ++ "%"
@@ -970,8 +876,6 @@ for i in range(0, pg_n) do
   if i < pg_n - 1 then
     draw_line(x1: pg_body.x, y1: rr.y + prowh - 0.5, x2: pg_body.x + pg_body.w, y2: rr.y + prowh - 0.5,
       r: HAIRLINE.r, g: HAIRLINE.g, b: HAIRLINE.b, a: 120, width: 1)
-  end
-end
 
 # ── Footer ───────────────────────────────────────────────────────────────────
 
@@ -994,4 +898,3 @@ for p in pills do
   draw_rect_outline(p.r, c: if on then :47597a else HAIRLINE end, a: 255, width: 1)
   let fg = if on then TEXT else if hot then :c3cbd8 else DIM end
   text_center(RANGES[p.i].label, cx: p.r.x + p.r.w / 2.0, y: p.r.y + 8, style: {size: 12, color: fg})
-end

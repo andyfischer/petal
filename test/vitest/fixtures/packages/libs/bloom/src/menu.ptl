@@ -3,8 +3,6 @@ import ./motion
 
 pub fn open()
   motion.ease("bloom open")
-end
 
 pub fn close()
   "bloom close"
-end

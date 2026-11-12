@@ -111,13 +111,11 @@ fn _speculate(view, model)
     set _cap_drags = Map()
     let value = view(model)
     {value: value, drags: get _cap_drags}
-  end)
+  )
   let places = Map()
   for p in r.places do
     places[p.key] = p.value
-  end
   {value: r.value.value, places: places, drags: r.value.drags}
-end
 
 # Where a speculation put `key`: its `place` record, or — for a view that
 # returns its scene as data — the scene node whose `key` field is `key`.
@@ -127,10 +125,7 @@ fn _placed(sp, key)
   if type(sp.value) == "list" then
     for n in sp.value do
       if type(n) == "record" && (n.key ?? nil) == key then return n end
-    end
-  end
   nil
-end
 
 # `view(st)`, speculated once per distinct state per walk.
 fn _spec_run(st)
@@ -140,14 +135,12 @@ fn _spec_run(st)
   let kept = {value: sp.value, places: sp.places}
   set _cache[st] = kept
   kept
-end
 
 # ── Values ────────────────────────────────────────────────────────────────
 
 fn _is_num(v)
   let t = type(v)
   t == "int" || t == "float"
-end
 
 # The point a placed value stands for: a rect's centre, a point's position.
 # nil for a value with no position (a number, a colour).
@@ -158,11 +151,9 @@ fn _center(v)
   let y = v.y ?? nil
   if !_is_num(x) || !_is_num(y) then return nil end
   {x: x + (v.w ?? 0) / 2.0, y: y + (v.h ?? 0) / 2.0}
-end
 
 fn _inside(px, py, r)
   r != nil && px >= r.x && px < r.x + (r.w ?? 0) && py >= r.y && py < r.y + (r.h ?? 0)
-end
 
 # `value` moved so its top-left is (x, y).
 fn _at(value, x, y)
@@ -170,29 +161,23 @@ fn _at(value, x, y)
   o.x = x
   o.y = y
   o
-end
 
 # Ease `cur` toward `target` field by field: numbers approach, lists and
 # records (rects, colours) recurse, anything else takes the target.
 fn _approach_value(cur, target, rate)
   if _is_num(target) then
     return if _is_num(cur) then approach(cur, target, rate) else target end
-  end
   let t = type(target)
   if t == "list" then
     if type(cur) != "list" || len(cur) != len(target) then return target end
     return for i in range(0, len(target)) do _approach_value(cur[i], target[i], rate) end
-  end
   if (t == "record" || t == "Rect") && type(cur) == t then
     let o = target
     for k in keys(target) do
       let c = cur[k] ?? nil
       if c != nil then o[k] = _approach_value(c, target[k], rate) end
-    end
     return o
-  end
   target
-end
 
 # ── place ─────────────────────────────────────────────────────────────────
 # Mark where `key` landed in this rendering, and get back the value to draw.
@@ -209,7 +194,6 @@ pub fn place(key, value)
   let out = _place(key, value)
   set _shown[key] = out
   out
-end
 
 fn _place(key, value)
   let o = get _origin
@@ -218,7 +202,6 @@ fn _place(key, value)
     let fv = _at(value, live.fx, live.fy)
     set _anim[key] = _shift(fv, o, -1)
     return fv
-  end
   if live != nil && (live.blend != nil || live.instant) then
     # `between`: a key every active target placed is drawn at the blend of
     # those values; `vary`: everything is drawn where the solved state puts
@@ -228,25 +211,20 @@ fn _place(key, value)
     if shown != nil then
       set _anim[key] = _shift(shown, o, -1)
       return shown
-    end
-  end
   let target = _shift(value, o, -1)
   let cur = get _anim[key]
   if cur == nil then
     set _anim[key] = target
     return value
-  end
   let v = _approach_value(cur, target, PLACE_RATE)
   if v != cur then set _anim[key] = v end
   if v == target && (get _settle) == key then set _settle = nil end
   _shift(v, o, 1)
-end
 
 # `v` with its position moved by `sign` times origin `o` (nil: unchanged).
 fn _shift(v, o, sign)
   if o == nil || _center(v) == nil then return v end
   _at(v, v.x + sign * o.x, v.y + sign * o.y)
-end
 
 # The same, drawing: `body(v)` gets the displayed value and runs on the drag
 # layer while `key` is being dragged or is settling after a drop, so the
@@ -260,8 +238,6 @@ pub fn place(key, value, body)
     ui_overlay(max(ui_layer(), UI_LAYER_DRAG), fn() body(v) end)
   else
     body(v)
-  end
-end
 
 # Inside `body()`, `place` eases positions relative to `origin` ({x, y}, in
 # screen coordinates) instead of the screen. Put a scrolled container's
@@ -274,24 +250,20 @@ pub fn place_origin(origin, body)
   let out = body()
   set _origin = prev
   out
-end
 
 # The key of the element being dragged right now, or nil.
 pub fn drag_key()
   let live = get _live
   if live == nil then nil else live.key end
-end
 
 fn _on_top(key)
   let live = get _live
   (live != nil && live.key == key) || ((get _settle) != nil && (get _settle) == key)
-end
 
 # Whether `key` is the element being dragged right now.
 pub fn is_dragging(key)
   let live = get _live
   live != nil && live.key == key
-end
 
 # ── draggable ─────────────────────────────────────────────────────────────
 # A press on `r` starts a drag of `key` once the pointer has moved
@@ -303,13 +275,10 @@ pub fn draggable(key, r, spec_fn)
   if speculating() then
     set _cap_drags[key] = {rect: r, spec: spec_fn}
     return {hover: false, down: false, pressed: false, released: false, click: false}
-  end
   let s = interact(r, "drag:{key}")
   if s.pressed && (get _press) == nil && (get _live) == nil then
     set _press = {key: key, x: mouse_x(), y: mouse_y(), spec: _spec_of(spec_fn())}
-  end
   s
-end
 
 # ── Drag specs (data) ─────────────────────────────────────────────────────
 # Every spec is a record whose `d2` field names its kind. A plain model state
@@ -317,29 +286,24 @@ end
 
 fn _is_spec(x)
   type(x) == "record" && type(x.d2 ?? nil) == "string"
-end
 
 fn _spec_of(x)
   if _is_spec(x) then x else fixed_state(x) end
-end
 
 # One target state. (D2 calls it `fixed`; Petal's `fixed` formats numbers.)
 pub fn fixed_state(st)
   {d2: "fixed", state: st, drop: st}
-end
 
 # The option whose target is nearest the dragged element. `stickiness` (px)
 # favours the option chosen last frame, so a pointer on a boundary does not
 # flicker between two.
 pub fn closest(options, opts = {})
   {d2: "closest", options: for o in options do _spec_of(o) end, stickiness: opts.stickiness ?? 0}
-end
 
 # The dragged element follows the pointer while the rest of the view
 # previews the chosen state (D2 `withFloating`).
 pub fn floating(spec)
   {d2: "floating", inner: _spec_of(spec)}
-end
 
 # Snap onto the inner choice when the element is within `px` of it: the
 # dragged element stops floating and is drawn in its slot (D2
@@ -348,25 +312,21 @@ end
 # with the spec the view's `draggable` gives in that state.
 pub fn snap_radius(spec, px, opts = {})
   {d2: "snap_radius", inner: _spec_of(spec), px: px, chain: opts.chain ?? false}
-end
 
 # `spec` while its target is within `px` (default 60) of the element,
 # `far` beyond that.
 pub fn when_far(spec, far, opts = {})
   {d2: "when_far", inner: _spec_of(spec), far: _spec_of(far), px: opts.px ?? 60}
-end
 
 # Dropping with the pointer over the element placed as `key` (a trash can,
 # a toolbar slot) gives `st`.
 pub fn drop_target(key, st)
   {d2: "drop_target", key: key, state: st, drop: st}
-end
 
 # Transform what a drop commits: every target's drop state goes through
 # `f` when the spec is built, so the spec stays data.
 pub fn on_drop(spec, f)
   _map_leaves(_spec_of(spec), fn(l) {...l, drop: f(l.drop)} end)
-end
 
 # Reaching this option switches the drag's model to `st` at once and keeps
 # dragging the element placed as `key` (D2 `switchToStateAndFollow`). The
@@ -376,7 +336,6 @@ end
 pub fn switch_to(st, key, spec_fn = nil)
   let follow = if spec_fn == nil then nil else _spec_of(spec_fn()) end
   {d2: "switch_to", state: st, drop: st, key: key, follow: follow}
-end
 
 # Interpolate between the options' renderings. The dragged element moves
 # continuously inside the region its positions in the options span — along
@@ -388,7 +347,6 @@ end
 # is a model state (or `fixed_state`).
 pub fn between(options)
   {d2: "between", options: for o in options do _spec_of(o) end}
-end
 
 # Solve the numbers at `paths` in `st` so the dragged element tracks the
 # pointer: each frame one step of the DM v2 solver (Gauss-Newton, warm-started
@@ -409,13 +367,11 @@ pub fn vary(st, paths, opts = {})
   let ps = _paths_of(paths)
   {d2: "vary", state: st, drop: st, paths: ps, bounds: _bounds_of(opts.bounds ?? nil, len(ps)),
     constraint: opts.constraint ?? nil}
-end
 
 # One path or a list of paths, as a list of paths.
 fn _paths_of(paths)
   if type(paths) != "list" then return [[paths]] end
   if len(paths) > 0 && all(paths, fn(p) type(p) == "list" end) then paths else [paths] end
-end
 
 # The bounds, one [lo, hi] or nil per path.
 fn _bounds_of(b, n)
@@ -425,7 +381,6 @@ fn _bounds_of(b, n)
   if one && n == 1 then return [b] end
   assert(len(b) == n, "ui/drag: vary has {n} paths but {len(b)} bounds")
   b
-end
 
 # Apply `f` to every leaf (fixed, drop_target, switch_to) of a spec.
 fn _map_leaves(spec, f)
@@ -442,8 +397,6 @@ fn _map_leaves(spec, f)
     # between / vary: a drop state that is only known per frame. The
     # transform is kept as a wrapper, applied to the drop each frame.
     {d2: "on_drop", inner: spec, f: f}
-  end
-end
 
 # Every leaf of a resolved spec, in spec order.
 fn _leaves(spec)
@@ -458,8 +411,6 @@ fn _leaves(spec)
     _leaves(spec.inner) ++ _leaves(spec.far)
   else
     []
-  end
-end
 
 # ── Resolving a spec: the target table ────────────────────────────────────
 # Each leaf gains `id` (its place in spec order) and `at` (where the dragged
@@ -489,8 +440,6 @@ fn _res(spec)
     {...spec, inner: _res(spec.inner)}
   else
     assert(false, "ui/drag: not a drag spec: {spec}")
-  end
-end
 
 # Speculate every distinct state `spec` can reach, from `base`, for `key`.
 fn _resolve(view, base, key, spec)
@@ -503,7 +452,6 @@ fn _resolve(view, base, key, spec)
   set _cache = Map()
   set _walk = nil
   {spec: out, home: home}
-end
 
 # Two different states that put the dragged element on the same spot cannot
 # be told apart by where it is: warn once, and `closest` takes the first.
@@ -520,13 +468,7 @@ fn _check_ambiguous(key, spec)
           if (get _warned[msg]) == nil then
             set _warned[msg] = true
             print(msg)
-          end
-        end
-      end
-    end
-  end
   nil
-end
 
 # ── Evaluating a spec against the pointer (no speculation) ────────────────
 # c: {ex, ey} the dragged element's centre, {px, py} the pointer, prev the
@@ -553,9 +495,6 @@ fn _eval(spec, c)
         if g < bg then
           best = r
           bg = g
-        end
-      end
-    end
     best
   else if t == "floating" then
     let r = _eval(spec.inner, c)
@@ -566,7 +505,6 @@ fn _eval(spec, c)
       {...r, float: false, snapped: true, chain: r.chain || spec.chain}
     else
       r
-    end
   else if t == "when_far" then
     let r = _eval(spec.inner, c)
     if r.gap > spec.px then _eval(spec.far, c) else r end
@@ -581,8 +519,6 @@ fn _eval(spec, c)
     if r.leaf == nil then r else {...r, leaf: f(r.leaf)} end
   else
     assert(false, "ui/drag: not a drag spec: {spec}")
-  end
-end
 
 # ── between and vary ──────────────────────────────────────────────────────
 # `between` reads its table like `closest` (no speculation per frame): the
@@ -598,15 +534,12 @@ fn _res_between(spec)
     set _leaf_n = (get _leaf_n) + 1
     let sp = _spec_run(o.state)
     {...o, id: get _leaf_n, at: _placed(sp, w.key), places: sp.places}
-  end
   let ok = filter(opts, fn(o) _center(o.at) != nil end)
   let pts = for o in ok do
     let p = _center(o.at)
     [p.x, p.y]
-  end
   let tris = if len(pts) >= 3 then drag_triangulate(pts) else [] end
   {...spec, options: ok, pts: pts, tris: tris}
-end
 
 fn _eval_between(spec, c)
   let n = len(spec.options)
@@ -619,14 +552,11 @@ fn _eval_between(spec, c)
     bx += ws[i] * spec.pts[i][0]
     by += ws[i] * spec.pts[i][1]
     if ws[i] > ws[top] then top = i end
-  end
   let blend = []
   for i in range(n) do
     if ws[i] > 1.0e-6 then blend ++= [{w: ws[i], places: spec.options[i].places}] end
-  end
   {leaf: spec.options[top], gap: hypot(bx - c.ex, by - c.ey), float: false, snapped: false, chain: false,
     blend: blend}
-end
 
 # `key`'s value blended across the active targets, or nil when one of them
 # does not place it.
@@ -638,15 +568,12 @@ fn _blend_key(blend, key)
     if v == nil then return nil end
     vs ++= [v]
     ws ++= [b.w]
-  end
   if len(vs) == 0 then return nil end
   if len(vs) == 1 then return vs[0] end
   _blend(vs, ws)
-end
 
 fn _is_color(v)
   type(v) == "record" && len(keys(v)) <= 4 && _is_num(v.r ?? nil) && _is_num(v.g ?? nil) && _is_num(v.b ?? nil)
-end
 
 # The weighted blend of values of one shape: numbers mix, lists mix by item,
 # records and rects by field (a colour's channels round to ints), and
@@ -655,19 +582,16 @@ fn _blend(vs, ws)
   let top = 0
   for i in range(len(ws)) do
     if ws[i] > ws[top] then top = i end
-  end
   let v0 = vs[top]
   if _is_num(v0) then
     if !all(vs, fn(v) _is_num(v) end) then return v0 end
     let s = 0.0
     for i in range(len(vs)) do s += ws[i] * vs[i] end
     return s
-  end
   let t = type(v0)
   if t == "list" then
     if !all(vs, fn(v) type(v) == "list" && len(v) == len(v0) end) then return v0 end
     return for j in range(len(v0)) do _blend(for v in vs do v[j] end, ws) end
-  end
   if t == "record" || t == "Rect" then
     if !all(vs, fn(v) type(v) == t end) then return v0 end
     let col = _is_color(v0)
@@ -677,21 +601,15 @@ fn _blend(vs, ws)
       if all(parts, fn(p) p != nil end) then
         let b = _blend(parts, ws)
         o[k] = if col && _is_num(b) then int(round(b)) else b end
-      end
-    end
     return o
-  end
   v0
-end
 
 # `st` with the numbers `vals` at `paths`.
 fn _with_vals(st, paths, vals)
   let out = st
   for i in range(len(paths)) do
     out = set_in(out, paths[i], vals[i])
-  end
   out
-end
 
 fn _res_vary(spec)
   let w = get _walk
@@ -700,16 +618,13 @@ fn _res_vary(spec)
     let v = get_in(spec.state, p)
     assert(_is_num(v), "ui/drag: vary path {p} holds {v}, not a number")
     v * 1.0
-  end
   let at = _placed(_spec_run(spec.state), w.key)
   {...spec, id: get _leaf_n, at: at, vals: vals}
-end
 
 # Where `vals` put the dragged element, by one speculative rendering.
 fn _vary_at(spec, vals)
   let w = get _walk
   _placed(_speculate(w.view, _with_vals(spec.state, spec.paths, vals)), w.key)
-end
 
 # ∂centre/∂lever for every lever at `vals` (the element is at `p` there):
 # 2 rows × k, by forward differences.
@@ -730,12 +645,8 @@ fn _vary_jac(spec, vals, p)
         let q = _center(_vary_at(spec, nv))
         if q != nil then col = [(q.x - p.x) / h, (q.y - p.y) / h] end
         h0 *= 10.0
-      end
-    end
     col
-  end
   [for c in cols do c[0] end, for c in cols do c[1] end]
-end
 
 # One frame of `vary`: from last frame's numbers, one Gauss-Newton step
 # toward putting the element's centre at (c.ex, c.ey), shortened while it
@@ -775,25 +686,17 @@ fn _eval_vary(spec, c)
               cur.vals = next
               cur.at = at
               done = true
-            end
-          end
           scale /= 2.0
-        end
-      end
-    end
     # Not there yet but getting closer: keep frames coming (the frame gate
     # would otherwise stop running them once the pointer is still).
     let q0 = _center(cur.at)
     if cur.vals != vs.vals && (q0.x - c.ex) * (q0.x - c.ex) + (q0.y - c.ey) * (q0.y - c.ey) > 0.25 then
       dt()
-    end
-  end
   set _vary_out[spec.id] = cur
   let q = _center(cur.at)
   let st = _with_vals(spec.state, spec.paths, cur.vals)
   {leaf: {...spec, state: st, drop: st, at: cur.at}, gap: hypot(q.x - c.ex, q.y - c.ey),
     float: false, snapped: false, chain: false, instant: true}
-end
 
 # ── Reload detection ──────────────────────────────────────────────────────
 # A memo entry survives every run and is dropped by a reload that changes
@@ -801,12 +704,10 @@ end
 fn _bump()
   set _tok = (get _tok) + 1
   get _tok
-end
 
 fn _token()
   memo(0) t = _bump()
   t
-end
 
 # ── drag_session ──────────────────────────────────────────────────────────
 
@@ -817,10 +718,8 @@ fn _out(model, s, extra)
   # editor can turn a drop on a literal model into a source edit.
   if d.dropped then
     push_output(symbol(DRAG_DROPS_CHANNEL), {key: d.key, model: model, drop: d.drop})
-  end
   if ui_debug("drag") then drag_debug(d) end
   d
-end
 
 # Build the drag for press `p` against `model`, or nil when `view` does not
 # place `p.key` (the press belongs to another session).
@@ -830,10 +729,8 @@ fn _start(model, view, p)
   if res.home == nil then return nil end
   if _center(res.home) == nil then
     assert(false, "ui/drag: `{p.key}` is dragged but placed with {res.home}: place a draggable key with a rect (\{x, y, w, h\}) or a point (\{x, y\})")
-  end
   {phase: "drag", key: p.key, base: model, raw: raw, spec: res.spec, home: res.home,
     grab: {x: p.x - res.home.x, y: p.y - res.home.y}, choice: nil, tok: _token()}
-end
 
 # Switch the drag to `st` (switch_to, or a chained snap).
 fn _rebase(view, s, leaf)
@@ -844,13 +741,11 @@ fn _rebase(view, s, leaf)
     let sp = _speculate(view, leaf.state)
     let dg = sp.drags[key]
     if dg == nil then nil else _spec_of(dg.spec()) end
-  end
   if spec == nil then return nil end
   let raw = _stash_fns(spec)
   let res = _resolve(view, leaf.state, key, raw)
   if res.home == nil then return nil end
   {...s, key: key, base: leaf.state, raw: raw, spec: res.spec, home: res.home, choice: nil}
-end
 
 # The engine. Call it once per frame, before drawing `view(d.preview)`, with
 # the committed model and the view function (`fn(model)`, pure apart from
@@ -886,13 +781,8 @@ pub fn drag_session(model, view, opts = {})
         if st != nil then
           set _press = nil
           s = st
-        end
-      end
-    end
-  end
   if s.phase != "drag" then
     return _out(model, s, {})
-  end
 
   # A reload changed the program: re-speculate the stored states against
   # the new view. The spec itself was resolved at the press and is kept —
@@ -904,30 +794,25 @@ pub fn drag_session(model, view, opts = {})
     if _holds_fn(s.raw) then
       let dg = _speculate(view, s.base).drags[s.key]
       if dg != nil then s.raw = _stash_fns(_spec_of(dg.spec())) end
-    end
     # Keep vary's numbers; where they put the element is rendered again.
     let kept = Map()
     for id in keys(s.vary ?? Map()) do
       kept[id] = {...s.vary[id], at: nil}
-    end
     s.vary = kept
     let res = _resolve(view, s.base, s.key, s.raw)
     if res.home == nil then
       let key = s.key
       s = {phase: "idle"}
       return _out(model, s, {cancelled: true, key: key, reason: "dragged element `{key}` no longer placed"})
-    end
     s.spec = res.spec
     s.home = res.home
     s.tok = tok
-  end
 
   let key = s.key
   if key_pressed("escape") then
     s = {phase: "idle"}
     set _settle = key
     return _out(model, s, {cancelled: true, key: key, reason: "escape"})
-  end
 
   let fx = mx - s.grab.x
   let fy = my - s.grab.y
@@ -939,8 +824,6 @@ pub fn drag_session(model, view, opts = {})
       s = {...nb, vary: Map()}
       let hc2 = _center(_at(s.home, fx, fy))
       r = _eval_frame(view, s, {ex: hc2.x, ey: hc2.y, px: mx, py: my, prev: nil})
-    end
-  end
   s.vary = r.vary
   let leaf = r.leaf
   s.choice = if leaf == nil then nil else leaf.id end
@@ -956,12 +839,9 @@ pub fn drag_session(model, view, opts = {})
     set _settle = k
     if drop == nil then
       return _out(model, s, {cancelled: true, key: k, reason: "no target"})
-    end
     return _out(model, s, {...info, active: false, preview: drop, dropped: true})
-  end
   set _live = {key: s.key, float: r.float, fx: fx, fy: fy, blend: r.blend ?? nil, instant: r.instant ?? false}
   _out(model, s, info)
-end
 
 # `_eval` for this frame of drag `s`, with what `vary` needs: the view, and
 # its solver state from last frame. The result carries the new solver state
@@ -974,7 +854,6 @@ fn _eval_frame(view, s, c)
   let r = _eval(s.spec, c)
   set _walk = nil
   {...r, vary: get _vary_out}
-end
 
 # Whether a spec holds a function (which a reload drops from `state`).
 # Whether a stashed spec refers to functions in `_fns`.
@@ -985,38 +864,30 @@ fn _holds_fn(spec)
     if (spec.d2fn ?? nil) != nil then return true end
     if !_is_spec(spec) then return false end
     return any(keys(spec), fn(k) k != "state" && k != "drop" && _holds_fn(spec[k]) end)
-  end
   false
-end
 
 # `spec` with every function in it moved to `_fns` and replaced by
 # `{d2fn: index}`.
 fn _stash_fns(spec)
   set _fns = []
   _strip_fns(spec)
-end
 
 fn _strip_fns(x)
   let t = type(x)
   if t == "function" then
     set _fns = (get _fns) ++ [x]
     return {d2fn: len(get _fns) - 1}
-  end
   if t == "list" then return for v in x do _strip_fns(v) end end
   if _is_spec(x) then
     let o = x
     for k in keys(x) do
       if k != "state" && k != "drop" then o[k] = _strip_fns(x[k]) end
-    end
     return o
-  end
   x
-end
 
 # The function a stashed spec field stands for (nil stays nil).
 fn _fn(f)
   if type(f) == "record" then (get _fns)[f.d2fn] else f end
-end
 
 # ── Candidate sets ────────────────────────────────────────────────────────
 
@@ -1026,7 +897,6 @@ pub fn moves(xs, i)
   let x = xs[i]
   let rest = remove_at(xs, i)
   for j in range(0, len(xs)) do slice(rest, 0, j) ++ [x] ++ slice(rest, j) end
-end
 
 # An item's identity: its `id`, else its `key`, else the item itself. A
 # record or a class instance (whose type() is its class name) has fields.
@@ -1034,16 +904,13 @@ fn _key_of(it)
   let t = type(it)
   let plain = t == "string" || t == "int" || t == "float" || t == "bool" || t == "nil" || t == "list" || t == "map"
   if plain then it else it.id ?? (it.key ?? it) end
-end
 
 fn _items(col, field)
   if field == nil then col else col[field] end
-end
 
 # Where column `c`'s items are, as a `set_in` path.
 fn _items_path(c, field)
   if field == nil then [c] else [c, field] end
-end
 
 # The kanban shape: `lists` is a list of columns, each a list of items (or,
 # with `field`, a record whose `field` is that list), and the item whose
@@ -1055,59 +922,48 @@ pub fn moves_nested(lists, key, field = nil)
     if _key_of(_items(lists[c], field)[i]) == key then
       ci = c
       ii = i
-    end
-  end
   if ci < 0 then return [] end
   let item = _items(lists[ci], field)[ii]
   let removed = set_in(lists, _items_path(ci, field), remove_at(_items(lists[ci], field), ii))
   for c in range(len(removed)), j in range(len(_items(removed[c], field)) + 1) do
     let items = _items(removed[c], field)
     set_in(removed, _items_path(c, field), slice(items, 0, j) ++ [item] ++ slice(items, j))
-  end
-end
 
 # `st` with the value at `path` (a list of keys and indices, or one key) set
 # to each of `values`.
 pub fn choices(st, path, values)
   let p = if type(path) == "list" then path else [path] end
   for v in values do set_in(st, p, v) end
-end
 
 fn _forest_insert(forest, path, node, field)
   let i = path[0]
   if len(path) == 1 then
     return slice(forest, 0, i) ++ [node] ++ slice(forest, i)
-  end
   let out = forest
   let n = forest[i]
   n[field] = _forest_insert(n[field] ?? [], slice(path, 1), node, field)
   out[i] = n
   out
-end
 
 fn _forest_remove(forest, path, field)
   let i = path[0]
   if len(path) == 1 then
     return remove_at(forest, i)
-  end
   let out = forest
   let n = forest[i]
   n[field] = _forest_remove(n[field], slice(path, 1), field)
   out[i] = n
   out
-end
 
 fn _forest_paths(forest, field, prefix)
   flat(for i in range(0, len(forest)) do
     let p = prefix ++ [i]
     [p] ++ _forest_paths(forest[i][field] ?? [], field, p)
-  end)
-end
+  )
 
 fn _forest_at(forest, path, field)
   let n = forest[path[0]]
   if len(path) == 1 then n else _forest_at(n[field] ?? [], slice(path, 1), field) end
-end
 
 # The layers-panel shape: `tree` is a list of nodes, each a record whose
 # `children` (opts.children) is a list of nodes, and `path` the indices of
@@ -1133,16 +989,11 @@ pub fn tree_moves(tree, path, opts = {})
     if ok then
       let kids = target[field] ?? []
       cands ++= [_forest_insert(rest, p ++ [len(kids)], node, field)]
-    end
-  end
   for c in cands do
     if seen[c] == nil then
       seen[c] = true
       out ++= [c]
-    end
-  end
   out
-end
 
 # ── Debugging: drag_explain and drag_debug ────────────────────────────────
 # The target table, the distances and the chosen branch are data the engine
@@ -1159,12 +1010,10 @@ let _DBG_BG = :15161c
 
 fn _dbg_color(id)
   if id == nil || id < 1 then :808080 else _DBG_COLORS[(id - 1) % len(_DBG_COLORS)] end
-end
 
 fn _is_leaf(spec)
   let t = spec.d2
   t == "fixed" || t == "drop_target" || t == "switch_to"
-end
 
 # A spec's sub-specs, in spec order.
 fn _kids(spec)
@@ -1177,29 +1026,22 @@ fn _kids(spec)
     [spec.inner]
   else
     []
-  end
-end
 
 fn _has_kind(spec, kind)
   if spec.d2 == kind then return true end
   for k in _kids(spec) do
     if _has_kind(k, kind) then return true end
-  end
   false
-end
 
 # The kinds from `spec` down to leaf `id`, root first ("fixed #3" last), or
 # nil when `id` is not under `spec`.
 fn _branch(spec, id)
   if _is_leaf(spec) then
     return if (spec.id ?? nil) == id then ["{spec.d2} #{id}"] else nil end
-  end
   for k in _kids(spec) do
     let b = _branch(k, id)
     if b != nil then return [spec.d2] ++ b end
-  end
   nil
-end
 
 fn _explain(g)
   let s = g.s
@@ -1209,12 +1051,10 @@ fn _explain(g)
     {id: l.id ?? nil, kind: l.d2, at: l.at ?? nil, zone: l.zone ?? nil,
       gap: if p == nil then nil else hypot(p.x - c.x, p.y - c.y) end,
       active: s.choice != nil && (l.id ?? nil) == s.choice, drop: l.drop ?? nil}
-  end
   {key: s.key, pointer: {x: g.mx, y: g.my}, element: c, grab: s.grab, home: s.home,
     choice: s.choice, gap: if s.choice == nil then nil else g.gap end,
     branch: if s.choice == nil then nil else _branch(s.spec, s.choice) end,
     targets: targets, spec: s.raw, speculations: get _spec_runs}
-end
 
 # The drag in flight this frame, as data — or nil when nothing is dragged.
 # Call it after `drag_session`. `targets` is the target table: each leaf of
@@ -1227,7 +1067,6 @@ end
 pub fn drag_explain()
   let g = get _dbg
   if g == nil then nil else _explain(g) end
-end
 
 # Which leaf wins at each `step`-px cell of a `w` x `h` screen, as runs of
 # cells per row ({x, y, w, h, id}; id -1 is "no target").
@@ -1246,15 +1085,10 @@ fn _zone_cells(spec, home, grab, step, w, h)
       if id != cur then
         if cur != -2 then
           out ++= [{x: start * step, y: gy * step, w: (gx - start) * step, h: step, id: cur}]
-        end
         cur = id
         start = gx
-      end
-    end
     out ++= [{x: start * step, y: gy * step, w: (cols - start) * step, h: step, id: cur}]
-  end
   out
-end
 
 # The spec as indented lines, those on the chosen branch marked.
 fn _tree(spec, depth, choice)
@@ -1274,19 +1108,15 @@ fn _tree(spec, depth, choice)
     "when_far {spec.px}"
   else
     t
-  end
   let rest = for k in _kids(spec) do _tree(k, depth + 1, choice) end
   [{text: label, depth: depth, on: on}] ++ flat(rest)
-end
 
 fn _dbg_n(x)
   if x == nil then "-" else "{int(round(x))}" end
-end
 
 fn _dbg_label(text, x, y, c)
   draw_rect(rect(x - 4, y - 2, 8 + len(text) * 7, 17), _DBG_BG, 220)
   draw_text(text, x, y, 12, c)
-end
 
 # Draw the drag debugger over the app: the drop-zone map (which target wins
 # where the pointer is), the target table with each target's distance from
@@ -1302,10 +1132,8 @@ pub fn drag_debug(d, opts = {})
       _dbg_label("ui/drag debug: no drag", 8, 8, _DBG_DIM)
     else
       _dbg_draw(g, opts)
-    end
-  end)
+  )
   nil
-end
 
 fn _dbg_draw(g, opts)
   let ex = _explain(g)
@@ -1320,9 +1148,6 @@ fn _dbg_draw(g, opts)
       memo([s.key, s.base, s.home, s.grab, s.tok, step, w, h]) cells = _zone_cells(s.spec, s.home, s.grab, step, w, h)
       for c in cells do
         if c.id >= 0 then draw_rect(rect(c.x, c.y, c.w, c.h), _dbg_color(c.id), 40) end
-      end
-    end
-  end
   let el = ex.element
   for t in ex.targets do
     let col = if t.active then _DBG_ON else _dbg_color(t.id) end
@@ -1331,13 +1156,10 @@ fn _dbg_draw(g, opts)
     if p != nil then
       if (t.at.w ?? nil) != nil then
         draw_rect_outline(t.at, col, if t.active then 230 else 140 end, if t.active then 2 else 1 end)
-      end
       draw_line(el, p, col, if t.active then 230 else 80 end, 1)
       draw_circle(p, 3, col, 230)
       # A shadow keeps the label legible over an element of its own colour.
       draw_text("#{t.id} {_dbg_n(t.gap)}", p.x + 5, p.y - 14, {size: 11, color: col, shadow: true})
-    end
-  end
   draw_circle(el, 4, _DBG_ON, 255)
   if opts.tree ?? true then
     let lines = _tree(s.spec, 0, s.choice)
@@ -1352,13 +1174,8 @@ fn _dbg_draw(g, opts)
     draw_rect(rect(x - 8, 4, 340, n * 15 + 10), _DBG_BG, 215)
     for i in range(0, len(head)) do
       draw_text(head[i], x, 9 + i * 15, 11, _DBG_ON)
-    end
     for i in range(0, len(shown)) do
       let ln = shown[i]
       draw_text(ln.text, x + ln.depth * 12, 9 + (len(head) + i) * 15, 11, if ln.on then _DBG_ON else _DBG_DIM end)
-    end
     if len(lines) > len(shown) then
       draw_text("… {len(lines) - len(shown)} more", x, 9 + (n - 1) * 15, 11, _DBG_DIM)
-    end
-  end
-end

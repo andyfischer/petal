@@ -27,11 +27,9 @@ import ui
 
 fn _ref_blank(c)
   c == " " || c == "\t"
-end
 
 fn _ref_row(para, base, a, b)
   {text: char_slice(para, a, b), start: base + a, end: base + b}
-end
 
 # The rows of one paragraph (no newline in it), appended to `out0`.
 fn _ref_para(out0, para, base, ts, max_w)
@@ -40,7 +38,6 @@ fn _ref_para(out0, para, base, ts, max_w)
   let n = len(cs)
   if max_w <= 0.0 then
     return append(out, _ref_row(para, base, 0, n))
-  end
   # The line being filled: [ls, le) of `cs`, `lw` px wide; ls < 0 is empty.
   var ls = -1
   var le = 0
@@ -50,11 +47,9 @@ fn _ref_para(out0, para, base, ts, max_w)
     let g0 = i
     while i < n && _ref_blank(cs[i]) do
       set i = i + 1
-    end
     let w0 = i
     while i < n && !_ref_blank(cs[i]) do
       set i = i + 1
-    end
     if i > w0 then
       let gap_w = if w0 > g0 then text_advance(char_slice(para, g0, w0), ts) else 0.0 end
       let word_w = text_advance(char_slice(para, w0, i), ts)
@@ -71,9 +66,7 @@ fn _ref_para(out0, para, base, ts, max_w)
         if ls < 0 then
           set ls = g0
           set empty = w0 == g0
-        end
         set lw = lw + gap_w
-      end
       if empty && word_w > max_w then
         var ps = w0
         var acc = 0.0
@@ -83,26 +76,18 @@ fn _ref_para(out0, para, base, ts, max_w)
             set out = append(out, _ref_row(para, base, ps, k))
             set ps = k
             set acc = 0.0
-          end
           set acc = acc + cw
-        end
         set ls = ps
         set lw = acc
       else
         if ls < 0 then
           set ls = w0
-        end
         set lw = lw + word_w
-      end
       set le = i
-    end
-  end
   if ls < 0 then
     append(out, _ref_row(para, base, 0, 0))
   else
     append(out, _ref_row(para, base, ls, le))
-  end
-end
 
 # The rows `text_wrap_rows(s, ts, max_w)` answers.
 pub fn wrap_rows_reference(s, ts, max_w)
@@ -113,6 +98,4 @@ pub fn wrap_rows_reference(s, ts, max_w)
     let para = if ends_with(raw, chr(13)) then char_slice(raw, 0, n_raw - 1) else raw end
     set out = _ref_para(out, para, base, ts, float(max_w))
     set base = base + n_raw + 1
-  end
   out
-end

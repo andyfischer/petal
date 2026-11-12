@@ -29,12 +29,12 @@ Both become **identity builtins on the initializer**, like `tunable` and
 `rigid` already are:
 
 ```petal
-// before
+# before
 const TILES = [tile("grass", 1), tile("road", 0)]
 pub config let SPEED = tunable(4.0, 0, 10)
 pub config let START = "title"
 
-// after
+# after
 let TILES = const([tile("grass", 1), tile("road", 0)])
 pub let SPEED = tunable(4.0, 0, 10)
 pub let START = tunable("title", options: ["title", "select", "play"])
@@ -152,15 +152,15 @@ const(value) -> value
 ### Before and after
 
 ```petal
-// before (examples, Cheesecake: 316 declarations)
+# before (examples, Cheesecake: 316 declarations)
 pub const ART = "../trailkeeper/art"
 const COSTS = map(TILES, fn(t) -> t.cost)
 const PALETTE = [
   :101418, :ff2e88,
 ]
 
-// after
-pub let ART = "../trailkeeper/art"          // a literal: `const` added nothing (lint, below)
+# after
+pub let ART = "../trailkeeper/art"          # a literal: `const` added nothing (lint, below)
 let COSTS = const(map(TILES, fn(t) -> t.cost))
 let PALETTE = const([
   :101418, :ff2e88,

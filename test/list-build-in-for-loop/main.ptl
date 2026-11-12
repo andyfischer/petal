@@ -7,6 +7,5 @@
 let xs = []
 for i in range(1, 6) do
   xs = xs.append(i)
-end
 print(xs)
 print(len(xs))

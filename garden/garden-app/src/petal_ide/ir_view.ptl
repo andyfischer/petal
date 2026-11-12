@@ -67,7 +67,6 @@ let body_len = len(body)
 if has_error then
   let etag = "compile error"
   bloom.pill(w - PAD - text_width(etag, T.font_sm) - 14, TABS_Y + 5, etag, T.danger)
-end
 
 if body_len == 0 then
   bloom.empty_state(rect(0, body_top, w, h - body_top),
@@ -75,4 +74,3 @@ if body_len == 0 then
 else
   let br = rect(PAD, body_top + 6, w - 2 * PAD, h - body_top - PAD - 6)
   text_view(1, br.x, br.y, br.w, br.h, body)
-end

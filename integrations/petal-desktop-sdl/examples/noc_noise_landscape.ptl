@@ -22,8 +22,6 @@ if len(stars) == 0 then
       bright: random(60.0, 200.0),
       twinkle: random(0.0, 6.28)
     })
-  end
-end
 
 # Pseudo-noise function using layered sines
 fn noise(x, t)
@@ -32,14 +30,12 @@ fn noise(x, t)
   v += sin(x * 0.11 + t * 0.7 + 5.0) * 0.125
   v += sin(x * 0.03 + t * 0.4) * 0.3
   v
-end
 
 fn noise2(x, offset)
   let v = sin(x * 0.03 + offset) * 0.5
   v += sin(x * 0.07 + offset * 1.5 + 3.0) * 0.3
   v += sin(x * 0.13 + offset * 0.5 + 7.0) * 0.15
   v
-end
 
 # === Drawing ===
 
@@ -47,7 +43,6 @@ end
 for i in range(0, 8) do
   let gy = i * int(sh) / 8
   draw_rect(x: 0, y: gy, w: int(sw), h: int(sh) / 8 + 1, r: 5 + i, g: 5 + i * 2, b: 20 + i * 5)
-end
 
 # Moon
 let moon_x = int(sw * 0.8)
@@ -61,7 +56,6 @@ draw_circle(cx: moon_x + 5, cy: moon_y - 3, radius: 22, r: 10, g: 10, b: 20)
 for s in stars do
   let bright = int(s.bright * (0.5 + 0.5 * abs(sin(time * 2.0 + s.twinkle))))
   draw_circle(cx: int(s.x), cy: int(s.y), radius: 1, r: bright, g: bright, b: min(255, bright + 20))
-end
 
 # --- Draw layered mountain ranges ---
 let num_layers = 6
@@ -92,8 +86,6 @@ for layer in range(0, num_layers) do
     let strip_h = int(sh) - int(height)
     if strip_h > 0 then
       draw_rect(x: int(x), y: int(height), w: step, h: strip_h, r: lr, g: lg, b: lb)
-    end
-  end
 
   # Ridge highlight on nearest layers
   if layer >= num_layers - 3 then
@@ -103,9 +95,6 @@ for layer in range(0, num_layers) do
       let height = base_y + n * amplitude
       let bright = int(10.0 + (1.0 - layer_frac) * 15.0)
       draw_rect(x: int(x), y: int(height), w: step, h: 1, r: lr + bright, g: lg + bright, b: lb + bright)
-    end
-  end
-end
 
 # --- Flowing water at the bottom ---
 let water_base = sh - 40.0
@@ -119,7 +108,6 @@ for i in range(0, int(sw) / 2) do
   let wg = 30 + int(sin(x * 0.02 + time * 0.7) * 15.0)
   let wb = 80 + int(sin(x * 0.04 + time * 1.2) * 20.0)
   draw_rect(x: int(x), y: wy, w: 2, h: depth, r: wr, g: wg, b: wb)
-end
 
 # Water surface highlights
 for i in range(0, 20) do
@@ -127,7 +115,6 @@ for i in range(0, 20) do
   let hy = water_base + sin(hx * 0.05 + time * 2.0) * 5.0
   let hw = int(random(5.0, 20.0))
   draw_rect(x: int(hx), y: int(hy), w: hw, h: 1, r: 40, g: 60, b: 120)
-end
 
 draw_text("Noise Landscape", x: 10, y: 10, size: 16, r: 100, g: 100, b: 140)
 draw_text("Layered sine waves simulate Perlin noise", x: 10, y: 30, size: 12, r: 60, g: 60, b: 90)

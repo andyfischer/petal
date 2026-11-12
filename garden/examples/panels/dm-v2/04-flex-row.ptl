@@ -29,7 +29,6 @@ let height = 28
 
 fn button_w(label)
   text_width(label, font_size) + pad * 2
-end
 
 fn layout_row(items, x)
   if len(items) == 0 then
@@ -37,13 +36,9 @@ fn layout_row(items, x)
   else
     let w = button_w(items[0])
     concat([{x: x, w: w, label: items[0]}], layout_row(slice(items, 1), x + w + gap))
-  end
-end
 
 clear(16, 18, 26)
 for b in layout_row(labels, x0) do
   draw_rect(b.x, y0, b.w, height, 42, 49, 71)
-end
 for b in layout_row(labels, x0) do
   draw_text(b.label, b.x + pad, y0 + 6, font_size, 232, 236, 248)
-end

@@ -1,7 +1,5 @@
 pub fn open()
   "menu open"
-end
 
 pub fn close()
   "menu close"
-end

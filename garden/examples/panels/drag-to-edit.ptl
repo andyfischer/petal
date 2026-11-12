@@ -47,7 +47,6 @@ let x0 = 46
 let row_y = 96
 for i in range(0, 4) do
   draw_rect(x: x0 + i * spacing, y: row_y, w: 44, h: 44, r: 70, g: 165, b: 150)
-end
 draw_text("drag any card to re-space the row", x: x0, y: 152, size: 12, r: 130, g: 145, b: 175)
 
 # ── 5. Through a function ────────────────────────────────
@@ -58,11 +57,9 @@ draw_text("drag any card to re-space the row", x: x0, y: 152, size: 12, r: 130, 
 fn orbit(cx, cy, radius, k)
   let a = k * 0.9
   {x: cx + radius * cos(a), y: cy + radius * sin(a)}
-end
 for k in range(0, 5) do
   let p = orbit(440, 300, 60, k)
   draw_circle(p.x, p.y, 7, 200, 120, 220)
-end
 
 # ── 4. Text is a shape too ───────────────────────────────
 draw_text("cmd-drag me", x: 250, y: 250, size: 18, r: 235, g: 200, b: 120)

@@ -239,31 +239,24 @@ fn book_color(b: string) -> record
     when "Recipes" -> ACCENT
     when "Reading" -> VIOLET
     when _ -> GHOST
-  end
-end
 
 # ── small drawing helpers ───────────────────────────────────────────────────
 # The `clamp` builtin yields a float; indices and pixel geometry stay integral,
 # so this is the one used below.
 fn iclamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
-end
 
 fn stroke(x1: num, y1: num, x2: num, y2: num, c: record, a: num, w: num)
   draw_line(x1, y1, x2, y2, r: c.r, g: c.g, b: c.b, a: a, width: w)
-end
 
 fn hairline(x1: num, y1: num, x2: num, y2: num, c: record)
   draw_line(x1, y1, x2, y2, r: c.r, g: c.g, b: c.b, a: 255, width: 1)
-end
 
 fn label(text: string, x: num, y: num, c: record)
   draw_text(text, pos: {x: x, y: y}, style: {size: FS_MICRO, color: c, spacing: 1.3})
-end
 
 fn dot(cx: num, cy: num, r: num, c: record)
   draw_circle(center: {x: cx, y: cy}, radius: r, c: c)
-end
 
 # ── text utilities ──────────────────────────────────────────────────────────
 fn words_in(lines: list) -> int
@@ -272,19 +265,13 @@ fn words_in(lines: list) -> int
     for w in split(ln, " ") do
       if len(w) > 0 then
         n = n + 1
-      end
-    end
-  end
   n
-end
 
 fn chars_in(lines: list) -> int
   let n = 0
   for ln in lines do
     n = n + len(ln) + 1
-  end
   max(0, n - 1)
-end
 
 # Character offsets of every case-insensitive occurrence of `needle` in `hay`.
 fn find_all(hay: string, needle: string) -> list
@@ -299,11 +286,7 @@ fn find_all(hay: string, needle: string) -> list
         i = i + len(n)
       else
         i = i + 1
-      end
-    end
-  end
   out
-end
 
 fn matches_query(note: record, query: string) -> bool
   if len(query) == 0 then
@@ -314,11 +297,7 @@ fn matches_query(note: record, query: string) -> bool
     for ln in note.lines do
       if !hit && contains(lower(ln), q2) then
         hit = true
-      end
-    end
     hit
-  end
-end
 
 fn ago(m: num) -> string
   if m < 1 then "just now"
@@ -327,8 +306,6 @@ fn ago(m: num) -> string
   else if m < 2880 then "yesterday"
   else if m < 10080 then "{int(m / 1440)}d ago"
   else "{int(m / 10080)}w ago"
-  end
-end
 
 # ── the wrap model ──────────────────────────────────────────────────────────
 # A logical line becomes one or more display rows. `wrap_starts` returns the
@@ -345,17 +322,12 @@ fn wrap_starts(s: string, maxc: num) -> list
     while j > start && brk < 0 do
       if slice(s, start: j - 1, end: j) == " " then
         brk = j
-      end
       j = j - 1
-    end
     if brk < 0 then
       brk = start + maxc
-    end
     starts = append(starts, brk)
     start = brk
-  end
   starts
-end
 
 fn build_rows(lines: list, maxc: num) -> list
   let rows = []
@@ -366,10 +338,7 @@ fn build_rows(lines: list, maxc: num) -> list
       let a = starts[k]
       let b = if k + 1 < len(starts) then starts[k + 1] else len(s) end
       rows = append(rows, {li: i, a: a, b: b})
-    end
-  end
   rows
-end
 
 # Display row holding `p`; the row that *ends* at a wrap point wins, so the
 # caret sits at the end of the visual line rather than jumping to the next.
@@ -379,32 +348,24 @@ fn row_of(rows: list, p: record) -> int
     let r = rows[i]
     if found < 0 && r.li == p.line && p.col <= r.b then
       found = i
-    end
-  end
   if found < 0 then max(0, len(rows) - 1) else found end
-end
 
 # ── positions and selection ─────────────────────────────────────────────────
 fn pos_before(a: record, b: record) -> bool
   a.line < b.line || (a.line == b.line && a.col < b.col)
-end
 
 fn pos_eq(a: record, b: record) -> bool
   a.line == b.line && a.col == b.col
-end
 
 fn sel_lo(a: record, c: record) -> record
   if pos_before(c, a) then c else a end
-end
 
 fn sel_hi(a: record, c: record) -> record
   if pos_before(c, a) then a else c end
-end
 
 fn clamp_pos(lines: list, p: record) -> record
   let l = iclamp(p.line, lo: 0, hi: len(lines) - 1)
   {line: l, col: iclamp(p.col, lo: 0, hi: len(lines[l]))}
-end
 
 # ── edit primitives (pure: they return new documents) ───────────────────────
 fn delete_range(lines: list, s: record, e: record) -> list
@@ -416,10 +377,7 @@ fn delete_range(lines: list, s: record, e: record) -> list
       let head = slice(lines[s.line], start: 0, end: s.col)
       let tail = slice(lines[e.line], start: e.col, end: len(lines[e.line]))
       out = append(out, head ++ tail)
-    end
-  end
   out
-end
 
 fn insert_text(lines: list, p: record, txt: string) -> record
   let parts = split(txt, "\n")
@@ -437,24 +395,18 @@ fn insert_text(lines: list, p: record, txt: string) -> record
       out = append(out, head ++ parts[0])
       for j in range(1, len(parts) - 1) do
         out = append(out, parts[j])
-      end
       out = append(out, last ++ tail)
-    end
-  end
   let np = if len(parts) == 1 then
     {line: p.line, col: p.col + len(last)}
   else
     {line: p.line + len(parts) - 1, col: len(last)}
-  end
   {lines: out, cur: np}
-end
 
 # Tab produces no text, but Ctrl+S *does* arrive with its character attached
 # (the host forwards the chord and its text together), so a save would type an
 # "s" into the document without this guard.
 fn typing_ok() -> bool
   !key_pressed("tab") && !mod_ctrl() && !mod_cmd()
-end
 
 fn sel_len(lines: list, lo: record, hi: record) -> num
   if lo.line == hi.line then
@@ -463,30 +415,22 @@ fn sel_len(lines: list, lo: record, hi: record) -> num
     let n = len(lines[lo.line]) - lo.col + 1
     for i in range(lo.line + 1, hi.line) do
       n = n + len(lines[i]) + 1
-    end
     n + hi.col
-  end
-end
 
 fn is_word_char(ch: string) -> bool
   ch != " " && ch != "\t" && ch != "," && ch != "." && ch != "-" && ch != "(" && ch != ")" && ch != "\"" && ch != ";" && ch != ":"
-end
 
 fn word_start(s: string, col: num) -> num
   let i = col
   while i > 0 && is_word_char(slice(s, start: i - 1, end: i)) do
     i = i - 1
-  end
   i
-end
 
 fn word_end(s: string, col: num) -> num
   let i = col
   while i < len(s) && is_word_char(slice(s, start: i, end: i + 1)) do
     i = i + 1
-  end
   i
-end
 
 # ── store helpers ───────────────────────────────────────────────────────────
 fn note_by_id(list: list, id: num)
@@ -494,10 +438,7 @@ fn note_by_id(list: list, id: num)
   for n in list do
     if n.id == id then
       found = n
-    end
-  end
   found
-end
 
 fn put_note(list: list, id: num, updated: record) -> list
   let out = []
@@ -506,44 +447,31 @@ fn put_note(list: list, id: num, updated: record) -> list
       out = append(out, updated)
     else
       out = append(out, n)
-    end
-  end
   out
-end
 
 fn index_of_note(list: list, id: num) -> int
   let at = 0
   for i in range(0, len(list)) do
     if list[i].id == id then
       at = i
-    end
-  end
   at
-end
 
 fn insert_note(list: list, at: num, item: record) -> list
   let out = []
   for i in range(0, len(list)) do
     if i == at then
       out = append(out, item)
-    end
     out = append(out, list[i])
-  end
   if at >= len(list) then
     out = append(out, item)
-  end
   out
-end
 
 fn drop_note(list: list, id: num) -> list
   let out = []
   for n in list do
     if n.id != id then
       out = append(out, n)
-    end
-  end
   out
-end
 
 # Notebook filter + query filter, pinned first, then most-recent first.
 fn visible_notes(list: list, bk: string, query: string) -> list
@@ -551,31 +479,21 @@ fn visible_notes(list: list, bk: string, query: string) -> list
   for n in list do
     if (bk == "All" || n.book == bk) && matches_query(n, query) then
       hits = append(hits, n)
-    end
-  end
   let out = []
   for n in hits do
     if n.pinned then
       out = append(out, n)
-    end
-  end
   for n in hits do
     if !n.pinned then
       out = append(out, n)
-    end
-  end
   out
-end
 
 fn book_count(list: list, bk: string) -> int
   let n = 0
   for x in list do
     if bk == "All" || x.book == bk then
       n = n + 1
-    end
-  end
   n
-end
 
 fn preview_text(lines: list) -> string
   let out = ""
@@ -583,17 +501,12 @@ fn preview_text(lines: list) -> string
     let t = ln
     while len(t) > 0 && slice(t, start: 0, end: 1) == " " do
       t = slice(t, start: 1, end: len(t))
-    end
     if len(t) > 0 && len(out) < 200 then
       if len(out) == 0 then
         out = t
       else
         out = out ++ " " ++ t
-      end
-    end
-  end
   out
-end
 
 # ════════════════════════════════════════════════════════════════════════════
 #  frame
@@ -604,7 +517,6 @@ let shown = visible_notes(notes, bk: book, query: q)
 # Keep the selection pointing at something that exists and is visible.
 if len(shown) > 0 && note_by_id(shown, sel_id) == nil then
   sel_id = shown[0].id
-end
 let note = note_by_id(notes, sel_id)
 let doc = if note == nil then [""] else note.lines end
 let rows = build_rows(doc, MAXC)
@@ -635,7 +547,6 @@ label("NOTEBOOKS", x: PAD, y: 98, c: FAINT)
 let rail_rows = ["All"]
 for b in BOOKS do
   rail_rows = append(rail_rows, b)
-end
 
 let rail_y = 120
 let want_book = book
@@ -649,18 +560,14 @@ for i in range(0, len(rail_rows)) do
     draw_rect(rect(r.x, r.y + 5, 2, r.h - 10), ACCENT)
   else if hot then
     draw_rect_rounded(r, radius: 7, c: CARD_HOV)
-  end
   if name != "All" then
     dot(cx: r.x + 17, cy: r.y + 14, r: 3.5, c: book_color(name))
-  end
   let fg = if on then ACCENT else if hot then INK else INK_SOFT end
   draw_text(name, pos: {x: r.x + 28, y: r.y + 7}, style: {size: FS, color: fg})
   let cnt = str(book_count(notes, name))
   draw_text_right(cnt, right_x: r.x + r.w - 10, y: r.y + 8, size: FS_TINY, c: if on then ACCENT else GHOST end)
   if hot && click then
     want_book = name
-  end
-end
 book = want_book
 
 let tag_y = rail_y + len(rail_rows) * 30 + 20
@@ -679,26 +586,20 @@ for b in BOOKS do
   if seg_w > 0 then
     draw_rect(rect(seg_x, bar_y, max(2, seg_w - 1), 6), book_color(b))
     seg_x = seg_x + seg_w
-  end
-end
 
 let stat_y = bar_y + 20
 let total_words = 0
 for n in notes do
   total_words = total_words + words_in(n.lines)
-end
 let pinned_n = 0
 for n in notes do
   if n.pinned then
     pinned_n = pinned_n + 1
-  end
-end
 let stats = [["notes", str(len(notes))], ["words", str(total_words)], ["pinned", str(pinned_n)]]
 for i in range(0, len(stats)) do
   let sy = stat_y + i * 20
   draw_text(stats[i][0], pos: {x: PAD, y: sy}, style: {size: FS_SM, color: INK_SOFT})
   draw_text_right(stats[i][1], right_x: RAIL_W - PAD, y: sy, size: FS_SM, c: INK)
-end
 
 # rail footer: the persistence indicator
 let foot_y = H - 84
@@ -712,7 +613,6 @@ let stamp = if dirty then "autosaving in a moment"
 else if since_save < 4 then "written just now"
 else if saves == 0 then "opened from disk"
 else "{saves} writes this session"
-end
 draw_text(stamp, pos: {x: PAD, y: foot_y + 40}, style: {size: FS_MICRO, color: GHOST})
 
 let undo_r = rect(10, H - 40, RAIL_W - 20, 26)
@@ -742,11 +642,9 @@ if len(q) == 0 then
   draw_text("Search notes", pos: {x: sf.x + 28, y: sf.y + 9}, style: {size: FS, color: GHOST})
 else
   draw_text(ellipsize(q, avail_px: sf.w - 44, size: FS), pos: {x: sf.x + 28, y: sf.y + 9}, style: {size: FS, color: INK})
-end
 if sfocus then
   let qc = sf.x + 28 + text_width(q, FS)
   stroke(x1: qc, y1: sf.y + 8, x2: qc, y2: sf.y + 24, c: ACCENT, a: 255, w: 1.5)
-end
 if len(q) > 0 then
   let clr = rect(sf.x + sf.w - 24, sf.y + 6, 20, 20)
   let hot = hovered(clr)
@@ -754,15 +652,12 @@ if len(q) > 0 then
   stroke(x1: clr.x + 14, y1: clr.y + 6, x2: clr.x + 6, y2: clr.y + 14, c: if hot then ACCENT else GHOST end, a: 255, w: 1.5)
   if hot && click then
     q = ""
-  end
-end
 
 # new-note button
 let new_hot = hovered(newr)
 draw_rect_rounded(newr, radius: 8, c: if new_hot then ACCENT else PAPER end)
 if !new_hot then
   draw_rect_outline(newr, RULE)
-end
 let plus_c = if new_hot then WHITE else INK_SOFT end
 stroke(x1: newr.x + 8, y1: newr.y + 16, x2: newr.x + 18, y2: newr.y + 16, c: plus_c, a: 255, w: 1.6)
 stroke(x1: newr.x + 13, y1: newr.y + 11, x2: newr.x + 13, y2: newr.y + 21, c: plus_c, a: 255, w: 1.6)
@@ -785,11 +680,9 @@ let CARD_GAP = 5
 let content_h = 0
 for n in shown do
   content_h = content_h + CARD_H + CARD_GAP + if n.id == acts_id then ACT_H else 0 end
-end
 
 if hovered(list_r) then
   lscroll = lscroll - scroll_y() * 34
-end
 lscroll = iclamp(lscroll, lo: 0, hi: max(0, content_h - list_h))
 
 clip(x: RAIL_W, y: list_top, w: LIST_W, h: list_h)
@@ -810,10 +703,8 @@ for i in range(0, len(shown)) do
       draw_rect_rounded(cr, radius: 9, c: WHITE)
       if on then
         draw_rect_rounded(rect(cr.x, cr.y + 8, 3, cr.h - 16), radius: 1.5, c: ACCENT)
-      end
     else if hot then
       draw_rect_rounded(cr, radius: 9, c: CARD_HOV)
-    end
     let tx = cr.x + 16
     let tw = cr.w - 28
     let ttl = if len(n.title) > 0 then n.title else "Untitled note" end
@@ -822,7 +713,6 @@ for i in range(0, len(shown)) do
       style: {size: FS_ROW, color: ttl_c})
     if n.pinned then
       dot(cx: cr.x + cr.w - 14, cy: cr.y + 18, r: 3, c: ACCENT)
-    end
     let body_txt = preview_text(n.lines)
     if len(body_txt) == 0 then
       draw_text("no words yet", pos: {x: tx, y: cr.y + 33}, style: {size: FS_SM, color: GHOST})
@@ -831,8 +721,6 @@ for i in range(0, len(shown)) do
       for k in range(0, len(pv.lines)) do
         draw_text(pv.lines[k], pos: {x: tx, y: cr.y + 33 + k * 16},
           style: {size: FS_SM, color: if on then INK_SOFT else FAINT end})
-      end
-    end
     dot(cx: tx + 3, cy: cr.y + 71, r: 3, c: book_color(n.book))
     draw_text(n.book, pos: {x: tx + 12, y: cr.y + 65}, style: {size: FS_MICRO, color: FAINT})
     draw_text_right(ago(n.mins), right_x: cr.x + cr.w - 14, y: cr.y + 65, size: FS_MICRO, c: GHOST)
@@ -861,21 +749,14 @@ for i in range(0, len(shown)) do
         if bhot && click then
           act = a.tag
           act_id = n.id
-        end
         bx = bx + bw + 7
-      end
-    end
 
     if hot && click && my < cr.y + CARD_H then
       want_sel = n.id
       want_focus = "list"
-    end
     if mouse_pressed(1) && point_in(px: mx, py: my, r: cr) then
       acts_id = if opened then 0 else n.id end
-    end
-  end
   cy = cy + ch + CARD_GAP
-end
 
 if len(shown) == 0 then
   let ey = list_top + 90
@@ -885,7 +766,6 @@ if len(shown) == 0 then
   let msg = if len(q) > 0 then "No note matches \"{q}\"" else "This notebook is empty" end
   draw_text_center(msg, cx: RAIL_W + LIST_W / 2, y: ey + 52, size: FS_SM, c: FAINT)
   draw_text_center("press + to start one", cx: RAIL_W + LIST_W / 2, y: ey + 74, size: FS_TINY, c: GHOST)
-end
 clip_none()
 
 # selection changed: reset the caret into the new document
@@ -895,13 +775,11 @@ if want_sel != sel_id then
   cur = {line: 0, col: 0}
   anchor = {line: 0, col: 0}
   bscroll = 0
-end
 
 if content_h > list_h then
   let bar_h = max(30, list_h * list_h / content_h)
   let bar_y = list_top + (list_h - bar_h) * lscroll / max(1, content_h - list_h)
   draw_rect_rounded(rect(RAIL_W + LIST_W - 6, bar_y, 3, bar_h), radius: 1.5, c: GHOST, a: 140)
-end
 
 # ════════════════════════════════════════════════════════════════════════════
 #  editor — header
@@ -914,17 +792,14 @@ if tfocus then
   draw_rect_outline(tr, c: ACCENT, a: 90)
 else if hovered(tr) then
   draw_rect_rounded(tr, radius: 7, c: LIST_BG, a: 120)
-end
 if len(title_txt) == 0 then
   draw_text("Untitled note", pos: {x: tr.x + 10, y: tr.y + 6}, style: {size: FS_TITLE, color: GHOST})
 else
   draw_text(ellipsize(title_txt, avail_px: tr.w - 24, size: FS_TITLE), pos: {x: tr.x + 10, y: tr.y + 6},
     style: {size: FS_TITLE, color: INK})
-end
 if tfocus then
   let tc = tr.x + 10 + text_width(title_txt, FS_TITLE)
   stroke(x1: tc, y1: tr.y + 6, x2: tc, y2: tr.y + 30, c: ACCENT, a: 255, w: 2)
-end
 
 if note != nil then
   let meta_parts = [note.book, "edited " ++ ago(note.mins),
@@ -932,7 +807,6 @@ if note != nil then
   dot(cx: EDX + EPAD + 3, cy: 90, r: 3.5, c: book_color(note.book))
   draw_text(fit_parts(parts: meta_parts, avail_px: EDW - EPAD * 2, size: FS_SM), pos: {x: EDX + EPAD + 14, y: 84},
     style: {size: FS_SM, color: FAINT})
-end
 hairline(x1: EDX + EPAD, y1: 122.5, x2: W - 36, y2: 122.5, c: RULE_SOFT)
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -947,7 +821,6 @@ fn hit_pos(rows: list, px: num, py: num, scroll: num) -> record
   let r = rows[ri]
   let off = int((px - BODY_X + CW / 2) / CW)
   {line: r.li, col: iclamp(r.a + off, lo: r.a, hi: r.b)}
-end
 
 if mouse_pressed(0) && point_in(px: mx, py: my, r: body_r) && note != nil then
   let p = hit_pos(rows, px: mx, py: my, scroll: bscroll)
@@ -969,17 +842,12 @@ if mouse_pressed(0) && point_in(px: mx, py: my, r: body_r) && note != nil then
     anchor = p
     cur = p
     dragging = true
-  end
-end
 if dragging && mouse_down(0) && note != nil then
   cur = hit_pos(rows, px: mx, py: my, scroll: bscroll)
-end
 if !mouse_down(0) then
   dragging = false
-end
 if hovered(body_r) then
   bscroll = bscroll - scroll_y() * 3 * LH
-end
 
 # -- input: keyboard --------------------------------------------------------
 # Cmd/Ctrl chords never reach a panel (the host keeps them) except Ctrl+S, so
@@ -1004,7 +872,6 @@ if bfocus && note != nil then
       cur = {line: cur.line, col: cur.col - 1}
     else if cur.line > 0 then
       cur = {line: cur.line - 1, col: len(doc[cur.line - 1])}
-    end
   else if key_pressed("right") then
     moved = true
     if hassel && !sh then
@@ -1013,7 +880,6 @@ if bfocus && note != nil then
       cur = {line: cur.line, col: cur.col + 1}
     else if cur.line < len(doc) - 1 then
       cur = {line: cur.line + 1, col: 0}
-    end
   else if key_pressed("up") || key_pressed("down") || key_pressed("pageup") || key_pressed("pagedown") then
     moved = true
     keep_goal = true
@@ -1021,7 +887,6 @@ if bfocus && note != nil then
     else if key_pressed("down") then 1
     else if key_pressed("pageup") then -(BODY_H / LH) + 1
     else (BODY_H / LH) - 1
-    end
     let nr = iclamp(ri + step, lo: 0, hi: len(rows) - 1)
     let row = rows[nr]
     cur = {line: row.li, col: iclamp(row.a + goal, lo: row.a, hi: row.b)}
@@ -1046,7 +911,6 @@ if bfocus && note != nil then
       cur = p0
     else
       did_edit = false
-    end
     anchor = cur
   else if key_pressed("delete") then
     did_edit = true
@@ -1059,7 +923,6 @@ if bfocus && note != nil then
       new_lines = delete_range(lines: doc, s: cur, e: {line: cur.line + 1, col: 0})
     else
       did_edit = false
-    end
     anchor = cur
   else if key_pressed("return") then
     did_edit = true
@@ -1074,8 +937,6 @@ if bfocus && note != nil then
       anchor = cur
     else
       focus = "list"
-    end
-  end
 
   let typed = text_input()
   if len(typed) > 0 && typing_ok() then
@@ -1086,12 +947,9 @@ if bfocus && note != nil then
     new_lines = res2.lines
     cur = res2.cur
     anchor = cur
-  end
 
   if moved && !mod_shift() then
     anchor = cur
-  end
-end
 
 # list-focused keyboard: move the selection between notes
 if focus == "list" && len(shown) > 0 then
@@ -1099,8 +957,6 @@ if focus == "list" && len(shown) > 0 then
   for i in range(0, len(shown)) do
     if shown[i].id == sel_id then
       idx = i
-    end
-  end
   let nidx = idx
   if key_pressed("down") then
     nidx = min(idx + 1, len(shown) - 1)
@@ -1108,33 +964,25 @@ if focus == "list" && len(shown) > 0 then
     nidx = max(idx - 1, 0)
   else if key_pressed("return") then
     focus = "body"
-  end
   if nidx != idx then
     sel_id = shown[nidx].id
     cur = {line: 0, col: 0}
     anchor = cur
     bscroll = 0
     lscroll = iclamp(lscroll, lo: (nidx + 1) * (CARD_H + CARD_GAP) - list_h, hi: nidx * (CARD_H + CARD_GAP))
-  end
-end
 
 # search-field keyboard
 if focus == "search" then
   if key_pressed("backspace") && len(q) > 0 then
     q = slice(q, start: 0, end: len(q) - 1)
-  end
   if key_pressed("escape") then
     q = ""
     focus = "list"
-  end
   if key_pressed("return") then
     focus = "list"
-  end
   let t = text_input()
   if len(t) > 0 && typing_ok() then
     q = q ++ t
-  end
-end
 
 # title-field keyboard
 let new_title = title_txt
@@ -1142,37 +990,27 @@ if focus == "title" && note != nil then
   if key_pressed("backspace") && len(new_title) > 0 then
     new_title = slice(new_title, start: 0, end: len(new_title) - 1)
     did_edit = true
-  end
   if key_pressed("return") || key_pressed("escape") then
     focus = "body"
-  end
   let t2 = text_input()
   if len(t2) > 0 && typing_ok() then
     new_title = new_title ++ t2
     did_edit = true
-  end
-end
 
 # focus by click, and Tab to cycle
 if click && point_in(px: mx, py: my, r: sf) then
   focus = "search"
-end
 if click && point_in(px: mx, py: my, r: tr) then
   focus = "title"
-end
 if click && point_in(px: mx, py: my, r: list_r) then
   focus = "list"
-end
 if key_pressed("tab") then
   let ring = ["search", "list", "title", "body"]
   let at = 0
   for i in range(0, len(ring)) do
     if ring[i] == focus then
       at = i
-    end
-  end
   focus = ring[(at + if mod_shift() then 3 else 1 end) % 4]
-end
 
 # ── commit edits into the store ─────────────────────────────────────────────
 if did_edit && note != nil then
@@ -1182,13 +1020,10 @@ if did_edit && note != nil then
     history = append(history, {id: sel_id, note: note, at: index_of_note(notes, sel_id)})
     if len(history) > 30 then
       history = slice(history, start: 1, end: len(history))
-    end
-  end
   notes = put_note(notes, id: sel_id, updated: {...note, lines: new_lines, title: new_title, mins: 0})
   dirty = true
   last_edit = now
   edits = edits + 1
-end
 
 # new note
 if new_hot && click then
@@ -1206,7 +1041,6 @@ if new_hot && click then
   focus = "title"
   dirty = true
   last_edit = now
-end
 
 # undo: pop the snapshot pushed at the start of the last edit burst
 if undo_hot && click then
@@ -1218,14 +1052,12 @@ if undo_hot && click then
     notes = insert_note(notes, at: last.at, item: last.note)
   else
     notes = put_note(notes, id: last.id, updated: last.note)
-  end
   sel_id = last.id
   cur = {line: 0, col: 0}
   anchor = cur
   bscroll = 0
   dirty = true
   last_edit = now
-end
 
 # save: Ctrl+S, or 3s after the last keystroke
 if dirty && (now - last_edit > 3.0 || key_pressed("s") && mod_ctrl()) then
@@ -1233,7 +1065,6 @@ if dirty && (now - last_edit > 3.0 || key_pressed("s") && mod_ctrl()) then
   dirty = false
   saves = saves + 1
   flash = now
-end
 
 # ── recompute after edits, then draw the body ───────────────────────────────
 let note2 = note_by_id(notes, sel_id)
@@ -1244,13 +1075,11 @@ anchor = clamp_pos(doc2, anchor)
 let cri = row_of(rows2, cur)
 if !keep_goal then
   goal = cur.col - rows2[cri].a
-end
 
 # keep the caret on screen
 if moved || did_edit then
   bscroll = min(bscroll, cri * LH)
   bscroll = max(bscroll, (cri + 1) * LH - BODY_H)
-end
 let doc_h = len(rows2) * LH
 bscroll = iclamp(bscroll, lo: 0, hi: max(0, doc_h - BODY_H + 8))
 
@@ -1275,25 +1104,19 @@ for i in range(first_row, last_row) do
       let sx = BODY_X + (s0 - r.a) * CW
       let sw = max(6, (s1 - s0) * CW)
       draw_rect(rect(sx, ry - 3, sw, LH), SELBG)
-    end
-  end
 
   # search matches
   if len(q) > 0 then
     for off in find_all(txt, q) do
       draw_rect_rounded(rect(BODY_X + off * CW - 1, ry - 2, len(q) * CW + 2, LH - 3), radius: 3, c: MATCH)
-    end
-  end
 
   draw_text(txt, pos: {x: BODY_X, y: ry}, style: {size: FS_BODY, color: INK})
-end
 
 # caret
 if bfocus && !hassel2 then
   let ry = BODY_Y + cri * LH - bscroll
   let cx = BODY_X + (cur.col - rows2[cri].a) * CW
   draw_rect(rect(cx, ry - 3, 1.8, LH - 2), ACCENT)
-end
 clip_none()
 
 # body scrollbar
@@ -1301,7 +1124,6 @@ if doc_h > BODY_H then
   let bh = max(36, BODY_H * BODY_H / doc_h)
   let by = BODY_Y + (BODY_H - bh) * bscroll / max(1, doc_h - BODY_H + 8)
   draw_rect_rounded(rect(W - 20, by, 3, bh), radius: 1.5, c: GHOST, a: 150)
-end
 
 # ── editor footer ───────────────────────────────────────────────────────────
 let fy = H - FOOT_H
@@ -1328,8 +1150,6 @@ if len(act) > 0 && anote != nil then
     history = append(history, {id: act_id, note: anote, at: index_of_note(notes, act_id)})
     if len(history) > 30 then
       history = slice(history, start: 1, end: len(history))
-    end
-  end
   if act == "pin" then
     notes = put_note(notes, id: act_id, updated: {...anote, pinned: !anote.pinned})
   else if act == "dup" then
@@ -1347,9 +1167,6 @@ if len(act) > 0 && anote != nil then
       cur = {line: 0, col: 0}
       anchor = cur
       bscroll = 0
-    end
-  end
   acts_id = 0
   dirty = true
   last_edit = now
-end

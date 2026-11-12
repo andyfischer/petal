@@ -18,8 +18,6 @@ pub fn truncate_tail(s, max_chars)
     s
   else
     "…" ++ slice(s, len(s) - max_chars + 1, len(s))
-  end
-end
 
 # Keep the head of `s`, "…"-suffixed when clipped to `max_chars`.
 pub fn truncate_head(s, max_chars)
@@ -27,8 +25,6 @@ pub fn truncate_head(s, max_chars)
     s
   else
     slice(s, 0, max_chars - 1) ++ "…"
-  end
-end
 
 fn _wrap_segment(seg, max_chars)
   let lines = []
@@ -40,7 +36,6 @@ fn _wrap_segment(seg, max_chars)
       if len(cur) > 0 then
         lines = append(lines, cur)
         cur = ""
-      end
       let take = max_chars
       let piece = slice(w, 0, take)
       while len(piece) == 0 do
@@ -48,10 +43,8 @@ fn _wrap_segment(seg, max_chars)
         # emptied the slice: widen until the char fits.
         take = take + 1
         piece = slice(w, 0, take)
-      end
       lines = append(lines, piece)
       w = slice(w, len(piece), len(w))
-    end
     if len(cur) == 0 then
       cur = w
     else if len(cur) + 1 + len(w) <= max_chars then
@@ -59,15 +52,11 @@ fn _wrap_segment(seg, max_chars)
     else
       lines = append(lines, cur)
       cur = w
-    end
-  end
   # Flush the line under construction; skip a leftover "" (the tail of a
   # fully hard-broken final word) unless it is the segment's only line.
   if len(cur) > 0 || len(lines) == 0 then
     lines = append(lines, cur)
-  end
   lines
-end
 
 # Greedy word wrap: split `s` into a list of lines at most `max_chars` wide.
 # Explicit "\n"s split first (each segment wraps independently), words break
@@ -83,11 +72,7 @@ pub fn wrap(s, max_chars)
     for seg in split(s, "\n") do
       for line in _wrap_segment(seg, max_chars) do
         lines = append(lines, line)
-      end
-    end
     lines
-  end
-end
 
 # Bounded-cost N-line preview: wrap `text` into at most `max_lines` lines of
 # `max_chars`, ending the last kept line with an explicit "…" when content was
@@ -102,11 +87,9 @@ pub fn preview(text, max_chars, max_lines)
   if len(t) > max_chars * (max_lines + 1) then
     t = slice(t, 0, max_chars * (max_lines + 1))
     over = true
-  end
   let ls = wrap(t, max_chars)
   if len(ls) > max_lines then
     over = true
-  end
   let keep = min(max_lines, len(ls))
   let kept = []
   for j in range(0, keep) do
@@ -115,32 +98,25 @@ pub fn preview(text, max_chars, max_lines)
       # Keep the head, explicit trailing "…" (truncate_head keeps the head;
       # truncate_tail would keep the tail and prefix the ellipsis).
       line = truncate_head(line ++ "…", max_chars)
-    end
     kept = append(kept, line)
-  end
   {lines: kept, truncated: over}
-end
 
 # Right-aligned text: the right edge sits at `right_x`.
 pub fn draw_text_right(text, right_x, y, size, c)
   _native_text(text, right_x - text_width(text, size), y, size, c.r, c.g, c.b)
-end
 
 # Style-record form — `{size, color, font, weight, italic, spacing}`, the same
 # record `draw_text` and `text_width` take. Measuring and drawing then agree
 # even for bold or spaced text, which the bare-`size` form cannot do.
 pub fn draw_text_right(text, right_x, y, style)
   _native_text(text, right_x - text_width(text, style), y, style)
-end
 
 # Centered text: the run's midpoint sits at `cx`.
 pub fn draw_text_center(text, cx, y, size, c)
   _native_text(text, cx - text_width(text, size) / 2, y, size, c.r, c.g, c.b)
-end
 
 pub fn draw_text_center(text, cx, y, style)
   _native_text(text, cx - text_width(text, style) / 2, y, style)
-end
 
 # Shorten `s` until it fits `avail_px` at font `size`, with a trailing "…".
 #
@@ -163,7 +139,6 @@ end
 # and re-adding it. (len and slice count code points now; the walk stays.)
 pub fn ellipsize(s, avail_px, size)
   text_ellipsize(s, size, float(avail_px), "tail")
-end
 
 # Shorten `s` until it fits `avail_px` at font `size`, with a *leading* "…":
 # the mirror of ellipsize, keeping the rightmost text instead of the leftmost.
@@ -179,7 +154,6 @@ end
 # one walk of the advance table rather than a measurement per character.
 pub fn ellipsize_tail(s, avail_px, size)
   text_ellipsize(s, size, float(avail_px), "head")
-end
 
 # Join `parts` left to right with "   ·   " separators, keeping only the leading
 # run that fits `avail_px` (measured with text_width at font `size`): it stops
@@ -197,22 +171,16 @@ pub fn fit_parts_n(parts, avail_px, size)
       let cand = parts[i]
       if len(out) > 0 then
         cand = out ++ "   ·   " ++ parts[i]
-      end
       if text_width(cand, size) <= avail_px then
         out = cand
         cnt = cnt + 1
       else
         stopped = true
-      end
-    end
-  end
   {text: out, count: cnt}
-end
 
 # The plain-text convenience over fit_parts_n: just the joined string.
 pub fn fit_parts(parts, avail_px, size)
   fit_parts_n(parts, avail_px, size).text
-end
 
 # ── Text on a path, and labels that would rather be rotated ───────────────
 # **Rotated text is not available.** No host in this ecosystem can rotate a
@@ -230,14 +198,12 @@ fn _path_point(points, lens, d)
   while i < last && rest > lens[i] do
     rest = rest - lens[i]
     i = i + 1
-  end
   let a = points[i]
   let b = points[i + 1]
   let f = if lens[i] > 0.0 then clamp(rest / lens[i], 0.0, 1.0) else 0.0 end
   {x: float(a.x) + (float(b.x) - float(a.x)) * f,
    y: float(a.y) + (float(b.y) - float(a.y)) * f,
    seg: i}
-end
 
 # Set `s` character by character along the polyline `points` ({x, y} records,
 # in order), each glyph *upright* and centred on the path. The workaround for
@@ -262,7 +228,6 @@ pub fn draw_text_along(points, s, style)
       let d = distance(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y)
       lens = append(lens, d)
       total = total + d
-    end
     let run = float(text_width(s, style))
     let at = float(_get(style, "start", (total - run) / 2.0))
     for i in range(0, n) do
@@ -273,10 +238,7 @@ pub fn draw_text_along(points, s, style)
       let p = _path_point(points, lens, at + cw / 2.0)
       draw_text(ch, {x: p.x - cw / 2.0, y: p.y - float(size) / 2.0}, style)
       at = at + cw
-    end
-  end
   nil
-end
 
 # Upright labels under the ticks of a horizontal axis — the other half of the
 # no-rotation answer, and the one charts actually need. Long category labels
@@ -290,7 +252,6 @@ end
 # {x, label} — `x` in the same coordinates as `r`. Returns the number drawn.
 pub fn draw_axis_labels(r, ticks)
   draw_axis_labels(r, ticks, {})
-end
 
 # `style` overrides {size, fg, font, gap, stagger} — `gap` is the minimum
 # clear space between neighbours (default 8px), `stagger` alternates rows for
@@ -322,19 +283,14 @@ pub fn draw_axis_labels(r, ticks, style)
         taken_0 = x + w
       else
         taken_1 = x + w
-      end
       drawn = drawn + 1
       row = (row + 1) % rows
-    end
-  end
   drawn
-end
 
 # The vertical counterpart: labels right-aligned against `r`'s right edge and
 # centred on their tick, for a y axis. `ticks` is a list of {y, label}.
 pub fn draw_axis_labels_y(r, ticks)
   draw_axis_labels_y(r, ticks, {})
-end
 
 # `style` overrides {size, fg, font, gap}.
 pub fn draw_axis_labels_y(r, ticks, style)
@@ -351,10 +307,7 @@ pub fn draw_axis_labels_y(r, ticks, style)
       draw_text_right(label, r.x + r.w, y, ts)
       taken = y + size
       drawn = drawn + 1
-    end
-  end
   drawn
-end
 
 # ── Clipboard ───────────────────────────────────────────────────────────────
 # Plain text to and from the host's clipboard. `clipboard_set` takes effect
@@ -365,11 +318,9 @@ end
 
 pub fn clipboard_get()
   binding(symbol("clipboard")) ?? ""
-end
 
 pub fn clipboard_set(text)
   push_output(symbol("clipboard_write"), text)
-end
 
 # ── Text ranges ─────────────────────────────────────────────────────────────
 # Every offset here is a character (code point) offset, the unit `char_slice`
@@ -384,7 +335,6 @@ end
 pub fn text_wrap_rows(s, style, max_width)
   let st = if type(style) == "record" then {...style, offsets: true} else {size: style, offsets: true} end
   text_wrap(s, st, max_width)
-end
 
 # The rows of unwrapped text: one per hard newline, in the shape
 # `text_wrap_rows` returns.
@@ -395,9 +345,7 @@ fn _line_rows(s)
     let n = char_len(line)
     rows = append(rows, {text: line, start: at, end: at + n})
     at = at + n + 1
-  end
   rows
-end
 
 # The index of the row a caret at character `at` sits on: the last row that
 # starts at or before it. A caret in the gap after a soft break (on the
@@ -407,9 +355,7 @@ pub fn text_row_of(rows, at)
   let idx = 0
   for i in range(0, len(rows)) do
     if at >= rows[i].start then idx = i end
-  end
   idx
-end
 
 # The rectangles covering characters [a, b) of `s` drawn in `style`: one
 # {x, y, w, h} per row the range touches, relative to the text's top-left
@@ -421,7 +367,6 @@ end
 # line break, so a selected empty line still shows.
 pub fn text_range_rects(s, style, a, b)
   text_range_rects(s, style, a, b, text_metrics(style).line_height)
-end
 
 pub fn text_range_rects(s, style, a, b, line_h)
   let rows = if type(s) == "string" then _line_rows(s) else s end
@@ -438,7 +383,4 @@ pub fn text_range_rects(s, style, a, b, line_h)
       let x1 = if to > from then text_width(char_slice(row.text, 0, to - row.start), style) else x0 end
       let pad = if past then max(2, int(line_h / 4)) else 0 end
       out = append(out, {x: x0, y: i * line_h, w: x1 - x0 + pad, h: line_h})
-    end
-  end
   out
-end

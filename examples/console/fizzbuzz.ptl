@@ -10,5 +10,3 @@ for i in range(1, 31) do
     print("Buzz")
   else
     print(i)
-  end
-end

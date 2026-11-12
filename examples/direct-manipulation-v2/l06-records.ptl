@@ -27,10 +27,7 @@ fn draw_shape(s)
     draw_circle(x, y, s.r, s.color)
   else
     draw_rect(x, y, s.w, s.h, s.color)
-  end
-end
 
 draw_rect(0, 0, 400, 300, :101418)
 for s in shapes do
   draw_shape(s)
-end

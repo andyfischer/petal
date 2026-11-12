@@ -8,5 +8,4 @@ for i in range(0, 300000) do
   let b = acc % 97
   let c = i % 13
   acc = acc + (a * 2 + b - c)
-end
 print("arith checksum:", acc % 1000000)

@@ -12,7 +12,7 @@ obviously unfinished, so the line break is ignored:
 ```petal
 let total = 1 +
   2
-print(total) // 3
+print(total) # 3
 ```
 
 ## An operator at the start of a line
@@ -23,7 +23,7 @@ A line that *begins* with a binary operator continues the expression above it:
 let total = 1
   + 2
   * 3
-print(total) // 7
+print(total) # 7
 ```
 
 Precedence is unaffected by the layout — the example above is `1 + (2 * 3)`,
@@ -37,7 +37,7 @@ let paused = false
 if ready
    && !paused
    && true then
-  print("go") // go
+  print("go") # go
 end
 ```
 
@@ -46,7 +46,7 @@ Pipelines wrap the same way:
 ```petal
 let n = [1, 2, 3]
   |> len()
-print(n) // 3
+print(n) # 3
 ```
 
 ### Which operators start a continuation

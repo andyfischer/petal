@@ -19,7 +19,6 @@ class Card
   who: string,
   pts: int,
   pri: int,          # 0 = low, 1 = normal, 2 = urgent
-end
 
 # ── Palette ──────────────────────────────────────────────────────────────
 
@@ -52,8 +51,6 @@ fn tag_color(t: string) -> record
     when "docs" -> :a98ce0
     when "tooling" -> :46b1c9
     when _ -> DIM
-  end
-end
 
 fn who_color(w: string) -> record
   match w
@@ -62,19 +59,14 @@ fn who_color(w: string) -> record
     when "JN" -> :3fae7a
     when "MR" -> :a98ce0
     when _ -> DIM
-  end
-end
 
 fn pri_color(p: num) -> record
   if p == 2 then DANGER
   else if p == 1 then :d9a441
   else :3d4653
-  end
-end
 
 fn pri_name(p: num) -> string
   if p == 2 then "urgent" else if p == 1 then "normal" else "low" end
-end
 
 # ── Board state ──────────────────────────────────────────────────────────
 
@@ -131,12 +123,10 @@ let LINE_CHARS = max(8, CARD_IN * 10 / CHW10)
 
 fn col_x(c: num) -> num
   M + c * (COL_W + GUT)
-end
 
 # The clipped card well one column's cards scroll inside.
 fn col_surf(c: num) -> Rect
   rect(col_x(c), SURF_TOP, COL_W, SURF_H)
-end
 
 # ── Small list surgery (lists are immutable values) ───────────────────────
 
@@ -145,24 +135,17 @@ fn list_remove(xs: list, k: num) -> list
   for i in range(0, len(xs)) do
     if i != k then
       out = append(out, xs[i])
-    end
-  end
   out
-end
 
 fn list_insert(xs: list, k: num, v) -> list
   let out = []
   for i in range(0, len(xs)) do
     if i == k then
       out = append(out, v)
-    end
     out = append(out, xs[i])
-  end
   if k >= len(xs) then
     out = append(out, v)
-  end
   out
-end
 
 fn find_card(cs: list, id: string) -> record
   let out = {c: -1, i: -1}
@@ -170,11 +153,7 @@ fn find_card(cs: list, id: string) -> record
     for i in range(0, len(cs[c])) do
       if cs[c][i].id == id then
         out = {c: c, i: i}
-      end
-    end
-  end
   out
-end
 
 # ── Card geometry ────────────────────────────────────────────────────────
 
@@ -184,35 +163,27 @@ let TITLE_LINES = Map()
 for col in cols do
   for card in col do
     TITLE_LINES[card.title] = preview(card.title, max_chars: LINE_CHARS, max_lines: 2).lines
-  end
-end
 
 fn card_lines(card: record)
   TITLE_LINES[card.title] ?? preview(card.title, max_chars: LINE_CHARS, max_lines: 2).lines
-end
 
 fn card_h(card: record) -> int
   82 + TITLE_LH * len(card_lines(card))
-end
 
 fn column_h(cards: list) -> int
   let h = 0
   for c in cards do
     h = h + card_h(c) + CARD_GAP
-  end
   max(0, h - CARD_GAP)
-end
 
 # ── Drawing ──────────────────────────────────────────────────────────────
 
 fn draw_card(r: record, card: record, mode: string)
   if mode == "lift" then
     draw_rect_rounded(rect(r.x + 2, r.y + 9, r.w, r.h), radius: 12, c: :000000, a: 120)
-  end
   let bg = if mode == "lift" then CARD_LIFT
   else if mode == "hover" then CARD_HOV
   else CARD_BG
-  end
   draw_rect_rounded(r, radius: 12, c: bg)
   if mode == "lift" then
     draw_rect_outline(r, c: ACCENT, a: 170, width: 1)
@@ -220,10 +191,8 @@ fn draw_card(r: record, card: record, mode: string)
     draw_rect_outline(r, c: ACCENT, a: 200, width: 1)
   else
     draw_rect_outline(r, c: RULE, a: 255, width: 1)
-  end
   if mode == "sel" || mode == "lift" then
     draw_rect_rounded(rect(r.x + 1, r.y + 13, 3, r.h - 26), radius: 2, c: ACCENT)
-  end
 
   # Top row: tag pill on the left, priority dot on the right.
   let tc = tag_color(card.tag)
@@ -238,7 +207,6 @@ fn draw_card(r: record, card: record, mode: string)
   let ty = r.y + CARD_PAD + 26
   for k in range(0, len(lines)) do
     draw_text(lines[k], {x: r.x + CARD_PAD, y: ty + k * TITLE_LH}, TITLE_SIZE, TEXT)
-  end
 
   # Footer: assignee chip, estimate.
   let fy = r.y + r.h - CARD_PAD - 20
@@ -246,7 +214,6 @@ fn draw_card(r: record, card: record, mode: string)
   draw_circle({x: r.x + CARD_PAD + 10, y: fy + 10}, 10, wc, 46)
   draw_text_center(card.who, cx: r.x + CARD_PAD + 10, y: fy + 5, size: 10, c: wc)
   draw_text_right("{card.pts} pts", right_x: r.x + r.w - CARD_PAD, y: fy + 5, size: 11, c: FAINT)
-end
 
 # Soft edges where the well clips its cards, so a scrolled column reads as
 # continuing rather than as a card sliced in half.
@@ -256,12 +223,8 @@ fn draw_edge_fade(surf: record, content: num, off: num)
     let a = 255 - k * 16
     if off > 0 then
       draw_rect(rect(surf.x + 2, surf.y + 2 + k * 4, surf.w - 4, 4), c: SURFACE, a: a)
-    end
     if off < content - surf.h then
       draw_rect(rect(surf.x + 2, surf.y + surf.h - 6 - k * 4, surf.w - 4, 4), c: SURFACE, a: a)
-    end
-  end
-end
 
 fn draw_vscroll(surf: record, content: num, off: num)
   if content > surf.h then
@@ -269,8 +232,6 @@ fn draw_vscroll(surf: record, content: num, off: num)
     let th = max(24, track_h * surf.h / content)
     let ty = surf.y + 8 + (track_h - th) * off / max(1, content - surf.h)
     draw_rect_rounded(rect(surf.x + surf.w - 7, ty, 3, th), radius: 2, c: FAINT, a: 150)
-  end
-end
 
 # ── The board, as a function of the columns ──────────────────────────────
 # Everything a drag can change comes from `cs`. The drag engine also runs it,
@@ -303,12 +264,10 @@ fn view(cs: list, sc: list, sel: string)
     draw_rect_rounded(surf, radius: 14, c: SURFACE)
     if c == tc then
       draw_rect_outline(surf, c: ACCENT, a: 70, width: 1)
-    end
 
     clip(x: surf.x, y: surf.y, w: surf.w, h: surf.h)
     if cnt == 0 then
       draw_text_center("empty", cx: x + COL_W / 2, y: SURF_TOP + 26, size: 11, c: :333b47)
-    end
     # Cards ease to new slots relative to the scroll, so the wheel moves
     # them at once while a reorder animates.
     place_origin({x: 0, y: -sc[c]}, fn()
@@ -321,18 +280,14 @@ fn view(cs: list, sc: list, sel: string)
         else if card.id == sel then "sel"
         else if card.id == get hover_id then "hover"
         else "plain"
-        end
         place(card.id, r, fn(p) draw_card(p, card, mode) end)
         y = y + h + CARD_GAP
-      end
-    end)
+    )
     let content = column_h(cs[c]) + COL_PAD * 2
     draw_edge_fade(surf, content, off: sc[c])
     clip_none()
     draw_vscroll(surf, content, off: sc[c])
-  end
   nil
-end
 
 # ── Input ────────────────────────────────────────────────────────────────
 
@@ -342,7 +297,6 @@ let d = drag_session(cols, fn(cs) view(cs, scrolls, sel_id) end)
 if d.dropped then
   cols = d.drop
   moves += 1
-end
 
 let mx = mouse_x()
 let my = mouse_y()
@@ -355,11 +309,6 @@ if !d.active then
         let r = ui_target_rect("drag:{card.id}")
         if r != nil && point_in(px: mx, py: my, r: r) then
           set hover_id = card.id
-        end
-      end
-    end
-  end
-end
 let hit = get hover_id
 
 # Wheel scrolls the column under the pointer.
@@ -370,9 +319,6 @@ if scroll_y() != 0 && !d.active then
       let content = column_h(cols[c]) + COL_PAD * 2
       let maxs = max(0, content - SURF_H)
       scrolls[c] = max(0, min(maxs, scrolls[c] + scroll_y() * 40))
-    end
-  end
-end
 
 # Press: select the card, or clear the selection on bare well space.
 if mouse_pressed(0) && hit != "" then
@@ -382,12 +328,8 @@ else if mouse_pressed(0) then
   for c in range(0, 4) do
     if point_in(px: mx, py: my, r: col_surf(c)) then
       over_board = true
-    end
-  end
   if over_board then
     sel_id = ""
-  end
-end
 
 # Keyboard: arrows select, shift+arrows move, 1-4 send, p cycles priority.
 let cur = find_card(cols, sel_id)
@@ -404,38 +346,29 @@ else if mod_shift() && cur.c >= 0 then
     let card = cols[cur.c][cur.i]
     cols[cur.c] = list_insert(list_remove(cols[cur.c], cur.i), k: cur.i - 1, v: card)
     moves = moves + 1
-  end
   if key_pressed("down") && cur.i < len(cols[cur.c]) - 1 then
     let card = cols[cur.c][cur.i]
     cols[cur.c] = list_insert(list_remove(cols[cur.c], cur.i), k: cur.i + 1, v: card)
     moves = moves + 1
-  end
   if key_pressed("left") && cur.c > 0 then
     let card = cols[cur.c][cur.i]
     cols[cur.c] = list_remove(cols[cur.c], cur.i)
     cols[cur.c - 1] = list_insert(cols[cur.c - 1], k: min(cur.i, len(cols[cur.c - 1])), v: card)
     moves = moves + 1
-  end
   if key_pressed("right") && cur.c < 3 then
     let card = cols[cur.c][cur.i]
     cols[cur.c] = list_remove(cols[cur.c], cur.i)
     cols[cur.c + 1] = list_insert(cols[cur.c + 1], k: min(cur.i, len(cols[cur.c + 1])), v: card)
     moves = moves + 1
-  end
 else if cur.c >= 0 then
   if key_pressed("up") && cur.i > 0 then
     sel_id = cols[cur.c][cur.i - 1].id
-  end
   if key_pressed("down") && cur.i < len(cols[cur.c]) - 1 then
     sel_id = cols[cur.c][cur.i + 1].id
-  end
   if key_pressed("left") && cur.c > 0 && len(cols[cur.c - 1]) > 0 then
     sel_id = cols[cur.c - 1][min(cur.i, len(cols[cur.c - 1]) - 1)].id
-  end
   if key_pressed("right") && cur.c < 3 && len(cols[cur.c + 1]) > 0 then
     sel_id = cols[cur.c + 1][min(cur.i, len(cols[cur.c + 1]) - 1)].id
-  end
-end
 
 let sent = false
 for n in range(0, 4) do
@@ -445,8 +378,6 @@ for n in range(0, 4) do
     cols[n] = list_insert(cols[n], k: 0, v: card)
     moves = moves + 1
     sent = true
-  end
-end
 
 # Keyboard navigation keeps the selection on screen.
 if arrowed || sent then
@@ -455,11 +386,8 @@ if arrowed || sent then
     let off = 0
     for i in range(0, s2.i) do
       off = off + card_h(cols[s2.c][i]) + CARD_GAP
-    end
     let view_h = SURF_H - COL_PAD * 2
     scrolls[s2.c] = max(0, ensure_visible_px(scroll: scrolls[s2.c], row_off: off, row_h: card_h(cols[s2.c][s2.i]), view_h: view_h))
-  end
-end
 
 if key_pressed("p") then
   let seat = find_card(cols, sel_id)
@@ -467,8 +395,6 @@ if key_pressed("p") then
     let card = cols[seat.c][seat.i]
     card.pri = (card.pri + 1) % 3
     cols[seat.c][seat.i] = card
-  end
-end
 
 # ── Frame ────────────────────────────────────────────────────────────────
 
@@ -486,9 +412,6 @@ for c in range(0, 4) do
     n_cards = n_cards + 1
     if c == 3 then
       done_pts = done_pts + card.pts
-    end
-  end
-end
 
 draw_text("Petal Board", pos: {x: M, y: 24}, style: {size: 25, color: TEXT})
 let move_note = if moves == 1 then "1 card moved" else "{moves} cards moved" end
@@ -502,7 +425,6 @@ draw_rect_rounded(rect(bar_x, 48, bar_w, 6), radius: 3, c: RULE)
 let fill_w = if total_pts > 0 then bar_w * done_pts / total_pts else 0 end
 if fill_w > 0 then
   draw_rect_rounded(rect(bar_x, 48, max(6, fill_w), 6), radius: 3, c: GOOD)
-end
 draw_rect(rect(0, 86, W, 1), RULE)
 
 # Columns: the board a drag previews, else the board.
@@ -523,7 +445,6 @@ if sel.c >= 0 then
     pos: {x: M + 30, y: fy + 32}, style: {size: 10, color: FAINT, spacing: 1})
 else
   draw_text("nothing selected", pos: {x: M, y: fy + 22}, style: {size: 12, color: FAINT})
-end
 
 let hints = fit_parts(parts: ["drag a card", "arrows select", "shift+arrows move",
   "1-4 send to lane", "p priority", "esc deselect"],

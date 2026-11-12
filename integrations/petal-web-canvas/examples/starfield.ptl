@@ -14,7 +14,6 @@ let fov = 400.0
 
 fn clip(v)
   if v > 30000.0 then 30000.0 else if v < -30000.0 then -30000.0 else v end
-end
 
 if !initialized then
   let temp = []
@@ -25,10 +24,8 @@ if !initialized then
       z: random(50.0, depth),
       pz: depth
     })
-  end
   stars = temp
   initialized = true
-end
 
 let speed = 300.0
 let new_stars = []
@@ -44,9 +41,7 @@ for s in stars do
       pz: depth
     })
   else
-    new_stars = append(new_stars, { x: s.x, y: s.y, z: nz, pz: pz })
-  end
-end
+    new_stars = append(new_stars, {x: s.x, y: s.y, z: nz, pz: pz})
 stars = new_stars
 
 # === Draw ===
@@ -61,6 +56,5 @@ for s in stars do
   let brightness = int((1.0 - s.z / depth) * 255.0)
   let b = min(255, max(40, brightness))
   draw_line(int(psx), int(psy), int(sx), int(sy), b, b, b)
-end
 
 draw_text("Starfield", x: 16, y: 12, size: 14, r: 180, g: 180, b: 220)

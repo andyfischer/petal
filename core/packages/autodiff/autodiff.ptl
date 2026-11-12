@@ -20,7 +20,6 @@
 # speculative call is already running (`speculate` does not nest).
 fn _run(f, arg)
   if speculating() then f(arg) else speculate(f, arg).value end
-end
 
 # One column: ask `fd_column` for points until it has what it needs.
 # `probe(x)` is the function with the input at `x`; `base` its value at
@@ -31,19 +30,15 @@ fn _column(probe, at, base, opts)
   while type(r) == "float" do
     samples = append(samples, [r, probe(r)])
     r = fd_column(at, base, samples, opts)
-  end
   r
-end
 
 # The `fd_column` options out of a caller's.
 fn _fd_opts(opts)
   {h: opts.h ?? nil, mode: opts.mode ?? "central"}
-end
 
 # A number or a list of numbers, as a list.
 fn _rows(v)
   if type(v) == "list" then v else [v] end
-end
 
 # The Euclidean distance between two lists of numbers.
 fn _dist(a, b)
@@ -51,9 +46,7 @@ fn _dist(a, b)
   for i in range(0, len(a)) do
     let d = a[i] - b[i]
     s += d * d
-  end
   sqrt(s)
-end
 
 # The result of `deriv` from a column: `error` only when a probe failed.
 fn _result(c)
@@ -61,8 +54,6 @@ fn _result(c)
     {value: c.value, quality: c.quality, step: c.step, error: c.error}
   else
     {value: c.value, quality: c.quality, step: c.step}
-  end
-end
 
 # The derivative of `f` (one number in, a number or a list of numbers out)
 # at `x`, by central differences with `h = 1e-4 * max(|x|, 1)`.
@@ -74,7 +65,6 @@ pub fn deriv(f, x, opts = {})
   let x0 = float(x)
   let base = _run(f, x0)
   _result(_column(fn(v) _run(f, v) end, x0, base, _fd_opts(opts)))
-end
 
 # The Jacobian and the base value: `{rows, quality, step, base}`.
 fn _jacobian(f, xs, opts)
@@ -83,18 +73,15 @@ fn _jacobian(f, xs, opts)
   let fo = _fd_opts(opts)
   let cols = for j in range(0, len(x0)) do
     _column(fn(v) _run(f, set_in(x0, [j], v)) end, x0[j], base, fo)
-  end
   let n = len(_rows(base))
   let rows = for i in range(0, n) do
     for c in cols do _rows(c.value)[i] end
-  end
   {
     rows: rows,
     quality: map(cols, fn(c) c.quality end),
     step: map(cols, fn(c) c.step end),
     base: base,
   }
-end
 
 # The Jacobian of `f` (a list of numbers in, a number or a list of numbers
 # out) at `xs`: `{rows, quality, step}`, where `rows[i][j]` is
@@ -103,7 +90,6 @@ end
 pub fn jacobian(f, xs, opts = {})
   let j = _jacobian(f, xs, opts)
   {rows: j.rows, quality: j.quality, step: j.step}
-end
 
 # Clamp `v` into `b`, nil or `[lo, hi]` (either end may be nil).
 fn _bound(v, b)
@@ -112,8 +98,6 @@ fn _bound(v, b)
   else
     let lo = if b[0] == nil then v else max(v, b[0]) end
     if b[1] == nil then lo else min(lo, b[1]) end
-  end
-end
 
 # Move from `xs` toward `next` by at most `max_step` per input (nil, a
 # number for all, or one per input; nil entries are unlimited), and keep
@@ -124,8 +108,6 @@ fn _limit(xs, next, max_step, bounds)
     let d = next[i] - xs[i]
     let d2 = if cap == nil then d else clamp(d, -abs(cap), abs(cap)) end
     _bound(xs[i] + d2, if bounds == nil then nil else bounds[i] end)
-  end
-end
 
 # One damped Gauss-Newton step from `xs` toward `f(xs) == target`, with the
 # Jacobian measured as `jacobian` does. A step that does not bring the
@@ -145,14 +127,10 @@ pub fn solve_step(f, xs, target, opts = {})
   for i in range(0, len(j.quality)) do
     if j.quality[i] == "zero" || j.quality[i] == "errored" then
       stuck = append(stuck, i)
-    end
-  end
   # A stuck column is not divided by: its sensitivities count as 0.
   let jac = for row in j.rows do
     for k in range(0, len(row)) do
       if j.quality[k] == "zero" || j.quality[k] == "errored" then 0.0 else row[k] end
-    end
-  end
   let bounds = opts.bounds ?? nil
   let r0 = _dist(ys, ts)
   let out = {xs: x0, residual: r0, improved: false, stuck: stuck, quality: j.quality}
@@ -170,13 +148,8 @@ pub fn solve_step(f, xs, target, opts = {})
           out.residual = r
           out.improved = true
           done = true
-        end
-      end
       scale *= 0.5
-    end
-  end
   out
-end
 
 # `solve_step` repeated until the residual is at most `tol` (default 1e-6)
 # or `max_iter` steps (default 20) are spent, or a step stops improving.
@@ -197,8 +170,4 @@ pub fn solve(f, xs, target, opts = {})
       r = s
       if s.residual <= tol || !s.improved then
         done = true
-      end
-    end
-  end
   {...r, improved: improved, iterations: iterations}
-end

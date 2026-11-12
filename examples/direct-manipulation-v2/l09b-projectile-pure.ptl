@@ -21,13 +21,10 @@ fn step(s, i)
   let moved = if s.landed then s else
     let y = s.y + s.vy * dt_sim
     {x: s.x + s.vx * dt_sim, y: y, vx: s.vx, vy: s.vy - g * dt_sim, landed: y < 0, trail: s.trail}
-  end
   if i % 20 == 0 then
     {x: moved.x, y: moved.y, vx: moved.vx, vy: moved.vy, landed: moved.landed, trail: append(moved.trail, {x: moved.x, y: moved.y})}
   else
     moved
-  end
-end
 
 let start = {x: 0.0, y: 0.0, vx: v0 * cos(angle), vy: v0 * sin(angle), landed: false, trail: []}
 let r = reduce(range(0, steps), start, step)
@@ -36,5 +33,4 @@ let ground = 380
 draw_rect(0, 0, 800, 400, :101418)
 for p in r.trail do
   draw_circle(20 + p.x * scale, ground - p.y * scale, 2, :808080)
-end
 draw_circle(20 + r.x * scale, ground, 6, :e04040)

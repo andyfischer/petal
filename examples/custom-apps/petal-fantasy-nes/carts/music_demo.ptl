@@ -54,7 +54,6 @@ state var fx = 0
 
 if btnp("a") then
   set pick = pmod(pick + 1, len(songs))
-end
 
 let tune = songs[pick]
 music_play(tune)
@@ -64,15 +63,11 @@ if btnp("b") then
     music_pause()
   else
     music_resume()
-  end
-end
 if btnp("start") then
   music_restart()
-end
 if btnp("select") then
   sfx_play(effects[fx])
   set fx = pmod(fx + 1, len(effects))
-end
 
 let pos = music_pos()
 let chans = ["p1", "p2", "tri", "noise"]
@@ -86,8 +81,6 @@ fn pattern_of(tune: record, order_index: num, ch: string)
     -1
   else
     tune.order[order_index][ch] ?? -1
-  end
-end
 
 # How many rows this order frame lasts: the longest pattern it names. A short
 # pattern under a long one simply holds, which is how a 4-row drum loop rides
@@ -99,10 +92,7 @@ fn frame_rows(tune: record, order_index: num) -> int
     let pi = pattern_of(tune, order_index, ch)
     if pi >= 0 && pi < len(tune.patterns) then
       n = max(n, len(tune.patterns[pi]))
-    end
-  end
   n
-end
 
 fn row_at(tune: record, order_index: num, ch: string, r: num)
   let pi = pattern_of(tune, order_index, ch)
@@ -111,8 +101,6 @@ fn row_at(tune: record, order_index: num, ch: string, r: num)
   else
     let pat = tune.patterns[pi]
     if r >= 0 && r < len(pat) then pat[r] else nil end
-  end
-end
 
 # One tracker cell: "C-4 12", "--- ..", "... .." — the note and the volume
 # column, in the notation the pattern was written in.
@@ -126,8 +114,6 @@ fn cell_text(tune: record, order_index: num, ch: string, r: num) -> string
     else note_name(x.note) end
     let v = if x.vol >= 0 then pad_num(x.vol, 2) else ".." end
     n ++ " " ++ v
-  end
-end
 
 # What a channel should be sounding right now: scan the frame from row 0 to
 # the playhead, keeping the last note and the last volume column, exactly as
@@ -140,16 +126,11 @@ fn sounding(tune: record, pos: record, ch: string) -> record
     if x != nil then
       if x.vol >= 0 then
         vol = x.vol
-      end
       if x.note == note_off then
         note = -1
       else if x.note >= 0 then
         note = x.note
-      end
-    end
-  end
   {note: note, vol: if note < 0 then 0 else vol end}
-end
 
 # ── The screen ────────────────────────────────────────────────────────────
 
@@ -164,7 +145,6 @@ map_text(1, 3, if music_playing() then "PLAYING" else "PAUSED " end, 0)
 # Channel headings over four 7-character columns.
 for c in range(0, 4) do
   map_text(1 + c * 8, 5, heads[c], 3)
-end
 
 # The pattern grid: 12 rows with the playhead four rows down, so you can see
 # what is coming as well as what just went by. The window stops at both ends
@@ -184,13 +164,9 @@ for i in range(0, visible) do
   if r >= 0 && r < total then
     for c in range(0, 4) do
       map_text(1 + c * 8, y, cell_text(tune, order_index: pos.order, ch: chans[c], r: r), pal)
-    end
   else
     for c in range(0, 4) do
       map_text(1 + c * 8, y, "       ", 0)
-    end
-  end
-end
 
 # ── The meters ────────────────────────────────────────────────────────────
 # Note name and a 15-step volume bar per channel. The noise channel has
@@ -208,7 +184,6 @@ for c in range(0, 4) do
   map_text(8, y, label, if s.vol > 0 then 1 else 0 end)
   map_rect(13, y, 15, 1, 0, 0)
   map_rect(13, y, s.vol, 1, 1, 2)
-end
 
 map_text(1, 28, "A SONG  B PAUSE  SEL SFX", 0)
 

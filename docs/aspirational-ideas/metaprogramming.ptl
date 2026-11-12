@@ -6,11 +6,9 @@
 
 fn add(a, b)
   a + b
-end
 
 fn mul(a, b)
   a * b
-end
 
 let me = Program.current()
 print("=== Self-Inspection ===")
@@ -18,7 +16,6 @@ print("This program has", len(me.terms()), "terms")
 print("Functions defined:")
 for func in me.functions() do
   print("  ", func.name, "-", len(func.terms()), "terms")
-end
 print("")
 
 # --- Example 2: Building programs from code ---
@@ -26,7 +23,7 @@ print("")
 let doubler = Program.build(fn(b)
   let x = b.param("x")
   b.return(b.mul(x, b.literal(2)))
-end)
+)
 
 print("=== Program Builder ===")
 print("Built program source:")
@@ -45,12 +42,9 @@ fn make_polynomial(coefficients)
       let power = b.literal(1.0)
       for _ in range(0, i) do
         power = b.mul(power, x)
-      end
       result = b.add(result, b.mul(b.literal(coefficients[i]), power))
-    end
     b.return(result)
-  end)
-end
+  )
 
 # p(x) = 1 + 2x + 3x^2
 let p = make_polynomial([1.0, 2.0, 3.0])
@@ -83,8 +77,7 @@ swapped.transform(fn(term)
   match term.op
     when Add -> term.with_op(Mul)
     when _ -> term
-  end
-end)
+)
 print("After Add->Mul:", swapped.run())  # 6
 print("")
 
@@ -129,10 +122,8 @@ print("  inputs:", c_term.inputs)
 print("  Depends on:")
 for input in c_term.inputs do
   print("    ", input.name, "(", input.op, ")")
-end
 
 let dependents = prog.find("x").dependents
 print("'x' feeds into:")
 for d in dependents do
   print("    ", d.name)
-end

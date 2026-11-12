@@ -5,10 +5,10 @@ an entity, a texture, a sound. The script holds the reference and calls
 methods on it; the object itself never leaves the engine.
 
 ```petal ignore
-let hero = spawn("hero")      // a host native that returns a handle
-hero.move_by(3.0, 4.0)        // dispatched to the engine
-print(hero.x())               // 3.0
-print(is_valid(hero))         // true, until the engine destroys the entity
+let hero = spawn("hero")      # a host native that returns a handle
+hero.move_by(3.0, 4.0)        # dispatched to the engine
+print(hero.x())               # 3.0
+print(is_valid(hero))         # true, until the engine destroys the entity
 ```
 
 On the Rust side a handle is `Value::Handle(HandleVal { class, slot, serial })`:
@@ -94,11 +94,11 @@ differs:
 
 ```petal ignore
 let a = spawn("a")
-print(a)                // handle(0:1#1)
+print(a)                # handle(0:1#1)
 a.destroy()
-let b = spawn("b")      // the host reuses slot 1
-print(b)                // handle(0:1#2)
-print(a == b, is_valid(a), is_valid(b))   // false false true
+let b = spawn("b")      # the host reuses slot 1
+print(b)                # handle(0:1#2)
+print(a == b, is_valid(a), is_valid(b))   # false false true
 ```
 
 ## Registering a class and making handles
@@ -219,8 +219,8 @@ call_method: Box::new(move |cxt: &mut PetalCxt, method: &str| -> NativeResult {
 ### `is_valid`
 
 ```petal
-print(is_valid(nil))   // false
-print(is_valid(5))     // false
+print(is_valid(nil))   # false
+print(is_valid(5))     # false
 ```
 
 `is_valid(v)` is true only for a handle of a registered class whose object
@@ -253,8 +253,8 @@ the same object made at different times are equal.
 ```petal ignore
 let a = spawn("a")
 let b = spawn("b")
-print(a == a, a == b, a == nil)             // true false false
-print(contains([a, b], a), index_of([a, b], b))   // true 1
+print(a == a, a == b, a == nil)             # true false false
+print(contains([a, b], a), index_of([a, b], b))   # true 1
 ```
 
 Handles have no order: `a < b` is the error `Cannot compare handle and handle`.
@@ -270,7 +270,7 @@ fn hit(e)
     set hp[e] = (get hp[e] ?? 100) - 10
     get hp[e]
 end
-print(hit(a), hit(a), hit(b))    // 90 80 90
+print(hit(a), hit(a), hit(b))    # 90 80 90
 ```
 
 An entry stays until it is removed, so drop it when its entity is destroyed:
@@ -285,10 +285,10 @@ On the Rust side `HandleVal` is `Copy`, `Eq` and `Hash`, so it is usable as a
 the class as its numeric id:
 
 ```petal ignore
-print(h)            // handle(0:1#1)
-print("{h}")        // handle(0:1#1)
-print([h, h])       // [handle(0:1#1), handle(0:1#1)]
-print(type(h))      // handle
+print(h)            # handle(0:1#1)
+print("{h}")        # handle(0:1#1)
+print([h, h])       # [handle(0:1#1), handle(0:1#1)]
+print(type(h))      # handle
 ```
 
 The printed form does not use the class name or `describe`. For a readable
@@ -330,8 +330,8 @@ other value, alone or inside a list or record. This is the usual way for a
 script to own an engine object: create it once, keep the handle.
 
 ```petal ignore
-state hero = spawn("hero")    // spawn runs on the first run only
-hero.move_by(1.0, 0.0)        // every run
+state hero = spawn("hero")    # spawn runs on the first run only
+hero.move_by(1.0, 0.0)        # every run
 ```
 
 The object can die while the handle is kept. The next run still reads the
@@ -593,7 +593,7 @@ not declared anywhere.
 native fn spawn(name, x, y)
 native fn distance(a, b)
 
-state hero = spawn("hero", 0.0, 0.0)      // created on the first frame only
+state hero = spawn("hero", 0.0, 0.0)      # created on the first frame only
 state target = spawn("target", 3.0, 0.0)
 
 fn patrol(e: handle, speed)

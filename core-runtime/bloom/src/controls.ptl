@@ -23,7 +23,6 @@ import ui
 # that makes the control feel mechanical rather than interpolated.
 pub fn switch(r: record, on: bool) -> bool
   switch(r, on, {})
-end
 
 pub fn switch(r: record, on: bool, opts: record) -> bool
   let t = theme()
@@ -46,9 +45,7 @@ pub fn switch(r: record, on: bool, opts: record) -> bool
     mix(:ffffff, t.text, 0.06), if enabled then 255 else 120 end)
   if p.hot > 0.01 then
     draw_circle({x: kx + kd / 2.0, y: track.y + track_h / 2.0}, kd * 0.95, on_c, int(30.0 * p.hot))
-  end
   v
-end
 
 # ── Checkbox ──────────────────────────────────────────────────────────────
 
@@ -56,11 +53,9 @@ end
 # box fills, rather than appearing whole.
 pub fn checkbox(r: record, label: string, on: bool) -> bool
   checkbox_impl(r, label, on, {})
-end
 
 pub fn checkbox(r: record, label: string, on: bool, opts: record) -> bool
   checkbox_impl(r, label, on, opts)
-end
 
 # `checkbox` is also a name in the `ui` package, which this module imports plainly
 # (`import ui`). Inside one variant's own body the name means only that
@@ -90,14 +85,10 @@ fn checkbox_impl(r: record, label: string, on: bool, opts: record) -> bool
     draw_line(a, {x: a.x + (b.x - a.x) * g1, y: a.y + (b.y - a.y) * g1}, c, 255, w)
     if g2 > 0.0 then
       draw_line(b, {x: b.x + (e.x - b.x) * g2, y: b.y + (e.y - b.y) * g2}, c, 255, w)
-    end
-  end
   if label != "" then
     let fg = if enabled then mix(t.text, t.accent, p.hot * 0.25) else t.dim end
     text_in(label, Rect(box.x + bs + t.gap, r.y, r.w - bs - t.gap, r.h), ts(t, size, fg))
-  end
   v
-end
 
 # ── Radio group ───────────────────────────────────────────────────────────
 
@@ -105,11 +96,9 @@ end
 # the row you are hovering warms toward the accent.
 pub fn radio_group(r: record, labels: list, index: num)
   radio_group_impl(r, labels, index, {})
-end
 
 pub fn radio_group(r: record, labels: list, index: num, opts: record)
   radio_group_impl(r, labels, index, opts)
-end
 
 # `radio_group` is also a name in the `ui` package, which this module imports plainly
 # (`import ui`). Inside one variant's own body the name means only that
@@ -126,7 +115,6 @@ fn radio_group_impl(r: record, labels: list, index: num, opts: record)
     let p = probe(row)
     if p.click then
       set chosen = i
-    end
     let on = i == index
     let cx = row.x + size * 0.6
     let cy = row.y + row_h / 2.0
@@ -136,11 +124,8 @@ fn radio_group_impl(r: record, labels: list, index: num, opts: record)
     let k = spring(if on then 1.0 else 0.0 end, {stiffness: 320.0, damping: 22.0})
     if k > 0.01 then
       draw_circle({x: cx, y: cy}, size * 0.3 * clamp(k, 0.0, 1.2), t.accent)
-    end
     text_in(labels[i], Rect(cx + size * 0.95, row.y, row.w, row_h), ts(t, size, t.text))
-  end
   chosen
-end
 
 # ── Slider ────────────────────────────────────────────────────────────────
 
@@ -149,11 +134,9 @@ end
 # While dragging, the value floats above the knob.
 pub fn slider(r: record, value: num, lo: num, hi: num)
   slider_impl(r, value, lo, hi, {})
-end
 
 pub fn slider(r: record, value: num, lo: num, hi: num, opts: record)
   slider_impl(r, value, lo, hi, opts)
-end
 
 # `slider` is also a name in the `ui` package, which this module imports plainly
 # (`import ui`). Inside one variant's own body the name means only that
@@ -173,8 +156,6 @@ fn slider_impl(r: record, value: num, lo: num, hi: num, opts: record)
     let stepping = field(opts, "step", 0)
     if stepping > 0 then
       set v = float(lo) + round((v - float(lo)) / float(stepping)) * float(stepping)
-    end
-  end
   let frac = clamp((v - float(lo)) / max(0.0001, float(hi) - float(lo)), 0.0, 1.0)
   draw_rect_rounded(track, int(track_h / 2), tone(t, t.panel, -0.4))
   draw_rect_rounded(Rect(track.x, track.y, track.w * frac, track.h), int(track_h / 2),
@@ -192,9 +173,7 @@ fn slider_impl(r: record, value: num, lo: num, hi: num, opts: record)
     let bub = Rect(kx - w / 2.0, r.y - 22.0 - 6.0 * grow, w, 20)
     draw_rect_rounded(bub, 5, tone(t, t.panel, 0.18), int(235.0 * grow))
     text_in(s, bub, ts(t, t.font_sm, t.text), "center")
-  end
   v
-end
 
 # ── Stepper ───────────────────────────────────────────────────────────────
 
@@ -206,10 +185,8 @@ pub fn stepper(r: record, value: num, lo: num, hi: num, step: num)
   var v = value
   if _step_btn(Rect(r.x, r.y, bw, r.h), "minus", t) then
     set v = max(lo, value - step)
-  end
   if _step_btn(Rect(r.x + r.w - bw, r.y, bw, r.h), "plus", t) then
     set v = min(hi, value + step)
-  end
   let mid = Rect(r.x + bw, r.y, r.w - bw * 2.0, r.h)
   let roll = spring(float(v), {stiffness: 240.0, damping: 22.0})
   let slide = clamp((roll - float(v)) * 2.0, -8.0, 8.0)
@@ -217,7 +194,6 @@ pub fn stepper(r: record, value: num, lo: num, hi: num, step: num)
   text_in(str(v), Rect(mid.x, mid.y - slide, mid.w, mid.h), ts(t, t.font_md, t.text), "center")
   clip_pop()
   v
-end
 
 fn _step_btn(r: record, name: string, t: record)
   let p = probe(r)
@@ -225,7 +201,6 @@ fn _step_btn(r: record, name: string, t: record)
     wash(t, t.panel, p.hot, p.active))
   icon(name, pad(r, r.h * 0.3), mix(t.muted, t.text, p.hot))
   p.click
-end
 
 # ── Progress ──────────────────────────────────────────────────────────────
 
@@ -233,7 +208,6 @@ end
 # its target, so a jump from 10% to 90% is a movement rather than a cut.
 pub fn progress(r: record, frac: num)
   progress(r, frac, {})
-end
 
 pub fn progress(r: record, frac: num, opts: record)
   let t = theme()
@@ -250,6 +224,3 @@ pub fn progress(r: record, frac: num, opts: record)
     let f = ease_to(clamp(float(frac), 0.0, 1.0), rate(t, 12.0))
     if f > 0.001 then
       draw_rect_rounded(Rect(r.x, r.y, r.w * f, r.h), radius, color)
-    end
-  end
-end

@@ -42,14 +42,11 @@ if len(bodies) == 0 then
       g: int(random(100.0, 255.0)),
       b: int(random(150.0, 255.0))
     })
-  end
-end
 
 # Calculate gravitational forces between all pairs
 let forces = []
 for i in range(0, len(bodies)) do
-  forces = append(forces, { fx: 0.0, fy: 0.0 })
-end
+  forces = append(forces, {fx: 0.0, fy: 0.0})
 
 for i in range(0, len(bodies)) do
   for j in range(i + 1, len(bodies)) do
@@ -69,10 +66,8 @@ for i in range(0, len(bodies)) do
     let fy = force * dy / (dist + 0.1)
 
     # Apply to both bodies (Newton's third law)
-    forces[i] = { fx: forces[i].fx + fx, fy: forces[i].fy + fy }
-    forces[j] = { fx: forces[j].fx - fx, fy: forces[j].fy - fy }
-  end
-end
+    forces[i] = {fx: forces[i].fx + fx, fy: forces[i].fy + fy}
+    forces[j] = {fx: forces[j].fx - fx, fy: forces[j].fy - fy}
 
 # Update bodies
 let new_bodies = []
@@ -98,26 +93,22 @@ for i in range(0, len(bodies)) do
 
   # Record trail
   if frame_count() % 2 == 0 then
-    trails = append(trails, { x: nx, y: ny, r: b.r, g: b.g, b: b.b, life: 1.0 })
-  end
+    trails = append(trails, {x: nx, y: ny, r: b.r, g: b.g, b: b.b, life: 1.0})
 
   new_bodies = append(new_bodies, {
     x: nx, y: ny, vx: nvx, vy: nvy,
     mass: b.mass, r: b.r, g: b.g, b: b.b
   })
-end
 bodies = new_bodies
 
 # Age trails
 let new_trails = []
 for t in trails do
-  let nt = { x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, life: t.life - delta * 0.3 }
+  let nt = {x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, life: t.life - delta * 0.3}
   if nt.life > 0.0 then new_trails = append(new_trails, nt) end
-end
 trails = new_trails
 if len(trails) > 4000 then
   trails = slice(trails, start: len(trails) - 3000, end: len(trails))
-end
 
 # === Drawing ===
 clear(5, 5, 12)
@@ -134,16 +125,12 @@ for i in range(0, len(bodies)) do
       let alpha = int((1.0 - dist / 200.0) * 25.0 * (a.mass + b.mass) * 0.1)
       let al = min(40, max(5, alpha))
       draw_line(int(a.x), int(a.y), int(b.x), int(b.y), al, al, al + 10)
-    end
-  end
-end
 
 # Draw trails
 for t in trails do
   let alpha = t.life * 0.4
   draw_circle(cx: int(t.x), cy: int(t.y), radius: 1,
     r: int(float(t.r) * alpha), g: int(float(t.g) * alpha), b: int(float(t.b) * alpha))
-end
 
 # Draw bodies
 for b in bodies do
@@ -157,7 +144,6 @@ for b in bodies do
   # Core highlight
   draw_circle(cx: int(b.x) - radius / 3, cy: int(b.y) - radius / 3, radius: max(1, radius / 3),
     r: min(255, b.r + 80), g: min(255, b.g + 80), b: min(255, b.b + 80))
-end
 
 draw_text("Mutual Attraction (N-body)", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
 draw_text("Every body attracts every other", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)

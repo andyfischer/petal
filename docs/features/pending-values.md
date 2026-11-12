@@ -41,10 +41,10 @@ wins.
 
 ```petal
 let user = __pending("user")
-print(is_pending(user + 1))          // true
-print(is_pending(user == 1))         // true
-print(is_pending("hi {user}"))       // true
-print(is_pending(user.name))         // true
+print(is_pending(user + 1))          # true
+print(is_pending(user == 1))         # true
+print(is_pending("hi {user}"))       # true
+print(is_pending(user.name))         # true
 ```
 
 | Where the pending value is | What happens |
@@ -74,8 +74,8 @@ the result is the pending value.
 let user = __pending("user")
 let override = false
 if user.admin || override then print("admin panel") end
-print(is_pending(user.admin && true))   // true
-print(is_pending(user.greet()))         // true
+print(is_pending(user.admin && true))   # true
+print(is_pending(user.greet()))         # true
 ```
 
 ## Lists and records hold pending values element by element
@@ -89,9 +89,9 @@ fetch is slow draws nineteen.
 ```petal
 let u = __pending("slow")
 let xs = [1, u, 3]
-print(len(xs), xs[0])                // 3 1
-print(is_pending(xs[1]))             // true
-print(is_pending(sum(xs)))           // true
+print(len(xs), xs[0])                # 3 1
+print(is_pending(xs[1]))             # true
+print(is_pending(sum(xs)))           # true
 ```
 
 ## Inspecting one
@@ -112,7 +112,7 @@ global and need no import.
 ```petal
 let pic = __pending("avatar")
 __reject("avatar", "404")
-print(is_error(pic), error_of(pic), is_loading(pic))   // true 404 false
+print(is_error(pic), error_of(pic), is_loading(pic))   # true 404 false
 ```
 
 The usual shape is a fallback where the value is used, and a branch where the

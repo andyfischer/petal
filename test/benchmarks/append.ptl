@@ -7,7 +7,5 @@ for round in range(0, 40) do
   let xs = []
   for i in range(0, 1500) do
     xs = append(xs, i)
-  end
   total = total + xs[round] + len(xs)
-end
 print("append checksum:", total)

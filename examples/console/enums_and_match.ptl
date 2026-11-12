@@ -8,7 +8,6 @@ enum Use
   road,
   green,
   park,
-end
 
 # ── Constant data ────────────────────────────────────────────────────────────
 # `key: expr` attaches data to a variant. Every variant declares the same keys,
@@ -18,7 +17,6 @@ enum Kind
   park(shape: "area", use: Use.green, cost: 12),
   plaza(shape: "area", use: Use.park, cost: 18),
   bridge(shape: "route", use: Use.road, cost: 95),
-end
 
 # ── Payloads, with data alongside ────────────────────────────────────────────
 # A bare name in the parens is a payload field, supplied when the value is
@@ -28,7 +26,6 @@ enum Op
   fight(place, won, tone: "bad"),
   gift(amount, tone: "good"),
   rest(tone: "plain"),
-end
 
 print("== values ==")
 let k = Kind.park
@@ -48,7 +45,6 @@ print("")
 print("== all and from ==")
 for kind in Kind.all do
   print("  {kind.name}: shape {kind.shape}, use {kind.use.name}, {kind.cost} per block")
-end
 let routes = filter(Kind.all, fn(kind) -> kind.shape == "route")
 print("routes:", map(routes, fn(kind) -> kind.name))
 print("total to build one of each:", reduce(map(Kind.all, fn(kind) -> kind.cost), 0, fn(a, b) -> a + b))
@@ -61,8 +57,6 @@ for word in ["plaza", "bridge", "casino"] do
     print("  from(\"{word}\") is nil")
   else
     print("  from(\"{word}\") is {found}, costing {found.cost}")
-  end
-end
 # A variant with a payload is not one value, so it is in neither: of the four
 # Ops only `rest` is listed.
 print("Op.all:", Op.all)
@@ -80,14 +74,11 @@ fn upkeep(kind: Kind) -> int
     when Kind.park | Kind.plaza -> 2
     when Kind.parkway -> 5
     when Kind.bridge -> 9
-  end
-end
 
 print("")
 print("== match ==")
 for kind in Kind.all do
   print("  upkeep of a {kind.name}: {upkeep(kind)}")
-end
 
 # ── match: statement bodies, payload patterns, guards ────────────────────────
 # After `->` an arm runs statements until the next `when`; its last expression
@@ -116,8 +107,6 @@ fn apply(op: Op) -> string
       set budget += amount
       "a gift of {amount}"
     when Op.rest -> "a quiet day"
-  end
-end
 
 let week = [
   Op.build(Kind.park, "Riverside"),
@@ -132,7 +121,6 @@ let week = [
 for day in range(0, len(week)) do
   let what = apply(week[day])
   print("  day {day + 1} [{week[day].tone}]: {what}")
-end
 print("budget {budget}, mood {mood}, built {map(built, fn(kind) -> kind.name)}")
 
 # ── match in value position, over strings ────────────────────────────────────
@@ -145,8 +133,6 @@ fn parse(word: string)
     when "e" | "east" | "right" -> [1, 0]
     when "w" | "west" | "left" -> [-1, 0]
     when _ -> nil
-  end
-end
 
 print("")
 print("== strings ==")
@@ -158,9 +144,7 @@ for word in ["north", "e", "right", "sideways", "down"] do
     when [dx, dy] ->
       set at = [at[0] + dx, at[1] + dy]
       "moved to {at}"
-  end
   print("  {word}: {said}")
-end
 
 # ── Bindings and wildcards in patterns ───────────────────────────────────────
 # A bare name in a pattern always binds; only a qualified name is a variant.
@@ -169,11 +153,8 @@ fn describe(op: Op) -> string
     when Op.build(Kind.bridge | Kind.parkway, place) -> "a route through {place}"
     when Op.build(other, _) -> "some {other.shape}: a {other.name}"
     when anything -> "not a building: {anything}"
-  end
-end
 
 print("")
 print("== nested patterns ==")
 for item in [Op.build(Kind.bridge, "the Narrows"), Op.build(Kind.plaza, "City Hall"), Op.gift(5)] do
   print("  {describe(item)}")
-end

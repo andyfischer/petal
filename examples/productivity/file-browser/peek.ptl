@@ -12,7 +12,6 @@ import ui
 
 fn frac(h: int, salt: int) -> float
   ((h / salt) % 1000) / 1000.0
-end
 
 # ── Pictures ────────────────────────────────────────────────────────────────
 
@@ -41,10 +40,7 @@ fn landscape(h: int, r: record) -> nil
     let pts = for i in range(0, 13) do
       let t = i / 12.0
       {x: r.x + r.w * t, y: r.y + r.h * (base - amp * (0.5 + 0.5 * sin(ph + t * k * 3.14)) * (0.6 + 0.4 * cos(ph * 2.0 + t * 5.0)))}
-    end
     fill_polygon(pts ++ [{x: r.x + r.w, y: r.y + r.h}, {x: r.x, y: r.y + r.h}], p[2 + layer])
-  end
-end
 
 # A screenshot: somebody's window.
 fn screenshot(h: int, r: record) -> nil
@@ -55,14 +51,11 @@ fn screenshot(h: int, r: record) -> nil
   for i in range(0, 3) do
     draw_circle({x: win.x + win.w * (0.05 + 0.045 * i), y: win.y + win.h * 0.07}, max(1.0, win.w * 0.013),
       [:ed6a5e, :f4bf4f, :61c554][i])
-  end
   draw_rect(Rect(win.x, win.y + win.h * 0.14, win.w * 0.26, win.h * 0.86), :f4f6f9)
   for i in range(0, 5) do
     let w = 0.30 + 0.34 * frac(h, 11 + i * 7)
     draw_rect(Rect(win.x + win.w * 0.32, win.y + win.h * (0.26 + 0.13 * i), win.w * w, max(1.0, win.h * 0.045)),
       if i == 0 then :5b8def else :cdd4df end)
-  end
-end
 
 # A logo on a flat ground: two waves.
 fn logo(h: int, r: record, name: string) -> nil
@@ -74,10 +67,7 @@ fn logo(h: int, r: record, name: string) -> nil
     let pts = for i in range(0, 17) do
       let t = i / 16.0
       {x: r.x + r.w * (0.26 + 0.48 * t), y: r.y + r.h * (0.44 + 0.14 * row) + sin(t * 9.42 + row) * r.h * 0.045}
-    end
     draw_polyline(pts, if row == 0 then ink else mix(ink, bg, 0.45) end, 255, max(1.5, r.h * 0.035))
-  end
-end
 
 # The picture a file's name stands for, clipped to a rounded rect.
 pub fn picture(name: string, h: int, r: record, radius: num) -> nil
@@ -89,9 +79,7 @@ pub fn picture(name: string, h: int, r: record, radius: num) -> nil
     logo(h, r, low)
   else
     landscape(h, r)
-  end
   clip_pop()
-end
 
 # ── Text ────────────────────────────────────────────────────────────────────
 
@@ -114,7 +102,6 @@ fn text_card(text: string, r: record, code: bool, big: bool) -> nil
   for line in lines do
     if y > r.y + r.h then
       break
-    end
     let t = trim(line)
     let style = if starts_with(t, "//") || (code && starts_with(t, "#")) then
       {size: size, font: "mono", color: soft}
@@ -122,7 +109,6 @@ fn text_card(text: string, r: record, code: bool, big: bool) -> nil
       {size: size, font: "mono", color: :1c1e22, weight: 700}
     else
       {size: size, font: "mono", color: ink}
-    end
     draw_text(line, {x: r.x + pad, y: y}, style)
     if code then
       # Tint the leading keyword, in place over the line.
@@ -130,12 +116,8 @@ fn text_card(text: string, r: record, code: bool, big: bool) -> nil
       if contains(CODE_WORDS, word) then
         let indent = slice(line, 0, index_of(line, word))
         draw_text(word, {x: r.x + pad + text_advance(indent, style), y: y}, {size: size, font: "mono", color: :b79cf5})
-      end
-    end
     y += step
-  end
   clip_pop()
-end
 
 # A CSV as a small table.
 fn table_card(text: string, r: record, big: bool) -> nil
@@ -154,20 +136,15 @@ fn table_card(text: string, r: record, big: bool) -> nil
     let y = r.y + i * step
     if y > r.y + r.h then
       break
-    end
     let every = split(rows[i], ",")
     let cells = if len(every) > cols then [every[0]] ++ slice(every, len(every) - cols + 1) else every end
     if i > 0 && i % 2 == 0 then
       draw_rect(Rect(r.x, y, r.w, step), :eceff3)
-    end
     for j in range(0, len(cells)) do
       let cell = if j == 0 then Rect(r.x + 10, y, first_w - 14, step) else Rect(r.x + first_w + (j - 1) * rest_w, y, rest_w - 10, step) end
       let style = {size: size, font: "ui", color: if i == 0 then :ffffff else :2b2e35 end, weight: if i == 0 then 600 else 400 end}
       tl.draw_text_line(tl.elide(cells[j], style, cell.w), cell, style, if j == 0 then "left" else "right" end)
-    end
-  end
   clip_pop()
-end
 
 # A page of something we cannot read: a title and grey paragraphs.
 fn page_card(h: int, r: record, accent: record) -> nil
@@ -184,8 +161,6 @@ fn page_card(h: int, r: record, accent: record) -> nil
     draw_rect(Rect(p.x + m, y, (p.w - 2 * m) * (if short then 0.4 + 0.3 * frac(h, 9 + i) else 1.0 end), max(1.0, p.h * 0.011)), :c9cfda)
     y += p.h * (if short then 0.062 else 0.033 end)
     i += 1
-  end
-end
 
 fn wave_card(h: int, r: record, accent: record, label: string, T: record) -> nil
   draw_rect_rounded(r, 8, T.well)
@@ -197,15 +172,12 @@ fn wave_card(h: int, r: record, accent: record, label: string, T: record) -> nil
     let half = max(1.0, a * r.h * 0.30)
     let x = r.x + 10 + i * (r.w - 20) / float(n)
     draw_line({x: x, y: mid - half}, {x: x, y: mid + half}, if t < 0.31 then accent else mix(accent, T.well, 0.55) end, 255, 2)
-  end
   let s = {size: 11, font: "ui", color: T.dim}
   tl.draw_text_line("0:00", Rect(r.x + 12, r.y + r.h - 24, 60, 16), s)
   tl.draw_text_line(label, Rect(r.x + r.w - 72, r.y + r.h - 24, 60, 16), s, "right")
-end
 
 fn duration(seconds: int) -> string
   "{seconds / 60}:{pad_start(str(seconds % 60), 2, "0")}"
-end
 
 # ── The preview ─────────────────────────────────────────────────────────────
 
@@ -255,7 +227,6 @@ pub fn draw(n: record, r: record, T: record, o: record) -> nil
       let x = r.x + (r.w - used) / 2.0 + (i % cols) * cell
       let y = r.y + (i / cols) * cell + (r.h - ((shown - 1) / cols + 1) * cell) / 2.0
       ic.file_icon(o.kids[i], Rect(x + cell * 0.15, y + cell * 0.15, cell * 0.7, cell * 0.7))
-    end
   else
     let s = min(r.w, r.h) * (if o.big then 0.5 else 0.82 end)
     let box = Rect(r.x + (r.w - s) / 2.0, r.y + (r.h - s) / 2.0, s, s)
@@ -263,7 +234,4 @@ pub fn draw(n: record, r: record, T: record, o: record) -> nil
       ic.trash(box, false)
     else
       ic.file_icon(key, box)
-    end
-  end
   nil
-end

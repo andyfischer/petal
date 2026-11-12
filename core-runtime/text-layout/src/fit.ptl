@@ -20,7 +20,6 @@ import ui
 # at least one line, so a caller can lay the result out with no empty case.
 pub fn wrap_text(s: string, style: record, max_w: num) -> list
   text_wrap(s, style, float(max_w))
-end
 
 # `s` cut to fit `max_w` px, with "…" marking the cut. Returns `s` untouched
 # when it already fits.
@@ -33,13 +32,10 @@ pub fn elide(s: string, style: record, max_w: num, keep: string) -> string
     when "tail" -> "head"
     when "both" -> "middle"
     when _ -> "tail"
-  end
   text_ellipsize(s, style, float(max_w), mode)
-end
 
 pub fn elide(s: string, style: record, max_w: num) -> string
   text_ellipsize(s, style, float(max_w), "tail")
-end
 
 # Wrap `s` into at most `max_lines` lines, ellipsizing the last one if the
 # text ran past it. The shape a card summary, a toast body or a two-line list
@@ -56,17 +52,13 @@ pub fn clamp_lines(s: string, style: record, max_w: num, max_lines: num) -> list
     var out = []
     for i in range(0, max_lines - 1) do
       set out = append(out, lines[i])
-    end
     # Everything that did not fit is rejoined before being cut, so the
     # ellipsis lands after as much of the overflow as the last line can hold
     # rather than after the last *whole line* the wrap happened to produce.
     var rest = lines[max_lines - 1]
     for i in range(max_lines, len(lines)) do
       set rest = rest ++ " " ++ lines[i]
-    end
     append(out, text_ellipsize(rest, style, float(max_w), "tail"))
-  end
-end
 
 # ── Measuring a block ─────────────────────────────────────────────────────
 
@@ -77,11 +69,9 @@ end
 pub fn line_step(style: record, lead: num) -> float
   let l = float(lead)
   if l >= 4.0 then l else text_metrics(style).line_height * l end
-end
 
 pub fn line_step(style: record) -> float
   line_step(style, 1.0)
-end
 
 # The widest of `lines`, in px.
 pub fn lines_width(lines: list, style: record) -> float
@@ -90,10 +80,7 @@ pub fn lines_width(lines: list, style: record) -> float
     let lw = float(text_width(line, style))
     if lw > w then
       set w = lw
-    end
-  end
   w
-end
 
 # The size `lines` occupy: `{w, h}`. The height is the ink-to-ink extent of
 # the block — the cap height of the first line down to the descenders of the
@@ -104,11 +91,9 @@ pub fn lines_size(lines: list, style: record, lead: num) -> record
   let n = max(1, len(lines))
   {w: lines_width(lines, style),
    h: m.cap_height + m.descent + float(n - 1) * line_step(style, lead)}
-end
 
 pub fn lines_size(lines: list, style: record) -> record
   lines_size(lines, style, 1.0)
-end
 
 # ── Carets ────────────────────────────────────────────────────────────────
 
@@ -117,12 +102,10 @@ end
 # `s[i]` take.
 pub fn caret_index(s: string, style: record, dx: num) -> int
   text_index_at(s, style, float(dx))
-end
 
 # The x offset of the caret sitting before character `i`.
 pub fn caret_x(s: string, style: record, i: num) -> float
   float(text_width(char_slice(s, 0, max(0, i)), style))
-end
 
 # The rect of the caret before character `i`, for text set in `r` — a
 # 1px-wide bar spanning the line's ink, so it matches the text's height rather
@@ -131,8 +114,6 @@ pub fn caret_rect(s: string, r: record, style: record, i: num, valign: string) -
   let m = text_metrics(style)
   let base = text_baseline(r, style, valign)
   Rect(float(r.x) + caret_x(s, style, i), base - m.baseline, 1.0, m.baseline + m.descent)
-end
 
 pub fn caret_rect(s: string, r: record, style: record, i: num) -> record
   caret_rect(s, r, style, i, "middle")
-end

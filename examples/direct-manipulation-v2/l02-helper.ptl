@@ -16,7 +16,6 @@ let center = {x: 200, y: 150}
 
 fn offset(p, dx, dy)
   {x: p.x + dx, y: p.y + dy}
-end
 
 let a = offset(center, -60, 0)
 let b = offset(center, 60, 0)

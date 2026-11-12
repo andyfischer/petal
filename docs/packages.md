@@ -17,10 +17,10 @@ petal run main.ptl                                       # no flags: the manifes
 ```
 
 ```petal ignore
-// main.ptl
-import tween          // a [dependencies] key
+# main.ptl
+import tween          # a [dependencies] key
 import util
-import ./level        // a file beside this one
+import ./level        # a file beside this one
 ```
 
 Every command that compiles (`run`, `lint`, `explain`, the `show-*`

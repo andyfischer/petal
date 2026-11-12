@@ -23,7 +23,6 @@ import ui
 # screen; capping it at ~3 frames turns a hitch into a slightly slow frame.
 pub fn step() -> float
   min(dt(), 0.05)
-end
 
 # ── Easing curves ─────────────────────────────────────────────────────────
 # `t` is clamped to [0, 1] in every one of these, so a caller may hand over a
@@ -31,17 +30,14 @@ end
 
 fn _t(t: num) -> float
   clamp(float(t), 0.0, 1.0)
-end
 
 pub fn ease_out(t: num) -> float
   let c = _t(t)
   1.0 - pow(1.0 - c, 3.0)
-end
 
 pub fn ease_in(t: num) -> float
   let c = _t(t)
   c * c * c
-end
 
 pub fn ease_in_out(t: num) -> float
   let c = _t(t)
@@ -49,8 +45,6 @@ pub fn ease_in_out(t: num) -> float
     4.0 * c * c * c
   else
     1.0 - pow(-2.0 * c + 2.0, 3.0) / 2.0
-  end
-end
 
 # Overshoots past 1 and settles back: the "pop" a menu or a dialog opens with.
 pub fn ease_back(t: num) -> float
@@ -58,7 +52,6 @@ pub fn ease_back(t: num) -> float
   let s = 1.70158
   let u = c - 1.0
   1.0 + (s + 1.0) * u * u * u + s * u * u
-end
 
 # A decaying wobble. Louder than `ease_back` — for a control that wants to be
 # noticed once (a toast landing), not for anything that fires on every hover.
@@ -72,9 +65,6 @@ pub fn ease_elastic(t: num) -> float
     else
       let p = 0.3
       pow(2.0, -10.0 * c) * sin((c - p / 4.0) * (2.0 * pi()) / p) + 1.0
-    end
-  end
-end
 
 # ── Animated values ───────────────────────────────────────────────────────
 
@@ -93,23 +83,17 @@ pub fn ease_to(target: num, rate: num) -> float
     v = v + (float(target) - v) * k
     if abs(float(target) - v) < 0.001 then
       v = float(target)
-    end
-  end
   v
-end
 
 pub fn ease_to(target: num) -> float
   ease_to(target, 18.0)
-end
 
 # 0 → 1 as `on` flips. The hover/press/open primitive every component uses.
 pub fn ease_flag(on: bool, rate: num) -> float
   ease_to(if on then 1.0 else 0.0 end, rate)
-end
 
 pub fn ease_flag(on: bool) -> float
   ease_flag(on, 18.0)
-end
 
 # A real second-order spring: overshoots, oscillates, settles. Use it where
 # motion should feel physical (a knob being flicked, a thumb sliding across a
@@ -135,18 +119,13 @@ pub fn spring(target: num, cfg: record) -> float
       let a = (float(target) - x) * k - v * d
       v = v + a * h
       x = x + v * h
-    end
     if abs(float(target) - x) < 0.0005 && abs(v) < 0.01 then
       x = float(target)
       v = 0.0
-    end
-  end
   x
-end
 
 pub fn spring(target: num) -> float
   spring(target, {})
-end
 
 # Linear 0 → 1 progress that advances while `on` and rewinds while not, over
 # `dur` seconds. Unlike `ease_flag` this reaches its ends exactly and takes a
@@ -161,9 +140,7 @@ pub fn enter(on: bool, dur: num) -> float
   else
     let d = max(float(dur), 0.001)
     p = clamp(p + (if on then step() / d else -step() / d end), 0.0, 1.0)
-  end
   p
-end
 
 # An impulse that decays: 1.0 on the frame `trigger` goes true, then falls to
 # 0 over `dur`. The building block for one-shot feedback — a ripple, a shake,
@@ -175,21 +152,17 @@ pub fn impulse(trigger: bool, dur: num) -> float
     v = 1.0
   else
     v = max(0.0, v - step() / max(float(dur), 0.001))
-  end
   was = trigger
   v
-end
 
 pub fn impulse(trigger: bool) -> float
   impulse(trigger, 0.45)
-end
 
 # A damped horizontal shake in pixels, for rejecting input. Feed it the frame
 # an error happens on.
 pub fn shake(trigger: bool, amount: num) -> float
   let e = impulse(trigger, 0.4)
   sin(time() * 46.0) * float(amount) * e * e
-end
 
 # ── Clock-driven motion ───────────────────────────────────────────────────
 # These read `time()` rather than integrating, so they never drift and every
@@ -198,12 +171,10 @@ end
 
 pub fn wave(period: num) -> float
   sin(time() * 2.0 * pi() / max(float(period), 0.001))
-end
 
 # 0 → 1 → 0, smoothly. The breathing highlight on a recording indicator.
 pub fn pulse(period: num) -> float
   (wave(period) + 1.0) / 2.0
-end
 
 # Seconds since this callsite first ran. One timer per instance, started when
 # the instance appears — so an item that enters a list later animates in on
@@ -220,16 +191,13 @@ pub fn age() -> float
     seen = 1
   else
     t = t + step()
-  end
   t
-end
 
 # Progress through a `dur`-second entrance that begins `i * step_s` seconds
 # after this callsite appeared: the stagger a list uses to cascade in.
 pub fn stagger(i: num, step_s: num, dur: num) -> float
   let a = age() - float(i) * float(step_s)
   clamp(a / max(float(dur), 0.001), 0.0, 1.0)
-end
 
 # ── Interpolation ─────────────────────────────────────────────────────────
 
@@ -237,15 +205,12 @@ pub fn lerp_rect(a: record, b: record, t: num) -> Rect
   let c = _t(t)
   Rect(a.x + (b.x - a.x) * c, a.y + (b.y - a.y) * c,
     a.w + (b.w - a.w) * c, a.h + (b.h - a.h) * c)
-end
 
 # A rect scaled about its own center — the press squash and the dialog pop.
 pub fn scale_rect(r: record, s: num) -> Rect
   let w = r.w * float(s)
   let h = r.h * float(s)
   Rect(r.x + (r.w - w) / 2.0, r.y + (r.h - h) / 2.0, w, h)
-end
 
 pub fn offset_rect(r: record, dx: num, dy: num) -> Rect
   Rect(r.x + dx, r.y + dy, r.w, r.h)
-end

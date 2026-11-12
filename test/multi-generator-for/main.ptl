@@ -9,12 +9,10 @@ print(cube)
 let off_diagonal = for a in range(3), b in range(3) do
   if a == b then continue end
   a * 10 + b
-end
 print(off_diagonal)
 var total = 0
 for a in range(3), b in range(4) do
   set total += a * b
-end
 print(total)
 let st = {rows: [[0, 0], [0, 0]]}
 let moves = for r in range(2), c in range(2) do set_in(st, ["rows", r, c], 1) end

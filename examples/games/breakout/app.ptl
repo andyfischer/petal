@@ -115,21 +115,17 @@ state var broken    = 0         # bricks broken this run
 
 fn tx(s: string, x: num, y: num, style: record)
   draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
-end
 
 fn tx_right(s: string, right_x: num, y: num, style: record)
   draw_text(s, pos: {x: int(right_x) - text_width(s, style), y: int(y)}, style: style)
-end
 
 fn tx_center(s: string, cx: num, y: num, style: record)
   draw_text(s, pos: {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style: style)
-end
 
 fn mix(a: record, b: record, t: num) -> record
   {r: int(float(a.r) + (float(b.r) - float(a.r)) * t),
     g: int(float(a.g) + (float(b.g) - float(a.g)) * t),
     b: int(float(a.b) + (float(b.b) - float(a.b)) * t)}
-end
 
 # Sample the brick ramp at row `row` of `rows`.
 fn row_color(row: num, rows: num) -> record
@@ -138,7 +134,6 @@ fn row_color(row: num, rows: num) -> record
   let s = f * float(n)
   let i = min(n - 1, int(s))
   mix(BRICK_STOPS[i], BRICK_STOPS[i + 1], t: s - float(i))
-end
 
 # Starting hit points for one grid cell — 0 means the layout leaves a hole.
 fn cell_hp(lvl, row, col)
@@ -147,13 +142,10 @@ fn cell_hp(lvl, row, col)
   else if p == 1 then !(row < 3 && (col < 2 || col >= COLS - 2))
   else if p == 2 then (row + col) % 3 != 0
   else !(col % 4 == 1 && row % 3 != 0)
-  end
   if !solid then 0 else 3 - row / 3 end
-end
 
 fn brick_value(row)
   (3 - row / 3) * 25
-end
 
 # `n` sparks at (x, y), thrown along `dirx`/`diry`.
 fn burst(lst, x: num, y: num, n: num, col: record, dirx: num, diry: num, power: num)
@@ -171,17 +163,13 @@ fn burst(lst, x: num, y: num, n: num, col: record, dirx: num, diry: num, power: 
       c: col,
       sz: random(1.5, 3.4),
     })
-  end
   out
-end
 
 fn power_by_key(k: string)
   var found = POWERS[0]
   for p in POWERS do
     if p.key == k then set found = p end
-  end
   found
-end
 
 # ── Geometry ─────────────────────────────────────────────────────────────
 
@@ -203,7 +191,6 @@ let pad_y = int(fb) - 34
 
 fn brick_rect(row, col)
   rect(GX + col * CW, GY + row * CH, CW - GAP, CH - GAP)
-end
 
 # ── Level / life plumbing ────────────────────────────────────────────────
 
@@ -217,27 +204,21 @@ fn build_level(lvl)
       set grid = append(grid, hp)
       set flashes = append(flashes, 0.0)
       if hp > 0 then set n = n + 1 end
-    end
-  end
   set bricks = grid
   set brick_hit = flashes
   set left = n
-end
 
 fn pad_w() -> int
   if get wide_t > 0.0 then PADW_WIDE else PADW end
-end
 
 fn park_ball()
   set balls = [{x: get padx + float(pad_w()) / 2.0, y: float(pad_y) - float(BR) - 2.0, vx: 0.0, vy: 0.0}]
   set trail = []
-end
 
 fn say(msg: string, col: record)
   set toast = msg
   set toast_t = 1.9
   set toast_c = col
-end
 
 fn new_game()
   set level = 1
@@ -258,14 +239,12 @@ fn new_game()
   set phase = "title"
   set banner = "BREAKOUT"
   set subbanner = "press SPACE or click to launch"
-end
 
 # ── Boot ─────────────────────────────────────────────────────────────────
 
 if !ready then
   set ready = true
   new_game()
-end
 
 let raw_dt = dt()
 let sdt = min(raw_dt, 0.06)
@@ -278,7 +257,6 @@ if key_pressed("right") || key_pressed("d") then set hold_r = tap_hold end
 
 if key_pressed("r") then
   new_game()
-end
 
 # SPACE is the one-button verb; a left click inside the court does the same,
 # so the game is fully playable with the mouse alone.
@@ -310,8 +288,6 @@ if advance then
     set subbanner = LAYOUTS[level % 4] ++ "  ·  press SPACE or click to launch"
   else if phase == "over" then
     new_game()
-  end
-end
 
 # Paddle: held keys, tap impulses, or the pointer when it is over the court.
 let live = phase == "play" || phase == "serve" || phase == "title"
@@ -323,13 +299,11 @@ set hold_r = max(0.0, hold_r - sdt)
 
 if kdir != 0.0 && live then
   set pad_target = pad_target + kdir * 900.0 * sdt
-end
 
 let mx = mouse_x()
 let my = mouse_y()
 if (mx != last_mx || my != last_my) && last_mx >= 0 && live && point_in(px: mx, py: my, r: court) then
   set pad_target = float(mx) - float(pad_w()) / 2.0
-end
 set last_mx = mx
 set last_my = my
 
@@ -340,7 +314,6 @@ set padx = clamp(padx, lo: fl, hi: fr - float(pad_w()))
 
 if phase == "title" || phase == "serve" then
   set balls = [{x: padx + float(pad_w()) / 2.0, y: float(pad_y) - float(BR) - 2.0, vx: 0.0, vy: 0.0}]
-end
 
 # ── Simulation ───────────────────────────────────────────────────────────
 
@@ -364,16 +337,13 @@ if phase == "play" then
       if x - float(BR) < fl && vx < 0.0 then
         set x = fl + float(BR)
         set vx = -vx
-      end
       if x + float(BR) > fr && vx > 0.0 then
         set x = fr - float(BR)
         set vx = -vx
-      end
       if y - float(BR) < ft && vy < 0.0 then
         set y = ft + float(BR)
         set vy = -vy
         set flash_top = 1.0
-      end
 
       # Bricks — the ball's bounding box maps straight onto grid cells, so
       # only the handful of bricks it could possibly touch are tested.
@@ -401,7 +371,6 @@ if phase == "play" then
               else
                 set vy = -vy
                 set y = if y < float(q.y) + float(q.h) / 2.0 then float(q.y) - float(BR) else float(q.y + q.h) + float(BR) end
-              end
               if hp <= 0 then
                 set left = left - 1
                 set broken = broken + 1
@@ -415,14 +384,8 @@ if phase == "play" then
                   let pk = choose(POWERS)
                   set drops = append(drops, {x: float(q.x + q.w / 2), y: float(q.y + q.h / 2),
                     vy: 132.0, k: pk.key, spin: random(0.0, 3.0)})
-                end
               else
                 set bits = burst(bits, x, y, n: 5, col: bc, dirx: 0.0, diry: 0.0, power: 0.55)
-              end
-            end
-          end
-        end
-      end
 
       # Paddle
       let pw = float(pad_w())
@@ -436,26 +399,19 @@ if phase == "play" then
           set vy = speed * sin(ang)
           set combo = 0
           set flash_pad = 1.0
-        end
-      end
 
       set balls[i].x = x
       set balls[i].y = y
       set balls[i].vx = vx
       set balls[i].vy = vy
-    end
 
     # Balls that fell past the floor are dropped.
     set balls = for b in balls do
       if b.y - float(BR) > fb then continue end
       b
-    end
 
     if len(balls) == 0 || left == 0 then
       set t_left = 0.0
-    end
-  end
-end
 
 # Life lost / level cleared
 if phase == "play" && left == 0 then
@@ -464,7 +420,6 @@ if phase == "play" && left == 0 then
   set subbanner = "press SPACE or click for level {level + 1}"
   set score = score + 250 + lives * 100
   set bits = burst(bits, x: float(cx), y: float(court.y + court.h / 2), n: 60, col: :ffd166, dirx: 0.0, diry: 0.0, power: 2.0)
-end
 
 if phase == "play" && len(balls) == 0 then
   set lives = lives - 1
@@ -487,8 +442,6 @@ if phase == "play" && len(balls) == 0 then
     set subbanner = "{lives} left  ·  press SPACE or click to launch"
     park_ball()
     say("BALL LOST", C_WARN)
-  end
-end
 
 # Power-up drops: fall, get caught, or leave the field.
 if phase == "play" || phase == "serve" then
@@ -501,9 +454,7 @@ if phase == "play" || phase == "serve" then
     if in_y && in_x then
       set caught = append(caught, d.k)
       continue
-    end
     {...d, y: ny, spin: d.spin + sdt * 2.4}
-  end
   for k in caught do
     let p = power_by_key(k)
     say(p.name, p.c)
@@ -522,14 +473,8 @@ if phase == "play" || phase == "serve" then
         for s in [-0.42, 0.42] do
           set extra = append(extra, {x: b.x, y: b.y,
             vx: speed * cos(a1 + s), vy: speed * sin(a1 + s)})
-        end
-      end
       for e in extra do
         if len(balls) < 9 then set balls = append(balls, e) end
-      end
-    end
-  end
-end
 
 set wide_t = max(0.0, wide_t - sdt)
 set slow_t = max(0.0, slow_t - sdt)
@@ -539,24 +484,19 @@ set toast_t = max(0.0, toast_t - sdt)
 if phase == "play" then
   for b in balls do
     set trail = append(trail, {x: b.x, y: b.y, life: 0.30})
-  end
   if len(trail) > 90 then
     set trail = slice(trail, start: len(trail) - 90, end: len(trail))
-  end
-end
 
 set trail = for p in trail do
   let nl = p.life - sdt
   if nl <= 0.0 then continue end
   {...p, life: nl}
-end
 
 set bits = for p in bits do
   let nl = p.life - sdt
   if nl <= 0.0 then continue end
   {...p, x: p.x + p.vx * sdt, y: p.y + p.vy * sdt,
     vx: p.vx * 0.92, vy: p.vy * 0.92 + 210.0 * sdt, life: nl}
-end
 
 let decay = min(1.0, sdt * 4.5)
 set flash_pad = flash_pad - flash_pad * decay
@@ -564,7 +504,6 @@ set flash_top = flash_top - flash_top * decay
 set shake = max(0.0, shake - sdt * 3.2)
 set brick_hit = for f in brick_hit do
   max(0.0, f - sdt * 4.0)
-end
 
 # ── Draw: chrome ─────────────────────────────────────────────────────────
 
@@ -582,8 +521,6 @@ for i in range(0, 6) do
     draw_circle(center: {x: px, y: 96}, radius: 4, c: C_BALL)
   else
     draw_circle(center: {x: px, y: 96}, radius: 3, c: C_LINE)
-  end
-end
 
 # Right-hand stat cells — three short numbers on one baseline grid.
 let cell3 = W - PAD
@@ -617,7 +554,6 @@ draw_rect(rect(int(fr) + 1, int(ft) - 3, 2, int(fb - ft) + 6), C_LINE)
 # The floor is a warning line, not a wall.
 for i in range(0, (int(fr - fl)) / 16) do
   draw_rect(rect(int(fl) + i * 16, int(fb) + 2, 9, 2), c: C_WARN, a: 60)
-end
 
 clip(x: court.x + 2, y: court.y + 2, w: court.w - 4, h: court.h - 4)
 
@@ -626,7 +562,6 @@ clip(x: court.x + 2, y: court.y + 2, w: court.w - 4, h: court.h - 4)
 let guide_top = GY + ROWS * CH + 6
 for col in range(0, COLS + 1) do
   draw_rect(rect(GX + col * CW - GAP / 2, guide_top, 1, pad_y - guide_top - 16), c: C_LINE, a: 70)
-end
 
 # Bricks
 for row in range(0, ROWS) do
@@ -644,35 +579,27 @@ for row in range(0, ROWS) do
       let lit = q.w * hp / full
       if lit > 4 then
         draw_rect_rounded(rect(q.x, q.y, lit, q.h), radius: 4, c: hue)
-      end
       if hp < full then
         # A hairline where the armour ran out, so a chipped brick is legible
         # even where the two tones are close.
         draw_rect(rect(q.x + lit, q.y + 2, 1, q.h - 4), c: :000000, a: 90)
-      end
       # A bevel across the top gives the row a lit edge.
       draw_rect_rounded(rect(q.x + 3, q.y + 2, q.w - 6, 2), radius: 1, c: :ffffff, a: 40)
       let f = brick_hit[idx]
       if f > 0.0 then
         draw_rect_rounded(q, radius: 4, c: :ffffff, a: int(f * 190.0))
-      end
-    end
-  end
-end
 
 # Ball trail
 for p in trail do
   let f = p.life / 0.30
   draw_circle({x: int(p.x) + sx, y: int(p.y) + sy}, max(1, int(float(BR) * f * 0.85)),
     C_BALL, int(70.0 * f * f))
-end
 
 # Particles
 for p in bits do
   let f = p.life / p.max
   draw_circle({x: int(p.x) + sx, y: int(p.y) + sy}, max(1, int(p.sz * f + 0.5)),
     p.c, int(225.0 * f))
-end
 
 # Falling power-ups
 for d in drops do
@@ -683,7 +610,6 @@ for d in drops do
   draw_rect_rounded(box, radius: 6, c: C_COURT)
   draw_rect_outline(box, c: p.c, a: 220, width: 1)
   tx_center(p.short, cx: box.center_x(), y: box.y + 4, style: {...S_BADGE, color: p.c})
-end
 
 # Paddle
 let pw = pad_w()
@@ -703,7 +629,6 @@ for b in balls do
   draw_circle({x: bx, y: by}, BR + 5, C_BALL, 34)
   draw_circle(center: {x: bx, y: by}, radius: BR, c: C_BALL)
   draw_circle({x: bx - 2, y: by - 2}, 2, :ffffff, 230)
-end
 
 # Aim guide while the ball is parked for a serve. Not drawn on the title
 # card, which carries its own legend in that space.
@@ -713,8 +638,6 @@ if phase == "serve" then
   for i in range(0, 5) do
     let d = 20.0 + float(i) * 14.0
     draw_circle({x: int(ax) + sx, y: int(ay - d) + sy}, 2, C_PADDLE, 110 - i * 18)
-  end
-end
 
 # Which wall you are looking at, top-left inside the court.
 tx("LEVEL {level}  ·  " ++ LAYOUTS[level % 4], x: int(fl) + 2, y: int(ft) + 12,
@@ -724,13 +647,10 @@ tx("LEVEL {level}  ·  " ++ LAYOUTS[level % 4], x: int(fl) + 2, y: int(ft) + 12,
 var badges = []
 if wide_t > 0.0 then
   set badges = append(badges, {t: "WIDE", s: "{int(wide_t) + 1}s", c: power_by_key("wide").c})
-end
 if slow_t > 0.0 then
   set badges = append(badges, {t: "SLOW", s: "{int(slow_t) + 1}s", c: power_by_key("slow").c})
-end
 if len(balls) > 1 then
   set badges = append(badges, {t: "{len(balls)} BALLS", s: "", c: power_by_key("multi").c})
-end
 var brail = int(fr) - 2
 for bg in badges do
   let sw = if len(bg.s) > 0 then text_width(bg.s, S_BADGE) + 8 else 0 end
@@ -741,9 +661,7 @@ for bg in badges do
   tx(bg.t, x: box.x + 9, y: box.y + 5, style: {...S_BADGE, color: bg.c})
   if len(bg.s) > 0 then
     tx_right(bg.s, right_x: box.x + bw - 9, y: box.y + 5, style: {...S_BADGE, color: C_DIM})
-  end
   set brail = brail - bw - 7
-end
 
 # Toast — the last thing that happened, fading out over the field.
 if toast_t > 0.0 then
@@ -753,7 +671,6 @@ if toast_t > 0.0 then
   draw_rect_rounded(tr, radius: 8, c: C_COURT, a: int(a * 235.0))
   draw_rect_outline(tr, c: toast_c, a: int(a * 190.0), width: 1)
   tx_center(toast, cx, y: tr.y + 7, style: {...S_CAP, color: toast_c})
-end
 
 clip_none()
 
@@ -782,7 +699,6 @@ if phase != "play" then
     var total = 0
     for p in POWERS do
       set total = total + text_width(p.short, S_BADGE) + 22 + 10
-    end
     var lx = cx - (total - 10) / 2
     for p in POWERS do
       let pwid = text_width(p.short, S_BADGE) + 22
@@ -791,13 +707,9 @@ if phase != "play" then
       draw_rect_outline(box, c: p.c, a: 80, width: 1)
       tx_center(p.short, cx: box.center_x(), y: box.y + 5, style: {...S_BADGE, color: p.c})
       set lx = lx + pwid + 10
-    end
-  end
   if phase == "over" then
     tx_center("FINAL {score}   ·   LEVEL {level}   ·   {broken} BRICKS",
       cx, y: ccy + 82, style: {size: 12, color: C_MUTE})
-  end
-end
 
 # ── Draw: footer ─────────────────────────────────────────────────────────
 
@@ -809,7 +721,6 @@ fn chip(x: num, y: num, cap: string, desc: string) -> int
   tx(cap, x: x + 10, y: y + 6, style: S_CAP)
   tx(desc, x: x + cw + 10, y: y + 6, style: S_HINT)
   cw + 10 + text_width(desc, S_HINT) + 24
-end
 
 let fy = court.y + court.h + 18
 var fx = PAD
@@ -824,7 +735,6 @@ let status = match phase
   when "over" -> "GAME OVER"
   when "cleared" -> "LEVEL CLEAR"
   when _ -> "READY TO LAUNCH"
-end
 tx_right("{int(speed * slowf)} px/s   ·   {status}", right_x: W - PAD, y: fy + 7, style: S_HINT)
 
 # ── Observation mirrors (readable in /state → panel.values) ──────────────

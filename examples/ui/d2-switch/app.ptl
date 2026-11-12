@@ -27,11 +27,9 @@ fn view(pos)
     let a = SPOTS[names[i]]
     let b = SPOTS[names[(i + 1) % 3]]
     draw_line(a, b, :5a6070, 255, 6)
-  end
   for n in names do
     draw_circle(SPOTS[n], 8, COLORS[n])
     draw_text(n, SPOTS[n].x - 12, SPOTS[n].y + 34, 14, :c8ccd8)
-  end
   let s = SPOTS[pos]
   let r = place("knob", rect(s.x - KNOB, s.y - KNOB, 2 * KNOB, 2 * KNOB))
   draggable("knob", r, fn() between(names) end)
@@ -39,7 +37,6 @@ fn view(pos)
   draw_circle({x: r.x + KNOB, y: r.y + KNOB}, KNOB, c)
   draw_circle_outline({x: r.x + KNOB, y: r.y + KNOB}, KNOB, :e8eaf0, 255, 2)
   nil
-end
 
 let d = drag_session(pos, view)
 view(d.preview)
@@ -47,4 +44,3 @@ draw_text("Drag the knob anywhere in the triangle.", 16, 16, 14, :c8ccd8)
 if d.dropped && d.drop != pos then
   pos = d.drop
   changes += 1
-end

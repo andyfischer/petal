@@ -23,8 +23,6 @@ if len(balls) == 0 then
       cg: 120 + (i * 47) % 135,
       cb: 200 - (i * 31) % 150
     })
-  end
-end
 
 # Add a ball on click
 if mouse_pressed(0) then
@@ -39,7 +37,6 @@ if mouse_pressed(0) then
     cg: int(random(80.0, 255.0)),
     cb: int(random(80.0, 255.0))
   })
-end
 
 let gravity = 600.0
 
@@ -57,29 +54,24 @@ for b in balls do
   if nx - b.r < 0.0 then
     final_x = b.r
     final_vx = -nvx * 0.85
-  end
   if nx + b.r > sw then
     final_x = sw - b.r
     final_vx = -nvx * 0.85
-  end
 
   let final_vy = nvy
   let final_y = ny
   if ny + b.r > sh then
     final_y = sh - b.r
     final_vy = -nvy * 0.85
-  end
   if ny - b.r < 0.0 then
     final_y = b.r
     final_vy = -nvy * 0.85
-  end
 
   new_balls = append(new_balls, {
     x: final_x, y: final_y,
     vx: final_vx, vy: final_vy,
     r: b.r, cr: b.cr, cg: b.cg, cb: b.cb
   })
-end
 balls = new_balls
 
 # === Drawing ===
@@ -91,7 +83,6 @@ for b in balls do
   draw_circle(cx: int(b.x), cy: int(b.y), radius: int(b.r), r: b.cr, g: b.cg, b: b.cb)
   draw_circle(cx: int(b.x - b.r * 0.3), cy: int(b.y - b.r * 0.3), radius: int(b.r * 0.35),
     r: min(255, b.cr + 60), g: min(255, b.cg + 60), b: min(255, b.cb + 60))
-end
 
 draw_text("Bouncing Balls — click to add", x: 16, y: 12, size: 14, r: 200, g: 200, b: 220)
 draw_text("count: " ++ str(len(balls)), x: 16, y: 32, size: 12, r: 150, g: 150, b: 180)

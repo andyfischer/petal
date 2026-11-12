@@ -21,16 +21,12 @@ let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
   _draw_line(x1, y1, x2, y2, r, g, b)
-end
 fn draw_line(a, b, color)
   _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
-end
 fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
-end
 fn draw_text(text, pos, size, color)
   _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
-end
 
 # --- State ---
 state ball_x = 400.0
@@ -53,12 +49,9 @@ if !initialized then
     while col < brick_cols do
       let bx = brick_offset_x + col * (brick_w + brick_pad)
       let by = brick_offset_y + row * (brick_h + brick_pad)
-      bricks = append(bricks, { x: bx, y: by, alive: true, row: row })
+      bricks = append(bricks, {x: bx, y: by, alive: true, row: row})
       col += 1
-    end
     row += 1
-  end
-end
 
 # --- Neon brick colors by row ---
 fn brick_color(row)
@@ -68,8 +61,6 @@ fn brick_color(row)
   else if row == 3 then :14ff64
   else if row == 4 then :14a0ff
   else :b43cff
-  end
-end
 
 let delta = dt()
 
@@ -82,24 +73,20 @@ ball_x += ball_dx * delta
 ball_y += ball_dy * delta
 
 # --- Store ball trail ---
-ball_trail = append(ball_trail, { x: ball_x, y: ball_y })
+ball_trail = append(ball_trail, {x: ball_x, y: ball_y})
 if len(ball_trail) > 12 then
   ball_trail = slice(ball_trail, start: len(ball_trail) - 12, end: len(ball_trail))
-end
 
 # --- Wall collisions ---
 if ball_x < float(ball_radius) then
   ball_x = float(ball_radius)
   ball_dx = abs(ball_dx)
-end
 if ball_x > float(screen_width() - ball_radius) then
   ball_x = float(screen_width() - ball_radius)
   ball_dx = -abs(ball_dx)
-end
 if ball_y < float(ball_radius) then
   ball_y = float(ball_radius)
   ball_dy = abs(ball_dy)
-end
 
 # --- Paddle collision ---
 if ball_dy > 0.0 && ball_y + float(ball_radius) >= paddle_y_pos && ball_y + float(ball_radius) <= paddle_y_pos + float(paddle_h) then
@@ -108,13 +95,10 @@ if ball_dy > 0.0 && ball_y + float(ball_radius) >= paddle_y_pos && ball_y + floa
     let hit_pos = (ball_x - paddle_x) / float(paddle_w)
     ball_dx = (hit_pos - 0.5) * 2.0 * ball_speed
     ball_y = paddle_y_pos - float(ball_radius)
-  end
-end
 
 # --- Brick collision ---
 fn rects_collide(x1, y1, w1, h1, x2, y2, w2, h2)
   x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2
-end
 
 let bx1 = ball_x - float(ball_radius)
 let by1 = ball_y - float(ball_radius)
@@ -126,7 +110,7 @@ while i < len(bricks) do
   let b = bricks[i]
   if b.alive then
     if rects_collide(x1: bx1, y1: by1, w1: bw, h1: bh, x2: float(b.x), y2: float(b.y), w2: float(brick_w), h2: float(brick_h)) then
-      bricks[i] = { x: b.x, y: b.y, alive: false, row: b.row }
+      bricks[i] = {x: b.x, y: b.y, alive: false, row: b.row}
       score += 10
 
       # Spawn particles
@@ -137,9 +121,8 @@ while i < len(bricks) do
         let py = float(b.y) + random(0.0, float(brick_h))
         let pvx = random(-120.0, 120.0)
         let pvy = random(-180.0, 20.0)
-        particles = append(particles, { x: px, y: py, vx: pvx, vy: pvy, life: 1.0, r: c.r, g: c.g, b: c.b })
+        particles = append(particles, {x: px, y: py, vx: pvx, vy: pvy, life: 1.0, r: c.r, g: c.g, b: c.b})
         p += 1
-      end
 
       # Determine bounce direction
       let ball_cx = ball_x
@@ -152,14 +135,10 @@ while i < len(bricks) do
         ball_dx = -ball_dx
       else
         ball_dy = -ball_dy
-      end
-    end
-  end
   i += 1
-end
 
 # --- Update particles ---
-particles = map(particles, fn(p) -> { x: p.x + p.vx * delta, y: p.y + p.vy * delta, vx: p.vx * 0.98, vy: p.vy + 200.0 * delta, life: p.life - delta * 1.5, r: p.r, g: p.g, b: p.b })
+particles = map(particles, fn(p) -> {x: p.x + p.vx * delta, y: p.y + p.vy * delta, vx: p.vx * 0.98, vy: p.vy + 200.0 * delta, life: p.life - delta * 1.5, r: p.r, g: p.g, b: p.b})
 particles = filter(particles, fn(p) -> p.life > 0.0)
 
 # --- Ball falls off bottom ---
@@ -170,7 +149,6 @@ if ball_y > float(screen_height() + 20) then
   ball_dx = 200.0
   ball_dy = -300.0
   ball_trail = []
-end
 
 # --- Check win ---
 let all_dead = true
@@ -178,9 +156,7 @@ let j = 0
 while j < len(bricks) do
   if bricks[j].alive then
     all_dead = false
-  end
   j += 1
-end
 
 # --- Drawing ---
 clear(10, 8, 20)
@@ -197,10 +173,8 @@ while star < 40 do
   let bright = 30
   if twinkle < 20 then
     bright = 50 + twinkle * 3
-  end
   draw_rect(x: sx, y: sy, w: 2, h: 2, r: bright, g: bright, b: bright + 15)
   star += 1
-end
 
 # --- Border glow ---
 # Top border
@@ -246,9 +220,7 @@ while k < len(bricks) do
 
     # Right edge shadow
     draw_rect(x: b.x + brick_w - 2, y: b.y, w: 2, h: brick_h, r: sr, g: sg, b: sb)
-  end
   k += 1
-end
 
 # --- Draw particles ---
 let pi = 0
@@ -261,7 +233,6 @@ while pi < len(particles) do
   let psize = int(alpha * 4.0) + 1
   draw_rect(x: int(p.x), y: int(p.y), w: psize, h: psize, r: pr, g: pg, b: pb)
   pi += 1
-end
 
 # --- Draw ball trail ---
 let ti = 0
@@ -275,9 +246,7 @@ while ti < len(ball_trail) do
   let trail_r = int(float(ball_radius) * frac * 0.8)
   if trail_r > 1 then
     draw_circle(cx: int(t.x), cy: int(t.y), radius: trail_r, r: tr, g: tg, b: tb)
-  end
   ti += 1
-end
 
 # --- Draw paddle with gradient effect ---
 # Outer glow
@@ -317,7 +286,6 @@ while li < lives do
   draw_circle(cx: lx, cy: 20, radius: 7, r: 255, g: 60, b: 80)
   draw_circle(cx: lx, cy: 20, radius: 4, r: 255, g: 120, b: 140)
   li += 1
-end
 
 # Score label on right side
 draw_text("LIVES", {x: 620, y: 10}, 22, {r: 255, g: 140, b: 160})
@@ -328,7 +296,6 @@ if all_dead && initialized then
   draw_rect_outline(250, 270, 300, 70, 20, 255, 100)
   draw_text("YOU WIN!", {x: 310, y: 280}, 40, {r: 20, g: 255, b: 100})
   draw_text("Score: " ++ str(score), {x: 335, y: 320}, 22, {r: 180, g: 255, b: 200})
-end
 
 # Game over message
 if lives <= 0 then
@@ -336,4 +303,3 @@ if lives <= 0 then
   draw_rect_outline(250, 270, 300, 80, 255, 40, 60)
   draw_text("GAME OVER", {x: 295, y: 280}, 40, {r: 255, g: 40, b: 60})
   draw_text("Score: " ++ str(score), {x: 335, y: 325}, 24, {r: 255, g: 180, b: 200})
-end

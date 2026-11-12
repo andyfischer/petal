@@ -9,7 +9,6 @@ fn mouse_over(rect: record) -> bool
   let mx = mouse_x()
   let my = mouse_y()
   mx >= rect.x && mx <= rect.x + rect.w && my >= rect.y && my <= rect.y + rect.h
-end
 
 # Tree structure: each person has name, title, and child indices
 let people = [
@@ -61,16 +60,12 @@ let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
   _draw_line(x1, y1, x2, y2, r, g, b)
-end
 fn draw_line(a: record, b: record, color: record)
   _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
-end
 fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
-end
 fn draw_text(text: string, pos: record, size: num, color: record)
   _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
-end
 
 clear(bg.r, bg.g, bg.b)
 
@@ -93,8 +88,6 @@ for i in range(0, len(people)) do
     draw_line({x: px, y: py}, {x: px, y: mid_y}, conn_color)
     draw_line({x: px, y: mid_y}, {x: cx, y: mid_y}, conn_color)
     draw_line({x: cx, y: mid_y}, {x: cx, y: cy}, conn_color)
-  end
-end
 
 # Draw nodes
 for i in range(0, len(people)) do
@@ -116,7 +109,6 @@ for i in range(0, len(people)) do
   else if y < 200 then
     node_color = vp_bg
     border_color = vp_border
-  end
 
   let bg_r = node_color.r
   let bg_g = node_color.g
@@ -132,7 +124,6 @@ for i in range(0, len(people)) do
     border_r = 150
     border_g = 180
     border_b = 255
-  end
 
   # Drop shadow: the same box, offset two pixels.
   draw_rect(x: x + 2, y: y + 2, w: node_w, h: node_h, r: shadow_color.r, g: shadow_color.g, b: shadow_color.b)
@@ -142,4 +133,3 @@ for i in range(0, len(people)) do
   # No bold in this host, so the name is simply drawn a size larger.
   draw_text(person.name, {x: x + 10, y: y + 10}, 15, name_color)
   draw_text(person.title, {x: x + 10, y: y + 30}, 13, role_color)
-end

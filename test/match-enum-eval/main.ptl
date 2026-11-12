@@ -3,14 +3,11 @@ enum Expr
   Num(value),
   Add(left, right),
   Mul(left, right),
-end
 fn eval(e)
   match e
     when Expr.Num(v) -> v
     when Expr.Add(a, b) -> eval(a) + eval(b)
     when Expr.Mul(a, b) -> eval(a) * eval(b)
-  end
-end
 # (2 + 3) * 4 = 20
 let tree = Expr.Mul(Expr.Add(Expr.Num(2), Expr.Num(3)), Expr.Num(4))
 print(eval(tree))

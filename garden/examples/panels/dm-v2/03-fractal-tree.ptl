@@ -38,8 +38,6 @@ fn branch(x, y, angle, len, depth)
   else
     branch(x2, y2, angle + spread, len * shrink, depth - 1)
     branch(x2, y2, angle - spread, len * shrink, depth - 1)
-  end
-end
 
 clear(16, 18, 26)
 branch(200, 380, pi() / 2, trunk, 5)

@@ -23,8 +23,6 @@ if len(walkers) == 0 then
       g: 200 - i * 30,
       b: 100 + i * 25
     })
-  end
-end
 
 # Update each walker with random steps
 let new_walkers = []
@@ -52,32 +50,27 @@ for w in walkers do
     # Pure random
     step_x = random(-3.0, 3.0)
     step_y = random(-3.0, 3.0)
-  end
 
   let nx = min(float(sw) - 1.0, max(0.0, w.x + step_x))
   let ny = min(float(sh) - 1.0, max(0.0, w.y + step_y))
 
   # Record trail point
-  trail = append(trail, { x: nx, y: ny, r: w.r, g: w.g, b: w.b, age: 0.0 })
+  trail = append(trail, {x: nx, y: ny, r: w.r, g: w.g, b: w.b, age: 0.0})
 
-  new_walkers = append(new_walkers, { x: nx, y: ny, r: w.r, g: w.g, b: w.b })
-end
+  new_walkers = append(new_walkers, {x: nx, y: ny, r: w.r, g: w.g, b: w.b})
 walkers = new_walkers
 
 # Age and prune trail
 let new_trail = []
 for t in trail do
-  let aged = { x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, age: t.age + delta }
+  let aged = {x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, age: t.age + delta}
   if aged.age < 8.0 then
     new_trail = append(new_trail, aged)
-  end
-end
 trail = new_trail
 
 # Keep trail manageable
 if len(trail) > 3000 then
   trail = slice(trail, start: len(trail) - 2500, end: len(trail))
-end
 
 # === Drawing ===
 clear(10, 10, 15)
@@ -90,13 +83,11 @@ for t in trail do
   let tb = int(float(t.b) * fade)
   let size = max(1, int(4.0 * fade))
   draw_circle(cx: int(t.x), cy: int(t.y), radius: size, r: tr, g: tg, b: tb)
-end
 
 # Draw walkers
 for w in walkers do
   draw_circle(cx: int(w.x), cy: int(w.y), radius: 8, r: min(255, w.r + 50), g: min(255, w.g + 50), b: min(255, w.b + 50))
   draw_circle(cx: int(w.x), cy: int(w.y), radius: 5, r: w.r, g: w.g, b: w.b)
-end
 
 # Title
 draw_text("Random Walkers", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)

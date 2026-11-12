@@ -28,13 +28,11 @@ state var total = 0
 fn accumulate(value)
   set total = get total + value
   get total
-end
 
 print("Accumulator")
 print("===========")
 for i in range(1, 6) do
   print("After adding", i, "-> total:", accumulate(i))
-end
 
 # ── One entry per entity ─────────────────────────────────────────────────
 # When the value belongs to an entity with an id, the shared cell holds a map
@@ -48,14 +46,12 @@ state var hits = Map()
 fn hit(id)
   set hits[id] = (get hits[id] ?? 0) + 1
   get hits[id]
-end
 
 print("")
 print("Per-entity counters")
 print("===================")
 for id in ["goblin", "orc", "goblin", "goblin", "orc"] do
   print("  {id} hit {hit(id)}x")
-end
 
 # ── One cell per use site ────────────────────────────────────────────────
 # A plain `state` inside a function belongs to the declaration, and to the path
@@ -75,13 +71,11 @@ fn header(title: string) -> string
   state renders = 0
   renders = renders + 1
   "{title} (render {renders})"
-end
 
 fn footer(note: string) -> string
   state renders = 0
   renders = renders + 1
   "{note} (render {renders})"
-end
 
 print("")
 print("Per-use-site state")
@@ -102,16 +96,13 @@ print("  {foot}")
 fn build_label(id: string) -> string
   print("  (building the label for {id})")
   "<{upper(id)}>"
-end
 
 fn label(id: string) -> string
   memo(id) text = build_label(id)
   text
-end
 
 print("")
 print("Cached results")
 print("==============")
 for id in ["goblin", "orc", "goblin"] do
   print("  {label(id)}")
-end

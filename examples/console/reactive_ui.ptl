@@ -28,7 +28,6 @@ enum Event
   None,
   Add(text),
   Clear,
-end
 
 # The app model: one cell, shared by every function that touches it.
 state var items = ["Buy groceries", "Write code", "Read a book"]
@@ -48,7 +47,6 @@ fn button(id: string, label: string, clicked: bool) -> record
     label: "{label} ({click_count})",
     clicks: click_count,
   }
-end
 
 fn todo_app(event)
   # Handle this frame's event (a real UI runtime would feed these from input).
@@ -60,7 +58,6 @@ fn todo_app(event)
       set items = []
       "clear"
     when Event.None -> ""
-  end
 
   let add_btn = button(id: "add", label: "Add", clicked: pressed == "add")
   let clear_btn = button(id: "clear", label: "Clear", clicked: pressed == "clear")
@@ -70,10 +67,8 @@ fn todo_app(event)
   print("  --------")
   for i in range(0, len(list)) do
     print("  [ ] {list[i]}")
-  end
   print("  [{add_btn.label}]  [{clear_btn.label}]")
   print("")
-end
 
 print("Reactive UI Demo")
 print("=================")
@@ -91,4 +86,3 @@ let events = [
 for frame in range(0, len(events)) do
   print("Frame {frame + 1}:")
   todo_app(events[frame])
-end

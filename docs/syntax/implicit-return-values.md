@@ -19,16 +19,16 @@ The short version:
 
 ```petal
 fn add(a, b)
-  a + b              // the last statement: this is what add returns
+  a + b              # the last statement: this is what add returns
 end
 
 fn describe(n)
   let kind = if n % 2 == 0 then "even" else "odd" end
-  "{n} is {kind}"    // a string, returned
+  "{n} is {kind}"    # a string, returned
 end
 
-print(add(2, 3))     // 5
-print(describe(7))   // 7 is odd
+print(add(2, 3))     # 5
+print(describe(7))   # 7 is odd
 ```
 
 Only the *last* statement counts. Every statement before it runs and has its
@@ -36,11 +36,11 @@ value dropped:
 
 ```petal
 fn noisy(n)
-  n * 100            // computed, then dropped
-  n + 1              // returned
+  n * 100            # computed, then dropped
+  n + 1              # returned
 end
 
-print(noisy(1))      // 2
+print(noisy(1))      # 2
 ```
 
 What "the value of the last statement" is, by the kind of statement:
@@ -82,13 +82,13 @@ fn name_of(code)
     when 1 -> "warning"
     when _ do
       print("unknown code {code}")
-      "error"          // a `do … end` arm yields its last statement
+      "error"          # a `do … end` arm yields its last statement
     end
   end
 end
 
-print(sign(-4))        // negative
-print(name_of(1))      // warning
+print(sign(-4))        # negative
+print(name_of(1))      # warning
 ```
 
 An `if` with **no `else`** yields `nil` when the condition is false:
@@ -98,8 +98,8 @@ fn label(n)
   if n > 0 then "positive" end
 end
 
-print(label(1))        // positive
-print(label(-1))       // nil
+print(label(1))        # positive
+print(label(-1))       # nil
 ```
 
 The position is only passed inward when the `if`/`match` itself is in value
@@ -109,13 +109,13 @@ position. One written mid-body is a statement, and so are its branch tails:
 fn total(xs)
   var sum = 0
   if len(xs) == 0 then
-    print("empty")     // a statement: this `if` is not the tail
+    print("empty")     # a statement: this `if` is not the tail
   end
   for x in xs do set sum = get sum + x end
   get sum
 end
 
-print(total([1, 2, 3]))   // 6
+print(total([1, 2, 3]))   # 6
 ```
 
 ## Loops
@@ -130,10 +130,10 @@ has no value.
 value of its body's last statement, once per iteration.
 
 ```petal
-for i in range(0, 3) do print(i) end          // statement: no list
+for i in range(0, 3) do print(i) end          # statement: no list
 
 let squares = for i in range(1, 4) do i * i end
-print(squares)                                 // [1, 4, 9]
+print(squares)                                 # [1, 4, 9]
 ```
 
 ### Where a loop is captured
@@ -153,12 +153,12 @@ A loop is in value position — and collects — when its value is used:
 
 ```petal
 fn doubled(xs)
-  for x in xs do x * 2 end           // the function's tail: collects
+  for x in xs do x * 2 end           # the function's tail: collects
 end
 
 fn rows(n)
   if n > 0 then
-    for i in range(0, n) do i end    // branch tail of a tail `if`: collects
+    for i in range(0, n) do i end    # branch tail of a tail `if`: collects
   else
     []
   end
@@ -166,13 +166,13 @@ end
 
 fn grid(n)
   for row in range(0, n) do
-    for col in range(0, n) do row * 10 + col end   // tail of a collecting body
+    for col in range(0, n) do row * 10 + col end   # tail of a collecting body
   end
 end
 
-print(doubled([1, 2, 3]))   // [2, 4, 6]
-print(rows(3))              // [0, 1, 2]
-print(grid(2))              // [[0, 1], [10, 11]]
+print(doubled([1, 2, 3]))   # [2, 4, 6]
+print(rows(3))              # [0, 1, 2]
+print(grid(2))              # [[0, 1], [10, 11]]
 ```
 
 ### Where a loop is not captured
@@ -189,14 +189,14 @@ is built:
 
 ```petal
 fn report(xs)
-  for x in xs do print(x) end        // not the tail: no list
+  for x in xs do print(x) end        # not the tail: no list
   if len(xs) > 2 then
-    for x in xs do print(x * 2) end  // tail of a statement `if`: no list
+    for x in xs do print(x * 2) end  # tail of a statement `if`: no list
   end
   len(xs)
 end
 
-print(report([1, 2]))                // prints 1, 2, then 2
+print(report([1, 2]))                # prints 1, 2, then 2
 ```
 
 ### What a collecting loop gathers
@@ -210,19 +210,19 @@ out, and `break` to stop with what has been gathered:
 let padded = for i in range(0, 4) do
   if i % 2 == 1 then i end
 end
-print(padded)                        // [nil, 1, nil, 3]
+print(padded)                        # [nil, 1, nil, 3]
 
 let odds = for i in range(0, 6) do
-  if i % 2 == 0 then continue end    // contributes nothing
+  if i % 2 == 0 then continue end    # contributes nothing
   i
 end
-print(odds)                          // [1, 3, 5]
+print(odds)                          # [1, 3, 5]
 
 let firsts = for i in range(0, 100) do
-  if i == 3 then break end           // stops; keeps what was gathered
+  if i == 3 then break end           # stops; keeps what was gathered
   i
 end
-print(firsts)                        // [0, 1, 2]
+print(firsts)                        # [0, 1, 2]
 ```
 
 `while` is statement-only. It has no collecting form and its value is `nil`
@@ -241,15 +241,15 @@ every statement before it:
 
 ```petal
 fn squares(xs) -> list
-  for x in xs do x * x end           // a mapping: returns [1, 4, 9]
+  for x in xs do x * x end           # a mapping: returns [1, 4, 9]
 end
 
 fn show_all(xs) -> nil
-  for x in xs do print(x) end        // a side-effect loop: returns nil
+  for x in xs do print(x) end        # a side-effect loop: returns nil
 end
 
-print(squares([1, 2, 3]))            // [1, 4, 9]
-print(show_all([1, 2]))              // prints 1, 2, then nil
+print(squares([1, 2, 3]))            # [1, 4, 9]
+print(show_all([1, 2]))              # prints 1, 2, then nil
 ```
 
 This is why it matters. Without the declaration, `show_all` would build a list
@@ -281,11 +281,11 @@ position means:
 
 ```petal
 fn summarize(xs) -> nil
-  let doubled = for x in xs do x * 2 end    // bound to a name: a list
+  let doubled = for x in xs do x * 2 end    # bound to a name: a list
   print(doubled)
 end
 
-summarize([1, 2])                            // [2, 4]
+summarize([1, 2])                            # [2, 4]
 ```
 
 ## Explicit `return`
@@ -297,12 +297,12 @@ inside a loop, and a loop being `return`ed is in value position:
 ```petal
 fn first_negative(xs)
   for x in xs do
-    if x < 0 then return x end       // leaves first_negative
+    if x < 0 then return x end       # leaves first_negative
   end
   nil
 end
 
-print(first_negative([3, -1, -2]))   // -1
+print(first_negative([3, -1, -2]))   # -1
 ```
 
 `return` is not affected by `-> nil`. A `return expr` in a `-> nil` function
@@ -319,8 +319,8 @@ tail, by all the rules above. A loop that ends a lambda collects:
 let twice = fn(x) x * 2 end
 let spread = fn(n) for i in range(0, n) do i end end
 
-print(twice(4))        // 8
-print(spread(3))       // [0, 1, 2]
+print(twice(4))        # 8
+print(spread(3))       # [0, 1, 2]
 ```
 
 The `->` in the short lambda form introduces the body, not a return type:

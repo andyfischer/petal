@@ -22,7 +22,6 @@ start_scene("master")
 let screens = ["master", "cycle", "fade"]
 if btnp("select") then
   set_scene(screens[pmod(index_of(screens, scene()) + 1, len(screens))])
-end
 
 set_map_size(32, 30)
 fill_map(0, 0)
@@ -70,19 +69,14 @@ fn fade(c: num, level: num) -> num
       out = if out < 16 then fade_black else out - 16 end
     else
       out = if out >= 48 then fade_white else out + 16 end
-    end
-  end
   out
-end
 
 # A whole palette faded at once — the form a cart actually calls.
 fn faded(cs: list, level: num) -> list
   let out = []
   for c in cs do
     out = append(out, fade(c, level))
-  end
   out
-end
 
 # ── Screen 1: the master palette ──────────────────────────────────────────
 # Twelve swatches at a time — three entries in each of the four background
@@ -96,10 +90,8 @@ fn screen_master()
   let pages = int((64 + per_page - 1) / per_page)
   if btnp("right") then
     set page = pmod(page + 1, pages)
-  end
   if btnp("left") then
     set page = pmod(page - 1, pages)
-  end
 
   let first = page * per_page
   let shown = min(per_page, 64 - first)
@@ -111,20 +103,16 @@ fn screen_master()
     for e in range(0, 3) do
       let i = p * 3 + e
       cs = append(cs, if i < shown then first + i else backdrop() end)
-    end
     palette(p, cs)
-  end
 
   for i in range(0, shown) do
     let col = i % 4
     let row = int(i / 4)
     map_rect(2 + col * 7, 5 + row * 7, 6, 6, i % 3 + 1, int(i / 3))
     text_sprites((2 + col * 7) * 8, (11 + row * 7) * 8, str(first + i), 4)
-  end
 
   text_sprites(16, 8, "MASTER {first}-{first + shown - 1}", 4)
   text_sprites_right(240, 8, "PAGE {page + 1}/{pages}", 4)
-end
 
 # ── Screen 2: color cycling ───────────────────────────────────────────────
 # Nine horizontal bars, each permanently assigned one (palette, entry) slot.
@@ -141,16 +129,12 @@ fn screen_cycle()
 
   if btnp("a") then
     set running = !running
-  end
   if btn_repeat("right", 0.3, 0.08) then
     set speed = min(20, speed + 1)
-  end
   if btn_repeat("left", 0.3, 0.08) then
     set speed = max(0, speed - 1)
-  end
   if running then
     set phase = phase + speed
-  end
 
   # Only palettes 0-2 hold the ramp; palette 3 is kept as plain white so the
   # text stays readable no matter where the cycle currently is.
@@ -159,20 +143,16 @@ fn screen_cycle()
     let cs = []
     for e in range(0, 3) do
       cs = append(cs, ramp[pmod(p * 3 + e + step, len(ramp))])
-    end
     palette(p, cs)
-  end
   palette(3, white, gray, dark_gray)
 
   for i in range(0, 9) do
     map_rect(0, 5 + i * 2, 32, 2, i % 3 + 1, int(i / 3))
-  end
 
   map_text(1, 1, "COLOR CYCLING", 3)
   map_text(1, 2, "9 BARS, 0 TILE WRITES PER FRAME", 3)
   map_text(1, 25, "SPEED {speed}  " ++ (if running then "RUN " else "STOP" end), 3)
   map_text(1, 27, "LR SPEED  A STOP  SEL NEXT", 3)
-end
 
 # ── Screen 3: fade to black and to white ──────────────────────────────────
 # A picture drawn once, then faded by rewriting three palettes. The text keeps
@@ -189,7 +169,6 @@ fn screen_fade()
 
   if btnp("a") then
     set auto = !auto
-  end
   if auto then
     # A slow triangle wave between -4 and +4, so the screen fades all the way
     # out to black, back up through its own colors, and on out to white.
@@ -197,11 +176,8 @@ fn screen_fade()
   else
     if btn_repeat("up", 0.3, 0.1) then
       set level = min(4, level + 1)
-    end
     if btn_repeat("down", 0.3, 0.1) then
       set level = max(-4, level - 1)
-    end
-  end
 
   palette(0, faded(sky, level))
   palette(1, faded(hill, level))
@@ -218,7 +194,6 @@ fn screen_fade()
   let disc = [2, 4, 6, 6, 4, 2]
   for i in range(0, len(disc)) do
     map_rect(24 - int(disc[i] / 2), 2 + i, disc[i], 1, 3, 2)
-  end
   map_rect(23, 4, 2, 2, 2, 2)
 
   # Hills.
@@ -234,7 +209,6 @@ fn screen_fade()
   let toward = if level < 0 then "TO BLACK" else if level > 0 then "TO WHITE" else "NONE    " end
   map_text(1, 25, "FADE {level}  {toward}", 3)
   map_text(1, 27, "UD LEVEL  A AUTO  SEL NEXT", 3)
-end
 
 # ── Dispatch ──────────────────────────────────────────────────────────────
 
@@ -244,8 +218,6 @@ else if scene() == "cycle" then
   screen_cycle()
 else
   screen_fade()
-end
 
 if scene() == "master" then
   text_sprites(16, 224, "LR PAGE  SEL NEXT", 4)
-end

@@ -381,8 +381,6 @@ pub fn tileset(n: num) -> list
   else
     [EMPTY, FIELD_TOP, FIELD_FILL, FIELD_BRICK, HARD, LEDGE_L, LEDGE_M, LEDGE_R,
       BUSH, MUSHROOM, TUFT, CLOUD_L, CLOUD_R, POLE, SPIKES, BANNER]
-  end
-end
 
 # ── The hero ──────────────────────────────────────────────────────────────
 # 16x16, palette 4: 1 navy (outline, cap, boots), 2 red (tunic), 3 peach
@@ -546,7 +544,6 @@ let HERO_HURT = [
 pub fn hero_grids() -> list
   [HERO_IDLE_A, HERO_IDLE_B, HERO_RUN_A, HERO_RUN_B, HERO_RUN_C,
     HERO_JUMP, HERO_FALL, HERO_HURT]
-end
 
 # ── Enemies ───────────────────────────────────────────────────────────────
 # Slime and hopper share palette 5 (greens); bat and boss share palette 7
@@ -668,15 +665,12 @@ let BAT_B = [
 
 pub fn slime_grids() -> list
   [SLIME_A, SLIME_B]
-end
 
 pub fn hopper_grids() -> list
   [HOPPER_A, HOPPER_B]
-end
 
 pub fn bat_grids() -> list
   [BAT_A, BAT_B]
-end
 
 # ── The Rift Warden ───────────────────────────────────────────────────────
 # 32x32 — sixteen tiles and sixteen of the sixty-four sprites, which is most
@@ -755,7 +749,6 @@ let BOSS_SHUT = [
 
 pub fn boss_grids() -> list
   [BOSS_OPEN, BOSS_SHUT]
-end
 
 # ── Pickups and effects ───────────────────────────────────────────────────
 # Coins are single 8x8 tiles (there are dozens per level and each one costs a
@@ -830,11 +823,9 @@ let STAR_B = [
 # The coin's four beats out of three drawings — full, edge-on, thin, edge-on.
 pub fn coin_grids() -> list
   [COIN_0, COIN_1, COIN_2]
-end
 
 pub fn pickup_grids() -> list
   [HEART, STAR_A, STAR_B]
-end
 
 let POOF_A = [
   "................",
@@ -897,7 +888,6 @@ let POOF_C = [
 # the powerup flash.
 pub fn poof_grids() -> list
   [POOF_A, POOF_B, POOF_C]
-end
 
 # ── Title-screen scenery ──────────────────────────────────────────────────
 # The title is not a level, so its hills and its sun are their own tiles
@@ -950,4 +940,3 @@ let SUN = [
 # Four extra title tiles: hill left / mid / right, and the sun.
 pub fn title_grids() -> list
   [HILL_L, HILL_M, HILL_R, SUN]
-end

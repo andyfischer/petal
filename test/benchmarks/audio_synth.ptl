@@ -30,11 +30,9 @@ let SFX_SAMPLES = 13230 # 0.3s, the ahead-of-time case
 
 fn prng_next(s)
   (s * 1103515245 + 12345) % 2147483647
-end
 
 fn note_hz(note)
   440.0 * pow(2.0, (note - 69.0) / 12.0)
-end
 
 # ── 1/2. the cheap chip voice ─────────────────────────────────────────────
 # Square + triangle + sample-and-held noise under one linear-attack /
@@ -48,7 +46,6 @@ fn chip_sample_setup(start)
     tp: fract(float(start) * (220.0 / 44100.0)),
     rnd: prng_next(start + 1),
   }
-end
 
 fn chip_block_arr(start, count, rate)
   let out = f64_array(count)
@@ -79,13 +76,10 @@ fn chip_block_arr(start, count, rate)
       set ncount = 0
       set rnd = prng_next(rnd)
       set nz = if rnd % 2 == 0 then 0.25 else -0.25 end
-    end
 
     out[i] = (sq + tri * 0.3 + nz) * env
     set i = i + 1
-  end
   out
-end
 
 # The same math writing the boxed list the design's `fn(start, count, rate)`
 # contract nominally returns, so the two runs differ only in the buffer.
@@ -118,13 +112,10 @@ fn chip_block_list(start, count, rate)
       set ncount = 0
       set rnd = prng_next(rnd)
       set nz = if rnd % 2 == 0 then 0.25 else -0.25 end
-    end
 
     set out = append(out, (sq + tri * 0.3 + nz) * env)
     set i = i + 1
-  end
   out
-end
 
 # ── 3. the rich voice ─────────────────────────────────────────────────────
 # Three detuned saws through a 2-pole state-variable lowpass whose cutoff an
@@ -153,7 +144,6 @@ fn rich_block_arr(start, count, rate)
     if i % 16 == 0 then
       let lfo = sin(t * 6.2831853 * 3.0)
       set f = 0.18 + 0.14 * lfo
-    end
 
     set p1 = p1 + i1
     if p1 >= 1.0 then set p1 = p1 - 1.0 end
@@ -170,9 +160,7 @@ fn rich_block_arr(start, count, rate)
 
     out[i] = low * env
     set i = i + 1
-  end
   out
-end
 
 # ── driver ────────────────────────────────────────────────────────────────
 # Checksums sample the buffer at a few fixed offsets rather than summing every
@@ -181,27 +169,23 @@ end
 
 fn checksum(buf, acc)
   acc + buf[0] + buf[1] + buf[BLOCK / 2] + buf[BLOCK - 1]
-end
 
 var acc_chip = 0.0
 for b in range(0, BLOCKS) do
   let buf = chip_block_arr(b * BLOCK, BLOCK, RATE)
   set acc_chip = checksum(buf, get acc_chip)
-end
 print("chip/array checksum:", round(get acc_chip, 6))
 
 var acc_list = 0.0
 for b in range(0, BLOCKS) do
   let buf = chip_block_list(b * BLOCK, BLOCK, RATE)
   set acc_list = checksum(buf, get acc_list)
-end
 print("chip/list  checksum:", round(get acc_list, 6))
 
 var acc_rich = 0.0
 for b in range(0, BLOCKS) do
   let buf = rich_block_arr(b * BLOCK, BLOCK, RATE)
   set acc_rich = checksum(buf, get acc_rich)
-end
 print("rich/array checksum:", round(get acc_rich, 6))
 
 # Ahead-of-time: a 0.3s effect rendered in one call, the `register_sound` path.

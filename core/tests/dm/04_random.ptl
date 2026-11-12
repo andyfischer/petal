@@ -6,5 +6,4 @@ let spread = tunable(25.0)
 
 for i in range(0, 5) do
   push_output(s, center + (random() - 0.5) * spread)
-end
 push_output(s, random_int(1, 6))

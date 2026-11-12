@@ -64,7 +64,6 @@ fn S(id: string, g: int, kind: string, label: string, desc: string, def, x: reco
     parent: field(x, "parent", ""), need: field(x, "need", true),
     reveal: field(x, "reveal", false), tags: field(x, "tags", ""),
     hint: field(x, "hint", ""), tone: field(x, "tone", "default")}
-end
 
 pub let SETTINGS = [
   # ── General ▸ Startup ────────────────────────────────────────────────────
@@ -220,9 +219,7 @@ pub fn build_index() -> record
   let idx = {}
   for i in range(0, len(SETTINGS)) do
     idx[SETTINGS[i].id] = i
-  end
   idx
-end
 
 # The default value of every setting that holds one (actions do not).
 pub fn defaults() -> record
@@ -230,10 +227,7 @@ pub fn defaults() -> record
   for s in SETTINGS do
     if s.kind != "action" then
       d[s.id] = s.def
-    end
-  end
   d
-end
 
 # Stored values over the defaults: a key the schema no longer has is dropped,
 # and one the store never saw takes its default.
@@ -245,14 +239,10 @@ pub fn merged(stored: record) -> record
       d[k] = v
     else if v != nil && (type(v) == "int" || type(v) == "float") && (type(d[k]) == "int" || type(d[k]) == "float") then
       d[k] = v
-    end
-  end
   d
-end
 
 fn two(n: num) -> string
   pad_start(str(int(n)), 2, "0")
-end
 
 # A number the way its row shows it: "13 px", "1.5×", "22:00".
 pub fn show_num(s: record, v: num) -> string
@@ -268,8 +258,6 @@ pub fn show_num(s: record, v: num) -> string
     "{whole}.{trimmed}{s.unit}"
   else
     "{int(round(float(v)))}{s.unit}"
-  end
-end
 
 # Any value, for the Changes list and for search: "On", "Dark", "13 px".
 pub fn show_value(s: record, v) -> string
@@ -280,8 +268,6 @@ pub fn show_value(s: record, v) -> string
     when "text" -> if v == "" then "empty" else v end
     when "action" -> ""
     when _ -> show_num(s, v)
-  end
-end
 
 # Snap a slider or stepper value to its step, inside its range. Ints stay
 # ints, so a stored "13" compares equal to the default 13.
@@ -290,7 +276,6 @@ pub fn snap(s: record, v: num)
   let stepped = lo + round((float(v) - lo) / float(s.step)) * float(s.step)
   let c = clamp(stepped, lo, float(s.hi))
   if s.places == 0 then int(round(c)) else round(c, s.places) end
-end
 
 # Why a text value is not acceptable, or "" when it is.
 pub fn problem(s: record, v: string) -> string
@@ -304,13 +289,10 @@ pub fn problem(s: record, v: string) -> string
     else if contains(domain, "@") then "Only one @ is allowed."
     else if index_of(domain, ".") < 1 || ends_with(domain, ".") then "The domain needs a dot, like fern.dev."
     else ""
-    end
   else if t == "" then
     "This cannot be empty."
   else
     ""
-  end
-end
 
 # Whether a setting answers a search. Every word of the query must appear
 # somewhere in its label, description, tags, group or section name.
@@ -320,6 +302,4 @@ pub fn matches(s: record, words: list) -> bool
   let ok = true
   for w in words do
     if !contains(hay, w) then ok = false end
-  end
   ok
-end

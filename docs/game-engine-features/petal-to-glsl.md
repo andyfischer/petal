@@ -13,10 +13,10 @@ let duotone = fn(fx: Fx, dark = :1b1040, light = :ffd9a0, amount = 0.6)
 end
 
 let g = glsl.glsl_function(duotone, ENV)
-// g.code:
-//   vec3 two = mix(linear_to_srgb(params.dark), linear_to_srgb(params.light), fx_luma(fx.color));
-//   fx.color = mix(fx.color, two, params.amount);
-// g.params:  {dark: :1b1040, light: :ffd9a0, amount: 0.6}
+# g.code:
+#   vec3 two = mix(linear_to_srgb(params.dark), linear_to_srgb(params.light), fx_luma(fx.color));
+#   fx.color = mix(fx.color, two, params.amount);
+# g.params:  {dark: :1b1040, light: :ffd9a0, amount: 0.6}
 ```
 
 **Experimental.** The library, its result record and the environment record
@@ -80,18 +80,18 @@ shader side provides is the `env` record:
 
 ```petal ignore
 let ENV = {
-  // The structs a function may take as its first parameter, with field types.
+  # The structs a function may take as its first parameter, with field types.
   structs: {Fx: {color: "vec3", uv: "vec2", time: "float", resolution: "vec2"}},
-  // Functions the shader has that Petal does not: argument and return types.
+  # Functions the shader has that Petal does not: argument and return types.
   functions: {
     src: {args: ["vec2"], returns: "vec3"},
     fx_luma: {args: ["vec3"], returns: "float"},
   },
-  self: "fx",           // the struct's name in the shader (default: the parameter's name)
-  result: "color",      // the field the body's value is assigned to
-  uniforms: "params",   // uniforms are read as params.<name> ("" for bare names)
-  count: "src",         // calls to count into `taps` (a name or a list)
-  entry: "effect",      // the hook's function name in `signature` and `to_glsl`
+  self: "fx",           # the struct's name in the shader (default: the parameter's name)
+  result: "color",      # the field the body's value is assigned to
+  uniforms: "params",   # uniforms are read as params.<name> ("" for bare names)
+  count: "src",         # calls to count into `taps` (a name or a list)
+  entry: "effect",      # the hook's function name in `signature` and `to_glsl`
 }
 ```
 
@@ -121,9 +121,9 @@ fn weight(i: int, n: int) -> float
   1.0 - abs(i) / (n + 1.0)
 end
 print(glsl.to_glsl(weight))
-// float weight(int i, int n) {
-//     return 1.0 - float(abs(i)) / (float(n) + 1.0);
-// }
+# float weight(int i, int n) {
+#     return 1.0 - float(abs(i)) / (float(n) + 1.0);
+# }
 ```
 
 A function called from translated code is translated the same way, once, and

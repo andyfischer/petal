@@ -30,7 +30,7 @@ var count = 0
 for i in [1, 2, 3] do
   set count = count + i
 end
-print(count)   // 6
+print(count)   # 6
 ```
 
 A `var` binds a *box*, not a value. A function or a closure that mentions the
@@ -46,7 +46,7 @@ let doubled = map([1, 2, 3], fn(a)
   if a > 1 then set score += 10 end
   a * 2
 end)
-print(doubled, score)   // [2, 4, 6] 20
+print(doubled, score)   # [2, 4, 6] 20
 ```
 
 Each *evaluation* of the declaration makes a new box, so a factory hands out
@@ -63,7 +63,7 @@ fn counter()
 end
 let a = counter()
 let b = counter()
-print(a(), a(), b())   // 1 2 1
+print(a(), a(), b())   # 1 2 1
 ```
 
 A `var` takes a type annotation like any binding (`var total: int = 0`), and
@@ -81,11 +81,11 @@ every write to a cell is visible where it happens.
 let a = 1
 var b = 1
 
-a = 2          // fine
-set b = 2      // fine
+a = 2          # fine
+set b = 2      # fine
 
-set a = 2      // error: `a` is not a `var`; use `a = ...`
-b = 2          // error: `b` is a `var`; use `set b = ...` to write it
+set a = 2      # error: `a` is not a `var`; use `a = ...`
+b = 2          # error: `b` is a `var`; use `set b = ...` to write it
 ```
 
 `set` never declares: an unknown name is an error. It takes field, index and
@@ -112,7 +112,7 @@ fn describe()
 end
 
 set hits = 3
-print(describe())   // hits so far: 3
+print(describe())   # hits so far: 3
 ```
 
 The reason is timing. A bare name is a *captured snapshot* if it names a
@@ -153,7 +153,7 @@ way to share a box is closure capture, which is lexically visible.
 var x = 1
 let r = { a: x }
 set x = 2
-print(r, x)   // { a: 1 } 2
+print(r, x)   # { a: 1 } 2
 ```
 
 This invariant keeps the feature small: equality, hashing, `print`,
@@ -181,7 +181,7 @@ fn settle(heights: list, passes: int) -> list
   var h = heights
   var moves = 0
 
-  // Move one unit from a to b if a stands at least two higher.
+  # Move one unit from a to b if a stands at least two higher.
   let level = fn(a, b)
     if get h[a] - get h[b] < 2 then return nil end
     set h[a] = get h[a] - 1
@@ -224,9 +224,9 @@ fn mark(i: int)
 end
 
 mark(2)
-mark(2)       // taken: nothing happens
+mark(2)       # taken: nothing happens
 mark(0)
-print(board, turn)   // [2, 0, 1, 0] 2
+print(board, turn)   # [2, 0, 1, 0] 2
 ```
 
 Every function reads these cells with `get`, however plain the function, and
@@ -243,7 +243,7 @@ as for a `let`:
 state score = 0
 
 fn award(n)
-  score = score + n   // error: `score` is bound outside this function
+  score = score + n   # error: `score` is bound outside this function
 end
 ```
 
@@ -271,7 +271,7 @@ what it took, and the next write pays for one copy.
 var xs = [1, 2, 3]
 let snap = xs
 set xs[0] = 99
-print(snap, xs)   // [1, 2, 3] [99, 2, 3]
+print(snap, xs)   # [1, 2, 3] [99, 2, 3]
 ```
 
 `set xs[i] = v` lowers to a `CellRead`, a `SetIndex` on what it read, and a
@@ -403,11 +403,11 @@ run behind, every run:
 state scroll = 0
 
 fn row_y(r)
-  GRID_Y + (r - scroll) * ROW_H   // warning: reads `scroll` one run behind
+  GRID_Y + (r - scroll) * ROW_H   # warning: reads `scroll` one run behind
 end
 
 scroll = scroll + 3
-draw_row(row_y(2))                // uses the previous run's `scroll`
+draw_row(row_y(2))                # uses the previous run's `scroll`
 ```
 
 That is a **warning**, not an error: the program compiles and `petal lint`
@@ -454,11 +454,11 @@ it is block-local.
 ```petal
 let x = 1
 for i in [1, 2, 3] do
-  x = 5              // targets the outer x, and reaches it
+  x = 5              # targets the outer x, and reaches it
   let x = i * 10
-  x = x + 1          // body-local
+  x = x + 1          # body-local
 end
-print(x)             // 5
+print(x)             # 5
 ```
 
 Two halves make this work and both are required: the phi pre-scan

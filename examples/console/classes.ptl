@@ -7,7 +7,6 @@
 class Point
   x: int,
   y: int,
-end
 
 let p = Point(3, 4)
 print(p.x, p.y)
@@ -17,11 +16,9 @@ print(type(p))
 # parameter and the call site supplies it — `p.dist2()` passes `p`.
 fn Point.dist2(p: Point) -> int
   p.x * p.x + p.y * p.y
-end
 
 fn Point.shifted(p: Point, dx: int, dy: int) -> Point
   Point(p.x + dx, p.y + dy)
-end
 
 print(p.dist2())
 print(p.shifted(10, 20).dist2())
@@ -30,7 +27,6 @@ print(p.shifted(10, 20).dist2())
 # (`petal lint classes.ptl`) and never blocks the run.
 fn describe(p: Point) -> string
   "({p.x}, {p.y})"
-end
 
 print(describe(p))
 
@@ -46,7 +42,6 @@ print(card.offset(10, 10).right())
 # built-in class exactly like a class of your own.
 fn Rect.area(r: Rect) -> num
   r.w * r.h
-end
 
 print(card.area())
 print(card.inset(10).area())

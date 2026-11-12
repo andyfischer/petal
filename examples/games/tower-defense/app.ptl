@@ -197,20 +197,16 @@ state var last_time = -1.0      # time() at the previous frame, for the frame de
 
 fn tx(s: string, x: num, y: num, style: record)
   draw_text(s, int(x), int(y), style)
-end
 
 fn tx_right(s: string, right_x: num, y: num, style: record)
   draw_text(s, int(right_x) - text_width(s, style), int(y), style)
-end
 
 fn tx_center(s: string, cx: num, y: num, style: record)
   draw_text(s, int(cx) - text_width(s, style) / 2, int(y), style)
-end
 
 # "1 PEST", "2 PESTS".
 fn count_of(n: int, one: string, many: string) -> string
   if n == 1 then "{n} {one}" else "{n} {many}" end
-end
 
 # A route as geometry: cell-centre waypoints, the running length at each, and
 # the total. Segments are axis-aligned, so length is a plain sum.
@@ -221,9 +217,7 @@ fn build_route(cells: list) -> record
   for i in range(1, len(pts)) do
     total += abs(pts[i][0] - pts[i - 1][0]) + abs(pts[i][1] - pts[i - 1][1])
     cum = append(cum, total)
-  end
   {pts: pts, cum: cum, total: total}
-end
 
 # Where a walker is after `d` cells of route, and which way it is heading.
 fn route_at(rt: record, d: num) -> record
@@ -231,24 +225,20 @@ fn route_at(rt: record, d: num) -> record
   let i = 0
   while i < len(rt.pts) - 2 && rt.cum[i + 1] < dd do
     i += 1
-  end
   let a = rt.pts[i]
   let b = rt.pts[i + 1]
   let seg = rt.cum[i + 1] - rt.cum[i]
   let t = (dd - rt.cum[i]) / seg
   {x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t,
     dx: (b[0] - a[0]) / seg, dy: (b[1] - a[1]) / seg}
-end
 
 fn step_of(a: int, b: int) -> int
   if b > a then 1 else if b < a then -1 else 0 end
-end
 
 # The board as a grid of ints: 0 buildable, 1 path, 2 scenery.
 fn build_grid() -> list
   let g = for r in range(0, ROWS) do
     for c in range(0, COLS) do 0 end
-  end
   for rc in ROUTE_CELLS do
     for i in range(0, len(rc) - 1) do
       let a = rc[i]
@@ -261,15 +251,9 @@ fn build_grid() -> list
         let r = a[1] + k * sr
         if c >= 0 && c < COLS && r >= 0 && r < ROWS then
           g[r][c] = 1
-        end
-      end
-    end
-  end
   for d in DECOR do
     g[d[1]][d[0]] = 2
-  end
   g
-end
 
 # The spawn list for wave `w` (1-based), offset to start at `t0`.
 fn wave_spawns(w: int, t0: num) -> list
@@ -279,14 +263,10 @@ fn wave_spawns(w: int, t0: num) -> list
     for i in range(0, g.n) do
       let lane = if g.lane == 2 then i % 2 else g.lane end
       out = append(out, {t: t0 + g.at + float(i) * g.gap, k: g.k, lane: lane, m: spec.m})
-    end
-  end
   out
-end
 
 fn wave_size(w: int) -> int
   reduce(WAVES[w - 1].groups, 0, fn(acc, g) -> acc + g.n)
-end
 
 # Targeting. Returns the index of the best pest within `reach` of (px, py)
 # under priority `mode`, or -1. Every mode is "largest score wins":
@@ -309,14 +289,10 @@ fn pick_target(cs: list, px: num, py: num, reach: num, mode: int) -> int
       when 2 -> c.hp
       when 3 -> 0.0 - c.hp
       when _ -> 0.0 - d2
-    end
     if best < 0 || v > best_v then
       best = i
       best_v = v
-    end
-  end
   best
-end
 
 fn find_creep(cs: list, id: int) -> int
   let found = -1
@@ -324,10 +300,7 @@ fn find_creep(cs: list, id: int) -> int
     if cs[i].id == id then
       found = i
       break
-    end
-  end
   found
-end
 
 # Lightning: from pest `first`, leap to the nearest unvisited pest within
 # `jump` cells, up to `count` pests in all. Returns their indices in order.
@@ -346,17 +319,12 @@ fn chain_from(cs: list, first: int, count: int, jump: num) -> list
       if d2 < best_d then
         best = i
         best_d = d2
-      end
-    end
     if best < 0 then
       going = false
     else
       chain = append(chain, best)
       cur = best
-    end
-  end
   chain
-end
 
 # A jagged path through `stops` (cell coords) for drawing a bolt.
 fn zigzag(stops: list) -> list
@@ -368,11 +336,8 @@ fn zigzag(stops: list) -> list
       let t = float(k) / 3.0
       out = append(out, [a[0] + (b[0] - a[0]) * t + random(-0.14, 0.14),
         a[1] + (b[1] - a[1]) * t + random(-0.14, 0.14)])
-    end
     out = append(out, b)
-  end
   out
-end
 
 # `n` sparks at (x, y), in cell units.
 fn burst(lst: list, x: num, y: num, n: int, col: record, power: num) -> list
@@ -382,15 +347,12 @@ fn burst(lst: list, x: num, y: num, n: int, col: record, power: num) -> list
     let sp = random(0.8, 4.2) * power
     out = append(out, {x: x, y: y, vx: cos(ang) * sp, vy: sin(ang) * sp,
       life: random(0.25, 0.6), max: 0.6, c: col, sz: random(1.2, 2.8)})
-  end
   out
-end
 
 fn say(msg: string, col: record)
   set toast = msg
   set toast_t = 2.4
   set toast_c = col
-end
 
 fn new_game()
   set phase = "title"
@@ -420,7 +382,6 @@ fn new_game()
   set spawned = 0
   set built = 0
   set peak = 0
-end
 
 # Send the next wave. Calling it while a wave is still on the board is
 # allowed and pays a bounty for the nerve.
@@ -430,13 +391,11 @@ fn send_wave()
     let bonus = 10 + 4 * get wave
     set gold += bonus
     say("CALLED EARLY  +{bonus}", C_GOLD)
-  end
   set wave += 1
   set queue = sort_by(flat([get queue, wave_spawns(get wave, get clock)]), fn(e) -> e.t)
   set phase = "wave"
   set paused = false
   nil
-end
 
 # ── Geometry ─────────────────────────────────────────────────────────────
 
@@ -455,17 +414,14 @@ let grid = build_grid()
 # Cell units → pane pixels.
 fn sx(x: num) -> num
   float(bx) + x * FC
-end
 fn sy(y: num) -> num
   float(by) + y * FC
-end
 
 # ── Boot ─────────────────────────────────────────────────────────────────
 
 if !ready then
   set ready = true
   new_game()
-end
 
 # The frame delta is taken from time() rather than dt(). In a window they are
 # the same number; under the debug server's POST /tick the panel's time() is a
@@ -486,7 +442,6 @@ let playing = phase == "build" || phase == "wave"
 
 if key_pressed("r") then
   new_game()
-end
 
 let advance = key_pressed("space") || key_pressed("return")
 if phase == "title" && (advance || click) then
@@ -498,36 +453,26 @@ else if (phase == "won" || phase == "lost") && (advance || click) then
 else if playing && advance then
   if wave < NW then
     send_wave()
-  end
-end
 
 if playing then
   if key_pressed("p") then
     set paused = !paused
-  end
   if key_pressed("f") then
     set speed = speed % 3 + 1
-  end
   for i in range(0, len(TOWERS)) do
     if key_pressed(TOWERS[i].key) then
       set build_sel = if build_sel == i then -1 else i end
       set sel_id = -1
-    end
-  end
   if key_pressed("escape") || mouse_pressed(1) then
     if build_sel >= 0 then
       set build_sel = -1
     else
       set sel_id = -1
-    end
-  end
-end
 
 # The selected tower, re-read after every edit that can change it.
 let sel_i = -1
 for i in range(0, len(towers)) do
   if towers[i].id == sel_id then sel_i = i end
-end
 
 # Tower commands, shared by the keys here and the sidebar buttons below.
 let do_upgrade = playing && key_pressed("u")
@@ -544,8 +489,6 @@ let hover_tower = -1
 if over_board then
   for i in range(0, len(towers)) do
     if towers[i].c == hc && towers[i].r == hr then hover_tower = i end
-  end
-end
 let can_build = over_board && build_sel >= 0 && grid[hr][hc] == 0 && hover_tower < 0
 let can_afford = build_sel >= 0 && gold >= TOWERS[max(0, build_sel)].cost
 
@@ -566,15 +509,12 @@ if playing && click && over_board then
       say(if hover_tower >= 0 then "THAT PLOT IS TAKEN" else if grid[hr][hc] == 1 then "CANNOT PLANT ON THE PATH" else "NOTHING GROWS THERE" end, C_WARN)
     else
       say("NOT ENOUGH GOLD", C_WARN)
-    end
   else if hover_tower >= 0 then
     set sel_id = towers[hover_tower].id
     sel_i = hover_tower
   else
     set sel_id = -1
     sel_i = -1
-  end
-end
 
 # ── Simulation ───────────────────────────────────────────────────────────
 # Fixed slices of at most 20 ms, however long the frame was and whatever the
@@ -600,7 +540,6 @@ while t_left > 0.0001 do
       hp: hp, max: hp, slow_t: 0.0, slow_f: 1.0, ox: jx, oy: jy, flash: 0.0})
     set next_id += 1
     set spawned += 1
-  end
 
   # Walk every pest along its route; one that runs out of route has leaked.
   let leaked = 0
@@ -613,16 +552,13 @@ while t_left > 0.0001 do
       leaked += K.leak
       set leaks += 1
       continue
-    end
     let p = route_at(rt, nd)
     {...c, d: nd, x: p.x + c.ox, y: p.y + c.oy, dx: p.dx, dy: p.dy, left: rt.total - nd,
       slow_t: max(0.0, c.slow_t - h), flash: max(0.0, c.flash - h)}
-  end
   if leaked > 0 then
     set lives = max(0, lives - leaked)
     set hurt_t = 0.6
     set floaters = append(floaters, {x: float(COLS) - 0.9, y: 7.8, life: 1.1, s: "-{leaked}", c: C_WARN})
-  end
   set peak = max(peak, len(creeps))
 
   # Towers: cool down, pick a target, fire. Damage is queued as `hits`
@@ -655,8 +591,6 @@ while t_left > 0.0001 do
             let o = creeps[j]
             if (o.x - tw.x) * (o.x - tw.x) + (o.y - tw.y) * (o.y - tw.y) <= r2 then
               hits = append(hits, {i: j, dmg: T.dmg[L], slow_f: T.aux[L], slow_t: chill_secs, src: tw.id})
-            end
-          end
           set rings = append(rings, {x: tw.x, y: tw.y, r0: 0.3, r1: T.reach[L],
             life: 0.45, max: 0.45, c: T.c})
         else if tw.k == 2 then
@@ -681,13 +615,8 @@ while t_left > 0.0001 do
             hits = append(hits, {i: j, dmg: bite, slow_f: 1.0, slow_t: 0.0, src: tw.id})
             stops = append(stops, [creeps[j].x, creeps[j].y])
             bite *= 0.75
-          end
           set bolts = append(bolts, {pts: zigzag(stops), life: 0.16})
-        end
-      end
-    end
     {...tw, cd: cd, ang: ang, flash: fl}
-  end
 
   # Darts home on their pest; one whose pest is gone flies on and fizzles.
   set darts = for d in darts do
@@ -701,11 +630,8 @@ while t_left > 0.0001 do
     if dist <= stride + 0.1 then
       if i >= 0 then
         hits = append(hits, {i: i, dmg: d.dmg, slow_f: 1.0, slow_t: 0.0, src: d.src})
-      end
       continue
-    end
     {...d, x: d.x + ddx / dist * stride, y: d.y + ddy / dist * stride, tx: gx, ty: gy}
-  end
 
   # Shells land where they were aimed and hurt everything within the splash,
   # full damage at the centre falling to half at the rim.
@@ -718,14 +644,10 @@ while t_left > 0.0001 do
         if dist <= s.splash then
           hits = append(hits, {i: j, dmg: s.dmg * (1.0 - 0.5 * dist / s.splash),
             slow_f: 1.0, slow_t: 0.0, src: s.src})
-        end
-      end
       set rings = append(rings, {x: s.x1, y: s.y1, r0: 0.15, r1: s.splash, life: 0.32, max: 0.32, c: C_PUFF})
       set bits = burst(bits, s.x1, s.y1, 7, C_PUFF, 0.8)
       continue
-    end
     {...s, t: nt}
-  end
 
   # Apply the slice's hits. Armour takes a flat bite out of each one.
   if len(hits) > 0 then
@@ -742,12 +664,9 @@ while t_left > 0.0001 do
         if hh.dmg > 0.0 then
           dmg += max(1.0, hh.dmg - K.armor)
           src = hh.src
-        end
         if hh.slow_t > 0.0 then
           sf = if st > 0.0 then min(sf, hh.slow_f) else hh.slow_f end
           st = max(st, hh.slow_t)
-        end
-      end
       if c.hp - dmg <= 0.0 then
         credit = append(credit, src)
         set gold += K.gold
@@ -756,16 +675,11 @@ while t_left > 0.0001 do
         set bits = burst(bits, c.x, c.y, if c.k == 4 then 40 else 5 end, K.c, if c.k == 4 then 1.6 else 0.7 end)
         set floaters = append(floaters, {x: c.x, y: c.y - 0.3, life: 0.8, s: "+{K.gold}", c: C_GOLD})
         continue
-      end
       {...c, hp: c.hp - dmg, slow_f: sf, slow_t: st, flash: if dmg > 0.0 then 0.09 else c.flash end}
-    end
     if len(credit) > 0 then
       set towers = for tw in towers do
         let got = len(filter(credit, fn(id) -> id == tw.id))
         if got > 0 then {...tw, kills: tw.kills + got} else tw end
-      end
-    end
-  end
 
   if lives <= 0 then
     set phase = "lost"
@@ -773,8 +687,6 @@ while t_left > 0.0001 do
     set sel_id = -1                     # the sidebar turns over to the debrief
     sel_i = -1
     t_left = 0.0
-  end
-end
 
 # Wave cleared: the queue is empty and nothing is left crawling. Anything
 # still in the air has nothing to hit, so it is dropped rather than frozen.
@@ -792,8 +704,6 @@ if phase == "wave" && len(queue) == 0 && len(creeps) == 0 then
     set gold += bonus
     set phase = "build"
     say("WAVE {wave} CLEARED  +{bonus}", C_THORN)
-  end
-end
 
 # ── Effects decay (real time, frozen by pause) ───────────────────────────
 
@@ -805,31 +715,24 @@ set bits = for p in bits do
   let nl = p.life - fx_dt
   if nl <= 0.0 then continue end
   {...p, x: p.x + p.vx * fx_dt, y: p.y + p.vy * fx_dt, vx: p.vx * 0.92, vy: p.vy * 0.92, life: nl}
-end
 if len(bits) > 360 then
   set bits = slice(bits, len(bits) - 360, len(bits))
-end
 set rings = for g in rings do
   if g.life - fx_dt <= 0.0 then continue end
   {...g, life: g.life - fx_dt}
-end
 set bolts = for b in bolts do
   if b.life - fx_dt <= 0.0 then continue end
   {...b, life: b.life - fx_dt}
-end
 set floaters = for f in floaters do
   if f.life - fx_dt <= 0.0 then continue end
   {...f, y: f.y - 0.9 * fx_dt, life: f.life - fx_dt}
-end
 if len(floaters) > 48 then
   set floaters = slice(floaters, len(floaters) - 48, len(floaters))
-end
 
 # Keep ticking while anything on the board is in motion.
 # Nothing moves under the pause card, so a paused panel is left to sleep.
 if !paused && (phase == "wave" || len(bits) > 0 || len(rings) > 0 || toast_t > 0.0) then
   request_frame()
-end
 
 # ── Draw helpers ─────────────────────────────────────────────────────────
 
@@ -851,7 +754,6 @@ fn draw_tower(k: int, lvl: int, px: num, py: num, ang: num, s: num, flash: num, 
       let an = float(i) * 1.0472 + 0.5236
       draw_line(px + cos(an) * s * 0.1, py + sin(an) * s * 0.1,
         px + cos(an) * s * (0.27 + 0.06 * kick), py + sin(an) * s * (0.27 + 0.06 * kick), col, a, 2)
-    end
     draw_circle(px, py, s * 0.11, col, a)
   else if k == 2 then
     draw_circle(px, py, s * 0.26, col, a)
@@ -862,13 +764,10 @@ fn draw_tower(k: int, lvl: int, px: num, py: num, ang: num, s: num, flash: num, 
     let hh = s * (0.28 + 0.04 * kick)
     fill_polygon([[int(px), int(py - hh)], [int(px + hw), int(py)], [int(px), int(py + hh)], [int(px - hw), int(py)]], col, a)
     draw_circle(px, py, s * 0.07, C_TBASE, a)
-  end
   # Level pips along the bottom of the plot.
   for i in range(0, lvl) do
     draw_rect(int(px) - (lvl * 7 - 3) / 2 + i * 7, int(py + s * 0.37) - 1, 4, 3, T.c, a)
-  end
   nil
-end
 
 # A pest, centred on (px, py) pixels, heading (dx, dy).
 fn draw_creep(c: record, px: num, py: num, s: num)
@@ -903,10 +802,8 @@ fn draw_creep(c: record, px: num, py: num, s: num)
     draw_circle(px + c.dx * r * 0.75, py + c.dy * r * 0.75, max(1.0, r * 0.4), dark)
   else
     draw_circle(px, py, r, col)
-  end
   if c.slow_t > 0.0 then
     draw_circle_outline(px, py, r + 2.0, C_FROST, 200, 1)
-  end
   if c.hp < c.max then
     let bw = max(12, int(r * 2.4))
     let bar = rect(int(px) - bw / 2, int(py - r) - 7, bw, 3)
@@ -914,14 +811,11 @@ fn draw_creep(c: record, px: num, py: num, s: num)
     draw_rect(bar, C_TBASE)
     draw_rect(bar.x, bar.y, max(1, int(float(bw) * frac)), 3,
       if frac > 0.5 then C_THORN else if frac > 0.25 then C_GOLD else C_WARN end)
-  end
   nil
-end
 
 fn draw_coin(x: num, y: num)
   draw_circle(x, y, 4, C_GOLD)
   draw_circle(x, y, 2, lerp_color(C_GOLD, C_BG, 0.45))
-end
 
 # A sidebar button. Returns true on the frame it is clicked while enabled.
 fn press(r: Rect, label: string, note: string, enabled: bool, accent: record) -> bool
@@ -936,9 +830,7 @@ fn press(r: Rect, label: string, note: string, enabled: bool, accent: record) ->
   else
     tx(label, r.x + 12, ty, ls)
     tx_right(note, r.x + r.w - 12, ty, {...S_CAP, color: if enabled then accent else C_MUTE end})
-  end
   hot && mouse_pressed(0)
-end
 
 # ── Draw: header ─────────────────────────────────────────────────────────
 
@@ -950,7 +842,6 @@ tx("PETAL / GARDEN TESTBED 10  ·  TOWER DEFENCE", PAD + 2, 60, S_KICK)
 fn stat(right_x: num, label: string, value: string, col: record)
   tx_right(label, right_x, 24, S_LABEL)
   tx_right(value, right_x, 40, {...S_VAL, color: col})
-end
 
 let st_x = W - PAD
 stat(st_x, "SCORE", str(score), C_TEXT)
@@ -964,7 +855,6 @@ for i in range(0, NW) do
   let seg = rect(side.x + i * (side.w + 4) / NW, 78, (side.w + 4) / NW - 4, 3)
   let col = if i < done_waves then C_THORN else if i == wave - 1 && phase == "wave" then C_GOLD else C_LINE end
   draw_rect_rounded(seg, 1, col)
-end
 
 # ── Draw: board ──────────────────────────────────────────────────────────
 
@@ -977,19 +867,14 @@ for r in range(0, ROWS) do
   for c in range(0, COLS) do
     if (r + c) % 2 == 0 && grid[r][c] != 1 then
       draw_rect(bx + c * CELL, by + r * CELL, CELL, CELL, C_TILE)
-    end
-  end
-end
 
 # The path: each route as one wide stroke, edge first, then the bed.
 for rt in ROUTES do
   let line = for p in rt.pts do [int(sx(p[0])), int(sy(p[1]))] end
   draw_polyline(line, C_PATH_E, 255, CELL - 4)
-end
 for rt in ROUTES do
   let line = for p in rt.pts do [int(sx(p[0])), int(sy(p[1]))] end
   draw_polyline(line, C_PATH, 255, CELL - 10)
-end
 
 # Flow marks drifting down each route, placed by arc length. The south
 # route stops marking where it merges, so the shared stretch is drawn once.
@@ -1008,8 +893,6 @@ for li in range(0, len(ROUTES)) do
       [int(cxp + p.dx * 2.0), int(cyp + p.dy * 2.0)],
       [int(cxp - p.dx * 3.0 - nx * 4.0), int(cyp - p.dy * 3.0 - ny * 4.0)],
     ], C_PATH_M, 120, 1)
-  end
-end
 
 # Scenery.
 for d in DECOR do
@@ -1027,8 +910,6 @@ for d in DECOR do
   else
     draw_ellipse(cxp, cyp, 14, 10, C_POND)
     draw_ellipse_outline(cxp, cyp, 8, 5, lerp_color(C_POND, C_FROST, 0.25), 255, 1)
-  end
-end
 
 # Gate and greenhouse labels, tucked above the path they belong to.
 tx("NORTH GATE", bx + 10, by + 2 * CELL - 17, S_TINY)
@@ -1047,7 +928,6 @@ fn range_ring(x: num, y: num, reach: num, col: record, strong: bool)
   let r = reach * FC
   draw_circle(sx(x), sy(y), r, col, if strong then 26 else 14 end)
   draw_circle_outline(sx(x), sy(y), r, col, if strong then 150 else 80 end, 1)
-end
 
 if sel_i >= 0 then
   let tw = towers[sel_i]
@@ -1055,7 +935,6 @@ if sel_i >= 0 then
 else if hover_tower >= 0 && build_sel < 0 && playing then
   let tw = towers[hover_tower]
   range_ring(tw.x, tw.y, TOWERS[tw.k].reach[tw.lvl - 1], TOWERS[tw.k].c, false)
-end
 
 # Placement ghost: the plot, the tower and its reach, tinted by validity.
 if playing && build_sel >= 0 && over_board then
@@ -1064,13 +943,10 @@ if playing && build_sel >= 0 && over_board then
   let plot = rect(bx + hc * CELL + 2, by + hr * CELL + 2, CELL - 4, CELL - 4)
   if ok then
     range_ring(float(hc) + 0.5, float(hr) + 0.5, TOWERS[build_sel].reach[0], col, true)
-  end
   draw_rect_rounded(plot, 6, col, 40)
   draw_rect_rounded_outline(plot, 6, col, 200, 1)
   if ok then
     draw_tower(build_sel, 0, bx + hc * CELL + CELL / 2, by + hr * CELL + CELL / 2, -1.5708, FC, 0.0, 150)
-  end
-end
 
 # Towers.
 for tw in towers do
@@ -1078,19 +954,16 @@ for tw in towers do
   draw_rect_rounded(plot, 7, C_CARD)
   draw_rect_rounded_outline(plot, 7, if tw.id == sel_id then TOWERS[tw.k].c else C_EDGE end, 255, 1)
   draw_tower(tw.k, tw.lvl, sx(tw.x), sy(tw.y), tw.ang, FC, tw.flash, 255)
-end
 
 # Frost and blast rings.
 for g in rings do
   let f = 1.0 - g.life / g.max
   let rr = (g.r0 + (g.r1 - g.r0) * ease_out(f)) * FC
   draw_circle_outline(sx(g.x), sy(g.y), rr, g.c, int(190.0 * (1.0 - f)), 2)
-end
 
 # Pests, slowest-drawn-last is not needed: draw in spawn order.
 for c in creeps do
   draw_creep(c, sx(c.x), sy(c.y), FC)
-end
 
 # Darts: a short streak along the line of flight.
 for d in darts do
@@ -1098,7 +971,6 @@ for d in darts do
   let ddy = d.ty - d.y
   let dist = max(0.001, sqrt(ddx * ddx + ddy * ddy))
   draw_line(sx(d.x), sy(d.y), sx(d.x - ddx / dist * 0.2), sy(d.y - ddy / dist * 0.2), C_THORN, 255, 2)
-end
 
 # Shells: a ballistic hop, with the shadow tracking the ground point.
 for s in shells do
@@ -1108,7 +980,6 @@ for s in shells do
   draw_circle(sx(gx), sy(gy), 3, C_TBASE, 120)
   draw_circle(sx(gx), sy(gy - lift), 4.0 + lift * 1.5, C_PUFF)
   draw_circle_outline(sx(s.x1), sy(s.y1), s.splash * FC, C_PUFF, 40, 1)
-end
 
 # Lightning.
 for b in bolts do
@@ -1116,21 +987,17 @@ for b in bolts do
   let a = int(255.0 * b.life / 0.16)
   draw_polyline(line, C_STORM, a / 4, 6)
   draw_polyline(line, C_WHITE, a, 1)
-end
 
 # Sparks and rising labels.
 for p in bits do
   let f = p.life / p.max
   draw_circle(sx(p.x), sy(p.y), max(1.0, p.sz * f), p.c, int(230.0 * f))
-end
 for f in floaters do
   tx_center(f.s, sx(f.x), sy(f.y) - 7.0, {...S_CAP, color: f.c})
-end
 
 # A red wash from the greenhouse side when something gets through.
 if hurt_t > 0.0 then
   draw_rect_gradient(rect(bx + board.w - 240, by, 240, board.h), C_WARN, C_WARN, 0.0, 0, int(90.0 * hurt_t / 0.6))
-end
 
 # Toast: the last thing that happened.
 if toast_t > 0.0 then
@@ -1140,7 +1007,6 @@ if toast_t > 0.0 then
   draw_rect_rounded(tr, 9, C_CHIP, int(a * 240.0))
   draw_rect_rounded_outline(tr, 9, toast_c, int(a * 190.0), 1)
   tx_center(toast, bx + board.w / 2, tr.y + 7, {...S_CAP, color: toast_c})
-end
 
 clip_pop()
 draw_rect_rounded_outline(board, 14, C_EDGE, 255, 1)
@@ -1167,7 +1033,6 @@ for i in range(0, len(TOWERS)) do
   tx_right(cost_s, card.x + card.w - 12, card.y + 9, {...S_NUM, color: if afford then C_GOLD else C_MUTE end})
   if afford then
     draw_coin(card.x + card.w - 22 - text_width(cost_s, S_NUM), card.y + 18)
-  end
   # Hotkey cap.
   let cap = rect(card.x + card.w - 28, card.y + 30, 16, 16)
   draw_rect_rounded(cap, 4, C_TBASE)
@@ -1177,8 +1042,6 @@ for i in range(0, len(TOWERS)) do
     set build_sel = if armed then -1 else i end
     set sel_id = -1
     sel_i = -1
-  end
-end
 
 # ── Draw: sidebar — selected tower, or the scouting report ───────────────
 
@@ -1209,13 +1072,11 @@ if sel_i >= 0 then
     let cxl = ix + i * iw / 4
     tx(cells[i].l, cxl, info.y + 42, {...S_TINY, color: C_MUTE})
     tx(cells[i].v, cxl, info.y + 56, S_NUM)
-  end
 
   # Targeting priority: a five-way segmented control.
   tx("TARGETS", ix, info.y + 86, {...S_TINY, color: C_MUTE})
   if tw.k != 0 then
     tx_right(count_of(tw.kills, "KILL", "KILLS"), ix + iw, info.y + 86, {...S_TINY, color: C_MUTE})
-  end
   # Five segments and four 3 px gaps, ending flush with the buttons below.
   let segw = (iw + 3) / len(MODES)
   for i in range(0, len(MODES)) do
@@ -1226,7 +1087,6 @@ if sel_i >= 0 then
     if on then draw_rect_rounded_outline(seg, 5, T.c, 200, 1) end
     tx_center(MODES[i], seg.x + seg.w / 2, seg.y + 4, {...S_TINY, spacing: 0, color: if on then C_TEXT else C_DIM end})
     if hot && click then set_mode = i end
-  end
   tx(MODE_HINTS[tw.mode], ix, info.y + 131, S_BODY)
 
   # Upgrade and sell.
@@ -1238,10 +1098,8 @@ if sel_i >= 0 then
   let slr = rect(ix + half + 8, info.y + info.h - 46, half, 32)
   if press(upr, if maxed then "MAX LEVEL" else "UPGRADE" end, if maxed then "" else "{up_cost}" end, playing && !maxed && gold >= up_cost, T.c) then
     do_upgrade = true
-  end
   if press(slr, "SELL", "+{refund}", playing, C_GOLD) then
     do_sell = true
-  end
 else
   let nxt = if wave < NW then wave + 1 else 0 end
   let over = phase == "won" || phase == "lost"
@@ -1267,7 +1125,6 @@ else
       tx(row.l, ix, ry + 2, {...S_TINY, color: C_MUTE})
       tx_right(row.v, ix + iw, ry, S_NUM)
       ry += 26
-    end
     draw_rect(ix, ry - 6, iw, 1, C_LINE)
     tx("SCORE", ix, ry + 2, {...S_TINY, color: C_MUTE})
     tx_right("{score}", ix + iw, ry, {...S_NUM, color: if won then C_GOLD else C_TEXT end})
@@ -1288,7 +1145,6 @@ else
       tx(K.name, ix + 28 + text_width("{g.n}", S_NUM) + 7, gy + 1, {...S_BODY, color: C_TEXT})
       tx_right(LANE_NAMES[g.lane], ix + iw, gy + 1, S_BODY)
       gy += 24
-    end
     # The scouting note, wrapped to the card.
     let lines = wrap_px(spec.note, iw, S_BODY)
     let ny = info.y + info.h - 14 - len(lines) * 16
@@ -1296,9 +1152,6 @@ else
     for ln in lines do
       tx(ln, ix, ny, S_BODY)
       ny += 16
-    end
-  end
-end
 
 # Send / call-early button.
 # On the title and end cards the same button offers the way back in; the
@@ -1308,14 +1161,12 @@ let idle_label = match phase
   when "won" -> "PLAY AGAIN"
   when "lost" -> "TRY AGAIN"
   when _ -> ""
-end
 let send_label = if len(idle_label) > 0 then idle_label else if wave >= NW then "ALL WAVES SENT" else if phase == "wave" then "CALL WAVE {wave + 1} EARLY" else "SEND WAVE {wave + 1}" end
 let send_note = if len(idle_label) > 0 then "SPACE" else if wave >= NW then "" else if phase == "wave" then "+{10 + 4 * wave}" else "SPACE" end
 let send_on = len(idle_label) > 0 || (playing && wave < NW)
 let send_hit = press(sendr, send_label, send_note, send_on, if phase == "wave" then C_GOLD else if phase == "lost" then C_WARN else C_THORN end)
 if send_hit && playing && wave < NW then
   send_wave()
-end
 
 # ── Tower commands (after the sidebar, so buttons and keys share a path) ──
 
@@ -1339,17 +1190,12 @@ if sel_i >= 0 && (do_upgrade || do_sell || do_mode != 0 || set_mode >= 0) then
       set gold -= price
       set towers = for o in towers do
         if o.id == tw.id then {...o, lvl: o.lvl + 1, spent: o.spent + price} else o end
-      end
       set rings = append(rings, {x: tw.x, y: tw.y, r0: 0.2, r1: 1.0, life: 0.4, max: 0.4, c: T.c})
       say("{upper(T.name)} GROWN TO LEVEL {tw.lvl + 1}", T.c)
-    end
   else
     let nm = if set_mode >= 0 then set_mode else (tw.mode + do_mode + len(MODES)) % len(MODES) end
     set towers = for o in towers do
       if o.id == tw.id then {...o, mode: nm} else o end
-    end
-  end
-end
 
 # ── Draw: overlay card ───────────────────────────────────────────────────
 
@@ -1376,7 +1222,6 @@ if show_card then
     else if paused then "WAVE {wave} OF {NW}   ·   {len(creeps)} ON THE PATH"
     else "SCORE {score}   ·   WAVE {wave} OF {NW}   ·   {count_of(kills, "PEST", "PESTS")} STOPPED   ·   {leaks} THROUGH" end
   tx_center(line, ccx + 8, ccy + 34, {...S_HINT, color: C_MUTE})
-end
 
 # ── Draw: footer ─────────────────────────────────────────────────────────
 
@@ -1388,7 +1233,6 @@ fn key_chip(x: num, y: num, cap: string, desc: string) -> int
   tx(cap, x + 9, y + 5, S_CAP)
   tx(desc, x + cw + 8, y + 5, S_HINT)
   cw + 8 + text_width(desc, S_HINT) + 20
-end
 
 let fy = board.y + board.h + 18
 let fx = PAD
@@ -1411,7 +1255,6 @@ let status = if paused then "PAUSED"
 let status_s = "{speed}× SPEED   ·   {status}"
 if fx + text_width(status_s, S_HINT) <= W - PAD then
   tx_right(status_s, W - PAD, fy + 5, S_HINT)
-end
 
 # ── Observation mirrors (readable in /state → panel.values) ──────────────
 

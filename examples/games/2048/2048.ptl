@@ -19,37 +19,27 @@ var rng = seed
 fn next_rand(limit: num) -> num
   set rng = (get rng * 1103515245 + 12345) % 2147483648
   (get rng / 65536) % limit
-end
 
 # ---------------------------------------------------------------- board basics
 
 fn new_board() -> list
   for r in range(0, 4) do
     for c in range(0, 4) do 0 end
-  end
-end
 
 fn transpose(g: list) -> list
   for i in range(0, 4) do
     for j in range(0, 4) do g[j][i] end
-  end
-end
 
 fn mirror(g: list) -> list
   for row in g do
     reverse(row)
-  end
-end
 
 fn boards_equal(a: list, b: list) -> bool
   var same = true
   for r in range(0, 4) do
     for c in range(0, 4) do
       if a[r][c] != b[r][c] then set same = false end
-    end
-  end
   same
-end
 
 # -------------------------------------------------------------- slide + merge
 
@@ -59,7 +49,6 @@ fn slide_row(row: list) -> record
   let vals = for v in row do
     if v == 0 then continue end
     v
-  end
   var out = []
   var gained = 0
   var i = 0
@@ -72,13 +61,9 @@ fn slide_row(row: list) -> record
     else
       set out = append(out, vals[i])
       set i = i + 1
-    end
-  end
   while len(out) < 4 do
     set out = append(out, 0)
-  end
   {row: out, gained: gained}
-end
 
 fn slide_left(g: list) -> record
   var total = 0
@@ -86,9 +71,7 @@ fn slide_left(g: list) -> record
     let res = slide_row(row)
     set total = total + res.gained
     res.row
-  end
   {grid: rows, gained: total}
-end
 
 # dir is one of "left", "right", "up", "down".
 fn move_board(g: list, dir: string) -> record
@@ -97,18 +80,13 @@ fn move_board(g: list, dir: string) -> record
     when "right" do
       let res = slide_left(mirror(g))
       {grid: mirror(res.grid), gained: res.gained}
-    end
     when "up" do
       let res = slide_left(transpose(g))
       {grid: transpose(res.grid), gained: res.gained}
-    end
     when "down" do
       let res = slide_left(mirror(transpose(g)))
       {grid: transpose(mirror(res.grid)), gained: res.gained}
-    end
     when d -> {grid: g, gained: 0, bad: d}
-  end
-end
 
 # ------------------------------------------------------------------- spawning
 
@@ -118,11 +96,7 @@ fn empty_cells(g: list) -> list
     for c in range(0, 4) do
       if g[r][c] == 0 then
         set cells = append(cells, {r: r, c: c})
-      end
-    end
-  end
   cells
-end
 
 fn spawn(g: list) -> list
   let cells = empty_cells(g)
@@ -133,8 +107,6 @@ fn spawn(g: list) -> list
     let value = if next_rand(10) == 0 then 4 else 2 end
     g[pick.r][pick.c] = value
     g
-  end
-end
 
 # -------------------------------------------------------------- game questions
 
@@ -143,10 +115,7 @@ fn has_won(g: list) -> bool
   for row in g do
     for v in row do
       if v >= target then set won = true end
-    end
-  end
   won
-end
 
 fn can_move(g: list) -> bool
   if len(empty_cells(g)) > 0 then
@@ -157,29 +126,22 @@ fn can_move(g: list) -> bool
       for c in range(0, 4) do
         if c + 1 < 4 && g[r][c] == g[r][c + 1] then set ok = true end
         if r + 1 < 4 && g[r][c] == g[r + 1][c] then set ok = true end
-      end
-    end
     ok
-  end
-end
 
 # -------------------------------------------------------------------- display
 
 fn cell_text(v: num) -> string
   let s = if v == 0 then "." else str(v) end
   pad_start(s, 5)
-end
 
 fn print_board(g: list, score: num) -> nil
   print("+--------------------+")
   for row in g do
     let cells = for v in row do cell_text(v) end
     print("|{join(cells, "")} |")
-  end
   print("+--------------------+")
   print("score: {score}")
   nil
-end
 
 # ----------------------------------------------------------------------- game
 
@@ -192,8 +154,6 @@ var moves = []
 for rep in range(0, repeats) do
   for m in pattern do
     set moves = append(moves, m)
-  end
-end
 
 var board = new_board()
 set board = spawn(get board)
@@ -219,7 +179,6 @@ for dir in get moves do
   var next = res.grid
   if changed then
     set next = spawn(next)
-  end
   set board = get next
   print("")
   print("move {get turn}: {dir}{if changed then "" else "  (no change)" end}")
@@ -230,8 +189,6 @@ for dir in get moves do
   else if !can_move(get board) then
     set finished = true
     set outcome = "no moves left"
-  end
-end
 
 print("")
 print("game over: {outcome}")

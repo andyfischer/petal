@@ -392,10 +392,7 @@ fn has_doc(name: string) -> bool
   for d in DOCS do
     if d[0] == name then
       return true
-    end
-  end
   false
-end
 
 # ── Building the tree ───────────────────────────────────────────────────────
 
@@ -405,7 +402,6 @@ fn parse_size(s: string) -> int
   let mul = if unit == "G" then 1000000000 else if unit == "M" then 1000000 else 1000 end
   # A size that is not a round number of kilobytes reads as a real file's.
   int(n * mul) + (len(s) * 137) % 911
-end
 
 # A camera roll long enough to scroll: forty shots over a fortnight, mostly
 # photos, the odd HEIC and clip.
@@ -416,8 +412,6 @@ fn camera_roll() -> list
     let size = if ext == "mov" then "{38 + (i * 17) % 90}.{i % 10}M" else "{2 + (i * 7) % 5}.{(i * 3) % 10}M" end
     let hm = 700 + ((i * 37) % 13) * 100 + (i * 23) % 60
     "Pictures/Camera Roll/IMG_{n}.{ext}|{size}|{17 - i / 3}|{pad_start(str(hm), 4, "0")}"
-  end
-end
 
 pub fn seed() -> list
   let out = [
@@ -439,20 +433,15 @@ pub fn seed() -> list
         known = len(out)
         out = append(out, {id: known, name: parts[i], parent: parent, dir: true, size: 0, mt: 0, from: -1, doc: ""})
         by_path[path] = known
-      end
       parent = known
       # A folder was last touched when the newest thing in it was.
       if out[parent].mt < mt && parent > 1 then
         out[parent].mt = mt
-      end
-    end
     let name = last(parts)
     let from = if len(f) > 4 then field(by_path, f[4], 0) else -1 end
     out = append(out, {id: len(out), name: name, parent: parent, dir: false, size: parse_size(f[1]),
       mt: mt, from: from, doc: if has_doc(name) then name else "" end})
-  end
   out
-end
 
 # The id of the node at a path under Home ("Documents/Taxes"), or -1.
 pub fn find(nodes: list, path: string) -> int
@@ -463,15 +452,10 @@ pub fn find(nodes: list, path: string) -> int
       if n.parent == at && n.name == part then
         next = n.id
         break
-      end
-    end
     if next < 0 then
       return -1
-    end
     at = next
-  end
   at
-end
 
 # ── Names and kinds ─────────────────────────────────────────────────────────
 
@@ -483,14 +467,10 @@ pub fn split_name(name: string) -> record
   for i in range(1, len(cs)) do
     if cs[i] == "." then
       dot = i
-    end
-  end
   if dot < 0 || dot == len(cs) - 1 then
     {stem: name, ext: ""}
   else
     {stem: slice(name, 0, dot), ext: slice(name, dot + 1)}
-  end
-end
 
 let KIND_BY_EXT = {
   png: ["image", "PNG image"], jpg: ["image", "JPEG image"], jpeg: ["image", "JPEG image"],
@@ -512,14 +492,11 @@ let KIND_BY_EXT = {
 pub fn kind_of(n: record) -> record
   if n.dir then
     return {key: "folder", label: "Folder"}
-  end
   let k = field(KIND_BY_EXT, lower(split_name(n.name).ext), nil)
   if k == nil then
     {key: "file", label: "Document"}
   else
     {key: k[0], label: k[1]}
-  end
-end
 
 # ── Formatting ──────────────────────────────────────────────────────────────
 
@@ -533,8 +510,6 @@ pub fn fmt_size(bytes: num) -> string
     if mb < 100.0 then "{round(mb, 1)} MB" else "{int(round(mb))} MB" end
   else
     "{round(bytes / 1000000000.0, 2)} GB"
-  end
-end
 
 let MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 let MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -546,24 +521,19 @@ fn civil(day: int) -> record
   while d >= (if y % 4 == 0 then 366 else 365 end) do
     d = d - (if y % 4 == 0 then 366 else 365 end)
     y += 1
-  end
   let m = 0
   while true do
     let dm = if m == 1 && y % 4 == 0 then 29 else MONTH_DAYS[m] end
     if d < dm then
       break
-    end
     d -= dm
     m += 1
-  end
   {y: y, m: m, d: d + 1}
-end
 
 fn clock(minute: int) -> string
   let h = minute / 60
   let h12 = if h % 12 == 0 then 12 else h % 12 end
   "{h12}:{pad_start(str(minute % 60), 2, "0")} {if h < 12 then "AM" else "PM" end}"
-end
 
 # The list column: "Today, 2:02 PM", "Yesterday, 9:41 AM", "Oct 3, 2026".
 # `long` adds the time to an older date, for the info pane.
@@ -578,8 +548,6 @@ pub fn fmt_date(mt: int, long: bool = false) -> string
     let c = civil(day)
     let date = "{MONTHS[c.m]} {c.d}, {c.y}"
     if long then "{date} at {at}" else date end
-  end
-end
 
 # A small stable number from a name, for the procedural previews.
 let HASH_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789-_. "
@@ -587,16 +555,11 @@ pub fn hash(s: string) -> int
   let h = 7
   for c in chars(lower(s)) do
     h = (h * 31 + index_of(HASH_CHARS, c) + 2) % 1000003
-  end
   h
-end
 
 # The text behind a node, or "" when it has none.
 pub fn doc_text(n: record) -> string
   for d in DOCS do
     if d[0] == n.doc then
       return trim(d[1])
-    end
-  end
   ""
-end

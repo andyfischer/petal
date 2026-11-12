@@ -11,13 +11,10 @@ fn update(p)
   if x > 100.0 || x < 0.0 then
     vx = -vx
     x = x + vx
-  end
   if y > 60.0 || y < 0.0 then
     vy = -vy
     y = y + vy
-  end
-  { x: x, y: y, vx: vx, vy: vy }
-end
+  {x: x, y: y, vx: vx, vy: vy}
 
 let particles = []
 for i in range(0, 300) do
@@ -27,18 +24,14 @@ for i in range(0, 300) do
     vx: float(i % 7) * 0.5 + 0.25,
     vy: float(i % 5) * 0.4 + 0.2,
   })
-end
 
 for frame in range(0, 100) do
   let next = []
   for p in particles do
     next = append(next, update(p))
-  end
   particles = next
-end
 
 let sum = 0.0
 for p in particles do
   sum = sum + p.x + p.y
-end
 print("particles checksum:", floor(sum))

@@ -170,7 +170,7 @@ pub let KINDS = {
   sedan: {mass: 1200.0, max_speed: 30.0},
   van: {mass: 1800.0, max_speed: 25.0},
 }
-print(KINDS.van.mass)   // 1800.0
+print(KINDS.van.mass)   # 1800.0
 ```
 
 **The older spelling.** `const NAME = expr` (and `pub const`) is the same
@@ -223,7 +223,7 @@ fn grow(xs)
 end
 
 let BASE = const([1, 2, 3])
-print(BASE, grow(BASE))   // [1, 2, 3] [99, 2, 3]
+print(BASE, grow(BASE))   # [1, 2, 3] [99, 2, 3]
 ```
 
 **The one thing a program can tell** is `frozen`, which answers about the

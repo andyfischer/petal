@@ -58,6 +58,5 @@ enum Tile
   t47(code: 47, label: "t47", cost: 71),
   t48(code: 48, label: "t48", cost: 72.5),
   t49(code: 49, label: "t49", cost: 74),
-end
 
 print(Tile.t07)

@@ -20,7 +20,6 @@ let TICK_LIMIT_PER_PIECE = tunable(40)
 # A small LCG, so the piece order does not depend on the host RNG at all.
 fn lcg_next(s: int) -> int
   (s * 1103515245 + 12345) % 2147483648
-end
 
 # Fisher-Yates over the seven pieces; returns the shuffled bag and the advanced
 # seed.
@@ -35,9 +34,7 @@ fn shuffled_bag(seed: int) -> record
     bag[i] = bag[j]
     bag[j] = tmp
     i = i - 1
-  end
   {bag: bag, seed: s}
-end
 
 # ------------------------------------------------------------------- pieces
 
@@ -57,7 +54,6 @@ enum Piece
   S(cells: [[1, 0], [2, 0], [0, 1], [1, 1]], box: 3, rotations: 2),
   T(cells: [[1, 0], [0, 1], [1, 1], [2, 1]], box: 3, rotations: 4),
   Z(cells: [[0, 0], [1, 0], [1, 1], [2, 1]], box: 3, rotations: 2),
-end
 
 # Cells of `kind` in rotation state `rot` (0..3), still box-relative.
 # Clockwise rotation inside an n-box sends (x, y) to (n - 1 - y, x).
@@ -72,10 +68,7 @@ fn piece_cells(kind: Piece, rot: int) -> list
     while t < turns do
       cells = for c in cells do [n - 1 - c[1], c[0]] end
       t = t + 1
-    end
     cells
-  end
-end
 
 # ---------------------------------------------------------------- wall kicks
 
@@ -92,8 +85,6 @@ fn kicks_jlstz(key: int) -> list
     when 12 -> [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]]   # L -> 0
     when 3 -> [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]]        # 0 -> L
     when _ -> [[0, 0]]
-  end
-end
 
 fn kicks_i(key: int) -> list
   match key
@@ -106,8 +97,6 @@ fn kicks_i(key: int) -> list
     when 12 -> [[0, 0], [-1, 0], [2, 0], [-1, -2], [2, 1]]
     when 3 -> [[0, 0], [1, 0], [-2, 0], [1, 2], [-2, -1]]
     when _ -> [[0, 0]]
-  end
-end
 
 fn kick_offsets(kind: Piece, from_rot: int, to_rot: int) -> list
   let key = from_rot * 4 + to_rot
@@ -115,16 +104,12 @@ fn kick_offsets(kind: Piece, from_rot: int, to_rot: int) -> list
     when Piece.O -> [[0, 0]]
     when Piece.I -> kicks_i(key)
     when Piece.J | Piece.L | Piece.S | Piece.T | Piece.Z -> kicks_jlstz(key)
-  end
-end
 
 # -------------------------------------------------------------------- board
 
 fn new_board() -> list
   for y in range(HEIGHT) do
     for x in range(WIDTH) do nil end
-  end
-end
 
 # True if `cells`, placed with its box origin at (px, py), overlaps a wall,
 # the floor or a filled cell.
@@ -140,10 +125,7 @@ fn collides(board: list, cells: list, px: int, py: int) -> bool
       hit = true
     else if board[y][x] != nil then
       hit = true
-    end
-  end
   hit
-end
 
 fn merge_piece(board: list, cells: list, px: int, py: int, kind: Piece) -> list
   let out = board
@@ -152,18 +134,13 @@ fn merge_piece(board: list, cells: list, px: int, py: int, kind: Piece) -> list
     let y = py + c[1]
     if y >= 0 && y < HEIGHT && x >= 0 && x < WIDTH then
       out[y][x] = kind
-    end
-  end
   out
-end
 
 fn row_full(row: list) -> bool
   let full = true
   for v in row do
     if v == nil then full = false end
-  end
   full
-end
 
 # Drop every surviving row down and refill the top. Returns the new board and
 # how many rows went away.
@@ -171,24 +148,19 @@ fn clear_lines(board: list) -> record
   let kept = for row in board do
     if row_full(row) then continue end
     row
-  end
   let cleared = HEIGHT - len(kept)
   let blank = for x in range(WIDTH) do nil end
   let out = for i in range(cleared) do blank end
   for row in kept do
     out = append(out, row)
-  end
   {board: out, cleared: cleared}
-end
 
 # Lowest py at which the piece still fits, starting from py.
 fn drop_to(board: list, cells: list, px: int, py: int) -> int
   let y = py
   while !collides(board, cells, px, py: y + 1) do
     y = y + 1
-  end
   y
-end
 
 # -------------------------------------------------------- placement heuristic
 
@@ -207,9 +179,7 @@ fn board_features(board: list) -> record
       let cur = if row[x] != nil then 1 else 0 end
       if cur != prev then row_t = row_t + 1 end
       prev = cur
-    end
     if prev != 1 then row_t = row_t + 1 end
-  end
 
   let col_t = 0
   let holes = 0
@@ -234,15 +204,10 @@ fn board_features(board: list) -> record
           run = run + 1
         else
           run = 0
-        end
         wells = wells + run
-      end
-    end
     if prev != 1 then col_t = col_t + 1 end
-  end
 
   {row_t: row_t, col_t: col_t, holes: holes, wells: wells}
-end
 
 # The El-Tetris evaluation function, with its published weights.
 fn score_board(board: list, cleared: int, landing_height: num) -> num
@@ -255,7 +220,6 @@ fn score_board(board: list, cleared: int, landing_height: num) -> num
   9.348695305445199 * f.col_t -
   7.899265427351652 * f.holes -
   3.3855972247263626 * f.wells
-end
 
 # Try every rotation at every column; return the best {rot, x} to aim for.
 fn best_placement(board: list, kind: Piece) -> record
@@ -275,7 +239,6 @@ fn best_placement(board: list, kind: Piece) -> record
         let row_from_floor = HEIGHT - (py + c[1])
         if row_from_floor < lo then lo = row_from_floor end
         if row_from_floor > hi then hi = row_from_floor end
-      end
       let landed = merge_piece(board, cells, px, py, kind)
       let res = clear_lines(landed)
       let s = score_board(board: res.board, cleared: res.cleared, landing_height: (lo + hi) / 2.0)
@@ -284,11 +247,7 @@ fn best_placement(board: list, kind: Piece) -> record
         best_score = s
         best_rot = rot
         best_x = px
-      end
-    end
-  end
   {rot: best_rot, x: best_x}
-end
 
 # ------------------------------------------------------------------ printing
 
@@ -299,16 +258,12 @@ fn render(board: list, header: string) -> nil
     for x in range(WIDTH) do
       let v = board[y][x]
       line = line ++ (if v == nil then " ." else " " ++ v.name end)
-    end
     print(line ++ " |")
-  end
   let floor_line = "+"
   for x in range(WIDTH) do
     floor_line = floor_line ++ "--"
-  end
   print(floor_line ++ "-+")
   nil
-end
 
 fn line_score(cleared: int, level: int) -> int
   let base = match cleared
@@ -317,14 +272,11 @@ fn line_score(cleared: int, level: int) -> int
     when 3 -> 500
     when 4 -> 800
     when _ -> 0
-  end
   base * level
-end
 
 fn gravity_period(level: int) -> int
   let p = 12 - level
   if p < 2 then 2 else p end
-end
 
 # ---------------------------------------------------------------- game loop
 
@@ -349,7 +301,6 @@ while running do
     let drawn = shuffled_bag(seed)
     queue = drawn.bag
     seed = drawn.seed
-  end
   let kind = queue[0]
   queue = slice(queue, start: 1, end: len(queue))
 
@@ -385,25 +336,20 @@ while running do
             py = py + k[1]
             rot = to_rot
             cells = want
-          end
-        end
         if !placed then
           # Every kick was blocked; give up on turning and drop as we are.
           plan = {rot: rot, x: plan.x}
-        end
       else if px != plan.x then
         let dx = if plan.x > px then 1 else -1 end
         if collides(board, cells, px: px + dx, py: py) then
           plan = {rot: rot, x: px}
         else
           px = px + dx
-        end
       else
         let landing = drop_to(board, cells, px, py)
         score = score + 2 * (landing - py)
         py = landing
         locked = true
-      end
 
       if !locked then
         grav = grav + 1
@@ -413,15 +359,10 @@ while running do
             locked = true
           else
             py = py + 1
-          end
-        end
-      end
 
       if piece_ticks >= TICK_LIMIT_PER_PIECE then
         py = drop_to(board, cells, px, py)
         locked = true
-      end
-    end
 
     board = merge_piece(board, cells, px, py, kind)
     let res = clear_lines(board)
@@ -439,7 +380,6 @@ while running do
         when 2 -> "double"
         when 3 -> "triple"
         when _ -> "TETRIS"
-      end
       render(board,
         "piece {pieces_played} ({kind.name}) at x={px} rot={rot} — " ++
         "{label}! +{gained}  score={score}  lines={lines_total}  level={level}")
@@ -447,13 +387,9 @@ while running do
     else if pieces_played % 20 == 0 then
       render(board, "piece {pieces_played} ({kind.name}) — no clear, score={score}")
       print("")
-    end
 
     if pieces_played >= MAX_PIECES then
       running = false
-    end
-  end
-end
 
 render(board, "final board")
 print("")

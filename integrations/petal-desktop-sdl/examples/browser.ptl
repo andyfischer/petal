@@ -25,13 +25,10 @@ let list_top = header_h + 20
 # Keyboard navigation
 if key_pressed("down") then
   selected = min(selected + 1, count - 1)
-end
 if key_pressed("up") then
   selected = max(selected - 1, 0)
-end
 if key_pressed("return") && count > 0 then
   launch_script(example_path(selected))
-end
 
 # Mouse hover detection
 let visible_items = (sh - list_top - 20) / (item_h + item_pad)
@@ -42,20 +39,14 @@ for i in range(0, count) do
       selected = i
       if mouse_pressed(0) then
         launch_script(example_path(i))
-      end
-    end
-  end
-end
 
 # Smooth scroll to keep selected item visible
 let sel_y = float(list_top + selected * (item_h + item_pad)) - scroll_y
 let view_bottom = float(sh - 40)
 if sel_y < float(list_top) then
   scroll_y = scroll_y - (float(list_top) - sel_y) * 8.0 * delta
-end
 if sel_y + float(item_h) > view_bottom then
   scroll_y = scroll_y + (sel_y + float(item_h) - view_bottom) * 8.0 * delta
-end
 scroll_y = max(0.0, scroll_y)
 
 # === DRAWING ===
@@ -71,8 +62,6 @@ for dx in range(0, 20) do
     let pulse = abs((fc + dx * 13 + dy * 17) % 60 - 30)
     let brightness = 18 + pulse / 2
     draw_rect(x: bx, y: by, w: 2, h: 2, r: brightness, g: brightness, b: brightness + 10)
-  end
-end
 
 # Header background
 draw_rect(x: 0, y: 0, w: sw, h: header_h, r: 8, g: 8, b: 24)
@@ -115,9 +104,6 @@ for i in range(0, count) do
 
       # Name text (dim)
       draw_text(name, {x: list_x + 24, y: iy + 14}, 22, {r: 120, g: 140, b: 170})
-    end
-  end
-end
 
 # Top/bottom fade bars (cover scrolled items near edges)
 draw_rect(x: 0, y: header_h, w: sw, h: 20, r: 12, g: 12, b: 30)

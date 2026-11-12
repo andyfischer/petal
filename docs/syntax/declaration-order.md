@@ -34,7 +34,7 @@ fn is_odd(n)
   if n == 0 then false else is_even(n - 1) end
 end
 
-print(is_even(10))  // true
+print(is_even(10))  # true
 ```
 
 A method (`fn Rect.area(r: Rect)`) is a top-level `fn` and is hoisted the
@@ -42,7 +42,7 @@ same way. `class` and `enum` are top-level declarations and are always
 hoisted: code above the declaration can build an instance or name a variant.
 
 ```petal
-print(Point(1, 2).x, Kind.a)    // 1 Kind.a
+print(Point(1, 2).x, Kind.a)    # 1 Kind.a
 
 class Point
   x: int,
@@ -65,7 +65,7 @@ records of them, enum variants and other such bindings is in place before the
 file's first statement. A function that reads one is still hoisted:
 
 ```petal
-print(width_of(3))   // 560
+print(width_of(3))   # 560
 
 let NODE_W = 140
 let GAP = NODE_W / 2
@@ -95,7 +95,7 @@ above fails with `Cannot call nil`, and `petal lint` says why first:
 
 ```petal ignore
 print(fit(2))
-let W = abs(-7)        // calls a function: computed at run time
+let W = abs(-7)        # calls a function: computed at run time
 fn fit(n)
   n * W
 end
@@ -123,7 +123,7 @@ let old_max = max
 fn max(a, b)
   "mine"
 end
-print(old_max(1, 2), max(1, 2))   // 2 mine
+print(old_max(1, 2), max(1, 2))   # 2 mine
 ```
 
 A call from *inside* another function body is always fine, hoisted or not:

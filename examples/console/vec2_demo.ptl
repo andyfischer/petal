@@ -22,4 +22,3 @@ for step in range(0, 20) do
 
   let d = distance(pos, target)
   print("step {step}: pos={pos}  dist={d}")
-end

@@ -29,8 +29,6 @@ if len(boids) == 0 then
       vx: cos(angle) * speed,
       vy: sin(angle) * speed
     })
-  end
-end
 
 # Update boids
 let new_boids = []
@@ -80,10 +78,6 @@ for i in range(0, len(boids)) do
           sep_x -= dx / dist
           sep_y -= dy / dist
           sep_count += 1
-        end
-      end
-    end
-  end
 
   let steer_x = 0.0
   let steer_y = 0.0
@@ -93,7 +87,6 @@ for i in range(0, len(boids)) do
     let mag = sqrt(sep_x * sep_x + sep_y * sep_y) + 0.1
     steer_x += sep_x / mag * max_force * 1.8
     steer_y += sep_y / mag * max_force * 1.8
-  end
 
   # Alignment force
   if ali_count > 0 then
@@ -104,7 +97,6 @@ for i in range(0, len(boids)) do
     let desired_vy = avg_vy / mag * max_speed
     steer_x += (desired_vx - b.vx) * 1.0
     steer_y += (desired_vy - b.vy) * 1.0
-  end
 
   # Cohesion force
   if coh_count > 0 then
@@ -115,7 +107,6 @@ for i in range(0, len(boids)) do
     let desired_vy = avg_y / mag * max_speed
     steer_x += (desired_vx - b.vx) * 0.8
     steer_y += (desired_vy - b.vy) * 0.8
-  end
 
   # Mouse avoidance
   let mx = float(mouse_x())
@@ -126,7 +117,6 @@ for i in range(0, len(boids)) do
   if mdist < 100.0 && mdist > 0.1 then
     steer_x += mdx / mdist * max_force * 3.0
     steer_y += mdy / mdist * max_force * 3.0
-  end
 
   # Apply forces
   let nvx = b.vx + steer_x * delta
@@ -137,12 +127,10 @@ for i in range(0, len(boids)) do
   if speed > max_speed then
     nvx = nvx / speed * max_speed
     nvy = nvy / speed * max_speed
-  end
   # Ensure minimum speed
   if speed < 40.0 && speed > 0.1 then
     nvx = nvx / speed * 40.0
     nvy = nvy / speed * 40.0
-  end
 
   # Update position
   let nx = b.x + nvx * delta
@@ -154,8 +142,7 @@ for i in range(0, len(boids)) do
   if ny < 0.0 then ny += sh end
   if ny > sh then ny -= sh end
 
-  new_boids = append(new_boids, { x: nx, y: ny, vx: nvx, vy: nvy })
-end
+  new_boids = append(new_boids, {x: nx, y: ny, vx: nvx, vy: nvy})
 boids = new_boids
 
 # === Drawing ===
@@ -174,9 +161,6 @@ for i in range(0, len(boids)) do
     if dist < perception * 0.6 then
       let alpha = int((1.0 - dist / (perception * 0.6)) * 30.0)
       draw_line(int(a.x), int(a.y), int(b.x), int(b.y), alpha, alpha + 5, alpha + 15)
-    end
-  end
-end
 
 # Draw boids as triangles
 for b in boids do
@@ -206,7 +190,6 @@ for b in boids do
   draw_line(int(nx_pt), int(ny_pt), int(lx), int(ly), cr, cg, cb)
   draw_line(int(lx), int(ly), int(rx), int(ry), cr, cg, cb)
   draw_line(int(rx), int(ry), int(nx_pt), int(ny_pt), cr, cg, cb)
-end
 
 # Mouse indicator
 draw_circle(cx: int(float(mouse_x())), cy: int(float(mouse_y())), radius: 12, r: 40, g: 15, b: 15)

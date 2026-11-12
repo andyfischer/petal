@@ -3,4 +3,3 @@ import bloom/motion
 
 pub fn label()
   motion.ease("button")
-end

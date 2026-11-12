@@ -7,5 +7,4 @@ let xs = [10, 20, 30, 40, 50]
 let total = 0
 for x in xs do
   total = total + x
-end
 print(total)

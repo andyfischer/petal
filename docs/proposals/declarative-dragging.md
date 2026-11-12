@@ -127,14 +127,14 @@ state board = initial_board()
 fn view(b)
   for col in b.cols key col.id do
     for card in col.cards key card.id do
-      let r = place(card.id, card_rect(col, card))           // identity + position
+      let r = place(card.id, card_rect(col, card))           # identity + position
       draggable(card.id, r, fn() -> closest(moves_nested(b, card.id)) |> floating())
       draw_card(r, card)
     end
   end
 end
 
-let d = drag_session(board, view)       // runs the engine; see "Per frame"
+let d = drag_session(board, view)       # runs the engine; see "Per frame"
 view(d.preview)
 if d.dropped then board = d.drop end
 ```
@@ -227,9 +227,9 @@ Running one speculatively today would draw and register for real, and its
 
 ```petal ignore
 let r = speculate(view, candidate)
-// r.value   what view returned
-// r.places  [{key, value}] recorded by place() during the call
-// r.emits   the draw commands it emitted, captured rather than drawn
+# r.value   what view returned
+# r.places  [{key, value}] recorded by place() during the call
+# r.emits   the draw commands it emitted, captured rather than drawn
 ```
 
 The semantics are a write overlay, not a fork:
@@ -321,7 +321,7 @@ end
 ```petal ignore
 let opts = for r in range(0, 4) do
   let s = st
-  s.meetings[i].room = r      // path assignment on a local copy
+  s.meetings[i].room = r      # path assignment on a local copy
   s
 end
 ```
@@ -435,11 +435,11 @@ end
 fn start_drag(model, key, mx, my)
   let i = index_of(model, key)
   let cands = moves(model, i)
-  let targets = for c in cands do find_key(view(c), key) end   // speculation = a call
+  let targets = for c in cands do find_key(view(c), key) end   # speculation = a call
   ...
 end
-// per frame: preview = drag.cands[closest(drag, mx - drag.gx, my - drag.gy)]
-// draw:      for n in view(preview) key n.key do state ax = … approach(ax, n.x, 18.0) … end
+# per frame: preview = drag.cands[closest(drag, mx - drag.gx, my - drag.gy)]
+# draw:      for n in view(preview) key n.key do state ax = … approach(ax, n.x, 18.0) … end
 ```
 
 With the library, the app's part becomes:
@@ -498,8 +498,8 @@ it is, wrapped as `fn view(cols)`:
 
 ```petal ignore
 let d = drag_session(cols, view)
-view(d.preview)                     // inside: r = place(card.id, r); draggable(card.id, r,
-                                    //   fn() -> closest(moves_nested(cols, card.id)) |> floating())
+view(d.preview)                     # inside: r = place(card.id, r); draggable(card.id, r,
+                                    #   fn() -> closest(moves_nested(cols, card.id)) |> floating())
 if d.dropped then
   cols = d.drop
   moves = moves + 1
@@ -569,7 +569,7 @@ not: `vary(st, ["angle"])` over a view that places the knob at
 
 ```petal ignore
 state board = initial_board()
-let d = drag_session(board, view)   // its state: {spec, targets, grab, active, …} — all values
+let d = drag_session(board, view)   # its state: {spec, targets, grab, active, …} — all values
 ```
 
 - **Editing `view` mid-drag.** The session stores candidate *states* (data),

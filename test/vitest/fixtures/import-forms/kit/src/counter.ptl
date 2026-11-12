@@ -4,4 +4,3 @@ var n = 0
 pub fn bump()
   set n = get n + 1
   get n
-end

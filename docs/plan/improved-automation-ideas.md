@@ -46,27 +46,27 @@ against the app's frame when the step runs. So a driver never hard-codes
 coordinates, and it keeps working after a layout change.
 
 ```petal ignore
-// examples/productivity/spreadsheet/tests/edit-formula.drive.ptl
+# examples/productivity/spreadsheet/tests/edit-formula.drive.ptl
 import auto
 
 let user = persona({seed: 7, pointer: "trackpad", wpm: 55, think: [0.3, 1.2]})
 
-// A cell in the grid, found by the column header and row label the app drew.
+# A cell in the grid, found by the column header and row label the app drew.
 fn cell(col: string, row: string) -> record
   intersect(column_of(text(col)), row_of(text(row)))
 end
 
 drive(user, [
   wait_for(text("Ledger")),
-  hover(cell("Q2", "New MRR")),          // glides there; the row highlight should follow
+  hover(cell("Q2", "New MRR")),          # glides there; the row highlight should follow
   expect(fn(app) -> app.state.editing == false, "hovering does not start an edit"),
   click(cell("Q4", "Expansion")),
-  type_text("=SUM(B3:E3)"),              // inter-key gaps drawn from 55 wpm
+  type_text("=SUM(B3:E3)"),              # inter-key gaps drawn from 55 wpm
   press("return"),
   wait_for(fn(app) -> app.state.editing == false),
   expect(fn(app) -> !contains(text_in(app, cell("Q4", "Expansion")), "#"),
          "the formula evaluates without an error value"),
-  idle(2.0),                             // read the result; the frame gate should skip these frames
+  idle(2.0),                             # read the result; the frame gate should skip these frames
 ])
 ```
 

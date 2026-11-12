@@ -24,12 +24,10 @@ let hours = 2.0
 
 fn hand_angle(h)
   h / 12 * 2 * pi() - pi() / 2
-end
 
 fn hand_tip(h, length)
   let a = hand_angle(h)
   {x: cx + cos(a) * length, y: cy + sin(a) * length}
-end
 
 let tip = hand_tip(hours, len)
 

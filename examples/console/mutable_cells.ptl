@@ -10,7 +10,6 @@ print("======================")
 var total = 0
 for i in [1, 2, 3, 4] do
   set total = total + i
-end
 print("total:", total)
 
 # The case `=` cannot express: writing from inside a lambda. Without a cell
@@ -23,7 +22,7 @@ var flagged = 0
 let doubled = map([1, 2, 3, 4], fn(n)
   if n % 2 == 0 then set flagged += 1 end
   n * 2
-end)
+)
 print("doubled:", doubled)
 print("even values seen:", flagged)
 
@@ -38,9 +37,7 @@ fn make_counter() -> function
   let bump = fn()
     set count = get count + 1
     get count
-  end
   bump
-end
 
 let a = make_counter()
 let b = make_counter()
@@ -62,7 +59,6 @@ print("snapshot:", snapshot, "level:", level)
 var player = {hp: 100, pos: [0, 0]}
 fn take_damage(amount: num)
   set player.hp = get player.hp - amount
-end
 take_damage(30)
 set player.pos[0] = 5
 print("player:", player)
@@ -80,5 +76,4 @@ state var hits = 0
 fn record_hit()
   set hits = get hits + 1
   get hits
-end
 print("hits:", record_hit(), record_hit(), record_hit())

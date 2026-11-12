@@ -16,16 +16,13 @@ state hits: int = 0
 # Parameter and return-type annotations. `str` is accepted for `string`.
 fn greet(who: string) -> string
   "Hello, {who}!"
-end
 
 fn area(r: float) -> float
   3.14159 * r * r
-end
 
 # Typed and un-annotated code mix freely; an int promotes to a float slot.
 fn scale(v, factor: float) -> float
   v * factor
-end
 
 # Lambda parameters annotate too. A lambda's `->` introduces its body, so a
 # lambda has no return-type annotation.

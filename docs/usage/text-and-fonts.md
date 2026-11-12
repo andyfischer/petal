@@ -23,16 +23,16 @@ its measurements into the environment, and the script reads them back through
 ```petal
 import ui
 
-draw_text("hello", x, y, size, r, g, b, [a])   // emits a `text` draw command
-text_width("hello", size)                       // px width, default font
-text_width("hello", size, "mono")               // px width, a named face
-text_advance("hello", style)                    // the same width as a float
-text_metrics(size)                              // px: where the ink sits (below)
-text_wrap(s, style, 200.0)                      // -> [line], greedy word wrap
-text_ellipsize(s, style, 200.0, "tail")         // -> "a long lab…"
-text_index_at(s, style, dx)                     // the character a click lands on
-font("Helvetica Neue")                          // a font object (see below)
-fonts()                                         // families this host can draw
+draw_text("hello", x, y, size, r, g, b, [a])   # emits a `text` draw command
+text_width("hello", size)                       # px width, default font
+text_width("hello", size, "mono")               # px width, a named face
+text_advance("hello", style)                    # the same width as a float
+text_metrics(size)                              # px: where the ink sits (below)
+text_wrap(s, style, 200.0)                      # -> [line], greedy word wrap
+text_ellipsize(s, style, 200.0, "tail")         # -> "a long lab…"
+text_index_at(s, style, dx)                     # the character a click lands on
+font("Helvetica Neue")                          # a font object (see below)
+fonts()                                         # families this host can draw
 ```
 
 `text_width` is exact for the host's font when the host bound real metrics,
@@ -51,11 +51,11 @@ lands, in **pixels** at that style's size:
 import ui
 
 let m = text_metrics(style)
-// m.baseline    the y draw_text was given -> the baseline
-// m.descent     the baseline -> the bottom of the line box
-// m.line_height one line's y -> the next line's y
-// m.cap_height  the baseline -> the top of a flat capital
-// m.x_height    the baseline -> the top of a lowercase "x"
+# m.baseline    the y draw_text was given -> the baseline
+# m.descent     the baseline -> the bottom of the line box
+# m.line_height one line's y -> the next line's y
+# m.cap_height  the baseline -> the top of a flat capital
+# m.x_height    the baseline -> the top of a lowercase "x"
 ```
 
 Without this a script has to guess, and the guess every script made was
@@ -63,7 +63,7 @@ Without this a script has to guess, and the guess every script made was
 ```petal ignore
 import ui
 
-draw_text(label, {x: x, y: r.y + (r.h - size) / 2}, style)   // wrong
+draw_text(label, {x: x, y: r.y + (r.h - size) / 2}, style)   # wrong
 ```
 
 — *the run is `size` px tall and starts at `y`*. Neither half is true: `y` is
@@ -103,7 +103,7 @@ let BODY = {size: 15, color: :d8d8d8}
 draw_text("Merge pull request ", {x: 10, y: 20}, BODY)
 draw_text("#482", {x: 170, y: 20}, {...BODY, weight: 700})
 draw_text("(draft)", {x: 210, y: 20}, {...BODY, italic: true, font: "mono"})
-text_width("#482", {...BODY, weight: 700})      // measures the bold face
+text_width("#482", {...BODY, weight: 700})      # measures the bold face
 ```
 
 | Field | Meaning | Default |
@@ -159,7 +159,7 @@ let body = font("Helvetica Neue", 15)
 let title = font_size(font_bold(body), 28)
 
 draw_text("Chapter One", {x: 20, y: 40}, title)
-let w = text_width("Chapter One", title)         // measures that exact cut
+let w = text_width("Chapter One", title)         # measures that exact cut
 ```
 
 A font object *is* a style record — the same one `draw_text`, `text_width` and

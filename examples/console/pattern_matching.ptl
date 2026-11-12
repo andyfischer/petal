@@ -7,8 +7,6 @@ fn classify(n: num) -> string
     when 0 -> "zero"
     when 1 -> "one"
     when _ -> "other"
-  end
-end
 print(classify(0), classify(1), classify(42))
 
 # Guards
@@ -19,8 +17,6 @@ fn temperature_label(temp: num) -> string
     when t if t < 25 -> "comfortable"
     when t if t < 35 -> "hot"
     when _ -> "extreme"
-  end
-end
 print("20 degrees is {temperature_label(20)}")
 print("-5 degrees is {temperature_label(-5)}")
 
@@ -31,8 +27,6 @@ fn describe_list(list: list) -> string
     when [x] -> "single element: {x}"
     when [a, b] -> "pair: {a} and {b}"
     when [head, ...tail] -> "starts with {head}, {len(tail)} more"
-  end
-end
 print(describe_list([]))
 print(describe_list([42]))
 print(describe_list([1, 2]))
@@ -43,15 +37,12 @@ enum Expr
   Num(value),
   Add(left, right),
   Mul(left, right),
-end
 
 fn eval(expr)
   match expr
     when Expr.Num(v) -> v
     when Expr.Add(l, r) -> eval(l) + eval(r)
     when Expr.Mul(l, r) -> eval(l) * eval(r)
-  end
-end
 
 # (2 + 3) * 4 = 20
 let expression = Expr.Mul(Expr.Add(Expr.Num(2), Expr.Num(3)), Expr.Num(4))
@@ -64,7 +55,6 @@ enum Command
   jump(height),
   say(text),
   quit,
-end
 
 fn run_commands(commands)
   var x = 0
@@ -78,15 +68,11 @@ fn run_commands(commands)
         if height > 3 then
           set log = push(get log, "too high")
           continue
-        end
         set log = push(get log, "jumped {height}")
       when Command.say(text) -> set log = push(get log, text)
       when Command.quit -> break
-    end
     set log = push(get log, "x={get x}")
-  end
   join(get log, ", ")
-end
 
 print(run_commands([
   Command.right, Command.right, Command.jump(2), Command.jump(9),
@@ -103,6 +89,4 @@ fn key_action(key: string) -> string
     when "space" -> "jump"
     when "escape" | "q" -> "quit"
     when _ -> "nothing"
-  end
-end
 print(map(["w", "left", "space", "q", "tab"], key_action))

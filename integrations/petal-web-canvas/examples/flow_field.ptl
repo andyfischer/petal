@@ -24,7 +24,6 @@ fn field_angle(px, py, t)
   n += sin((px + py) * field_scale * 0.5 + t * 0.8) * 0.5
   n += cos(px * field_scale * 1.5 - py * field_scale + t * 0.3) * 0.3
   n * PI * 2.0
-end
 
 # Hue (0..1) -> warm-to-cool rgb record, riding around the color wheel.
 fn hue_color(h)
@@ -40,7 +39,6 @@ fn hue_color(h)
   else cr = 255; cg = 60; cb = int((6.0 - hmod) * 195.0) + 60
   end
   {r: cr, g: cg, b: cb}
-end
 
 # Seed particles on the first frame.
 if len(particles) == 0 then
@@ -52,8 +50,6 @@ if len(particles) == 0 then
       hue: random(0.0, 1.0),
       trail: []
     })
-  end
-end
 
 # Advance every particle one step along the field.
 let new_particles = []
@@ -75,9 +71,6 @@ for p in particles do
     for t in p.trail do
       if len(new_trail) < trail_len then
         new_trail = append(new_trail, t)
-      end
-    end
-  end
 
   new_particles = append(new_particles, {
     x: nx, y: ny,
@@ -85,7 +78,6 @@ for p in particles do
     hue: p.hue,
     trail: new_trail
   })
-end
 particles = new_particles
 
 # === Drawing ===
@@ -102,12 +94,10 @@ for p in particles do
       r: int(float(col.r) * fade * 0.7),
       g: int(float(col.g) * fade * 0.7),
       b: int(float(col.b) * fade * 0.7))
-  end
 
   # Head: a soft halo under a bright core.
   draw_circle(cx: int(p.x), cy: int(p.y), radius: 2, r: col.r / 4, g: col.g / 4, b: col.b / 4)
   draw_circle(cx: int(p.x), cy: int(p.y), radius: 1,
     r: min(255, col.r + 40), g: min(255, col.g + 40), b: min(255, col.b + 40))
-end
 
 draw_text("Flow Field", x: 16, y: 12, size: 14, r: 120, g: 120, b: 150)

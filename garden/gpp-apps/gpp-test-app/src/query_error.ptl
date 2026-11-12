@@ -16,10 +16,8 @@ let errored = is_error(rd)
 let msg = "loading…"
 if errored then
   msg = error_of(rd) ?? "query failed"
-end
 
 draw_text("gpp-test-app — query error mode", {x: 16, y: 16}, 14, P.text)
 if errored then
   draw_text("query error:", {x: 16, y: 48}, 14, {r: 0.9, g: 0.4, b: 0.42, a: 1.0})
-end
 draw_text(msg, {x: 16, y: 72}, 14, P.text_mut)

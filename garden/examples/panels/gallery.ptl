@@ -48,7 +48,6 @@ fn sorted_rows(rows, ci, asc)
   let used = []
   for j in range(0, len(rows)) do
     used = append(used, false)
-  end
   let out = []
   for n in range(0, len(rows)) do
     let best = -1
@@ -60,19 +59,13 @@ fn sorted_rows(rows, ci, asc)
           best = j
         else if !asc && str(rows[j][ci]) > str(rows[best][ci]) then
           best = j
-        end
-      end
-    end
     used[best] = true
     out = append(out, rows[best])
-  end
   out
-end
 
 fn label(text, x, y)
   let t = ui_theme()
   draw_text(text, pos: {x: x, y: y}, style: {size: t.font_sm, color: t.dim, weight: 600, spacing: 0.5})
-end
 
 # ── Theme (applies before anything draws) ─────────────────────────────────
 if light then
@@ -82,7 +75,6 @@ if light then
              hover: :eaeef4, selection: :cfe1fb})
 else
   ui.theme_reset()
-end
 
 let T = ui_theme()
 clear(T.bg.r, T.bg.g, T.bg.b)
@@ -102,10 +94,8 @@ if tab == 0 then
   label("BUTTONS", x: left.x, y: left.y)
   if bloom.button(rect(left.x, left.y + 20, 110, 28), "Default") then
     last_action = "button"
-  end
   if bloom.button(rect(left.x + 118, left.y + 20, 110, 28), "Accented", {variant: "primary"}) then
     last_action = "accent button"
-  end
 
   label("CHECKBOX + SWITCH", x: left.x, y: left.y + 64)
   agree = bloom.checkbox(rect(left.x, left.y + 84, 200, 22), "I agree to nothing", agree)
@@ -132,7 +122,6 @@ if tab == 0 then
   draw_text("click to focus · tab moves on · shift-arrows select · cmd-z undoes", {x: right.x, y: right.y + 180}, T.font_sm, mix(T.dim, T.bg, t: 0.3))
 
   draw_text("last action: " ++ last_action, {x: left.x, y: body.y + body.h - 20}, T.font_sm, T.muted)
-end
 
 # ── Data ──────────────────────────────────────────────────────────────────
 if tab == 1 then
@@ -148,9 +137,7 @@ if tab == 1 then
     let rr = list_row_rect(lr, visible_rows: rows, i: idx, scroll: files.scroll)
     if idx == files.selected then
       draw_rect(rr, T.selection)
-    end
     draw_text(ellipsize(FILE_ROWS[idx][0], avail_px: rr.w - 16, size: T.font_md), {x: rr.x + 8, y: rr.y + (rr.h - T.font_md) / 2}, T.font_md, T.text)
-  end
   bloom.scrollbar(lr, len(FILE_ROWS), rows, files.scroll)
 
   label("TABLE (click a header to sort)", x: s.b.x, y: s.b.y)
@@ -171,13 +158,10 @@ if tab == 1 then
     ls = load_begin(ls, "demo")
   else if !load_ready(ls) then
     ls = load_ok(ls, "42 rows in 12ms")
-  end
   let lbox = rect(s.b.x, by + 34, s.b.w, 54)
   if bloom.load_view(lbox, ls) then
     let c = bloom.card(lbox, {pad: 8, shadow: false})
     draw_text("Loaded: " ++ ls.value, {x: c.x, y: c.y + 4}, T.font_md, T.text)
-  end
-end
 
 # ── Layout ────────────────────────────────────────────────────────────────
 if tab == 2 then
@@ -197,8 +181,6 @@ if tab == 2 then
   for column in hstack(grid_r, count: 4, gap: 8) do
     for cell in vstack(column, count: 3, gap: 8) do
       draw_rect_rounded(cell, radius: T.radius_sm, c: T.overlay)
-    end
-  end
 
   label("ROW — fixed | flex | flex | fixed", x: body.x, y: body.y + 350)
   let bar = rect(body.x, body.y + 370, body.w, 30)
@@ -207,8 +189,6 @@ if tab == 2 then
   for i in range(0, len(parts)) do
     draw_rect_rounded(parts[i], radius: T.radius_sm, c: mix(T.accent, T.bg, t: 0.7))
     draw_text_center(names[i], cx: parts[i].x + parts[i].w / 2, y: parts[i].y + 8, size: T.font_sm, c: T.text)
-  end
-end
 
 # ── Overlays ──────────────────────────────────────────────────────────────
 if tab == 3 then
@@ -224,7 +204,6 @@ if tab == 3 then
   # No guard needed: an open dialog captures the pointer.
   if bloom.button(rect(body.x, body.y + 230, 130, 28), "Open dialog…") then
     bloom.dialog_open("gallery")
-  end
 
   label("CONTEXT MENU (right-click below)", x: body.x, y: body.y + 280)
   let zone = rect(body.x, body.y + 300, 260, 60)
@@ -234,12 +213,10 @@ if tab == 3 then
   let picked = bloom.context_menu(zone, items)
   if picked >= 0 then
     last_action = "menu: " ++ items[picked]
-  end
   draw_text("last action: " ++ last_action, {x: body.x, y: body.y + 380}, T.font_sm, T.muted)
 
   # The tooltip draws late so it sits over the card it annotates.
   bloom.tooltip(halves.a, "Cards return their content rect")
-end
 
 # ── Theme ─────────────────────────────────────────────────────────────────
 if tab == 4 then
@@ -258,7 +235,6 @@ if tab == 4 then
     draw_rect_rounded(rect(cx, cy, 36, 24), radius: T.radius_sm, c: T[names[i]])
     draw_rect_outline(rect(cx, cy, 36, 24), T.outline)
     draw_text(names[i], {x: cx + 44, y: cy + 5}, T.font_sm, T.muted)
-  end
 
   label("TYPE SCALE", x: body.x, y: body.y + 280)
   draw_text("font_sm " ++ str(T.font_sm), {x: body.x, y: body.y + 300}, T.font_sm, T.text)
@@ -270,7 +246,6 @@ if tab == 4 then
   draw_rect_rounded(rect(body.x + 300, body.y + 304, 60, 36), radius: T.radius_sm, c: T.overlay)
   draw_rect_rounded(rect(body.x + 370, body.y + 304, 60, 36), radius: T.radius, c: T.overlay)
   draw_rect_rounded(rect(body.x + 440, body.y + 304, 60, 36), radius: T.radius_lg, c: T.overlay)
-end
 
 # ── Chrome: hint bar + dialog (last, so the dialog sits on top) ───────────
 bloom.hint_bar(rect(0, screen_height() - 26, screen_width(), 26),
@@ -283,8 +258,6 @@ if m.open then
   if bloom.button(rect(m.content.x, m.content.y + 46, 90, 28), "Done", {variant: "primary"}) then
     bloom.dialog_close()
     last_action = "dialog done"
-  end
-end
 
 # The late layer: menus and tooltips paint over everything above.
 bloom.overlays()

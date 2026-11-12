@@ -13,16 +13,12 @@ let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
   _draw_line(x1, y1, x2, y2, r, g, b)
-end
 fn draw_line(a, b, color)
   _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
-end
 fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
-end
 fn draw_text(text, pos, size, color)
   _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
-end
 
 # Shared colors
 let white = {r: 255, g: 255, b: 255}
@@ -68,8 +64,6 @@ if len(stars) == 0 then
       speed: random(10.0, 40.0),
       size: int(random(1.0, 3.0))
     })
-  end
-end
 
 # Player follows mouse
 let player_x = mouse_x()
@@ -104,14 +98,11 @@ if game_over then
     particles = []
     combo = 0
     combo_timer = 0.0
-  end
-end
 
 # Near miss decay
 if near_miss_flash > 0.0 then
   near_miss_flash = near_miss_flash - delta * 4.0
   if near_miss_flash < 0.0 then near_miss_flash = 0.0 end
-end
 
 # Combo timer decay
 if combo_timer > 0.0 then
@@ -119,8 +110,6 @@ if combo_timer > 0.0 then
   if combo_timer <= 0.0 then
     combo = 0
     combo_timer = 0.0
-  end
-end
 
 if !game_over then
   # Increase score (survival time in seconds)
@@ -134,7 +123,6 @@ if !game_over then
       life: 1.0,
       size: min(pspeed / 3.0, 8.0)
     })
-  end
 
   # Spawn enemies
   spawn_timer += delta
@@ -153,25 +141,21 @@ if !game_over then
       er = int(random(200.0, 256.0))
       eg = int(random(40.0, 120.0))
       eb = int(random(0.0, 40.0))
-    end
     if etype == 1 then
       # Purple/magenta
       er = int(random(160.0, 230.0))
       eg = int(random(20.0, 60.0))
       eb = int(random(180.0, 256.0))
-    end
     if etype == 2 then
       # Green/toxic
       er = int(random(40.0, 100.0))
       eg = int(random(200.0, 256.0))
       eb = int(random(20.0, 80.0))
-    end
     let erot = random(0.0, 6.28)
     enemies = append(enemies, {
       x: ex, y: -20.0, speed: espeed, radius: eradius,
       r: er, g: eg, b: eb, etype: etype, rot: erot
     })
-  end
 
   # Move enemies downward
   enemies = map(enemies, fn(e) -> {
@@ -194,7 +178,6 @@ if !game_over then
       game_over = true
       if score > high_score then
         high_score = score
-      end
       # Spawn explosion particles
       for p in range(0, 20) do
         particles = append(particles, {
@@ -202,34 +185,29 @@ if !game_over then
           vx: random(-200.0, 200.0), vy: random(-200.0, 200.0),
           life: 1.0, r: 255, g: int(random(100.0, 255.0)), b: 50
         })
-      end
-    end
     # Near miss detection
     let near_dist = float(PLAYER_RADIUS + e.radius + 20)
     if dist_sq < near_dist * near_dist && dist_sq >= min_dist * min_dist then
       near_miss_flash = 1.0
       combo = combo + 1
       combo_timer = 2.0
-    end
-  end
-end
 
 # Update trail
-trail = map(trail, fn(t) -> { x: t.x, y: t.y, life: t.life - delta * 3.0, size: t.size })
+trail = map(trail, fn(t) -> {x: t.x, y: t.y, life: t.life - delta * 3.0, size: t.size})
 trail = filter(trail, fn(t) -> t.life > 0.0)
 
 # Update particles
-particles = map(particles, fn(p) -> { x: p.x + p.vx * delta, y: p.y + p.vy * delta,
+particles = map(particles, fn(p) -> {x: p.x + p.vx * delta, y: p.y + p.vy * delta,
   vx: p.vx * 0.98, vy: p.vy * 0.98 + 200.0 * delta,
-  life: p.life - delta * 1.5, r: p.r, g: p.g, b: p.b })
+  life: p.life - delta * 1.5, r: p.r, g: p.g, b: p.b})
 particles = filter(particles, fn(p) -> p.life > 0.0)
 
 # Update stars (parallax scroll)
 stars = map(stars, fn(s)
   let ny = s.y + s.speed * delta
   if ny > float(SH) then ny = 0.0 end
-  { x: s.x, y: ny, brightness: s.brightness, speed: s.speed, size: s.size }
-end)
+  {x: s.x, y: ny, brightness: s.brightness, speed: s.speed, size: s.size}
+)
 
 # === Drawing ===
 
@@ -243,14 +221,12 @@ for i in range(0, 12) do
   let bg = 5 + i * 2
   let bb = 15 + i * 3
   draw_rect(x: 0, y: band_y, w: SW, h: band_h, r: br, g: bg, b: bb)
-end
 
 # Draw stars
 for s in stars do
   let pulse = s.brightness + 20.0 * (float(frame % 120) / 120.0)
   let sb = int(min(pulse, 200.0))
   draw_circle(cx: int(s.x), cy: int(s.y), radius: s.size, r: sb, g: sb, b: sb + 20)
-end
 
 # Scrolling grid for depth
 let grid_spacing = 50
@@ -261,11 +237,9 @@ for gx in range(0, SW / grid_spacing + 1) do
   let cx_dist = abs(line_x - SW / 2)
   let grid_alpha = max(10, 30 - cx_dist / 20)
   draw_line(x1: line_x, y1: 0, x2: line_x, y2: SH, r: grid_alpha, g: grid_alpha, b: grid_alpha + 20)
-end
 for gy in range(0, SH / grid_spacing + 2) do
   let line_y = gy * grid_spacing - grid_offset
   draw_line({x: 0, y: line_y}, {x: SW, y: line_y}, subtle_grid)
-end
 
 # Draw trail
 for t in trail do
@@ -273,8 +247,6 @@ for t in trail do
   let ts = int(t.size * t.life)
   if ts > 0 then
     draw_circle(cx: int(t.x), cy: int(t.y), radius: ts, r: 30, g: ta, b: int(t.life * 255.0))
-  end
-end
 
 # Draw enemies with visual flair
 for e in enemies do
@@ -291,25 +263,21 @@ for e in enemies do
   # Inner dark ring (creates a ring effect)
   if er > 6 then
     draw_circle(cx: ex, cy: ey, radius: er - 3, r: e.r / 2, g: e.g / 2, b: e.b / 2)
-  end
 
   # Bright core with highlight offset
   draw_circle(cx: ex, cy: ey, radius: max(2, er / 3), r: min(255, e.r + 80), g: min(255, e.g + 80), b: min(255, e.b + 80))
   draw_circle(cx: ex - 1, cy: ey - 1, radius: max(1, er / 5), r: 255, g: 255, b: 255)
-end
 
 # Near miss screen flash effect
 if near_miss_flash > 0.0 then
   let flash_a = int(near_miss_flash * 30.0)
   draw_rect(x: 0, y: 0, w: SW, h: SH, r: flash_a, g: flash_a, b: flash_a + 10)
-end
 
 # Draw explosion particles
 for p in particles do
   let pa = max(0, int(p.life * 255.0))
   let ps = max(1, int(p.life * 4.0))
   draw_circle(cx: int(p.x), cy: int(p.y), radius: ps, r: p.r, g: min(pa, p.g), b: p.b)
-end
 
 # Draw player with shield-like layers
 # Outer shield ring
@@ -335,7 +303,6 @@ if pspeed > 3.0 then
     {x: player_x + int(nx * dir_len), y: player_y + int(ny * dir_len)},
     player_trail
   )
-end
 
 # === HUD ===
 # Score bar background
@@ -358,7 +325,6 @@ draw_text("LV " ++ str(diff_display), {x: SW / 2 - 20, y: 12}, 20, purple)
 if combo > 1 then
   let combo_bright = int(min(combo_timer, 1.0) * 255.0)
   draw_text("CLOSE CALL x" ++ str(combo), x: SW / 2 - 70, y: 55, size: 18, r: 255, g: combo_bright, b: 80)
-end
 
 # Enemy count
 let enemy_count = len(enemies)
@@ -380,12 +346,9 @@ if game_over then
 
   if frame % 70 < 45 then
     draw_text("[ SPACE to retry ]", {x: SW / 2 - 110, y: SH / 2 + 110}, 22, hint_text)
-  end
 
   # Draw particles on top
   for p in particles do
     let pa2 = max(0, int(p.life * 255.0))
     let ps2 = max(1, int(p.life * 5.0))
     draw_circle(cx: int(p.x), cy: int(p.y), radius: ps2, r: p.r, g: min(pa2, p.g), b: p.b)
-  end
-end

@@ -13,7 +13,6 @@ for t in temperatures do
   for _ in range(0, filled) do bar = bar ++ "#" end
   for _ in range(filled, 20) do bar = bar ++ "-" end
   print("  {t}F  [{bar}]")
-end
 print("")
 
 print("Bounded response curve (clamped)")
@@ -25,4 +24,3 @@ for raw in range(-2, 13) do
   let mapped = map_range(v, in_lo: 0.0, in_hi: 10.0, out_lo: -1.0, out_hi: 1.0)
   let clamped = clamp(mapped, lo: -1.0, hi: 1.0)
   print("  input={v}  mapped={mapped}  clamped={clamped}")
-end

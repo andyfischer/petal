@@ -41,15 +41,12 @@ fn update_particle(id: num)
   if x > 50.0 || x < 0.0 then
     vx = -vx
     x = x + vx
-  end
   if y > 30.0 || y < 0.0 then
     vy = -vy
     y = y + vy
-  end
 
   set particles[id] = {x: x, y: y, vx: vx, vy: vy}
   print("  Particle", id, "-> x:", floor(x), "y:", floor(y))
-end
 
 print("Particle Simulation")
 print("====================")
@@ -58,6 +55,4 @@ for frame in range(1, 8) do
   print("Frame", frame)
   for p in range(0, 4) do
     update_particle(p)
-  end
   print("")
-end

@@ -4,7 +4,6 @@
 
 fn rect(x: num, y: num, width: num, height: num) -> string
   "rect at ({x}, {y}) sized {width}x{height}"
-end
 
 # All positional — the familiar form.
 print(rect(0, 0, 10, 4))
@@ -19,7 +18,6 @@ print(rect(1, 2, height: 8, width: 6))
 # Names are worth most where the call site is otherwise a row of literals.
 fn make_window(title: string, width: num, height: num, resizable: bool) -> record
   {title: title, width: width, height: height, resizable: resizable}
-end
 
 print(make_window("Editor", 800, 600, true))
 print(make_window(title: "Editor", width: 800, height: 600, resizable: true))
@@ -29,11 +27,9 @@ print(make_window(title: "Editor", width: 800, height: 600, resizable: true))
 class Vec2
   x: float,
   y: float,
-end
 
 fn Vec2.scaled(v: record, by) -> Vec2
   Vec2(v.x * by, v.y * by)
-end
 
 let v = Vec2(3, 4)
 print("scaled:", v.scaled(by: 2))
@@ -42,9 +38,7 @@ print("scaled:", v.scaled(by: 2))
 # positional plus named — before any name is matched to a slot.
 fn area(size)
   size * size
-end
 fn area(width, height)
   width * height
-end
 print("area/1:", area(size: 5))
 print("area/2:", area(width: 5, height: 3))

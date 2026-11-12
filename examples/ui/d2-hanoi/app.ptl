@@ -20,11 +20,9 @@ state moves_made = 0
 fn disk_rect(peg, height, size)
   let w = 40 + size * 24
   rect(PEG_X[peg] - w / 2, BASE_Y - (height + 1) * DISK_H, w, DISK_H - 2)
-end
 
 fn top(pegs, p)
   if len(pegs[p]) == 0 then nil else pegs[p][len(pegs[p]) - 1] end
-end
 
 # Every board the top disk of peg `p` can reach in one legal move, the
 # current board included.
@@ -38,15 +36,11 @@ fn hanoi_moves(pegs, p)
       next[p] = drop_last(pegs[p])
       next[q] = pegs[q] ++ [disk]
       out ++= [next]
-    end
-  end
   out
-end
 
 fn view(pegs)
   for p in range(0, 3) do
     draw_rect(PEG_X[p] - 4, BASE_Y - 130, 8, 130, :5a6070)
-  end
   draw_rect(40, BASE_Y, 460, 10, :5a6070)
   for p in range(0, 3) do
     for h in range(0, len(pegs[p])) do
@@ -54,12 +48,8 @@ fn view(pegs)
       let r = place(size, disk_rect(p, h, size))
       if h == len(pegs[p]) - 1 then
         draggable(size, r, fn() closest(hanoi_moves(pegs, p)) |> floating() end)
-      end
       place(size, r, fn(q) draw_rect_rounded(q, 4, DISK_COLORS[size]) end)
-    end
-  end
   nil
-end
 
 clear(24, 24, 32)
 let d = drag_session(pegs, view)
@@ -67,6 +57,5 @@ view(d.preview)
 if d.dropped && d.drop != pegs then
   pegs = d.drop
   moves_made += 1
-end
 let solved = len(pegs[2]) == 4
 draw_text(if solved then "Solved in {moves_made} moves" else "Moves: {moves_made}" end, 40, 30, 16, :c8ccd8)

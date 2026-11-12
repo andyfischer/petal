@@ -11,19 +11,15 @@
 
 fn f(x)
   (x - 3.0) * (x - 3.0) + sin(x)
-end
 
 fn plain(x)
   f(x)
-end
 
 fn spec(x)
   speculate(f, x).value
-end
 
 fn specv(x)
   speculate_value(f, x)
-end
 
 var total = 0.0
 for i in range(0, 500) do
@@ -31,5 +27,4 @@ for i in range(0, 500) do
   set total += plain(x)
   set total += spec(x)
   set total += specv(x)
-end
 get total

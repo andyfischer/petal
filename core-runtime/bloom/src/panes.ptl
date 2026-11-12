@@ -25,7 +25,6 @@ import ui
 # surface the strip is drawn over, which the hover wash is flattened against.
 pub fn tabs(r: record, labels: list, index: num) -> num
   tabs(r, labels, index, {})
-end
 
 pub fn tabs(r: record, labels: list, index: num, opts: record) -> num
   let t = theme()
@@ -45,28 +44,22 @@ pub fn tabs(r: record, labels: list, index: num, opts: record) -> num
     let p = probe(tr)
     if p.click then
       chosen = i
-    end
     if !active && p.hot > 0.01 then
       draw_rect(tr, over(on, field(opts, "hover", t.hover), int(p.hot * 160.0)))
-    end
     let fg = if active then fg0 else mix(fg0, t.text, p.hot * 0.5) end
     draw_text_line(labels[i], tr, {...style, color: fg}, "center")
     if active then
       ux = x + 6
       uw = w - 12
-    end
     x = x + w + gap
-  end
   # The underline is a spring on its own left edge and width, so switching
   # three tabs over slides and settles rather than jumping.
   if uw > 0.0 then
     let sx = spring(ux, {stiffness: 300.0, damping: 28.0})
     let sw = spring(uw, {stiffness: 300.0, damping: 28.0})
     draw_rect(Rect(sx, r.y + r.h - 2, sw, 2), field(opts, "underline", t.accent))
-  end
   draw_line({x: r.x, y: r.y + r.h}, {x: r.x + r.w, y: r.y + r.h}, field(opts, "rule", hair(t)))
   chosen
-end
 
 # ── Cycle ──────────────────────────────────────────────────────────────────
 
@@ -79,7 +72,6 @@ end
 # radius, arrow_w (22)}.
 pub fn cycle(r: record, options: list, index: num) -> num
   cycle(r, options, index, {})
-end
 
 pub fn cycle(r: record, options: list, index: num, opts: record) -> num
   let t = theme()
@@ -100,17 +92,12 @@ pub fn cycle(r: record, options: list, index: num, opts: record) -> num
     for side in [{p: lp, r: left, name: "chevron_left"}, {p: rp, r: right, name: "chevron_right"}] do
       if side.p.hot > 0.01 then
         draw_rect_rounded(pad(side.r, 2), radius, mix(field(opts, "bg", tone(t, t.panel, 0.12)), hover, side.p.hot))
-      end
       let c = mix(t.muted, t.text, side.p.hot)
       icon(side.name, pad(side.r, max(4.0, min(side.r.w, side.r.h) * 0.28)), c)
-    end
     if lp.click then
       out = (i + n - 1) % n
-    end
     if rp.click || mp.click then
       out = (i + 1) % n
-    end
-  end
   let labels = field(opts, "labels", nil)
   let shown = if n == 0 then
     ""
@@ -118,11 +105,9 @@ pub fn cycle(r: record, options: list, index: num, opts: record) -> num
     str(labels[i])
   else
     str(options[i])
-  end
   let style = ts(t, field(opts, "size", t.font_sm), field(opts, "fg", t.text))
   draw_text_line(text_cut(shown, style, max(0, mid.w - 4)), mid, style, "center")
   out
-end
 
 # ── Splitter ───────────────────────────────────────────────────────────────
 
@@ -142,11 +127,9 @@ end
 # active (colours).
 pub fn splitter(r: record, frac: num) -> record
   _splitter(r, frac, {})
-end
 
 pub fn splitter(r: record, frac: num, opts: record) -> record
   _splitter(r, frac, opts)
-end
 
 # `splitter` is also `ui`'s; see bloom/button's `button_impl`.
 fn _splitter(r: record, frac: num, opts: record) -> record
@@ -169,7 +152,6 @@ fn _splitter(r: record, frac: num, opts: record) -> record
   if d.active then
     let along = if horiz then mouse_x() - r.x else mouse_y() - r.y end
     f = clamp(float(along) / float(max(1, total)), lo, hi)
-  end
   let apx = int(clamp(float(total) * f, float(min_a), top))
   let hit = _split_band(r, horiz, float(apx), band)
   let hot = ease_flag(d.active || probe(hit).hover, rate(t, 18.0))
@@ -180,22 +162,17 @@ fn _splitter(r: record, frac: num, opts: record) -> record
     Rect(r.x + apx + gap, r.y, r.w - apx - gap, r.h)
   else
     Rect(r.x, r.y + apx + gap, r.w, r.h - apx - gap)
-  end
   if horiz then
     draw_line({x: r.x + apx, y: r.y}, {x: r.x + apx, y: r.y + r.h}, lc, 255, lw)
   else
     draw_line({x: r.x, y: r.y + apx}, {x: r.x + r.w, y: r.y + apx}, lc, 255, lw)
-  end
   {frac: f, a: a, b: b, divider: hit, dragging: d.active}
-end
 
 fn _split_band(r: record, horiz: bool, apx: num, band: num) -> record
   if horiz then
     Rect(r.x + apx - band / 2.0, r.y, band, r.h)
   else
     Rect(r.x, r.y + apx - band / 2.0, r.w, band)
-  end
-end
 
 # ── Table ──────────────────────────────────────────────────────────────────
 
@@ -213,8 +190,6 @@ pub fn table_columns(r: record, cols: list) -> list
       weights += w
     else
       weights += 1.0
-    end
-  end
   let leftover = max(0, r.w - fixed)
   let out = []
   let x = r.x
@@ -227,13 +202,9 @@ pub fn table_columns(r: record, cols: list) -> list
       let wt = if w > 0.0 then w else 1.0 end
       if weights > 0.0 then
         cw = int(float(leftover) * wt / weights)
-      end
-    end
     out = append(out, Rect(x, r.y, cw, r.h))
     x += cw
-  end
   out
-end
 
 # A header and rows grid: column sizing (`table_columns`), list selection
 # (j/k, arrows, page keys, a press on a row; the wheel scrolls), zebra rows,
@@ -256,11 +227,9 @@ end
 # for a table whose selection the app also moves.
 pub fn table(r: record, cols: list, rows: list) -> record
   _table(r, cols, rows, {})
-end
 
 pub fn table(r: record, cols: list, rows: list, opts: record) -> record
   _table(r, cols, rows, opts)
-end
 
 # `table` is also `ui`'s; see bloom/button's `button_impl`.
 fn _table(r: record, cols: list, rows: list, opts: record) -> record
@@ -290,8 +259,6 @@ fn _table(r: record, cols: list, rows: list, opts: record) -> record
       else
         sort_col = i
         sort_asc = true
-      end
-    end
     let label = field(cols[i], "label", "")
     let fg = if sort_col == i then t.text else mix(t.muted, t.text, p.hot * 0.5) end
     let head_ts = {...ts(t, size, fg), weight: 600}
@@ -300,8 +267,6 @@ fn _table(r: record, cols: list, rows: list, opts: record) -> record
       let arrow = if sort_asc then "chevron_up" else "chevron_down" end
       let s = size * 0.8
       icon(arrow, Rect(cr.x + 12 + lw, head.y + (head_h - s) / 2.0, s, s), t.accent)
-    end
-  end
   draw_line({x: r.x, y: body.y}, {x: r.x + r.w, y: body.y}, field(opts, "rule", hair(t)))
   let visible = max(1, body.h / row_h)
   let lr = Rect(body.x, body.y, body.w, visible * row_h)
@@ -317,8 +282,6 @@ fn _table(r: record, cols: list, rows: list, opts: record) -> record
     scroll = lst.scroll
     if pressed then
       clicked = sel
-    end
-  end
   let zebra = field(opts, "zebra", true)
   let cell_ts = ts(t, size, field(opts, "fg", t.text))
   for vi in range(0, max(0, min(visible, len(rows) - scroll))) do
@@ -330,15 +293,11 @@ fn _table(r: record, cols: list, rows: list, opts: record) -> record
       draw_rect(rr, t.hover)
     else if zebra && idx % 2 == 1 then
       draw_rect(rr, over(on, t.hover, 70))
-    end
     let cells = rows[idx]
     for ci in range(0, min(len(cols), len(cells))) do
       let cr = crects[ci]
       let cell = Rect(cr.x + 8, rr.y, max(0, cr.w - 16), row_h)
       draw_text_line(text_cut(str(cells[ci]), cell_ts, cell.w), cell, cell_ts, "left")
-    end
-  end
   scrollbar(lr, len(rows), visible, scroll)
   {selected: sel, scroll: scroll, sort_col: sort_col, sort_asc: sort_asc,
     changed: sel != before, clicked: clicked}
-end

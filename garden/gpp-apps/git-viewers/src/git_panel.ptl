@@ -60,7 +60,6 @@ state focus_seeded = false
 if !focus_seeded then
   focus_request("commits")
   focus_seeded = true
-end
 state commits_lst = list_state()
 state files_lst = list_state()
 state diff_scroll = 0
@@ -133,8 +132,6 @@ if !log_ready then
     log_err = ""
   else if is_error(rd) then
     log_err = error_of(rd) ?? "git log failed"
-  end
-end
 let git_repo = log.repo
 let git_branch = log.branch
 let git_worktree = log.worktree_dirty
@@ -193,7 +190,6 @@ if mouse_pressed(0) && !dragging && !refresh_hover then
   if point_in(mouse_x(), mouse_y(), commits_rect) then focus_request("commits") end
   if point_in(mouse_x(), mouse_y(), files_rect) then focus_request("files") end
   if point_in(mouse_x(), mouse_y(), diff_rect) then focus_request("diff") end
-end
 
 # ── input: commit selection, lazy fetch on change ─────────────────────────────
 # The prelude list: keyboard nav gated on focus, click-select, and a wheel
@@ -212,9 +208,6 @@ if mouse_pressed(0) && !dragging && point_in(mouse_x(), mouse_y(), diff_rect) th
     let row = diff_scroll + int(float(mouse_y() - diff_rect.y) / LINE_H)
     if row >= 0 && row < len(clines) then
       if clines[row].kind == "hunk" then diff_expanded = !diff_expanded end
-    end
-  end
-end
 
 # The commit (or working tree) the selection points at, and the fetch key —
 # prefixed with "@full:" when the diff is expanded.
@@ -224,12 +217,9 @@ if total_rows > 0 then
     base_want = "@worktree"
   else
     base_want = git_commits[commit_selected - wt].hash
-  end
-end
 # Selecting a different commit resets expansion back to the collapsed diff.
 if base_want != loaded_commit && loaded_commit != "@none" then
   diff_expanded = false
-end
 let want = base_want
 if diff_expanded && base_want != "" then want = "@full:" ++ base_want end
 
@@ -251,14 +241,11 @@ if want != "" && want != loaded_key then
       files_lst = list_state()
       prev_file = -1
       loaded_commit = base_want
-    end
   else if is_error(fetched) then
     diff_loading = false
     diff_err = error_of(fetched) ?? "diff failed"
   else
     diff_loading = true
-  end
-end
 
 # ── input: file selection ─────────────────────────────────────────────────────
 let file_count = len(data.files)
@@ -267,7 +254,6 @@ let file_selected = files_lst.selected
 if file_selected != prev_file then
   diff_scroll = 0
   prev_file = file_selected
-end
 
 # ── input: diff scrolling (wheel over the region; keys when focused) ──────────
 # The prelude scroll region handles the hover-scoped wheel + PageUp/PageDown;
@@ -281,7 +267,6 @@ if has_focus("diff") then
   if key_pressed("space") then diff_scroll += diff_rows end
   if key_pressed("home") then diff_scroll = 0 end
   if key_pressed("end") then diff_scroll = diff_lines end
-end
 diff_scroll = int(clamp(diff_scroll, 0, max(0, diff_lines - diff_rows)))
 
 # ── introspection for tests / debug server ───────────────────────────────────
@@ -310,7 +295,6 @@ draw_text(header_repo, {x: PAD + 20, y: PAD + 2}, FS, TEXT)
 let repo_w = text_width(header_repo, FS)
 if len(git_branch) > 0 then
   bloom.pill(PAD + 30 + repo_w, PAD, git_branch, ACCENT, {size: FS})
-end
 
 # refresh: a bloom button carrying a drawn reload glyph + the label.
 let rtc = if refresh_hover then ACCENT else MUT end
@@ -323,7 +307,6 @@ if bloom.button(refresh_r, "") then
   log_ready = false
   loaded_key = "@none"
   loaded_commit = "@none"
-end
 # A circular-arrow icon built from primitives (the mono font has no ⟳): a ring
 # open at the top right, with an arrowhead, so it reads as a clockwise reload
 # arrow at any font. The ring is an arc rather than a disc with a hole
@@ -350,8 +333,6 @@ if total_rows == 0 then
     draw_text("loading history {bloom.spinner_glyph()}", {x: PAD + 4, y: commits_rect.y + 6}, FS, DIM)
   else
     bloom.empty_state(commits_rect, "No commits yet", "")
-  end
-end
 clip(commits_rect.x, commits_rect.y, commits_rect.w, commits_rect.h)
 let cvis = int(clamp(total_rows - commits_scroll, 0, commits_rows + 1))
 for i in range(0, cvis) do
@@ -364,7 +345,6 @@ for i in range(0, cvis) do
     draw_rect(row_r, selbg)
   else
     if hovered(row_r) then draw_rect(row_r, HOVER) end
-  end
   if wt == 1 && idx == 0 then
     draw_rect(rect(commits_rect.x, ry + 4, 3, COMMIT_ROW - 8), ORANGE)
     draw_text("working tree", {x: commits_rect.x + 12, y: ry + 3}, FS, ORANGE)
@@ -377,8 +357,6 @@ for i in range(0, cvis) do
     draw_text(ellipsize(c.subject, subj_px, FS), {x: commits_rect.x + 12, y: ry + 3}, FS, subj_c)
     let meta = "{c.short}  {c.date}  {c.author}"
     draw_text(ellipsize(meta, subj_px, FS), {x: commits_rect.x + 12, y: ry + 21}, FS, FAINT)
-  end
-end
 clip_none()
 bloom.scrollbar(commits_rect, total_rows, commits_rows, commits_scroll)
 
@@ -391,7 +369,6 @@ if file_count == 0 then
   if total_rows == 0 then msg = "—" end
   if diff_loading then msg = "loading diff {bloom.spinner_glyph()}" end
   draw_text(msg, {x: PAD + 4, y: files_rect.y + 4}, FS, FAINT)
-end
 # Reserve a right strip for the +/- counts; wrap the path across the rest.
 let counts_w = 92
 let path_px = files_rect.w - 14 - counts_w
@@ -408,7 +385,6 @@ for i in range(0, fvis) do
     draw_rect(row_r, selbg)
   else
     if hovered(row_r) then draw_rect(row_r, HOVER) end
-  end
   let accent = GREEN
   if f.removed > f.added then accent = RED end
   draw_rect(rect(files_rect.x, ry + 4, 3, FILE_ROW - 8), accent)
@@ -423,11 +399,9 @@ for i in range(0, fvis) do
     let rest = slice(f.path, len(wls[0]), len(f.path))
     if len(rest) > 0 && slice(rest, 0, 1) == " " then rest = slice(rest, 1, len(rest)) end
     draw_text(ellipsize(rest, path_px, FS), {x: files_rect.x + 12, y: ry + 4 + LINE_H}, FS, path_c)
-  end
   let count_y = ry + FILE_ROW / 2 - 8
   draw_text_right("-{f.removed}", files_rect.x + files_rect.w - 8, count_y, FS, RED)
   draw_text_right("+{f.added}", files_rect.x + files_rect.w - 48, count_y, FS, GREEN)
-end
 clip_none()
 bloom.scrollbar(files_rect, file_count, files_rows, files_lst.scroll)
 
@@ -442,8 +416,6 @@ if total_rows > 0 then
     let c = git_commits[commit_selected - wt]
     head_subject = c.subject
     head_meta = "{c.short}  {c.date}  {c.author}"
-  end
-end
 if diff_expanded then head_meta ++= "  ·  full context" end
 draw_text(ellipsize(head_subject, right_w, FS), {x: right_x, y: content_top}, FS, TEXT)
 draw_text(ellipsize(head_meta, right_w, FS), {x: right_x, y: content_top + 20}, FS, DIM)
@@ -455,11 +427,9 @@ if file_count > 0 then
   let fp = ellipsize_tail(f.path, right_w - text_width(counts, FS) - 24, FS)
   draw_text(fp, {x: right_x, y: content_top + 41}, FS, ACCENT)
   head_path_w = text_width(fp, FS)
-end
 draw_line({x: right_x, y: diff_top - 4}, {x: w - PAD, y: diff_top - 4}, LINE)
 if has_focus("diff") then
   draw_rect(rect(right_x, diff_top - 5, head_path_w, 2), ACCENT)
-end
 
 # ── draw: the diff (clipped + scrollable, numbered gutter) ────────────────────
 if len(diff_err) > 0 then
@@ -475,7 +445,6 @@ else
   if file_count == 0 then
     if total_rows > 0 then
       bloom.empty_state(diff_rect, "No changes to show", "")
-    end
   else
     let f = data.files[file_selected]
     if diff_lines == 0 then
@@ -498,15 +467,10 @@ else
           when "add" -> {marker: "+", style: "added"}
           when "del" -> {marker: "-", style: "removed"}
           when _ -> {marker: " ", style: ""}
-        end
         dlines = append(dlines, look.marker ++ " " ++ ln.text)
         dstyles = append(dstyles, look.style)
-      end
       text_view(1, diff_rect.x, diff_rect.y, diff_rect.w, diff_rect.h, join(dlines, "\n"))
       text_view_line_styles(1, dstyles)
-    end
-  end
-end
 
 # ── draw: keyboard hints ─────────────────────────────────────────────────────
 bloom.hint_bar(rect(0, ch, w, HINT_H),

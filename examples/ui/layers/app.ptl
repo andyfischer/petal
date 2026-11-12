@@ -62,10 +62,7 @@ fn build_cells()
       out = append(out, CELL - 1)
       out = append(out, CELL - 1)
       out = append(out, ix)
-    end
-  end
   out
-end
 
 clear(t.bg.r, t.bg.g, t.bg.b)
 
@@ -76,13 +73,12 @@ let world = rect(24, 24, COLS * CELL, ROWS * CELL)
 # on every other frame.
 cached_layer(palette_ix, world, fn()
   draw_rects(CELLS, PALETTES[palette_ix])
-end)
+)
 
 if picked >= 0 then
   let pc = picked % COLS
   let pr = picked / COLS
   draw_rect_outline(rect(world.x + pc * CELL - 1, world.y + pr * CELL - 1, CELL + 1, CELL + 1), t.accent, 255, 2)
-end
 
 # ── The HUD ───────────────────────────────────────────────────────────────
 
@@ -93,7 +89,6 @@ end
 fn hud_button(r, label, id = nil)
   let hit = interact(r, id ?? label)
   bloom.button(r, label) && hit.click
-end
 
 # The panel's contents. Called once to measure and once to draw.
 fn panel_body(r, picked_now, clicks)
@@ -110,12 +105,10 @@ fn panel_body(r, picked_now, clicks)
   if hud_button(flow_next(84, 26), "Confirm…", "confirm") then set ask = true end
   flow_end()
   {size: flow_end(), next_palette: get next_palette, ask: get ask}
-end
 
 let toggle_r = rect(W - 44, 12, 32, 22)
 if hud_button(toggle_r, if panel_open then "×" else "≡" end, "toggle-panel") then
   panel_open = !panel_open
-end
 # Asked for here, drawn on top of everything below.
 bloom.tooltip(toggle_r, if panel_open then "Hide the panel" else "Show the panel" end)
 
@@ -129,21 +122,17 @@ if panel_open then
     draw_elevation(panel, 8, 2)
     draw_rect_rounded(panel, 8, ui_theme().panel)
     panel_body(panel, picked, world_clicks)
-  end)
+  )
   if res.next_palette then
     palette_ix = (palette_ix + 1) % len(PALETTES)
-  end
   if res.ask then
     md = {open: true, at: frame_count()}
-  end
-end
 
 # The world gets the click only if the UI did not want it. Asked after the
 # HUD has drawn, so it is exact even on the frame the panel appears.
 if mouse_pressed(0) && !pointer_captured() && point_in(mouse_x(), mouse_y(), world) then
   world_clicks = world_clicks + 1
   picked = (mouse_y() - world.y) / CELL * COLS + (mouse_x() - world.x) / CELL
-end
 
 # ── The dialog ────────────────────────────────────────────────────────────
 let dlg_r = rect((W - 320) / 2, (H - 150) / 2, 320, 150)
@@ -151,7 +140,6 @@ let dlg_r = rect((W - 320) / 2, (H - 150) / 2, 320, 150)
 if md.open && md.at != frame_count() &&
    (key_pressed("escape") || (mouse_pressed(0) && !point_in(mouse_x(), mouse_y(), dlg_r))) then
   md = {open: false, at: -1}
-end
 if md.open then
   # The rest of the frame is on the modal layer, and everything below it is
   # inert, this frame and the next.
@@ -168,13 +156,10 @@ if md.open then
     picked = -1
     cleared = cleared + 1
     md = {open: false, at: -1}
-  end
   if hud_button(flow_next(90, 28), "Cancel") then
     md = {open: false, at: -1}
-  end
   flow_end()
   flow_end()
-end
 
 # Last line of the frame: the tooltip asked for above paints here, on top.
 bloom.overlays()

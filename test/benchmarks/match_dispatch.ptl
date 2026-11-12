@@ -50,7 +50,6 @@ enum Variant
   v37,
   v38,
   v39,
-end
 
 let STRINGS = [
   "cmd_00_a", "cmd_01_b", "cmd_02_c", "cmd_03_d", "cmd_04_e",
@@ -107,8 +106,6 @@ fn by_string(k)
     when "cmd_38_i" -> 38
     when "cmd_39_j" -> 39
     when _ -> -1
-  end
-end
 
 fn by_int(k)
   match k
@@ -153,8 +150,6 @@ fn by_int(k)
     when 266 -> 38
     when 273 -> 39
     when _ -> -1
-  end
-end
 
 fn by_variant(k)
   match k
@@ -198,27 +193,20 @@ fn by_variant(k)
     when Variant.v37 -> 37
     when Variant.v38 -> 38
     when Variant.v39 -> 39
-  end
-end
 
 # The method form of `by_variant`. Called on a list element, which the
 # checker cannot type, so the call is not pinned: this measures dispatch on
 # the tag, the cost an unpinned enum method adds over the free function.
 fn Variant.index(k)
   by_variant(k)
-end
 
 var total = 0
 for i in range(0, 1000000) do
   set total = total + by_string(STRINGS[i % 40])
-end
 for i in range(0, 1000000) do
   set total = total + by_int((i % 40) * 7)
-end
 for i in range(0, 1000000) do
   set total = total + by_variant(VARIANTS[i % 40])
-end
 for i in range(0, 1000000) do
   set total = total + VARIANTS[i % 40].index()
-end
 print("match dispatch checksum:", get total)

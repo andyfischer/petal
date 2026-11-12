@@ -98,8 +98,6 @@ if !recents_ready then
     # lists), so this is a genuine surprise — show it, keep the buttons live.
     recents_err = error_of(rd) ?? "could not read recents"
     recents_ready = true
-  end
-end
 let projects = recents.projects
 let files = recents.files
 let prs = recents.prs
@@ -113,7 +111,6 @@ enum Row
   project(idx),
   file(idx),
   pr(idx),
-end
 
 let rows = []
 for i in range(0, project_count) do rows = append(rows, Row.project(i)) end
@@ -150,7 +147,6 @@ if project_count == 0 then
   cursor += HINT_H
 else
   for i in range(0, project_count) do row_off = append(row_off, cursor); cursor += ROW_H end
-end
 cursor += GAP
 let file_head = cursor
 cursor += HEAD_H
@@ -158,7 +154,6 @@ if file_count == 0 then
   cursor += HINT_H
 else
   for i in range(0, file_count) do row_off = append(row_off, cursor); cursor += ROW_H end
-end
 cursor += GAP
 let pr_head = cursor
 cursor += HEAD_H
@@ -166,7 +161,6 @@ if pr_count == 0 then
   cursor += HINT_H
 else
   for i in range(0, pr_count) do row_off = append(row_off, cursor); cursor += ROW_H end
-end
 let content_h = cursor
 
 # ── input: keyboard selection over the flat list ──────────────────────────────
@@ -190,9 +184,6 @@ if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), content_rect) then
     if point_in(mouse_x(), mouse_y(), rect(content_rect.x, ry, content_rect.w, ROW_H)) then
       selected = i
       activate = i
-    end
-  end
-end
 # The host spells Return `"return"` (never `"enter"`) — see panel_key_name.
 if key_pressed("return") && row_count > 0 then activate = selected end
 
@@ -208,14 +199,11 @@ if activate >= 0 && activate < row_count then
     when Row.pr(idx) ->
       last_action = "open_pr"
       mutate("open_pr", {number: prs[idx].number})
-  end
-end
 
 # ── input: scrolling (wheel over the content; keys pull the selection back) ───
 if hovered(content_rect) then scroll_px += scroll_y() * 24 end
 if key_moved && row_count > 0 then
   scroll_px = ensure_visible_px(scroll_px, row_off[selected], ROW_H, content_rect.h)
-end
 scroll_px = int(clamp(scroll_px, 0, max(0, content_h - content_rect.h)))
 
 # ── draw: chrome ──────────────────────────────────────────────────────────────
@@ -231,16 +219,13 @@ if bloom.button(open_button, open_label,
                 {variant: "primary", icon: "file", size: FS, id: "open_file"}) then
   last_action = "open_file_dialog"
   mutate("open_file_dialog", {mode: "file"})
-end
 if bloom.button(folder_button, folder_label,
                 {icon: "folder", size: FS, id: "open_folder"}) then
   last_action = "open_file_dialog"
   mutate("open_file_dialog", {mode: "folder"})
-end
 
 if len(recents_err) > 0 then
   draw_text(ellipsize(recents_err, col_w, FS), {x: col_x, y: btn_y + BTN_H + 6}, FS, T.danger)
-end
 
 # ── draw: the three sections ──────────────────────────────────────────────────
 clip(content_rect.x, content_rect.y, content_rect.w, content_rect.h)
@@ -254,9 +239,7 @@ fn draw_heading(label, count, y)
     # library how wide it will be before drawing it.
     let cw = bloom.chip_width("{count}", {size: T.font_sm})
     bloom.chip(col_x + col_w - cw, y - 3, "{count}", {size: T.font_sm, color: T.muted})
-  end
   draw_line({x: col_x, y: y + 20}, {x: col_x + col_w, y: y + 20}, T.outline)
-end
 
 draw_heading("RECENT PROJECTS", project_count, content_top + proj_head - scroll_px)
 draw_heading("RECENT FILES", file_count, content_top + file_head - scroll_px)
@@ -269,21 +252,16 @@ if !recents_ready then
   for i in range(0, 3) do
     bloom.skeleton(rect(col_x, content_top + proj_head + HEAD_H + i * 28 - scroll_px,
                         col_w * 0.6, 16), {phase: i * 0.18})
-  end
-end
 
 # An empty section says so rather than collapsing — on a first launch all three
 # are empty, and three headings over blank space would read as a failure.
 let hint_fg = mix(T.dim, T.bg, 0.35)
 if project_count == 0 && recents_ready then
   draw_text("No recent projects yet", {x: col_x, y: content_top + proj_head + HEAD_H - scroll_px}, FS, hint_fg)
-end
 if file_count == 0 && recents_ready then
   draw_text("No recent files yet", {x: col_x, y: content_top + file_head + HEAD_H - scroll_px}, FS, hint_fg)
-end
 if pr_count == 0 && recents_ready then
   draw_text("No recent pull requests yet", {x: col_x, y: content_top + pr_head + HEAD_H - scroll_px}, FS, hint_fg)
-end
 
 for i in range(0, row_count) do
   let row = rows[i]
@@ -301,10 +279,8 @@ for i in range(0, row_count) do
       draw_rect_rounded(row_r, T.radius_sm, mix(T.bg, T.selection, sel_k))
       # The keyboard focus ring: the selection is where Enter lands.
       draw_rect_outline(row_r, T.accent, int(90 * sel_k))
-    end
     if hov_k > 0.01 then
       draw_rect_rounded(row_r, T.radius_sm, mix(T.bg, T.hover, hov_k))
-    end
     let name_c = if i == selected then T.text else T.muted end
     let tx = row_r.x + 16
     let avail = row_r.w - 32
@@ -313,7 +289,6 @@ for i in range(0, row_count) do
       when Row.project(_) -> T.success
       when Row.file(_) -> P.blue
       when Row.pr(_) -> P.purple
-    end
     draw_rect_rounded(rect(row_r.x + 3, ry + 8, 3, ROW_H - 16), 1, bar_c)
     match row
       when Row.project(idx) ->
@@ -333,10 +308,6 @@ for i in range(0, row_count) do
         draw_text(ellipsize_tail("{pr.repo} #{pr.number}", avail, FS), {x: tx, y: ry + 6}, {size: FS, color: name_c, weight: 500})
         if len(pr.title) > 0 then
           draw_text(ellipsize_tail(pr.title, avail, T.font_sm), {x: tx, y: ry + 25}, T.font_sm, T.dim)
-        end
-    end
-  end
-end
 clip_none()
 
 # A hint bar only while there is something to walk — the keys do nothing on an
@@ -344,7 +315,6 @@ clip_none()
 if row_count > 0 then
   hint_bar(rect(0, h - HB_H, w, HB_H),
            [hint("↑↓/jk", "move"), hint("return", "open")])
-end
 
 # Last, so they land on top of everything: bloom tooltips, which appear only
 # after the pointer has rested on a button for a moment.

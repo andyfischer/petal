@@ -11,10 +11,8 @@ let sin_tab = [0, 195, 383, 556, 707, 831, 924, 981, 1000, 981, 924, 831, 707, 5
 
 fn tcos(angle_idx)
   cos_tab[angle_idx % 32]
-end
 fn tsin(angle_idx)
   sin_tab[angle_idx % 32]
-end
 
 # ── Brush state ──
 state brush_r = 255
@@ -56,16 +54,12 @@ let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
   _draw_line(x1, y1, x2, y2, r, g, b)
-end
 fn draw_line(a, b, color)
   _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
-end
 fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
-end
 fn draw_text(text, pos, size, color)
   _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
-end
 
 # ── Common UI colors ──
 let ui_dim = {r: 140, g: 140, b: 160}
@@ -105,9 +99,6 @@ if !demo_drawn then
         let ipx = cx + int(float(tcos(angle_idx) * inner_r) / 1000.0)
         let ipy = cy + int(float(tsin(angle_idx) * inner_r) / 1000.0)
         points = append(points, {x: ipx, y: ipy, r: min(cr + 60, 255), g: min(cg + 40, 255), b: min(cb + 60, 255), size: dot_size + 2})
-      end
-    end
-  end
 
   # --- Spiral arms radiating outward ---
   for arm in range(0, 6) do
@@ -123,8 +114,6 @@ if !demo_drawn then
       let cb = min(180 + arm * 15, 255)
 
       points = append(points, {x: px, y: py, r: cr, g: cg, b: cb, size: max(2, 6 - int(float(step) / 5.0))})
-    end
-  end
 
   # --- Corner decorations ---
   # Top-left burst
@@ -135,8 +124,6 @@ if !demo_drawn then
       let px = 80 + int(float(tcos(angle_idx) * dist) / 1000.0)
       let py = 120 + int(float(tsin(angle_idx) * dist) / 1000.0)
       points = append(points, {x: px, y: py, r: 255, g: min(100 + d * 30, 255), b: 80, size: max(2, 5 - d)})
-    end
-  end
 
   # Top-right burst
   for i in range(0, 16) do
@@ -146,8 +133,6 @@ if !demo_drawn then
       let px = 720 + int(float(tcos(angle_idx) * dist) / 1000.0)
       let py = 120 + int(float(tsin(angle_idx) * dist) / 1000.0)
       points = append(points, {x: px, y: py, r: 80, g: min(150 + d * 20, 255), b: 255, size: max(2, 5 - d)})
-    end
-  end
 
   # Bottom-left burst
   for i in range(0, 16) do
@@ -157,8 +142,6 @@ if !demo_drawn then
       let px = 100 + int(float(tcos(angle_idx) * dist) / 1000.0)
       let py = 520 + int(float(tsin(angle_idx) * dist) / 1000.0)
       points = append(points, {x: px, y: py, r: min(200 + d * 15, 255), g: 80, b: min(180 + d * 20, 255), size: max(2, 5 - d)})
-    end
-  end
 
   # Bottom-right burst
   for i in range(0, 16) do
@@ -168,8 +151,6 @@ if !demo_drawn then
       let px = 700 + int(float(tcos(angle_idx) * dist) / 1000.0)
       let py = 520 + int(float(tsin(angle_idx) * dist) / 1000.0)
       points = append(points, {x: px, y: py, r: 50, g: min(200 + d * 15, 255), b: min(130 + d * 30, 255), size: max(2, 5 - d)})
-    end
-  end
 
   # --- Diamond lattice pattern around the mandala ---
   for i in range(0, 12) do
@@ -177,8 +158,6 @@ if !demo_drawn then
     # Top edge diamonds
     points = append(points, {x: 200 + offset * 2, y: 90, r: 255, g: 200, b: 100, size: 3})
     points = append(points, {x: 200 + offset * 2, y: 580, r: 100, g: 200, b: 255, size: 3})
-  end
-end
 
 # ── Color selection via number keys ──
 if key_pressed("1") then selected_color = 0 end
@@ -200,15 +179,12 @@ brush_b = sel.color.b
 # Brush size controls
 if key_pressed("equals") then
   brush_size = min(brush_size + 2, 40)
-end
 if key_pressed("minus") then
   brush_size = max(brush_size - 2, 2)
-end
 
 # Clear canvas
 if key_pressed("c") then
   points = []
-end
 
 # Draw when mouse is held (only below toolbar)
 if mouse_down(0) then
@@ -222,9 +198,6 @@ if mouse_down(0) then
         b: brush_b,
         size: brush_size
       })
-    end
-  end
-end
 
 # ── Render ──
 
@@ -241,15 +214,11 @@ for gx in range(0, 20) do
     let doty = toolbar_h + 10 + gy * 40
     if doty > toolbar_h then
       draw_circle(cx: dotx, cy: doty, radius: 1, r: 35, g: 35, b: 45)
-    end
-  end
-end
 
 # Draw all stored points
 for i in range(0, len(points)) do
   let p = points[i]
   draw_circle(cx: p.x, cy: p.y, radius: p.size, r: p.r, g: p.g, b: p.b)
-end
 
 # Draw cursor preview (only below toolbar)
 if mouse_y() > toolbar_h then
@@ -257,7 +226,6 @@ if mouse_y() > toolbar_h then
   draw_circle(cx: mouse_x(), cy: mouse_y(), radius: brush_size + 2, r: min(brush_r + 30, 255), g: min(brush_g + 30, 255), b: min(brush_b + 30, 255))
   # Inner brush
   draw_circle(cx: mouse_x(), cy: mouse_y(), radius: brush_size, r: brush_r, g: brush_g, b: brush_b)
-end
 
 # ── Toolbar ──
 
@@ -280,11 +248,9 @@ for ci in range(0, len(palette)) do
   # Selection highlight
   if ci == selected_color then
     draw_rect(x: sx - 2, y: sy - 2, w: 24, h: 24, r: 220, g: 220, b: 255)
-  end
 
   # Swatch
   draw_rect(x: sx, y: sy, w: 20, h: 20, r: c.color.r, g: c.color.g, b: c.color.b)
-end
 
 # Separator
 draw_rect(x: 430, y: 6, w: 2, h: 38, r: 50, g: 50, b: 70)

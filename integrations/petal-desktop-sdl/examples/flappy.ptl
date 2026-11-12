@@ -21,25 +21,21 @@ let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
   _draw_line(x1, y1, x2, y2, r, g, b)
-end
 fn draw_line(a, b, color)
   _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
-end
 fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
-end
 fn draw_text(text, pos, size, color)
   _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
-end
 
 # Colors
-let white = { r: 255, g: 255, b: 255 }
-let black = { r: 0, g: 0, b: 0 }
-let dark_gray = { r: 50, g: 50, b: 50 }
-let light_gray = { r: 200, g: 200, b: 200 }
-let dark_red = { r: 80, g: 0, b: 0 }
-let red = { r: 255, g: 60, b: 60 }
-let grass_green = { r: 60, g: 140, b: 35 }
+let white = {r: 255, g: 255, b: 255}
+let black = {r: 0, g: 0, b: 0}
+let dark_gray = {r: 50, g: 50, b: 50}
+let light_gray = {r: 200, g: 200, b: 200}
+let dark_red = {r: 80, g: 0, b: 0}
+let red = {r: 255, g: 60, b: 60}
+let grass_green = {r: 60, g: 140, b: 35}
 
 # Game state
 state bird_y = 300.0
@@ -57,13 +53,12 @@ state clouds_init = false
 if !clouds_init then
   clouds_init = true
   clouds = [
-    { x: 100.0, y: 60, size: 40 },
-    { x: 300.0, y: 100, size: 30 },
-    { x: 520.0, y: 45, size: 50 },
-    { x: 700.0, y: 120, size: 35 },
-    { x: 180.0, y: 160, size: 25 }
+    {x: 100.0, y: 60, size: 40},
+    {x: 300.0, y: 100, size: 30},
+    {x: 520.0, y: 45, size: 50},
+    {x: 700.0, y: 120, size: 35},
+    {x: 180.0, y: 160, size: 25}
   ]
-end
 
 frame += 1
 let delta = dt()
@@ -80,14 +75,11 @@ if game_over then
     game_over = false
     started = false
     pipe_timer = 0.0
-  end
-end
 
 if !game_over then
   if flap then
     started = true
     bird_vy = FLAP_STRENGTH
-  end
 
   if started then
     bird_vy += GRAVITY * delta
@@ -97,10 +89,9 @@ if !game_over then
     if pipe_timer > 1.6 then
       pipe_timer = 0.0
       let gap_y = int(random(120.0, float(SH - GROUND_H - 120 - PIPE_GAP)))
-      pipes = append(pipes, { x: float(SW), gap_y: gap_y, scored: false })
-    end
+      pipes = append(pipes, {x: float(SW), gap_y: gap_y, scored: false})
 
-    pipes = map(pipes, fn(p) -> { x: p.x - PIPE_SPEED * delta, gap_y: p.gap_y, scored: p.scored })
+    pipes = map(pipes, fn(p) -> {x: p.x - PIPE_SPEED * delta, gap_y: p.gap_y, scored: p.scored})
 
     pipes = filter(pipes, fn(p) -> p.x > float(-PIPE_WIDTH - 10))
 
@@ -108,36 +99,27 @@ if !game_over then
       let p = pipes[i]
       if !p.scored && int(p.x) + PIPE_WIDTH < BIRD_X then
         score += 1
-        pipes[i] = { x: p.x, gap_y: p.gap_y, scored: true }
-      end
-    end
+        pipes[i] = {x: p.x, gap_y: p.gap_y, scored: true}
 
     let bird_top = bird_y - float(BIRD_RADIUS)
     let bird_bottom = bird_y + float(BIRD_RADIUS)
 
     if bird_bottom > float(SH - GROUND_H) || bird_top < 0.0 then
       game_over = true
-    end
 
     for p in pipes do
       let px = int(p.x)
       if BIRD_X + BIRD_RADIUS > px && BIRD_X - BIRD_RADIUS < px + PIPE_WIDTH then
         if bird_top < float(p.gap_y) || bird_bottom > float(p.gap_y + PIPE_GAP) then
           game_over = true
-        end
-      end
-    end
-  end
-end
 
 # Move clouds slowly (parallax)
 clouds = map(clouds, fn(c)
   let nx = c.x - 30.0 * delta
   if nx < -80.0 then
     nx = float(SW + 40)
-  end
-  { x: nx, y: c.y, size: c.size }
-end)
+  {x: nx, y: c.y, size: c.size}
+)
 
 # ====== DRAWING ======
 
@@ -153,7 +135,6 @@ for i in range(0, 12) do
   let g = 140 + i * 5
   let b = 220 - i * 8
   draw_rect(x: 0, y: band_y, w: SW, h: band_h, r: r, g: g, b: b)
-end
 
 # Distant hills (background layer)
 # Hill 1
@@ -163,7 +144,6 @@ for hx in range(0, 20) do
   let hill_h = 40 + int(abs(float(10 - hx)) * 3.0)
   let hy = SH - GROUND_H - hill_h + 30
   draw_rect(x: hx_pos, y: hy, w: 52, h: hill_h + 10, r: 120, g: 180, b: 100)
-end
 
 # Clouds
 for c in clouds do
@@ -178,7 +158,6 @@ for c in clouds do
   draw_circle(cx: cx + 8, cy: cy - 5, radius: sz - 5, r: 255, g: 255, b: 255)
   # Slight shadow underneath
   draw_circle(cx, cy: cy + 8, radius: sz - 5, r: 230, g: 240, b: 250)
-end
 
 # Pipes with caps and gradient shading
 for p in pipes do
@@ -215,7 +194,6 @@ for p in pipes do
   draw_rect_outline(cap_x, bottom_y, PIPE_CAP_W, PIPE_CAP_H, 40, 110, 25)
   # Outline for body
   draw_rect_outline(px, bottom_y + PIPE_CAP_H, PIPE_WIDTH, bottom_h - PIPE_CAP_H, 40, 110, 25)
-end
 
 # Ground with grass and dirt layers
 # Dirt base
@@ -231,7 +209,6 @@ for gx in range(0, 40) do
   let gx_pos = gx * 20 + 5
   let tuft_h = 6 + (gx % 3) * 3
   draw_rect(x: gx_pos, y: SH - GROUND_H - tuft_h, w: 4, h: tuft_h + 2, r: 70, g: 180, b: 45)
-end
 # Ground line
 draw_line({x: 0, y: SH - GROUND_H}, {x: SW, y: SH - GROUND_H}, grass_green)
 # Dirt texture dots
@@ -239,7 +216,6 @@ for dx in range(0, 16) do
   let dx_pos = dx * 50 + 20
   draw_circle(cx: dx_pos, cy: SH - 35, radius: 3, r: 140, g: 105, b: 50)
   draw_circle(cx: dx_pos + 25, cy: SH - 20, radius: 2, r: 140, g: 105, b: 50)
-end
 
 # Bird with wing animation and more detail
 let bird_yi = int(bird_y)
@@ -261,8 +237,6 @@ if started && !game_over then
     wing_offset = 0
   else
     wing_offset = 6
-  end
-end
 # Wing shape (small ellipse approximation)
 draw_circle(cx: BIRD_X - 8, cy: bird_yi + wing_offset, radius: 8, r: 230, g: 190, b: 30)
 draw_circle(cx: BIRD_X - 12, cy: bird_yi + wing_offset - 1, radius: 5, r: 240, g: 200, b: 50)
@@ -302,8 +276,6 @@ if game_over then
 
   if frame % 60 < 40 then
     draw_text("Press SPACE to restart", {x: SW / 2 - 140, y: SH / 2 + 40}, 24, light_gray)
-  end
-end
 
 # Start screen
 if !started && !game_over then
@@ -313,5 +285,3 @@ if !started && !game_over then
 
   if frame % 60 < 40 then
     draw_text("Press SPACE to start", {x: SW / 2 - 130, y: SH / 2 + 20}, 24, white)
-  end
-end

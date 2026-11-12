@@ -4,12 +4,9 @@
 
 pub class Circle
   radius: int
-end
 
 fn Circle.area(c: Circle) -> int
   3 * c.radius * c.radius
-end
 
 pub fn Rect.area(r: Rect) -> int
   r.w * r.h
-end

@@ -20,27 +20,22 @@
 # First element, or nil when empty. The complement of the native `last`.
 pub fn first(xs)
   if len(xs) == 0 then nil else xs[0] end
-end
 
 # True when the list (or string) has no elements.
 pub fn is_empty(xs)
   len(xs) == 0
-end
 
 # Sum of a list of numbers; 0 for the empty list.
 pub fn sum(xs)
   reduce(xs, 0, fn(acc, x) acc + x end)
-end
 
 # Product of a list of numbers; 1 for the empty list.
 pub fn product(xs)
   reduce(xs, 1, fn(acc, x) acc * x end)
-end
 
 # Arithmetic mean as a float, or nil for the empty list (no divide by zero).
 pub fn mean(xs)
   if len(xs) == 0 then nil else float(sum(xs)) / len(xs) end
-end
 
 # Smallest element, or nil when empty. Works for any comparable element type.
 pub fn minimum(xs)
@@ -48,8 +43,6 @@ pub fn minimum(xs)
     nil
   else
     reduce(xs, xs[0], fn(acc, x) if x < acc then x else acc end end)
-  end
-end
 
 # Largest element, or nil when empty.
 pub fn maximum(xs)
@@ -57,15 +50,12 @@ pub fn maximum(xs)
     nil
   else
     reduce(xs, xs[0], fn(acc, x) if x > acc then x else acc end end)
-  end
-end
 
 # ── Predicate queries ──────────────────────────────────────────────────────
 
 # How many elements satisfy `pred`.
 pub fn count(xs, pred)
   len(filter(xs, pred))
-end
 
 # `any`, `all` and `find` are native (core/packages/core/src/collections.ptl),
 # so they stop at the deciding element and their callbacks fall under the
@@ -81,14 +71,12 @@ end
 pub fn min_by(xs, key)
   let i = argmin(map(xs, key))
   if i == nil then nil else xs[i] end
-end
 
 # The element whose `key(x)` is largest (the first of equals), or nil when
 # the list is empty.
 pub fn max_by(xs, key)
   let i = argmax(map(xs, key))
   if i == nil then nil else xs[i] end
-end
 
 # The `k` largest elements, largest first — by `key(x)` when a key is given,
 # by the elements themselves (numbers) when not. Fewer than `k` when the list
@@ -96,32 +84,27 @@ end
 pub fn top_k(xs, k, key = nil)
   let scores = if key == nil then xs else map(xs, key) end
   map(top_indices(scores, k), fn(i) xs[i] end)
-end
 
 # A record of lists: each element goes into the group named by `key(x)`.
 # Groups are in the order their key first appears, each in list order. A key
 # that is not a string is named by its `str()`.
 pub fn group_by(xs, key)
   group_by_keys(xs, map(xs, key))
-end
 
 # `f` of every element, with the lists it returns joined end to end:
 # `flat(map(xs, f))`.
 pub fn flat_map(xs, f)
   flat(map(xs, f))
-end
 
 # ── Sublists ───────────────────────────────────────────────────────────────
 
 # The first `n` elements, clamped to the list bounds (never errors).
 pub fn take(xs, n)
   slice(xs, 0, max(0, min(n, len(xs))))
-end
 
 # Everything after the first `n` elements, clamped to the list bounds.
 pub fn drop(xs, n)
   slice(xs, max(0, min(n, len(xs))), len(xs))
-end
 
 # ── Ragged records ─────────────────────────────────────────────────────────
 #
@@ -134,21 +117,18 @@ end
 # which is the one case `rec[key] ?? false` cannot tell apart.
 pub fn has_field(rec, key)
   contains(keys(rec), key)
-end
 
 # Field `key` of `rec`, or `fallback` when the record does not carry it (or
 # carries it as nil). The named spelling of `rec[key] ?? fallback`, useful
 # when the key is computed.
 pub fn field(rec, key, fallback)
   rec[key] ?? fallback
-end
 
 # ── Numbers ────────────────────────────────────────────────────────────────
 
 # Clamp a number to the 0..1 range — the common `clamp(x, 0, 1)` shorthand.
 pub fn clamp01(x)
   clamp(x, 0, 1)
-end
 
 # ── Text ───────────────────────────────────────────────────────────────────
 
@@ -160,8 +140,6 @@ pub fn plural(n, one, many = nil)
     "1 {one}"
   else
     "{commas(n)} {many ?? one ++ "s"}"
-  end
-end
 
 # A list as prose: "a", "a and b", "a, b and c"; "" for the empty list.
 # `word` replaces "and" (`list_and(xs, "or")`).
@@ -173,5 +151,3 @@ pub fn list_and(xs, word = "and")
     str(xs[0])
   else
     join(slice(xs, 0, n - 1), ", ") ++ " {word} " ++ str(xs[n - 1])
-  end
-end

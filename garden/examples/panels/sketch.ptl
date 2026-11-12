@@ -27,7 +27,6 @@ for i in range(0, n) do
   let bh = int(mag * float(h) * 0.45)
   let bx = i * bw
   draw_rect(x: bx + 2, y: h - bh, w: bw - 4, h: bh, r: 70, g: int(140.0 + mag * 90.0), b: 220)
-end
 
 # A circle orbiting the center, trailed by a line back to it.
 let cx = int(float(w) * 0.5)

@@ -21,12 +21,10 @@ let delta = dt()
 if len(cells) == 0 then
   for i in range(0, num_cells) do
     cells = append(cells, 0)
-  end
   # Single cell in the middle
   cells[num_cells / 2] = 1
   next_row = 0
   history = []
-end
 
 # Decode rule number into 8-bit lookup
 fn apply_rule(left, center, right, rule)
@@ -36,9 +34,7 @@ fn apply_rule(left, center, right, rule)
   let result = 0
   for i in range(0, index) do
     r = r / 2
-  end
   r % 2
-end
 
 # Generate rows at speed
 let rows_per_frame = 3
@@ -48,7 +44,6 @@ for step in range(0, rows_per_frame) do
     let row_copy = []
     for c in cells do
       row_copy = append(row_copy, c)
-    end
     history = append(history, row_copy)
 
     # Generate next row
@@ -58,11 +53,8 @@ for step in range(0, rows_per_frame) do
       let center = cells[i]
       let right = cells[(i + 1) % num_cells]
       new_cells = append(new_cells, apply_rule(left, center, right, rule: rule_num))
-    end
     cells = new_cells
     next_row += 1
-  end
-end
 
 # When we fill the screen, move to next rule
 if next_row >= max_rows then
@@ -75,8 +67,6 @@ if next_row >= max_rows then
     for i in range(0, len(interesting_rules)) do
       if interesting_rules[i] == rule_num then
         current_idx = i
-      end
-    end
     let next_idx = (current_idx + 1) % len(interesting_rules)
     rule_num = interesting_rules[next_idx]
 
@@ -84,12 +74,9 @@ if next_row >= max_rows then
     cells = []
     for i in range(0, num_cells) do
       cells = append(cells, 0)
-    end
     cells[num_cells / 2] = 1
     history = []
     next_row = 0
-  end
-end
 
 # === Drawing ===
 clear(5, 5, 10)
@@ -109,9 +96,6 @@ for y in range(0, len(history)) do
       let pg = min(255, cg + (y * 2) % 20)
       let pb = min(255, cb)
       draw_rect(x: x * cell_size, y: y * cell_size, w: cell_size - 1, h: cell_size - 1, r: pr, g: pg, b: pb)
-    end
-  end
-end
 
 # HUD
 draw_rect(x: 0, y: 0, w: 200, h: 35, r: 0, g: 0, b: 0)
@@ -141,5 +125,3 @@ for bit in range(0, 8) do
     draw_rect(x: bx + 5, y: 18, w: 5, h: 5, r: cr, g: cg, b: cb)
   else
     draw_rect(x: bx + 5, y: 18, w: 5, h: 5, r: 20, g: 20, b: 20)
-  end
-end

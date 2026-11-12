@@ -3,8 +3,6 @@ fn classify(n)
   if n < 0 then "negative"
   else if n == 0 then "zero"
   else "positive"
-  end
-end
 print(classify(-3))
 print(classify(0))
 print(classify(7))

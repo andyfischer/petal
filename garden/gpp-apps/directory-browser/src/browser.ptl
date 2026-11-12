@@ -80,10 +80,8 @@ if listing_ready then
   if rd.parent != nil then
     has_parent = true
     parent_dir = rd.parent
-  end
   home_dir = rd.home ?? ""
   entries = rd.entries
-end
 
 # The flat row model: an optional ".." row, then the entries.
 let rows = []
@@ -116,7 +114,6 @@ if key_pressed("return") || key_pressed("l") || key_pressed("right") then activa
 let go_dir = ""
 if (key_pressed("h") || key_pressed("left") || key_pressed("backspace") || key_pressed("minus")) && has_parent then
   go_dir = parent_dir
-end
 if key_pressed("backquote") && mod_shift() && len(home_dir) > 0 then go_dir = home_dir end
 
 # ── input: mouse (click selects, double-click activates) ─────────────────────
@@ -126,9 +123,6 @@ if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), content_rect) then
     if point_in(mouse_x(), mouse_y(), rect(0, ry, w, ROW_H)) then
       selected = i
       if click_count() >= 2 then activate = i end
-    end
-  end
-end
 
 # ── the activation itself ────────────────────────────────────────────────────
 if activate >= 0 && activate < row_count && listing_ready then
@@ -138,21 +132,17 @@ if activate >= 0 && activate < row_count && listing_ready then
   else
     last_action = "open_path"
     mutate("open_path", {path: row.path})
-  end
-end
 
 if len(go_dir) > 0 then
   last_action = "chdir"
   dir = go_dir
   selected = 0
   scroll_px = 0
-end
 
 # ── input: scrolling ─────────────────────────────────────────────────────────
 if hovered(content_rect) then scroll_px += scroll_y() * 24 end
 if key_moved && row_count > 0 then
   scroll_px = ensure_visible_px(scroll_px, selected * ROW_H, ROW_H, content_rect.h)
-end
 scroll_px = int(clamp(scroll_px, 0, max(0, content_h - content_rect.h)))
 
 # ── draw ─────────────────────────────────────────────────────────────────────
@@ -168,7 +158,6 @@ else if !listing_ready then
   draw_text("loading…", {x: PAD, y: content_top + 6}, FS, FAINT)
 else if row_count == 0 then
   draw_text("(empty directory)", {x: PAD, y: content_top + 6}, FS, FAINT)
-end
 
 clip(content_rect.x, content_rect.y, content_rect.w, content_rect.h)
 for i in range(0, row_count) do
@@ -181,19 +170,14 @@ for i in range(0, row_count) do
       draw_rect(row_r, SEL)
     else if hovered(row_r) then
       draw_rect(row_r, HOVER)
-    end
     let name_c = MUT
     if i == selected then name_c = TEXT end
     let label = row.name
     if row.is_dir then
       label ++= "/"
       draw_rect(rect(0, ry + 3, 3, ROW_H - 6), BLUE)
-    end
     draw_text(ellipsize_tail(label, w - 2 * PAD, FS), {x: PAD, y: ry + 3}, FS, name_c)
-  end
-end
 clip_none()
 
 if row_count > 0 then
   draw_text_right("j/k move · Enter open · - up · ~ home", w - PAD, h - ROW_H, FS, FAINT)
-end

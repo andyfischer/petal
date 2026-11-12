@@ -4,10 +4,8 @@
 
 fn mix(a, b, c)
   a * 2 + b - c
-end
 
 let acc = 0
 for i in range(0, 300000) do
   acc = acc + mix(i, acc % 97, i % 13)
-end
 print("calls checksum:", acc % 1000000)

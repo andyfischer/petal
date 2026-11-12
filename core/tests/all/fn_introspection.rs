@@ -338,16 +338,16 @@ fn code_outside_the_subset_is_refused_with_a_position() {
     assert_eq!(
         frame(&mut w),
         [
-            "IndexAccess has no GLSL form [line 22, column 60]",
-            "a condition must be a bool, found float (GLSL has no truthiness) [line 25, column 45]",
-            "a string literal has no GLSL form [line 28, column 57]",
-            "param `amount` needs a default (it is the param's default value) [line 31, column 15]",
-            "the function returns the new `fx.color` (vec3), found float [line 34, column 48]",
-            "no GLSL operation between vec3 and vec2 [line 37, column 44]",
+            "IndexAccess has no GLSL form [line 21, column 60]",
+            "a condition must be a bool, found float (GLSL has no truthiness) [line 24, column 45]",
+            "a string literal has no GLSL form [line 27, column 57]",
+            "param `amount` needs a default (it is the param's default value) [line 30, column 15]",
+            "the function returns the new `fx.color` (vec3), found float [line 33, column 48]",
+            "no GLSL operation between vec3 and vec2 [line 36, column 44]",
             // The stand-in refused this one only because it ran offline: in the
             // VM the captured `state` has a value, and it becomes a uniform.
             "ok fx.color = fx.color * params.tint_k * params.amount; { tint_k: 0.5 }",
-            "#error to_glsl: a condition must be a bool, found float (GLSL has no truthiness) [line 25, column 45]",
+            "#error to_glsl: a condition must be a bool, found float (GLSL has no truthiness) [line 24, column 45]",
         ]
     );
 }

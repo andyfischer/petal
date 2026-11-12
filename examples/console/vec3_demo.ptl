@@ -21,12 +21,9 @@ for step in range(0, 16) do
   if pos.y < 0.0 then
     set pos = vec3(x: pos.x, y: -pos.y, z: pos.z)
     set vel = vec3(x: vel.x, y: -vel.y * 0.6, z: vel.z)
-  end
   if step % 3 == 0 then
     let p = get pos
     print("step {step}: pos=({fixed(p.x, 2)}, {fixed(p.y, 2)}, {fixed(p.z, 2)})  speed={fixed(mag(get vel), 2)}")
-  end
-end
 
 print("")
 print("Camera basis looking from eye to target")

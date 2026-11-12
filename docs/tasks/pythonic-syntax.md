@@ -260,7 +260,7 @@ replaced.
 ```petal ignore
 # proposed (today: the same, with `end)` on the last line)
 defer_paint(fn()
-  draw_shadow(r, {radius: t.radius_sm, blur: 14, color: #000000})
+  draw_shadow(r, {radius: t.radius_sm, blur: 14, color: :000000})
   draw_rect_rounded(r, t.radius_sm, tone(t, t.overlay, 0.05), 245)
 )
 ```

@@ -31,8 +31,6 @@ fn build(n)
       weight: i * 0.5,
       tags: [i, i + 1],
     }
-  end
-end
 
 let built = build(N)
 let table = if FREEZE then freeze(built) else built end
@@ -41,6 +39,5 @@ let sum = 0
 for i in range(0, CHURN) do
   let junk = {a: i, b: [i]}
   sum += junk.a
-end
 
 print(len(table), frozen(table), sum)

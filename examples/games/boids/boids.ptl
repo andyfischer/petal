@@ -42,7 +42,6 @@ class Boid
   y: num,
   vx: num,
   vy: num,
-end
 
 # --------------------------------------------------------------- helpers ---
 
@@ -54,24 +53,18 @@ fn hash01(i: num, salt: num) -> num
   var s = ((i + 1) * 2654435761 + salt * 40503 + 1013904223) % 2147483647
   for _round in range(0, 2) do
     set s = (s * s + s * 374761393 + 12345) % 2147483647
-  end
   float(s % 1000003) / 1000003.0
-end
 
 # Shortest signed offset on a wrapped axis of length `size`.
 fn wrap_delta(d: num, size: num) -> num
   if d > size / 2.0 then d - size
   else if d < 0.0 - size / 2.0 then d + size
   else d
-  end
-end
 
 fn wrap_coord(v: num, size: num) -> num
   if v < 0.0 then v + size
   else if v >= size then v - size
   else v
-  end
-end
 
 fn make_boids(n: num) -> list
   for i in range(0, n) do
@@ -83,8 +76,6 @@ fn make_boids(n: num) -> list
       vx: cos(angle) * speed,
       vy: sin(angle) * speed,
     )
-  end
-end
 
 # ------------------------------------------------------------ simulation ---
 
@@ -113,11 +104,9 @@ fn Boid.steer(self: Boid, flock: list) -> Boid
     let dx = if rx > half_w then rx - FIELD_W
     else if rx < 0.0 - half_w then rx + FIELD_W
     else rx
-    end
     let dy = if ry > half_h then ry - FIELD_H
     else if ry < 0.0 - half_h then ry + FIELD_H
     else ry
-    end
     let d2 = dx * dx + dy * dy
     if d2 > 0.0 && d2 < view2 then
       set neighbours = neighbours + 1
@@ -129,9 +118,6 @@ fn Boid.steer(self: Boid, flock: list) -> Boid
         # Push away, weighted by 1/distance so close crowding dominates.
         set sep_x = sep_x - dx / d2
         set sep_y = sep_y - dy / d2
-      end
-    end
-  end
 
   let n = float(neighbours)
   let ax = if neighbours == 0 then 0.0
@@ -139,13 +125,11 @@ fn Boid.steer(self: Boid, flock: list) -> Boid
     (coh_x / n) * COHESION_W
     + (ali_x / n - self.vx) * ALIGNMENT_W
     + sep_x * SEPARATION_W
-  end
   let ay = if neighbours == 0 then 0.0
   else
     (coh_y / n) * COHESION_W
     + (ali_y / n - self.vy) * ALIGNMENT_W
     + sep_y * SEPARATION_W
-  end
 
   let nvx = self.vx + ax
   let nvy = self.vy + ay
@@ -153,7 +137,6 @@ fn Boid.steer(self: Boid, flock: list) -> Boid
   let scale = if speed > MAX_SPEED then MAX_SPEED / speed
   else if speed < MIN_SPEED && speed > 0.0 then MIN_SPEED / speed
   else 1.0
-  end
   let fvx = nvx * scale
   let fvy = nvy * scale
 
@@ -163,11 +146,9 @@ fn Boid.steer(self: Boid, flock: list) -> Boid
     vx: fvx,
     vy: fvy,
   )
-end
 
 fn step(flock: list) -> list
   for b in flock do b.steer(flock) end
-end
 
 # ------------------------------------------------------------- reporting ---
 
@@ -186,7 +167,6 @@ fn cohesion(flock: list) -> num
     set cx = cx + cos(b.x * kx)
     set sy = sy + sin(b.y * ky)
     set cy = cy + cos(b.y * ky)
-  end
   let mx = wrap_coord(atan2(sx / n, cx / n) / kx, FIELD_W)
   let my = wrap_coord(atan2(sy / n, cy / n) / ky, FIELD_H)
 
@@ -195,31 +175,24 @@ fn cohesion(flock: list) -> num
     let dx = wrap_delta(b.x - mx, FIELD_W)
     let dy = wrap_delta(b.y - my, FIELD_H)
     set total = total + sqrt(dx * dx + dy * dy)
-  end
   total / n
-end
 
 fn mean_speed(flock: list) -> num
   var total = 0.0
   for b in flock do
     set total = total + sqrt(b.vx * b.vx + b.vy * b.vy)
-  end
   total / float(len(flock))
-end
 
 fn occupancy(flock: list) -> list
   var counts = for r in range(0, GRID_H) do
     for c in range(0, GRID_W) do 0 end
-  end
   for b in flock do
     let c = int(b.x / FIELD_W * float(GRID_W))
     let r = int(b.y / FIELD_H * float(GRID_H))
     let cc = min(max(c, 0), GRID_W - 1)
     let rr = min(max(r, 0), GRID_H - 1)
     set counts[rr][cc] = counts[rr][cc] + 1
-  end
   get counts
-end
 
 fn render(flock: list) -> nil
   let counts = occupancy(flock)
@@ -228,10 +201,8 @@ fn render(flock: list) -> nil
   for row in counts do
     let cells = for n in row do RAMP[min(n, len(RAMP) - 1)] end
     print("|" ++ join(cells, "") ++ "|")
-  end
   print(border)
   nil
-end
 
 fn report(frame: num, flock: list) -> nil
   render(flock)
@@ -242,7 +213,6 @@ fn report(frame: num, flock: list) -> nil
   )
   print("")
   nil
-end
 
 # ------------------------------------------------------------------ main ---
 
@@ -257,7 +227,5 @@ for frame in range(1, FRAMES + 1) do
   set flock = step(get flock)
   if frame % SAMPLE_EVERY == 0 then
     report(frame, get flock)
-  end
-end
 
 print("done.")

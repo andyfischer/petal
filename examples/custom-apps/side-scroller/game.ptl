@@ -41,7 +41,6 @@ enum Phase
   Complete,
   GameOver,
   AllDone,
-end
 
 # ----------------------------- STATE ----------------------------------
 #
@@ -100,26 +99,20 @@ state var toast_t      = 0.0
 
 fn clamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
-end
 fn approach(cur: num, target: num, step: num) -> num
   if cur < target then
     min(cur + step, target)
   else
     max(cur - step, target)
-  end
-end
 fn aabb(ax: num, ay: num, aw: num, ah: num, bx: num, by: num, bw: num, bh: num) -> bool
   ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
-end
 
 # String -> float / int parse helpers used by the level loader.
 # Petal's int()/float() work on numeric strings, so we just delegate.
 fn parse_int(s: string) -> int
   int(s)
-end
 fn parse_float(s: string) -> float
   float(s)
-end
 
 # ----------------------------- LEVEL I/O ------------------------------
 
@@ -137,7 +130,6 @@ fn empty_level() -> record
     enemies: [],
     checks: []
   }
-end
 
 fn parse_level(src: string) -> record
   let L = empty_level()
@@ -204,9 +196,7 @@ fn parse_level(src: string) -> record
     else
       # unknown tag: ignore the line
     end
-  end
   L
-end
 
 fn load_level(idx) -> record
   let path = level_files[idx]
@@ -218,8 +208,6 @@ fn load_level(idx) -> record
     L
   else
     parse_level(src)
-  end
-end
 
 # ----------------------------- RESET ----------------------------------
 
@@ -237,7 +225,6 @@ fn respawn_player()
   set invul = INVUL_MAX
   set squash = 1.0
   set stretch = 1.0
-end
 
 fn restart_level()
   set level = load_level(level_idx)
@@ -250,12 +237,10 @@ fn restart_level()
   set cam_x = 0.0
   set shake = 0.0
   respawn_player()
-end
 
 fn say(msg: string)
   set toast = msg
   set toast_t = 1.6
-end
 
 # ----------------------------- INPUT FRAME ----------------------------
 
@@ -267,7 +252,6 @@ set toast_t = max(0.0, toast_t - dts)
 # Lazy-load the level on the way into Playing.
 if phase == Phase.Playing && level_loaded != level_idx then
   restart_level()
-end
 
 # ===================== TITLE SCREEN ==================================
 
@@ -279,8 +263,6 @@ if phase == Phase.Title then
     phase = Phase.Playing
     phase_t = 0.0
     restart_level()
-  end
-end
 
 # ===================== PLAYING =======================================
 
@@ -307,7 +289,6 @@ if phase == Phase.Playing then
     set vx = approach(cur: vx, target: 0.0, step: fr * dts)
   else
     set vx = approach(cur: vx, target: target_vx, step: accel * dts)
-  end
 
   # jump
   if jump_buf > 0.0 && (on_ground || coyote > 0.0) then
@@ -330,8 +311,6 @@ if phase == Phase.Playing then
         size: random(2.0, 5.0)
       })
       i = i + 1
-    end
-  end
 
   # variable jump height
   if !jump_held && vy < 0.0 then set vy = vy * JUMP_CUT end
@@ -349,8 +328,6 @@ if phase == Phase.Playing then
     if aabb(ax: new_px, ay: py, aw: pw, ah: ph, bx: plx, by: ply, bw: plw, bh: plh) then
       if vx > 0.0 then new_px = plx - pw else if vx < 0.0 then new_px = plx + plw end
       set vx = 0.0
-    end
-  end
   set px = new_px
 
   # --- vertical move + collision ---
@@ -376,19 +353,14 @@ if phase == Phase.Playing then
               size: random(2.0, 4.0)
             })
             i = i + 1
-          end
           if vy > 500.0 then set shake = max(shake, 6.0) end
           set squash = 0.75
           set stretch = 1.15
-        end
         set on_ground = true
         set vy = 0.0
       else if vy < 0.0 then
         new_py = ply + plh
         set vy = 0.0
-      end
-    end
-  end
   # one-way platforms — only collide when falling and previously above
   for o in level.oneways do
     let ox = float(o.x); let oy = float(o.y); let ow = float(o.w)
@@ -399,9 +371,6 @@ if phase == Phase.Playing then
         set on_ground = true
         set squash = 0.85
         set stretch = 1.07
-      end
-    end
-  end
   set py = new_py
 
   # coyote time
@@ -426,10 +395,6 @@ if phase == Phase.Playing then
             size: random(2.0, 4.0)
           })
           i = i + 1
-        end
-      end
-    end
-  end
 
   # --- enemies update ---
   for e in level.enemies do
@@ -441,7 +406,6 @@ if phase == Phase.Playing then
       if e.patrol > 0.0 && abs(e.x - e.origin) > e.patrol then
         e.vx = -e.vx
         e.x = e.x + e.vx * dts
-      end
       # collision with player
       if invul <= 0.0 && aabb(ax: px, ay: py, aw: pw, ah: ph, bx: e.x, by: e.y, bw: 24.0, bh: 22.0) then
         if vy > 50.0 && py + ph - 14.0 < e.y then
@@ -460,7 +424,6 @@ if phase == Phase.Playing then
               size: random(3.0, 6.0)
             })
             i = i + 1
-          end
         else
           # got hit
           set invul = INVUL_MAX
@@ -468,8 +431,6 @@ if phase == Phase.Playing then
           set shake = 14.0
           set vx = float(-facing) * 220.0
           set vy = -260.0
-        end
-      end
     else if e.kind == "jumper" then
       # sinusoidal bounce around its origin_y
       let bounce = abs(sin(e.anim * 4.0)) * 60.0
@@ -491,17 +452,12 @@ if phase == Phase.Playing then
               size: random(3.0, 6.0)
             })
             i = i + 1
-          end
         else
           set invul = INVUL_MAX
           lives = lives - 1
           set shake = 14.0
           set vx = float(-facing) * 220.0
           set vy = -260.0
-        end
-      end
-    end
-  end
 
   # --- spikes ---
   for s in level.spikes do
@@ -513,9 +469,6 @@ if phase == Phase.Playing then
         set vy = -360.0
         set vx = float(-facing) * 200.0
         set floats = append(floats, {x: px + pw / 2.0, y: py, vy: -40.0, life: 1.0, text: "OUCH"})
-      end
-    end
-  end
 
   # --- checkpoints ---
   for ck in level.checks do
@@ -523,9 +476,6 @@ if phase == Phase.Playing then
       if checkpoint == nil || float(ck.x) > checkpoint.x then
         set checkpoint = {x: float(ck.x), y: float(ck.y) - float(PLAYER_H)}
         say("Checkpoint!")
-      end
-    end
-  end
 
   # --- goal ---
   let gx = level.goal.x
@@ -535,11 +485,8 @@ if phase == Phase.Playing then
     phase_t = 0.0
     if level_timer < best_times[level_idx] then
       best_times[level_idx] = level_timer
-    end
     if coins_got > best_coins[level_idx] then
       best_coins[level_idx] = coins_got
-    end
-  end
 
   # --- fall off world ---
   if py > 700.0 && phase == Phase.Playing then
@@ -547,24 +494,20 @@ if phase == Phase.Playing then
     lives = lives - 1
     set shake = 14.0
     respawn_player()
-  end
 
   # --- check death ---
   if lives <= 0 && phase == Phase.Playing then
     phase = Phase.GameOver
     phase_t = 0.0
-  end
 
   set invul = max(0.0, invul - dts)
 
   # --- restart ---
   if key_pressed("r") then
     restart_level()
-  end
   if key_pressed("escape") || key_pressed("p") then
     phase = Phase.Paused
     phase_t = 0.0
-  end
 
   # --- camera follow ---
   let target = px + pw / 2.0 - float(SCREEN_W) / 2.0
@@ -575,7 +518,6 @@ if phase == Phase.Playing then
   # squash/stretch decay
   set squash = approach(cur: squash, target: 1.0, step: 4.0 * dts)
   set stretch = approach(cur: stretch, target: 1.0, step: 4.0 * dts)
-end
 
 # ===================== PAUSE / COMPLETE / OVER =======================
 
@@ -583,10 +525,8 @@ if phase == Phase.Paused then
   if key_pressed("escape") || key_pressed("p") then
     phase = Phase.Playing
     phase_t = 0.0
-  end
   if key_pressed("r") then phase = Phase.Playing; restart_level() end
   if key_pressed("q") then phase = Phase.Title; phase_t = 0.0 end
-end
 
 if phase == Phase.Complete then
   if phase_t > 0.6 then
@@ -599,11 +539,7 @@ if phase == Phase.Complete then
       else
         phase = Phase.AllDone
         phase_t = 0.0
-      end
-    end
     if key_pressed("q") then phase = Phase.Title; phase_t = 0.0 end
-  end
-end
 
 if phase == Phase.GameOver then
   if phase_t > 0.6 then
@@ -613,22 +549,16 @@ if phase == Phase.GameOver then
       phase_t = 0.0
       set checkpoint = nil
       restart_level()
-    end
     if key_pressed("q") then
       lives = 3
       phase = Phase.Title
       phase_t = 0.0
-    end
-  end
-end
 
 if phase == Phase.AllDone then
   if key_pressed("return") || key_pressed("q") then
     phase = Phase.Title
     lives = 3
     phase_t = 0.0
-  end
-end
 
 # ===================== UPDATE: PARTICLES, FLOATS, SHAKE ==============
 
@@ -642,12 +572,12 @@ set particles = map(particles, fn(p)
     life: p.life - dts,
     size: p.size
   }
-end)
+)
 set particles = filter(particles, fn(p) -> p.life > 0.0)
 
 set floats = map(floats, fn(f)
   {x: f.x, y: f.y + f.vy * dts, vy: f.vy * 0.92, life: f.life - dts, text: f.text}
-end)
+)
 set floats = filter(floats, fn(f) -> f.life > 0.0)
 
 if shake > 0.0 then
@@ -657,7 +587,6 @@ if shake > 0.0 then
 else
   shake_dx = 0.0
   shake_dy = 0.0
-end
 
 # =====================================================================
 #                              DRAWING
@@ -665,24 +594,18 @@ end
 
 fn cam_offset_x() -> int
   int(get cam_x - shake_dx)
-end
 fn cam_offset_y() -> int
   int(0.0 - shake_dy)
-end
 
 fn draw_at(x: num, y: num, w: num, h: num, r: num, g: num, b: num)
   draw_rect(x - cam_offset_x(), y - cam_offset_y(), w, h, r, g, b)
-end
 fn circ_at(x: num, y: num, rad: num, r: num, g: num, b: num)
   draw_circle(cx: x - cam_offset_x(), cy: y - cam_offset_y(), radius: rad, r: r, g: g, b: b)
-end
 fn line_at(x1: num, y1: num, x2: num, y2: num, r: num, g: num, b: num)
   draw_line(x1 - cam_offset_x(), y1 - cam_offset_y(),
     x2 - cam_offset_x(), y2 - cam_offset_y(), r, g, b)
-end
 fn text_at(t: string, x: num, y: num, sz: num, r: num, g: num, b: num)
   draw_text(t, x: x - cam_offset_x(), y: y - cam_offset_y(), size: sz, r: r, g: g, b: b)
-end
 
 fn draw_sky()
   # gradient
@@ -695,8 +618,6 @@ fn draw_sky()
     let b = int(float(get level.bg_b) * (1.0 - t) + 200.0 * t)
     draw_rect(x: 0, y: sy, w: SCREEN_W, h: 55, r: r, g: g, b: b)
     row = row + 1
-  end
-end
 
 fn draw_parallax_mountains()
   # two layers, different parallax speeds
@@ -709,7 +630,6 @@ fn draw_parallax_mountains()
     let r = 60; let g = 80; let b = 110
     draw_circle(cx: mx + 110, cy: my + mh + 30, radius: mh + 30, r: r, g: g, b: b)
     m = m + 1
-  end
   let off2 = int(get cam_x * 0.4)
   let n = 0
   while n < 12 do
@@ -718,8 +638,6 @@ fn draw_parallax_mountains()
     let ny = 510 - nh
     draw_circle(cx: nx + 90, cy: ny + nh + 25, radius: nh + 25, r: 90, g: 110, b: 140)
     n = n + 1
-  end
-end
 
 fn draw_clouds()
   let off = int(get cam_x * 0.1) + frame_count() / 4
@@ -732,8 +650,6 @@ fn draw_clouds()
     draw_circle(cx: cx + cw * 2 / 3, cy: cy + 8, radius: cw / 4, r: 235, g: 240, b: 250)
     draw_circle(cx: cx + cw / 2, cy: cy, radius: cw / 3, r: 245, g: 248, b: 252)
     c = c + 1
-  end
-end
 
 fn draw_platforms()
   for p in get level.plats do
@@ -749,8 +665,6 @@ fn draw_platforms()
       let bx = p.x + i * 24 + 4
       line_at(x1: bx, y1: p.y, x2: bx - 1, y2: p.y - 4, r: 70, g: 200, b: 70)
       i = i + 1
-    end
-  end
   for o in get level.oneways do
     # wooden plank
     draw_at(x: o.x, y: o.y, w: o.w, h: 6, r: 200, g: 160, b: 90)
@@ -759,9 +673,6 @@ fn draw_platforms()
     while i < o.w / 30 do
       line_at(x1: o.x + i * 30 + 10, y1: o.y, x2: o.x + i * 30 + 10, y2: o.y + 6, r: 130, g: 90, b: 50)
       i = i + 1
-    end
-  end
-end
 
 fn draw_spikes()
   for s in get level.spikes do
@@ -773,8 +684,6 @@ fn draw_spikes()
     line_at(x1: bx + 2, y1: by + 16, x2: bx + 14, y2: by + 16, r: 220, g: 220, b: 230)
     line_at(x1: bx + 12, y1: by + 16, x2: bx + 18, y2: by + 4, r: 200, g: 200, b: 210)
     line_at(x1: bx + 18, y1: by + 4, x2: bx + 22, y2: by + 16, r: 200, g: 200, b: 210)
-  end
-end
 
 fn draw_coins()
   let fc = frame_count()
@@ -790,10 +699,6 @@ fn draw_coins()
       if sp < 10 then
         line_at(x1: c.x + 7, y1: cy - 7, x2: c.x + 13, y2: cy - 7, r: 255, g: 255, b: 200)
         line_at(x1: c.x + 10, y1: cy - 10, x2: c.x + 10, y2: cy - 4, r: 255, g: 255, b: 200)
-      end
-    end
-  end
-end
 
 fn draw_checks()
   for ck in get level.checks do
@@ -806,8 +711,6 @@ fn draw_checks()
     let flag_g = if lit then 80  else 100 end
     let flag_b = if lit then 90  else 100 end
     draw_at(x: ck.x + 9, y: ck.y - 30, w: 14, h: 9, r: flag_r, g: flag_g, b: flag_b)
-  end
-end
 
 fn draw_enemies()
   let fc = frame_count()
@@ -843,9 +746,6 @@ fn draw_enemies()
       draw_at(x: int(e.x) + 14, y: by + 8, w: 4, h: 5, r: 255, g: 255, b: 255)
       draw_at(x: int(e.x) + 7, y: by + 10, w: 2, h: 3, r: 30, g: 30, b: 30)
       draw_at(x: int(e.x) + 15, y: by + 10, w: 2, h: 3, r: 30, g: 30, b: 30)
-    end
-  end
-end
 
 fn draw_goal()
   let gx = int(get level.goal.x)
@@ -863,8 +763,6 @@ fn draw_goal()
     let fy = gy - 76 + int(sin(float(frame_count()) * 0.1 + float(f) * 0.3) * 1.5)
     draw_at(x: fx, y: fy, w: 1, h: 16, r: r, g: 60, b: 60)
     f = f + 1
-  end
-end
 
 fn draw_player()
   let bx = int(get px) - cam_offset_x()
@@ -899,15 +797,12 @@ fn draw_player()
     else
       draw_rect(x: bx + dx + 3, y: by + dy + sh - 8, w: 6, h: 8, r: 60, g: 60, b: 130)
       draw_rect(x: bx + dx + sw - 9, y: by + dy + sh - 6, w: 6, h: 6, r: 60, g: 60, b: 130)
-    end
   else
     draw_rect(x: bx + dx + 3, y: by + dy + sh - 6, w: 6, h: 6, r: 60, g: 60, b: 130)
     draw_rect(x: bx + dx + sw - 9, y: by + dy + sh - 6, w: 6, h: 6, r: 60, g: 60, b: 130)
-  end
   # shoes
   draw_rect(x: bx + dx + 2, y: by + dy + sh - 1, w: 8, h: 3, r: 160, g: 50, b: 40)
   draw_rect(x: bx + dx + sw - 10, y: by + dy + sh - 1, w: 8, h: 3, r: 160, g: 50, b: 40)
-end
 
 fn draw_particles()
   for p in get particles do
@@ -918,8 +813,6 @@ fn draw_particles()
     if p.kind == "puff"  then r = 200; g = 200; b = 220 end
     let life_t = p.life
     circ_at(x: int(p.x), y: int(p.y), rad: max(1, int(p.size * min(1.0, life_t * 2.0))), r: r, g: g, b: b)
-  end
-end
 
 fn draw_floats()
   for f in get floats do
@@ -928,8 +821,6 @@ fn draw_floats()
     let g = int(240.0 * alpha)
     let b = int(120.0 * alpha)
     text_at(t: f.text, x: int(f.x), y: int(f.y), sz: 18, r: r + 30, g: g, b: b)
-  end
-end
 
 fn draw_hud()
   # top bar
@@ -948,9 +839,7 @@ fn draw_hud()
       draw_circle(cx: hx + 4, cy: 18, radius: 6, r: 60, g: 25, b: 30)
       draw_circle(cx: hx + 12, cy: 18, radius: 6, r: 60, g: 25, b: 30)
       draw_rect(x: hx + 1, y: 17, w: 16, h: 8, r: 60, g: 25, b: 30)
-    end
     h = h + 1
-  end
   # coin count
   draw_circle(cx: 110, cy: 18, radius: 8, r: 255, g: 210, b: 40)
   draw_circle(cx: 108, cy: 16, radius: 4, r: 255, g: 240, b: 130)
@@ -967,8 +856,6 @@ fn draw_hud()
   if get toast_t > 0.0 then
     draw_rect(x: SCREEN_W / 2 - 100, y: 50, w: 200, h: 28, r: 0, g: 0, b: 0)
     draw_text(get toast, x: SCREEN_W / 2 - 90, y: 54, size: 20, r: 255, g: 230, b: 120)
-  end
-end
 
 # ================ TITLE / OVERLAYS ====================================
 
@@ -983,7 +870,6 @@ fn draw_title()
     let bright = if tw < 30 then 100 + tw * 4 else 220 - (tw - 30) * 4 end
     draw_rect(x: sx, y: sy, w: 2, h: 2, r: bright, g: bright, b: bright + 20)
     s = s + 1
-  end
   # title text wobble
   let bob = int(sin(title_t * 2.0) * 4.0)
   draw_text("PETAL  RUNNER", x: SCREEN_W / 2 - 130, y: 100 + bob, size: 48, r: 255, g: 230, b: 120)
@@ -1003,18 +889,14 @@ fn draw_title()
       let mins = int(bt) / 60
       let secs = int(bt) % 60
       draw_text("best {mins}:{secs}  *{best_coins[i]}", x: SCREEN_W / 2 + 60, y: y, size: 18, r: 220, g: 200, b: 100)
-    end
     i = i + 1
-  end
   draw_text("up/down to choose, ENTER to play", x: SCREEN_W / 2 - 130, y: 480, size: 18, r: 180, g: 180, b: 220)
   draw_text("R restart   ESC pause   arrows/WASD move   SPACE jump", x: SCREEN_W / 2 - 220, y: 510, size: 16, r: 150, g: 160, b: 200)
-end
 
 fn draw_pause_overlay()
   draw_rect(x: 0, y: 0, w: SCREEN_W, h: SCREEN_H, r: 0, g: 0, b: 0)
   draw_text("PAUSED", x: SCREEN_W / 2 - 60, y: SCREEN_H / 2 - 60, size: 36, r: 240, g: 240, b: 255)
   draw_text("ESC resume   R restart   Q quit", x: SCREEN_W / 2 - 140, y: SCREEN_H / 2, size: 20, r: 200, g: 200, b: 230)
-end
 
 fn draw_complete_overlay()
   let alpha = min(1.0, phase_t * 2.0)
@@ -1028,13 +910,11 @@ fn draw_complete_overlay()
   draw_text("time  {mins}:{secs}.{cents}", x: SCREEN_W / 2 - 70, y: 280, size: 22, r: 220, g: 220, b: 240)
   draw_text("coins {get coins_got}", x: SCREEN_W / 2 - 50, y: 310, size: 22, r: 255, g: 220, b: 120)
   draw_text("ENTER to continue   Q for menu", x: SCREEN_W / 2 - 140, y: 380, size: 18, r: 180, g: 180, b: 220)
-end
 
 fn draw_gameover_overlay()
   draw_rect(x: 0, y: 0, w: SCREEN_W, h: SCREEN_H, r: 0, g: 0, b: 0)
   draw_text("GAME OVER", x: SCREEN_W / 2 - 110, y: 200, size: 40, r: 220, g: 80, b: 80)
   draw_text("ENTER to retry   Q for menu", x: SCREEN_W / 2 - 130, y: 280, size: 20, r: 220, g: 220, b: 240)
-end
 
 fn draw_alldone_overlay()
   clear(20, 30, 50)
@@ -1049,9 +929,7 @@ fn draw_alldone_overlay()
     draw_text("{level_titles[i]}  -  {mins}:{secs}  *{best_coins[i]}",
       x: SCREEN_W / 2 - 180, y: y, size: 20, r: 220, g: 220, b: 250)
     i = i + 1
-  end
   draw_text("ENTER for title", x: SCREEN_W / 2 - 70, y: 480, size: 18, r: 200, g: 200, b: 230)
-end
 
 # =====================================================================
 #                              FRAME OUTPUT
@@ -1079,4 +957,3 @@ else
   if phase == Phase.Paused then draw_pause_overlay() end
   if phase == Phase.Complete then draw_complete_overlay() end
   if phase == Phase.GameOver then draw_gameover_overlay() end
-end

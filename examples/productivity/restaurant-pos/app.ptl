@@ -37,30 +37,24 @@ fn clock_text(t: num) -> string
   let h = m / 60 % 24
   let h12 = if h % 12 == 0 then 12 else h % 12 end
   "{h12}:{pad_start(str(m % 60), 2, "0")} {if h < 12 then "AM" else "PM" end}"
-end
 
 fn mins_text(secs: num) -> string
   let s = max(0, int(secs))
   "{s / 60}:{pad_start(str(s % 60), 2, "0")}"
-end
 
 # ── The check ───────────────────────────────────────────────────────────────
 
 fn unit_cents(l: record) -> int
   mn.item_by_id(l.item).cents + l.mod_cents
-end
 
 fn line_cents(l: record) -> int
   if l.void != "" then 0 else l.qty * unit_cents(l) end
-end
 
 fn unsent(t: record) -> list
   filter(t.lines, fn(l) -> !l.sent && l.void == "")
-end
 
 fn live_lines(t: record) -> list
   filter(t.lines, fn(l) -> l.void == "")
-end
 
 # Subtotal, tax and what is still owed. A split check is paid one share at a
 # time; `left` is how many shares are still to come.
@@ -71,7 +65,6 @@ fn bill(t: record) -> record
   let tips = reduce(t.paid, 0, fn(a, p) -> a + p.tip)
   {sub: sub, tax: tax, total: sub + tax, paid: paid, tips: tips, due: max(0, sub + tax - paid),
     left: max(1, t.split - len(t.paid))}
-end
 
 # The next share of a split check. Odd cents go to the earlier shares, and
 # the last share pays exactly what is left. `pretax` is the share's part of
@@ -81,7 +74,6 @@ fn share(t: record, b: record) -> record
   let base = if r <= 1 then b.due else b.due / r + (if b.due % r > 0 then 1 else 0 end) end
   let pretax = if b.total > 0 then base * b.sub / b.total else 0 end
   {base: base, pretax: pretax, n: len(t.paid) + 1, of: max(t.split, len(t.paid) + 1)}
-end
 
 # Every share of a split check: the paid ones as they were paid, the rest as
 # they will fall if nothing else is added.
@@ -95,17 +87,13 @@ fn share_plan(t: record, b: record) -> list
     let base = if left <= 1 then due else due / left + (if due % left > 0 then 1 else 0 end) end
     rest = append(rest, {amount: base, tip: 0, state: if k == 0 then "now" else "later" end, method: ""})
     due -= base
-  end
   paid ++ rest
-end
 
 fn tip_for(sh: record, pct: num) -> int
   lk.div_round(sh.pretax * pct, 100)
-end
 
 fn station_of(l: record) -> string
   mn.CATS[mn.item_by_id(l.item).cat].station
-end
 
 fn station_tone(s: string) -> record
   match s
@@ -114,15 +102,12 @@ fn station_tone(s: string) -> record
     when "Cold" -> mn.CATS[0].tone
     when "Pastry" -> mn.CATS[4].tone
     when _ -> mn.CATS[6].tone
-  end
-end
 
 let STATION_ORDER = ["Bar", "Cold", "Grill", "Saute", "Pastry"]
 
 fn stations_of(ls: list) -> list
   let have = map(ls, station_of)
   filter(STATION_ORDER, fn(s) -> contains(have, s))
-end
 
 fn seed_all() -> list
   let ts = mn.seed_tables(OPEN_AT)
@@ -131,7 +116,6 @@ fn seed_all() -> list
   let sh = share(t9, bill(t9))
   ts[8] = {...t9, paid: [{base: sh.base, tip: tip_for(sh, 20), method: "Card", tendered: 0, change: 0}]}
   ts
-end
 
 # ── State ───────────────────────────────────────────────────────────────────
 
@@ -142,7 +126,6 @@ let STORE_KEY = "floor-v1"
 fn load_saved()
   let raw = panel_store_get(STORE_KEY)
   if raw == nil then nil else json_parse(raw) end
-end
 
 state _saved = load_saved()
 state var tables = if _saved != nil then _saved.tables else seed_all() end
@@ -159,7 +142,6 @@ state var saves = 0
 # The clock: seconds after midnight, carried across a restart.
 fn now() -> int
   OPEN_AT + get clock_skew + int(time())
-end
 state var toasts = []
 state var sheet = ""             # "", "mods", "send", "pay", "void", "shift"
 state var draft = {}             # the modifier sheet's working copy
@@ -179,30 +161,24 @@ fn field_focus(key: string, focus: string, had: bool, pointer: bool) -> string
   else if has_focus(key) then key
   else if had then ""
   else focus
-  end
-end
 
 # ── Actions ─────────────────────────────────────────────────────────────────
 
 fn toast(text: string, kind: string) -> nil
   set toasts = slice([{text: text, kind: kind, age: 0.0}] ++ get toasts, 0, 3)
-end
 
 fn table_now() -> record
   get tables[get cur]
-end
 
 fn put_table(t: record) -> nil
   set tables[get cur] = t
   set dirty = true
-end
 
 fn save_floor() -> nil
   panel_store_set(STORE_KEY, json_stringify({v: 1, clock: now(), tables: get tables, tickets: get tickets,
     next_line: get next_line, next_ticket: get next_ticket}))
   set dirty = false
   set saves += 1
-end
 
 # A fresh service: the seed floor, the clock back at 7:41.
 fn reset_floor() -> nil
@@ -215,16 +191,13 @@ fn reset_floor() -> nil
   set sel = 15
   set dirty = true
   toast("Fresh service: the 7:41 PM floor is back", "info")
-end
 
 fn table_name() -> string
   mn.TABLES[get cur].name
-end
 
 # The first dish on an empty table seats it.
 fn seated(t: record) -> record
   if t.guests == 0 then {...t, guests: min(2, mn.TABLES[get cur].seats), opened: now()} else t end
-end
 
 fn add_line(item_id: num, qty: num, picks: list, note: string) -> nil
   let it = mn.item_by_id(item_id)
@@ -236,28 +209,23 @@ fn add_line(item_id: num, qty: num, picks: list, note: string) -> nil
   if same != nil then
     t.lines = for l in t.lines do
       if l.id == same.id then {...l, qty: l.qty + qty} else l end
-    end
     set sel = same.id
   else
     let id = get next_line
     set next_line = id + 1
     t.lines = append(t.lines, mn.line(id, item_id, qty, picks, note, -1))
     set sel = id
-  end
   put_table(t)
   set reveal = get sel
   set flash = {item: item_id, age: 0.0}
   set counts.adds += 1
-end
 
 fn replace_line(id: num, qty: num, picks: list, note: string) -> nil
   let t = table_now()
   t.lines = for l in t.lines do
     if l.id == id then mn.line(id, l.item, qty, picks, note, -1) else l end
-  end
   put_table(t)
   set reveal = id
-end
 
 fn set_qty(id: num, q: num) -> nil
   let t = table_now()
@@ -267,10 +235,7 @@ fn set_qty(id: num, q: num) -> nil
   else
     t.lines = for l in t.lines do
       if l.id == id then {...l, qty: min(99, q)} else l end
-    end
-  end
   put_table(t)
-end
 
 fn void_line(id: num, reason: string) -> nil
   let t = table_now()
@@ -280,11 +245,9 @@ fn void_line(id: num, reason: string) -> nil
       name = mn.item_by_id(l.item).name
       {...l, void: reason}
     else l end
-  end
   put_table(t)
   set counts.voids += 1
   toast("Voided {name}. A void slip printed in the kitchen", "warn")
-end
 
 fn send_order() -> nil
   let t = table_now()
@@ -297,16 +260,13 @@ fn send_order() -> nil
   let n = reduce(fresh, 0, fn(a, l) -> a + l.qty)
   let items = for l in fresh do
     {qty: l.qty, name: mn.item_by_id(l.item).name, mods: join(l.mods, ", "), note: l.note}
-  end
   t.lines = for l in t.lines do
     if !l.sent && l.void == "" then {...l, sent: true, sent_at: at} else l end
-  end
   put_table(t)
   set tickets = [{no: no, table: table_name(), count: n, stations: join(st, ", "), at: at, items: items}] ++
   get tickets
   set counts.sends += 1
   toast("Ticket #{no} fired: {plural(n, "item")} to {list_and(st)}", "ok")
-end
 
 fn take_payment(method: string, base: num, tip: num, tendered: num) -> record
   let t = table_now()
@@ -317,7 +277,6 @@ fn take_payment(method: string, base: num, tip: num, tendered: num) -> record
   let b = bill(t)
   {method: method, base: base, tip: tip, charged: base + tip, tendered: tendered, change: change,
     closed: b.due <= 0, n: len(t.paid), of: max(t.split, len(t.paid))}
-end
 
 fn close_table() -> nil
   let t = table_now()
@@ -327,7 +286,6 @@ fn close_table() -> nil
   set sel = -1
   set counts.closed += 1
   toast("Table {table_name()} closed, {lk.usd(got)} collected", "ok")
-end
 
 fn bump_ticket(no: num) -> nil
   let tk = find(get tickets, fn(k) -> k.no == no)
@@ -335,7 +293,6 @@ fn bump_ticket(no: num) -> nil
   set dirty = true
   set counts.bumps += 1
   toast("Ticket #{no} for table {tk.table} is up. Run it", "ok")
-end
 
 # Open the modifier sheet for a new dish (`line_id` -1) or an unsent line.
 # A one-of group that is optional starts on its first option, the house
@@ -347,8 +304,6 @@ fn open_mods(item_id: num, line_id: num) -> nil
   else
     for g in it.groups do
       if g.pick == "one" && !g.req then [0] else [] end
-    end
-  end
   let quick = mn.quick_notes(mn.CATS[it.cat].station)
   let parts = if l != nil && l.note != "" then split(l.note, ", ") else [] end
   let chips = filter(parts, fn(p) -> contains(quick, p))
@@ -356,12 +311,10 @@ fn open_mods(item_id: num, line_id: num) -> nil
   set draft = {item: item_id, picks: picks, qty: if l != nil then l.qty else 1 end, chips: chips, text: text,
     edit: line_id}
   set sheet = "mods"
-end
 
 fn open_pay() -> nil
   set pay = {method: "Card", tip: 2, tendered: 0, phase: "entry", result: {}}
   set sheet = "pay"
-end
 
 fn tap_item(it: record) -> nil
   if it.tag == "86" then
@@ -371,8 +324,6 @@ fn tap_item(it: record) -> nil
     open_mods(it.id, -1)
   else
     add_line(it.id, 1, [], "")
-  end
-end
 
 # ── Frame ───────────────────────────────────────────────────────────────────
 
@@ -406,15 +357,11 @@ if key_pressed("escape") then
     set sheet = ""
   else
     set sheet = ""
-  end
-end
 if sheet == "" && focus == "" then
   for k in range(0, len(mn.CATS)) do
     if key_pressed(str(k + 1)) then cat = k end
-  end
   if key_pressed("s") && n_new > 0 then set sheet = "send" end
   if key_pressed("p") && can_pay then open_pay() end
-end
 
 # Everything below the sheet stands down while one is open.
 let sheet0 = sheet
@@ -444,7 +391,6 @@ for k in range(0, 3) do
   let py = mark.y + 5.0 - k * 6.0
   draw_ellipse(px - 4.0, py - 2.0, 3.6, 2.0, lk.BAR_INK)
   draw_ellipse(px + 3.0, py + 3.0, 2.0, 3.6, lk.BAR_INK)
-end
 draw_circle({x: mark.x + 8.0, y: mark.y - 9.0}, 2.6, :9fb7d6)
 lk.txt("Juniper & Ash", Rect(PAD + 54, 14, 200, 28), lk.serif(21, lk.BAR_INK))
 lk.txt("DINING ROOM  /  DINNER", Rect(PAD + 55, 42, 200, 18), lk.caps(lk.BAR_MUT))
@@ -466,7 +412,6 @@ for i in range(0, len(mn.TABLES)) do
   draw_rect_rounded(r, 12, mix(mix(base, lk.BAR_INK, 0.07 * h), lk.ACCENT, k))
   if !busy_t && k < 0.5 then
     draw_rect_rounded_outline(r, 12, mix(lk.BAR_UP, lk.BAR_MUT, 0.3 * h), 255, 1.5)
-  end
   let ink = if busy_t || on then lk.BAR_INK else lk.BAR_MUT end
   lk.txt(tb.name, Rect(r.x, r.y + 6, r.w, 26), lk.uib(19, ink), "center")
   let sub = if busy_t then plural(tt.guests, "guest") else "{tb.seats} seats" end
@@ -474,17 +419,13 @@ for i in range(0, len(mn.TABLES)) do
   if len(unsent(tt)) > 0 then
     draw_circle({x: r.x + r.w - 10, y: r.y + 10}, 6.0, if on then lk.ACCENT else base end)
     draw_circle({x: r.x + r.w - 10, y: r.y + 10}, 4.5, :f0b445)
-  end
   if len(tt.paid) > 0 then
     draw_circle_outline({x: r.x + 11, y: r.y + 10}, 4.5, :7fc495, 255, 2.0)
-  end
   if lk.press(r) && !on then
     set cur = i
     set sel = -1
     scroll = 0.0
     focus = ""
-  end
-end
 
 # The clock and who is signed in.
 let rx = W - PAD
@@ -497,10 +438,8 @@ lk.txt("Server, section B", Rect(rx - 160, 40, 106, 18), lk.ui(11, lk.BAR_MUT), 
 let shift_r = Rect(rx - 166, 10, 166, TOP_H - 20)
 if lk.hot(shift_r) then
   draw_circle_outline(av, 24.0, lk.BAR_MUT, 255, 1.5)
-end
 if lk.press(shift_r) then
   set sheet = "shift"
-end
 draw_rect(rx - 176, 18, 1, TOP_H - 36, lk.BAR_UP)
 lk.txt(clock_text(clock), Rect(rx - 300, 14, 110, 26), lk.mono(19, lk.BAR_INK), "right")
 lk.txt("TUE OCT 21", Rect(rx - 300, 42, 110, 16), lk.caps(lk.BAR_MUT), "right")
@@ -517,11 +456,9 @@ for i in range(0, n_cats) do
   let h = lk.ease_flag(lk.hot(r))
   if k > 0.02 then
     draw_shadow(r, {radius: 14, blur: 14, dy: 4, color: c.tone, a: int(70 * k)})
-  end
   draw_rect_rounded(r, 14, mix(mix(lk.CARD, c.tone, 0.06 * h), c.tone, k))
   if k < 0.98 then
     draw_rect_rounded_outline(r, 14, mix(lk.LINE, c.tone, 0.3 * h), int(255 * (1.0 - k)))
-  end
   let ink = mix(lk.INK, lk.WHITE, k)
   draw_circle({x: r.x + 18, y: r.y + 24}, 5.0, mix(c.tone, lk.WHITE, k))
   lk.txt(c.short, Rect(r.x + 30, r.y + 12, r.w - 36, 24), lk.uib(16, ink))
@@ -529,8 +466,6 @@ for i in range(0, n_cats) do
   lk.txt("{cnt} items", Rect(r.x + 16, r.y + 37, r.w - 24, 18), lk.ui(12, mix(lk.MUTED, lk.with_alpha(lk.WHITE, 220), k)))
   if lk.press(r) then
     cat = i
-  end
-end
 
 # ── Menu grid ───────────────────────────────────────────────────────────────
 
@@ -541,7 +476,6 @@ let COLS = 4
 let tile_w = (r_grid.w - float(COLS - 1) * GAP) / COLS
 let counts_here = for it in items do
   reduce(T.lines, 0, fn(a, l) -> if l.item == it.id && l.void == "" then a + l.qty else a end)
-end
 for i in range(0, len(items)) do
   let it = items[i]
   let r = Rect(r_grid.x + float(i % COLS) * (tile_w + GAP), r_grid.y + float(i / COLS) * (TILE_H + GAP), tile_w,
@@ -570,7 +504,6 @@ for i in range(0, len(items)) do
   for ln in name_lines do
     lk.txt(ln, Rect(r.x + 22, ny, r.w - 36, 24), name_s)
     ny += 23
-  end
   lk.txt(lk.fit(it.blurb, lk.ui(12, lk.MUTED), r.w - 40), Rect(r.x + 22, ny + 2, r.w - 36, 18),
     lk.ui(12, if out then lk.FAINT else lk.MUTED end))
   lk.txt(lk.usd(it.cents), Rect(r.x + 22, r.y + r.h - 40, 120, 26), lk.mono(16, if out then lk.FAINT else lk.SOFT end))
@@ -583,7 +516,6 @@ for i in range(0, len(items)) do
     let pr = Rect(r.x + r.w - tw - 12, r.y + r.h - 36, tw, 22)
     draw_rect_rounded(pr, 11, mix(lk.CARD, tone, 0.14))
     lk.txt(label, pr, lk.caps(mix(tone, :000000, 0.15)), "center")
-  end
   let cnt = counts_here[i]
   if cnt > 0 then
     let bc = {x: r.x + r.w - 22, y: r.y + 22}
@@ -593,12 +525,8 @@ for i in range(0, len(items)) do
     # A dish with choices shows three dots: tapping it opens a sheet.
     for d in range(0, 3) do
       draw_circle({x: r.x + r.w - 32 + d * 7, y: r.y + 22}, 2.2, lk.FAINT)
-    end
-  end
   if lk.press(r) then
     tap_item(it)
-  end
-end
 
 # ── Kitchen rail ────────────────────────────────────────────────────────────
 # The tickets this station has fired and the kitchen has not bumped yet,
@@ -613,7 +541,6 @@ let fit_tk = max(1, int((tk_area.w + 12) / (TK_W + 12)))
 let tk_w = (tk_area.w - (fit_tk - 1) * 12.0) / float(fit_tk)
 if len(tickets) > fit_tk then
   rail_note = "{rail_note}  /  {len(tickets) - fit_tk} older off screen"
-end
 lk.txt(rail_note, Rect(r_rail.x + 20, r_rail.y + 14, r_rail.w - 40, 18), lk.ui(12, lk.FAINT), "right")
 let bump_no = 0
 for k in range(0, min(fit_tk, len(tickets))) do
@@ -640,33 +567,24 @@ for k in range(0, min(fit_tk, len(tickets))) do
     if iy + need > bump_r.y - 4 then
       more += 1
       continue
-    end
     lk.txt("{itm.qty}", Rect(r.x + 14, iy, 20, 20), lk.mono(13, lk.ACCENT))
     lk.txt(lk.fit(itm.name, lk.uib(13, lk.INK), r.w - 50), Rect(r.x + 34, iy, r.w - 46, 20), lk.uib(13, lk.INK))
     iy += 21
     if itm.mods != "" then
       lk.txt(lk.fit(itm.mods, lk.ui(11, lk.MUTED), r.w - 50), Rect(r.x + 34, iy - 2, r.w - 46, 16), lk.ui(11, lk.MUTED))
       iy += 16
-    end
     if itm.note != "" then
       lk.txt(lk.fit(upper(itm.note), lk.caps(lk.AMBER, 9), r.w - 50), Rect(r.x + 34, iy - 2, r.w - 46, 16),
         lk.caps(mix(lk.AMBER, :000000, 0.1), 9))
       iy += 16
-    end
-  end
   if more > 0 then
     lk.txt("+ {more} more", Rect(r.x + 34, iy, r.w - 46, 18), lk.ui(11, lk.MUTED))
-  end
   if lk.ghost(bump_r, "Bump", lk.SAGE, true, {size: 14, radius: 10}) then
     bump_no = tk.no
-  end
-end
 if len(tickets) == 0 then
   lk.txt("The rail is clear. Every ticket has gone out.", tk_area, lk.ui(14, lk.FAINT), "center")
-end
 if bump_no > 0 then
   bump_ticket(bump_no)
-end
 
 # ── The check ───────────────────────────────────────────────────────────────
 
@@ -688,10 +606,8 @@ lk.txt(str(T.guests), Rect(g_minus.x + 44, g_minus.y, 42, 44), lk.mono(20, lk.IN
 if lk.step_key(g_minus, false, T.guests > 0) then
   let t = table_now()
   put_table({...t, guests: t.guests - 1})
-end
 if lk.step_key(g_plus, true, T.guests < 12) then
   put_table(seated({...table_now(), guests: table_now().guests + 1}))
-end
 lk.hline(ox + 1, r_order.y + 84, ow - 2, lk.RULE)
 
 # Totals and actions are pinned to the foot; the lines scroll above them.
@@ -710,7 +626,6 @@ fn line_height(l: record, w: num, s: record, selected: bool) -> int
   let mods = if len(l.mods) > 0 then len(text_wrap(join(l.mods, ", "), s, w)) else 0 end
   let base = 50 + mods * 18 + (if l.note != "" then 22 else 0 end)
   base + (if selected then 60 else 0 end)
-end
 
 # The rows, as a list of `{kind, y, h, line}` in content coordinates.
 let rows = []
@@ -722,8 +637,6 @@ if len(sent_lines) > 0 then
     let lh = line_height(l, text_w, mods_s, l.id == sel)
     rows = append(rows, {kind: "line", y: cy, h: lh, label: "", n: 0, line: l})
     cy += lh
-  end
-end
 if len(new_lines) > 0 then
   rows = append(rows, {kind: "head", y: cy, h: 34, label: "NEW, NOT SENT", n: len(new_lines), line: {}})
   cy += 34
@@ -731,22 +644,17 @@ if len(new_lines) > 0 then
     let lh = line_height(l, text_w, mods_s, l.id == sel)
     rows = append(rows, {kind: "line", y: cy, h: lh, label: "", n: 0, line: l})
     cy += lh
-  end
-end
 let content_h = cy + 8
 let max_scroll = max(0.0, float(content_h) - r_list.h)
 if lk.hot(r_list) && scroll_y() != 0.0 then
   scroll += scroll_y() * 36.0
-end
 if reveal >= 0 then
   let want_id = reveal
   let rw = find(rows, fn(x) -> x.kind == "line" && x.line.id == want_id)
   if rw != nil then
     if float(rw.y + rw.h) - scroll > float(r_list.h) then scroll = float(rw.y + rw.h - r_list.h) end
     if float(rw.y) - scroll < 0.0 then scroll = float(rw.y) - 34.0 end
-  end
   set reveal = -1
-end
 scroll = clamp(scroll, lo: 0.0, hi: max_scroll)
 
 let act = ""                     # what a line's action row asked for this frame
@@ -764,7 +672,6 @@ if len(rows) == 0 then
   lk.txt("Table {tname} is free", Rect(r_list.x, cyp + 62, r_list.w, 30), lk.serif(20, lk.SOFT), "center")
   lk.txt("Tap a dish on the menu to open a check.", Rect(r_list.x, cyp + 92, r_list.w, 20), lk.ui(13, lk.MUTED),
     "center")
-end
 for rw in rows do
   let y = r_list.y + float(rw.y) - scroll
   if y + float(rw.h) < float(r_list.y) || y > float(r_list.y + r_list.h) then continue end
@@ -774,7 +681,6 @@ for rw in rows do
     lk.txt(rw.label, Rect(ox + 38, y + 8, 200, 20), lk.caps(mix(tone, :000000, 0.1), 10))
     lk.dashed(ox + 44 + text_width(rw.label, lk.caps(tone, 10)), ox + ow - 22, y + 18, lk.LINE)
     continue
-  end
   let l = rw.line
   let it = mn.item_by_id(l.item)
   let on = l.id == sel
@@ -784,10 +690,8 @@ for rw in rows do
   let voided = l.void != ""
   if k > 0.01 || h > 0.01 then
     draw_rect_rounded(r, 12, mix(mix(lk.CARD, lk.PAPER, 0.7 * h), mix(lk.CARD, lk.ACCENT, 0.07), k))
-  end
   if k > 0.01 then
     draw_rect_rounded(Rect(r.x, r.y + 10, 4, r.h - 20), 2, lk.ACCENT, int(255 * k))
-  end
   # Quantity, in a well tinted by where the line is: sent or new.
   let qtone = if voided then lk.FAINT else if l.sent then lk.SAGE else lk.ACCENT end
   let qb = Rect(r.x + 14, r.y + 12, 36, 28)
@@ -798,7 +702,6 @@ for rw in rows do
   let nw = lk.txt(nm, Rect(r.x + LX, r.y + 12, text_w, 28), name_s)
   if voided then
     draw_line({x: r.x + LX - 2, y: r.y + 27}, {x: r.x + LX + nw + 2, y: r.y + 27}, lk.FAINT, 255, 1.5)
-  end
   let pr = Rect(r.x + r.w - 104, r.y + 12, 90, 28)
   if voided then
     lk.txt("VOID", pr, lk.caps(lk.RED, 11), "right")
@@ -807,22 +710,17 @@ for rw in rows do
     if l.qty > 1 then
       lk.txt("{l.qty} x {lk.usd(unit_cents(l))}", Rect(r.x + r.w - 164, r.y + 36, 150, 16), lk.mono(11, lk.FAINT),
         "right")
-    end
-  end
   let my = r.y + 38
   if len(l.mods) > 0 then
     for ln in text_wrap(join(l.mods, ", "), mods_s, text_w) do
       lk.txt(ln, Rect(r.x + LX, my, text_w, 18), if voided then lk.ui(13, lk.FAINT) else mods_s end)
       my += 18
-    end
-  end
   if l.note != "" then
     let nr = Rect(r.x + LX, my + 3, text_width(l.note, lk.uib(12, lk.AMBER)) + 22, 19)
     draw_rect_rounded(nr, 6, mix(lk.CARD, lk.AMBER, 0.14))
     draw_rect_rounded(Rect(nr.x + 6, nr.y + 5, 3, 9), 1, lk.AMBER)
     lk.txt(l.note, Rect(nr.x + 14, nr.y, nr.w - 14, nr.h), lk.uib(12, mix(lk.AMBER, :000000, 0.3)))
     my += 22
-  end
   if on then
     # The action row: touch-sized, under the line it acts on.
     let ay = r.y + r.h - 58
@@ -833,39 +731,28 @@ for rw in rows do
       if lk.ghost(Rect(r.x + r.w - 130, ay + 4, 116, 44), "Void item", lk.RED, true, {size: 14, radius: 10}) then
         act = "void"
         act_id = l.id
-      end
     else
       if lk.step_key(Rect(r.x + LX - 4, ay + 4, 44, 44), false, true, lk.ACCENT) then
         act = "minus"
         act_id = l.id
-      end
       lk.txt(str(l.qty), Rect(r.x + LX + 40, ay + 4, 36, 44), lk.mono(18, lk.INK), "center")
       if lk.step_key(Rect(r.x + LX + 76, ay + 4, 44, 44), true, l.qty < 99, lk.ACCENT) then
         act = "plus"
         act_id = l.id
-      end
       if lk.ghost(Rect(r.x + r.w - 214, ay + 4, 96, 44), "Edit", lk.INK, true, {size: 14, radius: 10}) then
         act = "edit"
         act_id = l.id
-      end
       if lk.ghost(Rect(r.x + r.w - 110, ay + 4, 96, 44), "Remove", lk.RED, true, {size: 14, radius: 10}) then
         act = "remove"
         act_id = l.id
-      end
-    end
-  end
   if act == "" && lk.press(r) then
     set sel = if on then -1 else l.id end
-  end
-end
 clip_pop()
 # The list fades under the header and the totals when there is more of it.
 if scroll > 0.5 then
   draw_rect_gradient(Rect(r_list.x, r_list.y, r_list.w, 14), lk.CARD, lk.CARD, 1.5708, 255, 0)
-end
 if scroll < max_scroll - 0.5 then
   draw_rect_gradient(Rect(r_list.x, r_list.y + r_list.h - 18, r_list.w, 18), lk.CARD, lk.CARD, 1.5708, 0, 255)
-end
 
 if act_id >= 0 then
   let l = find(T.lines, fn(x) -> x.id == act_id)
@@ -878,8 +765,6 @@ if act_id >= 0 then
       set vd = {id: act_id, reason: ""}
       set sheet = "void"
     when _ -> nil
-  end
-end
 
 # Totals. Money in the mono face, so the decimal points line up.
 T = tables[cur]
@@ -902,7 +787,6 @@ if B.paid > 0 then
   lk.txt("Paid, {len(T.paid)} of {max(T.split, len(T.paid))} shares", Rect(tx0, ty, 260, 22), lk.ui(14, lk.SAGE))
   lk.txt("-" ++ lk.usd(B.paid), Rect(tx0, ty, tw0, 22), lk.mono(14, lk.SAGE), "right")
   ty += 26
-end
 lk.dashed(tx0, tx0 + tw0, ty + 4, lk.LINE)
 lk.txt(if B.paid > 0 then "Balance due" else "Total" end, Rect(tx0, ty + 10, 200, 34), lk.uib(18, lk.INK))
 lk.txt(lk.usd(B.due), Rect(tx0, ty + 8, tw0, 36), lk.mono(24, lk.INK), "right")
@@ -914,10 +798,8 @@ let pay_r = Rect(ox + 24 + half + 12.0, by, half, 60)
 let send_label = if n_new > 0 then "Send" else "All sent" end
 if lk.solid(send_r, send_label, lk.ACCENT, n_new > 0, {sub: if n_new > 0 then str(n_new) else "" end}) then
   set sheet = "send"
-end
 if lk.solid(pay_r, "Pay", lk.INK, can_pay, {sub: if can_pay then lk.usd(B.due) else "" end}) then
   open_pay()
-end
 
 # ── Sheets ──────────────────────────────────────────────────────────────────
 # One at a time, over a dimmed floor. Escape, the close button, or a tap
@@ -932,13 +814,11 @@ fn sheet_frame(w: num, h: num, k: num) -> Rect
   let H2 = screen_height()
   if k > 0.5 then
     draw_backdrop_blur(Rect(0, 0, W2, H2), 3)
-  end
   draw_rect(0, 0, W2, H2, :1d1714, int(150.0 * k))
   let r = Rect((W2 - w) / 2.0, (H2 - h) / 2.0 + (1.0 - k) * 24.0, w, h)
   draw_shadow(r, {radius: 22, blur: 40, dy: 14, color: :1d1714, a: int(110.0 * k)})
   draw_rect_rounded(r, 22, lk.CARD)
   r
-end
 
 fn close_button(r: record) -> bool
   let h = lk.ease_flag(lk.hot(r))
@@ -948,7 +828,6 @@ fn close_button(r: record) -> bool
   draw_line({x: cx - 6, y: cyy - 6}, {x: cx + 6, y: cyy + 6}, lk.SOFT, 255, 2.0)
   draw_line({x: cx - 6, y: cyy + 6}, {x: cx + 6, y: cyy - 6}, lk.SOFT, 255, 2.0)
   lk.press(r)
-end
 
 let sheet_rect = Rect(0, 0, 0, 0)
 let close_now = false
@@ -964,7 +843,6 @@ state synced_focus = ""
 if focus != synced_focus then
   focus_request(if focus == "note" then focus else nil end)
   synced_focus = focus
-end
 if sheet == "mods" then
   let it = mn.item_by_id(draft.item)
   let tone = mn.CATS[it.cat].tone
@@ -974,7 +852,6 @@ if sheet == "mods" then
   let group_rows = for g in it.groups do
     let per = min(len(g.opts), if len(g.opts) == 5 then 5 else 4 end)
     (len(g.opts) + per - 1) / per
-  end
   let body_h = reduce(group_rows, 0, fn(a, n) -> a + 34 + n * 62 + 10)
   let SH = 112 + body_h + 150 + 96
   let r = sheet_frame(SW, SH, sheet_k)
@@ -989,7 +866,6 @@ if sheet == "mods" then
   lk.txt(lk.usd(it.cents), Rect(x0, r.y + 42, GW - 64, 30), lk.mono(20, lk.SOFT), "right")
   if close_button(Rect(r.x + r.w - 32 - 40, r.y + 20, 40, 40)) then
     close_now = true
-  end
   lk.hline(r.x + 1, r.y + 108, r.w - 2, lk.RULE)
 
   let gy = r.y + 124
@@ -1021,12 +897,8 @@ if sheet == "mods" then
           (if on && !g.req then [] else [oi] end)
         else if on then filter(chosen, fn(x) -> x != oi)
         else sort(append(chosen, oi))
-        end
         set draft.picks[gi] = next
-      end
-    end
     gy += group_rows[gi] * 62 + 10
-  end
 
   # Notes for the kitchen: one-tap chips, and a field for anything else.
   lk.txt("Notes for the kitchen", Rect(x0, gy, 300, 24), lk.uib(16, lk.INK))
@@ -1042,8 +914,6 @@ if sheet == "mods" then
       let had = draft.chips
       set draft.chips = if on then filter(had, fn(x) -> x != q) else
         filter(quick, fn(x) -> x == q || contains(had, x)) end
-    end
-  end
   gy += 58
   let fr = Rect(x0, gy, GW, 50)
   let fstyle = lk.ui(15, lk.INK)
@@ -1055,7 +925,6 @@ if sheet == "mods" then
   let fk = lk.ease_flag(has, 24.0)
   if fk > 0.02 then
     draw_rect_rounded(Rect(fr.x - 3, fr.y - 3, fr.w + 6, fr.h + 6), 14, lk.ACCENT, int(50 * fk))
-  end
   draw_rect_rounded(fr, 12, lk.WELL)
   draw_rect_rounded_outline(fr, 12, mix(lk.LINE, lk.ACCENT, fk), 255, 1.0 + fk)
   let base_y = tl.text_baseline(fr, fstyle)
@@ -1066,18 +935,14 @@ if sheet == "mods" then
     for q in text_range_rects(res.text, fstyle, res.sel_start, res.sel_end) do
       draw_rect(tx + q.x, base_y - met.cap_height - 4.0, q.w, met.cap_height + met.descent + 7.0,
         mix(lk.WELL, lk.ACCENT, 0.3))
-    end
-  end
   if res.text == "" then
     draw_text(if has then "" else "Add a note: seat 2, allergies, how to fire..." end,
       {x: tx, y: base_y - met.baseline}, lk.ui(15, lk.FAINT))
   else
     draw_text(res.text, {x: tx, y: base_y - met.baseline}, fstyle)
-  end
   if has then
     let ccx = tx + tl.caret_x(res.text, fstyle, res.caret)
     draw_line({x: ccx, y: base_y - met.cap_height - 3.0}, {x: ccx, y: base_y + met.descent + 1.0}, lk.ACCENT, 255, 2.0)
-  end
   clip_pop()
 
   # Footer: quantity, then the price of what will go on the check.
@@ -1092,8 +957,6 @@ if sheet == "mods" then
   for gi in range(0, len(it.groups)) do
     for oi in draft.picks[gi] do
       mod_c += it.groups[gi].opts[oi].cents
-    end
-  end
   let price = draft.qty * (it.cents + mod_c)
   let have_chips = draft.chips
   let chip_notes = filter(quick, fn(x) -> contains(have_chips, x))
@@ -1103,7 +966,6 @@ if sheet == "mods" then
   let verb = if draft.edit >= 0 then "Update line" else if draft.qty > 1 then "Add {draft.qty}" else "Add to check" end
   if lk.ghost(Rect(primary.x - 122, foot_y + 20, 110, 50), "Cancel", lk.SOFT) then
     close_now = true
-  end
   let label = if ok then verb else "Choose {lower(missing[0])}" end
   let want = lk.solid(primary, label, tone, ok, {sub: if ok then lk.usd(price) else "" end}) || (res.submitted && ok)
   if want then
@@ -1111,13 +973,10 @@ if sheet == "mods" then
       replace_line(draft.edit, draft.qty, draft.picks, note)
     else
       add_line(draft.item, draft.qty, draft.picks, note)
-    end
     set sheet = ""
     focus = ""
-  end
   obs_mod_missing = join(missing, ",")
   obs_mod_price = price
-end
 
 # ── The send sheet ──────────────────────────────────────────────────────────
 
@@ -1136,7 +995,6 @@ if sheet == "send" then
     lk.ui(14, lk.MUTED))
   if close_button(Rect(r.x + r.w - 72, r.y + 22, 40, 40)) then
     close_now = true
-  end
   lk.hline(r.x + 1, r.y + 100, r.w - 2, lk.RULE)
   let yy = r.y + 116
   clip_push(Rect(r.x, r.y + 101, r.w, r.h - 101 - 98))
@@ -1153,26 +1011,19 @@ if sheet == "send" then
         lk.txt(lk.fit(join(l.mods, ", "), lk.ui(13, lk.MUTED), SW - 120), Rect(x0 + 44, yy - 4, SW - 110, 18),
           lk.ui(13, lk.MUTED))
         yy += 18
-      end
       if l.note != "" then
         lk.txt(upper(l.note), Rect(x0 + 44, yy - 2, SW - 110, 18), lk.caps(mix(lk.AMBER, :000000, 0.2), 10))
         yy += 20
-      end
       yy += 4
-    end
-  end
   clip_pop()
   let foot_y = r.y + r.h - 98
   lk.hline(r.x + 1, foot_y, r.w - 2, lk.RULE)
   if lk.ghost(Rect(x0, foot_y + 22, 140, 56), "Not yet", lk.SOFT) then
     close_now = true
-  end
   let go = Rect(r.x + r.w - 32 - 300, foot_y + 22, 300, 56)
   if lk.solid(go, "Fire {plural(n_new, "item")}", lk.ACCENT, n_new > 0) || key_pressed("return") then
     send_order()
     set sheet = ""
-  end
-end
 
 # ── The void sheet ──────────────────────────────────────────────────────────
 
@@ -1187,17 +1038,13 @@ if sheet == "shift" then
     Rect(x0, r.y + 70, 456, 66), lk.ui(14, lk.MUTED), {lines: 3, lead: 1.3})
   if close_button(Rect(r.x + r.w - 72, r.y + 22, 40, 40)) then
     close_now = true
-  end
   let foot_y = r.y + r.h - 96
   lk.hline(r.x + 1, foot_y, r.w - 2, lk.RULE)
   if lk.ghost(Rect(x0, foot_y + 22, 140, 54), "Not now", lk.SOFT) then
     close_now = true
-  end
   if lk.solid(Rect(r.x + r.w - 32 - 220, foot_y + 22, 220, 54), "Reset the floor", lk.ACCENT) then
     reset_floor()
     set sheet = ""
-  end
-end
 
 let VOID_REASONS = ["Guest changed mind", "Kitchen error", "Entered by mistake", "Manager comp"]
 if sheet == "void" then
@@ -1217,22 +1064,15 @@ if sheet == "void" then
       let cr = Rect(x0 + float(k % 2) * (cw + 12.0), r.y + 148 + (k / 2) * 66, cw, 54)
       if lk.chip(cr, VOID_REASONS[k], vd.reason == VOID_REASONS[k], lk.RED) then
         set vd.reason = VOID_REASONS[k]
-      end
-    end
     let foot_y = r.y + r.h - 96
     lk.hline(r.x + 1, foot_y, r.w - 2, lk.RULE)
     if lk.ghost(Rect(x0, foot_y + 22, 140, 54), "Keep it", lk.SOFT) then
       close_now = true
-    end
     if lk.solid(Rect(r.x + r.w - 32 - 220, foot_y + 22, 220, 54), "Void item", lk.RED, vd.reason != "") then
       void_line(vd.id, vd.reason)
       set sheet = ""
-    end
-  end
   if close_button(Rect(r.x + r.w - 72, r.y + 22, 40, 40)) then
     close_now = true
-  end
-end
 
 # ── The payment sheet ───────────────────────────────────────────────────────
 
@@ -1251,7 +1091,6 @@ if sheet == "pay" then
     lk.ui(14, lk.MUTED))
   if close_button(Rect(r.x + r.w - 72, r.y + 22, 40, 40)) then
     close_now = true
-  end
   lk.hline(r.x + 1, r.y + 100, r.w - 2, lk.RULE)
   let LW = 380
   let lx = x0
@@ -1266,7 +1105,6 @@ if sheet == "pay" then
       lk.txt(rw[0], Rect(lx, yy, 200, 22), lk.ui(14, lk.SOFT))
       lk.txt(rw[1], Rect(lx, yy, LW, 22), lk.mono(14, lk.SOFT), "right")
       yy += 26
-    end
     for k in range(0, len(t.paid)) do
       let p = t.paid[k]
       lk.check_mark(lx + 7, yy + 11, 5.0, lk.SAGE, 2.0)
@@ -1274,7 +1112,6 @@ if sheet == "pay" then
         Rect(lx + 20, yy, 260, 22), lk.ui(14, lk.SAGE))
       lk.txt("-" ++ lk.usd(p.base), Rect(lx, yy, LW, 22), lk.mono(14, lk.SAGE), "right")
       yy += 26
-    end
     lk.dashed(lx, lx + LW, yy + 4, lk.LINE)
     lk.txt("Balance due", Rect(lx, yy + 12, 200, 28), lk.uib(16, lk.INK))
     lk.txt(lk.usd(b.due), Rect(lx, yy + 12, LW, 28), lk.mono(18, lk.INK), "right")
@@ -1284,7 +1121,6 @@ if sheet == "pay" then
     let locked = len(t.paid) > 0
     if locked then
       lk.txt("set when the first guest paid", Rect(lx, yy, LW, 18), lk.ui(12, lk.FAINT), "right")
-    end
     yy += 24
     let split_now = clamp(t.split, lo: 1, hi: 6)
     if locked then
@@ -1296,8 +1132,6 @@ if sheet == "pay" then
       if si + 1 != t.split then
         set tables[cur].split = si + 1
         set dirty = true
-      end
-    end
     yy += 70
     let t2 = tables[cur]
     let b2 = bill(t2)
@@ -1310,8 +1144,6 @@ if sheet == "pay" then
       let label = if TIPS[k] == 0 then "None" else "{TIPS[k]}%" end
       if lk.chip(cr, label, pay.tip == k, lk.ACCENT, {sub: lk.usd(tip_for(sh, TIPS[k])), size: 15}) then
         set pay.tip = k
-      end
-    end
 
     # The shares, one row a guest, so the table can see who is next.
     yy += 84
@@ -1324,21 +1156,17 @@ if sheet == "pay" then
         let pr = Rect(lx, yy, LW, 30)
         if p.state == "now" then
           draw_rect_rounded(pr, 8, mix(lk.CARD, lk.ACCENT, 0.08))
-        end
         let tone = if p.state == "paid" then lk.SAGE else if p.state == "now" then lk.ACCENT else lk.FAINT end
         if p.state == "paid" then
           lk.check_mark(pr.x + 14, pr.y + 15, 5.0, lk.SAGE, 2.0)
         else
           draw_circle({x: pr.x + 14, y: pr.y + 15}, 4.5, tone)
-        end
         lk.txt("Guest {k + 1}", Rect(pr.x + 30, pr.y, 100, 30), lk.uib(14, if p.state == "later" then lk.MUTED else lk.INK end))
         let st = if p.state == "paid" then "paid by {lower(p.method)}" else if p.state == "now" then "paying now" else "waiting" end
         lk.txt(st, Rect(pr.x + 120, pr.y, 140, 30), lk.ui(13, mix(tone, :000000, 0.1)))
         lk.txt(lk.usd(p.amount), Rect(pr.x, pr.y, pr.w - 12, 30), lk.mono(14, if p.state == "later" then lk.MUTED else lk.INK end),
           "right")
         yy += 32
-      end
-    end
 
     # Right: who is paying, how, and the button that takes it.
     let tip = tip_for(sh, TIPS[pay.tip])
@@ -1369,7 +1197,6 @@ if sheet == "pay" then
         let rad = 9.0 + k * 8.0
         let pulse = 0.5 + 0.5 * sin(time() * 3.0 - k * 0.9)
         fill_arc({x: cxa - 18.0, y: dev.y + 118.0}, rad, rad + 2.6, -0.75, 0.75, mix(lk.BAR_MUT, :9fd4ae, pulse))
-      end
       lk.txt("Tap, insert or swipe", Rect(pr.x, pr.y + 194, pr.w, 22), lk.uib(15, lk.INK), "center")
       lk.txt("The reader is showing the guest {lk.usd(charge)}", Rect(pr.x, pr.y + 216, pr.w, 18), lk.ui(12, lk.MUTED),
         "center")
@@ -1378,11 +1205,9 @@ if sheet == "pay" then
       if n_unsent > 0 then
         lk.txt("{plural(n_unsent, "line")} not sent to the kitchen yet", Rect(rx0, ry, RW, 20), lk.uib(13, lk.AMBER),
           "center")
-      end
       if lk.solid(Rect(rx0, r.y + r.h - 32 - 60, RW, 60), "Charge card", lk.ACCENT, charge > 0, {sub: lk.usd(charge)}) ||
         (key_pressed("return") && charge > 0) then
         take = true
-      end
     else
       # Cash: what the guest handed over, keyed in cents like a register.
       let tend = pay.tendered
@@ -1397,7 +1222,6 @@ if sheet == "pay" then
       for step in [500, 1000, 2000, 5000, 10000] do
         let v = (charge / step + 1) * step
         if v > charge && !contains(ups, v) && len(ups) < 3 then ups = append(ups, v) end
-      end
       let quick = [charge] ++ ups
       let qw = (RW - 3.0 * 8.0) / 4.0
       for k in range(0, len(quick)) do
@@ -1405,8 +1229,6 @@ if sheet == "pay" then
         let lab = if k == 0 then "Exact" else lk.usd(quick[k]) end
         if lk.chip(qr, lab, tend == quick[k] && tend > 0, lk.SAGE, {size: 14}) then
           set pay.tendered = quick[k]
-        end
-      end
       ry += 62
       # The keypad.
       let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "00", "0", "del"]
@@ -1428,22 +1250,17 @@ if sheet == "pay" then
           draw_line({x: kx - 2, y: kyy + 4}, {x: kx + 6, y: kyy - 4}, lk.CARD, 255, 1.8)
         else
           lk.txt(keys[k], kr, lk.mono(20, lk.INK), "center")
-        end
         if lk.press(kr) then typed = keys[k] end
-      end
       if focus == "" then
         for d in range(0, 10) do
           if key_pressed(str(d)) then typed = str(d) end
-        end
         if key_pressed("backspace") then typed = "del" end
-      end
       if typed == "del" then
         set pay.tendered = tend / 10
       else if typed == "00" then
         set pay.tendered = min(9999999, tend * 100)
       else if typed != "" then
         set pay.tendered = min(9999999, tend * 10 + parse_int(typed))
-      end
       ry += 4 * 54 + 6
       let tend2 = pay.tendered
       let short = tend2 < charge
@@ -1455,13 +1272,10 @@ if sheet == "pay" then
       else
         lk.txt("Change due", Rect(rx0, ry, RW, 24), lk.uib(15, lk.SAGE))
         lk.txt(lk.usd(ch), Rect(rx0, ry, RW, 24), lk.mono(20, lk.SAGE), "right")
-      end
       obs_change = ch
       if lk.solid(Rect(rx0, r.y + r.h - 32 - 60, RW, 60), "Take cash", lk.SAGE, !short && charge > 0,
         {sub: lk.usd(tend2)}) || (key_pressed("return") && !short && charge > 0) then
         take = true
-      end
-    end
     obs_share = sh.base
     obs_tip = tip
     obs_charge = charge
@@ -1471,7 +1285,6 @@ if sheet == "pay" then
       set pay.result = res
       toast(if res.method == "Cash" then "Cash taken: {lk.usd(res.tendered)}, change {lk.usd(res.change)}" else
         "Card approved: {lk.usd(res.charged)}" end, "ok")
-    end
   else
     # Done: the receipt for this guest, and what comes next.
     let res = pay.result
@@ -1507,13 +1320,11 @@ if sheet == "pay" then
       draw_rect_rounded(Rect(chip_r.x + 10, chip_r.y + 12, 16, 12), 3, :d8b36a)
       lk.txt("{brand} ending {last4}", Rect(cr.x + 110, cr.y + 26, 280, 26), lk.uib(17, lk.INK))
       lk.txt("Auth {auth}  /  contactless", Rect(cr.x + 110, cr.y + 54, 280, 22), lk.mono(13, lk.MUTED))
-    end
     if res.closed then
       let tf = tables[cur]
       let got = reduce(tf.paid, 0, fn(a, p) -> a + p.base + p.tip)
       lk.txt("Check paid in full. {lk.usd(got)} collected with tips.", Rect(r.x, cyr + 280, r.w, 22),
         lk.uib(14, lk.SAGE), "center")
-    end
     let br = Rect(cxr - 256 + 172, r.y + r.h - 32 - 60, 340, 60)
     let b3 = bill(tables[cur])
     let label = if res.closed then "Close table {tname}" else "Next guest" end
@@ -1524,34 +1335,25 @@ if sheet == "pay" then
         set sheet = ""
       else
         set pay = {method: pay.method, tip: pay.tip, tendered: 0, phase: "entry", result: {}}
-      end
-    end
     if lk.ghost(Rect(br.x - 172, br.y, 160, 60), "Print receipt", lk.SOFT) then
       toast("Receipt printed at the host stand", "info")
-    end
     obs_change = res.change
-  end
-end
 
 # A tap outside the sheet backs out of it. A finished payment closes the
 # table if it was the last share, so the money and the floor agree.
 if sheet != "" && sheet0 != "" && !point_in(mouse_x(), mouse_y(), sheet_rect) && lk.stray_press() then
   close_now = true
-end
 if close_now then
   if sheet == "pay" && pay.phase == "done" && pay.result.closed then
     close_table()
-  end
   set sheet = ""
   focus = ""
-end
 
 # ── Toasts ──────────────────────────────────────────────────────────────────
 
 set toasts = for t in toasts do
   if t.age + frame_dt > TOAST_SECS then continue end
   {...t, age: t.age + frame_dt}
-end
 # Toasts wait while a sheet is up: the sheet already says what happened.
 for k in range(0, if sheet == "" then len(toasts) else 0 end) do
   let t = toasts[k]
@@ -1569,18 +1371,14 @@ for k in range(0, if sheet == "" then len(toasts) else 0 end) do
   draw_circle({x: tr.x + 24, y: tr.y + 23}, 9.0, tone, int(255 * a))
   if t.kind == "ok" then
     lk.check_mark(tr.x + 24, tr.y + 23, 4.0, lk.with_alpha(lk.WHITE, 255 * a), 1.8)
-  end
   lk.txt(t.text, Rect(tr.x + 42, tr.y, w - 50, tr.h), lk.uib(14, lk.with_alpha(lk.BAR_INK, 255 * a)))
-end
 
 if lk.busy() || len(toasts) > 0 then
   request_frame()
-end
 
 # Save after the frame's actions, at most once a frame.
 if dirty then
   save_floor()
-end
 
 # ── What a test can assert on ───────────────────────────────────────────────
 
@@ -1596,7 +1394,6 @@ let obs_lines = for l in TF.lines do
   let extra = (if len(l.mods) > 0 then " [" ++ join(l.mods, ", ") ++ "]" else "" end) ++
   (if l.note != "" then " ({l.note})" else "" end)
   "{l.qty}x {mn.item_by_id(l.item).name}{extra} {lk.usd(line_cents(l))}{tag}"
-end
 let obs_unsent = len(unsent(TF))
 let obs_subtotal = BF.sub
 let obs_tax = BF.tax
@@ -1616,7 +1413,6 @@ let obs_toasts = for t in toasts do t.text end
 let obs_open_tables = for i in range(0, len(tables)) do
   if tables[i].guests == 0 && len(tables[i].lines) == 0 then continue end
   "T{mn.TABLES[i].name}:{lk.usd(bill(tables[i]).due)}"
-end
 let obs_scroll = scroll
 let obs_saves = saves
 let obs_clock = clock_text(now())

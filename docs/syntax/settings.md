@@ -9,7 +9,7 @@ initializer is a call of the builtin
 let SPEED = tunable(4.0)
 let RADIUS = tunable(12)
 
-print(SPEED * 2, RADIUS)   // 8.0 12
+print(SPEED * 2, RADIUS)   # 8.0 12
 ```
 
 `tunable` returns its first argument, so the program runs exactly as if the
@@ -51,12 +51,12 @@ to its owner.
 
 ```petal
 let offset = tunable(10)
-let scale: float = tunable(1.5)             // an optional type annotation, as on `let`
-pub let THEME = tunable({                   // exported from a module
+let scale: float = tunable(1.5)             # an optional type annotation, as on `let`
+pub let THEME = tunable({                   # exported from a module
   bg: :101418,
   accent: :ff2e88,
 })
-let SPEED = tunable(4.0, 0, 10)             // a number with a range
+let SPEED = tunable(4.0, 0, 10)             # a number with a range
 let START = tunable("title", options: ["title", "select", "play"])
 print(offset, scale, THEME.bg, SPEED, START)
 ```
@@ -73,10 +73,10 @@ The declared value is the call's first argument, so `@tunable(a, …)` passes
 everything after the value:
 
 ```petal
-@tunable let offset = 10                          // let offset = tunable(10)
-@tunable(0, 10) let SPEED = 4.0                   // let SPEED = tunable(4.0, 0, 10)
+@tunable let offset = 10                          # let offset = tunable(10)
+@tunable(0, 10) let SPEED = 4.0                   # let SPEED = tunable(4.0, 0, 10)
 @tunable(min: 3.0, max: 12.0, step: 0.5)
-pub let RUN = 7.0                                 // pub let RUN = tunable(7.0, min: 3.0, max: 12.0, step: 0.5)
+pub let RUN = 7.0                                 # pub let RUN = tunable(7.0, min: 3.0, max: 12.0, step: 0.5)
 @tunable(options: ["title", "select", "play"])
 let START = "title"
 print(offset, SPEED, RUN, START)
@@ -120,8 +120,8 @@ no literal to hold on to, so `petal lint` reports it (`config-not-data`):
 
 ```petal
 let base = 20
-let margin = tunable(base * 2)     // config-not-data: needs evaluating
-print(margin)   // 40
+let margin = tunable(base * 2)     # config-not-data: needs evaluating
+print(margin)   # 40
 ```
 
 Every number literal in a setting's data is a knob, not only a scalar
@@ -132,11 +132,11 @@ match its `knob` selector exactly as `let X = tunable(140)` does.
 ## Ranges and options
 
 ```petal
-let SPEED = tunable(4.0, 0, 10)                       // min 0, max 10
+let SPEED = tunable(4.0, 0, 10)                       # min 0, max 10
 let GRAV = tunable(-9.8, min: -20, max: 0, step: 0.1)
 let MODE = tunable("day", options: ["day", "night"])
-@tunable(min: 0, max: 1) let MIX = 0.25               // bounds by name, `@` form
-print(SPEED, GRAV, MODE, MIX)   // 4.0 -9.8 day 0.25
+@tunable(min: 0, max: 1) let MIX = 0.25               # bounds by name, `@` form
+print(SPEED, GRAV, MODE, MIX)   # 4.0 -9.8 day 0.25
 ```
 
 The bounds are `min`, `max` and `step`, in that order by position, or by
@@ -267,15 +267,15 @@ for the C calls and the JSON form of a value.
 A script with three settings and one piece of state:
 
 ```petal
-// How far the dot moves each frame.
+# How far the dot moves each frame.
 let SPEED = tunable(4.0, -10, 10)
-// Dot radius in pixels.
+# Dot radius in pixels.
 let RADIUS = tunable(12)
 let TINT = tunable({r: 255, g: 80, b: 40})
 
 state x = 0.0
 x += SPEED
-print(x, RADIUS * 2, TINT.g)   // 4.0 24 80
+print(x, RADIUS * 2, TINT.g)   # 4.0 24 80
 ```
 
 A live-editing host does this with it:
@@ -328,8 +328,8 @@ is a setting; a value the program accumulates is
 Before `tunable` could declare a setting, the `config` modifier did:
 
 ```petal
-config let SPEED = 4.0                       // means let SPEED = tunable(4.0)
-config let GRAV = tunable(-9.8, -20, 0)      // means let GRAV = tunable(-9.8, -20, 0)
+config let SPEED = 4.0                       # means let SPEED = tunable(4.0)
+config let GRAV = tunable(-9.8, -20, 0)      # means let GRAV = tunable(-9.8, -20, 0)
 print(SPEED, GRAV)
 ```
 

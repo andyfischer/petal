@@ -42,5 +42,3 @@ for gy in range(0, rows) do
     let x = (gx * sw) / cols + ox
     let y = (gy * sh) / rows + ox
     draw_canvas(stamp, x, y)
-  end
-end

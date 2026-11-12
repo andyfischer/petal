@@ -71,10 +71,10 @@ A bundled package `ast` declares:
 
 ```petal
 pub enum AstKind
-  // statements
+  # statements
   Let, Assign, Set, Expr, For, While, Return, Break, Continue, State, Memo,
   FnDecl, ClassDecl, EnumDecl, NativeFn, Import,
-  // expressions (For is shared with the statement)
+  # expressions (For is shared with the statement)
   Literal, Ident, CellGet, AtVar, BinaryOp, UnaryOp, Call, If, Match, List,
   Record, FieldAccess, IndexAccess, OptionalAccess, Block, Lambda,
   StringInterp, Element,
@@ -229,10 +229,10 @@ Before (`glsl.ptl:883-950`, trimmed):
   let tag = node.tag
   if tag == "Let" then
     ...
-  elsif tag == "Set" || tag == "Assign" then
+  else if tag == "Set" || tag == "Assign" then
     if node.target.kind != "Name" then
   ...
-  elsif tag == "Break" then
+  else if tag == "Break" then
     emit(c, "break;")
   else
     fail(c, tag ++ " has no GLSL form", node)
@@ -264,7 +264,7 @@ Before (`glsl.ptl:1153-1159`):
 ```petal ignore
     if d.tag == "Literal" && (d.type == "float" || d.type == "int") then
       ty = Ty.float
-    elsif d.tag == "UnaryOp" && d.op == "Neg" && d.operand.tag == "Literal" then
+    else if d.tag == "UnaryOp" && d.op == "Neg" && d.operand.tag == "Literal" then
 ```
 
 After:
@@ -272,7 +272,7 @@ After:
 ```petal ignore
     if d.tag == AstKind.Literal && (d.type == "float" || d.type == "int") then
       ty = Ty.float
-    elsif d.tag == AstKind.UnaryOp && d.op == AstOp.Neg && d.operand.tag == AstKind.Literal then
+    else if d.tag == AstKind.UnaryOp && d.op == AstOp.Neg && d.operand.tag == AstKind.Literal then
 ```
 
 This is longer, and it now mixes two vocabularies: enum tags beside a string
@@ -292,7 +292,7 @@ end
 fn expensive_description(tree)
   "{tree.tag} with {len(tree.body)} statement(s)"
 end
-// Lambda with 1 statement(s)
+# Lambda with 1 statement(s)
 ```
 
 After: the same code prints `AstKind.Lambda with 1 statement(s)`. Writing
@@ -308,10 +308,10 @@ After: the same code prints `AstKind.Lambda with 1 statement(s)`. Writing
 A has to be judged against the language's own rules, not just glsl.ptl:
 
 ```petal ignore
-// proposed A — pattern must list every payload field (language-guide.md, Pattern Matching)
+# proposed A — pattern must list every payload field (language-guide.md, Pattern Matching)
 match node
   when AstNode.BinaryOp(op, left, right, _, _) -> ...
-  when AstNode.Ident(id, _, _) -> ...          // `name` is reserved, so `id`
+  when AstNode.Ident(id, _, _) -> ...          # `name` is reserved, so `id`
   when AstNode.Call(function, args, arg_names, _, _) -> ...
   when _ -> ...
 end

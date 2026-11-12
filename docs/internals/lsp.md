@@ -21,7 +21,7 @@ fn area(w, h = 2) -> int
 end
 
 let k = Kind.park
-print(area(LIMIT), k.code)   // 20 2
+print(area(LIMIT), k.code)   # 20 2
 ```
 
 hover on `area` in the last line answers with a Markdown block:

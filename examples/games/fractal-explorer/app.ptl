@@ -97,7 +97,7 @@ let PVCAP  = 26000                   # segments the zoom preview can hold
 let BAIL   = 65536.0
 let INV_LN2 = 1.4426950408889634
 let MIN_SCALE = 0.000000000000002    # world units per px: where f64 runs out
-let LN     = 256                     # entries per palette
+let LN = 256                         # entries per palette
 let PHASE_OCT = 4.0                  # doublings of the iteration count per palette cycle
 
 let KINDS = [
@@ -173,26 +173,21 @@ let ITER_STEPS = [64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 
 
 fn tx(s: string, x: num, y: num, style: record) -> nil
   draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
-end
 
 fn tx_right(s: string, right_x: num, y: num, style: record) -> nil
   draw_text(s, pos: {x: int(right_x) - text_width(s, style), y: int(y)}, style: style)
-end
 
 fn tx_center(s: string, cx: num, y: num, style: record) -> nil
   draw_text(s, pos: {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style: style)
-end
 
 # Floor division and the matching always-positive remainder.
 fn fdiv(a: int, b: int) -> int
   let q = a / b
   if a % b != 0 && a < 0 then q - 1 else q end
-end
 
 fn pmod(a: int, b: int) -> int
   let m = a % b
   if m < 0 then m + b else m end
-end
 
 # A float with exactly `places` decimals, never in exponent form.
 fn fixed(v: num, places: int) -> string
@@ -204,11 +199,9 @@ fn fixed(v: num, places: int) -> string
   if frac >= scale10 then
     whole += 1.0
     frac = 0.0
-  end
   let digits = pad_start(str(int(frac)), places, "0")
   let sign_s = if neg && (whole > 0.0 || frac > 0.0) then "-" else "" end
   if places == 0 then "{sign_s}{int(whole)}" else "{sign_s}{int(whole)}.{digits}" end
-end
 
 # 1234567 -> "1,234,567"
 fn fmt_int(v: num) -> string
@@ -217,9 +210,7 @@ fn fmt_int(v: num) -> string
   for i in range(0, len(cs)) do
     if i > 0 && (len(cs) - i) % 3 == 0 then out ++= "," end
     out ++= cs[i]
-  end
   out
-end
 
 # Magnification: 1.0x, 240x, 12.5kx, 3.4Mx, then powers of ten.
 fn fmt_mag(m: num) -> string
@@ -230,13 +221,10 @@ fn fmt_mag(m: num) -> string
   else
     let e = int(floor(log(m) / log(10.0)))
     "{fixed(m / pow(10.0, float(e)), 1)}e{e} x"
-  end
-end
 
 fn fmt_complex(re: num, im: num, places: int) -> string
   let sign_s = if im < 0.0 then "-" else "+" end
   "{fixed(re, places)} {sign_s} {fixed(abs(im), places)}i"
-end
 
 # ── Escape-time kernels ──────────────────────────────────────────────────
 # Each runs four iterations between bailout tests and returns the smooth
@@ -263,11 +251,8 @@ fn esc_quad(zr0: float, zi0: float, cr: float, ci: float, chunks: int) -> float
     if m > BAIL then
       n = k
       break
-    end
-  end
   if n < 0 then return -1.0 end
   float(n * 4 + 5) - log(0.5 * log(m)) * INV_LN2
-end
 
 fn esc_ship(cr: float, ci: float, chunks: int) -> float
   let zr = 0.0
@@ -287,11 +272,8 @@ fn esc_ship(cr: float, ci: float, chunks: int) -> float
     if m > BAIL then
       n = k
       break
-    end
-  end
   if n < 0 then return -1.0 end
   float(n * 4 + 5) - log(0.5 * log(m)) * INV_LN2
-end
 
 fn esc_tri(cr: float, ci: float, chunks: int) -> float
   let zr = 0.0
@@ -311,22 +293,17 @@ fn esc_tri(cr: float, ci: float, chunks: int) -> float
     if m > BAIL then
       n = k
       break
-    end
-  end
   if n < 0 then return -1.0 end
   float(n * 4 + 5) - log(0.5 * log(m)) * INV_LN2
-end
 
 # Smooth count -> palette phase in cycles (before the band density). The
 # log keeps the bands a readable width at every depth: one cycle per
 # PHASE_OCT doublings of the count, however deep the view.
 fn phase_of(mu: float) -> float
   log(1.0 + max(mu, 0.0) * 0.125) * INV_LN2 / PHASE_OCT
-end
 
 fn mu_of(phase: float) -> float
   (exp(phase * PHASE_OCT / INV_LN2) - 1.0) * 8.0
-end
 
 # ── Palette tables ───────────────────────────────────────────────────────
 # Every palette as LN colours, flattened into three int lists so the draw
@@ -342,16 +319,12 @@ fn build_lut() -> record
       let k = count - 1
       for q in range(0, count) do
         if stops[q].p <= t then k = q end
-      end
       let a = stops[k]
       let b = stops[(k + 1) % count]
       let b_p = if k == count - 1 then 1.0 else b.p end
       let c = lerp(a.c, b.c, (t - a.p) / (b_p - a.p))
       cols = append(cols, c)
-    end
-  end
   {r: map(cols, fn(c) -> c.r), g: map(cols, fn(c) -> c.g), b: map(cols, fn(c) -> c.b)}
-end
 
 # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -385,7 +358,6 @@ let PLACE_H = 24
 fn kind_chip(i: int) -> Rect
   let cw2 = (SWI - 6) / 2
   rect(SX + (i % 2) * (cw2 + 6), y_kind + 20 + (i / 2) * (CHIP_H + 6), cw2, CHIP_H)
-end
 
 let iter_minus = rect(SX, y_iter + 20, 30, CHIP_H)
 let iter_plus = rect(SX + 124, y_iter + 20, 30, CHIP_H)
@@ -394,7 +366,6 @@ let iter_auto = rect(SX + SWI - 76, y_iter + 20, 76, CHIP_H)
 fn pal_chip(i: int) -> Rect
   let pw = (SWI - 4 * 6) / 5
   rect(SX + i * (pw + 6), y_pal + 20, pw, CHIP_H)
-end
 
 let band_minus = rect(SX, y_pal + 20 + CHIP_H + 6, 30, CHIP_H)
 let band_plus = rect(SX + 124, y_pal + 20 + CHIP_H + 6, 30, CHIP_H)
@@ -403,13 +374,11 @@ let cycle_chip = rect(SX + SWI - 76, y_pal + 20 + CHIP_H + 6, 76, CHIP_H)
 fn detail_chip(i: int) -> Rect
   let dw = (SWI - 76 - 6 - 2 * 6) / 3
   rect(SX + i * (dw + 6), y_detail + 20, dw, CHIP_H)
-end
 
 let tiles_chip = rect(SX + SWI - 76, y_detail + 20, 76, CHIP_H)
 
 fn place_row(i: int) -> Rect
   rect(side.x + 8, y_place + 20 + i * PLACE_H, side.w - 16, PLACE_H)
-end
 
 # The locator map: the whole of one fractal, drawn small. A Julia set is
 # located by its seed, so it shares the Mandelbrot map.
@@ -422,7 +391,6 @@ fn map_geom(k: int) -> record
   let ms = KINDS[k].span * 1.12 / float(SWI)
   {ms: ms, wx0: KINDS[k].cx - ms * float(SWI) / 2.0,
     wy0: KINDS[k].cy * KINDS[k].ys - ms * float(map_r.h) / 2.0}
-end
 
 # ── Persistent state ─────────────────────────────────────────────────────
 
@@ -514,7 +482,6 @@ state maps = [nil, nil, nil, nil]     # locator draw lists, built on first use
 
 fn slot_of(tile_x: int, tile_y: int) -> int
   pmod(tile_x, NX) + pmod(tile_y, NY) * NX
-end
 
 # Iterations that suit a magnification: deeper views need more to resolve.
 fn auto_maxit(s: float, k: int) -> int
@@ -523,7 +490,6 @@ fn auto_maxit(s: float, k: int) -> int
   let base = if k == K_JULIA then 128.0 else 176.0 end
   let v = int(base + 52.0 * depth)
   min(v / 16 * 16, 4096)
-end
 
 # Copy what is on screen into the preview, unless the preview already held
 # is sharper than the tiles (a second zoom before the first one finished).
@@ -533,7 +499,6 @@ fn keep_preview(wipe: bool) -> nil
   if have && (get st_blank > 0 || get st_maxcell > get pv_cell * r + 0.01) then
     if wipe then set pv_cell = 1000000.0 end
     return nil
-  end
   let vx0 = get ox
   let vy0 = get oy
   let ep = get epoch
@@ -558,21 +523,16 @@ fn keep_preview(wipe: bool) -> nil
         set pva[n] = get sga[i]
         set pvb[n] = get sgb[i]
         n += 1
-      end
-    end
-  end
   set pv_n = n
   set pv_scale = get scale
   set pv_ox = vx0
   set pv_oy = vy0
   set pv_cell = if wipe then 1000000.0 else max(coarsest, float(CELL)) end
-end
 
 # Every cached sample is now stale.
 fn invalidate() -> nil
   set epoch += 1
   set job_s = -1
-end
 
 # Zoom by `factor` (> 1 is in), keeping the canvas point (px, py) fixed.
 fn zoom_at(px: num, py: num, factor: num) -> nil
@@ -588,7 +548,6 @@ fn zoom_at(px: num, py: num, factor: num) -> nil
   set oy = int(round(wy / s1)) - int(py)
   if get auto_iter then set maxit = auto_maxit(s1, get kind) end
   invalidate()
-end
 
 # Show the window `span` wide centred on (cx, cy) of fractal k's plane.
 fn frame_view(k: int, cx: num, cy: num, span: num) -> nil
@@ -598,11 +557,9 @@ fn frame_view(k: int, cx: num, cy: num, span: num) -> nil
   set oy = int(round(cy * KINDS[k].ys / s)) - CH / 2
   if get auto_iter then set maxit = auto_maxit(s, k) end
   invalidate()
-end
 
 fn home_view(k: int) -> nil
   frame_view(k, KINDS[k].cx, KINDS[k].cy, KINDS[k].span)
-end
 
 # Switch fractal, remembering where the old one was left.
 fn switch_kind(k: int) -> nil
@@ -620,22 +577,18 @@ fn switch_kind(k: int) -> nil
     set oy = v.oy
     if get auto_iter then set maxit = auto_maxit(v.scale, k) end
     invalidate()
-  end
-end
 
 fn set_seed(re: num, im: num) -> nil
   keep_preview(true)
   set jr = float(re)
   set ji = float(im)
   invalidate()
-end
 
 fn set_maxit(v: int) -> nil
   if v == get maxit then return nil end
   keep_preview(false)
   set maxit = v
   invalidate()
-end
 
 fn go_place(i: int) -> nil
   let k = get kind
@@ -647,8 +600,6 @@ fn go_place(i: int) -> nil
     frame_view(k, 0.0, 0.0, p.span)
   else
     frame_view(k, p.x, p.y, p.span)
-  end
-end
 
 # Which of fractal k's places the view is showing now, or -1.
 fn at_place(k: int) -> int
@@ -664,11 +615,7 @@ fn at_place(k: int) -> int
         abs(get ox - (int(round(p.x / s)) - CW / 2)) <= 2 &&
         abs(get oy - (int(round(p.y * KINDS[k].ys / s)) - CH / 2)) <= 2 then
         found = i
-      end
-    end
-  end
   found
-end
 
 # ── Fitting a tile's draw list ───────────────────────────────────────────
 # Walk each sample row of slot s at level `lod`. A run of interior samples
@@ -700,7 +647,6 @@ fn fit_tile(s: int, lod: int, dens: float) -> bool
     set sgb[so] = -1.0
     set t_n[s] = 1
     return true
-  end
   for ry in range(0, count) do
     let rb = base + ry * st * TS
     let y = float(ry) * cpx
@@ -735,7 +681,6 @@ fn fit_tile(s: int, lod: int, dens: float) -> bool
           hi = min(hi, slope + eps / d)
           last = j
           j += 1
-        end
         set sgx[so + n] = float(k) * cpx
         set sgy[so + n] = y
         set sgh[so + n] = cpx
@@ -753,7 +698,6 @@ fn fit_tile(s: int, lod: int, dens: float) -> bool
             set sgw[so + n] = cpx * 2.0
             set sgb[so + n] = vn
             k += 2
-          end
         else if last == count - 1 then
           # The ramp reaches the tile's last sample: run it on to the
           # edge instead of spending a call on the final cell.
@@ -765,10 +709,7 @@ fn fit_tile(s: int, lod: int, dens: float) -> bool
           set sgw[so + n] = float(last - k) * cpx
           set sgb[so + n] = get vals[rb + last * st]
           k = last
-        end
         n += 1
-      end
-    end
     # A row that repeats the one above (same cuts, phases within eps of
     # the first row of the run) makes that row taller instead of adding
     # calls: slow exterior and solid interior collapse vertically too.
@@ -782,22 +723,15 @@ fn fit_tile(s: int, lod: int, dens: float) -> bool
           abs(get sga[a] - get sga[b]) > veps || abs(get sgb[a] - get sgb[b]) > veps then
           same = false
           break
-        end
-      end
-    end
     if same then
       for q in range(0, row_n) do
         set sgh[so + grp + q] = get sgh[so + grp + q] + cpx
-      end
       n = row_start
     else
       grp = row_start
       grp_n = row_n
-    end
-  end
   set t_n[s] = n
   all_in
-end
 
 # ── The draw budget ──────────────────────────────────────────────────────
 # Called as the worker is about to start level `lod` (the 2 px pass). A tile's draw list can grow about threefold per level, and a view
@@ -819,15 +753,11 @@ fn plan_caps(lod: int) -> nil
       cands = append(cands, {s: s, n: n, est: est})
     else
       total += n
-    end
-  end
   if total <= draw_budget then return nil end
   for it in sort_by(cands, fn(it) -> it.n, "desc") do
     if total <= draw_budget then break end
     set t_cap[it.s] = lod - 1
     total -= it.est - it.n
-  end
-end
 
 # ── The refinement worker ────────────────────────────────────────────────
 # Spend up to `budget` iterations. The queue is walked once per level, so
@@ -855,16 +785,12 @@ fn work(budget: int, cap: int, dens: float, fit_key: int) -> int
             set job_row = 0
             found = true
             break
-          end
           set qi += 1
-        end
         if found then break end
         set pass_lod += 1
         set qi = 0
         if get pass_lod == MAXLOD && cap == MAXLOD then plan_caps(MAXLOD) end
-      end
       if !found then return spent end
-    end
 
     let s = get job_s
     let lod = get t_lod[s] + 1
@@ -894,18 +820,13 @@ fn work(budget: int, cap: int, dens: float, fit_key: int) -> int
           else
             mu = esc_quad(0.0, 0.0, x, y, chunks)
             spent += if mu < 0.0 then inside_cost else int(mu) + sample_cost end
-          end
         else
           if k == K_JULIA then mu = esc_quad(x, y, c_re, c_im, chunks)
           else if k == K_SHIP then mu = esc_ship(x, y, chunks)
           else mu = esc_tri(x, y, chunks)
-          end
           spent += if mu < 0.0 then inside_cost else int(mu) + sample_cost end
-        end
         set vals[rb + lx] = if mu < 0.0 then -1.0 else phase_of(mu) end
-      end
       row += 1
-    end
     set job_row = row
     if row >= count then
       let all_in = fit_tile(s, lod, dens)
@@ -915,16 +836,12 @@ fn work(budget: int, cap: int, dens: float, fit_key: int) -> int
         set t_lod[s] = MAXLOD
       else
         set t_lod[s] = lod
-      end
       set t_fit[s] = fit_key + lod
       set samples_done += count * count
       set job_s = -1
       set qi += 1
-    end
-  end
   set iters_done += spent
   spent
-end
 
 # Claim a slot for every visible tile and order them for the worker.
 fn build_queue(fx: num, fy: num) -> nil
@@ -946,17 +863,13 @@ fn build_queue(fx: num, fy: num) -> nil
         set t_n[s] = 0
       else if s == get job_s then
         keep_job = true
-      end
       let dx = float(tile_x * TPX + TPX / 2 - vx0) - fx
       let dy = float(tile_y * TPX + TPX / 2 - vy0) - fy
       items = append(items, {s: s, d: dx * dx + dy * dy})
-    end
-  end
   if !keep_job then set job_s = -1 end
   set queue = map(sort_by(items, fn(it) -> it.d), fn(it) -> it.s)
   set pass_lod = 1
   set qi = 0
-end
 
 # A locator map: fractal k at 3 px cells, as solid runs of a 14-step ramp.
 fn build_map(k: int) -> record
@@ -979,23 +892,16 @@ fn build_map(k: int) -> record
         let mu = if k == K_SHIP then esc_ship(re, im, 12)
         else if k == K_TRI then esc_tri(re, im, 12)
         else esc_quad(0.0, 0.0, re, im, 12)
-        end
         level = if mu < 0.0 then 13 else min(int(sqrt(max(mu, 0.0)) * 2.2), 12) end
-      end
       if level != run_c then
         if run_c > 0 then
           xs = append(xs, run * MM_CELL)
           tops = append(tops, j * MM_CELL)
           ws = append(ws, (i - run) * MM_CELL)
           cs = append(cs, run_c)
-        end
         run = i
         run_c = level
-      end
-    end
-  end
   {n: len(xs), x: xs, y: tops, w: ws, c: cs}
-end
 
 # Issue slot s's draw list with its top-left at pane px (x, y). The phase
 # becomes a colour here, through the palette table: one rect per interior
@@ -1015,10 +921,7 @@ fn draw_tile(s: int, x: int, y: int, pbase: int, dens: float, off: float, lr: li
       let ib = pbase + int(fract(get sgb[i] * dens + off) * lnf)
       draw_rect_gradient(fx + get sgx[i], fy + get sgy[i], get sgw[i], get sgh[i],
         lr[ia], lg[ia], lb[ia], 255, lr[ib], lg[ib], lb[ib], 255, 0.0)
-    end
-  end
   n
-end
 
 # Issue the zoom preview: its segments scaled by `r` and moved by (dx, dy)
 # into the canvas at pane px (x, y). Edges are rounded outwards, so scaled
@@ -1048,11 +951,8 @@ fn draw_preview(x: int, y: int, r: float, dx: float, dy: float, pbase: int, dens
       let ib = pbase + int(fract(get pvb[i] * dens + off) * lnf)
       draw_rect_gradient(fcx + px0, fcy + py0, ceil(x1) - px0, ceil(y1) - py0,
         lr[ia], lg[ia], lb[ia], 255, lr[ib], lg[ib], lb[ib], 255, 0.0)
-    end
     n += 1
-  end
   n
-end
 
 # ── Boot ─────────────────────────────────────────────────────────────────
 
@@ -1082,11 +982,9 @@ if alloc != NSLOT then
   set pv_n = 0
   invalidate()
   maps = [nil, nil, nil, nil]
-end
 if !ready then
   ready = true
   home_view(0)
-end
 let map_k = MAP_OF[kind]
 if maps[map_k] == nil then maps[map_k] = build_map(map_k) end
 let mm = maps[map_k]
@@ -1109,7 +1007,6 @@ let busy_input = moved || mouse_down(0) || scroll_y() != 0.0
 
 for i in range(0, len(KINDS)) do
   if key_pressed(KINDS[i].key) then switch_kind(i) end
-end
 
 # Keyboard pan: a tap nudges, a held key glides.
 let glide = pan_speed * dt() * (if shift then 3.0 else 1.0 end)
@@ -1130,21 +1027,17 @@ if pan_ix != 0 || pan_iy != 0 then
   set ox += pan_ix
   set oy += pan_iy
   pans += 1
-end
 let key_held = key_down("left") || key_down("right") || key_down("up") || key_down("down")
 
 if key_pressed("equals") then
   zoom_at(CW / 2, CH / 2, 1.6)
   zooms += 1
-end
 if key_pressed("minus") then
   zoom_at(CW / 2, CH / 2, 1.0 / 1.6)
   zooms += 1
-end
 if key_pressed("r") || key_pressed("home") then
   set pv_n = 0
   home_view(kind)
-end
 
 # Iterations: [ and ] step the manual ladder, A hands it back to the zoom.
 let iter_down = key_pressed("leftbracket") || (pressed && point_in(px: mx, py: my, r: iter_minus))
@@ -1154,53 +1047,39 @@ if iter_down || iter_up then
   if iter_up then
     for v in reverse(ITER_STEPS) do
       if v > maxit then target = v end
-    end
   else
     for v in ITER_STEPS do
       if v < maxit then target = v end
-    end
-  end
   set auto_iter = false
   set_maxit(target)
-end
 if key_pressed("a") || (pressed && point_in(px: mx, py: my, r: iter_auto)) then
   set auto_iter = !auto_iter
   if auto_iter then set_maxit(auto_maxit(scale, kind)) end
-end
 
 # Colour: none of these touch a sample.
 if key_pressed("p") then
   pal = (pal + (if shift then len(PALS) - 1 else 1 end)) % len(PALS)
-end
 if key_pressed("comma") || (pressed && point_in(px: mx, py: my, r: band_minus)) then
   band_i = max(band_i - 1, 0)
-end
 if key_pressed("period") || (pressed && point_in(px: mx, py: my, r: band_plus)) then
   band_i = min(band_i + 1, len(BANDS) - 1)
-end
 if key_pressed("c") || (pressed && point_in(px: mx, py: my, r: cycle_chip)) then cycling = !cycling end
 if key_pressed("d") then detail_i = (detail_i + 1) % len(DETAILS) end
 if key_pressed("t") || (pressed && point_in(px: mx, py: my, r: tiles_chip)) then show_tiles = !show_tiles end
 if key_pressed("tab") then
   let here = at_place(kind)
   go_place(if here < 0 then 0 else (here + (if shift then len(places) - 1 else 1 end)) % len(places) end)
-end
 
 if pressed && point_in(px: mx, py: my, r: side) then
   for i in range(0, len(KINDS)) do
     if point_in(px: mx, py: my, r: kind_chip(i)) then switch_kind(i) end
-  end
   for i in range(0, len(PALS)) do
     if point_in(px: mx, py: my, r: pal_chip(i)) then pal = i end
-  end
   for i in range(0, len(DETAILS)) do
     if point_in(px: mx, py: my, r: detail_chip(i)) then detail_i = i end
-  end
   for i in range(0, len(PLACES[kind])) do
     if point_in(px: mx, py: my, r: place_row(i)) then go_place(i) end
-  end
   if point_in(px: mx, py: my, r: map_r) then map_drag = true end
-end
 if !mouse_down(0) && !pressed then map_drag = false end
 
 # The locator map: drag to move the view, or in a Julia set, the seed.
@@ -1217,14 +1096,11 @@ if map_drag then
     if nx != ox || ny != oy then pans += 1 end
     set ox = nx
     set oy = ny
-  end
-end
 
 # Canvas: wheel zooms about the pointer, drag pans, double click dives.
 if in_cv && scroll_y() != 0.0 then
   zoom_at(cmx, cmy, pow(wheel_gain, -scroll_y()))
   zooms += 1
-end
 if pressed && in_cv then
   if click_count() >= 2 then
     zoom_at(cmx, cmy, if shift then 0.5 else 2.0 end)
@@ -1235,8 +1111,6 @@ if pressed && in_cv then
     drag_my = my
     drag_ox = ox
     drag_oy = oy
-  end
-end
 if dragging then
   let nx = drag_ox - (mx - drag_mx)
   let ny = drag_oy - (my - drag_my)
@@ -1244,7 +1118,6 @@ if dragging then
   set ox = nx
   set oy = ny
   if !mouse_down(0) && !pressed then dragging = false end
-end
 
 # Right click (or J): the Julia set of the point under the pointer, and
 # from a Julia set, back to the Mandelbrot set centred on its seed.
@@ -1258,15 +1131,12 @@ if (mouse_pressed(1) && in_cv) || key_pressed("j") then
     switch_kind(K_JULIA)
   else if kind == K_JULIA then
     switch_kind(K_MANDEL)
-  end
-end
 
 # A dragged seed is applied only once the last one has a full coarse pass,
 # so the Julia set morphs as fast as it can be drawn and never goes blank.
 if pend_j && (st_blank == 0 || pv_n == 0) then
   pend_j = false
   if kind == K_JULIA && (pend_jr != jr || pend_ji != ji) then set_seed(pend_jr, pend_ji) end
-end
 
 # ── Refine ───────────────────────────────────────────────────────────────
 
@@ -1280,7 +1150,6 @@ let ty1 = fdiv(oy + CH - 1, TPX)
 if q_key != [tx0, ty0, epoch, cap] then
   q_key = [tx0, ty0, epoch, cap]
   build_queue(if in_cv then cmx else CW / 2 end, if in_cv then cmy else CH / 2 end)
-end
 # The budget is a rate times dt(), capped at one 60 Hz frame's worth, so a
 # slow frame cannot ask for a slower one, and a frame that took no time (an
 # injected event under a test's virtual clock) does no work at all: only
@@ -1330,7 +1199,6 @@ for ty in range(ty0, ty1 + 1) do
       n_blank += 1
       want_samples += LOD_SAMPLES[cap]
       continue
-    end
     let goal = min(cap, t_cap[s])
     if goal < cap then n_capped += 1 end
     if lod >= goal then n_done += 1 end
@@ -1346,7 +1214,6 @@ for ty in range(ty0, ty1 + 1) do
       let covered = float(bx) >= pv_dx && float(by) >= pv_dy &&
         float(bx + TPX) <= pv_dx + float(CW) * pr && float(by + TPX) <= pv_dy + float(CH) * pr
       if covered then continue end
-    end
     # A draw list fitted for another band density or level is refitted, a
     # few tiles a frame.
     let want = fit_key + min(lod, cap)
@@ -1354,24 +1221,18 @@ for ty in range(ty0, ty1 + 1) do
       fit_tile(s, min(lod, cap), dens)
       set t_fit[s] = want
       refits += 1
-    end
     let item = {s: s, x: cv.x + bx, y: cv.y + by}
     if coarse then under = append(under, item) else over = append(over, item) end
-  end
-end
 
 for t in under do
   segs_drawn += draw_tile(t.s, t.x, t.y, pbase, dens, cycle_off, LR, LG, LB)
-end
 
 # The preview, scaled into the current view.
 if pv_n > 0 then
   segs_drawn += draw_preview(cv.x, cv.y, pr, pv_dx, pv_dy, pbase, dens, cycle_off, LR, LG, LB)
-end
 
 for t in over do
   segs_drawn += draw_tile(t.s, t.x, t.y, pbase, dens, cycle_off, LR, LG, LB)
-end
 let n_shown = len(under) + len(over)
 set st_blank = n_blank
 set st_maxcell = maxcell
@@ -1390,9 +1251,6 @@ if show_tiles then
       draw_rect_outline(r, c, 70, 1)
       draw_rect(r.x + 4, r.y + 4, 5, 5, c.r, c.g, c.b, 220)
       if s == job_s then draw_rect_outline(r.inset(1), C_TEXT, 220, 2) end
-    end
-  end
-end
 
 # What is under the pointer: its coordinates and its cached sample.
 let cur_re = float(ox + cmx) * scale
@@ -1407,8 +1265,6 @@ if in_cv then
     let ly = pmod(oy + cmy, TPX) / CELL / st * st
     let v = if t_uni[s] == 1 then -1.0 else vals[s * TN + ly * TS + lx] end
     cur_mu = if v < 0.0 then -1.0 else mu_of(v) end
-  end
-end
 
 let mag = KINDS[kind].span / float(CW) / scale
 let places_n = clamp(int(log(max(mag, 1.0)) / log(10.0)) + 4, lo: 4, hi: 16)
@@ -1418,7 +1274,6 @@ let ctr_im = float(oy + CH / 2) * scale * KINDS[kind].ys
 fn hud_pill(r: Rect) -> nil
   draw_rect_rounded(r, radius: 9, c: C_BG, a: 214)
   draw_rect_rounded_outline(r, radius: 9, c: C_EDGE, a: 200, width: 1)
-end
 
 # Top left: which fractal, and its rule.
 let name_s = upper(KINDS[kind].name)
@@ -1435,7 +1290,6 @@ if in_cv && !dragging then
   let what_s = if cur_mu == -2.0 then "not sampled yet"
   else if cur_mu < 0.0 then "bounded after {maxit} iterations"
   else "escapes after {fixed(cur_mu, 1)} iterations"
-  end
   let pw = max(text_width(pos_s, S_MONO), text_width(what_s, S_HINT)) + 28
   let pill = rect(cv.x + 14, cv.y + CH - 60, pw, 46)
   hud_pill(pill)
@@ -1446,7 +1300,6 @@ if in_cv && !dragging then
   draw_rect(mx + 4, my, 6, 1, 255, 255, 255, 170)
   draw_rect(mx, my - 9, 1, 6, 255, 255, 255, 170)
   draw_rect(mx, my + 4, 1, 6, 255, 255, 255, 170)
-end
 
 # Bottom right: what the renderer is doing.
 let cap_px = STEPS[cap] * CELL
@@ -1454,7 +1307,6 @@ let status_s = if complete && n_capped > 0 then "DONE - {n_capped} BUSY TILES AT
 else if complete then "SHARP AT {cap_px} PX"
 else if n_blank > 0 then "SKETCHING 16 PX"
 else "REFINING TO {STEPS[min(pass_lod, cap)] * CELL} PX"
-end
 let pct_s = "{int(progress * 100.0)}%"
 let sw = text_width(status_s, S_LABEL) + (if complete then 0 else text_width(pct_s, S_MONO) + 12 end) + 40
 let stat_pill = rect(cv.x + CW - 14 - sw, cv.y + CH - 42, sw, 28)
@@ -1465,7 +1317,6 @@ if !complete then
   tx_right(pct_s, right_x: stat_pill.x + sw - 14, y: stat_pill.y + 6, style: {...S_MONO, color: C_ACCENT})
   draw_rect(cv.x, cv.y + CH - 3, CW, 3, 0, 0, 0, 120)
   draw_rect(cv.x, cv.y + CH - 3, int(float(CW) * progress), 3, C_ACCENT.r, C_ACCENT.g, C_ACCENT.b)
-end
 
 if scale <= MIN_SCALE * 4.0 then
   let warn = "64-BIT FLOATS END HERE"
@@ -1473,7 +1324,6 @@ if scale <= MIN_SCALE * 4.0 then
   let wp = rect(cv.x + CW - 14 - ww, cv.y + 14, ww, 28)
   hud_pill(wp)
   tx(warn, x: wp.x + 14, y: wp.y + 8, style: {...S_LABEL, color: :ff8a6b})
-end
 
 clip_pop()
 draw_rect_rounded_outline(cv, radius: 12, c: C_EDGE, a: 255, width: 1)
@@ -1506,12 +1356,10 @@ fn key_cap(label: string, right_x: num, y: num, lit: bool) -> nil
   let box = rect(right_x - w, y, w, 16)
   draw_rect_rounded(box, radius: 4, c: if lit then C_EDGE else C_LINE end)
   tx_center(label, cx: box.x + box.w / 2, y: y + 1, style: if lit then {...S_KEY, color: C_TEXT} else S_KEY end)
-end
 
 fn section(label: string, y: num, note: string) -> nil
   tx(label, x: SX, y: y, style: S_LABEL)
   if note != "" then tx_right(note, right_x: SX + SWI, y: y, style: {...S_LABEL, color: C_MUTE}) end
-end
 
 # A chip that is either the selected one of a set, or a plain button.
 fn chip(r: Rect, label: string, on: bool, mx: int, my: int) -> nil
@@ -1519,7 +1367,6 @@ fn chip(r: Rect, label: string, on: bool, mx: int, my: int) -> nil
   draw_rect_rounded(r, radius: 7, c: if on then mix(C_CHIP, C_ACCENT, 0.16) else if hov then C_EDGE else C_CHIP end)
   if on then draw_rect_rounded_outline(r, radius: 7, c: C_ACCENT, a: 150, width: 1) end
   tx_center(label, cx: r.x + r.w / 2, y: r.y + 6, style: if on then {...S_UI, color: C_ACCENT} else if hov then S_UI else S_UI_M end)
-end
 
 fn toggle_chip(r: Rect, label: string, on: bool, mx: int, my: int) -> nil
   let hov = point_in(px: mx, py: my, r: r)
@@ -1527,19 +1374,16 @@ fn toggle_chip(r: Rect, label: string, on: bool, mx: int, my: int) -> nil
   if on then draw_rect_rounded_outline(r, radius: 7, c: C_ACCENT, a: 130, width: 1) end
   draw_circle({x: r.x + 13, y: r.y + r.h / 2}, 3, if on then C_ACCENT else C_MUTE end, 255)
   tx(label, x: r.x + 23, y: r.y + 6, style: if on then S_UI else S_UI_M end)
-end
 
 fn stepper(minus: Rect, plus: Rect, value: string, mx: int, my: int) -> nil
   chip(minus, "-", false, mx, my)
   chip(plus, "+", false, mx, my)
   tx_center(value, cx: (minus.x + minus.w + plus.x) / 2, y: minus.y + 7, style: S_MONO)
-end
 
 # Fractal.
 section("FRACTAL", y_kind, "1 - 4")
 for i in range(0, len(KINDS)) do
   chip(kind_chip(i), KINDS[i].name, kind == i, mx, my)
-end
 
 # Locator map.
 section(if kind == K_JULIA then "SEED" else "LOCATOR" end, y_map,
@@ -1548,11 +1392,9 @@ draw_rect_rounded(map_r, radius: 8, c: C_BG)
 clip_push(map_r, 8)
 let MAP_RAMP = for q in range(0, 14) do
   if q == 13 then :05060a else mix(C_PANEL, :5f7fb8, pow(float(q) / 12.0, 1.3)) end
-end
 for i in range(0, mm.n) do
   let c = MAP_RAMP[mm.c[i]]
   draw_rect(map_r.x + mm.x[i], map_r.y + mm.y[i], mm.w[i], MM_CELL, c.r, c.g, c.b)
-end
 if kind == K_JULIA then
   let p = {x: map_r.x + int((jr - mg.wx0) / mg.ms), y: map_r.y + int((ji * KINDS[K_MANDEL].ys - mg.wy0) / mg.ms)}
   draw_rect(p.x - 12, p.y, 25, 1, C_ACCENT.r, C_ACCENT.g, C_ACCENT.b, 150)
@@ -1575,13 +1417,10 @@ else
       let vr = rect(x0, y0, x1 - x0, y1 - y0)
       if vw < float(map_r.w) * 0.7 then draw_rect(vr, C_ACCENT, 26) end
       draw_rect_rounded_outline(vr, radius: 3, c: C_ACCENT, a: 255, width: 1)
-    end
   else
     let p = {x: int(vx + vw / 2.0), y: int(vy + vh / 2.0)}
     draw_circle_outline(p, 7, C_ACCENT, 255, 1)
     draw_circle(p, 2, C_ACCENT, 255)
-  end
-end
 clip_pop()
 draw_rect_rounded_outline(map_r, radius: 8, c: if map_drag then C_ACCENT else C_EDGE end, a: 255, width: 1)
 
@@ -1602,14 +1441,11 @@ for i in range(0, len(PALS)) do
     let x0 = r.x + q * r.w / 8
     let x1 = r.x + (q + 1) * r.w / 8
     draw_rect_gradient(x0, r.y, x1 - x0, r.h, LR[ia], LG[ia], LB[ia], 255, LR[ib], LG[ib], LB[ib], 255, 0.0)
-  end
   clip_pop()
   if on then
     draw_rect_rounded_outline(r.inset(-2), radius: 8, c: C_TEXT, a: 255, width: 2)
   else if point_in(px: mx, py: my, r: r) then
     draw_rect_rounded_outline(r.inset(-1), radius: 7, c: C_DIM, a: 255, width: 1)
-  end
-end
 stepper(band_minus, band_plus, "{fixed(dens, 2)} bands", mx, my)
 toggle_chip(cycle_chip, "Cycle", cycling, mx, my)
 
@@ -1617,7 +1453,6 @@ toggle_chip(cycle_chip, "Cycle", cycling, mx, my)
 section("DETAIL", y_detail, "D")
 for i in range(0, len(DETAILS)) do
   chip(detail_chip(i), DETAILS[i].name, detail_i == i, mx, my)
-end
 toggle_chip(tiles_chip, "Tiles", show_tiles, mx, my)
 
 # Places.
@@ -1633,7 +1468,6 @@ for i in range(0, len(places)) do
   tx(p.name, x: r.x + 26, y: r.y + 4, style: if on then S_UI else if hov then S_UI else S_UI_M end)
   let note = if kind == K_JULIA then fmt_complex(p.x, p.y, 3) else fmt_mag(KINDS[kind].span / p.span) end
   tx_right(note, right_x: r.x + r.w - 10, y: r.y + 6, style: {...S_KEY, color: if on then C_DIM else C_MUTE end})
-end
 
 # ── Draw: footer ─────────────────────────────────────────────────────────
 
@@ -1645,7 +1479,6 @@ fn hint_chip(x: num, y: num, cap_s: string, desc: string) -> int
   tx(cap_s, x: x + 9, y: y + 5, style: S_CAP)
   tx(desc, x: x + cw2 + 8, y: y + 5, style: S_HINT)
   cw2 + 8 + text_width(desc, S_HINT) + 16
-end
 
 let fy = cv.y + CH + 16
 let fx = PAD

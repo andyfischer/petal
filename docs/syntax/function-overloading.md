@@ -19,9 +19,9 @@ fn greet() print("hi") end
 fn greet(name) print("hi", name) end
 fn greet(a, b) print("hi", a, b) end
 
-greet()           // hi
-greet("world")    // hi world
-greet("a", "b")   // hi a b
+greet()           # hi
+greet("world")    # hi world
+greet("a", "b")   # hi a b
 ```
 
 ### The rules
@@ -44,13 +44,13 @@ greet("a", "b")   // hi a b
   fn box(w, h) w * h end
 
   fn outer()
-      fn box(x) 10 end   // shadows both variants, only inside outer()
-      box(3)             // 10
+      fn box(x) 10 end   # shadows both variants, only inside outer()
+      box(3)             # 10
   end
 
-  print(outer())    // 10
-  print(box(3))     // 9
-  print(box(3, 4))  // 12
+  print(outer())    # 10
+  print(box(3))     # 9
+  print(box(3, 4))  # 12
   ```
 - **Declaration order does not matter.** Top-level `fn`s are hoisted, so a
   call can appear above every variant.
@@ -68,8 +68,8 @@ fn count(n, acc)
     else count(n - 1, acc + 1) end
 end
 
-print(count(5))      // 5
-print(count(3, 10))  // 13
+print(count(5))      # 5
+print(count(3, 10))  # 13
 ```
 
 Variants capture outer variables like any other function:
@@ -79,8 +79,8 @@ let prefix = "Dr."
 fn title(name) title(prefix, name) end
 fn title(pre, name) print(pre, name) end
 
-title("Smith")        // Dr. Smith
-title("Mr.", "Jones") // Mr. Jones
+title("Smith")        # Dr. Smith
+title("Mr.", "Jones") # Mr. Jones
 ```
 
 ### Methods overload too
@@ -94,15 +94,15 @@ class Point
   y: int,
 end
 
-fn Point.shifted(p: Point, d: int)           // 2 parameters
+fn Point.shifted(p: Point, d: int)           # 2 parameters
   Point(p.x + d, p.y + d)
 end
-fn Point.shifted(p: Point, dx: int, dy: int) // 3 parameters
+fn Point.shifted(p: Point, dx: int, dy: int) # 3 parameters
   Point(p.x + dx, p.y + dy)
 end
 
-print(Point(1, 2).shifted(5))     // { x: 6, y: 7 }
-print(Point(1, 2).shifted(5, 6))  // { x: 6, y: 8 }
+print(Point(1, 2).shifted(5))     # { x: 6, y: 7 }
+print(Point(1, 2).shifted(5, 6))  # { x: 6, y: 8 }
 ```
 
 Each qualified name is its own set: `Point.shifted`, `Other.shifted` and a
@@ -111,7 +111,7 @@ counts the arguments written at the call site:
 
 ```petal ignore
 Point(1, 2).shifted(1, 2, 3)
-// error: method `Point.shifted` expects 1 or 2 arguments, got 3
+# error: method `Point.shifted` expects 1 or 2 arguments, got 3
 ```
 
 Where the checker cannot see which class the receiver is, the same mistake is
@@ -128,8 +128,8 @@ fn scale(value, by, offset)
     value * by + offset
 end
 
-print(scale(2, by: 10, offset: 1))    // 21
-print(scale(by: 10, offset: 1, value: 2))  // 21
+print(scale(2, by: 10, offset: 1))    # 21
+print(scale(by: 10, offset: 1, value: 2))  # 21
 ```
 
 Every positional argument must come before every named one; going back to
@@ -137,8 +137,8 @@ positional is a parse error:
 
 ```petal ignore
 scale(value: 2, 10, 1)
-// Error: A positional argument after a named argument: once an argument is
-// named, every later argument must be named too
+# Error: A positional argument after a named argument: once an argument is
+# named, every later argument must be named too
 ```
 
 For a function without defaults every parameter needs a value, so a slot left
@@ -147,8 +147,8 @@ got 2`). The two failures that are specific to names are an unknown parameter
 and a slot filled twice:
 
 ```petal
-scale(2, 10, nudge: 1)     // error: scale() has no parameter named 'nudge'
-scale(2, value: 3, by: 1)  // error: scale() got multiple values for parameter 'value'
+scale(2, 10, nudge: 1)     # error: scale() has no parameter named 'nudge'
+scale(2, value: 3, by: 1)  # error: scale() got multiple values for parameter 'value'
 ```
 
 Wherever the callee is known before the program runs — a function or a
@@ -171,7 +171,7 @@ other function:
 
 ```petal
 let sub = fn(a, b) -> a - b
-print(sub(b: 1, a: 10))  // 9
+print(sub(b: 1, a: 10))  # 9
 ```
 
 A method's receiver occupies the first parameter, so `p.shift(dx: 2)` names the
@@ -183,10 +183,10 @@ double-bind error above (`Point.shift() got multiple values for parameter
 [Builtins Reference](../Builtins.md) gives them:
 
 ```petal
-print(clamp(15, lo: 0, hi: 10))              // 10
-print(pow(exp: 3, base: 2))                  // 8.0
-print([1, 2, 3, 4].slice(start: 1, end: 3))  // [2, 3]
-print(15 |> clamp(lo: 0, hi: 10))            // 10
+print(clamp(15, lo: 0, hi: 10))              # 10
+print(pow(exp: 3, base: 2))                  # 8.0
+print([1, 2, 3, 4].slice(start: 1, end: 3))  # [2, 3]
+print(15 |> clamp(lo: 0, hi: 10))            # 10
 ```
 
 The names are put in the builtin's own argument order before it runs, so a
@@ -234,8 +234,8 @@ does lacks the name — see [Defaults and overload selection](#defaults-and-over
 fn box(w) box(w, w) end
 fn box(w, h) [w, h] end
 
-print(box(w: 3))          // [3, 3]
-print(box(h: 2, w: 5))    // [5, 2]
+print(box(w: 3))          # [3, 3]
+print(box(h: 2, w: 5))    # [5, 2]
 ```
 
 So a name the chosen variant does not declare is caught only after
@@ -259,9 +259,9 @@ fn greet(name, greeting = "Hello", punct = "!")
     "{greeting}, {name}{punct}"
 end
 
-print(greet("Ada"))                  // Hello, Ada!
-print(greet("Ada", "Hi"))            // Hi, Ada!
-print(greet("Ada", punct: "?"))      // Hello, Ada?
+print(greet("Ada"))                  # Hello, Ada!
+print(greet("Ada", "Hi"))            # Hi, Ada!
+print(greet("Ada", punct: "?"))      # Hello, Ada?
 ```
 
 Trailing defaulted parameters can simply be left off, and *any* defaulted
@@ -280,8 +280,8 @@ fn tagged(item, tags = [])
     push(tags, item)
 end
 
-print(tagged("a"))   // ["a"]
-print(tagged("b"))   // ["b"]    a fresh list each call — not ["a", "b"]
+print(tagged("a"))   # ["a"]
+print(tagged("b"))   # ["b"]    a fresh list each call — not ["a", "b"]
 ```
 
 ```petal
@@ -295,10 +295,10 @@ fn make(label, id = next_id())
     "{id}: {label}"
 end
 
-print(make("first"))       // 1: first
-print(make("second"))      // 2: second     next_id() ran again
-print(make("third", 99))   // 99: third     an argument was passed — it did not run
-print(make("fourth"))      // 3: fourth
+print(make("first"))       # 1: first
+print(make("second"))      # 2: second     next_id() ran again
+print(make("third", 99))   # 99: third     an argument was passed — it did not run
+print(make("fourth"))      # 3: fourth
 ```
 
 So `fn stamp(at = time())` reads the clock on each call, and
@@ -315,9 +315,9 @@ fn inset(w, h = w, pad = margin * 2)
     [w - pad, h - pad]
 end
 
-print(inset(20))           // [12, 12]    h defaults to w
-print(inset(20, 10))       // [12, 2]
-print(inset(20, pad: 0))   // [20, 20]
+print(inset(20))           # [12, 12]    h defaults to w
+print(inset(20, 10))       # [12, 2]
+print(inset(20, pad: 0))   # [20, 20]
 ```
 
 Defaults are evaluated left to right, and only for the parameters the call
@@ -326,8 +326,8 @@ that is a compile error, since the later parameter has no value yet:
 
 ```petal ignore
 fn span(lo = hi - 10, hi = 100) lo end
-// Error: The default value of parameter 'lo' refers to 'hi', which is declared
-// after it — a default can only use the parameters declared before it
+# Error: The default value of parameter 'lo' refers to 'hi', which is declared
+# after it — a default can only use the parameters declared before it
 ```
 
 The rules:
@@ -391,10 +391,10 @@ Then:
 fn box(w) "square {w}" end
 fn box(w, h, depth = 1) "box {w} {h} {depth}" end
 
-print(box(2))               // square 2      exact: the 1-parameter variant
-print(box(2, 3))            // box 2 3 1     no 2-parameter variant; one accepts
-print(box(2, 3, 4))         // box 2 3 4     exact
-print(box(2, 3, depth: 9))  // box 2 3 9
+print(box(2))               # square 2      exact: the 1-parameter variant
+print(box(2, 3))            # box 2 3 1     no 2-parameter variant; one accepts
+print(box(2, 3, 4))         # box 2 3 4     exact
+print(box(2, 3, depth: 9))  # box 2 3 9
 ```
 
 Written names take part in the choice. Here two arguments are written both
@@ -404,8 +404,8 @@ times, and only the name tells the variants apart:
 fn at(x, y) "point {x},{y}" end
 fn at(angle, radius, turns = 1) "polar {angle} {radius} x{turns}" end
 
-print(at(1, 2))                   // point 1,2     exact arity
-print(at(radius: 2, angle: 1))    // polar 1 2 x1  the 2-parameter `at` has no `radius`
+print(at(1, 2))                   # point 1,2     exact arity
+print(at(radius: 2, angle: 1))    # polar 1 2 x1  the 2-parameter `at` has no `radius`
 ```
 
 Two variants whose defaults both stretch to cover a call are ambiguous for
@@ -415,11 +415,11 @@ that call, and the error says which:
 fn pad(s, left = 1) s end
 fn pad(s, left = 1, right = 1) s end
 
-pad("x", 2)          // fine: exact arity, the 2-parameter variant
-pad("x", right: 2)   // fine: only the 3-parameter variant has `right`
+pad("x", 2)          # fine: exact arity, the 2-parameter variant
+pad("x", right: 2)   # fine: only the 3-parameter variant has `right`
 pad("x")
-// Error: pad() is ambiguous: pad(s, left = …) and pad(s, left = …, right = …)
-// both accept this call — pass or name another argument to pick one
+# Error: pad() is ambiguous: pad(s, left = …) and pad(s, left = …, right = …)
+# both accept this call — pass or name another argument to pick one
 ```
 
 The ambiguity is reported for the call, not the declarations: such a pair is
@@ -444,15 +444,15 @@ call that does not fit the exact-count variant goes there by rule 2:
 ```petal
 fn _is_num(v) type(v) == "int" || type(v) == "float" end
 
-fn dot(center, radius)                       // also, positionally, (cx, cy)
+fn dot(center, radius)                       # also, positionally, (cx, cy)
     if _is_num(center) then "at {center},{radius} r=1"
     else "at {center.x},{center.y} r={radius}" end
 end
 fn dot(cx, cy, radius = 1) "at {cx},{cy} r={radius}" end
 
-print(dot({x: 1, y: 2}, 5))            // at 1,2 r=5
-print(dot(1, 2))                       // at 1,2 r=1    told apart by type
-print(dot(cx: 1, cy: 2))               // at 1,2 r=1    told apart by name
+print(dot({x: 1, y: 2}, 5))            # at 1,2 r=5
+print(dot(1, 2))                       # at 1,2 r=1    told apart by type
+print(dot(cx: 1, cy: 2))               # at 1,2 r=1    told apart by name
 print(dot(center: {x: 1, y: 2}, radius: 5))
 ```
 
@@ -471,7 +471,7 @@ A call that matches no variant is an error listing the counts on offer:
 fn add(a, b) a + b end
 fn add(a, b, c) a + b + c end
 
-add(1)  // Error: add() expects 2 or 3 arguments, got 1
+add(1)  # Error: add() expects 2 or 3 arguments, got 1
 ```
 
 A variant with defaults is listed as a range — `box() expects 1 or 2-3
@@ -504,15 +504,15 @@ package's `draw_rect` takes a record and a color and the library wants a
 one-argument default-colored form:
 
 ```petal ignore
-// lib.ptl
+# lib.ptl
 import ui
 
 pub fn draw_rect(r)
   ui.draw_rect(r, { r: 9, g: 9, b: 9 })
 end
 
-// every arity is callable here: the one this file added, and every
-// form `ui` declares
+# every arity is callable here: the one this file added, and every
+# form `ui` declares
 pub fn paint()
   draw_rect({ x: 0, y: 0, w: 10, h: 10 })
   draw_rect({ x: 20, y: 0, w: 10, h: 10 }, { r: 1, g: 2, b: 3 })

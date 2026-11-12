@@ -4,6 +4,4 @@ let total = 0
 for row in grid do
   for x in row do
     total = total + x
-  end
-end
 print(total)

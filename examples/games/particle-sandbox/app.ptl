@@ -111,8 +111,6 @@ fn ramp(stops: list, count: int) -> list
     let t = float(i) / float(count - 1) * float(segs)
     let k = min(int(floor(t)), segs - 1)
     lerp(stops[k], stops[k + 1], t - float(k))
-  end
-end
 
 fn build_lut() -> record
   let ice = ramp([:2c3aa6, :3f74ff, :4fd2ff, :d9fbff, :ffffff], LN)
@@ -123,7 +121,6 @@ fn build_lut() -> record
   for c in ember do cols = append(cols, c) end
   for c in spectrum do cols = append(cols, c) end
   {r: map(cols, fn(c) -> c.r), g: map(cols, fn(c) -> c.g), b: map(cols, fn(c) -> c.b)}
-end
 
 # ── Persistent state ─────────────────────────────────────────────────────
 
@@ -176,15 +173,12 @@ state sim_frames = 0
 
 fn tx(s: string, x: num, y: num, style: record) -> nil
   draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
-end
 
 fn tx_right(s: string, right_x: num, y: num, style: record) -> nil
   draw_text(s, pos: {x: int(right_x) - text_width(s, style), y: int(y)}, style: style)
-end
 
 fn tx_center(s: string, cx: num, y: num, style: record) -> nil
   draw_text(s, pos: {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style: style)
-end
 
 # 12000 -> "12,000"
 fn fmt_int(v: num) -> string
@@ -193,14 +187,11 @@ fn fmt_int(v: num) -> string
   for i in range(0, len(cs)) do
     if i > 0 && (len(cs) - i) % 3 == 0 then out ++= "," end
     out ++= cs[i]
-  end
   out
-end
 
 # Speed of a circular orbit at distance r from one well.
 fn orbit_speed(r: num) -> num
   sqrt(well_strength * r * r / pow(r * r + WELL_SOFT2, 1.5))
-end
 
 # ── Pool edits ───────────────────────────────────────────────────────────
 
@@ -212,42 +203,34 @@ fn spawn(x: num, y: num, u: num, v: num, hue: num) -> nil
     set ring = (i + 1) % MAXP
   else
     set n = i + 1
-  end
   set px[i] = x
   set py[i] = y
   set vx[i] = u
   set vy[i] = v
   set hu[i] = clamp(hue, lo: 0.0, hi: float(LN - 1))
-end
 
 fn add_well(x: num, y: num, s: num) -> nil
   if len(get wxs) >= MAX_WELLS then return nil end
   set wxs = append(get wxs, x)
   set wys = append(get wys, y)
   set wss = append(get wss, s)
-end
 
 fn remove_well(k: int) -> nil
   let count = len(get wxs)
   set wxs = for i in range(0, count) do
     if i == k then continue end
     get wxs[i]
-  end
   set wys = for i in range(0, count) do
     if i == k then continue end
     get wys[i]
-  end
   set wss = for i in range(0, count) do
     if i == k then continue end
     get wss[i]
-  end
-end
 
 fn clear_wells() -> nil
   set wxs = []
   set wys = []
   set wss = []
-end
 
 # Index of the well within `reach` px of (x, y), or -1.
 fn well_at(x: num, y: num, reach: num) -> int
@@ -256,9 +239,7 @@ fn well_at(x: num, y: num, reach: num) -> int
     let dx = get wxs[i] - x
     let dy = get wys[i] - y
     if dx * dx + dy * dy < reach * reach then found = i end
-  end
   found
-end
 
 # Rebuild the stage as scene k with `count` particles in a sw x sh box.
 fn load_scene(k: int, count: int, sw: num, sh: num) -> nil
@@ -285,7 +266,6 @@ fn load_scene(k: int, count: int, sw: num, sh: num) -> nil
       let s = orbit_speed(r) * random(0.96, 1.04)
       spawn(cx + cos(a) * r, cy + sin(a) * r, -sin(a) * s, cos(a) * s,
         hue: 4.0 + r / reach * 40.0 + random(-3.0, 3.0))
-    end
   else if k == 1 then
     # Binary: two wells, a disc of particles in orbit around each.
     let sep = min(sw * 0.2, 190.0)
@@ -299,7 +279,6 @@ fn load_scene(k: int, count: int, sw: num, sh: num) -> nil
       let s = orbit_speed(r) * random(0.97, 1.03)
       spawn(ox + cos(a) * r, cy + sin(a) * r, -sin(a) * s, cos(a) * s,
         hue: (if left then 34.0 else 2.0 end) + r / sep * 14.0)
-    end
   else if k == 2 then
     # Currents: a gas at rest in a wrapping box, stirred by the flow field.
     set flow = true
@@ -308,7 +287,6 @@ fn load_scene(k: int, count: int, sw: num, sh: num) -> nil
     for i in range(0, count) do
       let x = random(0.0, sw)
       spawn(x, random(0.0, sh), 0.0, 0.0, hue: x / sw * 63.0)
-    end
   else
     # Burst: everything thrown from one point, under gravity, in a closed box.
     set gravity = true
@@ -319,9 +297,6 @@ fn load_scene(k: int, count: int, sw: num, sh: num) -> nil
       let r = random(0.0, 10.0)
       spawn(cx + cos(a) * r, sh * 0.42 + sin(a) * r, cos(a) * s, sin(a) * s - 120.0,
         hue: a / 6.2832 * 63.0)
-    end
-  end
-end
 
 # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -348,11 +323,9 @@ let frame_y = dens_y + 44
 
 fn tool_row(i: int) -> Rect
   rect(side.x + 8, tools_y + i * ROW_H, side.w - 16, ROW_H)
-end
 
 fn chip_rect(top: int, i: int) -> Rect
   rect(side.x + 10 + (i % 2) * (CHIP_W + 8), top + (i / 2) * (CHIP_H + 4), CHIP_W, CHIP_H)
-end
 
 let dens_minus = rect(side.x + 10, dens_y, 30, CHIP_H)
 let dens_plus = rect(side.x + side.w - 40, dens_y, 30, CHIP_H)
@@ -364,7 +337,6 @@ if !ready then
   load_scene(0, COUNTS[count_i], SW, SH)
   pmx = SW / 2.0
   pmy = SH / 2.0
-end
 
 # ── Input ────────────────────────────────────────────────────────────────
 
@@ -384,7 +356,6 @@ pmy = smy
 
 for i in range(0, len(TOOLS)) do
   if key_pressed(TOOLS[i].key) then tool = i end
-end
 if key_pressed("space") then paused = !paused end
 if key_pressed("g") then set gravity = !gravity end
 if key_pressed("f") then set flow = !flow end
@@ -398,27 +369,22 @@ if key_pressed("leftbracket") then radius = max(radius / 1.2, 24.0) end
 if key_pressed("rightbracket") then radius = min(radius * 1.2, 220.0) end
 if in_stage && scroll_y() != 0.0 then
   radius = clamp(radius * pow(1.1, -scroll_y()), lo: 24.0, hi: 220.0)
-end
 
 let reload = -1
 if key_pressed("r") then reload = scene end
 if key_pressed("tab") then
   reload = (scene + (if invert then len(SCENES) - 1 else 1 end)) % len(SCENES)
-end
 if key_pressed("equals") then
   count_i = min(count_i + 1, len(COUNTS) - 1)
   reload = scene
-end
 if key_pressed("minus") then
   count_i = max(count_i - 1, 0)
   reload = scene
-end
 
 # Sidebar clicks.
 if pressed && point_in(px: mx, py: my, r: side) then
   for i in range(0, len(TOOLS)) do
     if point_in(px: mx, py: my, r: tool_row(i)) then tool = i end
-  end
   if point_in(px: mx, py: my, r: brush_track.inset(-8)) then brush_drag = true end
   let ftop = forces_y + 20
   if point_in(px: mx, py: my, r: chip_rect(ftop, 0)) then set gravity = !gravity end
@@ -429,21 +395,16 @@ if pressed && point_in(px: mx, py: my, r: side) then
   if point_in(px: mx, py: my, r: chip_rect(ftop, 5)) then set cmode = (cmode + 1) % len(CMODES) end
   for i in range(0, len(SCENES)) do
     if point_in(px: mx, py: my, r: chip_rect(scene_y + 20, i)) then reload = i end
-  end
   if point_in(px: mx, py: my, r: dens_minus) then
     count_i = max(count_i - 1, 0)
     reload = scene
-  end
   if point_in(px: mx, py: my, r: dens_plus) then
     count_i = min(count_i + 1, len(COUNTS) - 1)
     reload = scene
-  end
-end
 if !mouse_down(0) then brush_drag = false end
 if brush_drag then
   let t = clamp(float(mx - brush_track.x) / float(brush_track.w), lo: 0.0, hi: 1.0)
   radius = 24.0 + t * 196.0
-end
 
 if reload >= 0 then load_scene(reload, COUNTS[count_i], SW, SH) end
 
@@ -462,8 +423,6 @@ if pressed && in_stage && tool == T_WELL then
     remove_well(hit)
   else
     add_well(smx, smy, if invert then -well_strength * 0.6 else well_strength end)
-  end
-end
 
 # Erase: swap-remove everything under the brush.
 if acting && tool == T_ERASE then
@@ -482,10 +441,7 @@ if acting && tool == T_ERASE then
       erased += 1
     else
       i += 1
-    end
-  end
   if ring >= n then set ring = 0 end
-end
 
 # Emit: a puff on the press, then a steady spray along the cursor's travel.
 if acting && tool == T_EMIT then
@@ -501,10 +457,8 @@ if acting && tool == T_EMIT then
     let r = sqrt(random()) * radius * 0.22
     spawn(smx + cos(a) * r, smy + sin(a) * r, cvx * 0.3 + cos(a) * s, cvy * 0.3 + sin(a) * s,
       hue: emit_hue + random(-2.0, 2.0))
-  end
   emitted += burst
   emit_hue = (emit_hue + h * 14.0 + (if pressed then 5.0 else 0.0 end)) % float(LN)
-end
 
 # Blast: right click (or B) kicks everything outward from the cursor. It is
 # an impulse, so it does not wait for a simulated frame.
@@ -517,10 +471,8 @@ if in_stage && (mouse_pressed(1) || key_pressed("b")) then
     let kick = blast_speed * reach2 / (d2 + reach2) / sqrt(d2)
     set vx[i] = vx[i] + bx * kick
     set vy[i] = vy[i] + by * kick
-  end
   rings = append(rings, {x: smx, y: smy, t: 0.0})
   blasts += 1
-end
 
 # ── Forces for this frame ────────────────────────────────────────────────
 # One row per well, plus one for the mouse while a force tool is held. A
@@ -547,8 +499,6 @@ if force_tool then
   else
     frs = append(frs, abs(ms) * 0.3)
     fts = append(fts, ms * 0.9)
-  end
-end
 let ks = range(0, len(fxs))
 
 let do_sim = !paused && h > 0.0
@@ -571,7 +521,6 @@ if do_sim then
   pend_dx = 0.0
   pend_dy = 0.0
   sim_frames += 1
-end
 
 # ── Draw: chrome behind the stage ────────────────────────────────────────
 
@@ -583,11 +532,9 @@ clip_push(stage, 14)
 let gx0 = stage.x + stage.w / 2 % 64
 for gx in range(gx0, stage.x + stage.w, 64) do
   draw_rect(gx, stage.y, 1, stage.h, 255, 255, 255, 5)
-end
 let gy0 = stage.y + stage.h / 2 % 64
 for gy in range(gy0, stage.y + stage.h, 64) do
   draw_rect(stage.x, gy, stage.w, 1, 255, 255, 255, 5)
-end
 
 # Wells sit under the particles: a soft halo, a ring and a core.
 for k in range(0, len(wxs)) do
@@ -597,7 +544,6 @@ for k in range(0, len(wxs)) do
   draw_circle_gradient(p, 22, c, c, 110, 0)
   draw_circle_outline(p, 11, c, 150, 1)
   draw_circle(p, 3, C_TEXT, 230)
-end
 
 # ── The hot loop: integrate and draw every particle ──────────────────────
 
@@ -627,12 +573,10 @@ for i in range(0, n) do
       let f = 1.0 / (d2 * sqrt(d2))
       ax += (dx * frs[k] - dy * fts[k]) * f
       ay += (dy * frs[k] + dx * fts[k]) * f
-    end
     if flow then
       let a = noise(x * 0.0034, y * 0.0034, flow_t) * 7.0
       ax += cos(a) * flow_accel
       ay += sin(a) * flow_accel
-    end
     u = (u + ax * h) * damp
     v = (v + ay * h) * damp
     if grabbing then
@@ -643,14 +587,11 @@ for i in range(0, n) do
         v += (gvy - v) * 0.35
         x += gdx
         y += gdy
-      end
-    end
     let s2 = u * u + v * v
     if s2 > vmax2 then
       let sc = speed_limit / sqrt(s2)
       u *= sc
       v *= sc
-    end
     x += u * h
     y += v * h
     if wrap then
@@ -663,7 +604,6 @@ for i in range(0, n) do
       else if x > SW then
         x = max(SW2 - x, 0.0)
         u *= bounce
-      end
       if y < 0.0 then
         y = min(-y, SH)
         v *= bounce
@@ -671,13 +611,10 @@ for i in range(0, n) do
         y = max(SH2 - y, 0.0)
         v *= bounce
         u *= 0.985
-      end
-    end
     set px[i] = x
     set py[i] = y
     set vx[i] = u
     set vy[i] = v
-  end
 
   let sp = sqrt(u * u + v * v)
   sum_speed += sp
@@ -695,8 +632,6 @@ for i in range(0, n) do
     draw_line(sx - u * sl, sy - v * sl, sx, sy, LR[ci], LG[ci], LB[ci], 225, 1.5)
   else
     draw_rect(sx - 1.0, sy - 1.0, 2, 2, LR[ci], LG[ci], LB[ci], 235)
-  end
-end
 
 # ── Draw: stage overlays ─────────────────────────────────────────────────
 
@@ -708,7 +643,6 @@ rings = for q in rings do
   draw_circle_outline({x: int(OX + q.x), y: int(OY + q.y)}, int(12.0 + 220.0 * ease_out(k)),
     C_TEXT, int(170.0 * (1.0 - k)), 2)
   {...q, t: t}
-end
 
 # The brush.
 if in_stage then
@@ -730,10 +664,6 @@ if in_stage then
       for q in range(0, 3) do
         let a = a0 + float(q) * 2.0944
         fill_arc(p, int(radius * 0.5), int(radius * 0.5) + 2, a, a + 1.1, tool_color, 150)
-      end
-    end
-  end
-end
 
 if paused then
   let pill = rect(stage.x + 16, stage.y + 16, 78, 24)
@@ -742,13 +672,11 @@ if paused then
   draw_rect(pill.x + 12, pill.y + 8, 3, 8, C_GOLD.r, C_GOLD.g, C_GOLD.b)
   draw_rect(pill.x + 18, pill.y + 8, 3, 8, C_GOLD.r, C_GOLD.g, C_GOLD.b)
   tx("PAUSED", x: pill.x + 28, y: pill.y + 6, style: {...S_KEY, color: C_TEXT, spacing: 1})
-end
 
 if n == 0 then
   tx_center("The stage is empty", cx: stage.x + stage.w / 2, y: stage.y + stage.h / 2 - 24, style: S_BIG)
   tx_center("Pick Emit (5) and drag to paint particles, or press R to reload the scene.",
     cx: stage.x + stage.w / 2, y: stage.y + stage.h / 2 + 4, style: S_UI_M)
-end
 
 # What the colours mean, bottom-right of the stage.
 let leg_tail = if by_hue then 0 else text_width("FAST", S_LABEL) + 10 end
@@ -758,7 +686,6 @@ draw_rect_rounded(rect(leg.x - leg_head - 20, leg.y - 11, leg_head + leg.w + leg
 for q in range(0, 16) do
   let ci = pal + q * 4 + 2
   draw_rect(leg.x + q * 6, leg.y, 6, leg.h, LR[ci], LG[ci], LB[ci], 220)
-end
 tx_right(if by_hue then "HUE BY ORIGIN" else "SLOW" end, right_x: leg.x - 10, y: leg.y - 5, style: S_LABEL)
 if !by_hue then tx("FAST", x: leg.x + leg.w + 10, y: leg.y - 5, style: S_LABEL) end
 
@@ -778,7 +705,6 @@ tx("PETAL / GARDEN TESTBED 11", x: PAD + 2, y: 52, style: S_KICK)
 if dt() > 0.0 then
   hist = append(hist, dt() * 1000.0)
   if len(hist) > 72 then hist = slice(hist, len(hist) - 72) end
-end
 let frame_ms = if len(hist) > 0 then reduce(hist, 0.0, fn(acc, v) -> acc + v) / float(len(hist)) else 0.0 end
 let mean_speed = if n > 0 then sum_speed / float(n) else 0.0 end
 
@@ -807,7 +733,6 @@ fn key_cap(label: string, right_x: num, y: num, lit: bool) -> nil
   let box = rect(right_x - w, y, w, 16)
   draw_rect_rounded(box, radius: 4, c: if lit then C_EDGE else C_CHIP end)
   tx_center(label, cx: box.x + box.w / 2, y: y + 1, style: if lit then {...S_KEY, color: C_TEXT} else S_KEY end)
-end
 
 # A 14 px glyph per tool, drawn from primitives.
 fn tool_glyph(i: int, cx: num, cy: num, c: record, a: int) -> nil
@@ -820,7 +745,6 @@ fn tool_glyph(i: int, cx: num, cy: num, c: record, a: int) -> nil
     for q in range(0, 4) do
       let ang = float(q) * 1.5708 + 0.7854
       draw_line(cx + cos(ang) * 4.0, cy + sin(ang) * 4.0, cx + cos(ang) * 7.5, cy + sin(ang) * 7.5, c, a, 1)
-    end
   else if i == T_VORTEX then
     fill_arc(p, 5, 7, 0.3, 2.6, c, a)
     fill_arc(p, 5, 7, 3.44, 5.74, c, a)
@@ -839,8 +763,6 @@ fn tool_glyph(i: int, cx: num, cy: num, c: record, a: int) -> nil
   else
     draw_circle_gradient(p, 8, c, c, a / 2, 0)
     draw_circle(p, 2, c, a)
-  end
-end
 
 fn toggle_chip(r: Rect, label: string, key: string, on: bool, mx: int, my: int) -> nil
   let hov = point_in(px: mx, py: my, r: r)
@@ -849,7 +771,6 @@ fn toggle_chip(r: Rect, label: string, key: string, on: bool, mx: int, my: int) 
   draw_circle({x: r.x + 13, y: r.y + r.h / 2}, 3, if on then C_ACCENT else C_MUTE end, 255)
   tx(label, x: r.x + 24, y: r.y + 5, style: if on then S_UI else S_UI_M end)
   key_cap(key, right_x: r.x + r.w - 6, y: r.y + 5, lit: false)
-end
 
 fn plain_chip(r: Rect, label: string, on: bool, mx: int, my: int) -> nil
   let hov = point_in(px: mx, py: my, r: r)
@@ -857,7 +778,6 @@ fn plain_chip(r: Rect, label: string, on: bool, mx: int, my: int) -> nil
     a: if on then 38 else if hov then 150 else 255 end)
   if on then draw_rect_rounded_outline(r, radius: 7, c: C_ACCENT, a: 150, width: 1) end
   tx_center(label, cx: r.x + r.w / 2, y: r.y + 5, style: if on then {...S_UI, color: C_ACCENT} else S_UI_M end)
-end
 
 tx("TOOLS", x: side.x + 16, y: side.y + 16, style: S_LABEL)
 tx_right(TOOLS[tool].hint, right_x: side.x + side.w - 16, y: side.y + 15, style: {...S_HINT, font: "ui"})
@@ -871,11 +791,9 @@ for i in range(0, len(TOOLS)) do
     draw_rect_rounded(rect(r.x, r.y + 6, 3, r.h - 12), radius: 2, c: t.color)
   else if hov then
     draw_rect_rounded(r, radius: 7, c: C_CHIP)
-  end
   tool_glyph(i, cx: r.x + 20, cy: r.y + r.h / 2, c: if on then t.color else C_DIM end, a: 255)
   tx(t.name, x: r.x + 38, y: r.y + 4, style: if on then S_UI_B else if hov then S_UI else S_UI_M end)
   key_cap(t.key, right_x: r.x + r.w - 8, y: r.y + 5, lit: on)
-end
 
 # Brush radius.
 tx("BRUSH", x: side.x + 16, y: brush_y, style: S_LABEL)
@@ -900,7 +818,6 @@ draw_rect_rounded(cm, radius: 7, c: if cm_hov then C_EDGE else C_CHIP end, a: if
 for q in range(0, 4) do
   let ci = cmode * LN + 8 + q * 16
   draw_rect(cm.x + 9 + q * 4, cm.y + 9, 4, 8, LR[ci], LG[ci], LB[ci])
-end
 tx(CMODES[cmode], x: cm.x + 31, y: cm.y + 5, style: S_UI)
 key_cap("C", right_x: cm.x + cm.w - 6, y: cm.y + 5, lit: false)
 
@@ -909,7 +826,6 @@ tx("SCENE", x: side.x + 16, y: scene_y, style: S_LABEL)
 tx_right("TAB", right_x: side.x + side.w - 16, y: scene_y, style: {...S_LABEL, color: C_MUTE})
 for i in range(0, len(SCENES)) do
   plain_chip(chip_rect(scene_y + 20, i), SCENES[i], scene == i, mx, my)
-end
 plain_chip(dens_minus, "-", false, mx, my)
 plain_chip(dens_plus, "+", false, mx, my)
 tx_center("{fmt_int(COUNTS[count_i])} particles", cx: side.x + side.w / 2, y: dens_y + 5, style: S_UI)
@@ -927,9 +843,7 @@ if len(hist) > 1 then
   let pts = for i in range(0, len(hist)) do
     let v = min(hist[i], ms_top) / ms_top
     {x: spark.x + i * spark.w / 71, y: spark.y + spark.h - int(v * float(spark.h))}
-  end
   draw_polyline(pts, c: C_ACCENT, a: 230, width: 1)
-end
 
 # ── Draw: footer ─────────────────────────────────────────────────────────
 
@@ -941,7 +855,6 @@ fn chip(x: num, y: num, cap: string, desc: string) -> int
   tx(cap, x: x + 9, y: y + 5, style: S_CAP)
   tx(desc, x: x + cw + 8, y: y + 5, style: S_HINT)
   cw + 8 + text_width(desc, S_HINT) + 16
-end
 
 let fy = stage.y + stage.h + 16
 let fx = PAD

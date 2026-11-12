@@ -22,4 +22,3 @@ let size = 30
 draw_rect(0, 0, 400, 200, :101418)
 for i in range(0, 6) do
   draw_rect(x0 + i * (size + gap), 100, size, size, :c08040)
-end

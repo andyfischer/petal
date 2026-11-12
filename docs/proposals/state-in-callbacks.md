@@ -208,7 +208,7 @@ fn seen(x)
     n += 1
     n
 end
-print(map([10, 20, 30], seen))   // [1, 2, 3]
+print(map([10, 20, 30], seen))   # [1, 2, 3]
 ```
 
 After, the same code is an error. `petal lint` can prove it, so the program
@@ -232,11 +232,11 @@ fn seen(x)
     n
 end
 
-// a value carried across elements: the accumulator
-print(reduce([10, 20, 30], [], fn(acc, x) append(acc, len(acc) + 1) end))  // [1, 2, 3]
+# a value carried across elements: the accumulator
+print(reduce([10, 20, 30], [], fn(acc, x) append(acc, len(acc) + 1) end))  # [1, 2, 3]
 
-// a value per element that persists across runs: a loop
-print(for x in [10, 20, 30] do seen(x) end)   // [1, 1, 1] on the first run
+# a value per element that persists across runs: a loop
+print(for x in [10, 20, 30] do seen(x) end)   # [1, 1, 1] on the first run
 ```
 
 For the writer: one less rule to learn ("callbacks share a slot") and one
@@ -278,8 +278,8 @@ fn picky(x)
     calls += 1
     x > 1
 end
-print(any([1, 2, 3], picky))     // true: a slot per element
-print(count([1, 2, 3], picky))   // 2: one shared slot
+print(any([1, 2, 3], picky))     # true: a slot per element
+print(count([1, 2, 3], picky))   # 2: one shared slot
 ```
 
 After, with the prototype, `any` still ran and `count` errored at
@@ -518,10 +518,10 @@ going in as an argument and coming back out as a value. A minimal design,
 **deferred** (decided 23 October 2026):
 
 ```petal
-// proposed, not implemented
-let r = run_state(seen, nil, 10)        // nil: a fresh state
-// r.value == 1, r.state is an opaque state bundle
-let r2 = run_state(seen, r.state, 20)   // r2.value == 2
+# proposed, not implemented
+let r = run_state(seen, nil, 10)        # nil: a fresh state
+# r.value == 1, r.state is an opaque state bundle
+let r2 = run_state(seen, r.state, 20)   # r2.value == 2
 ```
 
 - `run_state(f, st, ...args)` calls `f` with a **detached** state store,

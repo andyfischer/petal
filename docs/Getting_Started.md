@@ -81,15 +81,15 @@ are always in scope. Everything else is one `import` away, at the top of the
 file:
 
 ```petal
-import noise                    // noise, noise_seed
+import noise                    # noise, noise_seed
 
 print(noise(0.5))
 ```
 
 ```petal ignore
-import ./level                  // level.ptl beside this file
-import vec2                     // vec2, vec3, normalize, dot, …
-import ui                       // drawing and input, for a graphical host
+import ./level                  # level.ptl beside this file
+import vec2                     # vec2, vec3, normalize, dot, …
+import ui                       # drawing and input, for a graphical host
 ```
 
 `petal lint` names the import a script is missing, and `petal fix-imports

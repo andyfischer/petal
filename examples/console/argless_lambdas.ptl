@@ -4,7 +4,6 @@
 # `fn ... end` — a block body.
 let greet = fn
   print("hello from an argless lambda")
-end
 greet()
 
 # `fn -> expr` — a single-expression body.
@@ -25,8 +24,6 @@ print("same result:", old_style() == new_style())
 fn repeat(times: num, action: function)
   for i in range(0, times) do
     action()
-  end
-end
 
 var count = 0
 repeat(3, fn set count = get count + 1 end)

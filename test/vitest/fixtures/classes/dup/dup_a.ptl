@@ -1,3 +1,2 @@
 pub class Dup
   a: int
-end

@@ -14,8 +14,8 @@ fn f(x)
 end
 
 let d = deriv(f, 3.0)
-print(round(d.value, 6))   // 8.0
-print(d.quality)           // smooth
+print(round(d.value, 6))   # 8.0
+print(d.quality)           # smooth
 ```
 
 `8.0` is `2x + 2` at `x = 3`. `f` is ordinary code: it is called with plain
@@ -61,8 +61,8 @@ the input; pass `{h: …}` to choose it. An int `x` is probed as a float.
 ```petal
 import autodiff
 
-print(deriv(sin, 0.0).quality)   // smooth
-print(deriv(sin, 5.0).step)      // 0.0005
+print(deriv(sin, 0.0).quality)   # smooth
+print(deriv(sin, 5.0).step)      # 0.0005
 ```
 
 The value is an approximation. For `atan` at `1.0` it is
@@ -89,10 +89,10 @@ and says what it found:
 ```petal
 import autodiff
 
-print(deriv(abs, 0.0).quality)                                         // kink
-print(deriv(fn(x) if x < 1.0 then x else x + 5.0 end end, 1.0).quality)   // branch_flip
-print(deriv(floor, 0.97).quality)                                      // step
-print(deriv(fn(x) 7.0 end, 2.0).quality)                               // zero
+print(deriv(abs, 0.0).quality)                                         # kink
+print(deriv(fn(x) if x < 1.0 then x else x + 5.0 end end, 1.0).quality)   # branch_flip
+print(deriv(floor, 0.97).quality)                                      # step
+print(deriv(fn(x) 7.0 end, 2.0).quality)                               # zero
 ```
 
 `step` is the `h` the value was finally measured with: smaller than asked
@@ -122,8 +122,8 @@ fn tip(p)
 end
 
 let j = jacobian(tip, [200.0, 80.0, 0.6])
-print(map(j.rows, fn(r) map(r, fn(v) round(v, 3) end) end))   // [[1.0, 0.825, -45.171], [0.0, 0.565, 66.027]]
-print(j.quality)   // ["smooth", "smooth", "smooth"]
+print(map(j.rows, fn(r) map(r, fn(v) round(v, 3) end) end))   # [[1.0, 0.825, -45.171], [0.0, 0.565, 66.027]]
+print(j.quality)   # ["smooth", "smooth", "smooth"]
 ```
 
 The tip of the clock hand moves one pixel right per pixel of `cx`, 0.83
@@ -145,7 +145,7 @@ for step in range(0, 40) do
   let g = jacobian(bowl, p).rows[0]
   p = [p[0] - 0.2 * g[0], p[1] - 0.2 * g[1]]
 end
-print(round(p[0], 3), round(p[1], 3))   // 1.0 -3.0
+print(round(p[0], 3), round(p[1], 3))   # 1.0 -3.0
 ```
 
 ## `solve_step` and `solve`
@@ -164,8 +164,8 @@ fn tip_x(a)
 end
 
 let s = solve(tip_x, [0.6], 240.0)
-print(round(s.xs[0], 4))   // 1.0472
-print(s.iterations)        // 4
+print(round(s.xs[0], 4))   # 1.0472
+print(s.iterations)        # 4
 ```
 
 The result has:
@@ -189,7 +189,7 @@ bounds and a cap on how far each input moves:
 
 ```petal ignore
 let r = solve_step(
-  fn(xs) at(xs[0], xs[1], k) end,          // [x, y] where the shot lands
+  fn(xs) at(xs[0], xs[1], k) end,          # [x, y] where the shot lands
   [angle, speed],
   [target.x, target.y],
   {bounds: [[0.05, 1.5], [80.0, 900.0]], max_step: [0.06, 30.0], damping: 0.25},
@@ -216,8 +216,8 @@ fn view(x)
   x * 3.0
 end
 
-print(round(deriv(view, 1.0).value, 6))   // 3.0
-print(count)                              // 0
+print(round(deriv(view, 1.0).value, 6))   # 3.0
+print(count)                              # 0
 ```
 
 A `state` slot first reached inside a probe starts from its initializer in

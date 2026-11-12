@@ -37,4 +37,3 @@ hint_bar(rect(0, h - 26, w, 26), [hint("n", "open DETAIL")])
 
 if go || key_pressed("n") then
   navigate("detail.ptl")
-end

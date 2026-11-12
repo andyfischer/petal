@@ -18,7 +18,6 @@ fn compute(a, b, c)
   let unused = 999     # not related to output
   let z = x + y
   z
-end
 
 let prog = Program.current()
 let deps = prog.slice("z")
@@ -52,8 +51,6 @@ fn classify(n)
   else
     let negative_label = "negative"
     negative_label
-  end
-end
 
 let classify_prog = Program.parse("""
     fn classify(n)
@@ -88,7 +85,6 @@ fn pipeline(input)
   let formatted = format_output(validated)
   let logged = write_log(validated)
   {output: formatted, log: logged}
-end
 
 let pipe_prog = Program.current()
 let output_deps = pipe_prog.slice("formatted")

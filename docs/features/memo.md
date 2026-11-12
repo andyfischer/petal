@@ -47,7 +47,7 @@ fn layout(text)
     memo(text) width: int = len(text) * 8
     width
 end
-print(layout("hello"))   // 40
+print(layout("hello"))   # 40
 ```
 
 The key is evaluated every time the declaration runs. The initializer is

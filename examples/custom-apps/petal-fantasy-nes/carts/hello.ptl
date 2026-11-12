@@ -51,8 +51,6 @@ fill_map(0, 0)
 for y in range(27, 30) do
   for x in range(0, 32) do
     set_tile(x, y, 1, 0)
-  end
-end
 
 # ── The hero ──────────────────────────────────────────────────────────────
 # `state` survives both frames and hot reloads, which is what lets the cart be
@@ -65,16 +63,12 @@ let speed = 2
 
 if pad_down(0, "left") then
   set hero_x = hero_x - speed
-end
 if pad_down(0, "right") then
   set hero_x = hero_x + speed
-end
 if pad_down(0, "up") then
   set hero_y = hero_y - speed
-end
 if pad_down(0, "down") then
   set hero_y = hero_y + speed
-end
 
 # Keep him on screen: 256x240 visible, 8x8 sprite.
 set hero_x = max(0, min(248, hero_x))

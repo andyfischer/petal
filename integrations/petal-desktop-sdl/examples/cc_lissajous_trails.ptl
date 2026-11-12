@@ -19,7 +19,6 @@ let sh = float(screen_height())
 if !started then
   clear(0, 0, 0)
   started = true
-end
 
 let cx = sw * 0.5
 let cy = sh * 0.5
@@ -40,6 +39,5 @@ for i in range(0, 60) do
   let b = int(128.0 + 127.0 * sin(tt * 1.1 + 4.0))
 
   draw_circle(cx: int(x), cy: int(y), radius: 2, r: r, g: g, b: b)
-end
 
 t += dt() * 2.0

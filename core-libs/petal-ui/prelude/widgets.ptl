@@ -30,23 +30,17 @@ fn _anim(target, rate)
     v = float(target)
   else
     v = approach(v, float(target), rate)
-  end
   v
-end
 
 # 0→1 as `on` flips true/false, eased at `rate`. One instance per callsite
 # (and per loop iteration), like every in-function `state`.
 fn _anim_flag(on, rate)
   _anim(if on then 1.0 else 0.0 end, rate)
-end
-
 
 # ── Button (immediate-mode): draws, returns true on click this frame ─────
 
-
 pub fn button(r, label)
   button(r, label, {})
-end
 
 # `style` overrides any of {bg, hover, fg, outline, size, font, radius,
 # gradient, gradient_angle, elevation}; anything it omits comes from
@@ -70,7 +64,6 @@ pub fn button(r, label, style)
   let lift = _get(style, "elevation", 0)
   if lift > 0 && !press then
     draw_elevation(r, rad, lift)
-  end
   let outline = _get(style, "outline", t.outline)
   # A rounded button's border is the rounded rect *behind* its face, inset by
   # one pixel — the same trick `card` uses, since there is no rounded-outline
@@ -79,19 +72,16 @@ pub fn button(r, label, style)
   if rad > 0 then
     draw_rect_rounded(r, rad, outline)
     face = pad(r, 1)
-  end
   let grad = _get(style, "gradient", [])
   if len(grad) < 2 then
     let bg = mix(_get(style, "bg", t.panel), _get(style, "hover", t.hover), hov)
     if press then
       bg = mix(bg, :000000, 0.18)
-    end
     if rad > 0 then
       draw_rect_rounded(face, max(0, rad - 1), bg)
     else
       draw_rect(face, bg)
       draw_rect_outline(r, outline)
-    end
   else
     # Both stops take the same hover lift and press dip, so the ramp keeps its
     # shape through the interaction instead of flattening at one end.
@@ -100,14 +90,10 @@ pub fn button(r, label, style)
       let s = mix(c, t.text, hov * 0.10)
       if press then
         s = mix(s, :000000, 0.18)
-      end
       stops = append(stops, s)
-    end
     linear_gradient(face, stops, _get(style, "gradient_angle", GRAD_DOWN), max(0, rad - 1))
     if rad == 0 then
       draw_rect_outline(r, outline)
-    end
-  end
   let size = _get(style, "size", t.font_md)
   let ts = _ts(_face(t, style), size, _get(style, "fg", t.text))
   # Measured and drawn with the one record: a centred label that measures in
@@ -116,8 +102,6 @@ pub fn button(r, label, style)
   let ty = r.y + (r.h - size) / 2
   draw_text(label, {x: tx, y: ty}, ts)
   hot && mouse_pressed(0)
-end
-
 
 # ── Scrollbar ─────────────────────────────────────────────────────────────
 
@@ -128,7 +112,6 @@ end
 # thumb sized rows/count of the track and positioned by scroll/(count - rows).
 pub fn draw_scrollbar(r, count, rows, scroll)
   draw_scrollbar(r, count, rows, scroll, {})
-end
 
 # `style` overrides any of {track, thumb, width}; omitted keys come from
 # `ui_theme()`.
@@ -141,9 +124,6 @@ pub fn draw_scrollbar(r, count, rows, scroll, style)
     let thumb_h = max(12, r.h * rows / count)
     let thumb_y = track.y + (r.h - thumb_h) * scroll / (count - rows)
     draw_rect({x: track.x, y: thumb_y, w: bar_w, h: thumb_h}, _get(style, "thumb", t.dim))
-  end
-end
-
 
 # ── Section label ─────────────────────────────────────────────────────────
 # A section heading that shows which region owns the keyboard: accent-colored
@@ -151,7 +131,6 @@ end
 # registry — pass `has_focus(id)` as `active` to label each focusable region.
 pub fn section_label(label, x, y, active)
   section_label(label, x, y, active, {})
-end
 
 # `style` overrides any of {active, inactive, size, font}; omitted keys come
 # from `ui_theme()`.
@@ -166,9 +145,6 @@ pub fn section_label(label, x, y, active, style)
     # style the run was drawn in.
     let uy = y + size + 1
     draw_line({x: x, y: uy}, {x: x + text_width(label, ts), y: uy}, color)
-  end
-end
-
 
 # ── Text field (immediate-mode, focus-aware) ────────────────────────────────
 # Single-line editable text with a caret, a selection, the clipboard and
@@ -211,25 +187,21 @@ end
 # returned (the app cleared or replaced it), the history is dropped: it
 # described a different string.
 
-
 # The draw half. `has` is whether the field holds focus (draws the accent
 # border and the caret). Without an explicit caret the bar sits at the end of
 # the text, which is what the pre-caret prelude always drew.
 pub fn draw_text_field(r, text, has)
   draw_text_field(r, text, has, char_len(text), {}, {})
-end
 
 # `style` overrides any of {bg, fg, outline, focus, caret, selection, size,
 # font, inset, text_style, placeholder}; omitted keys come from `ui_theme()`.
 # `placeholder` is drawn dim while the field is empty.
 pub fn draw_text_field(r, text, has, style)
   draw_text_field(r, text, has, char_len(text), {}, style)
-end
 
 # `caret` is the char index the caret bar is drawn at (clamped).
 pub fn draw_text_field(r, text, has, caret, style)
   draw_text_field(r, text, has, caret, {}, style)
-end
 
 # Full form. `view` carries what `text_field_update` returned beyond the
 # caret — any of {sel_start, sel_end, scroll, overflow} — so passing its whole
@@ -250,7 +222,6 @@ pub fn draw_text_field(r, text, has, caret, view, style)
   let clipped = _get(view, "overflow", false)
   if clipped then
     clip_push({x: r.x + 1, y: r.y, w: r.w - 2, h: r.h})
-  end
   let n = char_len(text)
   let s0 = clamp(_get(view, "sel_start", 0), 0, n)
   let s1 = clamp(_get(view, "sel_end", 0), 0, n)
@@ -258,11 +229,9 @@ pub fn draw_text_field(r, text, has, caret, view, style)
     let x0 = text_width(char_slice(text, 0, s0), ts)
     let x1 = text_width(char_slice(text, 0, s1), ts)
     draw_rect({x: tx + x0, y: ty - 2, w: x1 - x0, h: tsize + 4}, _get(style, "selection", tint(bg, accent, 35)))
-  end
   let placeholder = _get(style, "placeholder", "")
   if n == 0 && placeholder != "" then
     draw_text(placeholder, {x: tx, y: ty}, {...ts, color: t.dim})
-  end
   draw_text(text, {x: tx, y: ty}, ts)
   if has then
     # The caret sits where the drawn run actually ends, so it measures the
@@ -271,22 +240,16 @@ pub fn draw_text_field(r, text, has, caret, view, style)
     let c = clamp(caret, 0, n)
     let cx = tx + text_width(char_slice(text, 0, c), ts)
     draw_line({x: cx, y: ty}, {x: cx, y: ty + tsize}, _get(style, "caret", accent))
-  end
   if clipped then
     clip_pop()
-  end
-end
 
 pub fn text_field(id, r, buf)
   text_field(id, r, buf, {})
-end
 
 pub fn text_field(id, r, buf, style)
   let res = text_field_update(id, r, buf, {...style, scroll: true})
   draw_text_field(r, res.text, has_focus(id), res.caret, res, style)
   res
-end
-
 
 # ── Text area (immediate-mode, focus-aware, multi-line) ─────────────────────
 # `text_field` for text with line breaks: captions, notes, a chat message.
@@ -322,8 +285,6 @@ fn _area_caret(rows, ts, at, lh)
   let row = rows[i]
   let x = text_width(char_slice(row.text, 0, clamp(at - row.start, 0, row.end - row.start)), ts)
   {x: x, y: i * lh, row: i}
-end
-
 
 # The draw half: the box, the selection, the rows, the caret and, when the
 # text overflows, a scrollbar. `res` is what `text_area_update` returned (or
@@ -331,7 +292,6 @@ end
 # focus, caret, selection, size, font, inset, text_style, placeholder}.
 pub fn draw_text_area(r, res, has)
   draw_text_area(r, res, has, {})
-end
 
 pub fn draw_text_area(r, res, has, style)
   let t = _palette()
@@ -352,40 +312,29 @@ pub fn draw_text_area(r, res, has, style)
     let sel = _get(style, "selection", tint(bg, accent, 35))
     for sr in text_range_rects(rows, ts, res.sel_start, res.sel_end, lh) do
       draw_rect({x: ox + sr.x, y: top + sr.y, w: sr.w, h: sr.h}, sel)
-    end
-  end
   let placeholder = _get(style, "placeholder", "")
   if char_len(res.text) == 0 && placeholder != "" then
     draw_text(placeholder, {x: ox, y: top + (lh - tsize) / 2}, {...ts, color: t.dim})
-  end
   for i in range(0, len(rows)) do
     let y = top + i * lh
     if y + lh > r.y && y < r.y + r.h then
       draw_text(rows[i].text, {x: ox, y: y + (lh - tsize) / 2}, ts)
-    end
-  end
   if has then
     let c = _area_caret(rows, ts, res.caret, lh)
     let cx = ox + c.x
     draw_line({x: cx, y: top + c.y + 1}, {x: cx, y: top + c.y + lh - 1}, _get(style, "caret", accent))
-  end
   clip_pop()
   if res.overflow then
     let inner_h = r.h - 2 * inset
     draw_scrollbar({x: r.x, y: r.y + 1, w: r.w - 1, h: r.h - 2}, res.content_h, inner_h, res.scroll)
-  end
-end
 
 pub fn text_area(id, r, buf)
   text_area(id, r, buf, {})
-end
 
 pub fn text_area(id, r, buf, style)
   let res = text_area_update(id, r, buf, style)
   draw_text_area(r, res, has_focus(id), style)
   res
-end
-
 
 # ── Context menu (immediate-mode dropdown) ─────────────────────────────────
 # A right-click menu. State is an explicit record so several menus coexist and
@@ -416,16 +365,13 @@ end
 # One menu row. `enabled: false` draws dim and cannot be chosen.
 pub fn menu_item(label)
   menu_item(label, true)
-end
 
 pub fn menu_item(label, enabled)
   {label: label, enabled: enabled, sep: false}
-end
 
 # A divider rule between groups of items. Never hoverable or choosable.
 pub fn menu_sep()
   {label: "", enabled: false, sep: true}
-end
 
 # Each menu record has its own popover id, made once where it is created
 # (`state menu = menu_state()`), so several menus coexist. `live` is whether
@@ -436,28 +382,23 @@ state var _pop_seq = 0
 fn _pop_new_id()
   set _pop_seq = (get _pop_seq) + 1
   "menu-" ++ str(get _pop_seq)
-end
 
 pub fn menu_state()
   {open: false, x: 0, y: 0, tag: "", hover: -1, id: _pop_new_id(), live: false, waited: false}
-end
 
 # A record made before menus had ids shares the one id "menu".
 fn _menu_id(m)
   str(_get(m, "id", "menu"))
-end
 
 pub fn menu_close(m)
   if m.open then _ui_popover_request(false, _menu_id(m)) end
   {...m, open: false, x: 0, y: 0, hover: -1, live: false, waited: false}
-end
 
 # Open (or move) the menu to `(x, y)`, remembering `tag`. Hover starts on
 # nothing, so a menu opened under the pointer highlights only once it moves.
 pub fn menu_show(m, x, y, tag)
   _ui_popover_request(true, _menu_id(m))
   {...m, open: true, x: x, y: y, tag: tag, hover: -1, live: popover_shown(_menu_id(m)), waited: false}
-end
 
 # The common trigger: a right press inside `r` opens the menu at the pointer.
 # Any other frame leaves the state alone, so this is safe to call every frame
@@ -467,8 +408,6 @@ pub fn menu_open_on_right_click(m, r, tag)
     menu_show(m, mouse_x(), mouse_y(), tag)
   else
     m
-  end
-end
 
 let _MENU_ROW_H = 24
 let _MENU_SEP_H = 9
@@ -481,7 +420,6 @@ let _MENU_SIZE = 14
 # what two testbed apps had to do, and what silently rots when these change).
 pub fn menu_metrics()
   menu_metrics({})
-end
 
 pub fn menu_metrics(style)
   {
@@ -494,20 +432,16 @@ pub fn menu_metrics(style)
     # another is either padded or clipped.
     font: _face(_palette(), style)
   }
-end
 
 fn _menu_row_h(item, mm)
   if item.sep then mm.sep_h else mm.row_h end
-end
 
 # Total height of `items` plus the frame's own vertical padding.
 fn _menu_h(items, mm)
   let h = mm.pad * 2
   for it in items do
     h = h + _menu_row_h(it, mm)
-  end
   h
-end
 
 # Width that fits the widest label, clamped so a very long one does not run
 # off the screen and a very short menu is still comfortably clickable.
@@ -518,13 +452,10 @@ fn _menu_w(items, mm)
     let tw = text_width(it.label, ts)
     if !it.sep && tw > widest then
       widest = tw
-    end
-  end
   # The `clamp` builtin preserves int-ness (it used to return a float, which is
   # why this went through a private `_clamp` for years) and this feeds pixel
   # geometry that has to stay integral.
   clamp(widest + 28, 120, max(140, screen_width() - 24))
-end
 
 # Where the menu actually lands: it prefers down-and-right of the click, and
 # flips to the other side of the pointer when that would put it off-screen —
@@ -538,7 +469,6 @@ end
 # `.rect` in its result, for the common case of "where did the open menu land".
 pub fn menu_rect(m, items)
   menu_rect(m, items, {})
-end
 
 pub fn menu_rect(m, items, style)
   let mm = menu_metrics(style)
@@ -548,12 +478,9 @@ pub fn menu_rect(m, items, style)
   let y = m.y
   if x + w > screen_width() then
     x = max(0, m.x - w)
-  end
   if y + h > screen_height() then
     y = max(0, m.y - h)
-  end
   {x: x, y: y, w: w, h: h}
-end
 
 # Index of the choosable item at pane-local `(px, py)`, or -1. Separators and
 # disabled rows are transparent to this, so neither can be picked.
@@ -565,11 +492,8 @@ fn _menu_hit(r, items, px, py, mm)
     let rh = _menu_row_h(it, mm)
     if !it.sep && it.enabled && px >= r.x && px < r.x + r.w && py >= y && py < y + rh then
       hit = i
-    end
     y = y + rh
-  end
   hit
-end
 
 # Step the keyboard highlight `from` by `step`, skipping separators and
 # disabled rows, and stopping at the ends rather than wrapping (a menu is
@@ -579,16 +503,12 @@ fn _menu_step(items, from, step)
   let i = from + step
   if from < 0 && step < 0 then
     i = len(items) - 1
-  end
   let found = from
   while i >= 0 && i < len(items) && found == from do
     if !items[i].sep && items[i].enabled then
       found = i
-    end
     i = i + step
-  end
   found
-end
 
 # Draw the menu and resolve this frame's input. Returns
 # {menu, index, label, tag, rect}: `index` is -1 unless something was chosen,
@@ -598,7 +518,6 @@ end
 # the geometry. A closed menu draws nothing and always returns index -1.
 pub fn context_menu(m, items)
   context_menu(m, items, {})
-end
 
 # `style` overrides any of {bg, fg, dim, outline, rule, selection, shadow,
 # radius, size, font, row_h, sep_h, pad}; omitted keys come from `ui_theme()`
@@ -635,13 +554,10 @@ pub fn context_menu(m, items, style)
     let moved = mx != (m.px ?? -1) || my != (m.py ?? -1)
     if inside && over >= 0 && (moved || hover < 0) then
       hover = over
-    end
     if key_pressed("down") then
       hover = _menu_step(items, hover, 1)
-    end
     if key_pressed("up") then
       hover = _menu_step(items, hover, -1)
-    end
 
     # Resolve: a press on a choosable row takes it, Return takes the
     # highlighted one, and a press on the rest of the menu closes it. A press
@@ -652,17 +568,12 @@ pub fn context_menu(m, items, style)
       if mouse_pressed(0) || mouse_pressed(1) then
         if inside && over >= 0 then
           chosen = over
-        end
         close = true
-      end
       if key_pressed("return") && hover >= 0 then
         chosen = hover
         close = true
-      end
       if key_pressed("escape") then
         close = true
-      end
-    end
 
     # Drawn after the input so the highlight reflects this frame's pointer.
     # A soft drop shadow lifts the menu off whatever it covers; without it a
@@ -691,7 +602,6 @@ pub fn context_menu(m, items, style)
         _reg(r, id)
         let sid = _get(style, "id", nil)
         if sid != nil then ui_target(sid, r) end
-      end
       draw_elevation(r, rad, 2, {color: _get(style, "shadow", :000000)})
       draw_rect(r, bg)
       draw_rect_outline(r, outline)
@@ -708,19 +618,13 @@ pub fn context_menu(m, items, style)
           if i == hover then
             draw_rect({x: r.x + 1, y: y, w: r.w - 2, h: rh}, _get(style, "selection", t.selection))
             fg = fg_on
-          end
           draw_text(it.label, {x: r.x + 12, y: y + (rh - mm.size) / 2}, _ts(mm.font, mm.size, fg))
-        end
         y = y + rh
-      end
-    end)
+    )
 
     let next = if close then menu_close(m) else {...m, hover: hover, px: mx, py: my, live: live, waited: true} end
     let label = if chosen >= 0 then items[chosen].label else "" end
     {menu: next, index: chosen, label: label, tag: m.tag, rect: r}
-  end
-end
-
 
 # ── Popover ───────────────────────────────────────────────────────────────
 # A menu whose open state is the runtime's, by id: no record to thread.
@@ -734,7 +638,6 @@ end
 # press reaches nothing underneath. It opens on the frame after
 # `popover_open`, and it has the keys while it is open: `shortcut(chord)`
 # is quiet, `shortcut(chord, id)` answers.
-
 
 # The popover's menu, under `anchor` (a rect: below it; a point {x, y}: at
 # it). Returns {open, index, label, rect}; `index` is -1 unless an item was
@@ -751,9 +654,6 @@ pub fn popover(id, anchor, items, style = {})
     let res = context_menu(m, items, style)
     hov = {hover: res.menu.hover, px: _get(res.menu, "px", -1), py: _get(res.menu, "py", -1)}
     {open: res.menu.open, index: res.index, label: res.label, rect: res.rect}
-  end
-end
-
 
 # ── Spinner + progress ────────────────────────────────────────────────────
 
@@ -761,7 +661,6 @@ end
 # `style` overrides {color, width}.
 pub fn spinner(cx, cy, radius)
   spinner(cx, cy, radius, {})
-end
 
 pub fn spinner(cx, cy, radius, style)
   let t = _palette()
@@ -769,20 +668,17 @@ pub fn spinner(cx, cy, radius, style)
   let thick = _get(style, "width", max(2, radius / 4))
   let a0 = time() * 5.5
   fill_arc(cx, cy, float(radius - thick), float(radius), a0, a0 + 4.5, col.r, col.g, col.b, 235)
-end
 
 # The one-character text spinner several apps hand-rolled: | / - \ cycling on
 # the frame clock. Draw it with the app's own font size and color.
 pub fn spinner_glyph()
   let glyphs = ["|", "/", "-", "\\"]
   glyphs[(frame_count() / 6) % 4]
-end
 
 # A progress bar. `frac` in [0, 1]; a negative `frac` draws the indeterminate
 # sweep. `style` overrides {track, fill, radius}.
 pub fn progress_bar(r, frac)
   progress_bar(r, frac, {})
-end
 
 pub fn progress_bar(r, frac, style)
   let t = _palette()
@@ -800,19 +696,13 @@ pub fn progress_bar(r, frac, style)
     let wpx = int(float(r.w) * clamp(float(frac), 0.0, 1.0))
     if wpx > 0 then
       draw_rect_rounded(rect(r.x, r.y, wpx, r.h), rad, fill)
-    end
-  end
-end
-
 
 # ── Checkbox / toggle / radio / slider ────────────────────────────────────
-
 
 # A checkbox with a label. Returns the new value; click anywhere in `r`
 # toggles. `style` overrides {box, bg, fill, outline, focus, fg, size}.
 pub fn checkbox(r, label, value)
   checkbox(r, label, value, {})
-end
 
 pub fn checkbox(r, label, value, style)
   let t = _palette()
@@ -839,18 +729,15 @@ pub fn checkbox(r, label, value, style)
     let by = br.y + box * 28 / 100
     draw_line({x: ax, y: ay}, {x: mx2, y: my2}, ink, al, 2)
     draw_line({x: mx2, y: my2}, {x: bx, y: by}, ink, al, 2)
-  end
   let size = _get(style, "size", t.font_md)
   draw_text(label, {x: br.x + box + t.space, y: r.y + (r.h - size) / 2},
             _ts(_face(t, style), size, _get(style, "fg", t.text)))
   v
-end
 
 # An animated on/off switch. Returns the new value; click anywhere in `r`
 # flips it. `style` overrides {height, track, fill, knob}.
 pub fn toggle(r, value)
   toggle(r, value, {})
-end
 
 pub fn toggle(r, value, style)
   let t = _palette()
@@ -867,14 +754,12 @@ pub fn toggle(r, value, style)
   let kx = tr.x + 2 + int(float(tr.w - kd - 4) * ease_out(on))
   draw_circle({x: kx + kd / 2, y: tr.y + th / 2}, kd / 2, _get(style, "knob", t.text))
   v
-end
 
 # A vertical radio group: one row per label, dot on the selected one. Returns
 # the new selected index. `style` overrides {row_h, size, bg, fill, outline,
 # focus, fg}.
 pub fn radio_group(r, labels, selected)
   radio_group(r, labels, selected, {})
-end
 
 pub fn radio_group(r, labels, selected, style)
   let t = _palette()
@@ -895,11 +780,8 @@ pub fn radio_group(r, labels, selected, style)
     draw_circle(cc, d / 2 - 1, _get(style, "bg", t.panel))
     if on > 0.05 then
       draw_circle(cc, float(d) * 0.28 * ease_out(on), _get(style, "fill", t.accent))
-    end
     draw_text(labels[i], {x: r.x + d + t.space, y: rr.y + (row_h - size) / 2}, ts)
-  end
   sel
-end
 
 # A horizontal slider over [lo, hi]. Returns the new value (a float). Press
 # anywhere in `r` to jump-and-drag; the drag keeps tracking outside the rect
@@ -911,14 +793,12 @@ end
 # with its row: `for n in nodes key n.id do slider(r, n.gain, 0, 1) end`.
 pub fn slider(r, value, lo, hi)
   slider(r, value, lo, hi, {})
-end
 
 pub fn slider(r, value, lo, hi, style)
   state dragging = false
   let hot = _hot(r, style["id"] ?? nil)
   dragging = _slider_drag(hot, dragging)
   _slider_draw(r, value, lo, hi, style, dragging, _anim_flag(dragging || hot, 16.0))
-end
 
 # Whether the slider is being dragged this frame, given last frame's and
 # whether the pointer is over it now.
@@ -927,7 +807,6 @@ fn _slider_drag(hot, dragging)
   if mouse_pressed(0) && hot then d = true end
   if !mouse_down(0) then d = false end
   d
-end
 
 fn _slider_draw(r, value, lo, hi, style, dragging, act)
   let t = _palette()
@@ -938,7 +817,6 @@ fn _slider_draw(r, value, lo, hi, style, dragging, act)
   if dragging then
     let fr = clamp(float(mouse_x() - r.x - pad_x) / float(usable), 0.0, 1.0)
     v = float(lo) + (float(hi) - float(lo)) * fr
-  end
   let span = float(hi) - float(lo)
   let frac = if span > 0.0 then (v - float(lo)) / span else 0.0 end
   let track_h = _get(style, "track_h", 4)
@@ -948,12 +826,9 @@ fn _slider_draw(r, value, lo, hi, style, dragging, act)
   let fw = int(float(usable) * frac)
   if fw > 0 then
     draw_rect_rounded(rect(tr.x, tr.y, fw, track_h), track_h / 2, _get(style, "fill", t.accent))
-  end
   let kx = tr.x + fw
   draw_circle({x: kx, y: cy}, float(knob) + act * 1.5, _get(style, "knob", t.text))
   v
-end
-
 
 # ── Inspector fields ──────────────────────────────────────────────────────
 # The controls of a property inspector, which every document editor needs
@@ -970,7 +845,6 @@ end
 # keyboard) and the old one, or nil, before. Escape abandons the edit and
 # gives the focus up.
 
-
 # One line of text that applies on Return or when the field loses the
 # keyboard; Escape reverts. While unfocused it shows `current`. Returns
 # {text, editing}: `text` is nil except on the frame the edit is
@@ -979,7 +853,6 @@ end
 # a double-click), rather than on a click in it.
 pub fn commit_field(id, r, current)
   commit_field(id, r, current, {})
-end
 
 pub fn commit_field(id, r, current, style)
   state buf = ""
@@ -987,12 +860,10 @@ pub fn commit_field(id, r, current, style)
   let out = nil
   if _get(style, "start", false) && !editing && !has_focus(id) then
     focus_request(id)
-  end
   let res = text_field(id, r, if editing then buf else str(current ?? "") end, style)
   if has_focus(id) then
     if !editing then
       editing = true
-    end
     buf = res.text
     if res.cancelled then
       focus_request(nil)
@@ -1001,14 +872,11 @@ pub fn commit_field(id, r, current, style)
       out = buf
       focus_request(nil)
       editing = false
-    end
   else if editing then
     # The keyboard went elsewhere (a click, Tab) mid-edit: apply it.
     editing = false
     out = buf
-  end
   {text: out, editing: editing}
-end
 
 # A number box: drag sideways to scrub (shift for fine steps), double-click
 # to type, Return or a click away to apply the typed value, Escape to drop
@@ -1020,7 +888,6 @@ end
 # for none), size, font, bg, hover, active, fg, radius}.
 pub fn number_field(id, r, value)
   number_field(id, r, value, {})
-end
 
 pub fn number_field(id, r, value, style)
   let t = _palette()
@@ -1034,7 +901,6 @@ pub fn number_field(id, r, value, style)
     if !editing then
       buf = fixed(float(value), places)
       editing = true
-    end
     let res = text_field(id, r, buf, style)
     buf = res.text
     if res.cancelled then
@@ -1045,14 +911,12 @@ pub fn number_field(id, r, value, style)
       if v != nil then out = v end
       focus_request(nil)
       editing = false
-    end
   else
     if editing then
       # The focus went elsewhere while typing (a click, Tab): keep the value.
       editing = false
       let v = parse_float(trim(buf))
       if v != nil then out = v end
-    end
     let it = interact(r, id)
     let bg = if it.down then _get(style, "active", t.selection)
              else if it.hover then _get(style, "hover", t.hover)
@@ -1066,14 +930,11 @@ pub fn number_field(id, r, value, style)
     if it.down && !it.pressed && mouse_x() != last_x then
       let k = if mod_shift() then _get(style, "fine", 0.1) else 1.0 end
       out = float(value) + float(mouse_x() - last_x) * float(_get(style, "step", 1.0)) * k
-    end
     last_x = mouse_x()
     if it.pressed && click_count() == 2 then
       focus_request(id)
-    end
     let tip = _get(style, "tip", "drag to change · shift for fine · double-click to type")
     if tip != "" then tooltip(r, tip) end
-  end
   if out != value then
     # `_get`, not `style["min"]`: a missing key is an error, and most
     # fields have no bounds.
@@ -1081,9 +942,7 @@ pub fn number_field(id, r, value, style)
     let hi = _get(style, "max", nil)
     if lo != nil then out = max(out, lo) end
     if hi != nil then out = min(out, hi) end
-  end
   {value: out, changed: out != value}
-end
 
 # A colour chip and its hex, typed: Return or a click away applies, Escape
 # reverts. Returns {color}: `color` is nil unless a valid new colour
@@ -1091,7 +950,6 @@ end
 # `commit_field`'s, plus {chip_radius, outline}.
 pub fn color_field(id, r, color)
   color_field(id, r, color, {})
-end
 
 pub fn color_field(id, r, color, style)
   let t = _palette()
@@ -1104,14 +962,12 @@ pub fn color_field(id, r, color, style)
   let res = commit_field(id, fr, shown, {placeholder: "#rrggbb", ...style})
   let picked = if res.text == nil then nil else color_from_hex(res.text) end
   {color: if same_color(picked, color) then nil else picked end}
-end
 
 # A row of square colour chips, `r.h` on a side, `current` ringed; chips
 # that would overrun `r.w` are left out. Returns the colour clicked, or nil. `style` sets {gap (4), radius (3), ring, hover,
 # id (the hit-test name prefix)}.
 pub fn swatches(r, colors, current)
   swatches(r, colors, current, {})
-end
 
 pub fn swatches(r, colors, current, style)
   let t = _palette()
@@ -1130,12 +986,8 @@ pub fn swatches(r, colors, current, style)
         draw_rect_rounded_outline(pad(cr, -2), rad + 1, _get(style, "ring", t.accent), 255, 2)
       else if it.hover then
         draw_rect_rounded_outline(pad(cr, -1), rad + 1, _get(style, "hover", t.border_strong), 255, 1)
-      end
       if it.click then picked = c end
-    end
-  end
   picked
-end
 
 # A small chevron pointing left (`dir` -1) or right (1), centred in `r`.
 fn _chevron(r, dir, c)
@@ -1144,7 +996,6 @@ fn _chevron(r, dir, c)
   let s = max(2, min(r.w, r.h) / 5)
   draw_line({x: cx + dir * s / 2, y: cy - s}, {x: cx - dir * s / 2, y: cy}, c, 255, 2)
   draw_line({x: cx - dir * s / 2, y: cy}, {x: cx + dir * s / 2, y: cy + s}, c, 255, 2)
-end
 
 # ‹ value › — the arrows step back and forward through `options` (wrapping),
 # and a click on the value steps forward. Returns the chosen option.
@@ -1152,7 +1003,6 @@ end
 # hover, fg, radius, arrow_w (22)}.
 pub fn stepper(r, options, current)
   stepper(r, options, current, {})
-end
 
 pub fn stepper(r, options, current, style)
   let t = _palette()
@@ -1173,24 +1023,20 @@ pub fn stepper(r, options, current, style)
     for side in [{it: lt, r: left, dir: -1}, {it: rt, r: right, dir: 1}] do
       if side.it.hover then draw_rect_rounded(pad(side.r, 2), rad, _get(style, "hover", t.hover)) end
       _chevron(side.r, side.dir, if side.it.hover then t.text else t.muted end)
-    end
     if lt.click then out = options[(i + n - 1) % n] end
     if rt.click || md.click then out = options[(i + 1) % n] end
-  end
   let labels = _get(style, "labels", nil)
   let shown = if labels != nil && index_of(options, current) >= 0 then labels[index_of(options, current)] else str(current) end
   let size = _get(style, "size", t.font_sm)
   let ts = _ts(_face(t, style), size, _get(style, "fg", t.text))
   draw_text_center(text_ellipsize(shown, ts, max(0, mid.w - 4)), mid.x + mid.w / 2, mid.y + (mid.h - size) / 2, ts)
   out
-end
 
 # One of n, as a row of equal segments. Returns the new selected index.
 # `style` sets {id, size, font, bg, on (the selected segment), hover, fg,
 # fg_on, radius, inset (2)}.
 pub fn segmented(r, labels, index)
   segmented(r, labels, index, {})
-end
 
 pub fn segmented(r, labels, index, style)
   let t = _palette()
@@ -1211,14 +1057,11 @@ pub fn segmented(r, labels, index, style)
       draw_rect_rounded(pad(sr, inset), max(0, rad - inset), _get(style, "on", t.panel))
     else if it.hover then
       draw_rect_rounded(pad(sr, inset), max(0, rad - inset), _get(style, "hover", t.hover))
-    end
     if it.click then out = i end
     let fg = if i == index then _get(style, "fg_on", t.text) else _get(style, "fg", t.muted) end
     let ts = _ts(face, size, fg)
     draw_text_center(text_ellipsize(labels[i], ts, max(0, sr.w - 6)), sr.x + sr.w / 2, sr.y + (r.h - size) / 2, ts)
-  end
   out
-end
 
 # A button showing `current` that opens a menu of `options` under itself.
 # Returns the chosen option (`current` until one is picked). The menu is a
@@ -1228,7 +1071,6 @@ end
 # plus `context_menu`'s keys for the menu.
 pub fn dropdown(r, options, current)
   dropdown(r, options, current, {})
-end
 
 pub fn dropdown(r, options, current, style)
   let t = _palette()
@@ -1252,13 +1094,10 @@ pub fn dropdown(r, options, current, style)
   draw_line({x: cx, y: cy + 2}, {x: cx + 4, y: cy - 2}, t.muted, 255, 2)
   if it.click && !m.open then
     m = menu_show(m, r.x, r.y + r.h + 2, id)
-  end
   let items = map(range(0, len(options)), fn(k) -> menu_item(label_of(k)))
   let res = context_menu(m, items, style)
   m = res.menu
   if res.index >= 0 then options[res.index] else current end
-end
-
 
 # ── Tab bar ───────────────────────────────────────────────────────────────
 
@@ -1269,7 +1108,6 @@ end
 # composited against.
 pub fn tab_bar(r, labels, active)
   tab_bar(r, labels, active, {})
-end
 
 pub fn tab_bar(r, labels, active, style)
   let t = _palette()
@@ -1289,7 +1127,6 @@ pub fn tab_bar(r, labels, active, style)
       _get(style, "fg_active", t.text)
     else
       _get(style, "fg", t.dim)
-    end
     let ts = _ts(face, size, fg0)
     let wl = text_width(labels[i], ts) + 24
     let tr = rect(x, r.y, wl, r.h)
@@ -1298,18 +1135,13 @@ pub fn tab_bar(r, labels, active, style)
     let hov = _anim_flag(hot, 16.0)
     if !is && hov > 0.01 then
       draw_rect(tr, over(on, _get(style, "hover", t.hover), hov * 160.0 / 255.0))
-    end
     let fg = if is then fg0 else mix(fg0, t.text, hov * 0.5) end
     draw_text_center(labels[i], tr.x + wl / 2, r.y + (r.h - size) / 2, {...ts, color: fg})
     if is then
       draw_rect(rect(tr.x + 6, r.y + r.h - 2, wl - 12, 2), _get(style, "underline", t.accent))
-    end
     x = x + wl + gap
-  end
   draw_line({x: r.x, y: r.y + r.h}, {x: r.x + r.w, y: r.y + r.h}, _get(style, "rule", t.outline))
   act
-end
-
 
 # ── Tooltip ───────────────────────────────────────────────────────────────
 
@@ -1318,7 +1150,6 @@ end
 # the widgets beneath. `style` overrides {delay, size, font, bg, fg, outline}.
 pub fn tooltip(anchor, text)
   tooltip(anchor, text, {})
-end
 
 pub fn tooltip(anchor, text, style)
   state hover_since = -1.0
@@ -1326,7 +1157,6 @@ pub fn tooltip(anchor, text, style)
     if hover_since < 0.0 then hover_since = time() end
   else
     hover_since = -1.0
-  end
   let delay = _get(style, "delay", 0.45)
   if hover_since >= 0.0 && time() - hover_since >= delay then
     let t = _palette()
@@ -1340,7 +1170,6 @@ pub fn tooltip(anchor, text, style)
     let y = mouse_y() + 18
     if y + hpx > screen_height() then
       y = mouse_y() - hpx - 6
-    end
     # The tip is over content it did not paint and is *fading in*, so its
     # alpha is genuine translucency, not a flat tint: it stays an alpha.
     let alpha = int(a * 235.0)
@@ -1353,10 +1182,7 @@ pub fn tooltip(anchor, text, style)
       draw_rect_rounded(tr, t.radius_sm, _get(style, "bg", t.overlay), alpha)
       draw_rect_outline(tr, _get(style, "outline", t.outline), alpha)
       draw_text(text, {x: x + 8, y: y + 5}, {...ts, color: {...fg, a: alpha}})
-    end)
-  end
-end
-
+    )
 
 # ── Modal / dialog ────────────────────────────────────────────────────────
 # An overlay dialog over a dimmed backdrop. Escape or a click outside closes
@@ -1373,32 +1199,26 @@ end
 #     ...draw into res.content; call modal_close(md) on your buttons...
 #   end
 
-
 pub fn modal_state()
   {open: false, at: -1}
-end
 
 # `at` records the opening frame: the click (or keypress) that opened the
 # modal is still a live edge when the modal runs later the same frame, and
 # must not be read as the click-outside that dismisses it.
 pub fn modal_open(m)
   {open: true, at: frame_count()}
-end
 
 pub fn modal_close(m)
   {open: false, at: -1}
-end
 
 # True while the modal owns the input. Guard the panel's own click/keyboard
 # handling with this so one press is not acted on twice.
 pub fn modal_blocking(m)
   m.open
-end
 
 # Where a w×h modal sits: centered on the screen.
 pub fn modal_rect(w, h)
   rect((screen_width() - w) / 2, (screen_height() - h) / 2, w, h)
-end
 
 # The input half: Escape or a press outside `r` closes. Safe to call every
 # frame; a closed modal passes through untouched.
@@ -1410,8 +1230,6 @@ pub fn modal_update(m, r)
     if key_pressed("escape") then nm = modal_close(m) end
     if mouse_pressed(0) && !point_in(mouse_x(), mouse_y(), r) then nm = modal_close(m) end
     nm
-  end
-end
 
 # A dialog takes the rest of the frame: from its first draw call on, the
 # frame is on the modal layer (so the dialog's own controls, drawn by the app
@@ -1420,14 +1238,11 @@ end
 fn _modal_layer()
   if ui_layer() < UI_LAYER_MODAL then
     ui_layer(UI_LAYER_MODAL)
-  end
   ui_modal()
-end
 
 # The dimming layer between the panel and the dialog.
 pub fn draw_modal_backdrop()
   draw_modal_backdrop({})
-end
 
 # The backdrop is the one place a flat alpha is right rather than lazy: it
 # covers content the modal did not paint, so there is nothing to composite it
@@ -1437,12 +1252,10 @@ pub fn draw_modal_backdrop(style)
   _modal_layer()
   draw_rect(rect(0, 0, screen_width(), screen_height()),
             _get(style, "shadow", :000000), _get(style, "dim", alpha_pct(47)))
-end
 
 # The dialog chrome: shadow, rounded panel, title. Returns the content rect.
 pub fn draw_modal(r, title)
   draw_modal(r, title, {})
-end
 
 pub fn draw_modal(r, title, style)
   let t = _palette()
@@ -1459,13 +1272,11 @@ pub fn draw_modal(r, title, style)
   draw_text(title, {x: r.x + inset, y: r.y + inset - 2},
             {..._ts(_face(t, style), size, _get(style, "fg", t.text)), weight: 600})
   rect(r.x + inset, r.y + inset + size + 8, r.w - inset * 2, r.h - inset * 2 - size - 8)
-end
 
 # The one-call form: update + backdrop + chrome. Returns
 # {modal, open, rect, content}; draw your body into `content` when `open`.
 pub fn modal(m, w, h, title)
   modal(m, w, h, title, {})
-end
 
 pub fn modal(m, w, h, title, style)
   let r = modal_rect(w, h)
@@ -1476,12 +1287,8 @@ pub fn modal(m, w, h, title, style)
     {modal: nm, open: true, rect: r, content: content}
   else
     {modal: nm, open: false, rect: rect(0, 0, 0, 0), content: rect(0, 0, 0, 0)}
-  end
-end
-
 
 # ── Badge / pill / card / empty state / hint bar ──────────────────────────
-
 
 # A small rounded label chip at (x, y). Returns the rect it drew (so callers
 # can flow the next one after it). `style` overrides {size, font, bg, fg,
@@ -1489,7 +1296,6 @@ end
 # instead of a flat colour.
 pub fn badge(x, y, text)
   badge(x, y, text, {})
-end
 
 pub fn badge(x, y, text, style)
   let t = _palette()
@@ -1505,10 +1311,8 @@ pub fn badge(x, y, text, style)
     draw_rect_rounded(r, hpx / 2, _get(style, "bg", t.overlay))
   else
     linear_gradient(r, grad, _get(style, "gradient_angle", GRAD_DOWN), hpx / 2)
-  end
   draw_text(text, {x: x + 7, y: y + 4}, ts)
   r
-end
 
 # The colored badge: `color` tints the fill and the text — the status-chip
 # look (pass t.success / t.warn / t.danger / t.accent). `style` overrides
@@ -1516,7 +1320,6 @@ end
 # tint is composited against.
 pub fn pill(x, y, text, color)
   pill(x, y, text, color, {})
-end
 
 pub fn pill(x, y, text, color, style)
   let t = _palette()
@@ -1531,7 +1334,6 @@ pub fn pill(x, y, text, color, style)
   draw_rect_rounded(r, hpx / 2, over(_get(style, "on", t.surface), color, 42))
   draw_text(text, {x: x + 7, y: y + 4}, ts)
   r
-end
 
 # A raised surface with a rounded border and a soft shadow. Returns the
 # padded content rect. `style` overrides {radius, pad, bg, outline, shadow,
@@ -1539,7 +1341,6 @@ end
 # step of the theme's elevation scale (1 by default).
 pub fn card(r)
   card(r, {})
-end
 
 pub fn card(r, style)
   let t = _palette()
@@ -1547,17 +1348,14 @@ pub fn card(r, style)
   if _get(style, "shadow", true) then
     # Elevation 1: a card is resting on the surface, not floating over it.
     draw_elevation(r, rad, _get(style, "elevation", 1))
-  end
   draw_rect_rounded(r, rad, _get(style, "outline", t.border))
   draw_rect_rounded(pad(r, 1), max(0, rad - 1), _get(style, "bg", t.surface))
   pad(r, _get(style, "pad", t.space_lg))
-end
 
 # Centered "nothing here" copy for an empty region: a dim title plus an even
 # dimmer hint line. `style` overrides {size, font, fg}.
 pub fn empty_state(r, title, hint_text)
   empty_state(r, title, hint_text, {})
-end
 
 pub fn empty_state(r, title, hint_text, style)
   let t = _palette()
@@ -1570,20 +1368,16 @@ pub fn empty_state(r, title, hint_text, style)
   draw_text_center(title, cx, cy - size + 2, _ts(face, size, _get(style, "fg", t.dim)))
   if len(hint_text) > 0 then
     draw_text_center(hint_text, cx, cy + 8, _ts(face, t.font_sm, mix(t.dim, t.bg, 0.35)))
-  end
-end
 
 # One entry of a hint bar: the key cap text and what it does.
 pub fn hint(key, label)
   {key: key, label: label}
-end
 
 # The keyboard-hint bar every full-pane app draws along its bottom edge:
 # key caps in small pills, labels dim beside them.
 #   hint_bar(bottom, [hint("j/k", "move"), hint("enter", "open")])
 pub fn hint_bar(r, hints)
   hint_bar(r, hints, {})
-end
 
 pub fn hint_bar(r, hints, style)
   let t = _palette()
@@ -1609,9 +1403,6 @@ pub fn hint_bar(r, hints, style)
     # The next cap flows after this label, so the advance is measured in the
     # style the label was drawn in.
     x = x + text_width(hn.label, lbl_ts) + 16
-  end
-end
-
 
 # ── Splitter ──────────────────────────────────────────────────────────────
 # A draggable divider splitting `r` in two — the widget git_panel/db_view
@@ -1628,18 +1419,14 @@ end
 # band (grab-zone thickness), gap (space left blank beside the divider line),
 # line / active (colors).
 
-
 pub fn splitter_state()
   splitter_state(0.5)
-end
 
 pub fn splitter_state(frac)
   {frac: frac, drag: false}
-end
 
 pub fn splitter(sp, r)
   splitter(sp, r, {})
-end
 
 pub fn splitter(sp, r, style)
   let t = _palette()
@@ -1656,14 +1443,11 @@ pub fn splitter(sp, r, style)
     rect(r.x + apx - band / 2, r.y, band, r.h)
   else
     rect(r.x, r.y + apx - band / 2, r.w, band)
-  end
   let hot = _hot(hit, style["id"] ?? nil)
   if mouse_pressed(0) && hot then
     s = {frac: s.frac, drag: true}
-  end
   if !mouse_down(0) then
     s = {frac: s.frac, drag: false}
-  end
   if s.drag then
     let along = if axis == "x" then mouse_x() - r.x else mouse_y() - r.y end
     s = {frac: clamp(float(along) / float(max(1, total)), 0.02, 0.98), drag: true}
@@ -1672,8 +1456,6 @@ pub fn splitter(sp, r, style)
       rect(r.x + apx - band / 2, r.y, band, r.h)
     else
       rect(r.x, r.y + apx - band / 2, r.w, band)
-    end
-  end
   let active = s.drag || hot
   let lc = if active then _get(style, "active", t.accent) else _get(style, "line", t.outline) end
   let lw = if active then 2 else 1 end
@@ -1687,10 +1469,7 @@ pub fn splitter(sp, r, style)
     draw_line({x: r.x, y: r.y + apx}, {x: r.x + r.w, y: r.y + apx}, lc, 255, lw)
     a = rect(r.x, r.y, r.w, apx - gap)
     b = rect(r.x, r.y + apx + gap, r.w, r.h - apx - gap)
-  end
   {state: s, a: a, b: b, divider: hit}
-end
-
 
 # ── Table ─────────────────────────────────────────────────────────────────
 # A header + rows grid with column sizing, keyboard/mouse selection (list
@@ -1703,10 +1482,8 @@ end
 #              rows)                       // rows: a list of row lists
 #   ...sort `rows` by tb.sort_col / tb.sort_asc before passing them in...
 
-
 pub fn table_state()
   {selected: 0, scroll: 0, sort_col: -1, sort_asc: true}
-end
 
 # Column rects for `cols` across `r`: each col is {label, w} — `w` >= 1 is
 # fixed pixels, 0 < w < 1 a weight over the leftover, missing/0 an equal
@@ -1722,8 +1499,6 @@ pub fn table_col_rects(r, cols)
       weights = weights + w
     else
       weights = weights + 1.0
-    end
-  end
   let leftover = max(0, r.w - fixed)
   let out = []
   let x = r.x
@@ -1735,16 +1510,12 @@ pub fn table_col_rects(r, cols)
     else
       let wt = if w > 0.0 then w else 1.0 end
       if weights > 0.0 then cw = int(float(leftover) * wt / weights) end
-    end
     out = append(out, rect(x, r.y, cw, r.h))
     x = x + cw
-  end
   out
-end
 
 pub fn table(tb, r, cols, rows_data)
   table(tb, r, cols, rows_data, {})
-end
 
 # `style` overrides {row_h, head_h, size, font, fg, head_bg, selection, zebra,
 # rule, on, active} — `active` gates keyboard navigation, like list_update's,
@@ -1772,8 +1543,6 @@ pub fn table(tb, r, cols, rows_data, style)
         nt = {...nt, sort_asc: !nt.sort_asc}
       else
         nt = {...nt, sort_col: i, sort_asc: true}
-      end
-    end
     let label = _get(cols[i], "label", "")
     let fg = if nt.sort_col == i then t.text else t.muted end
     # Semibold headings, in the theme face: the record measured below is the
@@ -1784,8 +1553,6 @@ pub fn table(tb, r, cols, rows_data, style)
       let arrow = if nt.sort_asc then "▲" else "▼" end
       draw_text(arrow, {x: cr.x + 12 + text_width(label, head_ts), y: head.y + (head_h - size) / 2 + 2},
                 _ts(face, size - 4, t.accent))
-    end
-  end
   draw_line({x: r.x, y: body.y}, {x: r.x + r.w, y: body.y}, _get(style, "rule", t.border))
   let visible = max(1, body.h / row_h)
   let lr = rect(body.x, body.y, body.w, visible * row_h)
@@ -1801,7 +1568,6 @@ pub fn table(tb, r, cols, rows_data, style)
       draw_rect(rr, t.hover)
     else if zebra && idx % 2 == 1 then
       draw_rect(rr, over(on, t.hover, 70))
-    end
     let cells = rows_data[idx]
     let cell_ts = _ts(face, size, _get(style, "fg", t.text))
     for ci in range(0, min(len(cols), len(cells))) do
@@ -1810,12 +1576,8 @@ pub fn table(tb, r, cols, rows_data, style)
       # really does fit.
       draw_text(ellipsize(str(cells[ci]), cr.w - 16, cell_ts),
                 {x: cr.x + 8, y: rr.y + (row_h - size) / 2}, cell_ts)
-    end
-  end
   draw_scrollbar(lr, len(rows_data), visible, lst.scroll)
   nt
-end
-
 
 # ── Load view ─────────────────────────────────────────────────────────────
 # Draw the non-ready states into `r` (spinner while loading, the error while
@@ -1824,7 +1586,6 @@ end
 # idle_title}.
 pub fn draw_load(r, ls)
   draw_load(r, ls, {})
-end
 
 pub fn draw_load(r, ls, style)
   if load_ready(ls) then
@@ -1837,7 +1598,4 @@ pub fn draw_load(r, ls, style)
       spinner(r.x + r.w / 2, r.y + r.h / 2, _get(style, "radius", 10))
     else
       empty_state(r, _get(style, "idle_title", "Nothing loaded"), "")
-    end
     false
-  end
-end

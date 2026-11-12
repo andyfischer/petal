@@ -622,8 +622,8 @@ Scripts keep state across runs with the `state` keyword
 side: declaring, keying, lifetime and reset):
 
 ```petal
-state score = 0            // top level: one slot, initialized on first run only
-state var hp = Map()       // one slot holding a map: one entry per entity id
+state score = 0            # top level: one slot, initialized on first run only
+state var hp = Map()       # one slot holding a map: one entry per entity id
 ```
 
 What a host needs to know about it:

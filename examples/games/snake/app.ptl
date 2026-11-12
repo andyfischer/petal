@@ -41,7 +41,6 @@ enum Phase
   playing(label: "RUNNING", tint: BODY_HI, action: "Pause"),
   paused(label: "PAUSED", tint: GOLD, action: "Resume"),
   over(label: "GAME OVER", tint: DANGER, action: "Play again"),
-end
 
 state phase = Phase.ready
 state body = [11 * COLS + 13, 11 * COLS + 12, 11 * COLS + 11, 11 * COLS + 10]
@@ -71,15 +70,12 @@ fn mix(a: record, b: record, t: num) -> record
     g: int(float(a.g) + (float(b.g) - float(a.g)) * u),
     b: int(float(a.b) + (float(b.b) - float(a.b)) * u),
   }
-end
 
 fn cell_x(c)
   c % COLS
-end
 
 fn cell_y(c)
   c / COLS
-end
 
 # A random cell that is not in `taken`. Bounded so a nearly-full board cannot
 # spin the frame forever.
@@ -89,22 +85,17 @@ fn free_cell(taken)
   while contains(taken, c) && guard < 3000 do
     set c = random_int(0, CELLS)
     set guard = guard + 1
-  end
   c
-end
 
 # Speed ramps with apples eaten: 0..9.
 fn level_of(n)
   min(9, n / 3)
-end
 
 fn interval_of(lvl: num) -> float
   0.155 - float(lvl) * 0.011
-end
 
 fn opposite(d)
   (d + 2) % 4
-end
 
 # ── Layout ───────────────────────────────────────────────────────────────────
 let W = screen_width()
@@ -131,11 +122,8 @@ if want >= 0 then
   # inside one tick cannot fold the snake back onto its own neck.
   if want != opposite(pending) then
     pending = want
-  end
   if phase == Phase.ready then
     phase = Phase.playing
-  end
-end
 
 let hit_pause = false
 let hit_restart = false
@@ -159,12 +147,10 @@ if clicked(b_wrap) then hit_wrap = true end
 if key_pressed("space") then hit_pause = true end
 if key_pressed("r") || key_pressed("return") then
   hit_restart = true
-end
 if key_pressed("t") then hit_wrap = true end
 
 if hit_wrap then
   wrap = !wrap
-end
 
 if hit_pause then
   match phase
@@ -172,8 +158,6 @@ if hit_pause then
     when Phase.paused | Phase.ready -> phase = Phase.playing
     # From `over` the primary control is the obvious one: play again.
     when Phase.over -> hit_restart = true
-  end
-end
 
 if hit_restart then
   # A run that already ended recorded itself on death; only a restart from a
@@ -182,8 +166,6 @@ if hit_restart then
     runs = append(runs, score)
     if len(runs) > 5 then
       runs = slice(runs, start: len(runs) - 5, end: len(runs))
-    end
-  end
   body = [11 * COLS + 13, 11 * COLS + 12, 11 * COLS + 11, 11 * COLS + 10]
   dir = 1
   pending = 1
@@ -198,7 +180,6 @@ if hit_restart then
   shake = 0.0
   food = free_cell(body)
   phase = Phase.playing
-end
 
 # ── Simulation ───────────────────────────────────────────────────────────────
 let dts = dt()
@@ -215,9 +196,6 @@ if phase == Phase.playing then
     bonus_left = bonus_left - dts
     if bonus_left <= 0.0 then
       bonus = -1
-    end
-  end
-end
 
 # Fixed-rate stepping off the accumulator, capped so a long stall (headless
 # frames tick at the ~200ms poll rate, not 60fps) cannot teleport the snake.
@@ -243,8 +221,6 @@ while phase == Phase.playing && acc >= step_time && steps < 3 do
   else
     if nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS then
       dead = true
-    end
-  end
 
   if !dead then
     let ncell = ny * COLS + nx
@@ -261,7 +237,6 @@ while phase == Phase.playing && acc >= step_time && steps < 3 do
       let nb = [ncell]
       for i in range(0, keep) do
         nb = append(nb, body[i])
-      end
       body = nb
 
       if ate then
@@ -276,17 +251,12 @@ while phase == Phase.playing && acc >= step_time && steps < 3 do
           let taken = append(body, food)
           bonus = free_cell(taken)
           bonus_left = 7.0
-        end
-      end
       if ate_bonus then
         score = score + 50 + lvl * 10
         grow = grow + 3
         flash = 1.0
         bonus = -1
         bonus_left = 0.0
-      end
-    end
-  end
 
   if dead then
     phase = Phase.over
@@ -297,10 +267,6 @@ while phase == Phase.playing && acc >= step_time && steps < 3 do
       runs = append(runs, score)
       if len(runs) > 5 then
         runs = slice(runs, start: len(runs) - 5, end: len(runs))
-      end
-    end
-  end
-end
 
 let length = len(body)
 
@@ -331,10 +297,8 @@ draw_rect_rounded(rect(bx, by, board_w, board_h), radius: 11, c: BOARD)
 
 for c in range(1, COLS) do
   draw_line(bx + c * CELL, by + 4, bx + c * CELL, by + board_h - 4, GRID.r, GRID.g, GRID.b)
-end
 for r in range(1, ROWS) do
   draw_line(bx + 4, by + r * CELL, bx + board_w - 4, by + r * CELL, GRID.r, GRID.g, GRID.b)
-end
 
 # The wall reads as a hazard when wrap is off, and as an open seam when it is on.
 let wall_c = if wrap then mix(BOARD, ACCENT, t: 0.35) else EDGE end
@@ -343,7 +307,6 @@ draw_rect_outline(rect(bx, by, board_w, board_h), c: wall_c, a: 255, width: 2)
 fn cell_rect(ox, oy, c, inset: num)
   rect(ox + cell_x(c) * CELL + inset, oy + cell_y(c) * CELL + inset,
     CELL - inset * 2, CELL - inset * 2)
-end
 
 # Food — a soft halo, the fruit, and a highlight.
 let pulse = (sin(time() * 3.4) + 1.0) * 0.5
@@ -364,7 +327,6 @@ if bonus >= 0 then
   # A countdown bar under the apple, shrinking as its time runs out.
   let tw = int(float(CELL - 6) * (bonus_left / 7.0))
   draw_rect(rect(gr.x + 3, gr.y + CELL - 3, tw, 2), c: GOLD, a: 200)
-end
 
 # Snake — head first, colour walking from bright head to dark tail. Each
 # segment is a rounded cell plus a connector to its predecessor, so the body
@@ -373,7 +335,6 @@ end
 fn seg_color(i: num, n: num) -> record
   let t = if n > 1 then float(i) / float(n - 1) else 0.0 end
   mix(BODY_HI, BODY_LO, t: t * 0.92)
-end
 
 for i in range(0, length) do
   let c = body[i]
@@ -395,12 +356,8 @@ for i in range(0, length) do
         rect(bx + lx * CELL + CELL / 2, by + ly * CELL + 4, CELL, CELL - 8)
       else
         rect(bx + lx * CELL + 4, by + ly * CELL + CELL / 2, CELL - 8, CELL)
-      end
       draw_rect(jr, col)
-    end
-  end
   draw_rect_rounded(cell_rect(ox: bx, oy: by, c: c, inset: inset), radius, c: col)
-end
 
 # Eyes on the head, facing the direction of travel.
 let hr = cell_rect(ox: bx, oy: by, c: body[0], inset: 0)
@@ -415,7 +372,6 @@ draw_circle(center: {x: hcx + ex - px, y: hcy + ey - py}, radius: 2, c: :0b2318)
 
 if flash > 0.0 then
   draw_rect_rounded(rect(bx, by, board_w, board_h), radius: 11, c: :ffffff, a: int(flash * 26.0))
-end
 
 # ── Overlays ─────────────────────────────────────────────────────────────────
 fn overlay(r: record, kicker: string, title: string, line1: string, line2: string, accent: record)
@@ -430,7 +386,6 @@ fn overlay(r: record, kicker: string, title: string, line1: string, line2: strin
   draw_text_center(title, cx, y: cy - 52, size: 44, c: accent)
   draw_text_center(line1, cx, y: cy + 44, size: 16, c: TEXT)
   draw_text_center(line2, cx, y: cy + 72, size: 13, c: DIM)
-end
 
 match phase
   when Phase.playing -> nil
@@ -447,17 +402,14 @@ match phase
     overlay(rect(bx, by, board_w, board_h), "FINAL SCORE", "{score}",
       "{apples} apples in {int(run_time)}s — {verdict}",
       "press R or Restart to go again", accent: DANGER)
-end
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 fn card(r: record)
   draw_rect_rounded(r, radius: 10, c: CARD)
   draw_rect_outline(r, c: EDGE, a: 90)
-end
 
 fn label(s: string, x, y)
   draw_text(s, pos: {x: x, y: y}, style: {size: 11, color: FAINT, spacing: 2})
-end
 
 # Score card
 let sc = rect(side.x, side.y, side_w, SC_H)
@@ -482,7 +434,6 @@ fn tile(r: record, key: string, value: string, color: record)
   draw_rect_rounded(r, radius: 8, c: CARD_HI)
   draw_text(key, pos: {x: r.x + 12, y: r.y + 10}, style: {size: 11, color: FAINT, spacing: 2})
   draw_text(value, pos: {x: r.x + 12, y: r.y + 28}, style: {size: 22, color: color})
-end
 
 let tile_w = (side_w - 12) / 2
 let tile_h = TILE_H
@@ -501,7 +452,6 @@ if bonus >= 0 && phase == Phase.playing then
 else
   draw_text("Every 5th apple drops a golden one.",
     pos: {x: side.x + 2, y: note_y + 10}, style: {size: 13, color: FAINT})
-end
 
 # Buttons
 fn chip(r: record, text: string, on: bool, accent: record)
@@ -511,7 +461,6 @@ fn chip(r: record, text: string, on: bool, accent: record)
   draw_rect_outline(r, c: if on then accent else EDGE end, a: if on then 160 else 110 end)
   let fg = if on then accent else if hot then TEXT else DIM end
   draw_text_center(text, cx: r.x + r.w / 2, y: r.y + (r.h - 13) / 2, size: 13, c: fg)
-end
 
 chip(b_pause, text: phase.action, on: phase == Phase.paused, accent: GOLD)
 chip(b_reset, text: "Restart", on: false, accent: DANGER)
@@ -531,7 +480,6 @@ for i in range(0, n) do
   draw_rect_rounded(rect(side.x + 2, ry, full, 12), radius: 6, c: :0c1017)
   draw_rect_rounded(rect(side.x + 2, ry, bwid, 12), radius: 6, c: c)
   draw_text_right("{v}", right_x: side.x + side_w, y: ry, size: 11, c: if v >= best then GOLD else DIM end)
-end
 
 # ── Footer ───────────────────────────────────────────────────────────────────
 let foot_y = board.y + board_h + 22

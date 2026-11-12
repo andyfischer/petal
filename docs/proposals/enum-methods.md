@@ -88,7 +88,7 @@ fn Ty.is_vec(t: Ty) -> bool
   t.dim > 1
 end
 
-print(Ty.vec3.text(), Ty.named("Fx").text(), Ty.vec2.is_vec())   // vec3 Fx true
+print(Ty.vec3.text(), Ty.named("Fx").text(), Ty.vec2.is_vec())   # vec3 Fx true
 ```
 
 **Declaration.** `fn E.m(recv, …)`, where `E` is an enum declared in the same
@@ -173,7 +173,7 @@ fn Shape.area(shape: Shape) -> float
     when Shape.Triangle(b, h) -> 0.5 * b * h
   end
 end
-// s.area()
+# s.area()
 ```
 
 The body is the same. The name now lives with the enum, so
@@ -210,7 +210,7 @@ end
 fn Ty.is_vec(t: Ty) -> bool
   t.dim > 1
 end
-// fail(c, "expected " ++ ty.text() ++ ", found " ++ v.ty.text(), node)
+# fail(c, "expected " ++ ty.text() ++ ", found " ++ v.ty.text(), node)
 ```
 
 There are 45 call sites. `is_vec(a.ty) && is_num(b.ty)` becomes
@@ -232,7 +232,7 @@ fn piece_cells(kind: Piece, rot: int) -> list
   else
   ...
 end
-// let cells = piece_cells(kind, rot)
+# let cells = piece_cells(kind, rot)
 ```
 
 After:
@@ -241,7 +241,7 @@ After:
 fn Piece.cells_at(kind: Piece, rot: int) -> list
   ...
 end
-// let cells = kind.cells_at(rot)
+# let cells = kind.cells_at(rot)
 ```
 
 The method cannot be called `cells`, because `cells` is a data key and the

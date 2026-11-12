@@ -27,8 +27,6 @@ fn branch(x, y, angle, len, depth)
   else
     branch(x2, y2, angle + spread, len * shrink, depth - 1)
     branch(x2, y2, angle - spread, len * shrink, depth - 1)
-  end
-end
 
 draw_rect(0, 0, 400, 400, :101418)
 branch(200, 380, pi() / 2, trunk, 5)

@@ -9,10 +9,8 @@
 import ui
 
 pub fn draw_rect_outline(r)
-  ui.draw_rect_outline(r, { r: 9, g: 9, b: 9 })
-end
+  ui.draw_rect_outline(r, {r: 9, g: 9, b: 9})
 
 pub fn paint()
-  draw_rect_outline({ x: 0, y: 0, w: 10, h: 10 })
-  draw_rect_outline({ x: 20, y: 0, w: 10, h: 10 }, { r: 1, g: 2, b: 3 })
-end
+  draw_rect_outline({x: 0, y: 0, w: 10, h: 10})
+  draw_rect_outline({x: 20, y: 0, w: 10, h: 10}, {r: 1, g: 2, b: 3})

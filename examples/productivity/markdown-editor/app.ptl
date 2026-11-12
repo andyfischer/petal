@@ -215,53 +215,41 @@ fn seed_docs() -> list
       "> The crumb tells you what the bulk did. Read it before blaming the oven.",
     ]},
   ]
-end
 
 # ── Small helpers ────────────────────────────────────────────────────────
 fn iclamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
-end
 
 fn ch(s: string, i: num) -> string
   if i < 0 || i >= len(s) then "" else slice(s, start: i, end: i + 1) end
-end
 
 fn starts(s: string, p: string) -> bool
   len(s) >= len(p) && slice(s, start: 0, end: len(p)) == p
-end
 
 fn ltrim(s: string) -> string
   let i = 0
   while i < len(s) && (ch(s, i) == " " || ch(s, i) == "\t") do
     i = i + 1
-  end
   slice(s, start: i, end: len(s))
-end
 
 fn rtrim(s: string) -> string
   let i = len(s)
   while i > 0 && ch(s, i - 1) == " " do
     i = i - 1
-  end
   slice(s, start: 0, end: i)
-end
 
 fn trim(s: string) -> string
   rtrim(ltrim(s))
-end
 
 fn indent_of(s: string) -> int
   let i = 0
   while i < len(s) && ch(s, i) == " " do
     i = i + 1
-  end
   i
-end
 
 fn is_digit(c: string) -> bool
   c == "0" || c == "1" || c == "2" || c == "3" || c == "4" ||
   c == "5" || c == "6" || c == "7" || c == "8" || c == "9"
-end
 
 fn find_from(s: string, needle: string, from: num) -> int
   let i = from
@@ -269,19 +257,14 @@ fn find_from(s: string, needle: string, from: num) -> int
   while found < 0 && i + len(needle) <= len(s) do
     if slice(s, start: i, end: i + len(needle)) == needle then
       found = i
-    end
     i = i + 1
-  end
   found
-end
 
 fn count_words(s: string) -> int
   let n = 0
   for w in split(s, " ") do
     if len(w) > 0 then n = n + 1 end
-  end
   n
-end
 
 # ── Line classification (block level) ───────────────────────────────────
 # Shared by the editor's colouring and the preview's parser.
@@ -290,9 +273,7 @@ fn heading_level(s: string) -> int
   let n = 0
   while n < 6 && ch(s, n) == "#" do
     n = n + 1
-  end
   if n > 0 && ch(s, n) == " " then n else 0 end
-end
 
 fn is_rule(s: string) -> bool
   let t = trim(s)
@@ -303,14 +284,10 @@ fn is_rule(s: string) -> bool
     let ok = c == "-" || c == "*" || c == "_"
     for i in range(1, len(t)) do
       if ch(t, i) != c then ok = false end
-    end
     ok
-  end
-end
 
 fn is_fence(s: string) -> bool
   starts(ltrim(s), "```")
-end
 
 # {kind, indent, marker_len, num, task} or nil for a plain line
 fn list_marker(s: string) -> record
@@ -325,19 +302,14 @@ fn list_marker(s: string) -> record
     let d = 0
     while is_digit(ch(t, d)) do
       d = d + 1
-    end
     if d > 0 && d <= 3 && ch(t, d) == "." && ch(t, d + 1) == " " then
       {kind: "ordered", indent: ind, mlen: d + 2, num: parse_int(slice(t, start: 0, end: d)) ?? 1, task: -1}
     else
       {kind: "none", indent: ind, mlen: 0, num: 0, task: -1}
-    end
-  end
-end
 
 fn is_table_row(s: string) -> bool
   let t = trim(s)
   len(t) >= 2 && ch(t, 0) == "|" && ch(t, len(t) - 1) == "|"
-end
 
 fn is_table_sep(s: string) -> bool
   let t = trim(s)
@@ -348,10 +320,7 @@ fn is_table_sep(s: string) -> bool
     for i in range(0, len(t)) do
       let c = ch(t, i)
       if c != "|" && c != "-" && c != ":" && c != " " then ok = false end
-    end
     ok && contains(t, "-")
-  end
-end
 
 fn split_cells(s: string) -> list
   let t = trim(s)
@@ -359,9 +328,7 @@ fn split_cells(s: string) -> list
   let out = []
   for c in split(inner, "|") do
     out = append(out, trim(c))
-  end
   out
-end
 
 # ── Inline markup ────────────────────────────────────────────────────────
 # `match_at` looks at position i and reports a matched span starting there:
@@ -392,7 +359,6 @@ fn match_at(s: string, i: num) -> record
     else
       let j = find_from(s, needle: c, from: i + 1)
       if j > i + 1 && ch(s, j - 1) != " " then {kind: "italic", ml: 1, close: j, url: ""} else none end
-    end
   else if c == "[" then
     let mid = find_from(s, needle: "](", from: i + 1)
     if mid < 0 then
@@ -400,11 +366,8 @@ fn match_at(s: string, i: num) -> record
     else
       let e = find_from(s, needle: ")", from: mid + 2)
       if e < 0 then none else {kind: "link", ml: 1, close: mid, url: slice(s, start: mid + 2, end: e), end_: e} end
-    end
   else
     none
-  end
-end
 
 # Editor colouring: character ranges {a, b, kind} covering the whole span,
 # markers included.
@@ -421,10 +384,7 @@ fn inline_ranges(s: string) -> list
     else
       out = append(out, {a: i, b: m.close + m.ml, kind: m.kind})
       i = m.close + m.ml
-    end
-  end
   out
-end
 
 # Preview tokens: {text, bold, italic, code, strike, url}.
 fn parse_inline(s: string, st: record) -> list
@@ -440,7 +400,6 @@ fn parse_inline(s: string, st: record) -> list
       if len(buf) > 0 then
         out = append(out, {...st, text: buf})
         buf = ""
-      end
       let inner = slice(s, start: i + m.ml, end: m.close)
       if m.kind == "code" then
         out = append(out, {...st, text: inner, code: true})
@@ -448,7 +407,6 @@ fn parse_inline(s: string, st: record) -> list
       else if m.kind == "link" then
         for t in parse_inline(inner, {...st, url: m.url}) do
           out = append(out, t)
-        end
         i = m.end_ + 1
       else
         let st2 = match m.kind
@@ -458,30 +416,21 @@ fn parse_inline(s: string, st: record) -> list
           when _ -> {...st, strike: true} end
         for t in parse_inline(inner, st2) do
           out = append(out, t)
-        end
         i = m.close + m.ml
-      end
-    end
-  end
   if len(buf) > 0 then
     out = append(out, {...st, text: buf})
-  end
   out
-end
 
 let PLAIN = {text: "", bold: false, italic: false, code: false, strike: false, url: ""}
 
 fn inline(s: string) -> list
   parse_inline(s, PLAIN)
-end
 
 fn plain_text(s: string) -> string
   let out = ""
   for t in inline(s) do
     out = out ++ t.text
-  end
   out
-end
 
 # ── Block parser ─────────────────────────────────────────────────────────
 # Blocks: {kind, line, ...}. kinds: heading{level, inl}, para{inl},
@@ -502,7 +451,6 @@ fn parse_blocks(lines: list) -> list
       while j < n && !is_fence(lines[j]) do
         body = append(body, lines[j])
         j = j + 1
-      end
       blocks = append(blocks, {kind: "code", line: i, lang: lang, lines: body})
       i = j + 1
     else if len(t) == 0 then
@@ -521,7 +469,6 @@ fn parse_blocks(lines: list) -> list
         let q = trim(slice(trim(lines[j]), start: 1, end: len(trim(lines[j]))))
         text = if len(text) == 0 then q else text ++ " " ++ q end
         j = j + 1
-      end
       blocks = append(blocks, {kind: "quote", line: i, inl: inline(text)})
       i = j
     else if is_table_row(s) then
@@ -535,11 +482,8 @@ fn parse_blocks(lines: list) -> list
           let cells = []
           for c in split_cells(lines[j]) do
             cells = append(cells, inline(c))
-          end
           rows = append(rows, cells)
-        end
         j = j + 1
-      end
       blocks = append(blocks, {kind: "table", line: i, head: has_head, rows: rows})
       i = j
     else if list_marker(s).kind != "none" then
@@ -551,7 +495,6 @@ fn parse_blocks(lines: list) -> list
         indent_of(lines[j]) > m.indent && !is_fence(lines[j]) && heading_level(lines[j]) == 0 do
         text = text ++ " " ++ trim(lines[j])
         j = j + 1
-      end
       blocks = append(blocks, {kind: "item", line: i, depth: m.indent / 2, ordered: m.kind == "ordered",
         num: m.num, task: m.task, inl: inline(text)})
       i = j
@@ -563,13 +506,9 @@ fn parse_blocks(lines: list) -> list
         !is_table_row(lines[j]) do
         text = text ++ " " ++ trim(lines[j])
         j = j + 1
-      end
       blocks = append(blocks, {kind: "para", line: i, inl: inline(text)})
       i = j
-    end
-  end
   blocks
-end
 
 # ── Preview layout ───────────────────────────────────────────────────────
 # Turns blocks into flat draw items with absolute y (before scrolling):
@@ -587,11 +526,9 @@ fn tok_style(t: record, base: record) -> record
   if t.url != "" then s = {...s, color: LINK} end
   if t.code then s = {...s, font: "mono", size: max(11, base.size - 2), color: CODE_INK} end
   s
-end
 
 fn space_w(ts: record) -> num
   text_width("a a", ts) - text_width("aa", ts)
-end
 
 # Flow one inline run into wrapped lines. Returns {items, y} with y at the
 # bottom of the last line.
@@ -609,18 +546,15 @@ fn flow(tokens: list, x0: num, y0: num, width: num, base: record, lh: num) -> re
       # A leading/trailing space in the token is an empty word: keep the gap.
       if wi > 0 then
         x = x + sw
-      end
       if len(w) > 0 then
         let ww = text_width(w, ts) + if t.code then 8 else 0 end
         if x + ww > x0 + width && x > x0 then
           x = x0
           y = y + lh
           ty = y + (lh - ts.size) / 2 - 1
-        end
         let tx = x + if t.code then 4 else 0 end
         if t.code then
           items = append(items, {kind: "rect", r: rect(x, ty - 2, ww, ts.size + 6), c: CODE_BG, a: 255, rad: 4})
-        end
         items = append(items, {kind: "text", x: tx, y: ty, text: w, ts: ts, url: t.url})
         if t.url != "" then
           # The underline runs under the following space too, so a multi-word
@@ -628,16 +562,10 @@ fn flow(tokens: list, x0: num, y0: num, width: num, base: record, lh: num) -> re
           let more = wi + 1 < len(ws) && len(ws[wi + 1]) > 0 && x + ww + sw + text_width(ws[wi + 1], ts) <= x0 + width
           items = append(items, {kind: "line", x1: tx, y1: ty + ts.size + 3,
             x2: tx + text_width(w, ts) + if more then sw else 0 end, y2: ty + ts.size + 3, c: LINK, w: 1})
-        end
         if t.strike then
           items = append(items, {kind: "line", x1: tx, y1: ty + ts.size / 2 + 1, x2: tx + text_width(w, ts), y2: ty + ts.size / 2 + 1, c: INK_SOFT, w: 1})
-        end
         x = x + ww
-      end
-    end
-  end
   {items: items, y: y + lh}
-end
 
 fn heading_ts(level: num) -> record
   match level
@@ -645,8 +573,6 @@ fn heading_ts(level: num) -> record
     when 2 -> {size: 22, font: PV_FONT, color: INK, weight: 700, spacing: -0.2}
     when 3 -> {size: 17, font: PV_FONT, color: INK, weight: 700}
     when _ -> {size: 15, font: PV_FONT, color: INK_SOFT, weight: 700}
-  end
-end
 
 fn layout_preview(blocks: list, x0: num, width: num) -> record
   let items = []
@@ -673,7 +599,6 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
         y = y + 6
         items = append(items, {kind: "line", x1: x0, y1: y, x2: x0 + width, y2: y, c: RULE, w: 1})
         y = y + 4
-      end
     else if b.kind == "para" then
       let f = flow(tokens: b.inl, x0: x0, y0: y, width: width, base: PV_TS, lh: PV_LH)
       for it in f.items do items = append(items, it) end
@@ -706,7 +631,6 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
         let f = flow(tokens: b.inl, x0: tx, y0: y, width: width - (tx - x0), base: PV_TS, lh: PV_LH)
         for it in f.items do items = append(items, it) end
         y = f.y
-      end
     else if b.kind == "code" then
       let code_ts = {size: 13, font: "mono", color: CODE_INK}
       let clh = 20
@@ -715,10 +639,8 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
       if len(b.lang) > 0 then
         items = append(items, {kind: "text", x: x0 + width - text_width(b.lang, {size: FS_TINY, font: "mono"}) - 10, y: y + 6,
           text: b.lang, ts: {size: FS_TINY, font: "mono", color: INK_FAINT}, url: ""})
-      end
       for li in range(0, len(b.lines)) do
         items = append(items, {kind: "text", x: x0 + 14, y: y + 12 + li * clh + 2, text: b.lines[li], ts: code_ts, url: ""})
-      end
       y = y + hgt
     else if b.kind == "rule" then
       items = append(items, {kind: "line", x1: x0 + width * 0.3, y1: y + 8, x2: x0 + width * 0.7, y2: y + 8, c: RULE, w: 1})
@@ -727,7 +649,6 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
       let ncol = 0
       for r in b.rows do
         ncol = max(ncol, len(r))
-      end
       if ncol > 0 then
         # Column widths: the widest cell, then scaled down to fit.
         let cell_ts = {...PV_TS, size: 14}
@@ -742,10 +663,7 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
               let txt = ""
               for t in r[c] do txt = txt ++ t.text end
               wmax = max(wmax, text_width(txt, cts) + 24)
-            end
-          end
           widths = append(widths, wmax)
-        end
         let total = 0
         for wv in widths do total = total + wv end
         let scale = if total > width then float(width) / total else 1.0 end
@@ -758,7 +676,6 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
             items = append(items, {kind: "rect", r: rect(x0, ty, min(width, total), rh), c: TABLE_HEAD, a: 255, rad: 4})
           else if ri % 2 == (if b.head then 0 else 1 end) then
             items = append(items, {kind: "rect", r: rect(x0, ty, min(width, total), rh), c: PAPER_LOW, a: 120, rad: 0})
-          end
           let cx = x0
           for c in range(0, ncol) do
             let cw = widths[c] * scale
@@ -768,19 +685,12 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
               for t in r[c] do txt = txt ++ t.text end
               items = append(items, {kind: "text", x: cx + 10, y: ty + (rh - cts.size) / 2 - 1,
                 text: ellipsize(txt, avail_px: cw - 16, size: cts), ts: cts, url: ""})
-            end
             cx = cx + cw
-          end
           ty = ty + rh
           items = append(items, {kind: "line", x1: x0, y1: ty, x2: x0 + min(width, total), y2: ty, c: RULE, w: 1})
-        end
         y = ty
-      end
-    end
     prev = b.kind
-  end
   {items: items, anchors: anchors, h: y}
-end
 
 # ── Editor: wrap model, positions, edit primitives ───────────────────────
 fn wrap_starts(s: string, maxc: num) -> list
@@ -793,13 +703,10 @@ fn wrap_starts(s: string, maxc: num) -> list
     while j > start && brk < 0 do
       if ch(s, j - 1) == " " then brk = j end
       j = j - 1
-    end
     if brk < 0 then brk = start + maxc end
     starts_ = append(starts_, brk)
     start = brk
-  end
   starts_
-end
 
 fn build_rows(lines: list, maxc: num) -> list
   let rows = []
@@ -810,48 +717,36 @@ fn build_rows(lines: list, maxc: num) -> list
       let a = st[k]
       let b = if k + 1 < len(st) then st[k + 1] else len(s) end
       rows = append(rows, {li: i, a: a, b: b, first: k == 0})
-    end
-  end
   rows
-end
 
 fn row_of(rows: list, p: record) -> int
   let found = -1
   for i in range(0, len(rows)) do
     let r = rows[i]
     if found < 0 && r.li == p.line && p.col <= r.b then found = i end
-  end
   if found < 0 then max(0, len(rows) - 1) else found end
-end
 
 fn first_row_of_line(rows: list, line: num) -> int
   let found = -1
   for i in range(0, len(rows)) do
     if found < 0 && rows[i].li == line then found = i end
-  end
   max(0, found)
-end
 
 fn pos_before(a: record, b: record) -> bool
   a.line < b.line || (a.line == b.line && a.col < b.col)
-end
 
 fn pos_eq(a: record, b: record) -> bool
   a.line == b.line && a.col == b.col
-end
 
 fn sel_lo(a: record, c: record) -> record
   if pos_before(c, a) then c else a end
-end
 
 fn sel_hi(a: record, c: record) -> record
   if pos_before(c, a) then a else c end
-end
 
 fn clamp_pos(lines: list, p: record) -> record
   let l = iclamp(p.line, lo: 0, hi: len(lines) - 1)
   {line: l, col: iclamp(p.col, lo: 0, hi: len(lines[l]))}
-end
 
 fn delete_range(lines: list, s: record, e: record) -> list
   let out = []
@@ -860,10 +755,7 @@ fn delete_range(lines: list, s: record, e: record) -> list
       out = append(out, lines[i])
     else if i == s.line then
       out = append(out, slice(lines[s.line], start: 0, end: s.col) ++ slice(lines[e.line], start: e.col, end: len(lines[e.line])))
-    end
-  end
   out
-end
 
 fn insert_text(lines: list, p: record, txt: string) -> record
   let parts = split(txt, "\n")
@@ -881,14 +773,10 @@ fn insert_text(lines: list, p: record, txt: string) -> record
       out = append(out, head ++ parts[0])
       for j in range(1, len(parts) - 1) do
         out = append(out, parts[j])
-      end
       out = append(out, last_ ++ tail)
-    end
-  end
   let np = if len(parts) == 1 then {line: p.line, col: p.col + len(last_)}
   else {line: p.line + len(parts) - 1, col: len(last_)} end
   {lines: out, cur: np}
-end
 
 fn selected_text(lines: list, lo: record, hi: record) -> string
   if lo.line == hi.line then
@@ -897,35 +785,26 @@ fn selected_text(lines: list, lo: record, hi: record) -> string
     let out = slice(lines[lo.line], start: lo.col, end: len(lines[lo.line]))
     for i in range(lo.line + 1, hi.line) do
       out = out ++ "\n" ++ lines[i]
-    end
     out ++ "\n" ++ slice(lines[hi.line], start: 0, end: hi.col)
-  end
-end
 
 fn sel_len(lines: list, lo: record, hi: record) -> num
   len(selected_text(lines, lo, hi))
-end
 
 fn is_word_char(c: string) -> bool
   c != " " && c != "" && c != "," && c != "." && c != "-" && c != "(" && c != ")" &&
   c != "\"" && c != ";" && c != ":" && c != "*" && c != "`" && c != "[" && c != "]" && c != "#"
-end
 
 fn word_start(s: string, col: num) -> num
   let i = col
   while i > 0 && is_word_char(ch(s, i - 1)) do
     i = i - 1
-  end
   i
-end
 
 fn word_end(s: string, col: num) -> num
   let i = col
   while i < len(s) && is_word_char(ch(s, i)) do
     i = i + 1
-  end
   i
-end
 
 # What Return should prefix the new line with, continuing a list.
 fn continuation(s: string) -> string
@@ -940,13 +819,9 @@ fn continuation(s: string) -> string
       pad ++ "{m.num + 1}. "
     else
       pad ++ ch(slice(s, start: m.indent, end: len(s)), 0) ++ " " ++ if m.task >= 0 then "[ ] " else "" end
-    end
-  end
-end
 
 fn typing_ok() -> bool
   !key_pressed("tab") && !mod_ctrl() && !mod_cmd()
-end
 
 # Editor colouring for one logical line: {a, b, color, weight} runs.
 fn line_runs(s: string, in_fence: bool) -> list
@@ -962,7 +837,6 @@ fn line_runs(s: string, in_fence: bool) -> list
     let runs = []
     for i in range(0, n) do
       runs = append(runs, {a: i, b: i + 1, c: if ch(s, i) == "|" || is_table_sep(s) then SYN_MARK else TEXT end})
-    end
     runs
   else
     let runs = []
@@ -976,8 +850,6 @@ fn line_runs(s: string, in_fence: bool) -> list
       if m.kind != "none" then
         body0 = m.indent + m.mlen
         runs = append(runs, {a: 0, b: body0, c: SYN_LIST})
-      end
-    end
     let base_c = if starts(t, ">") then SYN_QUOTE else TEXT end
     let i = body0
     for r in inline_ranges(s) do
@@ -992,12 +864,8 @@ fn line_runs(s: string, in_fence: bool) -> list
           when _ -> DIM end
         runs = append(runs, {a: r.a, b: r.b, c: c})
         i = r.b
-      end
-    end
     if i < n then runs = append(runs, {a: i, b: n, c: base_c}) end
     runs
-  end
-end
 
 # Which lines sit inside a code fence (so their colouring is flat).
 fn fence_map(lines: list) -> list
@@ -1009,54 +877,39 @@ fn fence_map(lines: list) -> list
       inf = !inf
     else
       out = append(out, inf)
-    end
-  end
   out
-end
 
 # ── Documents and persistence ────────────────────────────────────────────
 fn doc_by_id(ds: list, id: num)
   let found = nil
   for d in ds do
     if d.id == id then found = d end
-  end
   found
-end
 
 fn put_doc(ds: list, id: num, nd: record) -> list
   for d in ds do
     if d.id == id then nd else d end
-  end
-end
 
 fn store_key(id: num) -> string
   "doc:{id}"
-end
 
 fn load_docs() -> list
   for d in seed_docs() do
     let s = panel_store_get(store_key(d.id))
     if s == nil then d else {...d, lines: split(s, "\n")} end
-  end
-end
 
 fn doc_title(d: record) -> string
   let t = d.name
   for s in d.lines do
     if heading_level(s) == 1 && t == d.name then
       t = trim(slice(s, start: 2, end: len(s)))
-    end
-  end
   t
-end
 
 fn doc_words(d: record) -> int
   let n = 0
   for s in d.lines do
     n = n + count_words(plain_text(s))
-  end
   n
-end
 
 # ════════════════════════════════════════════════════════════════════════
 #  State
@@ -1118,7 +971,6 @@ fn hit_pos(rows: list, px: num, py: num, scroll: num) -> record
   let r = rows[ri]
   let off = int((px - TEXT_X + CW / 2) / CW)
   {line: r.li, col: iclamp(r.a + off, lo: r.a, hi: r.b)}
-end
 
 let text_r = rect(ed_r.x + GUT_W, ed_r.y, ed_r.w - GUT_W, ed_r.h)
 if show_ed && click && point_in(px: mx, py: my, r: text_r) && !s.dragging then
@@ -1139,24 +991,18 @@ if show_ed && click && point_in(px: mx, py: my, r: text_r) && !s.dragging then
     anchor = p
     cur = p
     dragging = true
-  end
-end
 # Clicking the gutter selects the whole logical line.
 if show_ed && click && point_in(px: mx, py: my, r: rect(ed_r.x, ed_r.y, GUT_W, ed_r.h)) then
   let p = hit_pos(rows, px: mx + GUT_W, py: my, scroll: escroll)
   anchor = {line: p.line, col: 0}
   cur = if p.line + 1 < len(lines) then {line: p.line + 1, col: 0} else {line: p.line, col: len(lines[p.line])} end
   dragging = false
-end
 if dragging && mouse_down(0) then
   cur = hit_pos(rows, px: mx, py: my, scroll: escroll)
-end
 if !mouse_down(0) then
   dragging = false
-end
 if show_ed && hovered(ed_r) then
   escroll = escroll - scroll_y() * 3 * LH
-end
 
 # ── Editor input: keyboard ───────────────────────────────────────────────
 let new_lines = lines
@@ -1178,13 +1024,11 @@ fn wrap_sel(lines: list, lo: record, hi: record, hassel: bool, cur: record, mark
   if !hassel then
     a = {line: cur.line, col: word_start(lines[cur.line], cur.col)}
     b = {line: cur.line, col: word_end(lines[cur.line], cur.col)}
-  end
   let inner = selected_text(lines, lo: a, hi: b)
   let base = delete_range(lines, s: a, e: b)
   let res = insert_text(lines: base, p: a, txt: mark ++ inner ++ suffix)
   {lines: res.lines, anchor: {line: a.line, col: a.col + len(mark)},
     cur: if a.line == b.line then {line: a.line, col: a.col + len(mark) + len(inner)} else res.cur end}
-end
 
 if cmd && key_pressed("z") then
   if sh then
@@ -1197,7 +1041,6 @@ if cmd && key_pressed("z") then
       anchor = snap.anchor
       did_edit = true
       edit_kind = "history"
-    end
   else if len(undo) > 0 then
     let snap = undo[len(undo) - 1]
     undo = drop_last(undo)
@@ -1207,7 +1050,6 @@ if cmd && key_pressed("z") then
     anchor = snap.anchor
     did_edit = true
     edit_kind = "history"
-  end
 else if cmd && key_pressed("a") then
   anchor = {line: 0, col: 0}
   cur = {line: len(lines) - 1, col: len(lines[len(lines) - 1])}
@@ -1230,7 +1072,6 @@ else if key_pressed("left") then
     cur = {line: cur.line, col: cur.col - 1}
   else if cur.line > 0 then
     cur = {line: cur.line - 1, col: len(lines[cur.line - 1])}
-  end
 else if key_pressed("right") then
   moved = true
   if hassel && !sh then
@@ -1239,7 +1080,6 @@ else if key_pressed("right") then
     cur = {line: cur.line, col: cur.col + 1}
   else if cur.line < len(lines) - 1 then
     cur = {line: cur.line + 1, col: 0}
-  end
 else if key_pressed("up") || key_pressed("down") || key_pressed("pageup") || key_pressed("pagedown") then
   moved = true
   keep_goal = true
@@ -1272,7 +1112,6 @@ else if key_pressed("backspace") then
     cur = p0
   else
     did_edit = false
-  end
   anchor = cur
 else if key_pressed("delete") then
   did_edit = true
@@ -1286,7 +1125,6 @@ else if key_pressed("delete") then
     new_lines = delete_range(lines, s: cur, e: {line: cur.line + 1, col: 0})
   else
     did_edit = false
-  end
   anchor = cur
 else if key_pressed("return") then
   did_edit = true
@@ -1303,7 +1141,6 @@ else if key_pressed("return") then
     let res = insert_text(lines: base, p: at, txt: "\n" ++ cont)
     new_lines = res.lines
     cur = res.cur
-  end
   anchor = cur
 else if key_pressed("tab") then
   did_edit = true
@@ -1316,7 +1153,6 @@ else if key_pressed("tab") then
   anchor = cur
 else if key_pressed("escape") then
   anchor = cur
-end
 
 let typed = text_input()
 if len(typed) > 0 && typing_ok() then
@@ -1328,11 +1164,9 @@ if len(typed) > 0 && typing_ok() then
   new_lines = res2.lines
   cur = res2.cur
   anchor = cur
-end
 
 if moved && !sh then
   anchor = cur
-end
 
 # ── Commit edits ─────────────────────────────────────────────────────────
 if did_edit then
@@ -1341,16 +1175,13 @@ if did_edit then
     if edit_kind != last_kind || now - last_edit > 0.8 || edit_kind == "wrap" then
       undo = append(undo, {lines: lines, cur: anchor, anchor: anchor})
       if len(undo) > 100 then undo = slice(undo, start: 1, end: len(undo)) end
-    end
     redo = []
-  end
   docs = put_doc(ds: docs, id: sel_doc, nd: {...doc, lines: new_lines})
   lines = new_lines
   dirty = true
   last_edit = now
   last_kind = edit_kind
   edits = edits + 1
-end
 
 # Save: ⌘S, or 1.5 s after the last edit.
 if dirty && (now - last_edit > 1.5 || cmd && key_pressed("s")) then
@@ -1358,7 +1189,6 @@ if dirty && (now - last_edit > 1.5 || cmd && key_pressed("s")) then
   dirty = false
   saves = saves + 1
   flash = now
-end
 
 # ── Recompute after edits ────────────────────────────────────────────────
 let rows2 = build_rows(lines, MAXC)
@@ -1367,16 +1197,13 @@ anchor = clamp_pos(lines, anchor)
 let cri = row_of(rows2, cur)
 if !keep_goal then
   goal = cur.col - rows2[cri].a
-end
 if jump_to >= 0 then
   let jr = first_row_of_line(rows2, jump_to)
   escroll = jr * LH - 24
   jump_to = -1
-end
 if moved || did_edit then
   escroll = min(escroll, cri * LH)
   escroll = max(escroll, (cri + 1) * LH - TEXT_H)
-end
 let doc_h = len(rows2) * LH
 escroll = iclamp(escroll, lo: 0, hi: max(0, doc_h - TEXT_H + LH))
 
@@ -1410,11 +1237,9 @@ if show_ed then
     let on_caret_line = r.li == cur.line
     if on_caret_line then
       draw_rect(rect(ed_r.x + GUT_W, ry - 3, ed_r.w - GUT_W, LH), SLATE_HI)
-    end
     if r.first then
       draw_text_right("{r.li + 1}", right_x: ed_r.x + GUT_W - 10, y: ry + 1,
         style: {size: FS_TINY, font: "mono", color: if on_caret_line then DIM else FAINT end})
-    end
     # selection band
     if hassel2 && lo2.line <= r.li && hi2.line >= r.li then
       let s0 = if lo2.line < r.li then r.a else if lo2.line == r.li then max(r.a, lo2.col) else r.b + 1 end
@@ -1422,30 +1247,22 @@ if show_ed then
       if s1 >= s0 then
         let sw = if s1 == s0 && hi2.line > r.li then CW * 0.6 else (s1 - s0) * CW end
         draw_rect_rounded(rect(TEXT_X + (s0 - r.a) * CW, ry - 3, max(3, sw), LH), radius: 3, c: SELBG)
-      end
-    end
     # coloured runs, clipped to this display row
     for run in line_runs(ln, fences[r.li]) do
       let a = max(run.a, r.a)
       let b = min(run.b, r.b)
       if b > a then
         draw_text(slice(ln, start: a, end: b), pos: {x: TEXT_X + (a - r.a) * CW, y: ry}, style: {...ED_TS, color: run.c})
-      end
-    end
-  end
   # caret
   if !hassel2 then
     let ry = TEXT_Y + cri * LH - escroll
     let cx = TEXT_X + (cur.col - rows2[cri].a) * CW
     draw_rect(rect(cx, ry - 3, 2, LH), CARET)
-  end
   clip_none()
   if doc_h > TEXT_H then
     let bh = max(36, TEXT_H * TEXT_H / doc_h)
     let by = TEXT_Y + (TEXT_H - bh) * escroll / max(1, doc_h - TEXT_H + LH)
     draw_rect_rounded(rect(ed_r.x + ed_r.w - 7, by, 3, bh), radius: 1.5, c: DIM, a: 120)
-  end
-end
 
 # ════════════════════════════════════════════════════════════════════════
 #  Preview pane
@@ -1464,14 +1281,11 @@ if show_pv && show_ed && sync && escroll != last_escroll then
   let target = -1
   for an in lay.anchors do
     if target < 0 && an.line >= top_row.li then target = an.y end
-  end
   if escroll == 0 then target = 0 end
   if target >= 0 then pscroll = target end
-end
 last_escroll = escroll
 if show_pv && hovered(pv_r) then
   pscroll = pscroll - scroll_y() * 3 * PV_LH
-end
 pscroll = iclamp(pscroll, lo: 0, hi: max(0, pv_content_h - pv_h))
 
 let toggle_line = -1
@@ -1485,8 +1299,6 @@ if show_pv then
         draw_text(it.text, pos: {x: it.x, y: it.y + oy}, style: it.ts)
         if it.url != "" && point_in(px: mx, py: my, r: rect(it.x, it.y + oy, text_width(it.text, it.ts), it.ts.size + 4)) then
           hover_link = it.url
-        end
-      end
     else if it.kind == "rect" then
       let rr = rect(it.r.x, it.r.y + oy, it.r.w, it.r.h)
       if it.rad > 0 then draw_rect_rounded(rr, radius: it.rad, c: it.c, a: it.a) else draw_rect(rr, c: it.c, a: it.a) end
@@ -1503,7 +1315,6 @@ if show_pv then
         draw_rect_rounded(br, radius: 3, c: if hot then ACCENT_INK else INK_FAINT end, a: if hot then 40 else 0 end)
         draw_rect_rounded_outline(x: br.x, y: br.y, w: br.w, h: br.h, radius: 3, r: if hot then ACCENT_INK.r else INK_FAINT.r end,
           g: if hot then ACCENT_INK.g else INK_FAINT.g end, b: if hot then ACCENT_INK.b else INK_FAINT.b end, a: 255, width: 1.5)
-      end
       if hot && click then toggle_line = it.line end
     else if it.kind == "jump" then
       let jr = rect(it.r.x, it.r.y + oy, it.r.w, it.r.h)
@@ -1511,9 +1322,6 @@ if show_pv then
         jump_to = it.line
         cur = {line: it.line, col: 0}
         anchor = cur
-      end
-    end
-  end
   clip_none()
   # top fade + scrollbar
   draw_rect_gradient(rect(pv_r.x, pv_r.y, pv_r.w, 28), PAPER, PAPER, pi() / 2, 255, 0)
@@ -1521,8 +1329,6 @@ if show_pv then
     let bh = max(36, pv_h * pv_h / pv_content_h)
     let by = pv_top + (pv_h - bh) * pscroll / max(1, pv_content_h - pv_h)
     draw_rect_rounded(rect(pv_r.x + pv_r.w - 7, by, 3, bh), radius: 1.5, c: INK_FAINT, a: 120)
-  end
-end
 
 # A task ticked in the preview edits the source line.
 if toggle_line >= 0 then
@@ -1535,21 +1341,18 @@ if toggle_line >= 0 then
   redo = []
   let nl = for i in range(0, len(lines)) do
     if i == toggle_line then s1 else lines[i] end
-  end
   docs = put_doc(ds: docs, id: sel_doc, nd: {...doc, lines: nl})
   lines = nl
   dirty = true
   last_edit = now
   last_kind = "toggle"
   edits = edits + 1
-end
 
 # ════════════════════════════════════════════════════════════════════════
 #  Rail: documents + outline
 # ════════════════════════════════════════════════════════════════════════
 fn label(text: string, x: num, y: num, c: record)
   draw_text(text, pos: {x: x, y: y}, style: {size: FS_MICRO, color: c, spacing: 1.3})
-end
 
 let rail_pad = 14
 label("DOCUMENTS", x: rail_pad, y: TOP_H + 16, c: FAINT)
@@ -1564,17 +1367,14 @@ for d in docs do
     draw_rect_rounded(rect(r.x, r.y + 10, 3, r.h - 20), radius: 1.5, c: ACCENT)
   else if hot then
     draw_rect_rounded(r, radius: 7, c: RAIL_ROW, a: 140)
-  end
   draw_text(ellipsize(doc_title(d), avail_px: r.w - 24, size: FS), pos: {x: r.x + 12, y: r.y + 6},
     style: {size: FS, color: if on then TEXT else DIM end, weight: if on then 600 else 400 end})
   let sub = "{doc_words(d)} words · {len(d.lines)} lines"
   draw_text(sub, pos: {x: r.x + 12, y: r.y + 23}, style: {size: FS_MICRO, color: FAINT})
   if on && dirty then
     draw_circle(center: {x: r.x + r.w - 12, y: r.y + 13}, radius: 3, c: CARET)
-  end
   if hot && click then want_doc = d.id end
   ry = ry + 44
-end
 if want_doc != sel_doc then
   sel_doc = want_doc
   cur = {line: 0, col: 0}
@@ -1584,7 +1384,6 @@ if want_doc != sel_doc then
   undo = []
   redo = []
   dirty = false
-end
 
 ry = ry + 12
 draw_rect(rect(rail_pad, ry, RAIL_W - rail_pad * 2, 1), OUTLINE)
@@ -1597,7 +1396,6 @@ let outline_n = len(heads)
 let cur_head = -1
 for h in heads do
   if h.line <= cur.line then cur_head = h.line end
-end
 let outline_h = H - STATUS_H - ry - 60
 clip(x: 0, y: ry, w: RAIL_W, h: outline_h)
 for h in heads do
@@ -1607,7 +1405,6 @@ for h in heads do
     let hot = hovered(r)
     if on || hot then
       draw_rect_rounded(r, radius: 6, c: RAIL_ROW, a: if on then 255 else 140 end)
-    end
     let txt = ""
     for t in h.inl do txt = txt ++ t.text end
     let ind = 12 + (h.level - 1) * 12
@@ -1618,14 +1415,10 @@ for h in heads do
       jump_to = h.line
       cur = {line: h.line, col: 0}
       anchor = cur
-    end
     ry = ry + 24
-  end
-end
 clip_none()
 if outline_n == 0 then
   draw_text("No headings yet", pos: {x: rail_pad + 4, y: ry + 2}, style: {size: FS_SM, color: FAINT})
-end
 
 # rail footer: reset the demo text
 let reset_r = rect(10, H - STATUS_H - 40, RAIL_W - 20, 26)
@@ -1635,7 +1428,6 @@ draw_text_center("reset demo text", cx: reset_r.x + reset_r.w / 2, y: reset_r.y 
 if reset_hot && click then
   for d in seed_docs() do
     panel_store_set(store_key(d.id), nil)
-  end
   docs = seed_docs()
   cur = {line: 0, col: 0}
   anchor = cur
@@ -1645,7 +1437,6 @@ if reset_hot && click then
   redo = []
   dirty = false
   flash = now
-end
 
 # ════════════════════════════════════════════════════════════════════════
 #  Top bar
@@ -1671,10 +1462,8 @@ for i in range(0, 3) do
     draw_rect_rounded(rect(r.x + 2, r.y + 2, r.w - 4, r.h - 4), radius: 6, c: ACCENT_INK)
   else if hot then
     draw_rect_rounded(rect(r.x + 2, r.y + 2, r.w - 4, r.h - 4), radius: 6, c: RAIL_ROW)
-  end
   draw_text_center(seg_labels[i], cx: r.x + r.w / 2, y: r.y + 7, style: {size: FS_SM, color: if on then TEXT else DIM end, weight: if on then 600 else 400 end})
   if hot && click then mode = seg_ids[i] end
-end
 
 # sync toggle
 let sync_r = rect(W - 16 - 108, 9, 108, 28)
@@ -1686,7 +1475,6 @@ draw_text("sync scroll", pos: {x: sync_r.x + 26, y: sync_r.y + 7}, style: {size:
 if sync_hot && click then
   sync = !sync
   last_escroll = -1
-end
 
 # ════════════════════════════════════════════════════════════════════════
 #  Status bar
@@ -1703,7 +1491,6 @@ let lx = 16
 for p in left_parts do
   draw_text(p, pos: {x: lx, y: sy + 7}, style: {size: FS_TINY, color: DIM})
   lx = lx + text_width(p, FS_TINY) + 22
-end
 let save_c = if dirty then CARET else if now - flash < 2.0 then :7fd39a else FAINT end
 draw_circle(center: {x: lx + 4, y: sy + 13}, radius: 3, c: save_c)
 draw_text(if dirty then "unsaved" else if now - flash < 2.0 then "saved" else "up to date" end,

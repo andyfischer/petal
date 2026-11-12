@@ -207,23 +207,23 @@ code and not natives (`drag_math.rs:2-4`).
 ```petal ignore
 import autodiff
 
-// The derivative of a one-number function at x, by central differences.
-// h defaults to 1e-4 * max(|x|, 1).
-// Returns {value, quality, step}.
+# The derivative of a one-number function at x, by central differences.
+# h defaults to 1e-4 * max(|x|, 1).
+# Returns {value, quality, step}.
 deriv(f, x, opts = {})                 -> record
 
-// The Jacobian of f: list of numbers -> number or list of numbers, at xs.
-// One row per output, one column per input. Central differences by default.
-// Returns {rows, quality, step}: rows[i][j] = d out_i / d in_j, and one
-// quality and one step per column (per input).
+# The Jacobian of f: list of numbers -> number or list of numbers, at xs.
+# One row per output, one column per input. Central differences by default.
+# Returns {rows, quality, step}: rows[i][j] = d out_i / d in_j, and one
+# quality and one step per column (per input).
 jacobian(f, xs, opts = {})             -> record
 
-// One damped Gauss-Newton step from xs toward f(xs) == target.
-// Returns {xs, residual, improved}. opts: bounds ([[lo, hi], …]), max_step,
-// damping, mode ("central" | "forward").
+# One damped Gauss-Newton step from xs toward f(xs) == target.
+# Returns {xs, residual, improved}. opts: bounds ([[lo, hi], …]), max_step,
+# damping, mode ("central" | "forward").
 solve_step(f, xs, target, opts = {})   -> record
 
-// solve_step repeated until the residual is under tol or max_iter is spent.
+# solve_step repeated until the residual is under tol or max_iter is spent.
 solve(f, xs, target, opts = {})        -> record
 ```
 
@@ -567,14 +567,14 @@ Before:
 
 ```petal ignore
 import autodiff
-print(deriv_of(atan(dual(1.0, 1.0))))   // 0.5, exactly
+print(deriv_of(atan(dual(1.0, 1.0))))   # 0.5, exactly
 ```
 
 After (proposed):
 
 ```petal
 import autodiff
-print(deriv(atan, 1.0).value)           // 0.5000000008337224 (central difference, h = 1e-4, computed today by hand)
+print(deriv(atan, 1.0).value)           # 0.5000000008337224 (central difference, h = 1e-4, computed today by hand)
 ```
 
 For checking a derivative formula, which is what this test line does, duals

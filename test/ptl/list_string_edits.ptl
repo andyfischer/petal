@@ -6,28 +6,23 @@ test "remove_at drops the element at an index" do
   expect_eq(remove_at(["a", "b", "c"], 1), ["a", "c"])
   expect_eq(remove_at(["a", "b", "c"], 2), ["a", "b"])
   expect_eq(remove_at([7], 0), [])
-end
 
 test "remove_at counts a negative index from the end" do
   expect_eq(remove_at([1, 2, 3], -1), [1, 2])
   expect_eq(remove_at([1, 2, 3], -3), [2, 3])
-end
 
 test "remove_at leaves its argument alone" do
   let xs = [1, 2, 3]
   let ys = remove_at(xs, 0)
   expect_eq(xs, [1, 2, 3])
   expect_eq(ys, [2, 3])
-end
 
 test "replace swaps every occurrence" do
   expect_eq(replace("a-b-c", "-", ", "), "a, b, c")
   expect_eq(replace("hello", "l", ""), "heo")
   expect_eq(replace("hello", "x", "y"), "hello")
   expect_eq(replace("", "x", "y"), "")
-end
 
 test "replace scans left to right without overlap" do
   expect_eq(replace("aaa", "aa", "b"), "ba")
   expect_eq(replace("abab", "ab", "abab"), "abababab")
-end

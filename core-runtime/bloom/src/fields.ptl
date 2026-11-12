@@ -33,14 +33,12 @@ import ui
 # "field". An int id is fine; the runtime compares ids as strings.
 fn _field_id(opts: record) -> string
   str(field(opts, "id", field(opts, "placeholder", "field")))
-end
 
 # The text style a field measures and draws with: `opts.text_style` whole,
 # or one built from `opts.size` and `opts.color` over the theme. One record
 # for both halves, or click-to-place lands the caret off the glyphs.
 fn _field_style(t: record, opts: record) -> record
   field(opts, "text_style", ts(t, field(opts, "size", t.font_md), field(opts, "color", t.text)))
-end
 
 # What `ui.text_field_update` / `ui.text_area_update` read from their style.
 # The pointer stays out while a bloom overlay holds input, unless the field
@@ -48,12 +46,10 @@ end
 fn _update_style(t: record, r: record, opts: record, inset: num) -> record
   {...opts, text_style: _field_style(t, opts), inset: inset,
    pointer: field(opts, "pointer", true) && pointer_free(r)}
-end
 
 # The selection tint: the accent over the field's own face.
 fn _sel_color(t: record, opts: record)
   field(opts, "selection", mix(field(opts, "bg", t.panel), t.accent, 0.35))
-end
 
 # The box every field is drawn in: a hairline that warms toward the accent
 # on hover and takes it fully with the focus, and a focus underline that
@@ -69,14 +65,11 @@ fn _field_box(t: record, r: record, opts: record, hot: num, k: num)
     let by = r.y + r.h - 1.0
     draw_line({x: r.x + (r.w - bar_w) / 2.0, y: by}, {x: r.x + (r.w + bar_w) / 2.0, y: by},
       field(opts, "focus", t.accent), 255, 2)
-  end
-end
 
 # The caret's on/off: a dt-driven blink (it also blinks in a headless trace,
 # where the wall clock stands still), held on while the text is changing.
 fn _caret_on(changed: bool) -> bool
   changed || fract(age() * 1.1) < 0.55
-end
 
 # ── Text field ────────────────────────────────────────────────────────────
 
@@ -104,11 +97,9 @@ end
 # — plus `focused`.
 pub fn text_field(r: record, buf: string) -> record
   text_field_impl(r, buf, {})
-end
 
 pub fn text_field(r: record, buf: string, opts: record) -> record
   text_field_impl(r, buf, opts)
-end
 
 # `text_field` is also a name in the `ui` package, which this module imports
 # plainly. Inside one variant's own body the name means only that variant,
@@ -125,7 +116,6 @@ fn text_field_impl(r: record, buf: string, opts: record) -> record
   let has = has_focus(id)
   draw_field_impl(r, res, has, opts)
   {...res, focused: has}
-end
 
 # The paint half, for a caller that runs `ui.text_field_update` itself (to
 # gate the keys, or to share one edit between two views). `res` is what the
@@ -134,11 +124,9 @@ end
 # pass the update the same `text_style` and `inset`, or the caret drifts.
 pub fn draw_text_field(r: record, res: record, focused: bool) -> record
   draw_field_impl(r, res, focused, {})
-end
 
 pub fn draw_text_field(r: record, res: record, focused: bool, opts: record) -> record
   draw_field_impl(r, res, focused, opts)
-end
 
 fn draw_field_impl(r: record, res: record, has: bool, opts: record) -> record
   let t = theme()
@@ -167,20 +155,16 @@ fn draw_field_impl(r: record, res: record, has: bool, opts: record) -> record
     let x0 = text_width(char_slice(text, 0, s0), style)
     let x1 = text_width(char_slice(text, 0, s1), style)
     draw_rect_rounded(Rect(tx + x0, top, x1 - x0, bottom - top), 2, _sel_color(t, opts))
-  end
   let placeholder = field(opts, "placeholder", "")
   if n == 0 && placeholder != "" then
     draw_text(placeholder, {x: tx, y: ty}, {...style, color: t.dim})
-  end
   draw_text(text, {x: tx, y: ty}, style)
   if has && _caret_on(field(res, "changed", false)) then
     let c = clamp(field(res, "caret", n), 0, n)
     let cx = tx + text_width(char_slice(text, 0, c), style)
     draw_line({x: cx, y: top + 1.0}, {x: cx, y: bottom - 1.0}, field(opts, "caret", t.accent), 255, 2)
-  end
   clip_pop()
   res
-end
 
 # ── Text area ─────────────────────────────────────────────────────────────
 
@@ -196,11 +180,9 @@ end
 # There is no `submitted`.
 pub fn text_area(r: record, buf: string) -> record
   text_area_impl(r, buf, {})
-end
 
 pub fn text_area(r: record, buf: string, opts: record) -> record
   text_area_impl(r, buf, opts)
-end
 
 fn text_area_impl(r: record, buf: string, opts: record) -> record
   let t = theme()
@@ -211,18 +193,15 @@ fn text_area_impl(r: record, buf: string, opts: record) -> record
   let has = has_focus(id)
   draw_area_impl(r, res, has, opts)
   {...res, focused: has}
-end
 
 # The paint half of `text_area`: the box, the selection, the rows, the caret
 # and, when the text overflows, a scroll thumb. `res` is what
 # `ui.text_area_update` returned.
 pub fn draw_text_area(r: record, res: record, focused: bool) -> record
   draw_area_impl(r, res, focused, {})
-end
 
 pub fn draw_text_area(r: record, res: record, focused: bool, opts: record) -> record
   draw_area_impl(r, res, focused, opts)
-end
 
 fn draw_area_impl(r: record, res: record, has: bool, opts: record) -> record
   let t = theme()
@@ -242,25 +221,19 @@ fn draw_area_impl(r: record, res: record, has: bool, opts: record) -> record
     let sel = _sel_color(t, opts)
     for sr in text_range_rects(rows, style, res.sel_start, res.sel_end, lh) do
       draw_rect({x: ox + sr.x, y: top + sr.y, w: sr.w, h: sr.h}, sel)
-    end
-  end
   let placeholder = field(opts, "placeholder", "")
   if char_len(res.text) == 0 && placeholder != "" then
     draw_text(placeholder, {x: ox, y: top + (lh - tsize) / 2}, {...style, color: t.dim})
-  end
   for i in range(0, len(rows)) do
     let y = top + i * lh
     if y + lh > r.y && y < r.y + r.h then
       draw_text(rows[i].text, {x: ox, y: y + (lh - tsize) / 2}, style)
-    end
-  end
   if has && _caret_on(res.changed) then
     let i = text_row_of(rows, res.caret)
     let row = rows[i]
     let cx = ox + text_width(char_slice(row.text, 0, clamp(res.caret - row.start, 0, row.end - row.start)), style)
     let cy = top + i * lh
     draw_line({x: cx, y: cy + 1}, {x: cx, y: cy + lh - 1}, field(opts, "caret", t.accent), 255, 2)
-  end
   clip_pop()
   if res.overflow then
     # A thin thumb on the right edge, sized to the share of the text in view.
@@ -270,9 +243,7 @@ fn draw_area_impl(r: record, res: record, has: bool, opts: record) -> record
     let span = max(1, res.content_h - inner_h)
     let ty = r.y + 4 + (track_h - th) * clamp(res.scroll, 0, span) / span
     draw_rect_rounded(Rect(r.x + r.w - 6, ty, 3, th), 1.5, mix(t.panel, t.text, 0.35))
-  end
   res
-end
 
 # ── Inspector fields ──────────────────────────────────────────────────────
 
@@ -283,11 +254,9 @@ end
 # field shows (a rename opened by a double-click), rather than on a click.
 pub fn commit_field(r: record, current) -> record
   commit_impl(r, current, {})
-end
 
 pub fn commit_field(r: record, current, opts: record) -> record
   commit_impl(r, current, opts)
-end
 
 fn commit_impl(r: record, current, opts: record) -> record
   let id = _field_id(opts)
@@ -296,12 +265,10 @@ fn commit_impl(r: record, current, opts: record) -> record
   let out = nil
   if field(opts, "start", false) && !editing && !has_focus(id) then
     focus_request(id)
-  end
   let res = text_field_impl(r, if editing then buf else str(current ?? "") end, opts)
   if has_focus(id) then
     if !editing then
       editing = true
-    end
     buf = res.text
     if res.cancelled then
       focus_request(nil)
@@ -310,14 +277,11 @@ fn commit_impl(r: record, current, opts: record) -> record
       out = buf
       focus_request(nil)
       editing = false
-    end
   else if editing then
     # The keyboard went elsewhere (a click, Tab) mid-edit: apply it.
     editing = false
     out = buf
-  end
   {text: out, editing: editing}
-end
 
 # A number box: drag sideways to scrub (shift for fine steps), double-click
 # to type, Return or a click away to apply the typed value, Escape to drop
@@ -329,11 +293,9 @@ end
 # "" for none), size, color, bg, radius.
 pub fn number_field(r: record, value: num) -> record
   number_impl(r, value, {})
-end
 
 pub fn number_field(r: record, value: num, opts: record) -> record
   number_impl(r, value, opts)
-end
 
 fn number_impl(r: record, value: num, opts: record) -> record
   let t = theme()
@@ -348,7 +310,6 @@ fn number_impl(r: record, value: num, opts: record) -> record
     if !editing then
       buf = fixed(float(value), places)
       editing = true
-    end
     let res = text_field_impl(r, buf, {size: t.font_sm, ...opts})
     buf = res.text
     if res.cancelled then
@@ -359,14 +320,12 @@ fn number_impl(r: record, value: num, opts: record) -> record
       if v != nil then out = v end
       focus_request(nil)
       editing = false
-    end
   else
     if editing then
       # The focus went elsewhere while typing (a click, Tab): keep the value.
       editing = false
       let v = parse_float(trim(buf))
       if v != nil then out = v end
-    end
     # Still in the Tab ring while it shows its value: Tab lands on it and
     # it opens for typing.
     focusable(id)
@@ -385,22 +344,17 @@ fn number_impl(r: record, value: num, opts: record) -> record
     if live && it.down && !it.pressed && mouse_x() != last_x then
       let k = if mod_shift() then field(opts, "fine", 0.1) else 1.0 end
       out = float(value) + float(mouse_x() - last_x) * float(field(opts, "step", 1.0)) * k
-    end
     last_x = mouse_x()
     if live && it.pressed && click_count() == 2 then
       focus_request(id)
-    end
     let tip = field(opts, "tip", "drag to change · shift for fine · double-click to type")
     if tip != "" then tooltip(r, tip) end
-  end
   if out != value then
     let lo = field(opts, "min", nil)
     let hi = field(opts, "max", nil)
     if lo != nil then out = max(out, lo) end
     if hi != nil then out = min(out, hi) end
-  end
   {value: out, changed: out != value}
-end
 
 # A colour chip and its hex, typed: Return or a click away applies, Escape
 # reverts. Returns {color}: nil unless a valid new colour was entered. A nil
@@ -408,11 +362,9 @@ end
 # chip_radius and outline.
 pub fn color_field(r: record, color) -> record
   color_impl(r, color, {})
-end
 
 pub fn color_field(r: record, color, opts: record) -> record
   color_impl(r, color, opts)
-end
 
 fn color_impl(r: record, color, opts: record) -> record
   let t = theme()
@@ -425,7 +377,6 @@ fn color_impl(r: record, color, opts: record) -> record
   let res = commit_impl(fr, shown, {placeholder: "#rrggbb", size: t.font_sm, ...opts})
   let picked = if res.text == nil then nil else color_from_hex(res.text) end
   {color: if same_color(picked, color) then nil else picked end}
-end
 
 # A row of square colour chips, `r.h` on a side, `current` ringed; chips
 # that would overrun `r.w` are left out. Returns the colour clicked (on
@@ -433,11 +384,9 @@ end
 # ring, hover.
 pub fn swatches(r: record, colors: list, current) -> any
   swatches_impl(r, colors, current, {})
-end
 
 pub fn swatches(r: record, colors: list, current, opts: record) -> any
   swatches_impl(r, colors, current, opts)
-end
 
 fn swatches_impl(r: record, colors: list, current, opts: record) -> any
   let t = theme()
@@ -456,9 +405,5 @@ fn swatches_impl(r: record, colors: list, current, opts: record) -> any
       else if p.hot > 0.01 then
         draw_rect_rounded_outline(pad(cr, -1), rad + 1, field(opts, "hover", mix(hair(t), t.text, 0.4)),
           int(255 * p.hot), 1)
-      end
       if p.click then picked = c end
-    end
-  end
   picked
-end

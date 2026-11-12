@@ -124,18 +124,15 @@ state var _nes_backdrop = 15
 pub fn set_backdrop(c: num)
   set _nes_backdrop = c
   _native_set_backdrop(c)
-end
 
 # The current backdrop index.
 pub fn backdrop() -> num
   get _nes_backdrop
-end
 
 # `palette(i, c1, c2, c3)` — the three colors that are actually this
 # palette's, with color 0 taken from the backdrop. The common form.
 pub fn palette(index: num, c1: num, c2: num, c3: num)
   set_palette(index, backdrop(), c1, c2, c3)
-end
 
 # `palette(i, [c0, c1, c2, c3])` / `palette(i, [c1, c2, c3])` — the list form,
 # so a cart can keep its palettes as data (a table of levels, a fade sequence)
@@ -145,8 +142,6 @@ pub fn palette(index: num, colors: list)
     set_palette(index, colors[0], colors[1], colors[2], colors[3])
   else if len(colors) == 3 then
     set_palette(index, backdrop(), colors[0], colors[1], colors[2])
-  end
-end
 
 # ── Tile art ──────────────────────────────────────────────────────────────
 # A tile is authored as 8 strings of 8 characters, one character per pixel:
@@ -194,57 +189,45 @@ fn _build_art_table() -> record
   t["#"] = 3
   t["3"] = 3
   t
-end
 
 fn _art_color(ch: string, remap: record)
   remap[ch] ?? ((get _nes_art_table)[ch] ?? 0)
-end
 
 # One authored line -> a string of color digits, unpadded.
 fn _art_digits(line: string, remap: record) -> string
   let out = ""
   for ch in chars(line) do
     out = out ++ str(_art_color(ch, remap))
-  end
   out
-end
 
 fn _pad_to(s: string, n: num) -> string
   let out = s
   while len(out) < n do
     out = out ++ "0"
-  end
   slice(out, start: 0, end: n)
-end
 
 # Normalize authored art into the 8 rows of 8 digits `define_tile` wants,
 # without defining anything. Useful for building a tile programmatically, or
 # for feeding the same art to `define_tile` yourself.
 pub fn art(rows: list) -> list
   art(rows, {})
-end
 
 pub fn art(rows: list, remap: record) -> list
   let out = []
   for line in rows do
     out = append(out, _pad_to(_art_digits(line, remap), 8))
-  end
   while len(out) < 8 do
     out = append(out, "00000000")
-  end
   slice(out, start: 0, end: 8)
-end
 
 # Define one tile from readable string art. Idempotent — the host hashes the
 # pattern table and skips unchanged writes — so this belongs at the top of the
 # cart, run every frame, and a hot reload repaints the artwork for free.
 pub fn define_art(index: num, rows: list)
   define_tile(index, art(rows, {}))
-end
 
 pub fn define_art(index: num, rows: list, remap: record)
   define_tile(index, art(rows, remap))
-end
 
 # Define a run of tiles from a list of arts, `base` upward. Returns the next
 # free tile index, so a cart lays out its pattern table by composition instead
@@ -256,14 +239,11 @@ end
 #
 pub fn define_art_run(base: num, arts: list) -> num
   define_art_run(base, arts, remap: {})
-end
 
 pub fn define_art_run(base: num, arts: list, remap: record) -> num
   for i in range(0, len(arts)) do
     define_tile(base + i, art(arts[i], remap))
-  end
   base + len(arts)
-end
 
 # ── Sprite flags ──────────────────────────────────────────────────────────
 # The bits `sprite(x, y, tile, pal, flags)` takes.
@@ -276,7 +256,6 @@ pub let behind_bg = 4
 #   sprite(x, y, tile, 4, flip(facing_left, false))
 pub fn flip(fx: bool, fy: bool) -> int
   (if fx then 1 else 0 end) + (if fy then 2 else 0 end)
-end
 
 # ── Metasprites ───────────────────────────────────────────────────────────
 # Anything bigger than 8x8 is several sprites moving together. A metasprite is
@@ -301,21 +280,17 @@ end
 # `tile_base`, in pattern-table order.
 pub fn meta(tile_base: num, w_tiles: num, h_tiles: num, pal: num) -> record
   {base: tile_base, w: w_tiles, h: h_tiles, pal: pal, parts: []}
-end
 
 # One piece of an irregular metasprite: `dx`/`dy` are pixel offsets from the
 # object's top-left corner.
 pub fn meta_part(dx: num, dy: num, tile: num) -> record
   meta_part(dx, dy, tile, pal: 4, flags: 0)
-end
 
 pub fn meta_part(dx: num, dy: num, tile: num, pal: num) -> record
   meta_part(dx, dy, tile, pal, flags: 0)
-end
 
 pub fn meta_part(dx: num, dy: num, tile: num, pal: num, flags: num) -> record
   {dx: dx, dy: dy, tile: tile, pal: pal, flags: flags}
-end
 
 # A metasprite from explicit parts. Its w/h are derived from the parts' extent
 # so `meta_rect` and the collision helpers still describe it correctly.
@@ -325,9 +300,7 @@ pub fn meta_of(parts: list) -> record
   for p in parts do
     w = max(w, p.dx + 8)
     h = max(h, p.dy + 8)
-  end
   {base: -1, w: w / 8, h: h / 8, pal: 0, parts: parts}
-end
 
 # Define a metasprite from one grid of string art, `base` upward. The grid's
 # width and height are rounded up to whole tiles (short rows are padded), and
@@ -335,7 +308,6 @@ end
 # artwork call. Returns the metasprite.
 pub fn define_meta(base: num, rows: list, pal: num) -> record
   define_meta(base, rows, pal, remap: {})
-end
 
 pub fn define_meta(base: num, rows: list, pal: num, remap: record) -> record
   let norm = []
@@ -344,7 +316,6 @@ pub fn define_meta(base: num, rows: list, pal: num, remap: record) -> record
     let d = _art_digits(line, remap)
     wide = max(wide, len(d))
     norm = append(norm, d)
-  end
   let cols = int((wide + 7) / 8)
   let rws = int((len(norm) + 7) / 8)
   for ty in range(0, rws) do
@@ -354,32 +325,24 @@ pub fn define_meta(base: num, rows: list, pal: num, remap: record) -> record
         let src = ty * 8 + y
         let line = if src < len(norm) then _pad_to(norm[src], cols * 8) else "" end
         cell_rows = append(cell_rows, _pad_to(slice(line, start: tx * 8, end: min(len(line), tx * 8 + 8)), 8))
-      end
       define_tile(base + ty * cols + tx, cell_rows)
-    end
-  end
   meta(tile_base: base, w_tiles: cols, h_tiles: rws, pal: pal)
-end
 
 # Pixel size of a metasprite, and the rect it occupies at (x, y) — the box the
 # collision helpers want.
 pub fn meta_w(m: record)
   m.w * 8
-end
 
 pub fn meta_h(m: record)
   m.h * 8
-end
 
 pub fn meta_rect(x: num, y: num, m: record) -> Rect
   rect(x, y, meta_w(m), meta_h(m))
-end
 
 # Draw a metasprite with its top-left corner at (x, y). Costs one sprite per
 # tile out of the 64-per-frame budget.
 pub fn draw_meta(x: num, y: num, m: record)
   draw_meta(x, y, m, flags: 0)
-end
 
 pub fn draw_meta(x: num, y: num, m: record, flags: num)
   if len(m.parts) == 0 then
@@ -393,9 +356,6 @@ pub fn draw_meta(x: num, y: num, m: record, flags: num)
       let ox = if fx then meta_w(m) - p.dx - 8 else p.dx end
       let oy = if fy then meta_h(m) - p.dy - 8 else p.dy end
       sprite(px(x) + ox, px(y) + oy, p.tile, p.pal, p.flags + flags)
-    end
-  end
-end
 
 # ── The built-in font ─────────────────────────────────────────────────────
 # 64 glyphs — ASCII 32 ('space') through 95 ('_'), i.e. uppercase, digits and
@@ -501,11 +461,8 @@ fn _glyph_rows(pattern: string, ink: num) -> list
     let out = ""
     for c in chars(line) do
       out = out ++ (if c == "#" then ink_ch else "0" end)
-    end
     rows = append(rows, out ++ "000")
-  end
   append(rows, "00000000")
-end
 
 # The decoded font, cached per ink color: 64 glyphs is enough string work that
 # rebuilding it every frame would be visible in a profile, and the result
@@ -514,24 +471,19 @@ end
 fn _font_rows(ink: num) -> list
   memo(ink) rows = _build_font_rows(ink)
   rows
-end
 
 fn _build_font_rows(ink: num) -> list
   let out = []
   for g in _FONT_GLYPHS do
     out = append(out, _glyph_rows(g, ink))
-  end
   out
-end
 
 fn _build_font_index() -> record
   let m = {}
   let cs = chars(_FONT_CHARS)
   for i in range(0, len(cs)) do
     m[cs[i]] = i
-  end
   m
-end
 
 # char -> glyph number, built once. A top-level cell for the same reason as
 # `_nes_art_table` above: `glyph()` runs once per character drawn, so a
@@ -545,8 +497,6 @@ fn _install_font(base: num, ink: num)
   let rows = _font_rows(ink)
   for i in range(0, len(rows)) do
     define_tile(base + i, rows[i])
-  end
-end
 
 # Install the font at `base` (64 tiles) and make it the font the text helpers
 # use. `ink` is which palette entry the glyphs are drawn in — 1 by default, so
@@ -554,18 +504,15 @@ end
 # next free tile index.
 pub fn font_tiles(base: num) -> num
   font_tiles(base, 1)
-end
 
 pub fn font_tiles(base: num, ink: num) -> num
   _install_font(base, ink)
   set _nes_font = {base: base, ink: ink, at: frame_count()}
   base + len(_FONT_GLYPHS)
-end
 
 # The tile index the font currently starts at.
 pub fn font_base() -> num
   (get _nes_font).base
-end
 
 # Make sure the glyphs are in the pattern table before something draws with
 # them, at most once per frame. This is what lets a cart use `map_text` with
@@ -576,16 +523,13 @@ fn _ensure_font() -> num
   if f.at != frame_count() then
     _install_font(f.base, f.ink)
     set _nes_font = {base: f.base, ink: f.ink, at: frame_count()}
-  end
   f.base
-end
 
 # The tile index for one character. Unknown characters (and lowercase, which
 # is folded) resolve through the same table; anything the font does not carry
 # draws as a space.
 pub fn glyph(ch: string)
   _ensure_font() + ((get _nes_font_index)[upper(ch)] ?? 0)
-end
 
 # ── Text ──────────────────────────────────────────────────────────────────
 # Two ways to put words on screen, and the choice matters:
@@ -605,31 +549,25 @@ end
 # frame with a changing score.
 pub fn map_text(x_cell: num, y_cell: num, s: string)
   map_text(x_cell, y_cell, s, pal: 0)
-end
 
 pub fn map_text(x_cell: num, y_cell: num, s: string, pal: num)
   let cs = chars(upper(s))
   for i in range(0, len(cs)) do
     set_tile(x_cell + i, y_cell, glyph(cs[i]), pal)
-  end
-end
 
 # Centered in the 32-cell width. Odd-length strings land half a cell left,
 # which is what a tile grid can do.
 pub fn map_text_center(y_cell: num, s: string, pal: num)
   map_text(int((screen_cols - len(s)) / 2), y_cell, s, pal)
-end
 
 # Draw `s` as sprites with its top-left corner at pixel (x, y). Blank
 # characters cost nothing. Returns the number of sprites used, so a HUD can
 # stay inside the 64-sprite budget deliberately instead of by luck.
 pub fn text_sprites(x: num, y: num, s: string) -> int
   text_sprites(x, y, s, pal: 4, flags: 0)
-end
 
 pub fn text_sprites(x: num, y: num, s: string, pal: num) -> int
   text_sprites(x, y, s, pal, flags: 0)
-end
 
 pub fn text_sprites(x: num, y: num, s: string, pal: num, flags: num) -> int
   let cs = chars(upper(s))
@@ -638,34 +576,26 @@ pub fn text_sprites(x: num, y: num, s: string, pal: num, flags: num) -> int
     if cs[i] != " " then
       sprite(px(x) + i * 8, px(y), glyph(cs[i]), pal, flags)
       used = used + 1
-    end
-  end
   used
-end
 
 # Centered on the 256-pixel screen.
 pub fn text_sprites_center(y: num, s: string, pal: num) -> int
   text_sprites(int((screen_w - len(s) * 8) / 2), y, s, pal, 0)
-end
 
 # Width of `s` if drawn, in cells and in pixels. The font is fixed-width, so
 # these are exact — lay a box out with them rather than guessing.
 pub fn text_cells(s: string) -> int
   len(s)
-end
 
 pub fn text_px(s: string) -> int
   len(s) * 8
-end
 
 # Right-align helpers, for scores and timers that grow leftward.
 pub fn map_text_right(right_cell: num, y_cell: num, s: string, pal: num)
   map_text(right_cell - len(s), y_cell, s, pal)
-end
 
 pub fn text_sprites_right(right_x: num, y: num, s: string, pal: num) -> int
   text_sprites(right_x - text_px(s), y, s, pal, 0)
-end
 
 # Zero-padded number, the other thing every HUD needs: `pad_num(7, 3)` is
 # "007". Negative numbers keep their sign and lose one digit of padding.
@@ -673,9 +603,7 @@ pub fn pad_num(n: num, digits: num) -> string
   let s = str(int(n))
   while len(s) < digits do
     s = "0" ++ s
-  end
   s
-end
 
 # ── Background map ────────────────────────────────────────────────────────
 # The map is up to 64x60 cells and wraps when scrolled. These wrappers exist
@@ -692,40 +620,32 @@ state var _nes_scroll = {x: 0, y: 0}
 pub fn set_map_size(w_cells: num, h_cells: num)
   set _nes_map = {w: w_cells, h: h_cells}
   _native_set_map_size(w_cells, h_cells)
-end
 
 # The map's size in cells and in pixels.
 pub fn map_cols() -> num
   (get _nes_map).w
-end
 
 pub fn map_rows() -> num
   (get _nes_map).h
-end
 
 pub fn map_w() -> num
   map_cols() * 8
-end
 
 pub fn map_h() -> num
   map_rows() * 8
-end
 
 pub fn set_scroll(x: num, y: num)
   set _nes_scroll = {x: x, y: y}
   _native_set_scroll(px(x), px(y))
-end
 
 # The current scroll position — the world coordinate at the top-left of the
 # screen. Named `cam_*` and not `scroll_*` because petal-ui already publishes
 # `scroll_x()`/`scroll_y()` for the mouse wheel.
 pub fn cam_x() -> num
   (get _nes_scroll).x
-end
 
 pub fn cam_y() -> num
   (get _nes_scroll).y
-end
 
 # Point the camera at a world position, clamped so the view never runs past
 # the edge of the map. Returns the position actually used.
@@ -734,67 +654,52 @@ pub fn camera(x: num, y: num) -> record
   let cy = clamp(y, lo: 0, hi: max(0, map_h() - screen_h))
   set_scroll(cx, cy)
   {x: cx, y: cy}
-end
 
 # Center the camera on a point — the usual "follow the player" call, already
 # clamped to the map.
 pub fn camera_follow(x: num, y: num) -> record
   camera(x - screen_w / 2, y - screen_h / 2)
-end
 
 # World -> screen, for drawing an object that lives in map coordinates.
 pub fn world_to_screen(x: num, y: num) -> record
   {x: x - cam_x(), y: y - cam_y()}
-end
 
 # A sprite placed in *world* coordinates: the camera offset is applied for
 # you. Most gameplay code never wants screen space, and hand-subtracting the
 # camera at every sprite call is where off-by-one jitter comes from.
 pub fn sprite_world(x: num, y: num, tile: num, pal: num)
   sprite_world(x, y, tile, pal, flags: 0)
-end
 
 pub fn sprite_world(x: num, y: num, tile: num, pal: num, flags: num)
   sprite(px(x - cam_x()), px(y - cam_y()), tile, pal, flags)
-end
 
 pub fn draw_meta_world(x: num, y: num, m: record)
   draw_meta_world(x, y, m, flags: 0)
-end
 
 pub fn draw_meta_world(x: num, y: num, m: record, flags: num)
   draw_meta(x: x - cam_x(), y: y - cam_y(), m: m, flags: flags)
-end
 
 # Is this world-space rect anywhere near the visible screen? The cheap cull
 # every scrolling game needs before it spends a sprite on an off-screen enemy.
 pub fn on_screen(r: record)
   overlaps(r, rect(cam_x(), cam_y(), screen_w, screen_h))
-end
 
 # Freeze the top `height_px` scanlines at scroll x = 0 while the rest of the
 # screen scrolls: the status-bar split. Call it every frame, after the camera.
 pub fn lock_top(height_px: num)
   for y in range(0, height_px) do
     set_scroll_at(y, 0)
-  end
-end
 
 # Fill a rectangular region of cells with one tile.
 pub fn map_rect(x_cell: num, y_cell: num, w_cells: num, h_cells: num, tile: num, pal: num)
   for y in range(0, h_cells) do
     for x in range(0, w_cells) do
       set_tile(x_cell + x, y_cell + y, tile, pal)
-    end
-  end
-end
 
 # Write a row of tile indices from a list.
 pub fn map_row(x_cell: num, y_cell: num, tiles: list, pal: num)
   for i in range(0, len(tiles)) do
     set_tile(x_cell + i, y_cell, tiles[i], pal)
-  end
-end
 
 # Paint a region of the map from string art, one character per cell, through a
 # legend. This is how a level is authored:
@@ -819,18 +724,12 @@ pub fn map_art(x_cell: num, y_cell: num, rows: list, legend: list)
       let e = m[cs[x]] ?? nil
       if e != nil then
         set_tile(x_cell + x, y_cell + y, e[1], if len(e) > 2 then e[2] else 0 end)
-      end
-    end
-  end
-end
 
 fn _legend_rec(legend: list) -> record
   let m = {}
   for e in legend do
     m[e[0]] = e
-  end
   m
-end
 
 # ── Pads ──────────────────────────────────────────────────────────────────
 # `btn`/`btnp`/`btnr` are held / pressed-this-frame / released-this-frame.
@@ -841,45 +740,35 @@ end
 
 pub fn btn(name: string)
   pad_down(0, name)
-end
 
 pub fn btn(pad: num, name: string)
   pad_down(pad, name)
-end
 
 pub fn btnp(name: string)
   pad_pressed(0, name)
-end
 
 pub fn btnp(pad: num, name: string)
   pad_pressed(pad, name)
-end
 
 pub fn btnr(name: string)
   pad_released(0, name)
-end
 
 pub fn btnr(pad: num, name: string)
   pad_released(pad, name)
-end
 
 # The d-pad as -1 / 0 / +1. Opposite directions cancel, which is what a real
 # pad does mechanically and what stops diagonal-input jitter.
 pub fn btn_dx() -> int
   btn_dx(0)
-end
 
 pub fn btn_dx(pad: num) -> int
   (if pad_down(pad, "right") then 1 else 0 end) - (if pad_down(pad, "left") then 1 else 0 end)
-end
 
 pub fn btn_dy() -> int
   btn_dy(0)
-end
 
 pub fn btn_dy(pad: num) -> int
   (if pad_down(pad, "down") then 1 else 0 end) - (if pad_down(pad, "up") then 1 else 0 end)
-end
 
 # Auto-repeat, for menus and any other held-to-scroll input: true on the frame
 # the button goes down, then again every `rate` seconds once it has been held
@@ -896,16 +785,13 @@ state var _nes_repeat = Map()
 
 pub fn btn_repeat(name: string, delay: num, rate: num) -> bool
   btn_repeat(0, name, delay, rate)
-end
 
 pub fn btn_repeat(pad: num, name: string, delay: num, rate: num) -> bool
   let key = "{pad}:{name}"
   if !pad_down(pad, name) then
     if contains(get _nes_repeat, key) then
       set _nes_repeat = remove(get _nes_repeat, key)
-    end
     return false
-  end
   let e = get _nes_repeat[key]
   let at = if e != nil && e.seen >= frame_count() - 1 then e.at else -1 end
   let fire = false
@@ -919,10 +805,8 @@ pub fn btn_repeat(pad: num, name: string, delay: num, rate: num) -> bool
     # stretch the repeat; a *very* slow frame resyncs instead of firing in a
     # burst to catch up.
     at = max(at + rate, time())
-  end
   set _nes_repeat[key] = {at: at, seen: frame_count()}
   fire
-end
 
 # ── Scenes ────────────────────────────────────────────────────────────────
 # A cart is title -> menu -> game -> game over, and Petal re-runs the whole
@@ -958,20 +842,16 @@ fn _scene_now() -> record
     n
   else
     s
-  end
-end
 
 # The current scene name; "" before anything has started one.
 pub fn scene() -> string
   _scene_now().name
-end
 
 # Request a switch, effective next frame. "" is not a scene name — it is the
 # "nothing pending" sentinel — so switching to it does nothing.
 pub fn set_scene(name: string)
   let s = _scene_now()
   set _nes_scene = {name: s.name, pending: name, req: frame_count(), at: s.at, at_time: s.at_time}
-end
 
 # Set the scene *only if the cart has not started one yet*, immediately. The
 # first line of a cart: safe to run every frame, and it does not fight a
@@ -979,24 +859,19 @@ end
 pub fn start_scene(name: string)
   if _scene_now().name == "" then
     set _nes_scene = {name: name, pending: "", req: -1, at: frame_count(), at_time: time()}
-  end
-end
 
 # True for exactly the first frame a scene is current — where per-scene setup
 # belongs (reset the score, repaint the map, reposition the player).
 pub fn scene_entered() -> bool
   _scene_now().at == frame_count()
-end
 
 # Seconds, and frames, since the current scene began. For timed splash
 # screens, respawn delays and "GAME OVER" holds.
 pub fn scene_time()
   time() - _scene_now().at_time
-end
 
 pub fn scene_frames()
   frame_count() - _scene_now().at
-end
 
 # ── Menus ─────────────────────────────────────────────────────────────────
 # A cursor-driven vertical menu drawn with the font. `id` names the menu, so
@@ -1019,17 +894,13 @@ pub fn menu_update(id: string, count: num) -> record
     let s = _menu_sel(id, write: false, v: 0)
     if btn_repeat(name: "up", delay: 0.35, rate: 0.12) then
       s = s - 1
-    end
     if btn_repeat(name: "down", delay: 0.35, rate: 0.12) then
       s = s + 1
-    end
     s = pmod(s, count)
     _menu_sel(id, write: true, v: s)
     {index: s,
       chosen: if btnp("a") || btnp("start") then s else -1 end,
       cancelled: btnp("b")}
-  end
-end
 
 # Every menu's cursor, by menu id, behind a single read/write port. One
 # module-level map is what lets `menu_update` and `menu_index` look at the
@@ -1048,15 +919,12 @@ fn _menu_sel(id: string, write: bool, v: num) -> num
     e.sel
   else
     0
-  end
   set _nes_menu_sel[id] = {sel: s, seen: frame_count()}
   s
-end
 
 # Where a menu's cursor currently sits, without touching it.
 pub fn menu_index(id: string) -> num
   _menu_sel(id, write: false, v: 0)
-end
 
 # The sprite-drawn menu: floats over anything, costs one sprite per visible
 # character. Rows are 16px apart (one blank line between them) and the cursor
@@ -1067,11 +935,8 @@ pub fn menu(id: string, x: num, y: num, items: list, pal: num) -> record
     let row_y = y + i * 16
     if i == m.index then
       text_sprites(x, y: row_y, s: ">", pal: pal, flags: 0)
-    end
     text_sprites(x: x + 16, y: row_y, s: items[i], pal: pal, flags: 0)
-  end
   m
-end
 
 # The map-drawn menu: costs no sprites, but scrolls with the background — use
 # it on a static title screen. Every row rewrites its cursor cell, blank
@@ -1082,40 +947,32 @@ pub fn map_menu(id: string, x_cell: num, y_cell: num, items: list, pal: num) -> 
     let row = y_cell + i * 2
     map_text(x_cell, y_cell: row, s: if i == m.index then ">" else " " end, pal: pal)
     map_text(x_cell: x_cell + 2, y_cell: row, s: items[i], pal: pal)
-  end
   m
-end
 
 # ── Geometry ──────────────────────────────────────────────────────────────
 
 pub fn point_in(px_: num, py_: num, r: record)
   px_ >= r.x && px_ < r.x + r.w && py_ >= r.y && py_ < r.y + r.h
-end
 
 # Axis-aligned overlap, in both the record and the flat form — gameplay code
 # has boxes as rects, but a quick "do these two 8x8 sprites touch" is often
 # eight loose numbers.
 pub fn overlaps(a: record, b: record)
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-end
 
 pub fn overlaps(ax: num, ay: num, aw: num, ah: num, bx: num, by: num, bw: num, bh: num)
   ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah
-end
 
 # Grow (or, with a negative amount, shrink) a rect on all sides. A forgiving
 # hitbox is `inflate(hero, -2)`; a generous pickup radius is `inflate(coin, 4)`.
 pub fn inflate(r: record, amount: num) -> Rect
   rect(r.x - amount, r.y - amount, r.w + amount * 2, r.h + amount * 2)
-end
 
 pub fn center_x(r: record)
   r.x + r.w / 2
-end
 
 pub fn center_y(r: record)
   r.y + r.h / 2
-end
 
 # ── Tile collision ────────────────────────────────────────────────────────
 # Which tiles are walls is a cart decision, declared once as index ranges:
@@ -1133,14 +990,12 @@ state var _nes_solid = []
 # Declare the solid tile range, replacing whatever was declared before.
 pub fn set_solid(first: num, last: num)
   set _nes_solid = [[first, last]]
-end
 
 # Add another solid range on top of the current set. Because `set_solid`
 # resets, the idiomatic order is one `set_solid` followed by any number of
 # `add_solid`s, re-run every frame.
 pub fn add_solid(first: num, last: num)
   set _nes_solid = append(get _nes_solid, [first, last])
-end
 
 # Is this tile index solid?
 pub fn solid_tile(t: num) -> bool
@@ -1148,10 +1003,7 @@ pub fn solid_tile(t: num) -> bool
   for r in get _nes_solid do
     if t >= r[0] && t <= r[1] then
       hit = true
-    end
-  end
   hit
-end
 
 # Is the map solid at world pixel (x, y)? Outside the map counts as solid, so
 # a level does not need a wall of tiles around its edge to be enclosed.
@@ -1162,8 +1014,6 @@ pub fn solid_at(x: num, y: num) -> bool
     true
   else
     solid_tile(get_tile(cx, cy))
-  end
-end
 
 # Does any solid tile touch this world-space rect? Checks every cell the box
 # overlaps, so it is correct for boxes larger than one tile.
@@ -1179,11 +1029,7 @@ pub fn solid_box(r: record) -> bool
         hit = true
       else if solid_tile(get_tile(cx, cy)) then
         hit = true
-      end
-    end
-  end
   hit
-end
 
 # Move `r` by (dx, dy), stopping against solid tiles. Returns
 # {rect, hit_x, hit_y, grounded}: `rect` is where the box ended up, `hit_x` /
@@ -1210,9 +1056,7 @@ pub fn move_box(r: record, dx: num, dy: num) -> record
       hit_x = true
     else
       cur = nxt
-    end
     rem = rem - s
-  end
 
   step = sign(dy)
   rem = abs(dy)
@@ -1223,18 +1067,14 @@ pub fn move_box(r: record, dx: num, dy: num) -> record
       hit_y = true
     else
       cur = nxt
-    end
     rem = rem - s
-  end
 
   {rect: cur, hit_x: hit_x, hit_y: hit_y, grounded: hit_y && dy > 0}
-end
 
 # Is there solid ground directly under this box? Cheaper than a move when all
 # you want is the coyote-time / jump-allowed test.
 pub fn on_ground(r: record) -> bool
   solid_box(rect(r.x, r.y + 1, r.w, r.h))
-end
 
 # ── Animation ─────────────────────────────────────────────────────────────
 
@@ -1246,26 +1086,22 @@ end
 # objects sharing a cycle stay in step.
 pub fn anim(frames: list, fps: num)
   anim(frames, fps, t: time())
-end
 
 # The same, driven by a clock you own — `scene_time()`, a per-entity timer —
 # which is what you want when an animation must start at frame 0 on a
 # particular event rather than wherever the global clock happens to be.
 pub fn anim(frames: list, fps: num, t: num)
   frames[pmod(int(floor(t * fps)), len(frames))]
-end
 
 # A one-shot animation: plays once from `t` = 0 and holds on the last frame.
 # Explosions, door opens, a death sprite that must not loop.
 pub fn anim_once(frames: list, fps: num, t: num)
   frames[clamp(int(floor(t * fps)), lo: 0, hi: len(frames) - 1)]
-end
 
 # True for the first half of each 1/hz cycle: the flashing "PRESS START", the
 # invulnerability blink after a hit.
 pub fn blink(hz: num) -> bool
   fract(time() * hz) < 0.5
-end
 
 # ── Numbers ───────────────────────────────────────────────────────────────
 # Movement is written in floats — subpixel speeds, gravity, friction — and
@@ -1278,18 +1114,15 @@ end
 # when calling the raw `sprite` native with float positions.
 pub fn px(v: num) -> int
   int(floor(v))
-end
 
 # Pixel -> cell index, correct for negative coordinates (plain integer
 # division truncates toward zero, which would put -1 and +1 in the same cell).
 pub fn cell_of(pixel: num) -> int
   int(floor(pixel / 8.0))
-end
 
 # Cell index -> the pixel coordinate of its top-left corner.
 pub fn cell_to_px(cell: num) -> num
   cell * 8
-end
 
 # Positive modulo: `pmod(-1, 4)` is 3, where `-1 % 4` is -1. Wrapping a menu
 # cursor, an animation frame or a scroll position past zero.
@@ -1299,8 +1132,6 @@ pub fn pmod(v: num, n: num) -> num
   else
     let m = v % n
     if m < 0 then m + n else m end
-  end
-end
 
 # Move `v` toward `target` by at most `step`, landing exactly on it. Friction,
 # acceleration ramps, a camera easing onto its mark — all the places a naive
@@ -1310,5 +1141,3 @@ pub fn approach(v: num, target: num, step: num) -> num
     min(target, v + abs(step))
   else
     max(target, v - abs(step))
-  end
-end

@@ -22,11 +22,9 @@ import ui
 # `gradient: [c0, c1]` fills the chip with a ramp instead of a flat colour.
 pub fn badge(x: num, y: num, text: string) -> record
   _badge(x, y, text, {})
-end
 
 pub fn badge(x: num, y: num, text: string, opts: record) -> record
   _badge(x, y, text, opts)
-end
 
 # `badge`, `pill` and the other names below are also `ui`'s, which this module
 # imports plainly. Inside one variant's own body the short form would escape
@@ -42,10 +40,8 @@ fn _badge(x: num, y: num, text: string, opts: record) -> record
     draw_rect_rounded(r, int(r.h / 2), field(opts, "bg", tone(t, t.panel, 0.18)))
   else
     linear_gradient(r, grad, field(opts, "gradient_angle", GRAD_DOWN), int(r.h / 2))
-  end
   draw_text_line(text, Rect(r.x + 7, r.y, r.w - 14, r.h), style, "center")
   r
-end
 
 # The coloured badge: `color` tints the fill and the text — the status-chip
 # look (pass t.success / t.warn / t.danger / t.accent). Returns its rect.
@@ -53,11 +49,9 @@ end
 # flattened against, so two overlapping pills still read as one wash.
 pub fn pill(x: num, y: num, text: string, color: record) -> record
   _pill(x, y, text, color, {})
-end
 
 pub fn pill(x: num, y: num, text: string, color: record, opts: record) -> record
   _pill(x, y, text, color, opts)
-end
 
 fn _pill(x: num, y: num, text: string, color: record, opts: record) -> record
   let t = theme()
@@ -67,13 +61,11 @@ fn _pill(x: num, y: num, text: string, color: record, opts: record) -> record
   draw_rect_rounded(r, int(r.h / 2), over(field(opts, "on", t.panel), color, 42))
   draw_text_line(text, Rect(r.x + 7, r.y, r.w - 14, r.h), style, "center")
   r
-end
 
 # A chip is as wide as its label plus padding, so the width it reserves comes
 # from the style the label is drawn in.
 fn _chip_rect(x: num, y: num, text: string, style: record, size: num) -> record
   rect(x, y, text_width(text, style) + 14, size + 8)
-end
 
 # ── Card ───────────────────────────────────────────────────────────────────
 
@@ -83,22 +75,18 @@ end
 # elevation scale (1 by default).
 pub fn card(r: record) -> record
   _card(r, {})
-end
 
 pub fn card(r: record, opts: record) -> record
   _card(r, opts)
-end
 
 fn _card(r: record, opts: record) -> record
   let t = theme()
   let radius = field(opts, "radius", t.radius)
   if field(opts, "shadow", true) then
     draw_elevation(r, radius, field(opts, "elevation", 1))
-  end
   draw_rect_rounded(r, radius, field(opts, "bg", t.panel))
   stroke(t, r, radius, field(opts, "outline", hair(t)))
   pad(r, field(opts, "pad", t.space_lg))
-end
 
 # ── Empty state ────────────────────────────────────────────────────────────
 
@@ -106,11 +94,9 @@ end
 # `hint` is not "", a dimmer line under it. `opts`: {size, fg}.
 pub fn empty_state(r: record, title: string, hint: string)
   _empty_state(r, title, hint, {})
-end
 
 pub fn empty_state(r: record, title: string, hint: string, opts: record)
   _empty_state(r, title, hint, opts)
-end
 
 fn _empty_state(r: record, title: string, hint: string, opts: record)
   let t = theme()
@@ -125,15 +111,12 @@ fn _empty_state(r: record, title: string, hint: string, opts: record)
     draw_text_line(hint, Rect(r.x, cy + 4.0, r.w, t.font_sm * 1.4), hint_ts, "center")
   else
     draw_text_line(title, r, title_ts, "center")
-  end
-end
 
 # ── Hint bar ───────────────────────────────────────────────────────────────
 
 # One entry of a hint bar: the key-cap text and what it does.
 pub fn hint(key: string, label: string) -> record
   {key: key, label: label}
-end
 
 # The keyboard-hint bar a full-pane app draws along its bottom edge: key caps
 # in small rounded boxes, labels dim beside them.
@@ -143,11 +126,9 @@ end
 # `opts`: {bg, rule, size, fg, cap, cap_fg}.
 pub fn hint_bar(r: record, hints: list)
   _hint_bar(r, hints, {})
-end
 
 pub fn hint_bar(r: record, hints: list, opts: record)
   _hint_bar(r, hints, opts)
-end
 
 fn _hint_bar(r: record, hints: list, opts: record)
   let t = theme()
@@ -168,8 +149,6 @@ fn _hint_bar(r: record, hints: list, opts: record)
     let lw = draw_text_line(hn.label, Rect(x, r.y, text_width(hn.label, label_ts) + 1, r.h),
       label_ts, "left")
     x = x + lw + 16
-  end
-end
 
 # ── Section label ──────────────────────────────────────────────────────────
 
@@ -179,11 +158,9 @@ end
 # run's width. `opts`: {active, inactive, size}.
 pub fn section_label(label: string, x: num, y: num, active: bool) -> num
   _section_label(label, x, y, active, {})
-end
 
 pub fn section_label(label: string, x: num, y: num, active: bool, opts: record) -> num
   _section_label(label, x, y, active, opts)
-end
 
 fn _section_label(label: string, x: num, y: num, active: bool, opts: record) -> num
   let t = theme()
@@ -196,9 +173,7 @@ fn _section_label(label: string, x: num, y: num, active: bool, opts: record) -> 
   if k > 0.01 then
     let uy = y + size + 1
     draw_line({x: x, y: uy}, {x: x + w * k, y: uy}, color)
-  end
   w
-end
 
 # ── Scrollbar ──────────────────────────────────────────────────────────────
 
@@ -209,7 +184,6 @@ end
 # width}.
 pub fn scrollbar(r: record, count: num, rows: num, scroll: num)
   scrollbar(r, count, rows, scroll, {})
-end
 
 pub fn scrollbar(r: record, count: num, rows: num, scroll: num, opts: record)
   let t = theme()
@@ -223,8 +197,6 @@ pub fn scrollbar(r: record, count: num, rows: num, scroll: num, opts: record)
     let thumb = Rect(track.x, track.y + (float(r.h) - thumb_h) * at, bar_w, thumb_h)
     let base = field(opts, "thumb", t.dim)
     draw_rect_rounded(thumb, int(bar_w / 2), mix(base, t.text, 0.35 * near))
-  end
-end
 
 # ── Load view ──────────────────────────────────────────────────────────────
 
@@ -241,7 +213,6 @@ end
 # `opts`: {radius, error_title, idle_title}.
 pub fn load_view(r: record, ls: record) -> bool
   load_view(r, ls, {})
-end
 
 pub fn load_view(r: record, ls: record, opts: record) -> bool
   if load_ready(ls) then
@@ -255,10 +226,7 @@ pub fn load_view(r: record, ls: record, opts: record) -> bool
       spinner(r.x + r.w / 2.0, r.y + r.h / 2.0, field(opts, "radius", 10), t.accent)
     else
       _empty_state(r, field(opts, "idle_title", "Nothing loaded"), "", {})
-    end
     false
-  end
-end
 
 # ── Text spinner ───────────────────────────────────────────────────────────
 
@@ -267,4 +235,3 @@ end
 pub fn spinner_glyph() -> string
   let glyphs = ["|", "/", "-", "\\"]
   glyphs[(frame_count() / 6) % 4]
-end

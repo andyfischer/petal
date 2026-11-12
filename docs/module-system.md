@@ -20,9 +20,9 @@ host's package.
 There are three forms:
 
 ```petal ignore
-import hud                      // every export bare, plus the qualifier: draw_score(), hud.draw_score()
-import hud as h                 // the same, with the qualifier renamed: draw_score(), h.draw_score()
-import hud: draw_score, margin  // only these names, and no qualifier
+import hud                      # every export bare, plus the qualifier: draw_score(), hud.draw_score()
+import hud as h                 # the same, with the qualifier renamed: draw_score(), h.draw_score()
+import hud: draw_score, margin  # only these names, and no qualifier
 ```
 
 A **plain import** is the default. It binds every name the module exports,
@@ -73,13 +73,13 @@ import.** Nothing is wrong until the file uses the name bare; then it is an
 error at each such use, naming both modules:
 
 ```petal ignore
-import ./hud       // exports draw
-import ./level     // exports draw
+import ./hud       # exports draw
+import ./level     # exports draw
 
-hud.draw()         // fine — qualified access always works
+hud.draw()         # fine — qualified access always works
 level.draw()
-draw()             // Error: `draw` is ambiguous: './hud' and './level' export it — write
-                   //        `hud.draw` or `level.draw`, or pin one with `import ./hud: draw`
+draw()             # Error: `draw` is ambiguous: './hud' and './level' export it — write
+                   #        `hud.draw` or `level.draw`, or pin one with `import ./hud: draw`
 ```
 
 So a game whose modules all export `draw`, `step` and `reset` imports them
@@ -130,11 +130,11 @@ What follows `import` says where the module comes from, and there are
 exactly two kinds of path:
 
 ```petal ignore
-import ./level            // a file beside this one: level.ptl
-import ./ui/hud           // a file below it: ui/hud.ptl
-import ../shared/rng      // a file above it
-import bloom              // a package
-import bloom/menu         // a module of a package
+import ./level            # a file beside this one: level.ptl
+import ./ui/hud           # a file below it: ui/hud.ptl
+import ../shared/rng      # a file above it
+import bloom              # a package
+import bloom/menu         # a module of a package
 ```
 
 - **A relative path** starts with `./` or one or more `../`. It names a
@@ -178,9 +178,9 @@ exactly what the same path would written bare, and takes the same `as` and
 selective forms:
 
 ```petal ignore
-import "./my-lib" as lib            // my-lib.ptl, bound as `lib`
-import "../shared-utils/rng"        // binds `rng`: the last segment is a name
-import "./sub-dir/deep-mod": n      // selective: no qualifier needed
+import "./my-lib" as lib            # my-lib.ptl, bound as `lib`
+import "../shared-utils/rng"        # binds `rng`: the last segment is a name
+import "./sub-dir/deep-mod": n      # selective: no qualifier needed
 ```
 
 A quoted path keeps the shape of a bare one: an optional `./` or `../`
@@ -229,12 +229,12 @@ exports `mouse_x` like any other name, which is how a host's interface module
 (petal-ui's `ui`) hands its natives to scripts.
 
 ```petal ignore
-// ui.ptl
-pub fn button(label)         // importable: button, ui.button, `import ui: button`
+# ui.ptl
+pub fn button(label)         # importable: button, ui.button, `import ui: button`
   "[" ++ label ++ "]"
 end
 
-fn helper(x)                 // private to ui.ptl
+fn helper(x)                 # private to ui.ptl
   x + 1
 end
 ```
@@ -281,18 +281,18 @@ facade names the modules, not each of their exports, so a name added to an
 implementation module needs no edit here:
 
 ```petal ignore
-// bloom.ptl — the whole facade
-pub import ./button               // every export of bloom/button
+# bloom.ptl — the whole facade
+pub import ./button               # every export of bloom/button
 pub import ./menu
-pub import ./theme: accent        // just these
+pub import ./theme: accent        # just these
 ```
 
 An importer of `bloom` sees those names as if `bloom` had declared them:
 
 ```petal ignore
 import bloom
-button("ok")        // bloom/button's, whole overload set and all
-bloom.open()        // bloom/menu's
+button("ok")        # bloom/button's, whole overload set and all
+bloom.open()        # bloom/menu's
 ```
 
 The two forms:
@@ -356,18 +356,18 @@ unexported class is private in both positions; using it as a type elsewhere
 is the usual `unknown type name` warning.
 
 ```petal ignore
-// shapes.ptl
-class Hidden          // no `pub`
+# shapes.ptl
+class Hidden          # no `pub`
   a: int
 end
 pub class Circle
   radius: int
 end
 
-// app.ptl
+# app.ptl
 import ./shapes
-fn f(c: Circle) c.radius end   // fine — `Circle` is exported
-fn g(h: Hidden) h.a end        // warning: unknown type name `Hidden`
+fn f(c: Circle) c.radius end   # fine — `Circle` is exported
+fn g(h: Hidden) h.a end        # warning: unknown type name `Hidden`
 ```
 
 An imported class or enum can also be named through its module qualifier,
@@ -376,7 +376,7 @@ in any type position, like its constructor and its variants are:
 ```petal ignore
 import ./shapes as sh
 fn area(c: sh.Circle) -> float 3.14159 * c.radius * c.radius end
-fn first(cs: list) -> sh.Circle? cs[0] end   // `?` after the whole name
+fn first(cs: list) -> sh.Circle? cs[0] end   # `?` after the whole name
 ```
 
 `sh.Circle` names the module's own `Circle`, the same type a bare `Circle`
@@ -397,12 +397,12 @@ the file's own declaration wins the bare name, and the qualifier still
 reaches the other (in an annotation too, as `shapes.Circle`):
 
 ```petal ignore
-import ./shapes          // exports class Circle
+import ./shapes          # exports class Circle
 class Circle
   r: int
 end
-Circle(1)                // this file's Circle
-shapes.Circle(2)         // the module's
+Circle(1)                # this file's Circle
+shapes.Circle(2)         # the module's
 ```
 
 Two plain imports that both export `Kind`, used bare, are the usual
@@ -431,8 +431,8 @@ the module that declared it:
 
 ```petal ignore
 import ./tally: hits
-set hits = 5     // Error: `hits` is a `var` exported by module `./tally`;
-                 //        only `./tally` can write it — call a function it exports instead
+set hits = 5     # Error: `hits` is a `var` exported by module `./tally`;
+                 #        only `./tally` can write it — call a function it exports instead
 ```
 
 Export a function that does the write instead. Reading an imported `var`
@@ -444,10 +444,10 @@ import ./tally: hits, bump
 
 bump()
 bump()
-print(hits)              // 2
+print(hits)              # 2
 
 fn describe()
-  "hits: {get hits}"     // live: reflects whatever `tally` has written
+  "hits: {get hits}"     # live: reflects whatever `tally` has written
 end
 ```
 

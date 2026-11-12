@@ -28,9 +28,7 @@ draw_rect(0, 0, 400, 300, :101418)
 draw_circle(round(x / grid) * grid, 40, 6, :f0f040)
 for i in range(0, 7) do
   draw_rect(20 + (i % cols) * pitch_x, 70 + (i / cols) * pitch_y, 28, 24, :4070a0)
-end
 let hi = 40
 for i in range(0, len(data)) do
   let h = data[i] * 160 / hi
   draw_rect(200 + i * 40, 280 - h, 30, h, :a07040)
-end

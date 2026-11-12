@@ -42,30 +42,24 @@ pub fn text_baseline(r: record, style: record, valign: string) -> float
     when "bottom" -> float(r.y) + float(r.h) - m.descent
     when "baseline" -> float(r.y) + float(r.h)
     when _ -> float(r.y) + float(r.h) / 2.0 + m.cap_height / 2.0
-  end
-end
 
 # The same, defaulting to a centred label — the case every control wants.
 pub fn text_baseline(r: record, style: record) -> float
   text_baseline(r, style, "middle")
-end
 
 # The `y` to hand `draw_text` so that the run's baseline lands on `baseline`.
 # The one conversion between the two coordinate systems in play: a script
 # reasons in baselines, `draw_text` takes line-box tops.
 pub fn text_top(baseline: num, style: record) -> float
   float(baseline) - text_metrics(style).baseline
-end
 
 # The `y` to hand `draw_text` for a single line set in `r` — the composition
 # of the two above, and the call a control actually makes.
 pub fn text_line_y(r: record, style: record, valign: string) -> float
   text_top(text_baseline(r, style, valign), style)
-end
 
 pub fn text_line_y(r: record, style: record) -> float
   text_line_y(r, style, "middle")
-end
 
 # ── Horizontal placement ──────────────────────────────────────────────────
 
@@ -77,8 +71,6 @@ pub fn text_align_x(w: num, r: record, align: string) -> float
     when "center" -> float(r.x) + (float(r.w) - float(w)) / 2.0
     when "right" -> float(r.x) + float(r.w) - float(w)
     when _ -> float(r.x)
-  end
-end
 
 # ── One line, placed and drawn ────────────────────────────────────────────
 
@@ -90,11 +82,9 @@ pub fn text_place(s: string, r: record, style: record, align: string, valign: st
   let w = float(text_width(s, style))
   let base = text_baseline(r, style, valign)
   {x: text_align_x(w, r, align), y: base - text_metrics(style).baseline, w: w, baseline: base}
-end
 
 pub fn text_place(s: string, r: record, style: record, align: string) -> record
   text_place(s, r, style, align, "middle")
-end
 
 # Draw one line of `s` in `r`, aligned horizontally and centred on its cap
 # height vertically. Returns the run's width, which is what a caller laying
@@ -106,15 +96,12 @@ pub fn draw_text_line(s: string, r: record, style: record, align: string, valign
   let p = text_place(s, r, style, align, valign)
   draw_text(s, {x: p.x, y: p.y}, style)
   p.w
-end
 
 pub fn draw_text_line(s: string, r: record, style: record, align: string) -> float
   draw_text_line(s, r, style, align, "middle")
-end
 
 pub fn draw_text_line(s: string, r: record, style: record) -> float
   draw_text_line(s, r, style, "left", "middle")
-end
 
 # Draw `s` on a baseline, aligned about `x` — for a caller that already knows
 # its baseline (a chart axis, a run following another run) and wants nothing
@@ -125,11 +112,8 @@ pub fn draw_text_baseline(s: string, x: num, baseline: num, style: record, align
     when "center" -> float(x) - w / 2.0
     when "right" -> float(x) - w
     when _ -> float(x)
-  end
   draw_text(s, {x: left, y: float(baseline) - text_metrics(style).baseline}, style)
   w
-end
 
 pub fn draw_text_baseline(s: string, x: num, baseline: num, style: record) -> float
   draw_text_baseline(s, x, baseline, style, "left")
-end

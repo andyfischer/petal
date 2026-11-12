@@ -94,7 +94,6 @@ pub let rect = Rect
 
 pub fn point_in(px, py, r)
   px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h
-end
 
 # `hovered(r)` — `point_in(mouse_x(), mouse_y(), r)` — is a native
 # (core-libs/petal-ui/src/input.rs), so that memoized scopes can record it as a single
@@ -103,7 +102,6 @@ end
 
 pub fn clicked(r)
   hovered(r) && mouse_pressed(0)
-end
 
 # ── Timing ────────────────────────────────────────────────────────────────
 # `time()` is an absolute clock in seconds, published by the host each frame
@@ -119,4 +117,3 @@ end
 pub fn elapsed()
   state start = time()
   time() - start
-end

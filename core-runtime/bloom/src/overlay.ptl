@@ -28,11 +28,9 @@ import ui
 # late in the frame so it lands on top of what it describes.
 pub fn tooltip(anchor: record, text: string)
   tooltip_impl(anchor, text, {})
-end
 
 pub fn tooltip(anchor: record, text: string, opts: record)
   tooltip_impl(anchor, text, opts)
-end
 
 # `tooltip` is also a name in the `ui` package, which this module imports plainly
 # (`import ui`). Inside one variant's own body the name means only that
@@ -49,7 +47,6 @@ fn tooltip_impl(anchor: record, text: string, opts: record)
     dwell = dwell + min(dt(), 0.05)
   else
     dwell = 0.0
-  end
   let ready = dwell > field(opts, "delay", 0.4)
   let k = ease_out(enter(ready, dur(t, 0.12)))
   if k > 0.005 then
@@ -73,9 +70,7 @@ fn tooltip_impl(anchor: record, text: string, opts: record)
       draw_rect_rounded(r, t.radius_sm, tone(t, t.overlay, 0.05), int(245.0 * k))
       draw_text_block(text, pad(r, t.pad_x, t.pad_y), ts_a(t, size, ink, 255.0 * k),
         {align: "center", valign: "middle"})
-    end)
-  end
-end
+    )
 
 # ── Toasts ────────────────────────────────────────────────────────────────
 # A queue anyone can push to, drawn wherever the app calls `toasts`. Each one
@@ -88,25 +83,20 @@ state var _toast_seq = 0
 pub fn toast(text: string, kind: string)
   set _toast_seq = (get _toast_seq) + 1
   set _toasts = append(get _toasts, {id: get _toast_seq, text: text, kind: kind, age: 0.0})
-end
 
 pub fn toast(text: string)
   toast(text, "info")
-end
 
 pub fn toast_count() -> int
   len(get _toasts)
-end
 
 pub fn toasts_clear()
   set _toasts = []
-end
 
 # Draw the stack in the bottom-right of `r` and expire finished toasts.
 # `opts`: {life (seconds), width, corner ("br" | "bl" | "tr" | "tl")}.
 pub fn toasts(r: record)
   toasts(r, {})
-end
 
 pub fn toasts(r: record, opts: record)
   let t = theme()
@@ -128,12 +118,10 @@ pub fn toasts(r: record, opts: record)
       r.y + t.space + slot * (h + t.gap)
     else
       r.y + r.h - t.space - (slot + 1.0) * (h + t.gap)
-    end
     let tx = if corner == "bl" || corner == "tl" then
       r.x + t.space - 24.0 * (1.0 - ein)
     else
       r.x + r.w - w - t.space + 24.0 * (1.0 - ein)
-    end
     let br = Rect(tx, ty, w, h)
     let accent = _kind_color(t, item.kind)
     draw_shadow(br, {radius: t.radius, blur: 20, spread: 0, dx: 0, dy: 6, color: :000000, a: int(60.0 * k)})
@@ -150,11 +138,8 @@ pub fn toasts(r: record, opts: record)
       {ripple: false})
     if a < life && !close then
       set kept = append(kept, {id: item.id, text: item.text, kind: item.kind, age: a})
-    end
     set i = i + 1
-  end
   set _toasts = kept
-end
 
 fn _kind_color(t: record, kind: string)
   match kind
@@ -162,8 +147,6 @@ fn _kind_color(t: record, kind: string)
     when "warn" -> t.warn
     when "danger" -> t.danger
     when _ -> t.accent
-  end
-end
 
 fn _kind_icon(kind: string) -> string
   match kind
@@ -171,8 +154,6 @@ fn _kind_icon(kind: string) -> string
     when "warn" -> "warning"
     when "danger" -> "warning"
     when _ -> "info"
-  end
-end
 
 # ── Dialog ────────────────────────────────────────────────────────────────
 
@@ -180,16 +161,13 @@ state var _dialog = ""
 
 pub fn dialog_open(id: string)
   set _dialog = id
-end
 
 pub fn dialog_close()
   set _dialog = ""
   capture_release()
-end
 
 pub fn dialog_is_open(id: string) -> bool
   (get _dialog) == id
-end
 
 # Draw the modal `id` centered on the screen and return
 # `{open, content, closed}`: draw your own controls into `content` while
@@ -202,7 +180,6 @@ end
 #   end
 pub fn dialog(id: string, w: num, h: num, title: string) -> record
   dialog(id, w, h, title, {})
-end
 
 pub fn dialog(id: string, w: num, h: num, title: string, opts: record) -> record
   let t = theme()
@@ -226,7 +203,6 @@ pub fn dialog(id: string, w: num, h: num, title: string, opts: record) -> record
     # (and the close button below) stays live; the page underneath does not.
     if open then
       capture(id, box)
-    end
     draw_shadow(box, {radius: t.radius_lg, blur: 40, spread: 0, dx: 0, dy: 18, color: :000000, a: int(90.0 * e)})
     draw_rect_rounded(box, t.radius_lg, tone(t, t.panel, 0.06), int(255.0 * e))
     stroke(t, box, t.radius_lg, hair(t), 1, tone(t, t.panel, 0.06))
@@ -237,27 +213,19 @@ pub fn dialog(id: string, w: num, h: num, title: string, opts: record) -> record
       text_in(title, head, ts_a(t, t.font_lg, t.text, 255.0 * e))
       if icon_button(Rect(box.x + box.w - 34.0, box.y + 9.0, 24, 24), "close") then
         set closed = true
-      end
       divider(t, Rect(box.x, box.y + head_h - 4.0, box.w, 8), "x")
-    end
     if open then
       if key_pressed("escape") then
         set closed = true
-      end
       # A press on the backdrop, outside the box.
       if mouse_pressed(0) && !(mouse_x() >= box.x && mouse_x() < box.x + box.w &&
         mouse_y() >= box.y && mouse_y() < box.y + box.h) then
         set closed = true
-      end
-    end
     if closed then
       dialog_close()
-    end
     {open: open, closed: closed,
       content: Rect(box.x + t.pad_x, box.y + head_h + t.space,
         box.w - t.pad_x * 2.0, box.h - head_h - t.space * 2.0)}
-  end
-end
 
 # ── Popover ───────────────────────────────────────────────────────────────
 
@@ -269,16 +237,13 @@ state var _popover = ""
 
 pub fn popover_open(id: string)
   set _popover = id
-end
 
 pub fn popover_close()
   set _popover = ""
   capture_release()
-end
 
 pub fn popover_is_open(id: string) -> bool
   (get _popover) == id
-end
 
 pub fn popover(id: string, anchor: record, w: num, h: num) -> record
   let t = theme()
@@ -293,20 +258,15 @@ pub fn popover(id: string, anchor: record, w: num, h: num) -> record
     let box = Rect(x, y, w, h * (0.96 + 0.04 * e))
     if open then
       capture(id, box)
-    end
     draw_shadow(box, {radius: t.radius_lg, blur: 26, spread: 0, dx: 0, dy: 10, color: :000000, a: int(70.0 * e)})
     draw_rect_rounded(box, t.radius_lg, tone(t, t.panel, 0.06), int(255.0 * e))
     stroke(t, box, t.radius_lg, hair(t), 1, tone(t, t.panel, 0.06))
     if open && key_pressed("escape") then
       popover_close()
-    end
     if open && mouse_pressed(0) && !(mouse_x() >= box.x && mouse_x() < box.x + box.w &&
       mouse_y() >= box.y && mouse_y() < box.y + box.h) then
       popover_close()
-    end
     {open: open, content: pad(box, t.pad_x, t.pad_y)}
-  end
-end
 
 # ── Banner ────────────────────────────────────────────────────────────────
 
@@ -325,9 +285,7 @@ pub fn banner(r: record, text: string, kind: string, show: bool) -> bool
     draw_text_line(text, Rect(box.x + t.gap + 28.0, box.y, box.w - t.gap - 32.0, box.h),
       ts_a(t, t.font_md, t.text, 255.0 * k), "left")
     clip_pop()
-  end
   k > 0.005
-end
 
 # ── Skeleton ──────────────────────────────────────────────────────────────
 
@@ -335,7 +293,6 @@ end
 # sweep is dt-driven, so it also shimmers under the headless harness.
 pub fn skeleton(r: record)
   skeleton(r, {})
-end
 
 pub fn skeleton(r: record, opts: record)
   let t = theme()
@@ -352,6 +309,4 @@ pub fn skeleton(r: record, opts: record)
     let f = 1.0 - float(i) / 3.0
     draw_rect_rounded(Rect(x + float(i) * bw / 6.0, r.y, bw * (1.0 - float(i) * 0.2), r.h),
       radius, mix(base, t.text, 0.10), int(90.0 * f))
-  end
   clip_pop()
-end

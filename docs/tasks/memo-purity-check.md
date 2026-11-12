@@ -26,10 +26,10 @@ caller's answer to every other caller:
 
 ```petal ignore
 fn scaled(k, scale)
-  memo(k) v = k * scale     // the first caller's `scale` wins for every caller
+  memo(k) v = k * scale     # the first caller's `scale` wins for every caller
   v
 end
-print(scaled(2, 10), scaled(2, 100))   // 20 20
+print(scaled(2, 10), scaled(2, 100))   # 20 20
 ```
 
 Three other kinds of impure initializer break the premise in other ways:

@@ -1,3 +1,2 @@
 pub fn open()
   "petal open"
-end

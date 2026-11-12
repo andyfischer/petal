@@ -80,7 +80,6 @@ let near = 0.2
 if !want_grab then
   grab_mouse()
   want_grab = true
-end
 
 # =========================================================================
 # Input: mouse look + WASD movement
@@ -107,7 +106,6 @@ let mag_m = sqrt(mx * mx + mz * mz)
 if mag_m > 0.01 then
   player_x = player_x + (mx / mag_m) * move_speed * delta
   player_z = player_z + (mz / mag_m) * move_speed * delta
-end
 
 # Keep player above ground & clamped to the street area.
 if player_x > 22.0 then player_x = 22.0 end
@@ -148,19 +146,12 @@ if (mouse_pressed(1) || key_pressed("space")) && ammo > 0 then
         if d2 < 1.4 then
           best_t = t
           best_i = i
-        end
-      end
-    end
     i = i + 1
-  end
   if best_i >= 0 then
     enemies[best_i].hp = enemies[best_i].hp - 1
     if enemies[best_i].hp <= 0 then
       enemies[best_i].alive = false
       score = score + 10
-    end
-  end
-end
 
 if muzzle > 0 then muzzle = muzzle - 1 end
 
@@ -183,10 +174,7 @@ while ei < len(enemies) do
     if dx * dx + dz * dz < 1.5 then
       hp = hp - 1
       if hp < 0 then hp = 0 end
-    end
-  end
   ei = ei + 1
-end
 
 # =========================================================================
 # Projection helpers
@@ -208,8 +196,6 @@ fn project(x: num, y: num, z: num) -> record
     {sx: 0.0, sy: 0.0, z: rz2, ok: false}
   else
     {sx: cx + rx / rz2 * focal, sy: cy - ry / rz2 * focal, z: rz2, ok: true}
-  end
-end
 
 fn tri(x1: num, y1: num, z1: num,
   x2: num, y2: num, z2: num,
@@ -220,8 +206,6 @@ fn tri(x1: num, y1: num, z1: num,
   let p3 = project(x: x3, y: y3, z: z3)
   if p1.ok && p2.ok && p3.ok then
     triangle3d(p1.sx, p1.sy, p1.z, p2.sx, p2.sy, p2.z, p3.sx, p3.sy, p3.z, r, g, b)
-  end
-end
 
 fn quad(ax: num, ay: num, az: num,
   bx: num, by: num, bz: num,
@@ -230,15 +214,12 @@ fn quad(ax: num, ay: num, az: num,
   r: num, g: num, b: num)
   tri(x1: ax, y1: ay, z1: az, x2: bx, y2: by, z2: bz, x3: cx_, y3: cy_, z3: cz, r: r, g: g, b: b)
   tri(x1: ax, y1: ay, z1: az, x2: cx_, y2: cy_, z2: cz, x3: dx, y3: dy_, z3: dz, r: r, g: g, b: b)
-end
 
 fn neon_line(x1: num, y1: num, z1: num, x2: num, y2: num, z2: num, r: num, g: num, b: num)
   let p1 = project(x: x1, y: y1, z: z1)
   let p2 = project(x: x2, y: y2, z: z2)
   if p1.ok && p2.ok then
     line3d(x1, y1, z1, x2, y2, z2, r, g, b)
-  end
-end
 
 fn box_(x: num, y: num, z: num, w: num, h: num, d: num, r: num, g: num, b: num)
   let hw = w / 2.0
@@ -261,7 +242,6 @@ fn box_(x: num, y: num, z: num, w: num, h: num, d: num, r: num, g: num, b: num)
     r: int(min(255.0, float(r) * 1.2)),
     g: int(min(255.0, float(g) * 1.2)),
     b: int(min(255.0, float(b) * 1.2)))
-end
 
 # =========================================================================
 # Draw: sky + ground + streets
@@ -291,7 +271,6 @@ fn gstrip(near_d: num, far_d: num, shade: num)
   let dz2 = player_z + fwd_z * far_d + right_z * gp_left
   quad(ax, ay: 0.0, az: az,  bx: bx, by: 0.0, bz: bz,  cx_: cx2, cy_: 0.0, cz: cz2,  dx: dx2, dy_: 0.0, dz: dz2,
     r: shade, g: shade / 2, b: shade + 20)
-end
 
 # Layer bands of alternating shade from near to far for visual depth.
 let gi = 0
@@ -300,7 +279,6 @@ while gi < 10 do
   let f = gp_near + float(gi + 1) * 6.0
   gstrip(near_d: n, far_d: f, shade: 12 + (gi % 2) * 10)
   gi = gi + 1
-end
 # Behind the camera — single darker strip (only visible if you turn around).
 gstrip(near_d: 0.0 - gp_far, far_d: 0.0 - gp_near, shade: 10)
 
@@ -311,7 +289,6 @@ while neon_i < 12 do
   let z = float(neon_i) * 6.0
   neon_line(x1: 0.0 - ground_half, y1: 0.05, z1: z, x2: ground_half, y2: 0.05, z2: z, r: 0, g: 220, b: 200)
   neon_i = neon_i + 1
-end
 neon_line(x1: -1.0, y1: 0.05, z1: -48.0, x2: -1.0, y2: 0.05, z2: 72.0, r: 255, g: 50, b: 180)
 neon_line(x1: 1.0, y1: 0.05, z1: -48.0,  x2: 1.0, y2: 0.05, z2: 72.0, r: 255, g: 50, b: 180)
 
@@ -331,7 +308,6 @@ while bi < len(buildings) do
   neon_line(x1: b.x + hx, y1: rt, z1: b.z + hz, x2: b.x - hx, y2: rt, z2: b.z + hz, r: 255, g: 180, b: 40)
   neon_line(x1: b.x - hx, y1: rt, z1: b.z + hz, x2: b.x - hx, y2: rt, z2: b.z - hz, r: 255, g: 180, b: 40)
   bi = bi + 1
-end
 
 # =========================================================================
 # Draw: enemies — colored cubes that bob on their patrol path.
@@ -349,9 +325,7 @@ while di < len(enemies) do
     # HP dot — small white box on top that shrinks as HP drops
     let hb = 0.15 * float(e.hp)
     box_(x: ex, y: 2.1, z: ez, w: hb, h: 0.1, d: hb, r: 255, g: 255, b: 255)
-  end
   di = di + 1
-end
 
 # =========================================================================
 # HUD
@@ -365,7 +339,6 @@ let ch_col_g = 255
 let ch_col_b = 220
 if muzzle > 0 then
   ch_col_r = 255; ch_col_g = 220; ch_col_b = 60
-end
 rect2d(cxh - 1, cyh - 9, 2, 7, ch_col_r, ch_col_g, ch_col_b)
 rect2d(cxh - 1, cyh + 2, 2, 7, ch_col_r, ch_col_g, ch_col_b)
 rect2d(cxh - 9, cyh - 1, 7, 2, ch_col_r, ch_col_g, ch_col_b)
@@ -375,7 +348,6 @@ rect2d(cxh + 2, cyh - 1, 7, 2, ch_col_r, ch_col_g, ch_col_b)
 if muzzle > 0 then
   let flash = muzzle * 4
   rect2d(cxh - flash, cyh - flash, flash * 2, flash * 2, 255, 200, 40)
-end
 
 # Health bar (bottom-left)
 let hp_max_w = 200
@@ -393,7 +365,6 @@ let ci = 0
 while ci < len(enemies) do
   if enemies[ci].alive then alive_count = alive_count + 1 end
   ci = ci + 1
-end
 text2d("SCORE " ++ str(score), int(sw) - 200, 10, 3, 60, 240, 230)
 text2d("ENEMIES " ++ str(alive_count), int(sw) - 200, 40, 2, 200, 200, 200)
 
@@ -426,9 +397,7 @@ while mmi < len(buildings) do
   let bd = int(b.d / mm_scale) + 1
   if bx > mm_x && bx < mm_x + mm_size && by > mm_y && by < mm_y + mm_size then
     rect2d(bx - bw / 2, by - bd / 2, bw, bd, 80, 40, 100)
-  end
   mmi = mmi + 1
-end
 # Enemies as red dots
 let mme = 0
 while mme < len(enemies) do
@@ -438,17 +407,12 @@ while mme < len(enemies) do
     let ey = mpy - int((e.z - player_z) / mm_scale)
     if ex > mm_x && ex < mm_x + mm_size && ey > mm_y && ey < mm_y + mm_size then
       rect2d(ex - 2, ey - 2, 4, 4, 255, 60, 80)
-    end
-  end
   mme = mme + 1
-end
 
 # Game over overlay
 if hp <= 0 then
   rect2d(0, 0, int(sw), int(sh), 60, 0, 20)
   text2d("YOU DIED", int(cx) - 80, int(cy) - 20, 6, 255, 60, 60)
   text2d("press R to reload (restart)", int(cx) - 120, int(cy) + 30, 2, 255, 200, 200)
-end
 if alive_count == 0 then
   text2d("CITY CLEARED", int(cx) - 120, int(cy) - 20, 5, 60, 255, 200)
-end

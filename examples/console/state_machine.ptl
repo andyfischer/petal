@@ -15,7 +15,6 @@ enum Light
   Red(symbol: "[R] .  . ", hold: 5, next: Light.Green),
   Yellow(symbol: " . [Y] . ", hold: 2, next: Light.Red),
   Green(symbol: " .  . [G]", hold: 4, next: Light.Yellow),
-end
 
 state var current = Light.Red
 state var ticks_in_state = 0
@@ -28,14 +27,11 @@ fn traffic_light()
   if get ticks_in_state >= light.hold then
     set ticks_in_state = 0
     set current = light.next
-  end
 
   get current
-end
 
 print("Traffic Light Simulation")
 print("========================")
 for tick in range(1, 25) do
   let light = traffic_light()
   print("Tick", tick, ":", light.symbol)
-end

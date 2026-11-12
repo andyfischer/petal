@@ -7,4 +7,3 @@ pub import ./widgets/menu
 # A facade may use what it re-exports.
 pub fn labelled(label)
   button(label) ++ accent
-end

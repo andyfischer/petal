@@ -7,8 +7,6 @@ let gap = 4.5
 fn column(i)
   let x = i * (40 + gap)
   if x > width then width else x end
-end
 
 for i in range(0, 9) do
   push_output(s, clamp(column(i), 10, 300))
-end

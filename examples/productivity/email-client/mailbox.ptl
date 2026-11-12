@@ -30,15 +30,12 @@ let WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 # The age of something that happened `days` days ago at hh:mm.
 fn at(days: int, hh: int, mm: int) -> int
   days * 1440 + NOW_MIN - (hh * 60 + mm)
-end
 
 fn days_ago(age: int) -> int
   if age <= NOW_MIN then 0 else (age - NOW_MIN - 1) / 1440 + 1 end
-end
 
 fn two(n: int) -> string
   if n < 10 then "0{n}" else str(n) end
-end
 
 fn clock(age: int) -> string
   let m = ((NOW_MIN - age) % 1440 + 1440) % 1440
@@ -46,7 +43,6 @@ fn clock(age: int) -> string
   let h12 = if h % 12 == 0 then 12 else h % 12 end
   let half = if h < 12 then "AM" else "PM" end
   "{h12}:{two(m % 60)} {half}"
-end
 
 fn month_day(d: int) -> string
   let dom = NOW_DOM - d
@@ -54,13 +50,10 @@ fn month_day(d: int) -> string
   while dom < 1 do
     mon = (mon + 11) % 12
     dom = dom + MONTH_LEN[mon]
-  end
   "{MONTHS[mon]} {dom}"
-end
 
 fn weekday(d: int) -> string
   WEEKDAYS[((NOW_WD - d) % 7 + 7) % 7]
-end
 
 # The list's timestamp: as short as it can be and still be unambiguous.
 pub fn when_short(age: int) -> string
@@ -70,8 +63,6 @@ pub fn when_short(age: int) -> string
   else if d == 1 then "Yesterday"
   else if d < 7 then weekday(d)
   else month_day(d)
-  end
-end
 
 # The reading pane's timestamp: the whole thing.
 pub fn when_long(age: int) -> string
@@ -80,8 +71,6 @@ pub fn when_long(age: int) -> string
   else if d == 0 then "Today, {clock(age)}"
   else if d == 1 then "Yesterday, {clock(age)}"
   else "{weekday(d)}, {month_day(d)}, {clock(age)}"
-  end
-end
 
 # ── People ───────────────────────────────────────────────────────────────
 
@@ -122,7 +111,6 @@ pub let CONTACTS = ["maya", "sofia", "tomas", "priya", "dana", "kofi",
 fn before_at(addr: string) -> string
   let i = index_of(addr, "@")
   if i > 0 then char_slice(addr, 0, i) else addr end
-end
 
 # A person by key. An address the user typed has no entry, so it is shown as
 # itself — which is what a mail client does with a stranger.
@@ -132,26 +120,19 @@ pub fn person(key: string) -> record
     known
   else
     {name: before_at(key), email: key, color: :6a7388}
-  end
-end
 
 pub fn first_name(key: string) -> string
   if key == ME then
     "me"
   else
     split(person(key).name, " ")[0]
-  end
-end
 
 pub fn initials(name: string) -> string
   let out = ""
   for part in split(name, " ") do
     if char_len(part) > 0 && char_len(out) < 2 then
       out = out ++ upper(char_at(part, 0))
-    end
-  end
   out
-end
 
 # The contact a half-typed recipient most plausibly means: a prefix of a
 # first name, a surname or an address. "" when nothing fits.
@@ -164,17 +145,11 @@ pub fn complete_contact(fragment: string) -> string
     for key in CONTACTS do
       let p = person(key)
       if found == "" && (index_of(lower(p.name), f) == 0 || index_of(lower(p.email), f) == 0) then found = key end
-    end
     for key in CONTACTS do
       if found == "" then
         for part in split(lower(person(key).name), " ") do
           if index_of(part, f) == 0 then found = key end
-        end
-      end
-    end
-  end
   found
-end
 
 # Turn what was typed into the To field into recipient keys: a known address
 # or name collapses to its contact key, anything else is kept verbatim.
@@ -187,12 +162,8 @@ pub fn parse_recipients(typed: string) -> list
       for k in CONTACTS do
         let p = person(k)
         if lower(p.email) == lower(s) || lower(p.name) == lower(s) then key = k end
-      end
       out = append(out, key)
-    end
-  end
   out
-end
 
 # Whether every recipient is someone mail could reach: a contact, or at least
 # something shaped like an address.
@@ -200,9 +171,7 @@ pub fn deliverable(keys: list) -> bool
   let ok = len(keys) > 0
   for k in keys do
     if !contains(CONTACTS, k) && index_of(k, "@") < 1 then ok = false end
-  end
   ok
-end
 
 pub fn trim_spaces(s: string) -> string
   let a = 0
@@ -210,7 +179,6 @@ pub fn trim_spaces(s: string) -> string
   while a < b && char_at(s, a) == " " do a = a + 1 end
   while b > a && char_at(s, b - 1) == " " do b = b - 1 end
   char_slice(s, a, b)
-end
 
 # ── Labels and mailboxes ─────────────────────────────────────────────────
 
@@ -226,9 +194,7 @@ pub fn label_of(key: string) -> record
   let found = {key: key, name: key, color: :6a7388}
   for l in LABELS do
     if l.key == key then found = l end
-  end
   found
-end
 
 pub let BOXES = [
   {key: "inbox",   name: "Inbox"},
@@ -245,20 +211,15 @@ pub fn view_name(view: string) -> string
   let name = view
   for b in BOXES do
     if b.key == view then name = b.name end
-  end
   if index_of(view, "label:") == 0 then
     name = label_of(char_slice(view, 6)).name
-  end
   name
-end
 
 fn from_me(t: record) -> bool
   let any = false
   for m in t.msgs do
     if m.from == ME then any = true end
-  end
   any
-end
 
 pub fn in_view(t: record, view: string) -> bool
   if view == "inbox" then t.box == "inbox"
@@ -271,34 +232,27 @@ pub fn in_view(t: record, view: string) -> bool
   else if index_of(view, "label:") == 0 then
     contains(t.labels, char_slice(view, 6)) && t.box != "trash"
   else false
-  end
-end
 
 # ── Reading a thread ─────────────────────────────────────────────────────
 
 pub fn last_msg(t: record) -> record
   t.msgs[len(t.msgs) - 1]
-end
 
 # Newest first means largest stamp first; mail written this session has a
 # negative age and so sorts above everything seeded.
 pub fn stamp(t: record) -> int
   0 - last_msg(t).age
-end
 
 pub fn has_attachment(t: record) -> bool
   let any = false
   for m in t.msgs do
     if len(m.atts) > 0 then any = true end
-  end
   any
-end
 
 pub fn attachment_count(t: record) -> int
   let n = 0
   for m in t.msgs do n = n + len(m.atts) end
   n
-end
 
 # Who the row is "from": the correspondents in the order they first spoke.
 # A thread that is only me talking is shown by who it is addressed to.
@@ -306,7 +260,6 @@ pub fn participants(t: record) -> string
   let keys = []
   for m in t.msgs do
     if !contains(keys, m.from) then keys = append(keys, m.from) end
-  end
   if len(keys) == 1 && keys[0] == ME then
     let to = t.msgs[0].to
     if len(to) == 0 then
@@ -314,30 +267,24 @@ pub fn participants(t: record) -> string
     else
       let names = for k in to do person(k).name end
       "To: " ++ join(names, ", ")
-    end
   else if len(keys) == 1 then
     person(keys[0]).name
   else
     let names = for k in keys do first_name(k) end
     join(names, ", ")
-  end
-end
 
 # The person whose face the row wears: the latest correspondent who is not me.
 pub fn face_of(t: record) -> string
   let key = ME
   for m in t.msgs do
     if m.from != ME then key = m.from end
-  end
   if key == ME && len(t.msgs[0].to) > 0 then key = t.msgs[0].to[0] end
   key
-end
 
 # A message as one run of text, for snippets and search: paragraphs and the
 # line breaks inside them both become spaces.
 pub fn body_text(m: record) -> string
   join(split(join(m.body, " "), "\n"), " ")
-end
 
 # Everything a free-text term can match in a thread, lowercased once.
 fn haystack(t: record) -> string
@@ -348,9 +295,7 @@ fn haystack(t: record) -> string
     parts = append(parts, p.email)
     parts = append(parts, body_text(m))
     for a in m.atts do parts = append(parts, a.name) end
-  end
   lower(join(parts, " "))
-end
 
 # ── The query language ───────────────────────────────────────────────────
 # Free words must all appear somewhere in the thread; `from:maya`,
@@ -360,8 +305,6 @@ pub fn tokens(q: string) -> list
   for tok in split(lower(q), " ") do
     if char_len(tok) == 0 then continue end
     tok
-  end
-end
 
 pub fn parse_query(q: string) -> record
   let pq = {terms: [], from: "", unread: false, starred: false, att: false, label: "", active: false}
@@ -381,20 +324,15 @@ pub fn parse_query(q: string) -> record
       pq.label = val
     else
       pq.terms = append(pq.terms, tok)
-    end
     pq.active = true
-  end
   pq
-end
 
 fn sender_matches(t: record, who: string) -> bool
   let hit = false
   for m in t.msgs do
     let p = person(m.from)
     if contains(lower(p.name), who) || contains(lower(p.email), who) then hit = true end
-  end
   hit
-end
 
 pub fn matches(t: record, pq: record) -> bool
   if pq.unread && !t.unread then return false end
@@ -404,18 +342,13 @@ pub fn matches(t: record, pq: record) -> bool
     let any = false
     for l in t.labels do
       if index_of(l, pq.label) == 0 then any = true end
-    end
     if !any then return false end
-  end
   if char_len(pq.from) > 0 && !sender_matches(t, pq.from) then return false end
   if len(pq.terms) > 0 then
     let hay = haystack(t)
     for term in pq.terms do
       if !contains(hay, term) then return false end
-    end
-  end
   true
-end
 
 # Add `tok` to the query, or take it out if it is already there — what a
 # filter chip does when it is clicked.
@@ -425,14 +358,11 @@ pub fn toggle_token(q: string, tok: string) -> string
     let kept = for t in toks do
       if t == tok then continue end
       t
-    end
     join(kept, " ")
   else if len(toks) == 0 then
     tok
   else
     trim_spaces(q) ++ " " ++ tok
-  end
-end
 
 # The line of body a row shows. With a search running, that is the stretch of
 # text around the first hit rather than the opening words, so the row shows
@@ -454,12 +384,7 @@ pub fn snippet(t: record, terms: list) -> string
           text = "… " ++ char_slice(b, from)
         else
           text = b
-        end
-      end
-    end
-  end
   text
-end
 
 # ── Transforms ───────────────────────────────────────────────────────────
 # Each takes the store and returns a new one; the caller owns the `state`.
@@ -468,30 +393,22 @@ pub fn find_thread(ts: list, id: int)
   let found = nil
   for t in ts do
     if t.id == id then found = t end
-  end
   found
-end
 
 pub fn move_to(ts: list, ids: list, box: string) -> list
   for t in ts do
     if contains(ids, t.id) then {...t, box: box} else t end
-  end
-end
 
 pub fn drop_threads(ts: list, ids: list) -> list
   for t in ts do
     if contains(ids, t.id) then continue end
     t
-  end
-end
 
 # The threads with these ids, as they are now: what an undo entry keeps.
 pub fn pick(ts: list, ids: list) -> list
   for t in ts do
     if !contains(ids, t.id) then continue end
     t
-  end
-end
 
 # Put `was` back: a thread that is still in the store returns to the mailbox
 # it was in and keeps whatever has happened to it since; one that was deleted
@@ -500,76 +417,57 @@ pub fn restore(ts: list, was: list) -> list
   let out = for t in ts do
     let old = find_thread(was, t.id)
     if old != nil then {...t, box: old.box} else t end
-  end
   for old in was do
     if find_thread(ts, old.id) == nil then out = append(out, old) end
-  end
   out
-end
 
 pub fn set_unread(ts: list, ids: list, unread: bool) -> list
   for t in ts do
     if contains(ids, t.id) then {...t, unread: unread} else t end
-  end
-end
 
 pub fn set_starred(ts: list, ids: list, starred: bool) -> list
   for t in ts do
     if contains(ids, t.id) then {...t, starred: starred} else t end
-  end
-end
 
 pub fn add_reply(ts: list, id: int, m: record) -> list
   for t in ts do
     if t.id == id then {...t, msgs: append(t.msgs, m), unread: false} else t end
-  end
-end
 
 pub fn next_id(ts: list) -> int
   let top = 0
   for t in ts do top = max(top, t.id) end
   top + 1
-end
 
 # Who a reply to this thread goes to: whoever last wrote that was not me.
 pub fn reply_to(t: record) -> list
   let key = ""
   for m in t.msgs do
     if m.from != ME then key = m.from end
-  end
   if key == "" then t.msgs[0].to else [key] end
-end
 
 pub fn count_unread(ts: list, view: string) -> int
   let n = 0
   for t in ts do
     if t.unread && in_view(t, view) then n = n + 1 end
-  end
   n
-end
 
 pub fn count_view(ts: list, view: string) -> int
   let n = 0
   for t in ts do
     if in_view(t, view) then n = n + 1 end
-  end
   n
-end
 
 # ── Seed data ────────────────────────────────────────────────────────────
 
 fn msg(from: string, to: list, age: int, body: list, atts: list)
   {from: from, to: to, age: age, body: body, atts: atts}
-end
 
 fn file(name: string, size: string, kind: string) -> record
   {name: name, size: size, kind: kind}
-end
 
 # `flags` holds "u" for unread and "s" for starred.
 fn thread(id: int, box: string, labels: list, subject: string, msgs: list, flags: string)
   {id: id, box: box, labels: labels, starred: contains(flags, "s"), unread: contains(flags, "u"), subject: subject, msgs: msgs}
-end
 
 pub fn seed_threads() -> list
   [
@@ -862,4 +760,3 @@ pub fn seed_threads() -> list
       ], []),
     ], ""),
   ]
-end

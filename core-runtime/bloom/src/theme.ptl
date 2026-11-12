@@ -57,15 +57,11 @@ pub fn theme() -> record
   let t = {}
   for k in keys(base) do
     t[k] = base[k]
-  end
   for k in keys(TOKENS) do
     t[k] = TOKENS[k]
-  end
   for k in keys(get _over) do
     t[k] = (get _over)[k]
-  end
   t
-end
 
 # Override tokens for the whole program. Merges, so an app usually sets one or
 # two keys: `theme_set({accent: #7c5cff, radius: 10})`.
@@ -73,28 +69,22 @@ pub fn theme_set(rec: record)
   let next = {}
   for k in keys(get _over) do
     next[k] = (get _over)[k]
-  end
   for k in keys(rec) do
     next[k] = rec[k]
-  end
   set _over = next
-end
 
 pub fn theme_reset()
   set _over = {}
-end
 
 # A duration scaled by the theme's `speed`, and its rate counterpart. Every
 # component asks for its timings through these two, which is what makes
 # `theme_set({speed: 0})` freeze an entire UI for a pixel diff.
 pub fn dur(t: record, seconds: num) -> float
   float(seconds) * float(field(t, "speed", 1.0))
-end
 
 pub fn rate(t: record, r: num) -> float
   let s = float(field(t, "speed", 1.0))
   if s <= 0.0 then 100000.0 else float(r) / s end
-end
 
 # ── The late layer ────────────────────────────────────────────────────────
 # A menu's popup belongs *above* everything, but the call that opens it sits
@@ -118,9 +108,7 @@ pub fn defer_paint(f: function)
   if !(get _late_begun) then
     set _late_begun = true
     overlays()
-  end
   set _late = append(get _late, f)
-end
 
 # Paint everything deferred this frame. Call it last; calling it twice, or
 # when nothing is pending, does nothing.
@@ -129,8 +117,6 @@ pub fn overlays()
   set _late = []
   for f in queued do
     f()
-  end
-end
 
 # ── Color ─────────────────────────────────────────────────────────────────
 
@@ -143,13 +129,10 @@ pub fn tone(t: record, c: record, amt: num)
     mix(c, t.text, clamp(a, 0.0, 1.0))
   else
     mix(c, t.bg, clamp(-a, 0.0, 1.0))
-  end
-end
 
 # The readable ink for text sitting on `c`.
 pub fn on(t: record, c: record)
   contrast_text(c)
-end
 
 # The fill for a named variant. Components take `variant` rather than a color
 # so a whole UI restyles from the theme.
@@ -160,8 +143,6 @@ pub fn variant_fill(t: record, name: string)
     when "success" -> t.success
     when "warn" -> t.warn
     when _ -> t.panel
-  end
-end
 
 pub fn variant_ink(t: record, name: string)
   match name
@@ -171,13 +152,10 @@ pub fn variant_ink(t: record, name: string)
     when "warn" -> contrast_text(t.warn)
     when "quiet" -> t.muted
     when _ -> t.text
-  end
-end
 
 # Whether a variant paints a filled face (and so must not also draw a border).
 pub fn variant_solid(name: string)
   name == "primary" || name == "danger" || name == "success" || name == "warn"
-end
 
 # ── Text ──────────────────────────────────────────────────────────────────
 
@@ -186,18 +164,15 @@ end
 # different face than it paints, and every centered label lands off.
 pub fn ts(t: record, size: num, color: record) -> record
   {size: size, font: field(t, "font", "ui"), color: color}
-end
 
 # The same, translucent. Alpha rides on the *color* record for styled text —
 # there is no `draw_text(s, pos, style, a)` overload, because the style is
 # where the host looks for it.
 pub fn ts_a(t: record, size: num, color: record, a: num) -> record
   {size: size, font: field(t, "font", "ui"), color: {r: color.r, g: color.g, b: color.b, a: int(clamp(float(a), 0.0, 255.0))}}
-end
 
 pub fn ts_bold(t: record, size: num, color: record) -> record
   {size: size, font: field(t, "font", "ui"), color: color, weight: 700}
-end
 
 # Draw `s` inside `r`, aligned. `align` is "left" | "center" | "right"; the
 # text is always vertically centered, which is what every control wants.
@@ -211,11 +186,9 @@ end
 # it read as a style rather than as a bug.
 pub fn text_in(s: string, r: record, style: record, align: string)
   draw_text_line(s, r, style, align)
-end
 
 pub fn text_in(s: string, r: record, style: record)
   draw_text_line(s, r, style, "left")
-end
 
 # The same for text that may be more than one line: wrapped to `r`, and cut
 # with an ellipsis if it still does not fit. `opts` is text_layout's — `lines`
@@ -224,23 +197,19 @@ end
 # around its text wants.
 pub fn text_block_in(s: string, r: record, style: record, opts: record)
   draw_text_block(s, r, style, opts)
-end
 
 pub fn text_block_in(s: string, r: record, style: record)
   draw_text_block(s, r, style, {valign: "middle"})
-end
 
 # `s` cut to fit `w` px in `style`, with a trailing "…". What a menu label, a
 # list row or a tab does with a name longer than its box.
 pub fn text_cut(s: string, style: record, w: num)
   elide(s, style, w)
-end
 
 # The size `s` takes in a box `w` px wide, `{w, h}` — for a component that
 # sizes itself to its text (a tooltip, a toast, a popover).
 pub fn text_extent(s: string, style: record, w: num)
   text_size(s, style, w)
-end
 
 # ── Surfaces ──────────────────────────────────────────────────────────────
 
@@ -250,15 +219,12 @@ pub fn surface(t: record, r: record, radius: num, level: num)
     let e = field(t, "elevation_" ++ str(min(level, 3)), {blur: 8, spread: 0, dy: 2, a: 48})
     draw_shadow(r, {radius: radius, blur: field(e, "blur", 8), spread: field(e, "spread", 0),
       dx: 0, dy: field(e, "dy", 2), color: :000000, a: field(e, "a", 48)})
-  end
   draw_rect_rounded(r, radius, t.panel)
   stroke(t, r, radius, hair(t))
-end
 
 # The border color a surface draws against its own background.
 pub fn hair(t: record)
   over(t.panel, t.text, field(t, "border_pct", 14) * 255 / 100)
-end
 
 # A rounded outline. There is no rounded-outline primitive, so this paints the
 # ring as a rounded rect with the face punched back out of it — the same trick
@@ -266,7 +232,6 @@ end
 # pixels.
 pub fn stroke(t: record, r: record, radius: num, color: record)
   stroke(t, r, radius, color, 1, t.panel)
-end
 
 pub fn stroke(t: record, r: record, radius: num, color: record, width: num, inner: record)
   if radius <= 0 then
@@ -274,8 +239,6 @@ pub fn stroke(t: record, r: record, radius: num, color: record, width: num, inne
   else
     draw_rect_rounded(r, radius, color)
     draw_rect_rounded(pad(r, width), max(0, radius - width), inner)
-  end
-end
 
 # The interaction wash over a surface, composited (never translucent): two
 # translucent fills over one pixel do not add up to the color the design says.
@@ -283,7 +246,6 @@ pub fn wash(t: record, base: record, hot: num, active: num)
   let h = float(field(t, "hover_pct", 8)) / 100.0
   let p = float(field(t, "press_pct", 14)) / 100.0
   mix(base, t.text, h * float(hot) + p * float(active))
-end
 
 # The focus ring: the accent bloomed *outside* the control, so focus never
 # changes a control's size or doubles its border.
@@ -294,8 +256,6 @@ pub fn focus_ring(t: record, r: record, radius: num, amount: num)
     let ring = Rect(r.x - grow, r.y - grow, r.w + grow * 2.0, r.h + grow * 2.0)
     draw_rect_rounded(ring, radius + grow, t.accent, int(field(t, "ring_pct", 55) * 255 / 100 * a))
     draw_rect_rounded(r, radius, t.panel)
-  end
-end
 
 # A hairline divider across the middle of `r`, horizontal or vertical.
 pub fn divider(t: record, r: record, axis: string)
@@ -306,5 +266,3 @@ pub fn divider(t: record, r: record, axis: string)
   else
     let y = r.y + r.h / 2
     draw_line({x: r.x, y: y}, {x: r.x + r.w, y: y}, c)
-  end
-end

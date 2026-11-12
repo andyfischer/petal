@@ -45,7 +45,6 @@ state focus_seeded = false
 if !focus_seeded then
   focus_request("catalog")
   focus_seeded = true
-end
 state cat_lst = list_state()
 state detail_scroll = 0
 state over_scroll = 0
@@ -111,10 +110,7 @@ fn commafmt(n)
       c += 1
       i -= 1
       if c % 3 == 0 && i > 0 then out = "," ++ out end
-    end
     out
-  end
-end
 
 # ── data: the catalog (loaded once, refreshed via cache policy on re-query) ──
 if !cat_ready then
@@ -125,8 +121,6 @@ if !cat_ready then
     cat_err = ""
   else if is_error(rd) then
     cat_err = error_of(rd) ?? "could not open database"
-  end
-end
 let tables = cat.tables
 let table_count = len(tables)
 # Left entries: row 0 is the Overview, rows 1.. are the tables/views.
@@ -136,7 +130,6 @@ let left_count = table_count + 1
 let max_rows = 1
 for i in range(0, table_count) do
   if tables[i].rows > max_rows then max_rows = tables[i].rows end
-end
 
 # ── layout + divider input: the splitter ─────────────────────────────────────
 # The splitter both updates its drag state and draws its divider line, so the
@@ -164,7 +157,6 @@ let detail_rect = rect(right_x - 6, content_top, right_w + 6, ch - PAD - content
 if mouse_pressed(0) && !dragging then
   if point_in(mouse_x(), mouse_y(), cat_rect) then focus_request("catalog") end
   if point_in(mouse_x(), mouse_y(), detail_rect) then focus_request("detail") end
-end
 
 # ── input: catalog selection, lazy detail fetch on change ──────────────────────
 # `ui`'s list: keyboard nav gated on focus, click-select, and a wheel
@@ -190,8 +182,6 @@ if !is_overview && want != loaded_arg then
     detail_err = error_of(fetched) ?? "load failed"
   else
     detail_loading = true
-  end
-end
 if is_overview && selected != prev_sel then over_scroll = 0; prev_sel = selected end
 
 # ── schema strip geometry (only for a table view) ─────────────────────────────
@@ -220,14 +210,11 @@ if is_overview then
   over_scroll = scroll_update(over_scroll, table_count, over_rows, over_rect, has_focus("detail"))
 else
   detail_scroll = scroll_update(detail_scroll, detail_lines, grid_rows, grid_rect, has_focus("detail"))
-end
 if has_focus("detail") then
   if is_overview then
     over_scroll = scroll_keys(over_scroll, table_count, over_rows)
   else
     detail_scroll = scroll_keys(detail_scroll, detail_lines, grid_rows)
-  end
-end
 detail_scroll = int(clamp(detail_scroll, 0, max(0, detail_lines - grid_rows)))
 over_scroll = int(clamp(over_scroll, 0, max(0, table_count - over_rows)))
 
@@ -253,7 +240,6 @@ if cat_ready && len(cat_err) == 0 then
   let nview = 0
   for i in range(0, table_count) do
     if tables[i].kind == "view" then nview += 1 else ntab += 1 end
-  end
   let tw = "tables"
   if ntab == 1 then tw = "table" end
   let vw = "views"
@@ -264,7 +250,6 @@ if cat_ready && len(cat_err) == 0 then
   draw_text(ellipsize(cat.path, w - 2 * PAD - text_width(sub, FS) - 16, FS),
     {x: PAD, y: PAD + 21}, FS, DIM)
   draw_text_right(sub, w - PAD, PAD + 21, FS, DIM)
-end
 draw_line({x: 0, y: content_top - 10}, {x: w, y: content_top - 10}, LINE)
 
 # ── draw: catalog section ───────────────────────────────────────────────────────
@@ -274,7 +259,6 @@ if len(cat_err) > 0 then
   draw_text(ellipsize(cat_err, cat_rect.w, FS), {x: PAD + 4, y: cat_rect.y + 22}, FS, MUT)
 else if !cat_ready then
   draw_text("loading {bloom.spinner_glyph()}", {x: PAD + 4, y: cat_rect.y + 4}, FS, DIM)
-end
 
 let count_w = 78
 let name_px = cat_rect.w - 14 - count_w
@@ -290,7 +274,6 @@ for i in range(0, cvis) do
     draw_rect(row_r, selbg)
   else
     if hovered(row_r) then draw_rect(row_r, HOVER) end
-  end
   if idx == 0 then
     draw_rect(rect(cat_rect.x, ry + 4, 3, ROW_H - 8), ACCENT)
     let ov_c = MUT
@@ -309,8 +292,6 @@ for i in range(0, cvis) do
     if t.kind == "view" then kindlabel = "view · {t.cols} cols" end
     draw_text(kindlabel, {x: cat_rect.x + 12, y: ry + 20}, FS, FAINT)
     draw_text_right(commafmt(t.rows), cat_rect.x + cat_rect.w - 8, ry + ROW_H / 2 - 8, FS, DIM)
-  end
-end
 clip_none()
 bloom.scrollbar(cat_rect, left_count, cat_rows, cat_lst.scroll)
 
@@ -322,12 +303,10 @@ if is_overview then
   draw_line({x: right_x, y: content_top + 22}, {x: w - PAD, y: content_top + 22}, LINE)
   if table_count == 0 then
     bloom.empty_state(over_rect, "No tables", "this database has no objects")
-  end
   let bar_label_w = 0
   for i in range(0, table_count) do
     let lw = text_width(tables[i].name, FS)
     if lw > bar_label_w then bar_label_w = lw end
-  end
   bar_label_w = min(bar_label_w + 14, int(float(over_rect.w) * 0.4))
   let bar_x = over_rect.x + bar_label_w
   let bar_max = over_rect.w - bar_label_w - 90
@@ -349,7 +328,6 @@ if is_overview then
     bloom.progress(rect(bar_x, cy - 8, bar_max, 16), frac, {color: col})
     # value
     draw_text(commafmt(t.rows), {x: bar_x + bar_max + 8, y: cy - 8}, FS, DIM)
-  end
   clip_none()
   bloom.scrollbar(over_rect, table_count, over_rows, over_scroll)
 else
@@ -362,10 +340,8 @@ else
   if detail.truncated then sub = "first {commafmt(detail.row_count)} rows (truncated) · {ncols} cols" end
   if !detail_loading && len(detail_err) == 0 then
     draw_text_right(sub, w - PAD, content_top, FS, DIM)
-  end
   if has_focus("detail") then
     draw_rect(rect(right_x, content_top + 19, text_width(heading, FS), 2), ACCENT)
-  end
   draw_line({x: right_x, y: content_top + 22}, {x: w - PAD, y: content_top + 22}, LINE)
 
   if len(detail_err) > 0 then
@@ -394,7 +370,6 @@ else
       if cursor + cwid > w - PAD && cursor > sx then
         line_no += 1
         cursor = sx
-      end
       let yy = sy + line_no * LINE_H
       if line_no < schema_rows then
         draw_text(c.name, {x: cursor, y: yy}, FS, TEXT)
@@ -402,10 +377,7 @@ else
         draw_text(ty, {x: after, y: yy}, FS, GREEN)
         if len(badge) > 0 then
           draw_text(badge, {x: after + text_width(ty, FS), y: yy}, FS, ORANGE)
-        end
-      end
       cursor += cwid
-    end
 
     # the data grid (selectable text_view with per-line styles)
     if detail_lines == 0 then
@@ -416,12 +388,8 @@ else
       for li in range(0, detail_lines) do
         dlines = append(dlines, detail.lines[li].text)
         dstyles = append(dstyles, detail.lines[li].style)
-      end
       text_view(1, grid_rect.x, grid_rect.y, grid_rect.w, grid_rect.h, join(dlines, "\n"))
       text_view_line_styles(1, dstyles)
-    end
-  end
-end
 
 # ── draw: keyboard hints ─────────────────────────────────────────────────────
 bloom.hint_bar(rect(0, ch, w, HINT_H),

@@ -29,17 +29,14 @@ let card_w = 56
 
 fn card_x(i)
   x0 + i * (card_w + gap)
-end
 
 fn card(i, label)
   let x = card_x(i)
   draw_rect(x: x, y: y0, w: card_w, h: 72, r: 70, g: 165, b: 150)
   draw_text(label, x: x + 8, y: y0 + 8, size: 14, r: 16, g: 20, b: 26)
-end
 
 clear(16, 18, 26)
 let labels = ["A", "B", "C", "D", "E"]
 for i in range(0, len(labels)) do
   card(i, labels[i])
-end
 draw_text("drag a card (drag mode: Cmd+Shift+D)", x: x0, y: y0 + 90, size: 12, r: 130, g: 145, b: 175)

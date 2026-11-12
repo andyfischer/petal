@@ -38,7 +38,6 @@ enum Ty
   named(id, dim: 0),
   # The type of an expression that was refused.
   unknown(dim: 0),
-end
 
 let TY_BY_NAME = {
   float: Ty.float, int: Ty.int, bool: Ty.bool,
@@ -49,34 +48,27 @@ let VEC_OF_DIM = [Ty.unknown, Ty.float, Ty.vec2, Ty.vec3, Ty.vec4]
 
 fn ty_named(name: string) -> Ty
   TY_BY_NAME?.[name] ?? Ty.named(name)
-end
 
 fn ty_text(t: Ty) -> string
   match t
     when Ty.named(id) -> id
     when Ty.unknown -> "?"
     when _ -> t.name
-  end
-end
 
 # A float, int, bool or vector: what a uniform or a local may be.
 fn is_value_type(t: Ty) -> bool
   t.dim > 0
-end
 
 fn is_vec(t: Ty) -> bool
   t.dim > 1
-end
 
 fn is_num(t: Ty) -> bool
   t == Ty.int || t == Ty.float
-end
 
 # The vector type a call of `name` constructs (`vec3(...)`), or nil.
 fn vec_ctor(name: string)
   let t = TY_BY_NAME?.[name]
   if t != nil && is_vec(t) then t else nil end
-end
 
 # `env.structs` with its field types read: {Fx: {color: Ty.vec3, ...}}.
 fn read_structs(raw: record) -> record
@@ -85,11 +77,8 @@ fn read_structs(raw: record) -> record
     let fields = {}
     for f in keys(raw[name]) do
       fields[f] = ty_named(raw[name][f])
-    end
     out[name] = fields
-  end
   out
-end
 
 # `env.functions` with its signatures read.
 fn read_signatures(raw: record) -> record
@@ -97,9 +86,7 @@ fn read_signatures(raw: record) -> record
   for name in keys(raw) do
     let sig = raw[name]
     out[name] = Sig(for a in sig.args do ty_named(a) end, ty_named(sig.returns))
-  end
   out
-end
 
 # --- Tables ----------------------------------------------------------------
 
@@ -153,51 +140,41 @@ class Val
   lit,
   # The value of a constant int expression (for loop trip counts), or nil.
   cv,
-end
 
 # The two operands of an arithmetic operator, brought to compatible types.
 class Operands
   a: Val,
   b: Val,
   ty: Ty,
-end
 
 # A function body's tail value and where it is.
 class Tail
   v: Val,
   node: record,
-end
 
 fn atom(code: string, ty: Ty) -> Val
   Val(code, ty, 8, nil, nil)
-end
 
 fn bad() -> Val
   Val("?", Ty.unknown, 8, nil, nil)
-end
 
 fn at(v: Val, prec: int) -> string
   if v.prec >= prec then v.code else "(" ++ v.code ++ ")" end
-end
 
 fn has(rec: record, name: string) -> bool
   rec?.[name] != nil
-end
 
 fn float_lit(x: num) -> string
   let text = str(float(x))
   if index_of(text, ".") < 0 && index_of(text, "e") < 0 then text ++ ".0" else text end
-end
 
 fn finite(x: float) -> bool
   x == x && x < 1.0e300 && x > -1.0e300
-end
 
 fn srgb_to_linear(channel: int) -> float
   let c = channel / 255.0
   let lin = if c <= 0.04045 then c / 12.92 else pow((c + 0.055) / 1.055, 2.4) end
   round(lin * 1000000.0) / 1000000.0
-end
 
 # Whether `v` (any value) is a color record (what `#rrggbb` evaluates to).
 fn is_color(v) -> bool
@@ -205,12 +182,10 @@ fn is_color(v) -> bool
   let ks = keys(v)
   if len(ks) != 3 then return false end
   type(v?.r) == "int" && type(v?.g) == "int" && type(v?.b) == "int"
-end
 
 fn color_vec3(r: int, g: int, b: int) -> string
   "vec3(" ++ float_lit(srgb_to_linear(r)) ++ ", " ++ float_lit(srgb_to_linear(g)) ++ ", " ++
     float_lit(srgb_to_linear(b)) ++ ")"
-end
 
 # [r, g, b] when `node` is what a color literal parses to, else nil.
 fn color_of(node: record)
@@ -219,13 +194,10 @@ fn color_of(node: record)
   for f in node.fields do
     if f.spread || f.value.tag != "Literal" || f.value.type != "int" then return nil end
     out[f.name] = f.value.value
-  end
   if has(out, "r") && has(out, "g") && has(out, "b") then [out.r, out.g, out.b] else nil end
-end
 
 fn join_codes(vals: list) -> string
   join(for v in vals do v.code end, ", ")
-end
 
 # --- The translation context -----------------------------------------------
 #
@@ -238,7 +210,6 @@ end
 class Cell
   read: function,
   write: function,
-end
 
 class Config
   # {name: Sig}: the functions the shader has that Petal does not.
@@ -252,24 +223,20 @@ class Config
   uniforms_struct: string,
   # In front of a helper's GLSL name.
   prefix: string,
-end
 
 class Sig
   args: list,
   returns: Ty,
-end
 
 # A local or a parameter in scope: its GLSL name and type.
 class Local
   glsl: string,
   ty: Ty,
-end
 
 # A hook's result: the struct field the body's value is assigned to.
 class Hook
   target: string,
   ty: Ty,
-end
 
 # A translated helper and how to call it. Emitted once per name.
 class Helper
@@ -278,7 +245,6 @@ class Helper
   ret: Ty,
   taps: int,
   taps_hidden: bool,
-end
 
 class FnState
   lines: list,
@@ -293,7 +259,6 @@ class FnState
   taps_hidden: bool,
   # The return type, a Ty once known.
   ret_ty,
-end
 
 class TranslationState
   # {name: Helper}.
@@ -307,7 +272,6 @@ class TranslationState
   uniform_types: record,
   # The helpers being translated (to refuse recursion).
   busy: list,
-end
 
 class Ctx
   read: function,
@@ -323,15 +287,13 @@ class Ctx
   fn_name,
   line,
   column,
-end
 
 fn cell(initial) -> Cell
   var value = initial
   Cell(read: fn() -> get value, write: fn(s)
     set value = s
     nil
-  end)
-end
+  )
 
 # `node` is the construct refused, or nil for the function itself.
 fn fail(c: Ctx, message: string, node) -> Val
@@ -341,19 +303,15 @@ fn fail(c: Ctx, message: string, node) -> Val
     let column = if node != nil then node.column else c.column end
     ts.err = {message: message, line: line, column: column}
     c.tr.write(ts)
-  end
   bad()
-end
 
 fn failed(c: Ctx) -> bool
   c.tr.read().err != nil
-end
 
 fn emit(c: Ctx, text: string) -> nil
   let s = c.read()
   s.lines = append(s.lines, repeat("    ", s.indent) ++ text)
   c.write(s)
-end
 
 fn declare(c: Ctx, name: string, ty: Ty) -> string
   let s = c.read()
@@ -362,7 +320,6 @@ fn declare(c: Ctx, name: string, ty: Ty) -> string
   while has(s.used, glsl) do
     glsl = name ++ "_" ++ str(n)
     n += 1
-  end
   s.used[glsl] = true
   let top = len(s.scopes) - 1
   let scope = s.scopes[top]
@@ -370,7 +327,6 @@ fn declare(c: Ctx, name: string, ty: Ty) -> string
   s.scopes[top] = scope
   c.write(s)
   glsl
-end
 
 # The Local `name` is, or nil.
 fn lookup(c: Ctx, name: string)
@@ -379,27 +335,22 @@ fn lookup(c: Ctx, name: string)
   for i in range(0, n) do
     let found = scopes[n - 1 - i]?.[name]
     if found != nil then return found end
-  end
   nil
-end
 
 fn push_scope(c: Ctx) -> nil
   let s = c.read()
   s.scopes = append(s.scopes, {})
   c.write(s)
-end
 
 fn pop_scope(c: Ctx) -> nil
   let s = c.read()
   s.scopes = drop_last(s.scopes)
   c.write(s)
-end
 
 fn indent_by(c: Ctx, by: int) -> nil
   let s = c.read()
   s.indent += by
   c.write(s)
-end
 
 # --- Types -----------------------------------------------------------------
 
@@ -408,17 +359,13 @@ fn to_float(c: Ctx, v: Val, node: record) -> Val
   if v.ty == Ty.int then
     if v.lit != nil then
       return Val(float_lit(v.lit), Ty.float, if v.lit < 0 then 7 else 8 end, nil, nil)
-    end
     return atom("float(" ++ v.code ++ ")", Ty.float)
-  end
   fail(c, "expected a number, found " ++ ty_text(v.ty), node)
-end
 
 fn coerce(c: Ctx, v: Val, ty: Ty, node: record) -> Val
   if v.ty == ty then return v end
   if ty == Ty.float then return to_float(c, v, node) end
   fail(c, "expected " ++ ty_text(ty) ++ ", found " ++ ty_text(v.ty), node)
-end
 
 # Bring two operands of an arithmetic operator to compatible GLSL types.
 fn unify(c: Ctx, a: Val, b: Val, node: record) -> Operands
@@ -427,16 +374,12 @@ fn unify(c: Ctx, a: Val, b: Val, node: record) -> Operands
   if is_vec(b.ty) && is_num(a.ty) then return Operands(to_float(c, a, node), b, b.ty) end
   if is_num(a.ty) && is_num(b.ty) then
     return Operands(to_float(c, a, node), to_float(c, b, node), Ty.float)
-  end
   fail(c, "no GLSL operation between " ++ ty_text(a.ty) ++ " and " ++ ty_text(b.ty), node)
   Operands(a, b, Ty.unknown)
-end
 
 fn floats(c: Ctx, args: list, node: record) -> list
   for a in args do
     if is_vec(a.ty) then a else to_float(c, a, node) end
-  end
-end
 
 fn widest(c: Ctx, vals: list, node: record) -> Ty
   let found = nil
@@ -445,12 +388,8 @@ fn widest(c: Ctx, vals: list, node: record) -> Ty
       if found != nil && found != v.ty then
         fail(c, "mixed vector sizes " ++ ty_text(found) ++ " and " ++ ty_text(v.ty), node)
         return Ty.unknown
-      end
       found = v.ty
-    end
-  end
   found ?? Ty.float
-end
 
 # --- Expressions -----------------------------------------------------------
 
@@ -469,26 +408,21 @@ fn expr(c: Ctx, node: record) -> Val
     when "For" -> fail(c, "a `for` used as a value builds a list, which has no GLSL form", node)
     when "Lambda" -> fail(c, "a function value has no GLSL form", node)
     when other -> fail(c, other ++ " has no GLSL form", node)
-  end
-end
 
 fn e_literal(c: Ctx, node: record) -> Val
   if node.type == "float" then return atom(float_lit(node.value), Ty.float) end
   if node.type == "int" then return Val(str(node.value), Ty.int, 8, node.value, node.value) end
   if node.type == "bool" then return atom(if node.value then "true" else "false" end, Ty.bool) end
   fail(c, "a " ++ node.type ++ " literal has no GLSL form", node)
-end
 
 # A captured value read as an expression.
 fn capture(c: Ctx, name: string, value, node: record) -> Val
   let t = type(value)
   if t == "int" then
     return Val(str(value), Ty.int, if value < 0 then 7 else 8 end, value, value)
-  end
   if t == "bool" then return atom(if value then "true" else "false" end, Ty.bool) end
   if t == "function" then
     return fail(c, "`" ++ name ++ "` is a function; a function can only be called here", node)
-  end
   let ty = if t == "float" then Ty.float
     else if t == "vec2" then Ty.vec2
     else if t == "vec3" then Ty.vec3
@@ -496,23 +430,17 @@ fn capture(c: Ctx, name: string, value, node: record) -> Val
     else nil end
   if ty == nil then
     return fail(c, "captured `" ++ name ++ "` is a " ++ t ++ ", which has no GLSL form", node)
-  end
   if c.cfg.inline then
     if t == "float" then
       if !finite(value) then
         return fail(c, "captured `" ++ name ++ "` is not a finite number", node)
-      end
       return Val(float_lit(value), Ty.float, if value < 0.0 then 7 else 8 end, nil, nil)
-    end
     if t == "vec2" then
       return atom("vec2(" ++ float_lit(value.x) ++ ", " ++ float_lit(value.y) ++ ")", Ty.vec2)
-    end
     if t == "vec3" then
       return atom("vec3(" ++ float_lit(value.x) ++ ", " ++ float_lit(value.y) ++ ", " ++
         float_lit(value.z) ++ ")", Ty.vec3)
-    end
     return atom(color_vec3(value.r, value.g, value.b), Ty.vec3)
-  end
   # A uniform: the text then depends on the code alone, never on the value.
   let uname = c.uniform_prefix ++ name
   let ts = c.tr.read()
@@ -520,9 +448,7 @@ fn capture(c: Ctx, name: string, value, node: record) -> Val
     ts.uniforms = append(ts.uniforms, uname)
     ts.uniform_types[uname] = ty_text(ty)
     c.tr.write(ts)
-  end
   atom(c.cfg.uniforms_struct ++ uname, ty)
-end
 
 fn e_ident(c: Ctx, node: record) -> Val
   let found = lookup(c, node.name)
@@ -530,15 +456,12 @@ fn e_ident(c: Ctx, node: record) -> Val
   let cap = c.captures?.[node.name]
   if cap != nil then return capture(c, node.name, cap.value, node) end
   fail(c, "`" ++ node.name ++ "` is not a local, a parameter or a captured value", node)
-end
 
 fn e_record(c: Ctx, node: record) -> Val
   let rgb = color_of(node)
   if rgb == nil then
     return fail(c, "a record has no GLSL form (only a color literal does)", node)
-  end
   atom(color_vec3(rgb[0], rgb[1], rgb[2]), Ty.vec3)
-end
 
 fn e_unary(c: Ctx, node: record) -> Val
   let v = expr(c, node.operand)
@@ -546,14 +469,10 @@ fn e_unary(c: Ctx, node: record) -> Val
     if v.lit != nil then return Val(str(-v.lit), Ty.int, 7, -v.lit, -v.lit) end
     if !is_num(v.ty) && !is_vec(v.ty) then
       return fail(c, "cannot negate " ++ ty_text(v.ty), node)
-    end
     return Val("-" ++ at(v, 8), v.ty, 7, nil, if v.cv != nil then -v.cv else nil end)
-  end
   if v.ty != Ty.bool then
     return fail(c, "`!` needs a bool (GLSL has no truthiness)", node)
-  end
   Val("!" ++ at(v, 8), Ty.bool, 7, nil, nil)
-end
 
 fn e_binary(c: Ctx, node: record) -> Val
   let op = node.op
@@ -563,32 +482,25 @@ fn e_binary(c: Ctx, node: record) -> Val
   if op == "And" || op == "Or" then
     if a.ty != Ty.bool || b.ty != Ty.bool then
       return fail(c, "`" ++ lower(op) ++ "` needs bools (GLSL has no truthiness)", node)
-    end
     let o = BINOPS[op]
     return Val(at(a, o.prec) ++ " " ++ o.sym ++ " " ++ at(b, o.prec + 1), Ty.bool, o.prec, nil, nil)
-  end
   if op == "Mod" then
     let u = unify(c, a, b, node)
     if u.ty == Ty.int then
       return Val(at(u.a, 6) ++ " % " ++ at(u.b, 7), Ty.int, 6, nil, nil)
-    end
     return atom("mod(" ++ u.a.code ++ ", " ++ u.b.code ++ ")", u.ty)
-  end
   let o = BINOPS?.[op]
   if o == nil then
     return fail(c, "operator " ++ op ++ " has no GLSL form", node)
-  end
   let u = unify(c, a, b, node)
   if failed(c) then return bad() end
   let ty = u.ty
   if o.prec == 4 || o.prec == 3 then
     if o.prec == 4 && !is_num(ty) then
       return fail(c, if is_vec(ty) then "vectors do not order" else "cannot order " ++ ty_text(ty) end, node)
-    end
     ty = Ty.bool
   else if !is_num(ty) && !is_vec(ty) then
     return fail(c, "no GLSL operation `" ++ o.sym ++ "` on " ++ ty_text(ty), node)
-  end
   let cv = nil
   if ty == Ty.int && a.cv != nil && b.cv != nil then
     cv = match op
@@ -596,10 +508,7 @@ fn e_binary(c: Ctx, node: record) -> Val
       when "Sub" -> a.cv - b.cv
       when "Mul" -> a.cv * b.cv
       when _ -> nil
-    end
-  end
   Val(at(u.a, o.prec) ++ " " ++ o.sym ++ " " ++ at(u.b, o.prec + 1), ty, o.prec, nil, cv)
-end
 
 fn swizzle_ok(field: string, dim: int) -> bool
   let n = len(field)
@@ -609,19 +518,14 @@ fn swizzle_ok(field: string, dim: int) -> bool
     let ok = true
     for i in range(0, n) do
       if index_of(allowed, field[i]) < 0 then ok = false end
-    end
     if ok then return true end
-  end
   false
-end
 
 # {field: Ty} when `ty` is a struct of the environment, else nil.
 fn struct_fields(c: Ctx, ty: Ty)
   match ty
     when Ty.named(id) -> c.cfg.structs?.[id]
     when _ -> nil
-  end
-end
 
 fn e_field(c: Ctx, node: record) -> Val
   let obj = expr(c, node.object)
@@ -632,30 +536,22 @@ fn e_field(c: Ctx, node: record) -> Val
     let fty = fields?.[field]
     if fty == nil then
       return fail(c, ty_text(obj.ty) ++ " has no field `" ++ field ++ "`", node)
-    end
     return atom(at(obj, 8) ++ "." ++ field, fty)
-  end
   if is_vec(obj.ty) then
     if swizzle_ok(field, obj.ty.dim) then
       return atom(at(obj, 8) ++ "." ++ field, VEC_OF_DIM[len(field)])
-    end
     return fail(c, ty_text(obj.ty) ++ " has no component(s) `" ++ field ++ "`", node)
-  end
   fail(c, "field access on " ++ ty_text(obj.ty), node)
-end
 
 fn cond(c: Ctx, node: record) -> Val
   let v = expr(c, node)
   if failed(c) then return bad() end
   if v.ty != Ty.bool then
     return fail(c, "a condition must be a bool, found " ++ ty_text(v.ty) ++ " (GLSL has no truthiness)", node)
-  end
   v
-end
 
 fn single_expr(stmts: list) -> bool
   len(stmts) == 1 && stmts[0].tag == "Expr"
-end
 
 # An `if` whose value is used.
 fn e_if(c: Ctx, node: record) -> Val
@@ -663,7 +559,6 @@ fn e_if(c: Ctx, node: record) -> Val
   let else_body = node.else_body
   if else_body == nil then
     return fail(c, "an `if` used as a value needs an `else`", node)
-  end
   if single_expr(then_body) && single_expr(else_body) then
     # Two plain expressions: a ternary, unless an arm needs statements of its
     # own (then everything it did is undone and the general form is used).
@@ -676,9 +571,7 @@ fn e_if(c: Ctx, node: record) -> Val
       let u = unify(c, a, b, node)
       if failed(c) then return bad() end
       return Val(at(cv, 1) ++ " ? " ++ at(u.a, 1) ++ " : " ++ at(u.b, 1), u.ty, 0, nil, nil)
-    end
     c.write(saved)
-  end
   # A temporary assigned in both arms.
   let tmp = declare(c, "pick", Ty.unknown)
   let slot = len(c.read().lines)
@@ -693,29 +586,24 @@ fn e_if(c: Ctx, node: record) -> Val
   if ty != ty2 then
     return fail(c, "the arms of this `if` have different types (" ++ ty_text(ty) ++ ", " ++
       ty_text(ty2) ++ ")", node)
-  end
   let s = c.read()
   s.lines[slot] = repeat("    ", s.indent) ++ ty_text(ty) ++ " " ++ tmp ++ ";"
   c.write(s)
   atom(tmp, ty)
-end
 
 fn branch_value(c: Ctx, stmts: list, tmp: string, node: record) -> Ty
   if len(stmts) == 0 || stmts[len(stmts) - 1].tag != "Expr" then
     fail(c, "this arm has no value", node)
     return Ty.unknown
-  end
   indent_by(c, 1)
   push_scope(c)
   for i in range(0, len(stmts) - 1) do
     stmt(c, stmts[i])
-  end
   let v = expr(c, stmts[len(stmts) - 1].expr)
   emit(c, tmp ++ " = " ++ v.code ++ ";")
   pop_scope(c)
   indent_by(c, -1)
   v.ty
-end
 
 fn count_taps(c: Ctx, times: int) -> nil
   let s = c.read()
@@ -723,21 +611,16 @@ fn count_taps(c: Ctx, times: int) -> nil
     s.taps_hidden = true
   else
     s.taps += times * s.loop_factor
-  end
   c.write(s)
-end
 
 fn call_text(name: string, vals: list) -> string
   name ++ "(" ++ join_codes(vals) ++ ")"
-end
 
 fn e_call(c: Ctx, node: record) -> Val
   if node.function.tag != "Ident" then
     return fail(c, "only calls of named functions translate", node)
-  end
   if len(node.arg_names) > 0 then
     return fail(c, "named arguments do not translate; pass them by position", node)
-  end
   let name = node.function.name
   let args = for a in node.args do expr(c, a) end
   if failed(c) then return bad() end
@@ -747,8 +630,6 @@ fn e_call(c: Ctx, node: record) -> Val
     let cap = c.captures?.[name]
     if cap != nil && type(cap.value) == "function" then
       return call_helper(c, name, cap.value, args, node)
-    end
-  end
   let vt = vec_ctor(name)
   if vt != nil then
     let fl = floats(c, args, node)
@@ -756,51 +637,39 @@ fn e_call(c: Ctx, node: record) -> Val
     let total = 0
     for a in fl do
       total += a.ty.dim
-    end
     if total != 1 && total != vt.dim then
       return fail(c, name ++ "() from " ++ join(for a in fl do ty_text(a.ty) end, ", "), node)
-    end
     return atom(call_text(name, fl), vt)
-  end
   if name == "float" && n == 1 then return to_float(c, args[0], node) end
   if name == "int" && n == 1 then
     if !is_num(args[0].ty) then return fail(c, "int() of " ++ ty_text(args[0].ty), node) end
     return atom(call_text("int", args), Ty.int)
-  end
   let sig = c.cfg.env_fns?.[name]
   if sig != nil then
     if n != len(sig.args) then
       return fail(c, name ++ "() takes " ++ str(len(sig.args)) ++ " argument(s)", node)
-    end
     if contains(c.cfg.counted, name) then count_taps(c, 1) end
     let vals = for i in range(0, n) do coerce(c, args[i], sig.args[i], node) end
     if failed(c) then return bad() end
     return atom(call_text(name, vals), sig.returns)
-  end
   if has(KEEP_INT_1, name) && n == 1 then
     if !is_num(args[0].ty) && !is_vec(args[0].ty) then
       return fail(c, name ++ "() of " ++ ty_text(args[0].ty), node)
-    end
     return atom(call_text(KEEP_INT_1[name], args), args[0].ty)
-  end
   if has(SAME_TYPE_1, name) && n == 1 then
     let fl = floats(c, args, node)
     if failed(c) then return bad() end
     return atom(call_text(SAME_TYPE_1[name], fl), fl[0].ty)
-  end
   if (name == "min" || name == "max") && n == 2 then
     if args[0].ty == Ty.int && args[1].ty == Ty.int then
       return atom(call_text(name, args), Ty.int)
-    end
     let fl = floats(c, args, node)
     let ty = widest(c, fl, node)
     if failed(c) then return bad() end
     return atom(call_text(name, fl), ty)
-  end
   if has(WIDEST_N, name) then
     if n != WIDEST_N[name] then
       return fail(c, name ++ "() takes " ++ str(WIDEST_N[name]) ++ " arguments", node)
-    end
     let fl = floats(c, args, node)
     let ty = widest(c, fl, node)
     if failed(c) then return bad() end
@@ -808,43 +677,33 @@ fn e_call(c: Ctx, node: record) -> Val
       # GLSL's pow wants both arguments of one type.
       fl = for a in fl do
         if a.ty == ty then a else atom(ty_text(ty) ++ "(" ++ a.code ++ ")", ty) end
-      end
-    end
     return atom(call_text(if name == "lerp" then "mix" else name end, fl), ty)
-  end
   if name == "mag" || name == "distance" || name == "dot" then
     let fl = floats(c, args, node)
     if failed(c) then return bad() end
     if name == "mag" && n > 1 then
       if n > 4 then return fail(c, "mag() takes at most 4 numbers", node) end
       return atom("length(" ++ ty_text(VEC_OF_DIM[n]) ++ "(" ++ join_codes(fl) ++ "))", Ty.float)
-    end
     return atom(call_text(if name == "mag" then "length" else name end, fl), Ty.float)
-  end
   if name == "cross" && n == 2 then return atom(call_text("cross", args), Ty.vec3) end
   if name == "atan2" && n == 2 then
     let fl = floats(c, args, node)
     if failed(c) then return bad() end
     return atom(call_text("atan", fl), Ty.float)
-  end
   if name == "hypot" && n == 2 then
     let fl = floats(c, args, node)
     if failed(c) then return bad() end
     return atom("length(vec2(" ++ join_codes(fl) ++ "))", Ty.float)
-  end
   if name == "pi" && n == 0 then return atom("3.141592653589793", Ty.float) end
   if name == c.fn_name then
     return fail(c, "`" ++ name ++ "` calls itself; GLSL has no recursion", node)
-  end
   fail(c, "`" ++ name ++ "` is not a function the shader has", node)
-end
 
 fn call_helper(c: Ctx, name: string, value: function, args: list, node: record) -> Val
   let h = helper(c, name, value, node)
   if h == nil then return bad() end
   if len(args) != len(h.params) then
     return fail(c, name ++ "() takes " ++ str(len(h.params)) ++ " argument(s)", node)
-  end
   let vals = for i in range(0, len(args)) do coerce(c, args[i], h.params[i], node) end
   if failed(c) then return bad() end
   let s = c.read()
@@ -852,7 +711,6 @@ fn call_helper(c: Ctx, name: string, value: function, args: list, node: record) 
   if h.taps_hidden || (h.taps > 0 && s.loop_factor == nil) then s.taps_hidden = true end
   c.write(s)
   atom(call_text(h.glsl, vals), h.ret)
-end
 
 # --- Statements ------------------------------------------------------------
 
@@ -863,28 +721,22 @@ fn body(c: Ctx, stmts: list)
   if n == 0 then return nil end
   for i in range(0, n - 1) do
     stmt(c, stmts[i])
-  end
   let last = stmts[n - 1]
   if last.tag == "Expr" then
     let e = last.expr
     # A loop, or an `if` with no `else`, ends the body as a statement.
     if e.tag != "For" && !(e.tag == "If" && e.else_body == nil) then
       return Tail(expr(c, e), e)
-    end
-  end
   stmt(c, last)
   nil
-end
 
 fn block(c: Ctx, stmts: list) -> nil
   indent_by(c, 1)
   push_scope(c)
   for s in stmts do
     stmt(c, s)
-  end
   pop_scope(c)
   indent_by(c, -1)
-end
 
 fn stmt(c: Ctx, node: record) -> nil
   if failed(c) then return nil end
@@ -896,22 +748,18 @@ fn stmt(c: Ctx, node: record) -> nil
     if !type_ok(c, v.ty) then
       fail(c, "a local cannot hold a " ++ ty_text(v.ty), node)
       return nil
-    end
     emit(c, ty_text(v.ty) ++ " " ++ declare(c, node.name, v.ty) ++ " = " ++ v.code ++ ";")
   else if tag == "Set" || tag == "Assign" then
     if node.target.kind != "Name" then
       fail(c, "only whole variables can be assigned (vectors are immutable in Petal)", node)
       return nil
-    end
     let found = lookup(c, node.target.name)
     if found == nil then
       fail(c, "`" ++ node.target.name ++ "` is not a local of this function", node)
       return nil
-    end
     if index_of(found.glsl, ".") >= 0 then
       fail(c, "`" ++ node.target.name ++ "` is a parameter; a shader cannot assign to it", node)
       return nil
-    end
     let v = coerce(c, expr(c, node.value), found.ty, node)
     if failed(c) then return nil end
     emit(c, found.glsl ++ " = " ++ v.code ++ ";")
@@ -924,7 +772,6 @@ fn stmt(c: Ctx, node: record) -> nil
     else
       let v = expr(c, e)
       if !failed(c) then emit(c, v.code ++ ";") end
-    end
   else if tag == "For" then
     for_stmt(c, node)
   else if tag == "While" then
@@ -944,15 +791,12 @@ fn stmt(c: Ctx, node: record) -> nil
       ret(c, nil, node)
     else
       ret(c, expr(c, node.value), node.value)
-    end
   else if tag == "Break" then
     emit(c, "break;")
   else if tag == "Continue" then
     emit(c, "continue;")
   else
     fail(c, tag ++ " has no GLSL form", node)
-  end
-end
 
 fn if_stmt(c: Ctx, node: record) -> nil
   let cv = cond(c, node.condition)
@@ -961,9 +805,7 @@ fn if_stmt(c: Ctx, node: record) -> nil
   if node.else_body != nil then
     emit(c, "} else \{")
     block(c, node.else_body)
-  end
   emit(c, "}")
-end
 
 fn for_stmt(c: Ctx, node: record) -> nil
   let it = node.iter
@@ -971,15 +813,12 @@ fn for_stmt(c: Ctx, node: record) -> nil
   if !ok || len(it.args) < 1 || len(it.args) > 3 then
     fail(c, "only `for i in range(...)` translates (no lists in a shader)", node)
     return nil
-  end
   let r = for a in it.args do expr(c, a) end
   if failed(c) then return nil end
   for v in r do
     if v.ty != Ty.int then
       fail(c, "range() bounds must be ints", node)
       return nil
-    end
-  end
   let zero = Val("0", Ty.int, 8, 0, 0)
   let one = Val("1", Ty.int, 8, 1, 1)
   let lo = if len(r) > 1 then r[0] else zero end
@@ -988,7 +827,6 @@ fn for_stmt(c: Ctx, node: record) -> nil
   if step.lit == nil || step.lit <= 0 then
     fail(c, "range() step must be a positive literal", node)
     return nil
-  end
   let s = c.read()
   let saved = s.loop_factor
   if saved != nil && lo.cv != nil && hi.cv != nil then
@@ -997,7 +835,6 @@ fn for_stmt(c: Ctx, node: record) -> nil
     s.loop_factor = saved * trips
   else
     s.loop_factor = nil
-  end
   c.write(s)
   push_scope(c)
   let i = declare(c, node.var, Ty.int)
@@ -1009,7 +846,6 @@ fn for_stmt(c: Ctx, node: record) -> nil
   s2.loop_factor = saved
   c.write(s2)
   emit(c, "}")
-end
 
 # `return v` (v is nil for a bare `return`), or the body's tail value.
 fn ret(c: Ctx, v, node: record) -> nil
@@ -1017,30 +853,23 @@ fn ret(c: Ctx, v, node: record) -> nil
   if c.hook != nil then
     if v != nil then
       emit(c, c.hook.target ++ " = " ++ hook_result(c, v, node).code ++ ";")
-    end
     emit(c, "return;")
     return nil
-  end
   if v == nil then
     fail(c, "a helper must return a value", node)
     return nil
-  end
   let s = c.read()
   if s.ret_ty == nil then
     s.ret_ty = v.ty
     c.write(s)
-  end
   let out = coerce(c, v, c.read().ret_ty, node)
   if !failed(c) then emit(c, "return " ++ out.code ++ ";") end
-end
 
 fn hook_result(c: Ctx, v: Val, node: record) -> Val
   if v.ty != c.hook.ty then
     return fail(c, "the function returns the new `" ++ c.hook.target ++ "` (" ++ ty_text(c.hook.ty) ++
       "), found " ++ ty_text(v.ty), node)
-  end
   v
-end
 
 # --- Functions -------------------------------------------------------------
 
@@ -1048,9 +877,7 @@ fn captures_of(info: record) -> record
   let out = {}
   for cap in info.captures do
     out[cap.name] = {value: cap.value}
-  end
   out
-end
 
 # A context for translating one function.
 fn context(
@@ -1066,11 +893,9 @@ fn context(
     captures: captures, uniform_prefix: uniform_prefix, hook: hook,
     fn_name: fn_name, line: line, column: column,
   )
-end
 
 fn type_ok(c: Ctx, ty: Ty) -> bool
   is_value_type(ty) || struct_fields(c, ty) != nil
-end
 
 # Translate `value` (a Petal function) into a GLSL function and return how to
 # call it (a Helper, nil after a failure). Emitted once per name.
@@ -1086,13 +911,11 @@ fn helper(c: Ctx, name: string, value: function, node, uprefix = nil, glsl_name 
   if contains(ts.busy, name) then
     fail(c, "`" ++ name ++ "` is recursive; GLSL has no recursion", node)
     return nil
-  end
   let info = fn_info(value)
   let ast = fn_ast(value)
   if info == nil || ast == nil then
     fail(c, "`" ++ name ++ "` has no source to translate (a builtin or an overloaded function)", node)
     return nil
-  end
   ts.busy = append(ts.busy, name)
   c.tr.write(ts)
 
@@ -1108,19 +931,15 @@ fn helper(c: Ctx, name: string, value: function, node, uprefix = nil, glsl_name 
     if p.type == nil then
       fail(c, name ++ ": parameter `" ++ p.name ++ "` needs a type annotation", node)
       return nil
-    end
     let pty = ty_named(p.type)
     if !type_ok(c, pty) then
       fail(c, name ++ ": parameter type `" ++ p.type ++ "` has no GLSL form", node)
       return nil
-    end
     params = append(params, pty)
     sig = append(sig, p.type ++ " " ++ declare(h, p.name, pty))
-  end
   if declared_ret != nil && !type_ok(c, declared_ret) then
     fail(c, name ++ ": return type `" ++ ast.returns ++ "` has no GLSL form", node)
     return nil
-  end
   let tail = body(h, ast.body)
   if tail != nil then ret(h, tail.v, tail.node) end
   if failed(c) then return nil end
@@ -1128,7 +947,6 @@ fn helper(c: Ctx, name: string, value: function, node, uprefix = nil, glsl_name 
   if hs.ret_ty == nil then
     fail(c, name ++ ": cannot tell what it returns; annotate it", node)
     return nil
-  end
   let glsl = glsl_name ?? (c.cfg.prefix ++ name)
   let ts2 = c.tr.read()
   ts2.common = concat(ts2.common,
@@ -1138,7 +956,6 @@ fn helper(c: Ctx, name: string, value: function, node, uprefix = nil, glsl_name 
   ts2.busy = filter(ts2.busy, fn(b) -> b != name)
   c.tr.write(ts2)
   out
-end
 
 # The GLSL type of an effect parameter (a uniform); Ty.unknown after a
 # failure. `node` is where to report a failure, nil for the function itself.
@@ -1146,7 +963,6 @@ fn param(c: Ctx, p: record, pinfo: record, node) -> Ty
   if p.default == nil then
     fail(c, "param `" ++ p.name ++ "` needs a default (it is the param's default value)", node)
     return Ty.unknown
-  end
   let ty = Ty.unknown
   if p.type == nil then
     let d = p.default
@@ -1161,20 +977,15 @@ fn param(c: Ctx, p: record, pinfo: record, node) -> Ty
     else
       fail(c, "cannot tell the type of param `" ++ p.name ++ "` from its default; annotate it", d)
       return Ty.unknown
-    end
   else
     ty = ty_named(p.type)
     if !is_value_type(ty) then
       fail(c, "param `" ++ p.name ++ "`: type `" ++ p.type ++ "` has no GLSL form", node)
       return Ty.unknown
-    end
-  end
   if pinfo.default == nil then
     fail(c, "param `" ++ p.name ++ "`: the default must be a literal (a number, a color, a vec2/vec3 of numbers)", p.default)
     return Ty.unknown
-  end
   ty
-end
 
 fn empty_result(message: string, line, column) -> record
   {
@@ -1183,13 +994,11 @@ fn empty_result(message: string, line, column) -> record
     params: {}, param_types: {}, uniform_names: [], uniform_types: {},
     taps: nil, taps_in_loop: false,
   }
-end
 
 fn translate(f: function, info: record, env: record, opts: record) -> record
   let ast = fn_ast(f)
   if ast == nil then
     return empty_result("this function has no source to translate", nil, nil)
-  end
   let tr = cell(TranslationState(
     helpers: {}, common: [], err: nil, uniforms: [], uniform_types: {}, busy: [],
   ))
@@ -1223,7 +1032,6 @@ fn translate(f: function, info: record, env: record, opts: record) -> record
     let done = tr.read()
     if done.err != nil then
       return empty_result(done.err.message, done.err.line, done.err.column)
-    end
     # The entry function is the last definition; everything before it is common.
     let cut = last_definition(done.common)
     return {
@@ -1234,7 +1042,6 @@ fn translate(f: function, info: record, env: record, opts: record) -> record
       uniform_names: done.uniforms, uniform_types: done.uniform_types,
       taps: if h.taps_hidden then nil else h.taps end, taps_in_loop: false,
     }
-  end
 
   # A hook body: the first parameter is the host's `inout` struct, every
   # other parameter is a uniform with a default, and the body's value is the
@@ -1244,7 +1051,6 @@ fn translate(f: function, info: record, env: record, opts: record) -> record
   if result_field == nil || !has(structs[first.type], result_field) then
     return empty_result("the environment must name the field the body's value is assigned to (env.result), a field of " ++
       first.type, ast.line, ast.column)
-  end
   let c = context(
     tr: tr, cfg: cfg, indent: 0, ret_ty: nil, captures: captures_of(info), uniform_prefix: "",
     hook: Hook(self_name ++ "." ++ result_field, structs[first.type][result_field]),
@@ -1263,27 +1069,22 @@ fn translate(f: function, info: record, env: record, opts: record) -> record
     if failed(c) then
       let e = tr.read()
       return empty_result(e.err.message, e.err.line, e.err.column)
-    end
     scope[p.name] = Local(cfg.uniforms_struct ++ p.name, got)
     out_params[p.name] = info.params[i].default
     param_types[p.name] = ty_text(got)
-  end
   s.scopes[0] = scope
   c.write(s)
 
   let tail = body(c, ast.body)
   if tail != nil && !failed(c) then
     emit(c, c.hook.target ++ " = " ++ hook_result(c, tail.v, tail.node).code ++ ";")
-  end
   let done = tr.read()
   if done.err != nil then
     return empty_result(done.err.message, done.err.line, done.err.column)
-  end
   let fs = c.read()
   let in_loop = false
   for line in fs.lines do
     if index_of(line, "for (") >= 0 || index_of(line, "while (") >= 0 then in_loop = true end
-  end
   {
     error: nil, kind: "hook", name: env?.entry ?? "apply",
     code: join(fs.lines, "\n"), common: join(done.common, "\n"),
@@ -1293,7 +1094,6 @@ fn translate(f: function, info: record, env: record, opts: record) -> record
     taps: if fs.taps_hidden then nil else fs.taps end,
     taps_in_loop: in_loop && fs.taps > 0,
   }
-end
 
 # The index of the line that opens the last function definition in `lines`
 # (definitions start in column 0, their bodies are indented).
@@ -1302,9 +1102,7 @@ fn last_definition(lines: list) -> int
   for i in range(0, len(lines)) do
     let line = lines[i]
     if line != "}" && !starts_with(line, " ") then cut = i end
-  end
   cut
-end
 
 # --- Captures as of this run -----------------------------------------------
 
@@ -1323,16 +1121,12 @@ fn live_captures(info: record, prefix: string, inline: bool, depth: int) -> reco
         let sub = live_captures(inner, cap.name ++ "_", inline, depth + 1)
         key = concat(key, sub.key)
         values = {...values, ...sub.values}
-      end
     else if t == "int" || t == "bool" || inline then
       key = append(key, [prefix ++ cap.name, v])
     else
       key = append(key, [prefix ++ cap.name, t])
       values[prefix ++ cap.name] = {value: v}
-    end
-  end
   {key: key, values: values}
-end
 
 # --- The public surface ----------------------------------------------------
 
@@ -1365,23 +1159,19 @@ end
 pub fn glsl_function(f, env: record = {}, opts: record = {}) -> record
   if type(f) != "function" then
     return {...empty_result("to_glsl expects a function, got a " ++ type(f), nil, nil), uniforms: {}, code_hash: nil}
-  end
   let info = fn_info(f)
   if info == nil || info.code_hash == nil then
     return {
       ...empty_result("to_glsl needs a Petal function with source (a lambda or a named fn), not a builtin, a constructor or an overloaded name", nil, nil),
       uniforms: {}, code_hash: nil,
     }
-  end
   let live = live_captures(info, "", opts?.inline_captures ?? false, 0)
   memo([info.code_hash, live.key, env, opts]) cached = translate(f, info, env, opts)
   let uniforms = {}
   for name in cached.uniform_names do
     let held = live.values?.[name]
     if held != nil then uniforms[name] = held.value end
-  end
   {...cached, uniforms: uniforms, code_hash: info.code_hash}
-end
 
 # The GLSL of `f` as one string: its helpers, then the function itself (a
 # hook body is wrapped in its signature). Code outside the subset gives a
@@ -1391,14 +1181,11 @@ pub fn to_glsl(f, env: record = {}, opts: record = {}) -> string
   let g = glsl_function(f, env, opts)
   if g.error != nil then
     return "#error to_glsl: " ++ glsl_error_text(g.error)
-  end
   let text = if g.kind == "hook" then
     g.signature ++ " \{\n" ++ join(for line in split(g.code, "\n") do "    " ++ line end, "\n") ++ "\n}"
   else
     g.code
-  end
   if g.common == "" then text else g.common ++ "\n\n" ++ text end
-end
 
 # "message [line L, column C]" for an error record of `glsl_function`.
 pub fn glsl_error_text(err: record) -> string
@@ -1406,5 +1193,3 @@ pub fn glsl_error_text(err: record) -> string
     err.message
   else
     err.message ++ " [line " ++ str(err.line) ++ ", column " ++ str(err.column) ++ "]"
-  end
-end

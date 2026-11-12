@@ -55,16 +55,16 @@ fn area(r: float) -> float
   3.14159 * r * r
 end
 
-fn greet(name: string)          // return type optional
+fn greet(name: string)          # return type optional
   print("Hello,", name)
 end
 
-// annotated and un-annotated params mix freely
+# annotated and un-annotated params mix freely
 fn scale(v, factor: float) -> float
   v * factor
 end
 
-// lambda parameters can be annotated
+# lambda parameters can be annotated
 let double = fn(n: int) -> n * 2
 ```
 

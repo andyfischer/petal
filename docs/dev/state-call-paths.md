@@ -112,7 +112,7 @@ declaration is exactly one slot.
 Intentionally shared, cross-function state is a top-level cell:
 
 ```petal
-state var theme = default_theme()   // top level: one cell, one path
+state var theme = default_theme()   # top level: one cell, one path
 
 fn ui_theme()      get theme end
 fn theme_set(t)    set theme = t end

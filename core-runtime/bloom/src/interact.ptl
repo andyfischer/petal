@@ -41,7 +41,6 @@ pub fn capture(owner: string)
   set _owner = owner
   set _owner_frame = frame_count()
   set _owner_area = nil
-end
 
 # The same claim, for an overlay whose contents the app draws after it:
 # probes made later this frame that lie inside `area` stay live, so the
@@ -50,7 +49,6 @@ pub fn capture(owner: string, area: record)
   set _owner = owner
   set _owner_frame = frame_count()
   set _owner_area = area
-end
 
 # Whether the pointer is free for a control at `r`: no claim is live, or
 # `r` lies inside the box an overlay claimed earlier this frame. `probe`
@@ -59,23 +57,19 @@ pub fn pointer_free(r: record) -> bool
   let a = get _owner_area
   !is_captured() || (a != nil && r.x >= a.x && r.y >= a.y &&
     r.x + r.w <= a.x + a.w && r.y + r.h <= a.y + a.h)
-end
 
 # Whether some overlay is holding input right now.
 pub fn is_captured()
   (get _owner) != "" && frame_count() - (get _owner_frame) <= 1
-end
 
 pub fn capture_owner()
   if is_captured() then get _owner else "" end
-end
 
 # Drop a claim early (a menu closing mid-frame).
 pub fn capture_release()
   set _owner = ""
   set _owner_frame = -2
   set _owner_area = nil
-end
 
 # ── Probes ────────────────────────────────────────────────────────────────
 
@@ -95,17 +89,14 @@ end
 # snapping.
 pub fn probe(r: record, enabled: bool) -> record
   probe_at(r, enabled, pointer_free(r))
-end
 
 pub fn probe(r: record) -> record
   probe(r, true)
-end
 
 # The overlay's own probe: identical, but it ignores the capture claim (an
 # open menu is the thing holding the pointer, so its items must still see it).
 pub fn probe_over(r: record) -> record
   probe_at(r, true, true)
-end
 
 fn probe_at(r: record, enabled: bool, allowed: bool) -> record
   state armed = false
@@ -114,24 +105,19 @@ fn probe_at(r: record, enabled: bool, allowed: bool) -> record
   let press = over && mouse_pressed(0)
   if press then
     armed = true
-  end
   let click = armed && mouse_released(0) && over
   let down = armed && mouse_down(0)
   if mouse_down(0) == false then
     armed = false
-  end
   {rect: r, enabled: enabled, hover: over, down: down, press: press, click: click,
     hot: ease_flag(over && !down, 18.0), active: ease_flag(down, 34.0)}
-end
 
 # The two shorthands, for the many places that want one bool.
 pub fn hovering(r: record)
   pointer_free(r) && point_in(mouse_x(), mouse_y(), r)
-end
 
 pub fn clicked(r: record)
   probe(r).click
-end
 
 # ── Dragging ──────────────────────────────────────────────────────────────
 
@@ -146,13 +132,10 @@ pub fn drag(r: record) -> record
     on = true
     sx = mouse_x()
     sy = mouse_y()
-  end
   if !mouse_down(0) then
     on = false
-  end
   {active: on, x: mouse_x(), y: mouse_y(), dx: mouse_x() - sx, dy: mouse_y() - sy,
     start_x: sx, start_y: sy}
-end
 
 # ── Focus ─────────────────────────────────────────────────────────────────
 # The keyboard owner is `ui`'s: the runtime focus (`has_focus`,
@@ -181,11 +164,9 @@ var _building = []
 pub fn focusable(id: string) -> bool
   if len(get _building) == 0 then
     _begin_frame()
-  end
   set _building = append(get _building, id)
   set _ring = get _building
   has_focus(id)
-end
 
 # Tab / Shift+Tab are applied at the top of the next frame, against the ring
 # the *last* frame built — the only complete ring that exists at that moment.
@@ -199,37 +180,28 @@ fn _begin_frame()
       if step > 0 then 0 else n - 1 end
     else
       ((at + step) % n + n) % n
-    end
     focus_request(ring[next])
-  end
   set _pending = 0
   if key_pressed("tab") then
     set _pending = if mod_shift() then -1 else 1 end
-  end
-end
 
 pub fn focused(id: string) -> bool
   has_focus(id)
-end
 
 pub fn focus_set(id: string)
   focus_request(id)
-end
 
 pub fn focus_clear()
   focus_request(nil)
-end
 
 pub fn focus_id()
   focus_owner()
-end
 
 # ── Keys ──────────────────────────────────────────────────────────────────
 
 # A plain key press, ignored while an overlay holds input.
 pub fn key(k: string) -> bool
   !is_captured() && key_pressed(k)
-end
 
 # A modified chord: `chord("k", "cmd")`, `chord("p", "ctrl")`. `mods` is one
 # of "cmd", "ctrl", "alt", "shift", or "cmdctrl" for the accelerator that is
@@ -245,6 +217,3 @@ pub fn chord(k: string, mods: string) -> bool
       when "shift" -> mod_shift()
       when "cmdctrl" -> mod_cmd() || mod_ctrl()
       when _ -> false
-    end
-  end
-end

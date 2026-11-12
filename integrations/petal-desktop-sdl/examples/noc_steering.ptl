@@ -33,8 +33,6 @@ if len(vehicles) == 0 then
       b: int(200.0 + random(0.0, 55.0)),
       mode: i % 3
     })
-  end
-end
 
 # Update target to mouse position
 target_x = float(mouse_x())
@@ -44,11 +42,9 @@ target_y = float(mouse_y())
 fn limit_vec(vx, vy, max_val)
   let mag = sqrt(vx * vx + vy * vy)
   if mag > max_val then
-    { x: vx / mag * max_val, y: vy / mag * max_val }
+    {x: vx / mag * max_val, y: vy / mag * max_val}
   else
-    { x: vx, y: vy }
-  end
-end
+    {x: vx, y: vy}
 
 # Update vehicles
 let new_vehicles = []
@@ -66,7 +62,6 @@ for v in vehicles do
     let desired_speed = v.max_speed
     if dist < 100.0 then
       desired_speed = v.max_speed * dist / 100.0
-    end
     let desired_vx = dx / dist * desired_speed
     let desired_vy = dy / dist * desired_speed
 
@@ -83,7 +78,6 @@ for v in vehicles do
       let desired_vy = dy / dist * v.max_speed
       steer_x = desired_vx - v.vx
       steer_y = desired_vy - v.vy
-    end
   else
     # WANDER: random steering
     let wander_r = 50.0
@@ -100,7 +94,6 @@ for v in vehicles do
 
     steer_x = wx - v.x - v.vx
     steer_y = wy - v.y - v.vy
-  end
 
   # Limit steering force
   let steer = limit_vec(vx: steer_x, vy: steer_y, max_val: v.max_force)
@@ -129,8 +122,7 @@ for v in vehicles do
 
   # Trail
   if frame_count() % 2 == 0 then
-    trails = append(trails, { x: nx, y: ny, r: v.r, g: v.g, b: v.b, life: 1.0 })
-  end
+    trails = append(trails, {x: nx, y: ny, r: v.r, g: v.g, b: v.b, life: 1.0})
 
   new_vehicles = append(new_vehicles, {
     x: nx, y: ny, vx: nvx, vy: nvy,
@@ -138,19 +130,16 @@ for v in vehicles do
     wander_angle: new_wander,
     r: v.r, g: v.g, b: v.b, mode: v.mode
   })
-end
 vehicles = new_vehicles
 
 # Age trails
 let new_trails = []
 for t in trails do
-  let nt = { x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, life: t.life - delta * 0.8 }
+  let nt = {x: t.x, y: t.y, r: t.r, g: t.g, b: t.b, life: t.life - delta * 0.8}
   if nt.life > 0.0 then new_trails = append(new_trails, nt) end
-end
 trails = new_trails
 if len(trails) > 2000 then
   trails = slice(trails, start: len(trails) - 1500, end: len(trails))
-end
 
 # === Drawing ===
 clear(10, 12, 20)
@@ -160,7 +149,6 @@ for t in trails do
   let alpha = t.life * 0.5
   draw_circle(cx: int(t.x), cy: int(t.y), radius: 2,
     r: int(float(t.r) * alpha), g: int(float(t.g) * alpha), b: int(float(t.b) * alpha))
-end
 
 # Draw target
 draw_circle(cx: int(target_x), cy: int(target_y), radius: 15, r: 40, g: 15, b: 15)
@@ -198,8 +186,6 @@ for v in vehicles do
   else if v.mode == 1 then
     # Fleer - red warning
     draw_circle(cx: int(nose_x), cy: int(nose_y), radius: 3, r: 255, g: 100, b: 100)
-  end
-end
 
 # Legend
 draw_text("Autonomous Agents", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)

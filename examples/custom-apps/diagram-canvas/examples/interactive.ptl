@@ -48,9 +48,6 @@ if pressed then
       dragging = i
       drag_offset_x = n.x - mx
       drag_offset_y = n.y - my
-    end
-  end
-end
 
 if down && dragging >= 0 then
   let n = nodes[dragging]
@@ -73,26 +70,19 @@ else
         label: n.label,
         active: !n.active
       }
-    end
-  end
   dragging = -1
-end
 
 # Overloaded draw functions: accept point/color records
 let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
   _draw_line(x1, y1, x2, y2, r, g, b)
-end
 fn draw_line(a: record, b: record, color: record)
   _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
-end
 fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
-end
 fn draw_text(text: string, pos: record, size: num, color: record)
   _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
-end
 
 # === DRAW ===
 clear(bg.r, bg.g, bg.b)
@@ -108,7 +98,6 @@ for conn in connections do
   let c = if both_active then conn_active else conn_inactive end
 
   draw_line({x: a.x, y: a.y}, {x: b.x, y: b.y}, c)
-end
 
 # Draw nodes
 for i in range(0, len(nodes)) do
@@ -121,21 +110,17 @@ for i in range(0, len(nodes)) do
     # Active: green glow
     if hover then
       draw_circle(cx: n.x, cy: n.y, radius: node_r + 6, r: 40, g: 120, b: 60)
-    end
     draw_circle(cx: n.x, cy: n.y, radius: node_r, r: active_outer.r, g: active_outer.g, b: active_outer.b)
     draw_circle(cx: n.x, cy: n.y, radius: node_r - 4, r: active_inner.r, g: active_inner.g, b: active_inner.b)
   else
     # Inactive: dim
     if hover then
       draw_circle(cx: n.x, cy: n.y, radius: node_r + 6, r: 80, g: 70, b: 70)
-    end
     draw_circle(cx: n.x, cy: n.y, radius: node_r, r: inactive_outer.r, g: inactive_outer.g, b: inactive_outer.b)
     draw_circle(cx: n.x, cy: n.y, radius: node_r - 4, r: inactive_inner.r, g: inactive_inner.g, b: inactive_inner.b)
-  end
 
   let tw = len(n.label) * 7
   draw_text(n.label, {x: n.x - tw / 2, y: n.y - 7}, 14, label_color)
-end
 
 # Status bar
 let active_count = len(filter(nodes, fn(n) -> n.active))

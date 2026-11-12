@@ -16,16 +16,12 @@ let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
   _draw_line(x1, y1, x2, y2, r, g, b)
-end
 fn draw_line(a, b, color)
   _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
-end
 fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
-end
 fn draw_text(text, pos, size, color)
   _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
-end
 
 let gravity = 400.0
 let max_particles = 800
@@ -46,8 +42,6 @@ if len(stars) == 0 then
       bright: int(40.0 + random(0.0, 60.0)),
       speed: 0.5 + float(i % 4) * 0.3
     })
-  end
-end
 
 # Helper: spawn a burst of particles at (px, py) with given color theme
 fn spawn_burst(px, py, base_r, base_g, base_b, count, speed, spread_y)
@@ -71,9 +65,7 @@ fn spawn_burst(px, py, base_r, base_g, base_b, count, speed, spread_y)
       size: size,
       kind: 0
     })
-  end
   spawned
-end
 
 # Helper: spawn rising/floating particles (kind=1)
 fn spawn_floaters(px, py, r, g, b, count)
@@ -91,9 +83,7 @@ fn spawn_floaters(px, py, r, g, b, count)
       size: size,
       kind: 1
     })
-  end
   spawned
-end
 
 # Helper: spawn spiral particles (kind=2)
 fn spawn_spiral(px, py, r, g, b, count)
@@ -113,9 +103,7 @@ fn spawn_spiral(px, py, r, g, b, count)
       size: size,
       kind: 2
     })
-  end
   spawned
-end
 
 # === AUTO-EMITTERS: spawn particles periodically ===
 
@@ -138,8 +126,6 @@ if frame_count() % 3 == 0 && len(particles) < max_particles - 20 then
       size: 3 + i % 3,
       kind: 1
     })
-  end
-end
 
 # Electric blue emitter (top-right area) - every 5 frames
 if frame_count() % 5 == 0 && len(particles) < max_particles - 15 then
@@ -157,8 +143,6 @@ if frame_count() % 5 == 0 && len(particles) < max_particles - 15 then
       size: 2 + i % 3,
       kind: 2
     })
-  end
-end
 
 # Green/purple emitter (left side) - every 7 frames
 if frame_count() % 7 == 0 && len(particles) < max_particles - 10 then
@@ -178,7 +162,6 @@ if frame_count() % 7 == 0 && len(particles) < max_particles - 10 then
       rr = int(160.0 + random(0.0, 80.0))
       gg = int(40.0 + random(0.0, 40.0))
       bb = int(200.0 + random(0.0, 55.0))
-    end
     particles = append(particles, {
       x: 50.0 + random(-20.0, 20.0), y: 300.0 + random(-40.0, 40.0),
       vx: vx, vy: vy,
@@ -187,8 +170,6 @@ if frame_count() % 7 == 0 && len(particles) < max_particles - 10 then
       size: 3 + i % 4,
       kind: 1
     })
-  end
-end
 
 # Big rainbow burst every 90 frames
 if frame_count() % 90 == 45 && len(particles) < max_particles - 30 then
@@ -225,7 +206,6 @@ if frame_count() % 90 == 45 && len(particles) < max_particles - 30 then
       rr = 255
       gg = 0
       bb = int((6.0 - phase) * 255.0)
-    end
     let vx = (t - 0.5) * 400.0
     let vy = -150.0 - random(0.0, 100.0)
     particles = append(particles, {
@@ -236,8 +216,6 @@ if frame_count() % 90 == 45 && len(particles) < max_particles - 30 then
       size: 3 + i % 4,
       kind: 0
     })
-  end
-end
 
 # Detect mouse click (pressed this frame) or space bar
 let clicking = mouse_down(0)
@@ -258,7 +236,6 @@ if spawn then
   let count = 40
   if len(particles) + count > max_particles then
     count = max_particles - len(particles)
-  end
 
   let spread = random(0.8, 1.2)
   for i in range(0, count) do
@@ -278,8 +255,6 @@ if spawn then
       size: 2 + i % 5,
       kind: 0
     })
-  end
-end
 
 # Update particles based on kind
 particles = map(particles, fn(p)
@@ -299,7 +274,6 @@ particles = map(particles, fn(p)
     new_vy = p.vy + gravity * 0.5 * delta
     new_vx = p.vx * 0.98
     drag = 0.98
-  end
 
   {
     x: p.x + new_vx * delta,
@@ -311,7 +285,7 @@ particles = map(particles, fn(p)
     size: p.size,
     kind: p.kind
   }
-end)
+)
 
 # Remove dead or off-screen particles
 particles = filter(particles, fn(p) -> p.life > 0.0 && p.y < 620.0)
@@ -324,7 +298,6 @@ for i in range(0, 6) do
   let gy = 500 + i * 20
   let gb = 18 + i * 3
   draw_rect(x: 0, y: gy, w: 800, h: 20, r: 8 + i, g: 6 + i, b: gb)
-end
 
 # Draw twinkling stars
 for s in stars do
@@ -333,9 +306,7 @@ for s in stars do
   let bright = s.bright
   if flicker % 120 < 15 then
     bright = min(255, s.bright + 40)
-  end
   draw_rect(x: int(s.x) % 800, y: int(s.y), w: s.size, h: s.size, r: bright, g: bright, b: bright + 10)
-end
 
 # Draw subtle ground line
 let ground_color = {r: 30, g: 25, b: 50}
@@ -356,7 +327,6 @@ for p in particles do
     let gg = int(float(cg) * 0.3)
     let gb = int(float(cb) * 0.3)
     draw_circle(cx: px, cy: py, radius: p.size + 2, r: gr, g: gg, b: gb)
-  end
 
   # Core particle
   draw_circle(cx: px, cy: py, radius: p.size, r: cr, g: cg, b: cb)
@@ -367,8 +337,6 @@ for p in particles do
     let hg = min(255, cg + 60)
     let hb = min(255, cb + 60)
     draw_circle(cx: px, cy: py, radius: max(1, p.size - 2), r: hr, g: hg, b: hb)
-  end
-end
 
 # Draw connecting lines between nearby particles (for electric effect, kind==2 only)
 let electrics = filter(particles, fn(p) -> p.kind == 2 && p.life > 0.3)
@@ -382,9 +350,6 @@ if len(electrics) > 1 then
       let fade = max(0.0, min(1.0, a.life))
       draw_line(x1: int(a.x), y1: int(a.y), x2: int(b.x), y2: int(b.y),
         r: int(60.0 * fade), g: int(120.0 * fade), b: int(255.0 * fade))
-    end
-  end
-end
 
 # HUD
 let hud_color = {r: 200, g: 200, b: 220}

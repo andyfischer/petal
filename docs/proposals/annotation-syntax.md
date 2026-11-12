@@ -460,13 +460,13 @@ today's compiler (`cli/target/debug/petal run`): output
 (`cheesecake/games/canopy/core/tune.ptl:12-15`)
 
 ```petal ignore
-// before
-pub let RUN = tunable(7.0, 3.0, 12.0)                 // top speed, tiles/s
-pub let ACCEL = tunable(60.0, 10.0, 200.0)            // on the ground, tiles/s²
+# before
+pub let RUN = tunable(7.0, 3.0, 12.0)                 # top speed, tiles/s
+pub let ACCEL = tunable(60.0, 10.0, 200.0)            # on the ground, tiles/s²
 
-// after
-@tunable(3.0, 12.0) pub let RUN = 7.0                 // top speed, tiles/s
-@tunable(10.0, 200.0) pub let ACCEL = 60.0            // on the ground, tiles/s²
+# after
+@tunable(3.0, 12.0) pub let RUN = 7.0                 # top speed, tiles/s
+@tunable(10.0, 200.0) pub let ACCEL = 60.0            # on the ground, tiles/s²
 ```
 
 The line length is the same. The value now sits where every other `let`
@@ -480,10 +480,10 @@ is a wash. There is one new mistake to make: `@tunable(3.0, 12.0)` looks like
 one-argument `tunable`s)
 
 ```petal ignore
-// before
-let KICK = tunable(6.0)          // upward impulse of the space-bar kick (N·s)
-// after
-@tunable let KICK = 6.0          // upward impulse of the space-bar kick (N·s)
+# before
+let KICK = tunable(6.0)          # upward impulse of the space-bar kick (N·s)
+# after
+@tunable let KICK = 6.0          # upward impulse of the space-bar kick (N·s)
 ```
 
 Same length. The declaration now begins by saying it is a setting, so a
@@ -494,7 +494,7 @@ visible" argument, and it is a modest one.
 (`cheesecake/games/gta/vehicles.ptl:22-29`, one of 146 multi-line sites)
 
 ```petal ignore
-// before
+# before
 pub let KINDS = const({
   sedan: {size: vec3(1.8, 0.6, 4.2), mass: 1200.0, engine_torque: 1500.0, max_speed: 30.0,
     wheel_radius: 0.38, ride_height: 0.35, wheelbase: 2.6, track: 1.6, cabin: 0.55},
@@ -502,7 +502,7 @@ pub let KINDS = const({
     wheel_radius: 0.4, ride_height: 0.7, wheelbase: 3.0, track: 1.7, cabin: 0.0},
 })
 
-// after
+# after
 @const
 pub let KINDS = {
   sedan: {size: vec3(1.8, 0.6, 4.2), mass: 1200.0, engine_torque: 1500.0, max_speed: 30.0,
@@ -521,7 +521,7 @@ table, which is what the migration fixer had to work hard at
 **4. Where the old form is better** (`cheesecake/games/canopy/core/jump.ptl:10`)
 
 ```petal
-// before, and after: unchanged
+# before, and after: unchanged
 pub fn apex()
   tune.JUMP_V * tune.JUMP_V / (rigid(2.0) * tune.GRAV)
 end
@@ -536,11 +536,11 @@ one-line rule "on a declaration, `@`; inside an expression, the call."
 `syntax/settings.md`)
 
 ```petal ignore
-// before
+# before
 let START = tunable("title", options: ["title", "select", "play"])
 state screen = START
 
-// after
+# after
 @tunable(options: ["title", "select", "play"])
 let START = "title"
 state screen = START

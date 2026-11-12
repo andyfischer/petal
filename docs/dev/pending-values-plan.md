@@ -180,11 +180,11 @@ thread fetchers and browser `fetch`, and a `query` prelude module:
 import query
 let user = query.fetch_json("/api/user/{id}")
 if is_loading(user) then ui.spinner()
-elsif is_error(user) then ui.error_banner(error_of(user))
+else if is_error(user) then ui.error_banner(error_of(user))
 else draw_text(user.name, 10, 10) end
 
-draw_text(user.name ?? "…", 10, 10)          // or inline
-query.invalidate("avatar", user.avatar_id)   // refetch next frame
+draw_text(user.name ?? "…", 10, 10)          # or inline
+query.invalidate("avatar", user.avatar_id)   # refetch next frame
 ```
 
 Principles that still hold: keying is **by arguments**, not call position,

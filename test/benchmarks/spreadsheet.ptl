@@ -3,37 +3,28 @@
 # with a driver that recomputes the whole 26x8 grid. Mirrors the work that
 # example's panel does whenever a cell is edited.
 
-
 let DIGITS = "0123456789"
 let LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 fn is_digit(c)
   len(c) == 1 && contains(DIGITS, c)
-end
 
 fn digit_val(c)
   let d = -1
   for i in range(0, 10) do
     if slice(DIGITS, i, i + 1) == c then
       d = i
-    end
-  end
   d
-end
 
 fn letter_val(c)
   let d = -1
   for i in range(0, 26) do
     if slice(LETTERS, i, i + 1) == c then
       d = i
-    end
-  end
   d
-end
 
 fn is_alpha(c)
   letter_val(upper(c)) >= 0
-end
 
 # ── values ────────────────────────────────────────────────────────────────
 # One record shape for every result a cell can hold, so nothing downstream
@@ -41,16 +32,12 @@ end
 
 fn vnum(x)
   {k: "num", n: float(x), s: ""}
-end
 fn vtext(s)
   {k: "text", n: 0.0, s: s}
-end
 fn vempty()
   {k: "empty", n: 0.0, s: ""}
-end
 fn verr(s)
   {k: "err", n: 0.0, s: s}
-end
 
 # Numeric coercion for arithmetic: a blank cell reads as 0 (so =SUM over a
 # half-filled column works), text does not read as anything.
@@ -60,8 +47,6 @@ fn as_num(v)
     when "empty" -> vnum(0.0)
     when "err" -> v
     when _ -> verr("#VALUE!")
-  end
-end
 
 # ── scanning a number out of a string ─────────────────────────────────────
 # `float("3.5")` rejects strings ("Expected float at arg 1, got string"), so
@@ -76,14 +61,12 @@ fn str_num(s)
   if n > 0 && slice(s, 0, 1) == "-" then
     neg = true
     i = 1
-  end
   let seen = false
   let whole = 0.0
   while i < n && is_digit(slice(s, i, i + 1)) do
     whole = whole * 10.0 + float(digit_val(slice(s, i, i + 1)))
     seen = true
     i = i + 1
-  end
   if i < n && slice(s, i, i + 1) == "." then
     i = i + 1
     let scale = 0.1
@@ -92,14 +75,10 @@ fn str_num(s)
       scale = scale * 0.1
       seen = true
       i = i + 1
-    end
-  end
   if !seen || i != n then
     {ok: false, v: 0.0}
   else
     {ok: true, v: if neg then -whole else whole end}
-  end
-end
 
 # ── tokenizer ─────────────────────────────────────────────────────────────
 # Tokens are {t, s, n}, where t is "num" | "name" | "str" | "op".
@@ -117,14 +96,12 @@ fn tokenize(src)
       let j = i + 1
       while j < n && slice(s, j, j + 1) != "\"" do
         j = j + 1
-      end
       toks = append(toks, {t: "str", s: slice(s, i + 1, j), n: 0.0})
       i = min(j + 1, n)
     else if is_digit(c) || c == "." then
       let j = i
       while j < n && (is_digit(slice(s, j, j + 1)) || slice(s, j, j + 1) == ".") do
         j = j + 1
-      end
       let lit = str_num(slice(s, i, j))
       toks = append(toks, {t: "num", s: slice(s, i, j), n: lit.v})
       i = j
@@ -132,7 +109,6 @@ fn tokenize(src)
       let j = i
       while j < n && (is_alpha(slice(s, j, j + 1)) || is_digit(slice(s, j, j + 1))) do
         j = j + 1
-      end
       toks = append(toks, {t: "name", s: upper(slice(s, i, j)), n: 0.0})
       i = j
     else if c == ">" || c == "<" then
@@ -143,23 +119,17 @@ fn tokenize(src)
       else
         toks = append(toks, {t: "op", s: c, n: 0.0})
         i = i + 1
-      end
     else
       toks = append(toks, {t: "op", s: c, n: 0.0})
       i = i + 1
-    end
-  end
   toks
-end
 
 fn tok_at(toks, i)
   if i >= 0 && i < len(toks) then toks[i] else {t: "eof", s: "", n: 0.0} end
-end
 
 fn is_op(toks, i, s)
   let t = tok_at(toks, i)
   t.t == "op" && t.s == s
-end
 
 # ── cell references ───────────────────────────────────────────────────────
 # "B12" -> {ok, r, c}, zero-based; one or more column letters.
@@ -171,7 +141,6 @@ fn parse_ref(name)
   while i < n && letter_val(slice(name, i, i + 1)) >= 0 do
     col = col * 26 + letter_val(slice(name, i, i + 1)) + 1
     i = i + 1
-  end
   if i == 0 || i >= n then
     {ok: false, r: 0, c: 0}
   else
@@ -180,9 +149,6 @@ fn parse_ref(name)
       {ok: false, r: 0, c: 0}
     else
       {ok: true, r: int(rowpart.v) - 1, c: col - 1}
-    end
-  end
-end
 
 fn ref_name(r, c)
   let col = ""
@@ -191,9 +157,7 @@ fn ref_name(r, c)
     let d = (n - 1) % 26
     col = slice(LETTERS, d, d + 1) ++ col
     n = (n - 1) / 26
-  end
   col ++ str(r + 1)
-end
 
 # ── evaluator ─────────────────────────────────────────────────────────────
 # Petal binds a `fn` when its declaration *runs*, so a name used above its
@@ -217,11 +181,8 @@ fn agg(vals, kind)
     else if v.k == "num" then
       if count == 0 || (kind == "min" && v.n < best) || (kind == "max" && v.n > best) then
         best = v.n
-      end
       total = total + v.n
       count = count + 1
-    end
-  end
   if len(err) > 0 then
     verr(err)
   else if kind == "sum" then
@@ -234,8 +195,6 @@ fn agg(vals, kind)
     vnum(total / float(count))
   else
     vnum(best)
-  end
-end
 
 fn call_fn(name, vals)
   if name == "SUM" then agg(vals, "sum")
@@ -254,17 +213,13 @@ fn call_fn(name, vals)
     else
       let scale = pow(10.0, d.n)
       vnum(round(a.n * scale) / scale)
-    end
   else if name == "IF" && len(vals) == 3 then
     let c = as_num(vals[0])
     if c.k == "err" then c
     else if c.n != 0.0 then vals[1]
     else vals[2]
-    end
   else
     verr("#NAME?")
-  end
-end
 
 # Every argument of a call, with `B2:E4` expanded in place into one value per
 # cell. Ranges are legal only here, which is why the argument list resolves
@@ -286,14 +241,11 @@ fn parse_args(cx, toks, i0)
         for r in range(min(ra.r, rb.r), max(ra.r, rb.r) + 1) do
           for c in range(min(ra.c, rb.c), max(ra.c, rb.c) + 1) do
             vals = append(vals, get _eval_at(cx, r, c))
-          end
-        end
         i = i + 3
       else
         let res = get _expr(cx, toks, i)
         vals = append(vals, res.v)
         i = res.i
-      end
       if is_op(toks, i, ",") then
         i = i + 1
       else if is_op(toks, i, ")") then
@@ -302,11 +254,7 @@ fn parse_args(cx, toks, i0)
       else
         err = "#SYNTAX"
         done = true
-      end
-    end
     {vals: vals, i: i, err: err}
-  end
-end
 
 fn parse_primary(cx, toks, i)
   let t = tok_at(toks, i)
@@ -320,7 +268,6 @@ fn parse_primary(cx, toks, i)
       {v: inner.v, i: inner.i + 1}
     else
       {v: verr("#SYNTAX"), i: inner.i}
-    end
   else if t.t == "name" then
     if is_op(toks, i + 1, "(") then
       let args = parse_args(cx, toks, i + 2)
@@ -328,19 +275,14 @@ fn parse_primary(cx, toks, i)
         {v: verr(args.err), i: args.i}
       else
         {v: call_fn(t.s, args.vals), i: args.i}
-      end
     else
       let ref = parse_ref(t.s)
       if ref.ok then
         {v: get _eval_at(cx, ref.r, ref.c), i: i + 1}
       else
         {v: verr("#NAME?"), i: i + 1}
-      end
-    end
   else
     {v: verr("#SYNTAX"), i: i + 1}
-  end
-end
 
 fn parse_unary(cx, toks, i)
   if is_op(toks, i, "-") then
@@ -351,8 +293,6 @@ fn parse_unary(cx, toks, i)
     parse_unary(cx, toks, i + 1)
   else
     parse_primary(cx, toks, i)
-  end
-end
 
 fn parse_pow(cx, toks, i)
   let a = parse_unary(cx, toks, i)
@@ -364,8 +304,6 @@ fn parse_pow(cx, toks, i)
     {v: v, i: b.i}
   else
     a
-  end
-end
 
 fn parse_mul(cx, toks, i0)
   let acc = parse_pow(cx, toks, i0)
@@ -381,11 +319,8 @@ fn parse_mul(cx, toks, i0)
     else if op == "/" && y.n == 0.0 then v = verr("#DIV/0!")
     else if op == "*" then v = vnum(x.n * y.n)
     else v = vnum(x.n / y.n)
-    end
     i = rhs.i
-  end
   {v: v, i: i}
-end
 
 fn parse_add(cx, toks, i0)
   let acc = parse_mul(cx, toks, i0)
@@ -400,11 +335,8 @@ fn parse_add(cx, toks, i0)
     else if y.k == "err" then v = y
     else if op == "+" then v = vnum(x.n + y.n)
     else v = vnum(x.n - y.n)
-    end
     i = rhs.i
-  end
   {v: v, i: i}
-end
 
 fn cmp_apply(op, x, y)
   match op
@@ -414,8 +346,6 @@ fn cmp_apply(op, x, y)
     when "<=" -> x.n <= y.n
     when "<>" -> x.n != y.n
     when _ -> x.n == y.n
-  end
-end
 
 fn parse_cmp(cx, toks, i0)
   let a = parse_add(cx, toks, i0)
@@ -427,12 +357,9 @@ fn parse_cmp(cx, toks, i0)
     let v = if x.k == "err" then x
     else if y.k == "err" then y
     else vnum(if cmp_apply(t.s, x, y) then 1.0 else 0.0 end)
-    end
     {v: v, i: b.i}
   else
     a
-  end
-end
 
 set _expr = parse_cmp
 
@@ -440,8 +367,6 @@ fn raw_at(cells, r, c)
   if r < 0 || r >= len(cells) then ""
   else if c < 0 || c >= len(cells[r]) then ""
   else cells[r][c]
-  end
-end
 
 # `cx` is {cells, depth}. There is no dependency graph and no memo table: the
 # sheet is 208 cells and a reference simply re-evaluates its target, with the
@@ -466,14 +391,9 @@ fn eval_at(cx, r, c)
           verr("#SYNTAX")
         else
           res.v
-        end
-      end
     else
       let lit = str_num(raw)
       if lit.ok then vnum(lit.v) else vtext(raw) end
-    end
-  end
-end
 
 set _eval_at = eval_at
 
@@ -481,11 +401,8 @@ fn evaluate(cells)
   let grid = for r in range(0, len(cells)) do
     let row = for c in range(0, len(cells[r])) do
       eval_at({cells: cells, depth: 0}, r, c)
-    end
     row
-  end
   grid
-end
 
 # ── display formatting ────────────────────────────────────────────────────
 
@@ -496,11 +413,8 @@ fn group3(digits)
   for i in range(0, n) do
     if i > 0 && (n - i) % 3 == 0 then
       out = out ++ ","
-    end
     out = out ++ slice(digits, i, i + 1)
-  end
   out
-end
 
 # At most two decimals, trailing zeros dropped, thousands grouped.
 fn fmt_num(x)
@@ -513,11 +427,8 @@ fn fmt_num(x)
     let frac = if cents < 10 then "0" ++ str(cents) else str(cents) end
     if cents % 10 == 0 then
       frac = slice(frac, 0, 1)
-    end
     body = body ++ "." ++ frac
-  end
   if neg && (whole > 0 || cents > 0) then "-" ++ body else body end
-end
 
 fn display(v)
   match v.k
@@ -525,8 +436,6 @@ fn display(v)
     when "text" -> v.s
     when "err" -> v.s
     when _ -> ""
-  end
-end
 
 fn kind_label(raw, v)
   if len(raw) > 0 && slice(raw, 0, 1) == "=" then
@@ -534,8 +443,6 @@ fn kind_label(raw, v)
   else if v.k == "num" then "number"
   else if v.k == "text" then "text"
   else "empty"
-  end
-end
 
 # ══ 2. the sheet ══════════════════════════════════════════════════════════
 
@@ -545,7 +452,6 @@ let ROWS = 26
 fn blank_row()
   let r = for c in range(0, COLS) do "" end
   r
-end
 
 fn seed()
   let g = []
@@ -568,9 +474,7 @@ fn seed()
   g = append(g, ["Verdict", "=IF(E5>D5,\"expanding\",\"flat\")", "", "", "", "", "", "=IF(E15<4,\"raise now\",\"runway ok\")"])
   while len(g) < ROWS do
     g = append(g, blank_row())
-  end
   g
-end
 
 # ── driver ────────────────────────────────────────────────────────────────
 
@@ -581,7 +485,4 @@ for iter in range(0, 10) do
   for row in grid do
     for v in row do
       total = total + v.n
-    end
-  end
-end
 print(total)

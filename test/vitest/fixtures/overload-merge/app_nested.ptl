@@ -7,7 +7,6 @@ let _keep_std = sum([1])   # pulls the reference-gated `std` into the program
 fn outer()
   fn count(xs) "nested" end
   count([1, 2, 3])
-end
 
 print(outer())
 print(count([1, 2, 3]))

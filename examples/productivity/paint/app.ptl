@@ -40,7 +40,6 @@ enum Tool
   ellipse(label: "Ellipse", stroke: "Ellipse", key: "4", hint: "click-drag"),
   eraser(label: "Eraser", stroke: "Eraser", key: "5", hint: "paints paper"),
   fill(label: "Flood fill", stroke: "Fill", key: "6", hint: "click"),
-end
 
 let TOOLS = Tool.all
 
@@ -50,52 +49,41 @@ let TAU = 6.28318530718
 
 fn hex_digit(n: num) -> string
   slice("0123456789ABCDEF", start: n, end: n + 1)
-end
 
 fn hex2(n: num) -> string
   hex_digit(n / 16) ++ hex_digit(n % 16)
-end
 
 fn hex_of(c: record) -> string
   "#" ++ hex2(c.r) ++ hex2(c.g) ++ hex2(c.b)
-end
 
 fn luma(c: record) -> num
   (c.r * 299 + c.g * 587 + c.b * 114) / 1000
-end
 
 fn on_color(c: record) -> record
   if luma(c) > 140 then :101319 else :f4f6fa end
-end
 
 fn mix(a: record, b: record, t: num) -> record
   {r: int(float(a.r) + (float(b.r) - float(a.r)) * t),
     g: int(float(a.g) + (float(b.g) - float(a.g)) * t),
     b: int(float(a.b) + (float(b.b) - float(a.b)) * t)}
-end
 
 fn seg(x1: num, y1: num, x2: num, y2: num, c: record, a: num, wd: num)
   draw_line(x1: int(x1), y1: int(y1), x2: int(x2), y2: int(y2), r: c.r, g: c.g, b: c.b, a: a, width: max(1, int(wd)))
-end
 
 fn dot(x: num, y: num, rad: num, c: record, a: num)
   draw_circle(cx: int(x), cy: int(y), radius: max(1, int(rad)), r: c.r, g: c.g, b: c.b, a: a)
-end
 
 fn label(s: string, x: num, y: num, c: record)
   draw_text(s, pos: {x: x, y: y}, style: {size: 10, color: c, spacing: 2})
-end
 
 # ── Stroke geometry ──────────────────────────────────────────────────────
 
 fn to_px(art: record, p: list) -> record
   {x: float(art.x) + p[0] * float(art.w), y: float(art.y) + p[1] * float(art.h)}
-end
 
 fn to_uv(art: record, mx: num, my: num) -> list
   [clamp(float(mx - art.x) / float(art.w), lo: 0.0, hi: 1.0),
     clamp(float(my - art.y) / float(art.h), lo: 0.0, hi: 1.0)]
-end
 
 fn ellipse_outline(cx: num, cy: num, rx: num, ry: num, c: record, a: num, wd: num)
   let n = 60
@@ -108,8 +96,6 @@ fn ellipse_outline(cx: num, cy: num, rx: num, ry: num, c: record, a: num, wd: nu
     seg(x1: px, y1: py, x2: qx, y2: qy, c: c, a: a, wd: wd)
     px = qx
     py = qy
-  end
-end
 
 fn stroke_bbox(art: record, s: record)
   if len(s.pts) == 0 then
@@ -126,11 +112,8 @@ fn stroke_bbox(art: record, s: record)
       y0 = min(y0, q.y)
       x1 = max(x1, q.x)
       y1 = max(y1, q.y)
-    end
     let pad = float(s.size) / 2.0 + 3.0
     rect(int(x0 - pad), int(y0 - pad), int(x1 - x0 + pad * 2.0), int(y1 - y0 + pad * 2.0))
-  end
-end
 
 fn draw_stroke(art: record, s: record)
   let c = s.color
@@ -142,15 +125,12 @@ fn draw_stroke(art: record, s: record)
     let prev = to_px(art, s.pts[0])
     if a >= 250 || len(s.pts) == 1 then
       dot(x: prev.x, y: prev.y, rad: float(wd) / 2.0, c: c, a: a)
-    end
     for i in range(1, len(s.pts)) do
       let q = to_px(art, s.pts[i])
       seg(x1: prev.x, y1: prev.y, x2: q.x, y2: q.y, c: c, a: a, wd: wd)
       if wd >= 4 && a >= 250 then
         dot(x: q.x, y: q.y, rad: float(wd) / 2.0, c: c, a: a)
-      end
       prev = q
-    end
   else if len(s.pts) >= 2 then
     let p = to_px(art, s.pts[0])
     let q = to_px(art, s.pts[1])
@@ -170,23 +150,17 @@ fn draw_stroke(art: record, s: record)
     else if s.kind == Tool.ellipse then
       ellipse_outline(cx: (p.x + q.x) / 2.0, cy: (p.y + q.y) / 2.0,
         rx: abs(q.x - p.x) / 2.0, ry: abs(q.y - p.y) / 2.0, c: c, a: a, wd: wd)
-    end
-  end
-end
 
 # ── Seeded artwork ───────────────────────────────────────────────────────
 
 fn mk(kind: Tool, color: record, size: num, pts: list) -> record
   {kind: kind, color: color, size: size, alpha: 255, pts: pts}
-end
 
 fn mk(kind: Tool, color: record, size: num, alpha: num, pts: list) -> record
   {kind: kind, color: color, size: size, alpha: alpha, pts: pts}
-end
 
 fn tick(x: num, y0: num, y1: num) -> record
   mk(kind: Tool.brush, color: :79b74a, size: 2, pts: [[x, y0], [x + 0.006, y1]])
-end
 
 fn seed_artwork() -> list
   let out = []
@@ -231,7 +205,6 @@ fn seed_artwork() -> list
   out = append(out, mk(kind: Tool.brush, color: :55606f, size: 2, pts: [[0.46, 0.175], [0.483, 0.160], [0.506, 0.176]]))
   out = append(out, mk(kind: Tool.brush, color: :55606f, size: 2, pts: [[0.535, 0.215], [0.552, 0.204], [0.569, 0.216]]))
   out
-end
 
 # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -264,7 +237,6 @@ fn build_layout(w: num, h: num, nrows: num) -> record
   for i in range(0, len(TOOLS)) do
     tool_rects = append(tool_rects, rect(rail.x + 12, ty, 52, 52))
     ty = ty + 62
-  end
 
   # right panel
   let px = panel.x + 24
@@ -280,7 +252,6 @@ fn build_layout(w: num, h: num, nrows: num) -> record
     let col = i % 6
     let row = i / 6
     swatches = append(swatches, rect(px + col * (sw + 8), y + row * 38, sw, 30))
-  end
   y = y + 68 + 24
   let lbl_brush = y
   y = y + 22
@@ -303,7 +274,6 @@ fn build_layout(w: num, h: num, nrows: num) -> record
   let rows = []
   for i in range(0, cap) do
     rows = append(rows, rect(px, y + i * row_h, pw, row_h - 4))
-  end
 
   {header: header, status: status, rail: rail, panel: panel, canvas: canvas,
     art: art, btn_undo: btn_undo, btn_redo: btn_redo, btn_clear: btn_clear,
@@ -312,14 +282,12 @@ fn build_layout(w: num, h: num, nrows: num) -> record
     size_row: size_row, size_slider: size_slider, alpha_row: alpha_row,
     alpha_slider: alpha_slider, preview: preview, lbl_hist: lbl_hist,
     list_r: list_r, rows: rows}
-end
 
 # ── Chrome widgets ───────────────────────────────────────────────────────
 
 fn plate(r: record, radius: num, fill: record, edge: record)
   draw_rect_rounded(r.inset(-1), radius: radius + 1, c: edge)
   draw_rect_rounded(r, radius, c: fill)
-end
 
 fn pill(r: record, text: string, keycap: string, on: bool, enabled: bool)
   let hov = enabled && hovered(r)
@@ -334,7 +302,6 @@ fn pill(r: record, text: string, keycap: string, on: bool, enabled: bool)
   let tx = r.x + (r.w - total) / 2
   draw_text(text, {x: tx, y: r.y + (r.h - 12) / 2 - 1}, 12, fg)
   draw_text(keycap, {x: tx + tw + 8, y: r.y + (r.h - 10) / 2}, 10, kc)
-end
 
 fn tool_icon(tool: Tool, r: record, c: record)
   let cx = r.x + r.w / 2
@@ -350,7 +317,6 @@ fn tool_icon(tool: Tool, r: record, c: record)
         seg(x1: px, y1: py, x2: qx, y2: qy, c: c, a: 255, wd: 3)
         px = qx
         py = qy
-      end
       dot(x: px, y: py, rad: 1.5, c: c, a: 255)
     when Tool.line ->
       seg(x1: cx - 8, y1: cy + 7, x2: cx + 8, y2: cy - 7, c: c, a: 255, wd: 2)
@@ -367,8 +333,6 @@ fn tool_icon(tool: Tool, r: record, c: record)
       fill_poly(points: [[cx - 8, cy - 1], [cx - 1, cy - 9], [cx + 7, cy - 1], [cx - 1, cy + 7]],
         r: c.r, g: c.g, b: c.b, a: 220)
       dot(x: cx + 8, y: cy + 6, rad: 3.0, c: c, a: 255)
-  end
-end
 
 # The history row menu.
 let HIST_ITEMS = ["Select on canvas", "Duplicate", "Bring to front", {sep: true},
@@ -386,11 +350,9 @@ fn menu_est(m: record)
   if x + w > screen_width() then x = max(0, m.x - w) end
   if y + h > screen_height() then y = max(0, m.y - h) end
   rect(x, y, w, h)
-end
 
 fn overlaps(a: record, b: record) -> bool
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-end
 
 fn slider_track(r: record, t: num, c: record)
   let ty = r.y + r.h / 2
@@ -398,11 +360,9 @@ fn slider_track(r: record, t: num, c: record)
   let fw = int(float(r.w) * t)
   if fw > 4 then
     draw_rect_rounded(x: r.x, y: ty - 3, w: fw, h: 6, radius: 3, r: c.r, g: c.g, b: c.b)
-  end
   let kx = r.x + fw
   dot(x: kx, y: ty, rad: 9, c: :0c0e13, a: 255)
   dot(x: kx, y: ty, rad: 7, c: c, a: 255)
-end
 
 # ── Persistent document + tool state ─────────────────────────────────────
 
@@ -437,8 +397,6 @@ let blocked = bloom.menu_any_open()
 for t in TOOLS do
   if key_pressed(t.key) then
     tool = t
-  end
-end
 if key_pressed("leftbracket") then brush = max(1, brush - 1) end
 if key_pressed("rightbracket") then brush = min(48, brush + 1) end
 if key_pressed("g") then grid = !grid end
@@ -453,37 +411,27 @@ if mouse_pressed(0) && hovered(L.alpha_slider) then alpha_grab = true end
 if !mouse_down(0) then
   size_grab = false
   alpha_grab = false
-end
 if size_grab then
   let t = clamp(float(mx - L.size_slider.x) / float(L.size_slider.w), lo: 0.0, hi: 1.0)
   brush = 1 + int(round(t * 47.0))
-end
 if alpha_grab then
   let t = clamp(float(mx - L.alpha_slider.x) / float(L.alpha_slider.w), lo: 0.0, hi: 1.0)
   opacity = 25 + int(round(t * 230.0))
-end
 
 # ── Pointer: tools, swatches, history rows, header pills ─────────────────
 for i in range(0, len(TOOLS)) do
   if !blocked && ui.clicked(L.tool_rects[i]) then
     tool = TOOLS[i]
-  end
-end
 for i in range(0, len(INKS)) do
   if !blocked && ui.clicked(L.swatches[i]) then
     ink = i
-  end
-end
 for i in range(0, len(L.rows)) do
   let idx = len(strokes) - 1 - i
   if !blocked && ui.clicked(L.rows[i]) then
     sel = if sel == idx then -1 else idx end
-  end
   if !blocked && mouse_pressed(1) && point_in(px: mx, py: my, r: L.rows[i]) then
     menu_at = {x: mx, y: my, tag: idx}
     bloom.menu_open_at("history", mx, my)
-  end
-end
 if !blocked && ui.clicked(L.btn_grid) then grid = !grid end
 
 # ── Painting on the artboard ─────────────────────────────────────────────
@@ -504,7 +452,6 @@ else if start_paint then
   cur = {kind: kind, color: paint_c, size: paint_w, alpha: paint_a,
     pts: [to_uv(art, mx, my)], active: true}
   sel = -1
-end
 
 if cur.active && mouse_down(0) then
   let uv = to_uv(art, mx, my)
@@ -514,11 +461,8 @@ if cur.active && mouse_down(0) then
     let dy = (uv[1] - lastp[1]) * float(art.h)
     if dx * dx + dy * dy > 4.0 && len(cur.pts) < 900 then
       cur.pts = append(cur.pts, uv)
-    end
   else
     cur.pts = [cur.pts[0], uv]
-  end
-end
 
 if cur.active && !mouse_down(0) then
   let keep = cur.kind == Tool.brush || cur.kind == Tool.eraser
@@ -526,16 +470,13 @@ if cur.active && !mouse_down(0) then
     let p = to_px(art, cur.pts[0])
     let q = to_px(art, cur.pts[1])
     keep = abs(q.x - p.x) + abs(q.y - p.y) > 4.0
-  end
   if keep then
     hist = append(hist, strokes)
     fut = []
     strokes = append(strokes, {kind: cur.kind, color: cur.color, size: cur.size,
       alpha: cur.alpha, pts: cur.pts})
     ops = ops + 1
-  end
   cur = {kind: nil, color: :000000, size: 0, alpha: 0, pts: [], active: false}
-end
 
 # ── Undo / redo / clear ──────────────────────────────────────────────────
 let hit_undo = !blocked && ui.clicked(L.btn_undo) && len(hist) > 0
@@ -548,21 +489,18 @@ if (want_undo || hit_undo) && len(hist) > 0 then
   hist = drop_last(hist)
   sel = -1
   ops = ops + 1
-end
 if (want_redo || hit_redo) && len(fut) > 0 then
   hist = append(hist, strokes)
   strokes = last(fut)
   fut = drop_last(fut)
   sel = -1
   ops = ops + 1
-end
 if (want_clear || hit_clear) && len(strokes) > 0 then
   hist = append(hist, strokes)
   fut = []
   strokes = []
   sel = -1
   ops = ops + 1
-end
 if sel >= len(strokes) then sel = -1 end
 if len(hist) > 60 then hist = slice(hist, start: len(hist) - 60, end: len(hist)) end
 
@@ -576,28 +514,22 @@ draw_rect(art, PAPER)
 clip(x: art.x, y: art.y, w: art.w, h: art.h)
 for s in strokes do
   draw_stroke(art, s)
-end
 if cur.active && len(cur.pts) > 0 then
   draw_stroke(art, cur)
-end
 if len(strokes) == 0 && !cur.active then
   let ec = :b8b3a8
   draw_text_center("blank canvas", cx: art.x + art.w / 2, y: art.y + art.h / 2 - 22, size: 20, c: ec)
   draw_text_center("drag to paint  ·  press U to bring the sketch back",
     cx: art.x + art.w / 2, y: art.y + art.h / 2 + 6, size: 12, c: ec)
-end
 if grid then
   let gx = art.x + 40
   while gx < art.x + art.w do
     seg(x1: gx, y1: art.y, x2: gx, y2: art.y + art.h, c: :17191f, a: 22, wd: 1)
     gx = gx + 40
-  end
   let gy = art.y + 40
   while gy < art.y + art.h do
     seg(x1: art.x, y1: gy, x2: art.x + art.w, y2: gy, c: :17191f, a: 22, wd: 1)
     gy = gy + 40
-  end
-end
 clip_none()
 draw_rect_outline(x: art.x, y: art.y, w: art.w, h: art.h, r: 0, g: 0, b: 0, a: 40)
 
@@ -609,7 +541,6 @@ if sel >= 0 && sel < len(strokes) then
   dot(x: bb.x + bb.w, y: bb.y, rad: 3, c: ACCENT, a: 255)
   dot(x: bb.x, y: bb.y + bb.h, rad: 3, c: ACCENT, a: 255)
   dot(x: bb.x + bb.w, y: bb.y + bb.h, rad: 3, c: ACCENT, a: 255)
-end
 
 # brush cursor
 if over_art && !cur.active then
@@ -623,8 +554,6 @@ if over_art && !cur.active then
   else
     draw_circle(cx: mx, cy: my, radius: max(3, cr / 2 + 1), r: 0, g: 0, b: 0, a: 90)
     draw_circle(cx: mx, cy: my, radius: max(2, cr / 2), r: color.r, g: color.g, b: color.b, a: 150)
-  end
-end
 
 # ── Draw: header ─────────────────────────────────────────────────────────
 draw_rect(L.header, PANEL)
@@ -659,12 +588,10 @@ for i in range(0, len(TOOLS)) do
   draw_rect_rounded(r, radius: 10, c: fill)
   if on then
     draw_rect_rounded(x: r.x - 12, y: r.y + 14, w: 4, h: r.h - 28, radius: 2, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b)
-  end
   let ic = if on then TEXT else if hov then TEXT else DIM end
   tool_icon(t, r: r, c: ic)
   draw_text(t.key, {x: r.x + r.w - 12, y: r.y + r.h - 15}, 9,
     if on then ACCENT else FAINT end)
-end
 
 # ── Draw: right panel ────────────────────────────────────────────────────
 draw_rect(L.panel, PANEL)
@@ -685,9 +612,7 @@ for i in range(0, len(INKS)) do
     draw_rect_rounded(r.inset(-3), radius: 8, c: TEXT)
   else if hovered(r) then
     draw_rect_rounded(r.inset(-2), radius: 7, c: OUTLINE)
-  end
   draw_rect_rounded(r, radius: 5, c: c)
-end
 
 label("BRUSH", x: L.px, y: L.lbl_brush, c: FAINT)
 draw_text("Size", {x: L.px, y: L.size_row}, 12, DIM)
@@ -703,7 +628,6 @@ clip(x: L.preview.x, y: L.preview.y, w: L.preview.w, h: L.preview.h)
 if tool == Tool.eraser then
   seg(x1: L.preview.x + 8, y1: L.preview.y + L.preview.h / 2,
     x2: L.preview.x + L.preview.w - 8, y2: L.preview.y + L.preview.h / 2, c: :55606f, a: 255, wd: 26)
-end
 let pcy = float(L.preview.y + L.preview.h / 2)
 let ppx = float(L.preview.x + 14)
 let ppy = pcy
@@ -714,13 +638,11 @@ for i in range(1, 33) do
   seg(x1: ppx, y1: ppy, x2: qx, y2: qy, c: paint_c, a: paint_a, wd: paint_w)
   ppx = qx
   ppy = qy
-end
 clip_none()
 
 label("HISTORY", x: L.px, y: L.lbl_hist, c: FAINT)
 if len(strokes) == 0 then
   draw_text("empty canvas", {x: L.px, y: L.list_r.y + 4}, 12, FAINT)
-end
 let mcover = if bloom.menu_is_open("history") then menu_est(menu_at) else rect(-9999, -9999, 0, 0) end
 for i in range(0, len(L.rows)) do
   let r = L.rows[i]
@@ -733,7 +655,6 @@ for i in range(0, len(L.rows)) do
     draw_rect_rounded(x: r.x, y: r.y + 6, w: 3, h: r.h - 12, radius: 2, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b)
   else if hovered(r) then
     draw_rect_rounded(r, radius: 6, c: HOVER, a: 150)
-  end
   draw_rect_rounded(x: r.x + 10, y: r.y + 8, w: 14, h: 14, radius: 4, r: PAPER.r, g: PAPER.g, b: PAPER.b)
   draw_rect_rounded(x: r.x + 13, y: r.y + 11, w: 8, h: 8, radius: 3, r: s.color.r, g: s.color.g, b: s.color.b, a: s.alpha)
   let nm = s.kind.stroke
@@ -741,12 +662,9 @@ for i in range(0, len(L.rows)) do
     draw_text(nm, {x: r.x + 34, y: r.y + 8}, 12, if on then TEXT else DIM end)
     let meta = if s.kind == Tool.fill then "wash" else "{s.size} px · {len(s.pts)} pt" end
     draw_text_right(meta, right_x: r.x + r.w - 10, y: r.y + 9, size: 10, c: FAINT)
-  end
-end
 let older_r = rect(L.px, L.list_r.y + L.list_r.h - 16, L.pw, 14)
 if len(strokes) > len(L.rows) && !overlaps(older_r, mcover) then
   draw_text("+{len(strokes) - len(L.rows)} older", {x: older_r.x, y: older_r.y}, 10, FAINT)
-end
 
 # ── Draw: status bar ─────────────────────────────────────────────────────
 draw_rect(L.status, PANEL)
@@ -781,7 +699,6 @@ if tip >= 0 then
     r: ELEV.r, g: ELEV.g, b: ELEV.b)
   draw_text(t.label, {x: tr.x + 12, y: tr.y + 8}, 12, TEXT)
   draw_text(t.hint, {x: tr.x + 12, y: tr.y + 25}, 10, FAINT)
-end
 
 # ── History context menu (drawn last so it sits over everything) ─────────
 let picked = bloom.menu("history", art, HIST_ITEMS, {at: "point"})
@@ -801,15 +718,9 @@ if picked >= 0 then
           continue
         else if picked == 4 then
           continue
-        end
-      end
       out = append(out, strokes[i])
-    end
     if picked == 2 then
       out = append(out, strokes[t])
-    end
     strokes = out
     sel = -1
     ops = ops + 1
-  end
-end

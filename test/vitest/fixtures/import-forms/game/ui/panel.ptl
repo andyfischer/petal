@@ -5,4 +5,3 @@ import ../../shared/rng
 
 pub fn title()
   hud.draw() ++ " panel " ++ str(rng.seed)
-end

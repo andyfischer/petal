@@ -16,23 +16,19 @@ fn view(cards)
   for i in range(0, len(cards)) do
     let r = speculate_place(cards[i], {x: 40 + i * 70, y: 100})
     push_output(symbol("draw"), "card {cards[i]} at {r.x}")
-  end
   renders
-end
 
 # The candidate orders a drag of "A" could reach: A moved to each slot.
 fn moves(xs, i)
   let x = xs[i]
   let rest = remove_at(xs, i)
   for j in range(0, len(xs)) do take(rest, j) ++ [x] ++ drop(rest, j) end
-end
 
 let cards = ["A", "B", "C"]
 for c in moves(cards, 0) do
   let r = speculate(view, c)
   let a = find(r.places, fn(p) p.key == "A" end)
   print("{c}: A lands at x={a.value.x}, {len(r.emits)} draw commands, renders={r.value}")
-end
 
 # Nothing the hypothetical runs did is left behind: the cell is untouched,
 # the random stream did not move, and no draw command reached the buffer.

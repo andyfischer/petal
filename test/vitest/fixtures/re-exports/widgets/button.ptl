@@ -1,10 +1,8 @@
 # Two arities of one name: the overload set a facade must carry whole.
 pub fn button(label)
   "[" ++ label ++ "]"
-end
 
 pub fn button(label, width)
   "[" ++ label ++ "|" ++ str(width) ++ "]"
-end
 
 pub let button_pad = 2

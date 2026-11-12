@@ -33,4 +33,3 @@ hint_bar(rect(0, h - 26, w, 26),
 
 if back || key_pressed("b") then
   navigate_back()
-end

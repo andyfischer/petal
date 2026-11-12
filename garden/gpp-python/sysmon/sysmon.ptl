@@ -37,7 +37,6 @@ let SORT_FIELDS = ["pid", "user", "cpu", "mem", "rss", "command"]
 let sort_field = "cpu"
 if tbl.sort_col >= 0 && tbl.sort_col < len(SORT_FIELDS) then
   sort_field = SORT_FIELDS[tbl.sort_col]
-end
 let sort_dir = if tbl.sort_asc then "asc" else "desc" end
 let sort_spec = sort_field ++ ":" ++ sort_dir
 
@@ -69,7 +68,6 @@ if ready then
     cpu_color = T.danger
   else if cpu_frac > 0.35 then
     cpu_color = T.warn
-  end
   let b2 = bloom.pill(b1.x + b1.w + 8, by, "cpu " ++ str(d.cpu_total) ++ "%", cpu_color)
   let b3 = bloom.pill(b2.x + b2.w + 8, by, "load " ++ str(d.load1) ++ " / " ++ str(d.load5) ++ " / " ++ str(d.load15), T.accent)
   let b4 = bloom.badge(b3.x + b3.w + 8, by, "rss " ++ str(d.rss_total_gb) ++ " GB")
@@ -79,8 +77,6 @@ if ready then
   let meter_w = header.x + header.w - meter_x
   if meter_w > 80 then
     bloom.progress(rect(meter_x, header.y + 14, meter_w, 8), cpu_frac)
-  end
-end
 
 # ── Body: the sortable process table ─────────────────────────────────────
 if bloom.load_view(body, ls) then
@@ -95,7 +91,6 @@ if bloom.load_view(body, ls) then
   ]
   let shown = bloom.table(body, cols, ls.value.procs, {sort_col: tbl.sort_col, sort_asc: tbl.sort_asc})
   tbl = {sort_col: shown.sort_col, sort_asc: shown.sort_asc}
-end
 
 bloom.hint_bar(split_hints.cut, [
   bloom.hint("click header", "sort"),

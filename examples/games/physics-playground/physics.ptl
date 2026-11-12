@@ -43,19 +43,16 @@ pub let BAR_R = 3.0
 # Length of the vector (dx, dy).
 pub fn norm(dx: num, dy: num) -> num
   sqrt(dx * dx + dy * dy)
-end
 
 # ── Building a world ─────────────────────────────────────────────────────
 
 pub fn empty_world() -> record
   {n: 0, x: [], y: [], vx: [], vy: [], r: [], m: [], w: [], ang: [], om: [],
     c: [], id: [], pin: [], links: [], segs: [], order: [], tension: [], next_id: 1}
-end
 
 # Mass grows with area; `dens` scales it (a wrecking ball is 6).
 pub fn mass_of(r: num, dens: num) -> num
   dens * (r * r) / 196.0
-end
 
 pub fn add_body(wd: record, x: num, y: num, r: num, c: int, pin: bool, dens: num,
     vx: num, vy: num) -> record
@@ -68,16 +65,13 @@ pub fn add_body(wd: record, x: num, y: num, r: num, c: int, pin: bool, dens: num
     ang: append(wd.ang, 0.0), om: append(wd.om, 0.0),
     c: append(wd.c, c), id: append(wd.id, wd.next_id), pin: append(wd.pin, pin),
     order: [], next_id: wd.next_id + 1}
-end
 
 # The two common cases: a free disc at rest, and a pinned one.
 pub fn add_ball(wd: record, x: num, y: num, r: num, c: int) -> record
   add_body(wd, x, y, r, c, false, 1.0, 0.0, 0.0)
-end
 
 pub fn add_pin(wd: record, x: num, y: num, r: num, c: int) -> record
   add_body(wd, x, y, r, c, true, 1.0, 0.0, 0.0)
-end
 
 # Join bodies a and b at their current distance. A rod is never shorter
 # than the two radii, so it cannot fight the contact between its own ends.
@@ -88,36 +82,29 @@ pub fn add_link(wd: record, a: int, b: int, kind: int, hz: num, rest_len: num) -
   let rest = if rest_len >= 0.0 then float(rest_len) else d end
   if kind == 0 then rest = max(rest, wd.r[a] + wd.r[b]) end
   {...wd, tension: [], links: append(wd.links, {a: a, b: b, len: rest, kind: kind, hz: float(hz)})}
-end
 
 pub fn add_seg(wd: record, x1: num, y1: num, x2: num, y2: num) -> record
   {...wd, segs: append(wd.segs, {x1: float(x1), y1: float(y1), x2: float(x2), y2: float(y2),
     lx: float(min(x1, x2)), hx: float(max(x1, x2)), ly: float(min(y1, y2)), hy: float(max(y1, y2))})}
-end
 
 fn without(xs: list, i: int) -> list
   for k in range(0, len(xs)) do
     if k == i then continue end
     xs[k]
-  end
-end
 
 # Drop body i, and every link that touched it; later bodies shift down one.
 pub fn remove_body(wd: record, i: int) -> record
   let links = for L in wd.links do
     if L.a == i || L.b == i then continue end
     {...L, a: if L.a > i then L.a - 1 else L.a end, b: if L.b > i then L.b - 1 else L.b end}
-  end
   {...wd, n: wd.n - 1,
     x: without(wd.x, i), y: without(wd.y, i), vx: without(wd.vx, i), vy: without(wd.vy, i),
     r: without(wd.r, i), m: without(wd.m, i), w: without(wd.w, i),
     ang: without(wd.ang, i), om: without(wd.om, i), c: without(wd.c, i),
     id: without(wd.id, i), pin: without(wd.pin, i), links: links, order: [], tension: []}
-end
 
 pub fn remove_link(wd: record, k: int) -> record
   {...wd, tension: [], links: without(wd.links, k)}
-end
 
 pub fn set_pin(wd: record, i: int, on: bool) -> record
   let pin = wd.pin
@@ -131,7 +118,6 @@ pub fn set_pin(wd: record, i: int, on: bool) -> record
   vy[i] = 0.0
   om[i] = 0.0
   {...wd, pin: pin, w: w, vx: vx, vy: vy, om: om, tension: []}
-end
 
 pub fn set_velocity(wd: record, i: int, nvx: num, nvy: num) -> record
   let vx = wd.vx
@@ -139,19 +125,15 @@ pub fn set_velocity(wd: record, i: int, nvx: num, nvy: num) -> record
   vx[i] = float(nvx)
   vy[i] = float(nvy)
   {...wd, vx: vx, vy: vy}
-end
 
 pub fn index_of_id(wd: record, id: int) -> int
   index_of(wd.id, id)
-end
 
 pub fn links_on(wd: record, i: int) -> int
   let k = 0
   for L in wd.links do
     if L.a == i || L.b == i then k += 1 end
-  end
   k
-end
 
 # ── Picking ──────────────────────────────────────────────────────────────
 
@@ -166,10 +148,7 @@ pub fn pick_body(wd: record, px: num, py: num, slack: num) -> int
     if best < 0 || d < best_d then
       best = i
       best_d = d
-    end
-  end
   best
-end
 
 # Distance from point p to segment a-b.
 pub fn seg_dist(px: num, py: num, ax: num, ay: num, bx: num, by: num) -> num
@@ -178,7 +157,6 @@ pub fn seg_dist(px: num, py: num, ax: num, ay: num, bx: num, by: num) -> num
   let l2 = ex * ex + ey * ey
   let t = if l2 < 0.0001 then 0.0 else clamp(((px - ax) * ex + (py - ay) * ey) / l2, 0.0, 1.0) end
   norm(px - (ax + ex * t), py - (ay + ey * t))
-end
 
 pub fn pick_link(wd: record, px: num, py: num, tol: num) -> int
   let best = -1
@@ -189,14 +167,10 @@ pub fn pick_link(wd: record, px: num, py: num, tol: num) -> int
     if d <= best_d then
       best = k
       best_d = d
-    end
-  end
   best
-end
 
 fn orient(ax: num, ay: num, bx: num, by: num, cx: num, cy: num) -> num
   (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
-end
 
 # Indices of the links the stroke p-q crosses, highest first so they can be
 # removed in order.
@@ -213,9 +187,7 @@ pub fn links_crossing(wd: record, px: num, py: num, qx: num, qy: num) -> list
     let d3 = orient(ax, ay, bx, by, px, py)
     let d4 = orient(ax, ay, bx, by, qx, qy)
     if d1 * d2 < 0.0 && d3 * d4 < 0.0 then out = append(out, k) end
-  end
   out
-end
 
 # ── Measuring ────────────────────────────────────────────────────────────
 
@@ -232,7 +204,6 @@ pub fn energy(wd: record, env: record) -> record
     let r = wd.r[i]
     ke += 0.5 * m * (wd.vx[i] * wd.vx[i] + wd.vy[i] * wd.vy[i]) + 0.25 * m * r * r * wd.om[i] * wd.om[i]
     pe += m * (env.gx * (top_x - wd.x[i]) + env.gy * (top_y - wd.y[i]))
-  end
   let se = 0.0
   for L in wd.links do
     if L.kind != 1 then continue end
@@ -241,9 +212,7 @@ pub fn energy(wd: record, env: record) -> record
     let k = (6.2832 * L.hz) * (6.2832 * L.hz) / ws
     let d = norm(wd.x[L.b] - wd.x[L.a], wd.y[L.b] - wd.y[L.a]) - L.len
     se += 0.5 * k * d * d
-  end
   {ke: ke, pe: pe, se: se}
-end
 
 # Worst rod error and worst disc overlap, in px: how honest the solver is.
 pub fn audit(wd: record) -> record
@@ -252,7 +221,6 @@ pub fn audit(wd: record) -> record
     if L.kind != 0 then continue end
     let d = norm(wd.x[L.b] - wd.x[L.a], wd.y[L.b] - wd.y[L.a])
     stretch = max(stretch, abs(d - L.len))
-  end
   let overlap = 0.0
   for i in range(0, wd.n) do
     for j in range(i + 1, wd.n) do
@@ -261,10 +229,7 @@ pub fn audit(wd: record) -> record
       if dx > rr || dx < 0.0 - rr then continue end
       let d = norm(dx, wd.y[j] - wd.y[i])
       overlap = max(overlap, rr - d)
-    end
-  end
   {stretch: stretch, overlap: overlap}
-end
 
 # ── The step ─────────────────────────────────────────────────────────────
 
@@ -280,7 +245,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
   let n = wd.n
   if n == 0 || dt <= 0.0 then
     return {world: wd, contacts: 0, pts: [], subs: 0}
-  end
   # What the solver writes lives in cells, so the helpers below can write it
   # (`set vx[i] = …`, in place) and read it (`get vx[i]`). The code of `step`
   # itself reads a cell by its bare name.
@@ -324,7 +288,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
     set vy[a] = get vy[a] + dy * s * w[a]
     set vx[b] = get vx[b] - dx * s * w[b]
     set vy[b] = get vy[b] - dy * s * w[b]
-  end
 
   # The same for their positions.
   let shift = fn(a, b, dx, dy, s)
@@ -332,7 +295,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
     set y[a] = get y[a] + dy * s * w[a]
     set x[b] = get x[b] - dx * s * w[b]
     set y[b] = get y[b] - dy * s * w[b]
-  end
 
   # Remember that i and j touch, for the impulse passes.
   let touch_pair = fn(i, j, nx, ny)
@@ -343,8 +305,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
     if get keep then
       set pts = append(get pts, get x[i] + nx * r[i])
       set pts = append(get pts, get y[i] + ny * r[i])
-    end
-  end
 
   # Remember that i touches something fixed at (px, py).
   let touch_static = fn(i, nx, ny, px, py)
@@ -354,8 +314,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
     if get keep then
       set pts = append(get pts, px)
       set pts = append(get pts, py)
-    end
-  end
 
   # One impulse between two bodies: stop them closing along n, with
   # restitution, then Coulomb friction on the sliding speed of the two
@@ -382,7 +340,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
     set vy[j] = get vy[j] + ty * jt * wj
     set om[i] = get om[i] - jt * 2.0 * wi / r[i]
     set om[j] = get om[j] - jt * 2.0 * wj / r[j]
-  end
 
   # The same against something fixed.
   let solve_static = fn(i, nx, ny)
@@ -399,7 +356,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
     set vx[i] = get vx[i] + tx * dt_v
     set vy[i] = get vy[i] + ty * dt_v
     set om[i] = get om[i] + 2.0 * dt_v / r[i]
-  end
 
   # Broadphase, once per frame: sweep the bodies in x order and keep every
   # pair whose boxes could meet before the frame is over. `reach` is a
@@ -408,11 +364,9 @@ pub fn step(wd: record, dt: num, env: record) -> record
   let reach = for i in range(0, n) do
     let sp = abs(vx[i]) + abs(vy[i])
     r[i] + 2.5 + (if i == grab then max(sp, 1500.0) else sp end) * dt
-  end
   let max_reach = 0.0
   for i in range(0, n) do
     max_reach = max(max_reach, reach[i])
-  end
   let order = if len(wd.order) == n then wd.order else range(0, n) end
   for a in range(1, n) do
     let i = order[a]
@@ -421,9 +375,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
     while b >= 0 && x[order[b]] > xi do
       order[b + 1] = order[b]
       b -= 1
-    end
     order[b + 1] = i
-  end
   let pairs = []
   for a in range(0, n) do
     let i = order[a]
@@ -443,8 +395,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
       if dy > rr || dy < 0.0 - rr then continue end
       pairs = append(pairs, i)
       pairs = append(pairs, j)
-    end
-  end
   let np = len(pairs)
   let spairs = []
   let nseg = len(segs)
@@ -459,9 +409,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
         if xi + ri < sg.lx || xi - ri > sg.hx || yi + ri < sg.ly || yi - ri > sg.hy then continue end
         spairs = append(spairs, i)
         spairs = append(spairs, s)
-      end
-    end
-  end
   let nsp = len(spairs)
 
   # Rods as flat lists, so the passes below index instead of reading fields.
@@ -473,7 +420,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
     ra = append(ra, L.a)
     rb = append(rb, L.b)
     rl = append(rl, L.len)
-  end
   let nr = len(rl)
   # Each rod remembers the force it carried last sub-step and starts from
   # it (a warm start), so a loaded bridge or a hanging chain holds its
@@ -505,9 +451,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
       let pen = rr - d
       if pen > SLOP then
         shift(i, j, nx, ny, 0.0 - (pen - SLOP) * PUSH / (w[i] + w[j]))
-      end
       touch_pair(i, j, nx, ny)
-    end
     for i in range(0, n) do
       if w[i] == 0.0 then continue end
       let ri = r[i]
@@ -516,20 +460,15 @@ pub fn step(wd: record, dt: num, env: record) -> record
       if x[i] - ri < TOUCH then
         if x[i] - ri < 0.0 - SLOP then set x[i] = ri - SLOP end
         touch_static(i, -1.0, 0.0, 0.0, y[i])
-      end
       if x[i] + ri > W - TOUCH then
         if x[i] + ri > W + SLOP then set x[i] = W - ri + SLOP end
         touch_static(i, 1.0, 0.0, W, y[i])
-      end
       if y[i] - ri < TOUCH then
         if y[i] - ri < 0.0 - SLOP then set y[i] = ri - SLOP end
         touch_static(i, 0.0, -1.0, x[i], 0.0)
-      end
       if y[i] + ri > H - TOUCH then
         if y[i] + ri > H + SLOP then set y[i] = H - ri + SLOP end
         touch_static(i, 0.0, 1.0, x[i], H)
-      end
-    end
     k = 0
     while k < nsp do
       let i = spairs[k]
@@ -555,9 +494,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
       if pen > SLOP then
         set x[i] = x[i] - nx * (pen - SLOP)
         set y[i] = y[i] - ny * (pen - SLOP)
-      end
       touch_static(i, nx, ny, qx - nx * SEG_R, qy - ny * SEG_R)
-    end
     let nbc = len(bc)
     let nsc = len(sc)
     if keep then contacts = nbc / 4 + nsc / 3 end
@@ -568,8 +505,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
         set vx[i] = (vx[i] + gx * h) * damp
         set vy[i] = (vy[i] + gy * h) * damp
         set om[i] = om[i] * spin_damp
-      end
-    end
     for L in links do
       if L.kind != 1 then continue end
       let a = L.a
@@ -587,7 +522,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
       # Force over the pair's reduced mass, so every spring rings at `hz`
       # whatever it carries.
       kick(a, b, nx, ny, (omega * omega * (d - L.len) + 2.0 * SPRING_Z * omega * vrel) * h / ws)
-    end
     if grab >= 0 then
       # The mouse is a velocity servo: the grabbed disc closes most of the
       # distance each frame, but rods and contacts still get their say.
@@ -597,7 +531,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
       let cap = if sp > MAX_V then MAX_V / sp else 1.0 end
       set vx[grab] = pvx * cap
       set vy[grab] = pvy * cap
-    end
 
     # c. Impulses.
     for q in range(0, nr) do
@@ -610,7 +543,6 @@ pub fn step(wd: record, dt: num, env: record) -> record
       let p = rf[q] * h / d
       rf[q] = rf[q] * h
       kick(a, b, dx, dy, p)
-    end
     for it in range(0, ITERS) do
       # Rods get extra passes, alternating direction: a chain converges
       # from both ends, which a heavy ball on a light chain needs.
@@ -626,23 +558,17 @@ pub fn step(wd: record, dt: num, env: record) -> record
           let lam = ((vx[b] - vx[a]) * dx + (vy[b] - vy[a]) * dy) / (d * d * (w[a] + w[b]))
           rf[ri] = rf[ri] + lam * d
           kick(a, b, dx, dy, lam)
-        end
-      end
       k = 0
       while k < nbc do
         solve_pair(bc[k], bc[k + 1], bc[k + 2], bc[k + 3])
         k += 4
-      end
       k = 0
       while k < nsc do
         solve_static(sc[k], sc[k + 1], sc[k + 2])
         k += 3
-      end
-    end
 
     for q in range(0, nr) do
       rf[q] = rf[q] / h
-    end
 
     # d. Move, then put every rod back to its length.
     for i in range(0, n) do
@@ -650,17 +576,14 @@ pub fn step(wd: record, dt: num, env: record) -> record
         set vx[i] = 0.0
         set vy[i] = 0.0
         continue
-      end
       let sp2 = vx[i] * vx[i] + vy[i] * vy[i]
       if sp2 > MAX_V * MAX_V then
         let f = MAX_V / sqrt(sp2)
         set vx[i] = vx[i] * f
         set vy[i] = vy[i] * f
-      end
       set x[i] = x[i] + vx[i] * h
       set y[i] = y[i] + vy[i] * h
       ang[i] = ang[i] + om[i] * h
-    end
     for pass in range(0, ROD_PASSES * 2) do
       for q in range(0, nr) do
         let ri = if pass % 2 == 0 then q else nr - 1 - q end
@@ -671,13 +594,9 @@ pub fn step(wd: record, dt: num, env: record) -> record
         let d = sqrt(dx * dx + dy * dy)
         if d < 0.0001 then continue end
         shift(a, b, dx, dy, (d - rl[ri]) / (d * (w[a] + w[b])))
-      end
-    end
-  end
 
   {world: {...wd, x: x, y: y, vx: vx, vy: vy, ang: ang, om: om, order: order, tension: rf},
     contacts: contacts, pts: pts, subs: subs}
-end
 
 # ── Tests ────────────────────────────────────────────────────────────────
 #
@@ -688,23 +607,19 @@ end
 fn test_env(gy: num) -> record
   {gx: 0.0, gy: gy, bounce: 0.3, fric: 0.5, drag: 0.0, w: 800.0, h: 600.0,
     grab: -1, tx: 0.0, ty: 0.0}
-end
 
 # `wd` after `frames` steps of 1/60 s.
 fn run_frames(wd: record, frames: int, env: record) -> record
   let cur = wd
   for f in range(0, frames) do
     cur = step(cur, 1.0 / 60.0, env).world
-  end
   cur
-end
 
 test "norm and seg_dist measure in pixels" do
   expect_eq(norm(3.0, 4.0), 5.0)
   # Beside the middle of a segment, then past its end.
   expect_near(seg_dist(5.0, 3.0, 0.0, 0.0, 10.0, 0.0), 3.0, 0.000001)
   expect_near(seg_dist(13.0, 4.0, 0.0, 0.0, 10.0, 0.0), 5.0, 0.000001)
-end
 
 test "a body is added at rest with a mass that grows with its area" do
   let wd = add_ball(add_ball(empty_world(), 100, 100, 14, 0), 200, 100, 28, 1)
@@ -714,7 +629,6 @@ test "a body is added at rest with a mass that grows with its area" do
   expect_eq(wd.m[1], 4.0)
   expect_eq([wd.vx[1], wd.vy[1]], [0.0, 0.0])
   expect_eq(index_of_id(wd, 2), 1)
-end
 
 test "a free disc falls and a pinned one stays" do
   let wd = add_pin(add_ball(empty_world(), 100, 100, 14, 0), 300, 100, 14, 0)
@@ -723,7 +637,6 @@ test "a free disc falls and a pinned one stays" do
   expect_near(after.y[0] - 100.0, 112.5, 3.0)
   expect(after.vy[0] > 400.0, "the falling disc has picked up speed")
   expect_eq([after.x[1], after.y[1]], [300.0, 100.0])
-end
 
 test "a rod keeps its length while its bob swings" do
   let wd = add_ball(add_pin(empty_world(), 400, 100, 6, 0), 520, 100, 14, 0)
@@ -733,14 +646,12 @@ test "a rod keeps its length while its bob swings" do
   let after = run_frames(hung, 30, test_env(900.0))
   expect(audit(after).stretch < 0.5, "the rod stretched {audit(after).stretch} px")
   expect(after.y[1] > 180.0, "the bob is at y = {after.y[1]}")
-end
 
 test "a disc dropped on the floor comes to rest on it" do
   let wd = add_ball(empty_world(), 400, 540, 14, 0)
   let after = run_frames(wd, 240, test_env(900.0))
   expect_near(after.y[0], 600.0 - 14.0, 1.0)
   expect(abs(after.vy[0]) < 5.0, "still moving at {after.vy[0]} px/s")
-end
 
 test "with no gravity and no drag a thrown disc keeps its speed" do
   let wd = add_body(empty_world(), 100, 300, 14, 0, false, 1.0, 120.0, 0.0)
@@ -749,4 +660,3 @@ test "with no gravity and no drag a thrown disc keeps its speed" do
   let after = run_frames(wd, 60, env)
   expect_near(energy(after, env).ke, before, 0.001)
   expect_near(after.x[0], 220.0, 0.01)
-end

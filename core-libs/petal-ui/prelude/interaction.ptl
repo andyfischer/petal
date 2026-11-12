@@ -15,7 +15,6 @@ import ./hit
 import ./text
 import ./layout
 
-
 # ── Lists ─────────────────────────────────────────────────────────────────
 # State is an explicit record so multiple lists coexist:
 #   state files = list_state()
@@ -26,28 +25,22 @@ import ./layout
 
 pub fn list_state()
   {selected: 0, scroll: 0}
-end
 
 fn _row_h(r, visible_rows)
   max(1, r.h / visible_rows)
-end
 
 # Rect of the item with absolute index `i`, given the list's current scroll.
 pub fn list_row_rect(r, visible_rows, i, scroll)
   {x: r.x, y: r.y + (i - scroll) * _row_h(r, visible_rows), w: r.w, h: _row_h(r, visible_rows)}
-end
 
 # Scroll offset that keeps `selected` inside a `visible_rows` window.
 pub fn ensure_visible(scroll, selected, visible_rows)
   let s = scroll
   if selected < s then
     s = selected
-  end
   if selected >= s + visible_rows then
     s = selected - visible_rows + 1
-  end
   s
-end
 
 # Pixel counterpart of ensure_visible for a VARIABLE-height row list: return the
 # scroll offset (px) that keeps the selected row's full [row_off, row_off+row_h)
@@ -59,16 +52,12 @@ pub fn ensure_visible_px(scroll, row_off, row_h, view_h)
   let s = scroll
   if row_off + row_h > s + view_h then
     s = row_off + row_h - view_h
-  end
   if row_off < s then
     s = row_off
-  end
   s
-end
 
 pub fn list_update(lst, item_count, visible_rows, r)
   list_update(lst, item_count, visible_rows, r, true)
-end
 
 # Focus-gated form: keyboard navigation only runs when `active` is true, so a
 # list can share the keyboard with other widgets (see the focus registry).
@@ -87,55 +76,40 @@ pub fn list_update(lst, item_count, visible_rows, r, active)
     if key_pressed("down") || key_pressed("j") then
       sel = sel + 1
       key_moved = true
-    end
     if key_pressed("up") || key_pressed("k") then
       sel = sel - 1
       key_moved = true
-    end
     if key_pressed("pagedown") then
       sel = sel + visible_rows
       key_moved = true
-    end
     if key_pressed("pageup") then
       sel = sel - visible_rows
       key_moved = true
-    end
     if key_pressed("home") then
       sel = 0
       key_moved = true
-    end
     if key_pressed("end") then
       sel = item_count - 1
       key_moved = true
-    end
-  end
   let over = _hot(r, nil)
   if mouse_pressed(0) && over then
     let row = scroll + (mouse_y() - r.y) / _row_h(r, visible_rows)
     if row >= 0 && row < item_count then
       sel = row
-    end
-  end
   if over then
     scroll = scroll + scroll_y()
-  end
   sel = clamp(sel, 0, max(0, item_count - 1))
   scroll = clamp(scroll, 0, max(0, item_count - visible_rows))
   if key_moved then
     scroll = ensure_visible(scroll, sel, visible_rows)
-  end
   {selected: sel, scroll: scroll}
-end
-
 
 # ── Scroll region (row/line based) ────────────────────────────────────────
 # Wheel scrolls when the pointer is over `r`; pageup/pagedown page; the
 # offset is clamped to [0, total_lines - visible_lines].
 
-
 pub fn scroll_update(offset, total_lines, visible_lines, r)
   scroll_update(offset, total_lines, visible_lines, r, true)
-end
 
 # Focus-gated form (mirrors list_update's): the wheel stays hover-scoped, but
 # pageup/pagedown only page when `active` is true. In a multi-region panel
@@ -145,18 +119,12 @@ pub fn scroll_update(offset, total_lines, visible_lines, r, active)
   let off = offset
   if _hot(r, nil) then
     off = off + scroll_y()
-  end
   if active then
     if key_pressed("pagedown") then
       off = off + visible_lines
-    end
     if key_pressed("pageup") then
       off = off - visible_lines
-    end
-  end
   clamp(off, 0, max(0, total_lines - visible_lines))
-end
-
 
 # ── Focus ──────────────────────────────────────────────────────────────────
 # At most one widget id has the keyboard. The runtime keeps track of it,
@@ -195,25 +163,20 @@ var _focus_now = {frame: -1, id: ""}
 
 pub fn has_focus(id)
   id != nil && focus_owner() == str(id)
-end
 
 pub fn focus_owner()
   let p = get _focus_now
   if p.frame == frame_count() then p.id else _ui_focus() end
-end
 
 pub fn focus_request(id)
   _ui_focus_request(id)
   set _focus_now = {frame: frame_count(), id: if id == nil then "" else str(id) end}
-end
 
 pub fn shortcut(chord)
   _ui_shortcut(chord)
-end
 
 pub fn shortcut(chord, id)
   _ui_shortcut(chord, id)
-end
 
 # Position of the focused id in the ordered list `ids`, or -1 if absent (so
 # nothing focused reads as "before the first").
@@ -222,10 +185,7 @@ fn _index_of(ids, id)
   for i in range(0, len(ids)) do
     if found < 0 && str(ids[i]) == id then
       found = i
-    end
-  end
   found
-end
 
 # Move focus to the next / previous id in the ordered ring `ids`. From nothing
 # focused, next lands on the first and prev on the last; both wrap.
@@ -234,10 +194,7 @@ pub fn focus_next(ids)
     let j = _index_of(ids, focus_owner()) + 1
     if j >= len(ids) then
       j = 0
-    end
     focus_request(ids[j])
-  end
-end
 
 pub fn focus_prev(ids)
   if len(ids) > 0 then
@@ -245,10 +202,7 @@ pub fn focus_prev(ids)
     let j = idx - 1
     if idx < 0 || j < 0 then
       j = len(ids) - 1
-    end
     focus_request(ids[j])
-  end
-end
 
 # Convenience: Tab advances focus, Shift+Tab reverses it. Call once per frame
 # with the ring of focusable widget ids.
@@ -258,10 +212,6 @@ pub fn focus_update(ids)
       focus_prev(ids)
     else
       focus_next(ids)
-    end
-  end
-end
-
 
 # ── Text editing ──────────────────────────────────────────────────────────
 # The logic of a single-line editable text, with no pixels: a caret, a
@@ -308,7 +258,6 @@ end
 # What separates words: a space, or (in a text area) a line break.
 fn _is_gap(ch)
   ch == " " || ch == "\n"
-end
 
 # Char index where the word before `caret` starts (for word-backspace):
 # skip the run of spaces just left of the caret, then the word before it.
@@ -316,12 +265,9 @@ fn _word_start(text, caret)
   let i = caret
   while i > 0 && _is_gap(char_slice(text, i - 1, i)) do
     i = i - 1
-  end
   while i > 0 && !_is_gap(char_slice(text, i - 1, i)) do
     i = i - 1
-  end
   i
-end
 
 # Its mirror: where the word after `caret` ends.
 fn _word_end(text, caret)
@@ -329,12 +275,9 @@ fn _word_end(text, caret)
   let i = caret
   while i < n && _is_gap(char_slice(text, i, i + 1)) do
     i = i + 1
-  end
   while i < n && !_is_gap(char_slice(text, i, i + 1)) do
     i = i + 1
-  end
   i
-end
 
 # The word a double click at char index `at` selects, as {a, b}.
 fn _word_at(text, at)
@@ -343,26 +286,21 @@ fn _word_at(text, at)
   let b = a
   while a > 0 && !_is_gap(char_slice(text, a - 1, a)) do
     a = a - 1
-  end
   while b < n && !_is_gap(char_slice(text, b, b + 1)) do
     b = b + 1
-  end
   {a: a, b: b}
-end
 
 # An editing state {text, caret, anchor} with characters [lo, hi) replaced by
 # `ins`, the caret after it and nothing selected.
 fn _field_splice(st, lo, hi, ins)
   let c = lo + char_len(ins)
   {text: char_slice(st.text, 0, lo) ++ ins ++ char_slice(st.text, hi, char_len(st.text)), caret: c, anchor: c}
-end
 
 # The style a field measures with. `style.text_style`, when given, is the
 # whole record (an app with its own type ramp passes the one it draws with);
 # otherwise it is built from {size, font} over the theme.
 fn _field_measure(t, style)
   _get(style, "text_style", _tm(_face(t, style), _get(style, "size", t.font_md)))
-end
 
 # How many undo steps a field keeps.
 let _FIELD_UNDO_MAX = 100
@@ -392,15 +330,12 @@ fn _edit_keys(st0, h, multiline)
       redo = append(redo, st)
       st = last(undo)
       undo = slice(undo, 0, len(undo) - 1)
-    end
   else if cmd && (key_pressed("y") || (key_pressed("z") && shift)) then
     stepped = true
     if len(redo) > 0 then
       undo = append(undo, st)
       st = last(redo)
       redo = slice(redo, 0, len(redo) - 1)
-    end
-  end
 
   if stepped then
     typing = false
@@ -414,30 +349,22 @@ fn _edit_keys(st0, h, multiline)
       if key_pressed("x") then
         st = _field_splice(st, lo, hi, "")
         typed_only = false
-      end
-    end
     if key_pressed("backspace") then
       lo = min(st.caret, st.anchor)
       hi = max(st.caret, st.anchor)
       if lo == hi && lo > 0 then
         lo = if mod_cmd() then 0 else if word then _word_start(st.text, hi) else hi - 1 end
-      end
       if lo < hi then
         st = _field_splice(st, lo, hi, "")
         typed_only = false
-      end
-    end
     if key_pressed("delete") then
       lo = min(st.caret, st.anchor)
       hi = max(st.caret, st.anchor)
       if lo == hi && hi < char_len(st.text) then
         hi = hi + 1
-      end
       if lo < hi then
         st = _field_splice(st, lo, hi, "")
         typed_only = false
-      end
-    end
     if (cmd && key_pressed("v")) || (shift && key_pressed("insert")) then
       let raw = join(split(clipboard_get(), "\r"), "")
       # One line: a pasted paragraph break becomes a space.
@@ -445,32 +372,23 @@ fn _edit_keys(st0, h, multiline)
       if char_len(clip) > 0 then
         st = _field_splice(st, min(st.caret, st.anchor), max(st.caret, st.anchor), clip)
         typed_only = false
-      end
-    end
     if multiline && key_pressed("return") then
       st = _field_splice(st, min(st.caret, st.anchor), max(st.caret, st.anchor), "\n")
       typed_only = false
-    end
     # A shortcut's own letter is not text. (ctrl+alt is AltGr, which is.)
     let typed = if mod_cmd() || (mod_ctrl() && !mod_alt()) then "" else text_input() end
     if char_len(typed) > 0 then
       st = _field_splice(st, min(st.caret, st.anchor), max(st.caret, st.anchor), typed)
-    end
     if st.text != before.text then
       # A run of typing is one undo step; anything else is its own.
       if !(typed_only && typing) then
         undo = append(undo, before)
         if len(undo) > _FIELD_UNDO_MAX then
           undo = slice(undo, len(undo) - _FIELD_UNDO_MAX, len(undo))
-        end
-      end
       redo = []
       # The step ends with the word, so undo takes a word at a time.
       typing = typed_only && !_is_gap(char_slice(typed, char_len(typed) - 1, char_len(typed)))
-    end
-  end
   {st: st, h: {undo: undo, redo: redo, typing: typing}}
-end
 
 # The input half, with no pixels of its own: focus, caret, selection,
 # clipboard, undo and Return.
@@ -485,7 +403,6 @@ end
 # bloom's `draw_text_field(r, res, focused, opts)` is the stock look.
 pub fn text_field_update(id, r, buf)
   text_field_update(id, r, buf, {})
-end
 
 # The update half reads {size, font, inset, text_style, pointer, scroll} from
 # `style`. The type keys must match what the draw half uses, or click-to-place
@@ -522,13 +439,10 @@ pub fn text_field_update(id, r, buf, style)
     undo = []
     redo = []
     typing = false
-  end
   if caret < 0 || caret > n then
     caret = n
-  end
   if anchor < 0 || anchor > n then
     anchor = caret
-  end
   let pointer = _get(style, "pointer", true)
   let pressed = _hot_text(r, id, pointer) && mouse_pressed(0)
   if !pressed && pointer && mouse_pressed(0) && has_focus(id) && !pointer_captured(ui_layer()) then
@@ -537,7 +451,6 @@ pub fn text_field_update(id, r, buf, style)
     # from this field) took the press.
     focus_request(nil)
     dragging = false
-  end
   if pressed then
     focus_request(id)
     let at = text_index_at(text, ts, float(mouse_x() - (r.x + inset) + scroll))
@@ -554,7 +467,6 @@ pub fn text_field_update(id, r, buf, style)
     else
       caret = at
       anchor = at
-    end
     dragging = clicks < 2
     typing = false
   else if dragging then
@@ -562,15 +474,12 @@ pub fn text_field_update(id, r, buf, style)
       caret = text_index_at(text, ts, float(mouse_x() - (r.x + inset) + scroll))
     else
       dragging = false
-    end
-  end
   let has = has_focus(id)
   let submitted = false
   if has && !had_focus && !pressed then
     # Focus arrived by keyboard (Tab, a shortcut): start at the end.
     caret = n
     anchor = n
-  end
   # Lost the keyboard since the last frame (a click elsewhere, Tab, the
   # caller's focus_request): the cue a commit-on-blur field applies on.
   let blurred = had_focus && !has
@@ -586,22 +495,18 @@ pub fn text_field_update(id, r, buf, style)
     let to = -1
     if key_pressed("left") then
       to = if mod_cmd() then 0 else if word then _word_start(text, caret) else if lo < hi && !shift then lo else max(0, caret - 1) end
-    end
     if key_pressed("right") then
       to = if mod_cmd() then n else if word then _word_end(text, caret) else if lo < hi && !shift then hi else min(n, caret + 1) end
-    end
     if key_pressed("home") then to = 0 end
     if key_pressed("end") then to = n end
     if to >= 0 then
       caret = to
       if !shift then anchor = to end
       typing = false
-    end
     if cmd && key_pressed("a") then
       anchor = 0
       caret = n
       typing = false
-    end
 
     let ed = _edit_keys({text: text, caret: caret, anchor: anchor}, {undo: undo, redo: redo, typing: typing}, false)
     undo = ed.h.undo
@@ -612,8 +517,6 @@ pub fn text_field_update(id, r, buf, style)
     anchor = ed.st.anchor
     if key_pressed("return") then
       submitted = true
-    end
-  end
   # Keep the caret inside the box. Unfocused, a field shows its start.
   let overflow = false
   if _get(style, "scroll", false) then
@@ -627,15 +530,11 @@ pub fn text_field_update(id, r, buf, style)
       if cx - scroll > inner then scroll = cx - inner end
       if cx < scroll then scroll = cx end
       scroll = clamp(scroll, 0, total - inner)
-    end
-  end
   let changed = text != buf
   last_text = text
   {text: text, caret: caret, submitted: submitted, changed: changed, anchor: anchor,
    sel_start: min(caret, anchor), sel_end: max(caret, anchor), scroll: scroll, overflow: overflow,
    blurred: blurred, cancelled: has && key_pressed("escape")}
-end
-
 
 # ── Text area editing ─────────────────────────────────────────────────────
 # `text_field_update` for text with line breaks: captions, notes, a chat message.
@@ -668,19 +567,16 @@ end
 fn _area_rows(text, ts, w)
   let rows = text_wrap_rows(text, ts, w)
   if len(rows) == 0 then [{text: "", start: 0, end: 0}] else rows end
-end
 
 # The distance between rows: the face's line height plus `line_gap`.
 fn _area_line_h(ts, style)
   int(text_metrics(ts).line_height) + _get(style, "line_gap", 2)
-end
 
 # The character at (dx, dy) from the top-left of the rows.
 fn _area_index_at(rows, ts, dx, dy, lh)
   let i = clamp(int(floor(float(dy) / float(lh))), 0, len(rows) - 1)
   let row = rows[i]
   row.start + clamp(text_index_at(row.text, ts, float(dx)), 0, row.end - row.start)
-end
 
 # Where a caret at character `at` sits: {x, y, row}, from the rows' top-left.
 fn _area_caret(rows, ts, at, lh)
@@ -688,14 +584,12 @@ fn _area_caret(rows, ts, at, lh)
   let row = rows[i]
   let x = text_width(char_slice(row.text, 0, clamp(at - row.start, 0, row.end - row.start)), ts)
   {x: x, y: i * lh, row: i}
-end
 
 # The input half, with no pixels of its own (see `text_field_update`). Reads
 # {size, font, inset, text_style, line_gap, pointer} from `style`; they must
 # match what the draw half uses.
 pub fn text_area_update(id, r, buf)
   text_area_update(id, r, buf, {})
-end
 
 pub fn text_area_update(id, r, buf, style)
   let t = _palette()
@@ -723,13 +617,10 @@ pub fn text_area_update(id, r, buf, style)
     undo = []
     redo = []
     typing = false
-  end
   if caret < 0 || caret > n then
     caret = n
-  end
   if anchor < 0 || anchor > n then
     anchor = caret
-  end
   let rows = _area_rows(text, ts, inner_w)
   let ox = r.x + inset
   let oy = r.y + inset - scroll
@@ -740,7 +631,6 @@ pub fn text_area_update(id, r, buf, style)
     # A press elsewhere takes the focus away, as in `text_field_update`.
     focus_request(nil)
     dragging = false
-  end
   if pressed then
     focus_request(id)
     let at = _area_index_at(rows, ts, mouse_x() - ox, mouse_y() - oy, lh)
@@ -757,7 +647,6 @@ pub fn text_area_update(id, r, buf, style)
     else
       caret = at
       anchor = at
-    end
     dragging = clicks < 2
     typing = false
   else if dragging then
@@ -765,25 +654,20 @@ pub fn text_area_update(id, r, buf, style)
       caret = _area_index_at(rows, ts, mouse_x() - ox, mouse_y() - oy, lh)
     else
       dragging = false
-    end
-  end
   # The wheel scrolls a box that overflows; the clamp below keeps it in range.
   if hot && scroll_y() != 0 then
     scroll = scroll + scroll_y() * lh
-  end
   let has = has_focus(id)
   let arrived = has && !had_focus
   if arrived && !pressed then
     # Focus arrived by keyboard: start at the end.
     caret = n
     anchor = n
-  end
   if _get(style, "select_all", false) then
     # The caller's "everything, ready to be typed over" (a layer just
     # added with placeholder text): select the whole text this frame.
     anchor = 0
     caret = n
-  end
   had_focus = has
   let vertical = false
   if has then
@@ -799,35 +683,28 @@ pub fn text_area_update(id, r, buf, style)
     let to = -1
     if key_pressed("left") then
       to = if mod_cmd() then rows[cur.row].start else if word then _word_start(text, caret) else if lo < hi && !shift then lo else max(0, caret - 1) end
-    end
     if key_pressed("right") then
       to = if mod_cmd() then rows[cur.row].end else if word then _word_end(text, caret) else if lo < hi && !shift then hi else min(n, caret + 1) end
-    end
     if key_pressed("up") || key_pressed("down") then
       let gx = if goal_x >= 0 then goal_x else cur.x end
       if key_pressed("up") then
         to = if mod_cmd() || cur.row == 0 then 0 else _area_index_at(rows, ts, gx, cur.y - lh, lh) end
       else
         to = if mod_cmd() || cur.row == last_row then n else _area_index_at(rows, ts, gx, cur.y + lh, lh) end
-      end
       # cmd + up / down jumps to an end, which starts no column.
       if !mod_cmd() then
         goal_x = gx
         vertical = true
-      end
-    end
     if key_pressed("home") then to = rows[cur.row].start end
     if key_pressed("end") then to = rows[cur.row].end end
     if to >= 0 then
       caret = to
       if !shift then anchor = to end
       typing = false
-    end
     if cmd && key_pressed("a") then
       anchor = 0
       caret = n
       typing = false
-    end
 
     let ed = _edit_keys({text: text, caret: caret, anchor: anchor}, {undo: undo, redo: redo, typing: typing}, true)
     undo = ed.h.undo
@@ -835,11 +712,9 @@ pub fn text_area_update(id, r, buf, style)
     typing = ed.h.typing
     if ed.st.text != text then
       rows = _area_rows(ed.st.text, ts, inner_w)
-    end
     text = ed.st.text
     caret = ed.st.caret
     anchor = ed.st.anchor
-  end
   if !vertical then goal_x = -1 end
   # Keep the caret in view when it moved or the text changed — not on a
   # quiet frame, or the wheel could never scroll away from it.
@@ -848,14 +723,12 @@ pub fn text_area_update(id, r, buf, style)
     let cpos = _area_caret(rows, ts, caret, lh)
     if cpos.y + lh - scroll > inner_h then scroll = cpos.y + lh - inner_h end
     if cpos.y < scroll then scroll = cpos.y end
-  end
   scroll = clamp(scroll, 0, max(0, content_h - inner_h))
   last_caret = caret
   last_text = text
   {text: text, caret: caret, changed: text != buf, anchor: anchor,
    sel_start: min(caret, anchor), sel_end: max(caret, anchor), scroll: scroll,
    overflow: content_h > inner_h, rows: rows, line_h: lh, content_h: content_h}
-end
 
 # The height a text area `w` wide needs to show `text`, between `min_lines`
 # and `max_lines` rows — for a box that grows with what is typed into it.
@@ -866,8 +739,6 @@ pub fn text_area_height(text, w, min_lines = 3, max_lines = 12, style = {})
   let inset = _get(style, "inset", 6)
   let lines = len(_area_rows(text, ts, w - 2 * inset))
   clamp(lines, min_lines, max_lines) * _area_line_h(ts, style) + 2 * inset
-end
-
 
 # ── Popover runtime ───────────────────────────────────────────────────────
 # Which popover is open, held by the runtime by id
@@ -880,22 +751,17 @@ end
 
 pub fn popover_open(id)
   _ui_popover_request(true, id)
-end
 
 pub fn popover_close(id)
   _ui_popover_request(false, id)
-end
 
 # Whether `id` is the open popover this frame.
 pub fn popover_shown(id)
   id != nil && _ui_popover() == str(id)
-end
 
 # The open popover's id, "" for none.
 pub fn popover_owner()
   _ui_popover()
-end
-
 
 # ── Drag and drop (immediate-mode) ────────────────────────────────────────
 # The primitive every reorderable list, kanban board, timeline editor and tab
@@ -926,19 +792,16 @@ end
 
 pub fn drag_state()
   {dragging: false, id: "", dx: 0, dy: 0, dropped: false, sx: 0, sy: 0, at: -1}
-end
 
 pub fn drag_update(ds, item_id, r)
   let d = ds
   # A finished drag is visible for one whole frame, then cleared.
   if d.dropped && d.at != frame_count() then
     d = drag_state()
-  end
   # A press inside `r` claims the drag, unless another item already holds it.
   if !d.dragging && !d.dropped && mouse_pressed(0) && _over(r) then
     d = {dragging: true, id: item_id, dx: 0, dy: 0, dropped: false,
       sx: mouse_x(), sy: mouse_y(), at: -1}
-  end
   if d.dragging && d.id == item_id then
     let dx = mouse_x() - d.sx
     let dy = mouse_y() - d.sy
@@ -949,21 +812,16 @@ pub fn drag_update(ds, item_id, r)
       # The button came up: report the drop, keeping the final offset.
       d = {dragging: false, id: item_id, dx: dx, dy: dy, dropped: true,
         sx: d.sx, sy: d.sy, at: frame_count()}
-    end
-  end
   d
-end
 
 # Abandon an in-flight drag (Escape, a lost window, a list that just changed
 # under the pointer). Returns a fresh state, so no `dropped` is reported.
 pub fn drag_cancel(ds)
   drag_state()
-end
 
 # True while `item_id` is the item being dragged.
 pub fn dragging(ds, item_id)
   ds.dragging && ds.id == item_id
-end
 
 # Where an item dropped at pixel `y` belongs in a vertical list whose rows are
 # `rects` (in list order): the count of rows whose midpoint is above `y`. 0
@@ -974,10 +832,7 @@ pub fn insertion_index(rects, y)
   for r in rects do
     if y > r.y + r.h / 2 then
       idx = idx + 1
-    end
-  end
   idx
-end
 
 # The horizontal counterpart, for tab strips and kanban columns.
 pub fn insertion_index_x(rects, x)
@@ -985,11 +840,7 @@ pub fn insertion_index_x(rects, x)
   for r in rects do
     if x > r.x + r.w / 2 then
       idx = idx + 1
-    end
-  end
   idx
-end
-
 
 # ── Colour text ───────────────────────────────────────────────────────────
 # `#rrggbb` / `#rrggbbaa` to and from a colour record, for any field that
@@ -1000,24 +851,20 @@ let _HEX = "0123456789abcdef"
 fn _hex2(v)
   let n = clamp(int(round(float(v))), 0, 255)
   char_at(_HEX, n / 16) ++ char_at(_HEX, n % 16)
-end
 
 # A colour as `#rrggbb`, or `#rrggbbaa` when it is not opaque.
 pub fn color_to_hex(c)
   let a = c["a"] ?? 255
   let base = "#" ++ _hex2(c.r) ++ _hex2(c.g) ++ _hex2(c.b)
   if int(round(float(a))) >= 255 then base else base ++ _hex2(a) end
-end
 
 fn _hex_digit(s, i)
   index_of(_HEX, char_slice(s, i, i + 1))
-end
 
 fn _hex_pair(s, i)
   let hi = _hex_digit(s, i)
   let lo = _hex_digit(s, i + 1)
   if hi < 0 || lo < 0 then -1 else hi * 16 + lo end
-end
 
 # The colour `#rgb`, `#rrggbb` or `#rrggbbaa` names (the `#` is optional,
 # case and surrounding space don't matter), or nil when it names none.
@@ -1040,8 +887,6 @@ pub fn color_from_hex(text)
     else {r: r, g: g, b: b} end
   else
     nil
-  end
-end
 
 # Whether two colours are the same, alpha included (absent is opaque). Two
 # nils are the same; a nil and a colour are not.
@@ -1050,9 +895,6 @@ pub fn same_color(a, b)
     a == b
   else
     a.r == b.r && a.g == b.g && a.b == b.b && (a["a"] ?? 255) == (b["a"] ?? 255)
-  end
-end
-
 
 # ── Keyboard scrolling ────────────────────────────────────────────────────
 
@@ -1069,8 +911,6 @@ pub fn scroll_keys(offset, total_lines, visible_lines)
   if key_pressed("home") then off = 0 end
   if key_pressed("end") then off = total_lines end
   clamp(off, 0, max(0, total_lines - visible_lines))
-end
-
 
 # ── Async load state ──────────────────────────────────────────────────────
 # The `X_ready / X_err / X_loading` pattern every data-driven panel
@@ -1089,32 +929,25 @@ end
 
 pub fn load_state()
   {status: "idle", key: "@none", value: nil, error: ""}
-end
 
 pub fn load_loading(ls)
   ls.status == "loading"
-end
 
 pub fn load_ready(ls)
   ls.status == "ready"
-end
 
 pub fn load_failed(ls)
   ls.status == "error"
-end
 
 # Begin (or restart) a load for `key`.
 pub fn load_begin(ls, key)
   {status: "loading", key: key, value: ls.value, error: ""}
-end
 
 pub fn load_ok(ls, value)
   {status: "ready", key: ls.key, value: value, error: ""}
-end
 
 pub fn load_fail(ls, msg)
   {status: "error", key: ls.key, value: ls.value, error: msg}
-end
 
 # One poll step: restart when `key` changed, then absorb `pv` — a pending
 # value from an async channel (Garden's `query`), or a plain value (ready
@@ -1123,13 +956,9 @@ pub fn load_poll(ls, key, pv)
   let s = ls
   if s.key != key then
     s = load_begin(s, key)
-  end
   if s.status == "loading" then
     if is_error(pv) then
       s = load_fail(s, error_of(pv) ?? "load failed")
     else if is_ready(pv) then
       s = load_ok(s, pv)
-    end
-  end
   s
-end

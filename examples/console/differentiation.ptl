@@ -11,7 +11,6 @@ import autodiff
 # f(x) = (x - 3)^2 — minimum at x = 3, minimum value 0.
 fn f(x)
   (x - 3.0) * (x - 3.0)
-end
 
 # --- Part 1: check the derivative at a point ------------------------------
 # At x = 5, f'(x) = 2*(x-3) = 4.
@@ -29,6 +28,5 @@ for step in range(0, 12) do
   let grad = deriv(f, x).value
   print("step {step}: x={round(x, 6)}  f(x)={round(f(x), 6)}  f'(x)={round(grad, 6)}")
   x -= lr * grad
-end
 print("")
 print("converged x = {round(x, 6)}  (expected ~3.0)")

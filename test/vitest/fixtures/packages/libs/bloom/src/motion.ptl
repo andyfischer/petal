@@ -1,3 +1,2 @@
 pub fn ease(x)
   x ++ " eased"
-end

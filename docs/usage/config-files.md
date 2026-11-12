@@ -5,7 +5,7 @@ mostly `let` bindings. The host reads the values out of it, and writes changes
 back when the user flips a setting in the UI.
 
 ```petal
-// ~/.garden/config.ptl
+# ~/.garden/config.ptl
 
 let color_scheme = "dracula"
 let font_size    = 14
@@ -57,7 +57,7 @@ would end up with. Both binding forms count:
 
 ```petal
 let font_size = 12
-font_size = 14        // ← this is what get_static_value returns
+font_size = 14        # ← this is what get_static_value returns
 ```
 
 Only **top-level** bindings are configuration. A binding inside a function body

@@ -501,8 +501,6 @@ pub fn level(n: num) -> record
       chunks: [L1_0, L1_1, L1_2, L1_3, L1_4, L1_5, L1_6, L1_7, L1_8],
       boss: -1
     }
-  end
-end
 
 # How many levels there are. `game.ptl` counts wins against this.
 pub let level_count = 3

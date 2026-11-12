@@ -20,4 +20,3 @@ let cur = edit_view_text(1)
 let text_len = len(cur)
 if key_pressed("s") then
   mutate("save", {text: cur})
-end

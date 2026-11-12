@@ -9,4 +9,3 @@ let count = 6
 for i in range(0, count) do
   let a = i * 2 * pi() / count
   push_output(s, {x: cx + cos(a) * radius, y: cy + sin(a) * radius})
-end

@@ -13,9 +13,9 @@ fn view(cards)
 end
 
 let r = speculate(view, ["B", "A", "C"])
-print(r.value)                 // 3
-print(r.places[1].key)         // A
-print(r.places[1].value.x)     // 110
+print(r.value)                 # 3
+print(r.places[1].key)         # A
+print(r.places[1].value.x)     # 110
 ```
 
 It is what a drag engine needs to ask "where would this card be if the board
@@ -54,9 +54,9 @@ fn draw(n)
 end
 
 let r = speculate(draw, 2)
-print(len(r.emits))            // 2
-print(r.emits[1].channel)      // cmds
-print(r.emits[1].value)        // 10
+print(len(r.emits))            # 2
+print(r.emits[1].channel)      # cmds
+print(r.emits[1].value)        # 10
 ```
 
 Nothing the call emitted reaches the host: the buffers hold only what the
@@ -70,7 +70,7 @@ through it allocates nothing.
 
 ```petal
 fn square(x) x * x end
-print(speculate_value(square, 3))   // 9
+print(speculate_value(square, 3))   # 9
 ```
 
 ## What is put back
@@ -98,8 +98,8 @@ end
 
 let a = random()
 let r = speculate(view, 10)
-print(get draws)               // 0
-print(r.value == random() * 10)   // true
+print(get draws)               # 0
+print(r.value == random() * 10)   # true
 ```
 
 What is not put back: anything a host native did (see below; such a native is
@@ -146,8 +146,8 @@ fn counter()
   n
 end
 
-print(speculate(counter).value)   // 1
-print(speculate(counter).value)   // 1
+print(speculate(counter).value)   # 1
+print(speculate(counter).value)   # 1
 ```
 
 `state` is also allowed in a call made from a `map` (or another higher-order

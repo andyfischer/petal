@@ -4,38 +4,31 @@
 # The last expression is the return value.
 fn square(n: num) -> num
   n * n
-end
 
 fn greet(name: string)
   print("Hello,", name)
-end
 
 greet("World")
 print("5 squared =", square(5))
 
 fn add(a: num, b: num) -> num
   a + b
-end
 print("3 + 4 =", add(3, 4))
 
 # Recursion
 fn factorial(n: num) -> num
   if n <= 1 then 1 else n * factorial(n - 1) end
-end
 print("5! =", factorial(5))
 
 fn fibonacci(n: num) -> num
   if n <= 0 then 0
   else if n == 1 then 1
   else fibonacci(n - 1) + fibonacci(n - 2)
-  end
-end
 print("fib(10) =", fibonacci(10))
 
 # `?` is allowed in identifiers.
 fn even?(n: num) -> bool
   n % 2 == 0
-end
 print("4 is even?", even?(4))
 print("7 is even?", even?(7))
 

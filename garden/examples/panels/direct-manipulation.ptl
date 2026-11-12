@@ -33,7 +33,6 @@ let base_y = h - 60
 for i in range(0, len(bars)) do
   let bh = bars[i]
   draw_rect(x: w - 200 + i * 26, y: base_y - bh, w: 18, h: bh, r: 90, g: 150, b: 220)
-end
 
 # Through a function you wrote: hovering a swatch highlights
 # the `draw_rect` *inside* `swatch`, not the call to it. The
@@ -41,7 +40,6 @@ end
 # Petal function) but stops at the first frame in this file.
 fn swatch(x, y, r, g, b)
   draw_rect(x, y, 46, 46, r, g, b)
-end
 
 swatch(x: 60, y: base_y - 46, r: 220, g: 120, b: 90)
 swatch(x: 116, y: base_y - 46, r: 120, g: 200, b: 140)

@@ -29,7 +29,6 @@ class Band
   name: string,
   glyph: string,
   ceiling: num,
-end
 
 # `ceiling` is the exclusive upper bound of the band, expressed as a fraction
 # of the full 0..1 height range. Sea level splits water from land, so the
@@ -44,7 +43,6 @@ fn terrain_bands(sea: num) -> list
     Band(name: "rock", glyph: "^", ceiling: sea + 0.50),
     Band(name: "snow", glyph: "#", ceiling: 1.01),
   ]
-end
 
 # ---------------------------------------------------------------- noise ----
 
@@ -63,15 +61,12 @@ fn hash_2d(ix: int, iy: int, seed: int) -> num
   let h1 = (h0 * h0 + 1103515245) % p
   let h2 = (h1 * h1 + 12345) % p
   float(h2) / float(p)
-end
 
 fn smoothstep(t: num) -> num
   t * t * (3.0 - 2.0 * t)
-end
 
 fn lerp(a: num, b: num, t: num) -> num
   a + (b - a) * t
-end
 
 # Bilinearly interpolated value noise over the integer lattice.
 fn value_noise(x: num, y: num, seed: int) -> num
@@ -82,7 +77,6 @@ fn value_noise(x: num, y: num, seed: int) -> num
   let top = lerp(hash_2d(ix, iy, seed), hash_2d(ix + 1, iy, seed), t: fx)
   let bot = lerp(hash_2d(ix, iy: iy + 1, seed: seed), hash_2d(ix: ix + 1, iy: iy + 1, seed: seed), t: fx)
   lerp(top, bot, t: fy)
-end
 
 # Fractal brownian motion: `octaves` layers of value noise, frequency scaled
 # by `lacunarity` and amplitude by `persistence` at each step. The result is
@@ -98,9 +92,7 @@ fn fbm(x: num, y: num) -> num
     set norm = get norm + get amp
     set amp = get amp * persistence
     set freq = get freq * lacunarity
-  end
   get total / get norm
-end
 
 # Radial falloff so the map reads as an island rather than as a noise tile:
 # 1.0 at the centre, dropping toward the edges.
@@ -111,7 +103,6 @@ fn island_mask(x: int, y: int) -> num
   # the island round on screen.
   let d = sqrt(nx * nx * 0.55 + ny * ny)
   max(0.0, 1.0 - island_falloff * d * d * 1.6)
-end
 
 # -------------------------------------------------------------- heightmap --
 
@@ -122,17 +113,12 @@ fn raw_heightmap() -> list
       # Ridge sharpening: bias the noise toward peaks before masking.
       let ridged = n * n * (3.0 - 2.0 * n)
       ridged * island_mask(x, y)
-    end
-  end
-end
 
 fn grid_min(grid: list) -> num
   reduce(grid, 1000000.0, fn(acc, row) -> min(acc, reduce(row, 1000000.0, fn(a, v) -> min(a, v))))
-end
 
 fn grid_max(grid: list) -> num
   reduce(grid, -1000000.0, fn(acc, row) -> max(acc, reduce(row, -1000000.0, fn(a, v) -> max(a, v))))
-end
 
 # Rescale so the lowest cell is 0.0 and the highest is 1.0.
 fn normalize(grid: list) -> list
@@ -141,8 +127,6 @@ fn normalize(grid: list) -> list
   let span = max(hi - lo, 0.000001)
   for row in grid do
     for v in row do (v - lo) / span end
-  end
-end
 
 # ------------------------------------------------------------ classifying --
 
@@ -150,11 +134,9 @@ end
 fn band_index(h: num, bands: list) -> int
   # The ceilings ascend, so the band is simply how many `h` has cleared.
   min(count(bands, fn(b) -> h >= b.ceiling), len(bands) - 1)
-end
 
 fn band_glyph(h: num, bands: list) -> string
   bands[band_index(h, bands)].glyph
-end
 
 # A one-word summary of a cell, used by the legend line.
 fn slope_hint(idx: int) -> string
@@ -166,32 +148,25 @@ fn slope_hint(idx: int) -> string
     when 4 -> "woodland"
     when 5 -> "bare rock"
     when _ -> "ice cap"
-  end
-end
 
 # ---------------------------------------------------------------- render ----
 
 fn render_row(row: list, bands: list) -> string
   join(for h in row do band_glyph(h, bands) end, "")
-end
 
 fn render_map(grid: list, bands: list) -> string
   join(for row in grid do render_row(row, bands) end, "\n")
-end
 
 fn bar(n: int, total: int, width: int) -> string
   let filled = int(floor(float(n) * float(width) / float(max(total, 1))))
   pad_end(join(for i in range(0, filled) do "#" end, ""), width, fill: " ")
-end
 
 fn percent(n: int, total: int) -> string
   format("%.1f", float(n) * 100.0 / float(max(total, 1)))
-end
 
 fn count_band(grid: list, bands: list, idx: int) -> int
   reduce(grid, 0, fn(acc, row) ->
     acc + count(row, fn(h) -> band_index(h, bands) == idx))
-end
 
 # ------------------------------------------------------------------ main ----
 
@@ -217,7 +192,6 @@ for i in range(0, len(bands)) do
     ++ pad_start(percent(n, cell_count), width: 5, fill: " ") ++ "%  "
     ++ bar(n, total: cell_count, width: 32)
     ++ "  " ++ slope_hint(i))
-end
 print("")
 
 let water = counts[0] + counts[1]
@@ -238,5 +212,4 @@ for step in range(0, 9) do
   print("  sea " ++ format("%.2f", sea)
     ++ "  water " ++ pad_start(percent(wet, cell_count), width: 5, fill: " ") ++ "%  "
     ++ bar(n: wet, total: cell_count, width: 40))
-end
 nil

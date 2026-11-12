@@ -127,31 +127,31 @@ blocks, width)` does exactly that.
 Styles are records, composed with spread: `{...BODY, weight: 700}`.
 
 ```petal
-let BODY  = {font: "ui", size: 15, color: #d8d8d8}
+let BODY  = {font: "ui", size: 15, color: :d8d8d8}
 let EM    = {...BODY, italic: true}
-let CODE  = {font: "mono", size: 13, color: #a8d8a8}
+let CODE  = {font: "mono", size: 13, color: :a8d8a8}
 
-// Rich single line (replaces manual x-advancing)
+# Rich single line (replaces manual x-advancing)
 typo.draw_line([
-  typo.span("+12 ", {...BODY, color: #7ad87a}),
-  typo.span("-4 ",  {...BODY, color: #d87a7a}),
+  typo.span("+12 ", {...BODY, color: :7ad87a}),
+  typo.span("-4 ",  {...BODY, color: :d87a7a}),
   typo.span("in 3 files", BODY),
 ], x, y)
-typo.line_width(spans)               // for centering / right-align
+typo.line_width(spans)               # for centering / right-align
 typo.draw_line_right(spans, right_x, y)
 
-// Flow layout (the HTML-lite part)
+# Flow layout (the HTML-lite part)
 let doc = [
   typo.p([typo.span("Merge pull request ", BODY),
           typo.span("#482", {...BODY, weight: 700})]),
   typo.p([typo.span(commit.body, BODY)], {spacing_before: 8}),
   typo.p([typo.span(diffstat, CODE)], {align: "right"}),
 ]
-let layout = typo.layout(doc, avail_w)     // pure; no drawing
-layout.height                              // size rows/cards by content
-typo.draw(layout, x, y)                    // emit draw commands
-// blocks: p (paragraph), h(level, spans), gap(px); paragraph opts:
-// {align: left|center|right, line_height, spacing_before, max_lines, ellipsis}
+let layout = typo.layout(doc, avail_w)     # pure; no drawing
+layout.height                              # size rows/cards by content
+typo.draw(layout, x, y)                    # emit draw commands
+# blocks: p (paragraph), h(level, spans), gap(px); paragraph opts:
+# {align: left|center|right, line_height, spacing_before, max_lines, ellipsis}
 ```
 
 `typo.layout` + `layout.height` + `typo.draw` replaces the

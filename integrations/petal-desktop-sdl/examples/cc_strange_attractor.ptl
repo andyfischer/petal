@@ -28,14 +28,14 @@ hue_shift += delta * 0.05
 # Preset table: [a, b, c, d, label, kind]
 # kind: 0 = Clifford, 1 = De Jong
 let presets = [
-  { a: -1.4, b:  1.6, c:  1.0, d:  0.7, name: "Clifford 1", kind: 0 },
-  { a: -1.7, b:  1.8, c: -1.9, d: -0.4, name: "Clifford 2", kind: 0 },
-  { a: -1.8, b: -2.0, c: -0.5, d: -0.9, name: "Clifford 3", kind: 0 },
-  { a:  1.7, b:  1.7, c:  0.6, d:  1.2, name: "Clifford 4", kind: 0 },
-  { a:  1.4, b: -2.3, c:  2.4, d: -2.1, name: "De Jong 1",  kind: 1 },
-  { a: -2.7, b: -0.09, c: -0.86, d: -2.2, name: "De Jong 2", kind: 1 },
-  { a: -2.0, b: -2.0, c: -1.2, d:  2.0, name: "De Jong 3",  kind: 1 },
-  { a:  1.641, b:  1.902, c:  0.316, d:  1.525, name: "De Jong 4", kind: 1 }
+  {a: -1.4, b:  1.6, c:  1.0, d:  0.7, name: "Clifford 1", kind: 0},
+  {a: -1.7, b:  1.8, c: -1.9, d: -0.4, name: "Clifford 2", kind: 0},
+  {a: -1.8, b: -2.0, c: -0.5, d: -0.9, name: "Clifford 3", kind: 0},
+  {a:  1.7, b:  1.7, c:  0.6, d:  1.2, name: "Clifford 4", kind: 0},
+  {a:  1.4, b: -2.3, c:  2.4, d: -2.1, name: "De Jong 1",  kind: 1},
+  {a: -2.7, b: -0.09, c: -0.86, d: -2.2, name: "De Jong 2", kind: 1},
+  {a: -2.0, b: -2.0, c: -1.2, d:  2.0, name: "De Jong 3", kind: 1},
+  {a:  1.641, b:  1.902, c: 0.316, d: 1.525, name: "De Jong 4", kind: 1}
 ]
 
 if key_pressed("1") then preset = 0 end
@@ -49,7 +49,6 @@ if key_pressed("8") then preset = 7 end
 if key_pressed("r") then
   seed_x = random(-0.5, 0.5)
   seed_y = random(-0.5, 0.5)
-end
 if key_pressed("space") then mouse_tune = !mouse_tune end
 
 let p = presets[preset]
@@ -62,7 +61,6 @@ if mouse_tune then
   # Map mouse position into a useful parameter range
   a = (float(mouse_x()) / sw) * 4.0 - 2.0
   b = (float(mouse_y()) / sh) * 4.0 - 2.0
-end
 
 clear(6, 6, 14)
 
@@ -86,10 +84,8 @@ for i in range(0, 30) do
   else
     nx = sin(a * y) - cos(b * x)
     ny = sin(c * x) - cos(d * y)
-  end
   x = nx
   y = ny
-end
 
 for i in range(0, iters) do
   let nx = 0.0
@@ -100,7 +96,6 @@ for i in range(0, iters) do
   else
     nx = sin(a * y) - cos(b * x)
     ny = sin(c * x) - cos(d * y)
-  end
   x = nx
   y = ny
 
@@ -115,8 +110,6 @@ for i in range(0, iters) do
     let col = hsv_deg(h, s: 0.7, v: 0.95)
     # 1-pixel point as a 1x1 rect (no draw_pixel primitive)
     draw_rect(x: px, y: py, w: 1, h: 1, r: col.r, g: col.g, b: col.b)
-  end
-end
 
 # HUD with a faint backdrop
 draw_rect(x: 8, y: 8, w: 280, h: 78, r: 0, g: 0, b: 0)

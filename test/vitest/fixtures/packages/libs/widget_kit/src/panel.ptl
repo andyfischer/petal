@@ -1,3 +1,2 @@
 pub fn draw()
   "widgets panel"
-end

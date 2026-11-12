@@ -36,7 +36,6 @@ let near = 0.2
 if !want_grab then
   grab_mouse()
   want_grab = true
-end
 
 # ---------- input: mouse look ----------
 let look_sens = 0.0022
@@ -62,7 +61,6 @@ let mag_m = sqrt(mx * mx + mz * mz)
 if mag_m > 0.01 then
   player_x = player_x + (mx / mag_m) * move_speed * delta
   player_z = player_z + (mz / mag_m) * move_speed * delta
-end
 
 # ---------- rendering constants ----------
 let cos_y = cos(0.0 - yaw)
@@ -91,8 +89,6 @@ fn project(x: num, y: num, z: num) -> record
       z: rz2,
       ok: true
     }
-  end
-end
 
 # Submit a world-space triangle. If any vertex is behind near, skip.
 fn tri(x1: num, y1: num, z1: num,
@@ -108,8 +104,6 @@ fn tri(x1: num, y1: num, z1: num,
       p2.sx, p2.sy, p2.z,
       p3.sx, p3.sy, p3.z,
       r, g, b)
-  end
-end
 
 # Submit a world-space axis-aligned quad (4 corners, 2 triangles).
 fn quad(ax: num, ay: num, az: num,
@@ -119,7 +113,6 @@ fn quad(ax: num, ay: num, az: num,
   r: num, g: num, b: num)
   tri(x1: ax, y1: ay, z1: az, x2: bx, y2: by, z2: bz, x3: cx_, y3: cy_, z3: cz, r: r, g: g, b: b)
   tri(x1: ax, y1: ay, z1: az, x2: cx_, y2: cy_, z2: cz, x3: dx, y3: dy_, z3: dz, r: r, g: g, b: b)
-end
 
 # Submit an axis-aligned box (cube). x,y,z is the center; w,h,d are extents.
 fn box_(x: num, y: num, z: num, w: num, h: num, d: num, r: num, g: num, b: num)
@@ -146,7 +139,6 @@ fn box_(x: num, y: num, z: num, w: num, h: num, d: num, r: num, g: num, b: num)
     r: int(min(255.0, float(r) * 1.15)),
     g: int(min(255.0, float(g) * 1.15)),
     b: int(min(255.0, float(b) * 1.15)))
-end
 
 # ---------- draw: cyberpunk sky + ground + one neon cube ----------
 sky_gradient(40, 8, 90, 240, 70, 150)
@@ -169,7 +161,6 @@ while grid < 10 do
     dx: 0.0 - ground_half, dy_: 0.0, dz: z1,
     r: shade, g: shade / 2, b: shade + 20)
   grid = grid + 1
-end
 
 # One neon box in front of spawn.
 box_(x: 0.0, y: 1.5, z: 0.0, w: 3.0, h: 3.0, d: 3.0, r: 200, g: 40, b: 180)

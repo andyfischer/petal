@@ -13,23 +13,14 @@ fn count_neighbors(grid: list, x: num, y: num, width: num, height: num) -> int
         if nx >= 0 && nx < width && ny >= 0 && ny < height then
           if grid[ny][nx] == 1 then
             count = count + 1
-          end
-        end
-      end
-    end
-  end
   count
-end
 
 fn print_grid(grid: list, width: num, height: num)
   for y in range(0, height) do
     let row = ""
     for x in range(0, width) do
       row = row ++ if grid[y][x] == 1 then "#" else "." end
-    end
     print(row)
-  end
-end
 
 fn step(grid: list, width: num, height: num) -> list
   let next = []
@@ -44,12 +35,8 @@ fn step(grid: list, width: num, height: num) -> list
       else
         # Dead cell: born with exactly 3 neighbors
         row = append(row, if neighbors == 3 then 1 else 0 end)
-      end
-    end
     next = append(next, row)
-  end
   next
-end
 
 # Glider pattern
 let width = 8
@@ -76,4 +63,3 @@ for gen in range(1, 6) do
   print("")
   print("Generation", gen, ":")
   print_grid(grid, width, height)
-end

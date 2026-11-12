@@ -85,16 +85,13 @@ fn respawn()
   set won = false
   set got = []
   set clock = 0.0
-end
 
 fn approach(cur: num, target: num, step: num) -> num
   if cur < target then min(cur + step, target) else max(cur - step, target) end
-end
 
 fn overlaps(ax: num, ay: num, aw: num, ah: num, b: record) -> bool
   ax < float(b.x + b.w) && ax + aw > float(b.x) &&
   ay < float(b.y + b.h) && ay + ah > float(b.y)
-end
 
 # ------------------------------ UPDATE -------------------------------
 
@@ -117,7 +114,6 @@ if !won then
     set vx = approach(cur: vx, target: 0.0, step: drag * dts)
   else
     set vx = approach(cur: vx, target: target, step: ACCEL * dts)
-  end
 
   # jump, with a little coyote time
   if grounded then set coyote = COYOTE else set coyote = max(0.0, coyote - dts) end
@@ -125,7 +121,6 @@ if !won then
     set vy = JUMP_VY
     set coyote = 0.0
     set grounded = false
-  end
   if !jump_held && vy < 0.0 then set vy = vy * JUMP_CUT end
   set vy = min(MAX_FALL, vy + GRAVITY * dts)
 
@@ -137,8 +132,6 @@ if !won then
     if overlaps(ax: nx, ay: py, aw: pw, ah: ph, b: p) then
       if vx > 0.0 then nx = float(p.x) - pw else nx = float(p.x + p.w) end
       set vx = 0.0
-    end
-  end
   set px = nx
 
   let ny = py + vy * dts
@@ -150,10 +143,7 @@ if !won then
         set grounded = true
       else
         ny = float(p.y + p.h)
-      end
       set vy = 0.0
-    end
-  end
   set py = ny
 
   # coins
@@ -162,22 +152,16 @@ if !won then
     if !contains(got, i) then
       if abs(px + pw / 2.0 - float(c.x)) < 20.0 && abs(py + ph / 2.0 - float(c.y)) < 24.0 then
         set got = append(got, i)
-      end
-    end
     i = i + 1
-  end
 
   # goal
   if px + pw > float(goal.x) && py + ph > float(goal.y) - 60.0 then
     set won = true
-  end
 
   # fell off the world
   if py > float(H) + 60.0 then
     set falls = falls + 1
     respawn()
-  end
-end
 
 # camera eases toward the player
 let want = clamp(px + float(PW) / 2.0 - float(W) / 2.0, lo: 0.0, hi: float(level_w - W))
@@ -197,7 +181,6 @@ fn draw_backdrop()
     let hx = k * 260 - (off % 260) - 80
     draw_circle(cx: hx + 130, cy: 560, radius: 150, r: 96, g: 150, b: 120)
     k = k + 1
-  end
   # near hills
   let off2 = int(get cam * 0.5)
   let j = 0
@@ -205,15 +188,11 @@ fn draw_backdrop()
     let hx = j * 220 - (off2 % 220) - 40
     draw_circle(cx: hx + 110, cy: 600, radius: 130, r: 76, g: 130, b: 96)
     j = j + 1
-  end
-end
 
 fn draw_platforms()
   for p in plats do
     draw_rect(x: sx(p.x), y: p.y + 6, w: p.w, h: p.h - 6, r: 112, g: 76, b: 48)
     draw_rect(x: sx(p.x), y: p.y, w: p.w, h: 7, r: 70, g: 176, b: 64)
-  end
-end
 
 fn draw_coins()
   let bob = sin(get clock * 5.0) * 3.0
@@ -222,17 +201,13 @@ fn draw_coins()
     if !contains(get got, i) then
       draw_circle(cx: sx(c.x), cy: c.y + int(bob), radius: 9, r: 255, g: 205, b: 40)
       draw_circle(cx: sx(c.x) - 2, cy: c.y + int(bob) - 2, radius: 4, r: 255, g: 240, b: 150)
-    end
     i = i + 1
-  end
-end
 
 fn draw_goal()
   let gx = sx(goal.x)
   draw_rect(x: gx, y: goal.y - 90, w: 4, h: 90, r: 240, g: 240, b: 240)
   let wave = int(sin(get clock * 6.0) * 3.0)
   draw_rect(x: gx + 4, y: goal.y - 88 + wave, w: 30, h: 20, r: 230, g: 60, b: 70)
-end
 
 fn draw_player()
   let x = sx(get px)
@@ -241,7 +216,6 @@ fn draw_player()
   draw_rect(x: x + 2, y: y + 4, w: PW - 4, h: 10, r: 245, g: 200, b: 165)
   let eye = if get vx < 0.0 then 4 else PW - 8 end
   draw_rect(x: x + eye, y: y + 7, w: 4, h: 4, r: 20, g: 20, b: 50)
-end
 
 fn draw_hud()
   draw_rect(x: 0, y: 0, w: W, h: 30, r: 20, g: 25, b: 45)
@@ -249,13 +223,10 @@ fn draw_hud()
   draw_text("time {round(get clock, 1)}", x: 180, y: 6, size: 18, r: 220, g: 220, b: 240)
   if get falls > 0 then
     draw_text("falls {get falls}", x: 330, y: 6, size: 18, r: 255, g: 150, b: 150)
-  end
   if get won then
     draw_rect(x: W / 2 - 150, y: 200, w: 300, h: 90, r: 20, g: 25, b: 45)
     draw_text("YOU MADE IT", x: W / 2 - 90, y: 220, size: 28, r: 120, g: 240, b: 140)
     draw_text("R to run it again", x: W / 2 - 70, y: 256, size: 16, r: 220, g: 220, b: 240)
-  end
-end
 
 draw_backdrop()
 draw_platforms()

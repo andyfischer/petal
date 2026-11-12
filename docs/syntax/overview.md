@@ -164,13 +164,13 @@ first.
 Only valid before any other statement in a file:
 
 ```petal ignore
-import ui                    // plain: every export bare, plus ui.button(...)
-import ui as u               // the same, with the qualifier renamed: u.button(...)
-import ui: button, clicked   // selective: only button(...) and clicked
-import ./level               // a file beside this one
-import ../shared/rng         // a file above it
-import bloom/menu            // a module inside a package
-pub import ./menu            // re-export every export of the module
+import ui                    # plain: every export bare, plus ui.button(...)
+import ui as u               # the same, with the qualifier renamed: u.button(...)
+import ui: button, clicked   # selective: only button(...) and clicked
+import ./level               # a file beside this one
+import ../shared/rng         # a file above it
+import bloom/menu            # a module inside a package
+pub import ./menu            # re-export every export of the module
 ```
 
 A path is relative (`./`, or one or more `../`, then `/`-joined identifiers)
@@ -189,11 +189,11 @@ private to its file. See [Exporting](../module-system.md#exporting).
 
 ```petal
 let x = 10
-let name: string = "Petal"   // optional type annotation (see Types)
-x = 20                       // reassignment
-x += 5                       // compound assignment
-let offset = tunable(4)      // a setting: a declared tuning knob
-let TILES = const([1, 2, 3]) // a `let` that must be static (top level only)
+let name: string = "Petal"   # optional type annotation (see Types)
+x = 20                       # reassignment
+x += 5                       # compound assignment
+let offset = tunable(4)      # a setting: a declared tuning knob
+let TILES = const([1, 2, 3]) # a `let` that must be static (top level only)
 ```
 
 `let` declares a dataflow binding and `=` rebinds it
@@ -217,9 +217,9 @@ the tools. On a declaration each can also be written before it with `@`,
 which passes the declared value as the first argument:
 
 ```petal
-@tunable(0, 10) let speed = 4.0   // let speed = tunable(4.0, 0, 10)
+@tunable(0, 10) let speed = 4.0   # let speed = tunable(4.0, 0, 10)
 @const
-let TABLE = [1, 2, 3]             // let TABLE = const([1, 2, 3])
+let TABLE = [1, 2, 3]             # let TABLE = const([1, 2, 3])
 print(speed, TABLE)
 ```
 
@@ -233,13 +233,13 @@ write the call (`rigid(2.0)`). See
 ```petal
 var count = 0
 for i in [1, 2, 3] do
-    set count = count + i     // also `set count += i`
+    set count = count + i     # also `set count += i`
 end
 
 fn describe()
-    "count: {get count}"      // `get` is required inside a function
+    "count: {get count}"      # `get` is required inside a function
 end
-print(describe())             // count: 6
+print(describe())             # count: 6
 ```
 
 `var` declares a mutable cell instead of a dataflow binding, `set` is the only
@@ -252,12 +252,12 @@ field or an index as its target, and the compound forms. See
 
 ```petal
 fn counter()
-    state count = 0           // initialised once, kept across runs
+    state count = 0           # initialised once, kept across runs
     count += 1
     count
 end
 
-state var hp = Map()          // one shared cell holding a map
+state var hp = Map()          # one shared cell holding a map
 
 fn hit(id)
     set hp[id] = (get hp[id] ?? 100) - 10
@@ -278,14 +278,14 @@ fn add(a, b)
     a + b
 end
 
-fn abs(x: int) -> int        // optional param/return type annotations
+fn abs(x: int) -> int        # optional param/return type annotations
     if x < 0 then return -x end
     x
 end
 
-fn box(w, h = w, label: str = "box") "{label} {w}x{h}" end   // defaults
+fn box(w, h = w, label: str = "box") "{label} {w}x{h}" end   # defaults
 
-fn show_all(xs) -> nil       // no implicit return
+fn show_all(xs) -> nil       # no implicit return
     for x in xs do print(x) end
 end
 ```
@@ -311,7 +311,7 @@ fn Point.shifted(p: Point, dx: int, dy: int) -> Point
     Point(p.x + dx, p.y + dy)
 end
 
-let p = Point(1, 2).shifted(10, 0)   // an instance is a record with a class tag
+let p = Point(1, 2).shifted(10, 0)   # an instance is a record with a class tag
 ```
 
 A named record type: comma-separated fields with optional annotations. The
@@ -328,11 +328,11 @@ enum Shape
     unit(sides: 4),
 end
 
-print(Shape.circle(2).radius)    // 2
-print(Shape.unit.sides)          // 4
-print(Shape.unit.name)           // unit
-print(Shape.all)                 // [Shape.unit]
-print(Shape.from("unit"))        // Shape.unit
+print(Shape.circle(2).radius)    # 2
+print(Shape.unit.sides)          # 4
+print(Shape.unit.name)           # unit
+print(Shape.all)                 # [Shape.unit]
+print(Shape.from("unit"))        # Shape.unit
 ```
 
 Named variants, written through the enum (`Shape.unit`, `Shape.circle(2)`).
@@ -406,11 +406,11 @@ let area = match shape
     when Shape.circle(r)  -> 3 * r * r
     when Shape.rect(w, h) ->
         let a = w * h
-        print("rect of {a}")    // rect of 6
+        print("rect of {a}")    # rect of 6
         a
     when Shape.unit -> 1
 end
-print(area)                     // 6
+print(area)                     # 6
 ```
 
 | Pattern | Example | Matches |
@@ -434,10 +434,10 @@ error, not `nil`.
 ### `for` (loop / mapping expression)
 
 ```petal
-for item in [1, 2, 3] do print(item) end   // statement: side effects only
+for item in [1, 2, 3] do print(item) end   # statement: side effects only
 
 let squares = for i in range(1, 6) do i * i end
-// squares == [1, 4, 9, 16, 25]
+# squares == [1, 4, 9, 16, 25]
 ```
 
 Iterates over a list or range with `in … do … end`. As a statement it runs for
@@ -451,7 +451,7 @@ value position they collect one flat list
 
 ```petal
 let pairs = for a in [1, 2], b in ["x", "y"] do "{a}{b}" end
-// pairs == ["1x", "1y", "2x", "2y"]
+# pairs == ["1x", "1y", "2x", "2y"]
 ```
 
 ### `while` (loop)
@@ -468,12 +468,12 @@ end
 ### Lambdas
 
 ```petal
-let double = fn(x) -> x * 2          // arrow body
-let describe = fn(x)                 // block body
+let double = fn(x) -> x * 2          # arrow body
+let describe = fn(x)                 # block body
     print(x)
     x * 2
 end
-let answer = fn -> 42                // no parameters: the list may be dropped
+let answer = fn -> 42                # no parameters: the list may be dropped
 let greet = fn print("hi") end
 ```
 
@@ -487,9 +487,9 @@ See [Lambdas](../language-guide.md#lambdas) and
 ```petal
 fn scale(value, by, offset) value * by + offset end
 
-print(scale(2, 10, 1))                      // 21
-print(scale(2, by: 10, offset: 1))          // 21
-print(scale(by: 10, offset: 1, value: 2))   // 21
+print(scale(2, 10, 1))                      # 21
+print(scale(2, by: 10, offset: 1))          # 21
+print(scale(by: 10, offset: 1, value: 2))   # 21
 ```
 
 An argument may be written `name: value`; positional arguments come first.
@@ -506,21 +506,21 @@ written call would give). Any callable takes one, builtins included. See
 ```petal
 fn box(w, h = w) "{w}x{h}" end
 
-print(box(...[3, 4]))    // 3x4
-print(box(...{w: 5}))    // 5x5
-print(box(2, ...{h: 9})) // 2x9
+print(box(...[3, 4]))    # 3x4
+print(box(...{w: 5}))    # 5x5
+print(box(2, ...{h: 9})) # 2x9
 ```
 
 ### Collection and access forms
 
 ```petal
-[1, 2, 3]              // list literal
-xs[0]                  // index (zero-based; negative counts from the end)
-{name: "Alice"}        // record literal
-{...defaults, x: 100}  // record spread (later fields override)
-{[key]: 1, x: 100}     // computed key: the field is named by a string expression
-person.name            // field access
-person?.name           // optional access: nil when the field is absent
+[1, 2, 3]              # list literal
+xs[0]                  # index (zero-based; negative counts from the end)
+{name: "Alice"}        # record literal
+{...defaults, x: 100}  # record spread (later fields override)
+{[key]: 1, x: 100}     # computed key: the field is named by a string expression
+person.name            # field access
+person?.name           # optional access: nil when the field is absent
 ```
 
 See [Lists](../language-guide.md#lists), [Records](../language-guide.md#records)
@@ -550,13 +550,13 @@ is a comment in the deprecated spelling); `<Tag />` self-closes. See
 let n: int = 0
 var total: float = 0.0
 state count: int = 0
-state var seen: list = []          // the annotation follows the name, before `=`
+state var seen: list = []          # the annotation follows the name, before `=`
 
 fn scale(v: float, k: float) -> float
     v * k
 end
 
-let double = fn(n: int) -> n * 2   // lambda params, but no lambda return type
+let double = fn(n: int) -> n * 2   # lambda params, but no lambda return type
 ```
 
 `:` annotates a binding (`let`, `var`, or `state`), a parameter or a class

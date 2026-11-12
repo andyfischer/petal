@@ -30,21 +30,16 @@ if cols == 0 then
     for x in range(0, cols) do
       if random(0.0, 1.0) < 0.3 then
         row = append(row, 1)
-        color_row = append(color_row, { r: int(random(100.0, 255.0)), g: int(random(100.0, 255.0)), b: int(random(150.0, 255.0)), age: 0 })
+        color_row = append(color_row, {r: int(random(100.0, 255.0)), g: int(random(100.0, 255.0)), b: int(random(150.0, 255.0)), age: 0})
       else
         row = append(row, 0)
-        color_row = append(color_row, { r: 0, g: 0, b: 0, age: 0 })
-      end
-    end
+        color_row = append(color_row, {r: 0, g: 0, b: 0, age: 0})
     grid = append(grid, row)
     cell_colors = append(cell_colors, color_row)
-  end
-end
 
 # Toggle pause with space
 if key_pressed("space") then
   paused = !paused
-end
 
 # Click to toggle cells
 if mouse_down(0) then
@@ -52,9 +47,7 @@ if mouse_down(0) then
   let my = mouse_y() / cell_size
   if mx >= 0 && mx < cols && my >= 0 && my < rows then
     grid[my][mx] = 1
-    cell_colors[my][mx] = { r: 255, g: 255, b: 100, age: 0 }
-  end
-end
+    cell_colors[my][mx] = {r: 255, g: 255, b: 100, age: 0}
 
 # Right click to clear cells
 if mouse_down(1) then
@@ -62,8 +55,6 @@ if mouse_down(1) then
   let my = mouse_y() / cell_size
   if mx >= 0 && mx < cols && my >= 0 && my < rows then
     grid[my][mx] = 0
-  end
-end
 
 # Update simulation
 if !paused then
@@ -97,10 +88,6 @@ if !paused then
                 avg_g += cell_colors[ny][nx].g
                 avg_b += cell_colors[ny][nx].b
                 alive_neighbors += 1
-              end
-            end
-          end
-        end
 
         let cell = grid[y][x]
         let new_cell = 0
@@ -110,8 +97,7 @@ if !paused then
           # Alive: survive with 2-3 neighbors
           if neighbors == 2 || neighbors == 3 then
             new_cell = 1
-            new_color = { r: new_color.r, g: new_color.g, b: new_color.b, age: new_color.age + 1 }
-          end
+            new_color = {r: new_color.r, g: new_color.g, b: new_color.b, age: new_color.age + 1}
         else
           # Dead: birth with exactly 3 neighbors
           if neighbors == 3 then
@@ -120,20 +106,14 @@ if !paused then
             let nr = min(255, avg_r / alive_neighbors + int(random(-20.0, 20.0)))
             let ng = min(255, avg_g / alive_neighbors + int(random(-20.0, 20.0)))
             let nb = min(255, avg_b / alive_neighbors + int(random(-20.0, 20.0)))
-            new_color = { r: max(50, nr), g: max(50, ng), b: max(80, nb), age: 0 }
-          end
-        end
+            new_color = {r: max(50, nr), g: max(50, ng), b: max(80, nb), age: 0}
 
         row = append(row, new_cell)
         color_row = append(color_row, new_color)
-      end
       next_grid = append(next_grid, row)
       new_colors = append(new_colors, color_row)
-    end
     grid = next_grid
     cell_colors = new_colors
-  end
-end
 
 # === Drawing ===
 clear(5, 5, 10)
@@ -149,9 +129,6 @@ for y in range(0, rows) do
       let cg = int(float(c.g) * age_fade)
       let cb = int(float(c.b) * age_fade)
       draw_rect(x: x * cell_size, y: y * cell_size, w: cell_size - 1, h: cell_size - 1, r: cr, g: cg, b: cb)
-    end
-  end
-end
 
 # HUD
 draw_rect(x: 0, y: 0, w: 250, h: 55, r: 0, g: 0, b: 0)
@@ -159,5 +136,4 @@ draw_text("Game of Life", x: 10, y: 5, size: 16, r: 100, g: 100, b: 120)
 draw_text("Gen: " ++ str(generation), x: 10, y: 25, size: 12, r: 60, g: 60, b: 80)
 if paused then
   draw_text("PAUSED", x: 100, y: 25, size: 12, r: 255, g: 100, b: 100)
-end
 draw_text("Space=pause  Click=draw  RClick=erase", x: 10, y: 40, size: 10, r: 50, g: 50, b: 70)

@@ -26,16 +26,12 @@ let _draw_line = draw_line
 let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
   _draw_line(x1, y1, x2, y2, r, g, b)
-end
 fn draw_line(a, b, color)
   _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
-end
 fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
-end
 fn draw_text(text, pos, size, color)
   _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
-end
 
 let score_color = {r: 200, g: 255, b: 220}
 
@@ -43,19 +39,15 @@ let score_color = {r: 200, g: 255, b: 220}
 if key_pressed("up") && dir_y != 1 then
   next_dir_x = 0
   next_dir_y = -1
-end
 if key_pressed("down") && dir_y != -1 then
   next_dir_x = 0
   next_dir_y = 1
-end
 if key_pressed("left") && dir_x != 1 then
   next_dir_x = -1
   next_dir_y = 0
-end
 if key_pressed("right") && dir_x != -1 then
   next_dir_x = 1
   next_dir_y = 0
-end
 
 # Restart on space after game over
 if game_over && key_pressed("space") then
@@ -68,7 +60,6 @@ if game_over && key_pressed("space") then
   score = 0
   food_x = int(random(2.0, float(cols) - 2.0))
   food_y = int(random(2.0, float(rows) - 2.0))
-end
 
 # Update logic
 if !game_over then
@@ -89,7 +80,6 @@ if !game_over then
     # Check wall collision (inside the border)
     if new_x < 1 || new_x >= cols - 1 || new_y < 1 || new_y >= rows - 1 then
       game_over = true
-    end
 
     # Check self collision
     if !game_over then
@@ -97,9 +87,6 @@ if !game_over then
         let seg = snake[i]
         if seg.x == new_x && seg.y == new_y then
           game_over = true
-        end
-      end
-    end
 
     if !game_over then
       # Build new snake with new head
@@ -111,10 +98,8 @@ if !game_over then
       let keep_count = len(snake)
       if !ate_food then
         keep_count = len(snake) - 1
-      end
       for i in range(0, keep_count) do
         new_snake = append(new_snake, snake[i])
-      end
       snake = new_snake
 
       if ate_food then
@@ -122,10 +107,6 @@ if !game_over then
         # Spawn new food not on snake, inside border
         food_x = int(random(2.0, float(cols) - 2.0))
         food_y = int(random(2.0, float(rows) - 2.0))
-      end
-    end
-  end
-end
 
 frame += 1
 
@@ -141,9 +122,6 @@ for gx in range(1, cols - 1) do
   for gy in range(1, rows - 1) do
     if (gx + gy) % 2 == 0 then
       draw_rect(x: gx * grid_size, y: gy * grid_size, w: grid_size, h: grid_size, r: 18, g: 15, b: 35)
-    end
-  end
-end
 
 # Border walls - thick neon border
 let border_r = 40
@@ -152,19 +130,15 @@ let border_b = 80
 # Top wall
 for bx in range(0, cols) do
   draw_rect(x: bx * grid_size, y: 0, w: grid_size, h: grid_size, r: border_r, g: border_g, b: border_b)
-end
 # Bottom wall
 for bx in range(0, cols) do
   draw_rect(x: bx * grid_size, y: (rows - 1) * grid_size, w: grid_size, h: grid_size, r: border_r, g: border_g, b: border_b)
-end
 # Left wall
 for by in range(0, rows) do
   draw_rect(x: 0, y: by * grid_size, w: grid_size, h: grid_size, r: border_r, g: border_g, b: border_b)
-end
 # Right wall
 for by in range(0, rows) do
   draw_rect(x: (cols - 1) * grid_size, y: by * grid_size, w: grid_size, h: grid_size, r: border_r, g: border_g, b: border_b)
-end
 # Inner border glow line
 draw_rect_outline(grid_size + 1, grid_size + 1, (cols - 2) * grid_size - 2, (rows - 2) * grid_size - 2, 80, 60, 160)
 # Outer border highlight
@@ -177,7 +151,6 @@ if pulse < 20 then
   pulse_size = pulse / 4
 else
   pulse_size = (40 - pulse) / 4
-end
 
 # Outer glow
 let fx = food_x * grid_size + grid_size / 2
@@ -201,7 +174,6 @@ for i in range(0, snake_len) do
   let t = 0.0
   if snake_len > 1 then
     t = float(i) / float(snake_len - 1)
-  end
   # Color interpolation: head (100, 255, 200) -> tail (40, 160, 110)
   let sr = int(100.0 - 60.0 * t)
   let sg = int(255.0 - 95.0 * t)
@@ -221,35 +193,29 @@ for i in range(0, snake_len) do
       draw_circle(cx: sx + 14, cy: sy + 14, radius: eye_size, r: 255, g: 255, b: 255)
       draw_circle(cx: sx + 15, cy: sy + 6, radius: 1, r: 20, g: 20, b: 40)
       draw_circle(cx: sx + 15, cy: sy + 14, radius: 1, r: 20, g: 20, b: 40)
-    end
     if dir_x == -1 then
       # Facing left
       draw_circle(cx: sx + 6, cy: sy + 6, radius: eye_size, r: 255, g: 255, b: 255)
       draw_circle(cx: sx + 6, cy: sy + 14, radius: eye_size, r: 255, g: 255, b: 255)
       draw_circle(cx: sx + 5, cy: sy + 6, radius: 1, r: 20, g: 20, b: 40)
       draw_circle(cx: sx + 5, cy: sy + 14, radius: 1, r: 20, g: 20, b: 40)
-    end
     if dir_y == -1 then
       # Facing up
       draw_circle(cx: sx + 6, cy: sy + 6, radius: eye_size, r: 255, g: 255, b: 255)
       draw_circle(cx: sx + 14, cy: sy + 6, radius: eye_size, r: 255, g: 255, b: 255)
       draw_circle(cx: sx + 6, cy: sy + 5, radius: 1, r: 20, g: 20, b: 40)
       draw_circle(cx: sx + 14, cy: sy + 5, radius: 1, r: 20, g: 20, b: 40)
-    end
     if dir_y == 1 then
       # Facing down
       draw_circle(cx: sx + 6, cy: sy + 14, radius: eye_size, r: 255, g: 255, b: 255)
       draw_circle(cx: sx + 14, cy: sy + 14, radius: eye_size, r: 255, g: 255, b: 255)
       draw_circle(cx: sx + 6, cy: sy + 15, radius: 1, r: 20, g: 20, b: 40)
       draw_circle(cx: sx + 14, cy: sy + 15, radius: 1, r: 20, g: 20, b: 40)
-    end
   else
     # Body segment with gradient and padding for "segmented" look
     draw_rect(x: sx + pad, y: sy + pad, w: grid_size - pad * 2, h: grid_size - pad * 2, r: sr, g: sg, b: sb)
     # Subtle inner highlight
     draw_rect(x: sx + 4, y: sy + 4, w: grid_size - 8, h: grid_size - 8, r: min(sr + 30, 255), g: min(sg + 20, 255), b: min(sb + 20, 255))
-  end
-end
 
 # ---- Score display with background panel ----
 draw_rect(x: 10, y: 8, w: 160, h: 32, r: 20, g: 15, b: 40)
@@ -273,5 +239,3 @@ if game_over then
   # Blinking restart prompt
   if frame % 60 < 40 then
     draw_text("Press SPACE to restart", {x: screen_width() / 2 - 130, y: screen_height() / 2 + 35}, 22, {r: 180, g: 160, b: 220})
-  end
-end

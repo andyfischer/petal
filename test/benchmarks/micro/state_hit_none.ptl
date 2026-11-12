@@ -5,10 +5,8 @@
 fn counter(i)
   let n = i
   n
-end
 
 var sum = 0
 for i in range(0, 200) do
   set sum = sum + counter(i)
-end
 sum

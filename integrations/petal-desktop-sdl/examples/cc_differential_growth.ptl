@@ -26,23 +26,19 @@ let sh = float(screen_height())
 if key_pressed("space") then paused = !paused end
 if key_pressed("c") then attractors = [] end
 if mouse_pressed(0) then
-  attractors = append(attractors, { x: float(mouse_x()), y: float(mouse_y()) })
-end
+  attractors = append(attractors, {x: float(mouse_x()), y: float(mouse_y())})
 
 fn make_ring(cx, cy, r, n)
   let out = []
   let two_pi = pi() * 2.0
   for i in range(0, n) do
     let a = float(i) / float(n) * two_pi
-    out = append(out, { x: cx + cos(a) * r, y: cy + sin(a) * r })
-  end
+    out = append(out, {x: cx + cos(a) * r, y: cy + sin(a) * r})
   out
-end
 
 if key_pressed("r") || len(nodes) == 0 then
   nodes = make_ring(cx: sw * 0.5, cy: sh * 0.5, r: 60.0, n: 24)
   attractors = []
-end
 
 # Tunables. The repulsion loop is O(n^2), so n ~250 is a soft ceiling.
 let target_dist = 8.0        # desired neighbour spacing (spring rest length)
@@ -63,7 +59,6 @@ if !paused && len(nodes) > 0 then
   for i in range(0, n) do
     dxs = append(dxs, 0.0)
     dys = append(dys, 0.0)
-  end
 
   # Spring between neighbours, restoring length = target_dist. Pulls when
   # far apart, pushes when too close. Plus a small per-node jitter that
@@ -82,11 +77,8 @@ if !paused && len(nodes) > 0 then
       if stretch > 0.0 then
         dxs[i] += dx / d * stretch * attract_str
         dys[i] += dy / d * stretch * attract_str
-      end
-    end
     dxs[i] += (random(0.0, 1.0) - 0.5) * 2.0 * jitter_str
     dys[i] += (random(0.0, 1.0) - 0.5) * 2.0 * jitter_str
-  end
 
   # Repulsion: O(n^2) — fine for ~1.5k nodes if we keep it tight
   for i in range(0, n) do
@@ -102,10 +94,6 @@ if !paused && len(nodes) > 0 then
           let force = (repel_radius - d) / repel_radius
           dxs[i] += dx / d * force * repel_str
           dys[i] += dy / d * force * repel_str
-        end
-      end
-    end
-  end
 
   # Attractor pull
   for a in attractors do
@@ -118,9 +106,6 @@ if !paused && len(nodes) > 0 then
         let f = (1.0 - d / 250.0) * 0.4
         dxs[i] += dx / d * f * 4.0
         dys[i] += dy / d * f * 4.0
-      end
-    end
-  end
 
   # Apply with a per-step cap
   let new_nodes = []
@@ -133,7 +118,6 @@ if !paused && len(nodes) > 0 then
       let m = sqrt(mag2)
       dx = dx / m * max_step
       dy = dy / m * max_step
-    end
     let nx = here.x + dx
     let ny = here.y + dy
     # Soft wall: keep nodes inside the screen
@@ -141,8 +125,7 @@ if !paused && len(nodes) > 0 then
     if nx > sw - 8.0 then nx = sw - 8.0 end
     if ny < 8.0 then ny = 8.0 end
     if ny > sh - 8.0 then ny = sh - 8.0 end
-    new_nodes = append(new_nodes, { x: nx, y: ny })
-  end
+    new_nodes = append(new_nodes, {x: nx, y: ny})
   nodes = new_nodes
 
   # Insertion pass — only every 4th frame so growth is gradual.
@@ -162,11 +145,7 @@ if !paused && len(nodes) > 0 then
           x: (here.x + next_node.x) * 0.5,
           y: (here.y + next_node.y) * 0.5
         })
-      end
-    end
     nodes = inserted
-  end
-end
 
 # === Draw ===
 clear(8, 8, 14)
@@ -180,20 +159,17 @@ for i in range(0, n) do
   let h = (float(i) / float(n) * 360.0 + t_now * 0.4) % 360.0
   let col = hsv_deg(h, s: 0.5, v: 0.45)
   draw_line(int(nodes[i].x), int(nodes[i].y), int(nodes[next_i].x), int(nodes[next_i].y), col.r, col.g, col.b)
-end
 # Crisp inner stroke
 for i in range(0, n) do
   let next_i = (i + 1) % n
   let h = (float(i) / float(n) * 360.0 + t_now * 0.4) % 360.0
   let col = hsv_deg(h, s: 0.85, v: 1.0)
   draw_line(int(nodes[i].x), int(nodes[i].y), int(nodes[next_i].x), int(nodes[next_i].y), col.r, col.g, col.b)
-end
 
 # Attractor markers
 for a in attractors do
   draw_circle(cx: int(a.x), cy: int(a.y), radius: 10, r: 60, g: 30, b: 60)
   draw_circle(cx: int(a.x), cy: int(a.y), radius: 4, r: 255, g: 200, b: 220)
-end
 
 draw_rect(x: 8, y: 8, w: 280, h: 60, r: 0, g: 0, b: 0)
 draw_text("Differential Growth", x: 14, y: 12, size: 16, r: 220, g: 200, b: 230)

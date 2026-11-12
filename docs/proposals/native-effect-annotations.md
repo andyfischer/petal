@@ -161,9 +161,9 @@ syntax and has not been run; no prototype was built.
 registered `kPhysicsQuery` = `Probe | ReadsPhysics` (`natives_physics.cpp:608`):
 
 ```petal ignore
-// before
+# before
 pub native fn raycast(from, dir, max_distance?, opts?)
-// after (proposed)
+# after (proposed)
 pub native fn raycast(from, dir, max_distance?, opts?) probe(PHYSICS)
 ```
 
@@ -175,12 +175,12 @@ that raycasts on every call. One more word per line, no new name.
 row.** `physics.ptl:5-7`, registered `kPhysicsCommand` (`natives_physics.cpp:367`):
 
 ```petal ignore
-// before
-// body(id, opts): declares the body; returns nothing.
-// Declarative: keep calling it every frame for as long as the body exists.
+# before
+# body(id, opts): declares the body; returns nothing.
+# Declarative: keep calling it every frame for as long as the body exists.
 pub native fn body(id, opts)
-// after (proposed)
-// body(id, opts): the body, re-issued with these options by every replay.
+# after (proposed)
+# body(id, opts): the body, re-issued with these options by every replay.
 pub native fn body(id, opts) command
 ```
 
@@ -194,9 +194,9 @@ newly possible: none at run time; a stale clause is a report.
 `contained`, which is a DM concern:
 
 ```petal ignore
-// before
+# before
 pub native fn editing() -> bool
-// after (proposed)
+# after (proposed)
 pub native fn editing() -> bool effect reads(HOST_DATA)
 ```
 
@@ -221,11 +221,11 @@ which is a possible later drift test, not part of this proposal.
 `fx::Command` (`natives_audio.cpp:315`):
 
 ```petal ignore
-// before
+# before
 pub native fn sfx(name: string, opts?)
-// after (proposed)
+# after (proposed)
 pub native fn sfx(name: string, opts?) command
-// and, if someone writes this, a warning: "a command returns nil"
+# and, if someone writes this, a warning: "a command returns nil"
 pub native fn sfx(name: string, opts?) -> int command
 ```
 

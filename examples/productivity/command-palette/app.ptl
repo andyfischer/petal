@@ -38,8 +38,6 @@ fn theme_for(name: string) -> record
       text: :eef0f6, muted: :9aa2b4, dim: :5e6578, accent: :5b8cff,
       line: :262a36, edge: :323744, sel: :26324e, hover: :1f2330,
       danger: :ff6b7a, success: :5fd28a, warn: :ffb454, scrim: :000000}
-  end
-end
 
 # ── Seed documents ───────────────────────────────────────────────────────
 
@@ -116,7 +114,6 @@ fn seed_files()
       "todo: measure how often the palette is opened by mouse vs key",
     ]},
   ]
-end
 
 # ── Command catalogue ────────────────────────────────────────────────────
 # {id, cat, label, key}. `key` is the shortcut caption shown on the right.
@@ -200,31 +197,25 @@ state var pulse      = 0.0
 
 fn toast(msg: string, kind: string)
   set toasts = append(get toasts, {msg: msg, kind: kind, t: 2.6})
-end
 
 fn cur_file() -> record
   (get files)[get file_i]
-end
 
 fn set_lines(ls: list)
   let f = cur_file()
   let nf = {...f, lines: ls}
   set files = for i in range(0, len(get files)) do
     if i == get file_i then nf else (get files)[i] end
-  end
   set dirty = true
-end
 
 fn clamp_line()
   let n = len(cur_file().lines)
   set cur_line = clamp(get cur_line, lo: 0, hi: max(0, n - 1))
-end
 
 fn replace_line(f)
   let ls = cur_file().lines
   let i = get cur_line
   set_lines(for k in range(0, len(ls)) do if k == i then f(ls[k]) else ls[k] end end)
-end
 
 fn insert_after(s: string)
   let ls = cur_file().lines
@@ -233,34 +224,29 @@ fn insert_after(s: string)
   for k in range(0, len(ls)) do
     out = append(out, ls[k])
     if k == i then out = append(out, s) end
-  end
   if len(ls) == 0 then out = [s] end
   set_lines(out)
   set cur_line = i + 1
-end
 
 fn title_case(s: string) -> string
   let words = split(s, " ")
   join(for w in words do
     if char_len(w) == 0 then w else upper(char_at(w, 0)) ++ char_slice(w, 1) end
   end, " ")
-end
 
 fn trim_right(s: string) -> string
   let cs = chars(s)
   let n = len(cs)
   while n > 0 && cs[n - 1] == " " do n -= 1 end
   join(slice(cs, start: 0, end: n), "")
-end
 
 fn swap_lines(i: int, j: int)
   let ls = cur_file().lines
   if i < 0 || j < 0 || i >= len(ls) || j >= len(ls) then return nil end
   set_lines(for k in range(0, len(ls)) do
     if k == i then ls[j] else if k == j then ls[i] else ls[k] end
-  end)
+  )
   set cur_line = j
-end
 
 # ── Fuzzy matching ───────────────────────────────────────────────────────
 # Greedy subsequence match of `q` (lowercase char list) in `t`, scored:
@@ -272,7 +258,6 @@ fn is_word_start(tc: list, i: int) -> bool
   if i == 0 then return true end
   let p = tc[i - 1]
   p == " " || p == ":" || p == "-" || p == "…" || p == "/"
-end
 
 fn fuzzy_from(q: list, tc: list, start: int)
   let n = len(tc)
@@ -286,7 +271,6 @@ fn fuzzy_from(q: list, tc: list, start: int)
     while j < n && found < 0 do
       if tc[j] == ch then found = j end
       j += 1
-    end
     if found < 0 then return nil end
     let bonus = if found == prev + 1 then 14
     else if is_word_start(tc, found) then 10
@@ -295,10 +279,8 @@ fn fuzzy_from(q: list, tc: list, start: int)
     pos = append(pos, found)
     prev = found
     i = found + 1
-  end
   # Shorter labels win ties; a match at the very start wins a little more.
   {score: score - n / 12 + (if pos[0] == 0 then 4 else 0 end), pos: pos}
-end
 
 fn fuzzy(q: list, t: string)
   if len(q) == 0 then return {score: 0, pos: []} end
@@ -308,13 +290,11 @@ fn fuzzy(q: list, t: string)
   let ws = -1
   for i in range(0, len(tc)) do
     if ws < 0 && tc[i] == q[0] && is_word_start(tc, i) then ws = i end
-  end
   let b = if ws > 0 then fuzzy_from(q, tc, start: ws) else nil end
   if a == nil then b
   else if b == nil then a
   else if b.score > a.score then b
   else a end
-end
 
 # ── Palette rows ─────────────────────────────────────────────────────────
 # The visible list is a list of rows: {kind: "header", text} or
@@ -323,7 +303,6 @@ end
 fn cmd_by_id(id: string)
   let hits = filter(COMMANDS, fn(c) -> c.id == id)
   if len(hits) > 0 then hits[0] else nil end
-end
 
 fn build_rows(mode: string, query: string, recent: list, files: list) -> list
   let q = chars(lower(query))
@@ -334,21 +313,16 @@ fn build_rows(mode: string, query: string, recent: list, files: list) -> list
       let m = fuzzy(q, f.name)
       if m != nil then
         rows = append(rows, {kind: "file", index: i, name: f.name, n: len(f.lines), pos: m.pos, score: m.score})
-      end
-    end
     if len(q) > 0 then rows = sort(rows, fn(a, b) -> b.score - a.score) end
     return rows
-  end
   if mode == "goto" then
     let n = parse_int(query)
     let total = len(files[get file_i].lines)
     if n == nil then
       return [{kind: "line", text: "Type a line number (1 – {total})", ok: false, target: 0}]
-    end
     let ok = n >= 1 && n <= total
     let text = if ok then "Go to line {n}" else "Line {n} is out of range (1 – {total})" end
     return [{kind: "line", text: text, ok: ok, target: n - 1}]
-  end
   if len(q) == 0 then
     let rows = []
     if len(recent) > 0 then
@@ -356,16 +330,11 @@ fn build_rows(mode: string, query: string, recent: list, files: list) -> list
       for id in recent do
         let c = cmd_by_id(id)
         if c != nil then rows = append(rows, {kind: "cmd", cmd: c, pos: [], score: 0}) end
-      end
-    end
     for cat in CATS do
       rows = append(rows, {kind: "header", text: upper(cat)})
       for c in COMMANDS do
         if c.cat == cat then rows = append(rows, {kind: "cmd", cmd: c, pos: [], score: 0}) end
-      end
-    end
     return rows
-  end
   let rows = []
   for c in COMMANDS do
     let m = fuzzy(q, c.label)
@@ -376,21 +345,15 @@ fn build_rows(mode: string, query: string, recent: list, files: list) -> list
       rows = append(rows, {kind: "cmd", cmd: c, pos: m.pos, score: m.score + boost})
     else if m2 != nil then
       rows = append(rows, {kind: "cmd", cmd: c, pos: [], score: m2.score - 8})
-    end
-  end
   sort(rows, fn(a, b) -> b.score - a.score)
-end
 
 fn selectable(rows: list, i: int) -> bool
   i >= 0 && i < len(rows) && rows[i].kind != "header"
-end
 
 fn first_selectable(rows: list) -> int
   for i in range(0, len(rows)) do
     if rows[i].kind != "header" then return i end
-  end
   0
-end
 
 # Step the selection over headers, wrapping.
 fn step_sel(rows: list, from: int, dir: int) -> int
@@ -400,9 +363,7 @@ fn step_sel(rows: list, from: int, dir: int) -> int
   for k in range(0, n) do
     i = ((i + dir) % n + n) % n
     if rows[i].kind != "header" then return i end
-  end
   from
-end
 
 # ── Running a command ────────────────────────────────────────────────────
 
@@ -413,17 +374,14 @@ fn open_palette(m: string)
   set sel = 0
   set list_scroll = 0
   set opens += 1
-end
 
 fn close_palette()
   set open = false
   set query = ""
-end
 
 fn remember(id: string)
   let rest = filter(get recent, fn(r) -> r != id)
   set recent = slice(append([id], rest), start: 0, end: min(5, len(rest) + 1))
-end
 
 fn run_command(id: string)
   set run_count += 1
@@ -441,17 +399,14 @@ fn run_command(id: string)
       set cur_line = 0
       set dirty = true
       toast("Created untitled-{n}.md", "success")
-    end
     when "file.save" do
       set dirty = false
       set saves += 1
       toast("Saved {f.name}", "success")
-    end
     when "file.save_all" do
       set dirty = false
       set saves += 1
       toast("Saved {len(get files)} files", "success")
-    end
     when "file.close" do
       if len(get files) > 1 then
         let fi = get file_i
@@ -461,68 +416,54 @@ fn run_command(id: string)
         toast("Closed {f.name}", "info")
       else
         toast("Cannot close the last file", "danger")
-      end
-    end
     when "file.rename" do toast("Rename is not available in the demo", "warn") end
     when "file.reveal" do
       set sidebar = true
       toast("Revealed {f.name}", "info")
-    end
     when "go.file" do
       open_palette("files")
       keep_open = true
-    end
     when "go.line" do
       open_palette("goto")
       keep_open = true
-    end
     when "go.top" do set cur_line = 0 end
     when "go.bottom" do set cur_line = max(0, len(ls) - 1) end
     when "go.next_file" do
       set file_i = (get file_i + 1) % len(get files)
       set cur_line = 0
-    end
     when "go.prev_file" do
       set file_i = (get file_i - 1 + len(get files)) % len(get files)
       set cur_line = 0
-    end
     when "edit.upper" do replace_line(fn(s) -> upper(s)) end
     when "edit.lower" do replace_line(fn(s) -> lower(s)) end
     when "edit.title" do replace_line(fn(s) -> title_case(s)) end
     when "edit.dup" do
       if len(ls) > 0 then insert_after(ls[i]) end
-    end
     when "edit.delete" do
       if len(ls) > 0 then
         set_lines(for k in range(0, len(ls)) do
           if k == i then continue end
           ls[k]
-        end)
+        )
         clamp_line()
         toast("Deleted line {i + 1}", "info")
-      end
-    end
     when "edit.move_up" do swap_lines(i, i - 1) end
     when "edit.move_down" do swap_lines(i, i + 1) end
     when "edit.trim" do
       set_lines(for s in ls do trim_right(s) end)
       toast("Trimmed trailing whitespace", "info")
-    end
     when "edit.sort" do
       set_lines(sort(ls))
       toast("Sorted {len(ls)} lines", "info")
-    end
     when "edit.reverse" do
       set_lines(reverse(ls))
       toast("Reversed {len(ls)} lines", "info")
-    end
     when "edit.toggle_task" do
       replace_line(fn(s)
         if index_of(s, "- [ ] ") == 0 then "- [x] " ++ char_slice(s, 6)
         else if index_of(s, "- [x] ") == 0 then "- [ ] " ++ char_slice(s, 6)
         else "- [ ] " ++ s end
-      end)
-    end
+      )
     when "insert.date" do insert_after("2026-09-21") end
     when "insert.rule" do insert_after("---") end
     when "insert.task" do insert_after("- [ ] ") end
@@ -537,7 +478,6 @@ fn run_command(id: string)
       set focus_mode = !get focus_mode
       set sidebar = !get focus_mode
       set statusbar = !get focus_mode
-    end
     when "theme.dark" do set theme_name = "dark" end
     when "theme.light" do set theme_name = "light" end
     when "theme.midnight" do set theme_name = "midnight" end
@@ -545,32 +485,26 @@ fn run_command(id: string)
       set theme_name = if get theme_name == "dark" then "light"
       else if get theme_name == "light" then "midnight" else "dark" end
       toast("Theme: {title_case(get theme_name)}", "info")
-    end
     when "help.shortcuts" do toast("Cmd K opens the palette; Cmd O files; Ctrl G lines", "info") end
     when "help.about" do toast("Beacon notes — a Petal / Garden testbed app", "info") end
     when "palette.clear" do
       set recent = []
       toast("Cleared recently used", "info")
-    end
     when "palette.reset" do
       set files = seed_files()
       set file_i = 0
       set cur_line = 0
       set dirty = false
       toast("Demo documents restored", "success")
-    end
     when _ do toast("Unknown command {id}", "danger") end
-  end
   if !keep_open then close_palette() end
   nil
-end
 
 # ── Boot ─────────────────────────────────────────────────────────────────
 
 if !ready then
   set ready = true
   set files = seed_files()
-end
 
 let sdt = min(dt(), 0.1)
 set pulse += sdt
@@ -578,7 +512,6 @@ set toasts = for t in toasts do
   let nt = t.t - sdt
   if nt <= 0.0 then continue end
   {...t, t: nt}
-end
 if len(toasts) > 0 then request_frame() end
 
 let T = theme_for(theme_name)
@@ -616,7 +549,6 @@ if !open then
     if key_pressed("up") || key_pressed("k") then set cur_line -= 1 end
     if key_pressed("pagedown") then set cur_line += 12 end
     if key_pressed("pageup") then set cur_line -= 12 end
-  end
   clamp_line()
 else
   if chord && key_pressed("k") then close_palette() end
@@ -625,9 +557,6 @@ else
       open_palette("commands")
     else
       close_palette()
-    end
-  end
-end
 
 # Text editing of the query.
 if open then
@@ -636,7 +565,6 @@ if open then
     set query ++= typed
     set sel = 0
     set list_scroll = 0
-  end
   if key_pressed("backspace") then
     if mod_cmd() || char_len(query) == 0 then
       if char_len(query) == 0 && mode != "commands" then open_palette("commands") end
@@ -650,11 +578,8 @@ if open then
       set query = char_slice(s, start: 0, end: cut)
     else
       set query = char_slice(query, start: 0, end: char_len(query) - 1)
-    end
     set sel = 0
     set list_scroll = 0
-  end
-end
 
 let rows = if open then build_rows(mode, query, recent, files) else [] end
 
@@ -665,13 +590,10 @@ if open then
   if key_pressed("up") || (mod_ctrl() && key_pressed("p")) then set sel = step_sel(rows, from: sel, dir: -1) end
   if key_pressed("pagedown") then
     for k in range(0, 8) do set sel = step_sel(rows, from: sel, dir: 1) end
-  end
   if key_pressed("pageup") then
     for k in range(0, 8) do set sel = step_sel(rows, from: sel, dir: -1) end
-  end
   if key_pressed("home") then set sel = first_selectable(rows) end
   if key_pressed("end") then set sel = step_sel(rows, from: 0, dir: -1) end
-end
 
 # ── Geometry ─────────────────────────────────────────────────────────────
 
@@ -721,9 +643,7 @@ if open then
   set list_scroll = ensure_visible(scroll: list_scroll, selected: sel, visible_rows: VISIBLE)
   if scroll_y() != 0.0 && point_in(px: mouse_x(), py: mouse_y(), r: list_r) then
     set list_scroll = clamp(list_scroll + scroll_y(), lo: 0, hi: max(0, len(rows) - VISIBLE))
-  end
   set list_scroll = clamp(list_scroll, lo: 0, hi: max(0, len(rows) - VISIBLE))
-end
 
 # Mouse over the palette rows: hover selects, click runs.
 let mouse_row = if open && point_in(px: mouse_x(), py: mouse_y(), r: list_r) then
@@ -734,14 +654,12 @@ if open && mouse_row >= 0 && selectable(rows, mouse_row) then
   state last_mm = -1
   if mm != last_mm then set sel = mouse_row end
   last_mm = mm
-end
 
 # Activation: Return, or a click on a row, or a click outside closes.
 let activate = open && (key_pressed("return") ||
   (mouse_pressed(0) && mouse_row >= 0 && selectable(rows, mouse_row)))
 if open && mouse_pressed(0) && !point_in(px: mouse_x(), py: mouse_y(), r: pal) then
   close_palette()
-end
 if activate && selectable(rows, sel) then
   let r = rows[sel]
   if r.kind == "cmd" then
@@ -755,9 +673,6 @@ if activate && selectable(rows, sel) then
     if r.ok then
       set cur_line = r.target
       close_palette()
-    end
-  end
-end
 
 # Sidebar clicks pick a file (only when the palette is closed).
 let side_rows = if sidebar then for i in range(0, len(files)) do rect(side.x + 8, side.y + 44 + i * 30, side.w - 16, 28) end else [] end
@@ -766,9 +681,6 @@ if !open && sidebar && mouse_pressed(0) then
     if point_in(px: mouse_x(), py: mouse_y(), r: side_rows[i]) then
       set file_i = i
       set cur_line = 0
-    end
-  end
-end
 # The search box in the top bar opens the palette by mouse.
 let search_r = rect(W / 2 - 170, 9, 340, 26)
 if !open && mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: search_r) then open_palette("commands") end
@@ -782,14 +694,12 @@ let doc_body = rect(doc.x + doc_pad, doc.y + 52, doc.w - doc_pad * 2, doc.h - 52
 let doc_vis = max(1, doc_body.h / LINE_H)
 if !open && scroll_y() != 0.0 && point_in(px: mouse_x(), py: mouse_y(), r: doc) then
   set doc_scroll += int(scroll_y() * 3.0)
-end
 set doc_scroll = clamp(doc_scroll, lo: 0, hi: max(0, len(lines) - doc_vis))
 if cur_line < doc_scroll then set doc_scroll = cur_line end
 if cur_line >= doc_scroll + doc_vis then set doc_scroll = cur_line - doc_vis + 1 end
 if !open && mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: doc_body) then
   let li = doc_scroll + (mouse_y() - doc_body.y) / LINE_H
   if li >= 0 && li < len(lines) then set cur_line = li end
-end
 
 # ── Draw: workspace ──────────────────────────────────────────────────────
 
@@ -827,27 +737,21 @@ if sidebar then
       draw_rect_rounded(rect(r.x, r.y + 7, 3, r.h - 14), radius: 2, c: T.accent)
     else if hov then
       draw_rect_rounded(r, radius: 6, c: T.hover)
-    end
     # A tiny document glyph.
     draw_rect_rounded_outline(rect(r.x + 12, r.y + 7, 10, 13), radius: 2, c: if active then T.accent else T.dim end, a: 255, width: 1)
     draw_rect(rect(r.x + 15, r.y + 11, 4, 1), if active then T.accent else T.dim end)
     draw_rect(rect(r.x + 15, r.y + 14, 4, 1), if active then T.accent else T.dim end)
     draw_text(ellipsize(files[i].name, avail_px: r.w - 70, size: S_UI), pos: {x: r.x + 30, y: r.y + 6}, style: if active then S_UI else S_UI_M end)
     draw_text_right(str(len(files[i].lines)), right_x: r.x + r.w - 10, y: r.y + 8, style: S_UI_D)
-  end
   # Recently used, below the files.
   let ry = side.y + 44 + len(files) * 30 + 24
   draw_text("RECENT COMMANDS", pos: {x: side.x + 16, y: ry}, style: S_LABEL)
   if len(recent) == 0 then
     draw_text("Nothing yet", pos: {x: side.x + 16, y: ry + 22}, style: S_UI_D)
-  end
   for i in range(0, len(recent)) do
     let c = cmd_by_id(recent[i])
     if c != nil then
       draw_text(ellipsize(c.label, avail_px: side.w - 36, size: S_UI_M), pos: {x: side.x + 16, y: ry + 22 + i * 22}, style: S_UI_M)
-    end
-  end
-end
 
 # Document.
 draw_rect(doc, T.bg)
@@ -863,18 +767,14 @@ for i in range(doc_scroll, last_vis) do
   if i == cur_line then
     draw_rect_rounded(rect(doc_body.x - 8, y - 2, doc_body.w + 16, LINE_H), radius: 4, c: T.sel)
     draw_rect_rounded(rect(doc_body.x - 8, y + 2, 3, LINE_H - 8), radius: 2, c: T.accent)
-  end
   if numbers then
     draw_text_right(str(i + 1), right_x: doc_body.x + gutter - 14, y: y + 2, style: S_NUM)
-  end
   let style = if index_of(ln, "#") == 0 then S_DOC_H
   else if index_of(ln, "- [x]") == 0 then S_DOC_M
   else S_DOC end
   draw_text(ln, pos: {x: doc_body.x + gutter, y: y}, style: style)
-end
 if len(lines) == 0 then
   draw_text("Empty file", pos: {x: doc_body.x + gutter, y: doc_body.y}, style: S_DOC_M)
-end
 clip_pop()
 
 # Status bar.
@@ -885,7 +785,6 @@ if statusbar then
     pos: {x: 16, y: status.y + 6}, style: S_UI_D)
   draw_text_right("Cmd K palette   Cmd O files   Ctrl G go to line   {run_count} commands run",
     right_x: W - 16, y: status.y + 6, style: S_UI_D)
-end
 
 # ── Draw: palette overlay ────────────────────────────────────────────────
 
@@ -902,14 +801,11 @@ fn draw_highlighted(s: string, pos: list, x: num, y: num, base: record, hi: reco
       draw_text(run, pos: {x: int(cx), y: int(y)}, style: st)
       cx += text_width(run, st)
       run = ""
-    end
     run ++= cs[i]
     run_hi = is_hi
-  end
   let st = if run_hi then hi else base end
   draw_text(run, pos: {x: int(cx), y: int(y)}, style: st)
   cx + text_width(run, st) - x
-end
 
 fn keycaps(caption: string, right_x: num, y: num, col: record, bg: record)
   let parts = split(caption, " ")
@@ -924,8 +820,6 @@ fn keycaps(caption: string, right_x: num, y: num, col: record, bg: record)
     draw_rect_rounded_outline(rect(int(x), int(y), w, 18), radius: 4, c: col, a: 90, width: 1)
     draw_text(p, pos: {x: int(x) + 6, y: int(y) + 3}, style: {...S_KEY, color: col})
     x -= 4
-  end
-end
 
 if open then
   draw_rect(rect(0, 0, W, H), c: T.scrim, a: if theme_name == "light" then 70 else 130 end)
@@ -948,7 +842,6 @@ if open then
     draw_circle_outline({x: qx + 7, y: input_r.y + 26}, 6, T.dim, 255, 2)
     draw_line({x: qx + 11, y: input_r.y + 30}, {x: qx + 16, y: input_r.y + 35}, T.dim, 255, 2)
     qx += 30
-  end
   let placeholder = match mode
     when "files" -> "Type a file name"
     when "goto" -> "Line number"
@@ -957,7 +850,6 @@ if open then
     draw_text(placeholder, pos: {x: qx, y: input_r.y + 16}, style: S_Q_PH)
   else
     draw_text(query, pos: {x: qx, y: input_r.y + 16}, style: S_Q)
-  end
   let caret_x = qx + (if char_len(query) == 0 then 0 else text_width(query, S_Q) + 1 end)
   draw_rect(rect(caret_x, input_r.y + 17, 2, 21), T.accent)
   let count_txt = if mode == "goto" then "" else "{len(filter(rows, fn(r) -> r.kind != "header"))} results" end
@@ -968,7 +860,6 @@ if open then
   clip_push(list_r)
   if len(rows) == 0 then
     draw_text_center("No matching commands", cx: pal.x + PW / 2, y: list_r.y + 14, style: S_UI_M)
-  end
   let vis_end = min(len(rows), list_scroll + VISIBLE + 1)
   for i in range(list_scroll, vis_end) do
     let r = rows[i]
@@ -981,14 +872,12 @@ if open then
       if is_sel then
         draw_rect_rounded(rr, radius: 7, c: T.sel)
         draw_rect_rounded(rect(rr.x, ry + 10, 3, ROW_H - 20), radius: 2, c: T.accent)
-      end
       let lx = rr.x + 22
       let ty = ry + 10
       if r.kind == "cmd" then
         draw_highlighted(r.cmd.label, pos: r.pos, x: lx, y: ty, base: S_ROW, hi: S_ROW_H)
         if len(r.cmd.key) > 0 then
           keycaps(caption: r.cmd.key, right_x: rr.x + rr.w - 14, y: ry + 10, col: if is_sel then T.text else T.muted end, bg: if is_sel then T.overlay else T.surface end)
-        end
         draw_text_right(r.cmd.cat, right_x: rr.x + rr.w - 150, y: ty + 2, style: S_ROW_M)
       else if r.kind == "file" then
         draw_rect_rounded_outline(rect(lx, ty + 1, 10, 13), radius: 2, c: T.muted, a: 255, width: 1)
@@ -997,13 +886,9 @@ if open then
       else if r.kind == "line" then
         draw_text(r.text, pos: {x: lx, y: ty}, style: if r.ok then S_ROW else {...S_ROW, color: T.muted} end)
         if r.ok then draw_text_right("Return", right_x: rr.x + rr.w - 14, y: ty + 2, style: S_ROW_M) end
-      end
-    end
-  end
   clip_pop()
   if len(rows) > VISIBLE then
     bloom.scrollbar(rect(pal.x + PW - 10, list_r.y, 6, list_r.h), count: len(rows), rows: VISIBLE, scroll: list_scroll)
-  end
 
   # Footer hints.
   draw_rect(rect(foot_r.x + 1, foot_r.y, foot_r.w - 2, 1), T.line)
@@ -1014,13 +899,11 @@ if open then
     draw_text(cap, pos: {x: int(x) + 6, y: foot_r.y + 11}, style: S_KEY)
     draw_text(label, pos: {x: int(x) + w + 6, y: foot_r.y + 10}, style: S_UI_D)
     w + 6 + text_width(label, S_UI_D) + 16
-  end
   hx += hint_cap(x: hx, cap: "Up Down", label: "navigate")
   hx += hint_cap(x: hx, cap: "Return", label: if mode == "files" then "open" else if mode == "goto" then "jump" else "run" end)
   hx += hint_cap(x: hx, cap: "Esc", label: if mode == "commands" then "close" else "back" end)
   draw_text_right(if mode == "commands" then "Cmd O files   Ctrl G line" else "Cmd K commands" end,
     right_x: foot_r.x + foot_r.w - 18, y: foot_r.y + 10, style: S_UI_D)
-end
 
 # ── Draw: toasts (always on top) ─────────────────────────────────────────
 
@@ -1040,7 +923,6 @@ for i in range(0, len(toasts)) do
   draw_rect_rounded_outline(tr, radius: 8, c: T.edge, a: int(a * 255.0), width: 1)
   draw_circle({x: tr.x + 16, y: tr.y + 16}, 4, col, int(a * 255.0))
   draw_text(t.msg, pos: {x: tr.x + 30, y: tr.y + 8}, style: {...S_UI, color: {...T.text, a: int(a * 255.0)}})
-end
 
 # ── Observation mirrors (readable in /state → panel.values) ──────────────
 
@@ -1056,7 +938,6 @@ fn row_id(r: record) -> string
     when "file" -> r.name
     when "line" -> r.text
     when _ -> "#" ++ r.text end
-end
 let obs_top = if open && selectable(rows, sel) then row_id(rows[sel]) else "" end
 let obs_ranked = for r in slice(rows, start: 0, end: min(5, len(rows))) do row_id(r) end
 let obs_runs = run_count

@@ -142,7 +142,7 @@ fn ui_theme()      get theme end
 fn theme_set(t)    set theme = t end
 
 theme_set("light")
-print(ui_theme())   // light
+print(ui_theme())   # light
 ```
 
 One useful approach is to store a Map in a state var:
@@ -154,7 +154,7 @@ fn health(id, damage)
     set hp[id] = (get hp[id] ?? 100) - damage
     get hp[id]
 end
-print(health("goblin", 10), health("orc", 30), health("goblin", 5))  // 90 70 85
+print(health("goblin", 10), health("orc", 30), health("goblin", 5))  # 90 70 85
 ```
 
 ## Deprecated: `state(key)`
@@ -256,11 +256,11 @@ fn seen(x)
     n
 end
 
-// a value per element that persists across runs: a loop
-print(for x in [10, 20, 30] do seen(x) end)   // [1, 1, 1] on the first run
+# a value per element that persists across runs: a loop
+print(for x in [10, 20, 30] do seen(x) end)   # [1, 1, 1] on the first run
 
-// a value carried from one element to the next: reduce's accumulator
-print(reduce([10, 20, 30], [], fn(acc, x) append(acc, len(acc) + 1) end))   // [1, 2, 3]
+# a value carried from one element to the next: reduce's accumulator
+print(reduce([10, 20, 30], [], fn(acc, x) append(acc, len(acc) + 1) end))   # [1, 2, 3]
 ```
 
 A `for` gives each iteration its own slots. Give it a [`key`](#loops) when
@@ -282,16 +282,16 @@ state limit = 2
 state var total = 0
 
 fn over(x)
-    set total += x   // a top-level cell, shared on purpose
-    x > limit        // a top-level state read
+    set total += x   # a top-level cell, shared on purpose
+    x > limit        # a top-level state read
 end
-print(filter([1, 2, 3, 4], over), get total)   // [3, 4] 10
+print(filter([1, 2, 3, 4], over), get total)   # [3, 4] 10
 
 fn label(x)
     memo(x) s = "item " ++ str(x)
     s
 end
-print(map([1, 2], label))   // ["item 1", "item 2"]
+print(map([1, 2], label))   # ["item 1", "item 2"]
 
 fn framed(body) "[" ++ body() ++ "]" end
 fn clicks()
@@ -299,7 +299,7 @@ fn clicks()
     n += 1
     str(n)
 end
-print(framed(clicks))   // [1]
+print(framed(clicks))   # [1]
 ```
 
 The design and its measurements are in

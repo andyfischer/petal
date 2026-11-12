@@ -164,7 +164,7 @@ prototype was built.
 Before (`core-runtime/glsl/src/glsl.ptl`, f27a7bea):
 
 ```petal ignore
-// `node` is the construct refused, or nil for the function itself.
+# `node` is the construct refused, or nil for the function itself.
 fn fail(c: Ctx, message: string, node) -> Val
   let ts = c.tr.read()
   if ts.err == nil then
@@ -242,7 +242,7 @@ class Val
   code: string,
   ty: Ty,
   prec: int,
-  // The value of an int literal (it can be re-printed as a float), or nil.
+  # The value of an int literal (it can be re-printed as a float), or nil.
   lit,
 ```
 
@@ -260,8 +260,8 @@ argument is the realistic bug here.
 Before (`examples/custom-apps/petal-fantasy-nes/carts/petal_quest/game.ptl:151-152`):
 
 ```petal ignore
-// `nil` is the "not built yet" sentinel — the reader function for each cell is
-// what fills it in.
+# `nil` is the "not built yet" sentinel — the reader function for each cell is
+# what fills it in.
 state var _pq_game = nil
 state var _pq_level = nil
 ```
@@ -287,8 +287,8 @@ nobody writes `-> nil?` expecting either behavior.
 ### 6. Where the old form is still the better choice
 
 ```petal ignore
-let name = ast.name ?? (opts?.name ?? "f")         // glsl.ptl, translate()
-let held = live.values?.[name]                     // glsl.ptl, glsl_function()
+let name = ast.name ?? (opts?.name ?? "f")         # glsl.ptl, translate()
+let held = live.values?.[name]                     # glsl.ptl, glsl_function()
 ```
 
 Locals produced by `??` and `?.` need no annotation, and should get none. In

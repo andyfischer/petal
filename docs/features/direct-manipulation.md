@@ -192,8 +192,8 @@ move this" use `rigid`:
 ```petal
 let speed = 1.1
 let t = 2.0
-let angle = t * rigid(speed)            // the rate stays put
-let radius = tunable(40, 10, 80)        // preferred, kept within 10..80
+let angle = t * rigid(speed)            # the rate stays put
+let radius = tunable(40, 10, 80)        # preferred, kept within 10..80
 print(cos(angle) * radius)
 ```
 

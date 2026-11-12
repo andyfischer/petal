@@ -6,7 +6,6 @@ enum Color
   Red,
   Green,
   Blue,
-end
 
 let favorite = Color.Blue
 print("Favorite color:", favorite)
@@ -16,15 +15,12 @@ enum Shape
   Circle(radius),
   Rectangle(width, height),
   Triangle(base, height),
-end
 
 fn area(shape)
   match shape
     when Shape.Circle(r) -> 3.14159 * r * r
     when Shape.Rectangle(w, h) -> w * h
     when Shape.Triangle(b, h) -> 0.5 * b * h
-  end
-end
 
 let shapes = [
   Shape.Circle(5.0),
@@ -34,28 +30,22 @@ let shapes = [
 
 for s in shapes do
   print("Area:", area(s))
-end
 
 # Result type for error handling
 enum Result
   Ok(value),
   Error(message),
-end
 
 fn safe_divide(a: num, b: num)
   if b == 0 then
     Result.Error("division by zero")
   else
     Result.Ok(a / b)
-  end
-end
 
 match safe_divide(10, 3)
   when Result.Ok(v) -> print("10 / 3 =", v)
   when Result.Error(msg) -> print("Error:", msg)
-end
 
 match safe_divide(10, 0)
   when Result.Ok(v) -> print("10 / 0 =", v)
   when Result.Error(msg) -> print("Error:", msg)
-end

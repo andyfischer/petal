@@ -7,8 +7,8 @@ output buffers that the host drains after the run. Both are named by a
 
 ```petal
 import io
-let dt = binding(symbol("dt")) ?? 0.016     // host → script
-push_output(symbol("shapes"), {kind: "dot", x: 10, y: 20})   // script → host
+let dt = binding(symbol("dt")) ?? 0.016     # host → script
+push_output(symbol("shapes"), {kind: "dot", x: 10, y: 20})   # script → host
 ```
 
 This page is the script's side. The host's side, binding values and draining
@@ -28,7 +28,7 @@ on a channel. `type(symbol("x"))` is `"symbol"`, and symbols compare with
 
 ```petal
 import io
-print(type(symbol("shapes")), symbol("shapes") == symbol("shapes"))   // symbol true
+print(type(symbol("shapes")), symbol("shapes") == symbol("shapes"))   # symbol true
 ```
 
 A symbol prints as `symbol#<id>`, not as its name. `symbol` is a constant
@@ -43,7 +43,7 @@ an input snapshot, a model record.
 ```petal
 import io
 let speed = binding(symbol("speed")) ?? 1.0
-print(speed)                                 // 1.0
+print(speed)                                 # 1.0
 ```
 
 Under `petal run` nothing is bound, so give every binding a default with

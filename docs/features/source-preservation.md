@@ -152,7 +152,7 @@ So changing one parameter, removing one effect and adding another in
 ```petal ignore
 effects: [
   {effect: "lens_dirt", amount: 0.5, scale: 3.0},
-  // grain goes last
+  # grain goes last
   {effect: "grain", amount: 0.30},
 ],
 ```
@@ -162,7 +162,7 @@ by setting the whole list to `[crt 0.2, grain 0.35, halftone 0.7]` gives
 ```petal ignore
 effects: [
   {effect: "crt", amount: 0.2},
-  // grain goes last
+  # grain goes last
   {effect: "grain", amount: 0.35},
   {effect: "halftone", amount: 0.7},
 ],

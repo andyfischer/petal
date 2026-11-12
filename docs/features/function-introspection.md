@@ -36,15 +36,15 @@ let info = fn_info(streak)
 
 ```petal ignore
 {
-  name: nil,                  // "weight" for fn_info(weight)
+  name: nil,                  # "weight" for fn_info(weight)
   file: nil, line: 8, column: 14,
-  code_hash: "9f3a…",         // 16 hex digits, see below
+  code_hash: "9f3a…",         # 16 hex digits, see below
   params: [
     {name: "fx", type: "Fx", has_default: false, default: nil, default_source: nil},
     {name: "amount", type: nil, has_default: true, default: 0.6, default_source: "0.6"},
     {name: "tint", type: nil, has_default: true, default: {r: 26, g: 42, b: 108}, default_source: ":1a2a6c"},
   ],
-  returns: nil,               // "float" for fn_info(weight)
+  returns: nil,               # "float" for fn_info(weight)
   captures: [
     {name: "weight", value: <function>},
     {name: "TAPS", value: 3},
@@ -97,7 +97,7 @@ fn expensive_description(tree)
   "{tree.tag} with {len(tree.body)} statement(s)"
 end
 
-print(describe(fn(x) -> x + 1))   // Lambda with 1 statement(s)
+print(describe(fn(x) -> x + 1))   # Lambda with 1 statement(s)
 ```
 
 Two closures of the same `fn` expression made on different frames are
@@ -114,9 +114,9 @@ let f = fn(x: float, k = 2)
   if y > 1.0 then y else 1.0 end
 end
 let tree = fn_ast(f)
-print(tree.tag, len(tree.params), len(tree.body))   // Lambda 2 2
-print(tree.body[0].tag, tree.body[0].name)          // Let y
-print(tree.body[1].expr.condition.op)               // Gt
+print(tree.tag, len(tree.params), len(tree.body))   # Lambda 2 2
+print(tree.body[0].tag, tree.body[0].name)          # Let y
+print(tree.body[1].expr.condition.op)               # Gt
 ```
 
 The root is `{tag, name, class, params, returns, body, file, line, column}`:

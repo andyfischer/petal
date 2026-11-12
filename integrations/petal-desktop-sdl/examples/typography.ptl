@@ -14,7 +14,6 @@ fn row(label, style, y)
   # A rule exactly as wide as text_width claims: it must end flush with the
   # text in every style, including bold, italic and letter-spaced.
   draw_rect(x: 20, y: y + 32, w: text_width(label, style), h: 2, r: 120, g: 200, b: 255)
-end
 
 row(label: "Regular sans", style: BODY, y: 20)
 row(label: "Bold sans", style: {...BODY, weight: 700}, y: 70)

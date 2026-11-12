@@ -115,7 +115,6 @@ let ink_chars = [".", "1", "2", "3"]
 fn pixel_at(rows: list, x: num, y: num) -> int
   let c = char_at(rows[y], x)
   index_of(ink_chars, c)
-end
 
 fn painted(rows: list, x: num, y: num, value: num) -> list
   let out = []
@@ -124,34 +123,25 @@ fn painted(rows: list, x: num, y: num, value: num) -> list
       out = append(out, char_slice(rows[j], start: 0, end: x) ++ ink_chars[value] ++ char_slice(rows[j], x + 1))
     else
       out = append(out, rows[j])
-    end
-  end
   out
-end
 
 # ── Input ─────────────────────────────────────────────────────────────────
 
 if btn_repeat("left", 0.3, 0.06) then
   set cx = pmod(cx - 1, 8)
-end
 if btn_repeat("right", 0.3, 0.06) then
   set cx = pmod(cx + 1, 8)
-end
 if btn_repeat("up", 0.3, 0.06) then
   set cy = pmod(cy - 1, 8)
-end
 if btn_repeat("down", 0.3, 0.06) then
   set cy = pmod(cy + 1, 8)
-end
 
 if btnp("b") then
   set ink = pmod(ink + 1, 4)
-end
 
 # Held, not tapped: painting while the pad is moving is how you draw a line.
 if btn("a") then
   set art_rows = painted(rows: art_rows, x: cx, y: cy, value: ink)
-end
 
 # Recoloring ink 0 would mean recoloring the backdrop, which every palette on
 # screen shares — including the one this interface is written in. The hardware
@@ -160,7 +150,6 @@ if ink > 0 && btn_repeat("select", 0.35, 0.05) then
   let cs = inks
   cs[ink - 1] = pmod(cs[ink - 1] + 1, 64)
   set inks = cs
-end
 
 # ── The source, printed on demand ─────────────────────────────────────────
 # The whole point of the cart. `log` goes to the terminal the console was
@@ -172,13 +161,10 @@ fn source_text(slot: num, rows: list, inks: list) -> string
   let out = "define_art({slot}, [\n"
   for j in range(0, len(rows)) do
     out = out ++ "  " ++ q ++ rows[j] ++ q ++ (if j < len(rows) - 1 then ",\n" else "\n" end)
-  end
   out ++ "])\npalette(0, {inks[0]}, {inks[1]}, {inks[2]})"
-end
 
 if btnp("start") then
   log("\n" ++ source_text(slot, rows: art_rows, inks: inks))
-end
 
 # ── The canvas ────────────────────────────────────────────────────────────
 # Eight by eight pixels at two cells each: 16 cells square, cols 1-16, rows
@@ -194,8 +180,6 @@ for y in range(0, 8) do
     let tile = if v == 0 then 6 else 1 + v end
     let pal = if v == 0 then 2 else 0 end
     map_rect(canvas_x + x * 2, canvas_y + y * 2, 2, 2, tile, pal)
-  end
-end
 
 # The cursor: one bracket tile, four sprites, four flip combinations. It blinks
 # so it stays visible over a white pixel and over a black one.
@@ -206,7 +190,6 @@ if blink(2.0) then
   sprite(px + 8, py, 5, 5, flip(true, false))
   sprite(px, py + 8, 5, 5, flip(false, true))
   sprite(px + 8, py + 8, 5, 5, flip(true, true))
-end
 
 # ── The panel ─────────────────────────────────────────────────────────────
 
@@ -224,8 +207,6 @@ for i in range(0, 4) do
   else
     map_rect(21, y, 2, 1, 1 + i, 0)
     map_text(24, y, str(inks[i - 1]), 1)
-  end
-end
 
 # Tiled: the same tile laid next to itself, which is the only way to see
 # whether its edges line up — the question every background tile has to answer.
@@ -247,7 +228,6 @@ let quote = char_at("\"", 0)
 map_text(1, 20, "DEFINE_ART({slot}, [", 1)
 for j in range(0, 8) do
   map_text(1, 21 + j, "  " ++ quote ++ art_rows[j] ++ quote ++ (if j < 7 then "," else "" end), 1)
-end
 map_text(1, 29, "])", 1)
 
 map_text(16, 21, "PAD   MOVE", 1)

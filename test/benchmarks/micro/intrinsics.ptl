@@ -21,73 +21,55 @@ fn empty_loop()
   var sum = 0.0
   for i in range(0, N) do
     set sum = sum + 0.5
-  end
   sum
-end
 
 fn float_call()
   var sum = 0.0
   for i in range(0, N) do
     set sum = sum + float(i)
-  end
   sum
-end
 
 fn int_call(x)
   var sum = 0
   for i in range(0, N) do
     set sum = sum + int(x)
-  end
   sum
-end
 
 fn min_call()
   var sum = 0
   for i in range(0, N) do
     set sum = sum + min(i, 100)
-  end
   sum
-end
 
 fn max_call(x)
   var sum = 0.0
   for i in range(0, N) do
     set sum = sum + max(x, 0.25)
-  end
   sum
-end
 
 fn clamp_call()
   var sum = 0
   for i in range(0, N) do
     set sum = sum + clamp(i, 10, 1000)
-  end
   sum
-end
 
 fn abs_call()
   var sum = 0
   for i in range(0, N) do
     set sum = sum + abs(i)
-  end
   sum
-end
 
 fn floor_call(x)
   var sum = 0.0
   for i in range(0, N) do
     set sum = sum + floor(x)
-  end
   sum
-end
 
 fn len_call(xs)
   var sum = 0
   for i in range(0, N) do
     set sum = sum + len(xs)
-  end
   sum
-end
 
 # A test on the answer, as `if type(c) == "record"` is written.
 fn type_call(r)
@@ -95,19 +77,14 @@ fn type_call(r)
   for i in range(0, N) do
     if type(r) == "record" then
       set sum = sum + 1
-    end
-  end
   sum
-end
 
 # Control: still a native call.
 fn sqrt_call(x)
   var sum = 0.0
   for i in range(0, N) do
     set sum = sum + sqrt(x)
-  end
   sum
-end
 
 print(empty_loop(), float_call(), int_call(2.5), min_call(), max_call(0.5))
-print(clamp_call(), abs_call(), floor_call(2.5), len_call([1, 2, 3]), type_call({ a: 1 }), sqrt_call(2.5))
+print(clamp_call(), abs_call(), floor_call(2.5), len_call([1, 2, 3]), type_call({a: 1}), sqrt_call(2.5))

@@ -227,7 +227,7 @@ was built.
 Before (`a.ptl`, `b.ptl`, and `m.ptl` importing both):
 
 ```petal ignore
-// a.ptl
+# a.ptl
 enum Phase
   play, over,
 end
@@ -235,7 +235,7 @@ pub fn a_phase()
   Phase.play
 end
 
-// b.ptl
+# b.ptl
 enum Phase
   menu, play,
 end
@@ -272,7 +272,7 @@ Before, with an alias (fails today):
 
 ```petal ignore
 import ./shapes as sh
-fn f(c: sh.Circle) -> int      // Error: Expected ',' between parameters
+fn f(c: sh.Circle) -> int      # Error: Expected ',' between parameters
   c.radius
 end
 ```
@@ -288,9 +288,9 @@ didn't.
 Before (`~/cheesecake/games/solitude/missions.ptl`, trimmed):
 
 ```petal ignore
-import ./inventory        // exports pub fn info()
+import ./inventory        # exports pub fn info()
 ...
-pub fn info()             // line 395: this module's own summary
+pub fn info()             # line 395: this module's own summary
   ...
 end
 ```
@@ -308,7 +308,7 @@ Before (runs today, silently):
 class Rect
   q: int,
 end
-print(Rect(1))            // { q: 1 }
+print(Rect(1))            # { q: 1 }
 ```
 
 After: the same output, plus the B1 warning. The user can still choose the

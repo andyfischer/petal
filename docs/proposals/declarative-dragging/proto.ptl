@@ -7,35 +7,28 @@ let COLORS = {A: {r: 229, g: 115, b: 115}, B: {r: 255, g: 183, b: 77}, C: {r: 12
 fn view(items)
   for i in range(0, len(items)) do
     {key: items[i], x: 40 + i * 70, y: 100, w: 60, h: 60, c: COLORS[items[i]]}
-  end
-end
 
 # ── Candidate states: item i reinserted at every index ──
 fn moves(xs, i)
   let x = xs[i]
   let rest = remove_at(xs, i)
   for j in range(0, len(xs)) do take(rest, j) ++ [x] ++ drop(rest, j) end
-end
 
 fn find_key(scene, key)
   let out = nil
   for n in scene do
     if n.key == key then out = n end
-  end
   out
-end
 
 # ── The engine: speculate once at drag start, then pick per frame ──
 fn start_drag(model, key, mx, my)
   let i = 0
   for j in range(0, len(model)) do
     if model[j] == key then i = j end
-  end
   let cands = moves(model, i)
   let targets = for c in cands do find_key(view(c), key) end
   let me = find_key(view(model), key)
   {active: true, key: key, cands: cands, targets: targets, gx: mx - me.x, gy: my - me.y}
-end
 
 fn closest(d, fx, fy)
   let best = 0
@@ -46,10 +39,7 @@ fn closest(d, fx, fy)
     if dd < bd then
       best = j
       bd = dd
-    end
-  end
   best
-end
 
 state items = ["A", "B", "C", "D", "E"]
 state drag = {active: false}
@@ -63,9 +53,6 @@ if !drag.active && mouse_pressed(0) then
     if mx >= n.x && mx < n.x + n.w && my >= n.y && my < n.y + n.h then
       drag = start_drag(items, n.key, mx, my)
       specs = specs + len(drag.cands)
-    end
-  end
-end
 
 let preview = items
 if drag.active then
@@ -73,8 +60,6 @@ if drag.active then
   if mouse_released(0) then
     items = preview
     drag = {active: false}
-  end
-end
 
 clear(24, 24, 32)
 for n in view(preview) key n.key do
@@ -87,4 +72,3 @@ for n in view(preview) key n.key do
   ax = if floating then tx else approach(ax, tx, 18.0) end
   ay = if floating then ty else approach(ay, ty, 18.0) end
   draw_rect(ax, ay, n.w, n.h, n.c)
-end

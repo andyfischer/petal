@@ -1,4 +1,3 @@
 # Exports a name that is also a builtin.
 pub fn clamp(a, b, t)
   "tween"
-end

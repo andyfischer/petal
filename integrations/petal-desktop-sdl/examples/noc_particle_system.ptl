@@ -35,8 +35,6 @@ if len(fountain) < max_per_system then
       life: 1.0,
       size: random(2.0, 5.0)
     })
-  end
-end
 
 # Update fountain
 let new_fountain = []
@@ -46,9 +44,7 @@ for p in fountain do
   let nvy = p.vy + 300.0 * delta
   let nl = p.life - delta * 0.5
   if nl > 0.0 then
-    new_fountain = append(new_fountain, { x: nx, y: ny, vx: p.vx * 0.999, vy: nvy, life: nl, size: p.size })
-  end
-end
+    new_fountain = append(new_fountain, {x: nx, y: ny, vx: p.vx * 0.999, vy: nvy, life: nl, size: p.size})
 fountain = new_fountain
 
 # --- Fire emitter (left) ---
@@ -65,8 +61,6 @@ if len(fire) < max_per_system then
       life: 1.0,
       size: random(3.0, 8.0)
     })
-  end
-end
 
 let new_fire = []
 for p in fire do
@@ -77,9 +71,7 @@ for p in fire do
   let nvy = p.vy - 20.0 * delta
   let nl = p.life - delta * 0.8
   if nl > 0.0 then
-    new_fire = append(new_fire, { x: nx, y: ny, vx: nvx, vy: nvy, life: nl, size: p.size * 0.99 })
-  end
-end
+    new_fire = append(new_fire, {x: nx, y: ny, vx: nvx, vy: nvy, life: nl, size: p.size * 0.99})
 fire = new_fire
 
 # --- Snow emitter (across top) ---
@@ -93,7 +85,6 @@ if len(snow) < max_per_system && frame_count() % 3 == 0 then
     size: random(2.0, 5.0),
     wobble: random(0.0, PI * 2.0)
   })
-end
 
 let new_snow = []
 for p in snow do
@@ -102,9 +93,7 @@ for p in snow do
   let nl = p.life
   if ny > sh then nl = 0.0 end
   if nl > 0.0 then
-    new_snow = append(new_snow, { x: nx, y: ny, vx: p.vx, vy: p.vy, life: nl, size: p.size, wobble: p.wobble })
-  end
-end
+    new_snow = append(new_snow, {x: nx, y: ny, vx: p.vx, vy: p.vy, life: nl, size: p.size, wobble: p.wobble})
 snow = new_snow
 
 # --- Mouse sparks ---
@@ -122,9 +111,6 @@ if mouse_down(0) then
         life: 1.0,
         size: random(1.0, 4.0)
       })
-    end
-  end
-end
 
 let new_sparks = []
 for p in sparks do
@@ -132,9 +118,7 @@ for p in sparks do
   let ny = p.y + p.vy * delta
   let nl = p.life - delta * 1.5
   if nl > 0.0 then
-    new_sparks = append(new_sparks, { x: nx, y: ny, vx: p.vx * 0.98, vy: p.vy * 0.98 + 100.0 * delta, life: nl, size: p.size })
-  end
-end
+    new_sparks = append(new_sparks, {x: nx, y: ny, vx: p.vx * 0.98, vy: p.vy * 0.98 + 100.0 * delta, life: nl, size: p.size})
 sparks = new_sparks
 
 # === Drawing ===
@@ -148,7 +132,6 @@ for p in snow do
   let alpha = min(1.0, p.life)
   let bright = int(200.0 * alpha)
   draw_circle(cx: int(p.x), cy: int(p.y), radius: int(p.size), r: bright, g: bright, b: min(255, bright + 30))
-end
 
 # Draw fire
 for p in fire do
@@ -158,7 +141,6 @@ for p in fire do
   let fg = int(255.0 * min(1.0, alpha * 1.5) * alpha)
   let fb = int(100.0 * alpha * alpha)
   draw_circle(cx: int(p.x), cy: int(p.y), radius: int(p.size * alpha + 1.0), r: fr, g: fg, b: fb)
-end
 
 # Fire base glow
 draw_circle(cx: int(fire_x), cy: int(fire_y) - 10, radius: 30, r: 60, g: 20, b: 5)
@@ -171,7 +153,6 @@ for p in fountain do
   let fg = int(150.0 * alpha + 50.0)
   let fb = int(255.0 * alpha)
   draw_circle(cx: int(p.x), cy: int(p.y), radius: int(p.size * alpha + 1.0), r: fr, g: fg, b: fb)
-end
 
 # Fountain base
 draw_rect(x: int(fountain_x) - 20, y: int(fountain_y), w: 40, h: 10, r: 50, g: 60, b: 80)
@@ -184,7 +165,6 @@ for p in sparks do
   let sg = int(200.0 * alpha * alpha)
   let sb = int(50.0 * alpha)
   draw_circle(cx: int(p.x), cy: int(p.y), radius: int(p.size * alpha + 1.0), r: sr, g: sg, b: sb)
-end
 
 # Labels
 draw_text("Particle Systems", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)

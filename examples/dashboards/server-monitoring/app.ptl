@@ -66,24 +66,19 @@ let T_HERO  = 28
 
 fn tx(s: string, x: num, y: num, size: num, c: record)
   draw_text(s, pos: {x: x, y: y}, style: {size: size, color: c})
-end
 
 fn tx(s: string, x: num, y: num, size: num, c: record, spacing: num)
   draw_text(s, pos: {x: x, y: y}, style: {size: size, color: c, spacing: spacing})
-end
 
 fn tx_right(s: string, right_x: num, y: num, size: num, c: record)
   draw_text(s, pos: {x: right_x - text_width(s, size), y: y}, style: {size: size, color: c})
-end
 
 fn tx_center(s: string, cx: num, y: num, size: num, c: record)
   draw_text(s, pos: {x: cx - text_width(s, size) / 2.0, y: y}, style: {size: size, color: c})
-end
 
 # Small-caps section label: the one place letter-spacing earns its keep.
 fn label_caps(s: string, x: num, y: num, c: record)
   draw_text(upper(s), pos: {x: x, y: y}, style: {size: T_MICRO, color: c, spacing: 1.4})
-end
 
 # ── Number formatting ────────────────────────────────────────────────────────
 
@@ -92,7 +87,6 @@ fn dec(x: num, places: num) -> string
   let mul = 1
   for i in range(0, places) do
     mul = mul * 10
-  end
   let neg = x < 0.0
   let scaled = int(round(abs(x) * float(mul)))
   let whole = scaled / mul
@@ -102,11 +96,8 @@ fn dec(x: num, places: num) -> string
     let fs = str(fr)
     while len(fs) < places do
       fs = "0" ++ fs
-    end
     s = s ++ "." ++ fs
-  end
   if neg then "-" ++ s else s end
-end
 
 fn commas(n: num) -> string
   let s = str(n)
@@ -118,22 +109,17 @@ fn commas(n: num) -> string
     c = c + 1
     if c % 3 == 0 && i > 0 then
       out = "," ++ out
-    end
     i = i - 1
-  end
   out
-end
 
 fn pad2(n: num) -> string
   if n < 10 then "0" ++ str(n) else str(n) end
-end
 
 fn clock(secs: num) -> string
   let h = secs / 3600
   let m = (secs % 3600) / 60
   let s = secs % 60
   pad2(h) ++ ":" ++ pad2(m) ++ ":" ++ pad2(s)
-end
 
 fn ago(secs: num) -> string
   if secs < 60 then
@@ -142,8 +128,6 @@ fn ago(secs: num) -> string
     str(secs / 60) ++ "m " ++ str(secs % 60) ++ "s ago"
   else
     str(secs / 3600) ++ "h " ++ str((secs % 3600) / 60) ++ "m ago"
-  end
-end
 
 # ── Metric metadata ──────────────────────────────────────────────────────────
 # Index order is the wire order everywhere: 0 cpu, 1 mem, 2 net, 3 lat.
@@ -159,27 +143,21 @@ let M_COLOR = [C_CPU, C_MEM, C_NET, C_LAT]
 
 fn fmt_metric(m: num, v: num) -> string
   dec(v, M_DEC[m]) ++ M_UNIT[m]
-end
 
 fn fmt_bare(m: num, v: num) -> string
   dec(v, M_DEC[m])
-end
 
 # 0 nominal · 1 warning · 2 critical
 fn level_of(m: num, v: num) -> int
   if v >= M_CRIT[m] then 2
   else if v >= M_WARN[m] then 1
   else 0
-  end
-end
 
 fn level_color(lv: num)
   if lv == 2 then CRIT else if lv == 1 then WARN else OK end
-end
 
 fn level_word(lv: num) -> string
   if lv == 2 then "critical" else if lv == 1 then "warning" else "nominal" end
-end
 
 # Alerting level *with hysteresis*: a metric climbs a band the moment it
 # crosses, but has to fall a few percent below the line to leave it again.
@@ -195,14 +173,11 @@ fn level_hyst(m: num, v: num, prev: num)
     max(1, raw)
   else
     raw
-  end
-end
 
 # The same three levels read differently in a log: level 0 arrived there by
 # coming back down, so it is "resolved" rather than "nominal".
 fn sev_word(lv: num) -> string
   if lv == 2 then "critical" else if lv == 1 then "warning" else "resolved" end
-end
 
 # ── The fleet ────────────────────────────────────────────────────────────────
 # Plausible seeded inventory. `base`/`amp` set each host's resting level and
@@ -217,7 +192,6 @@ class Host
   base: list,
   amp: list,
   hot: list,
-end
 
 let HOSTS = [
   Host(name: "atlas-01",   role: "api",      region: "us-east-1",  seed: 1.7,  base: [52.0, 61.0, 380.0, 88.0],  amp: [15.0, 9.0, 120.0, 34.0], hot: [0.0, 0.0, 0.0, 0.0]),
@@ -261,15 +235,12 @@ fn sample(h: record, m: num, i: num)
   if h.hot[m] > 0.0 then
     let s = noise(x * 0.0075 + ph + 200.0) + 0.5
     v = v + smoothstep(0.52, 0.86, x: s) * h.hot[m]
-  end
   clamp(v, lo: 0.0, hi: M_MAX[m])
-end
 
 fn core_load(h: record, core: num, i: num)
   let cpu = sample(h, m: 0, i: i)
   let n = noise(float(i) * 0.085 + h.seed * 3.1 + float(core) * 17.3) + 0.5
   clamp(cpu + (n - 0.5) * 52.0, lo: 0.0, hi: 100.0)
-end
 
 # Worst level across all four metrics — the fleet row's status dot.
 fn host_level(h: record, i: num) -> int
@@ -278,10 +249,7 @@ fn host_level(h: record, i: num) -> int
     let lv = level_of(m, sample(h, m, i))
     if lv > worst then
       worst = lv
-    end
-  end
   worst
-end
 
 # ── Persistent state ─────────────────────────────────────────────────────────
 
@@ -314,9 +282,7 @@ state alerts = [
 state levels = for si in range(0, NHOST) do
   let row = for m in range(0, 4) do
     level_of(m, sample(h: HOSTS[si], m: m, i: 0))
-  end
   row
-end
 
 # ── Input · stream advance ───────────────────────────────────────────────────
 
@@ -326,24 +292,17 @@ let h = screen_height()
 if key_pressed("space") then
   paused = !paused
   pause_toggles = pause_toggles + 1
-end
 if key_pressed("leftbracket") && rate > 0 then
   rate = rate - 1
-end
 if key_pressed("rightbracket") && rate < len(RATES) - 1 then
   rate = rate + 1
-end
 for mi in range(0, 4) do
   if key_pressed(str(mi + 1)) then
     sel_metric = mi
-  end
-end
 if key_pressed("a") then
   ack_count = ack_count + 1
   alerts = for al in alerts do
     {...al, ack: true}
-  end
-end
 
 let step = RATES[rate]
 let advanced = 0
@@ -358,9 +317,7 @@ if !paused then
     let next_levels = for si in range(0, NHOST) do
       let row = for m in range(0, 4) do
         level_hyst(m, v: sample(h: HOSTS[si], m: m, i: tick), prev: levels[si][m])
-      end
       row
-    end
 
     for si in range(0, NHOST) do
       for m in range(0, 4) do
@@ -379,25 +336,17 @@ if !paused then
             msg = M_NAME[m] ++ " eased to " ++ fmt_metric(m, v) ++ " — still above warning"
           else
             msg = M_NAME[m] ++ " recovered to " ++ fmt_metric(m, v) ++ " — back inside limits"
-          end
           alerts = flat([[{t: tick, sev: sev, host: si, metric: m, text: msg, ack: false}], alerts])
-        end
-      end
-    end
 
     levels = next_levels
     if len(alerts) > 60 then
       alerts = slice(alerts, start: 0, end: 60)
-    end
-  end
-end
 
 let uptime = clock(tick + 1147)
 
 let open_alerts = 0
 for al in alerts do
   if !al.ack then open_alerts = open_alerts + 1 end
-end
 
 # ── Layout ───────────────────────────────────────────────────────────────────
 
@@ -436,7 +385,6 @@ clear(BG.r, BG.g, BG.b)
 fn card(r: record)
   draw_rect_rounded(r, radius: 10, c: SURFACE)
   draw_rect_outline(r, c: HAIR, a: 255, width: 1)
-end
 
 fn dashed_h(x0: num, x1: num, y: num, c: record, a: num)
   let x = x0
@@ -444,8 +392,6 @@ fn dashed_h(x0: num, x1: num, y: num, c: record, a: num)
     let xe = min(x + 5.0, x1)
     draw_line(x1: x, y1: y, x2: xe, y2: y, r: c.r, g: c.g, b: c.b, a: a, width: 1)
     x = x + 11.0
-  end
-end
 
 # A tiny sparkline: `n` samples ending at `end_i`, autoscaled to its own range
 # so a flat-but-high series still shows its shape.
@@ -457,10 +403,8 @@ fn sparkline(r: record, hst: record, m: num, end_i: num, n: num, c: record, fill
     if v < lo then lo = v end
     if v > hi then hi = v end
     v
-  end
   if hi - lo < 0.001 then
     hi = lo + 1.0
-  end
   let stepx = r.w / float(n - 1)
   let px = 0.0
   let py = 0.0
@@ -470,14 +414,10 @@ fn sparkline(r: record, hst: record, m: num, end_i: num, n: num, c: record, fill
     if k > 0 then
       if fill_a > 0 then
         fill_poly(points: [[px, py], [x, y], [x, r.y + r.h], [px, r.y + r.h]], r: c.r, g: c.g, b: c.b, a: fill_a)
-      end
       draw_line(x1: px, y1: py, x2: x, y2: y, r: c.r, g: c.g, b: c.b, a: 235, width: 1.5)
-    end
     px = x
     py = y
-  end
   draw_circle(cx: px, cy: py, radius: 2.0, r: c.r, g: c.g, b: c.b, a: 255)
-end
 
 # ── Header ───────────────────────────────────────────────────────────────────
 
@@ -503,7 +443,6 @@ let crit_hosts = 0
 for hi in range(0, NHOST) do
   let lv = host_level(HOSTS[hi], tick)
   if lv == 2 then crit_hosts = crit_hosts + 1 else if lv == 1 then warn_hosts = warn_hosts + 1 end
-end
 let ok_hosts = NHOST - warn_hosts - crit_hosts
 
 tx("prod-eu-us", x: mark_x + 192.0, y: 22.0, size: T_BODY, c: TEXT)
@@ -513,7 +452,6 @@ let stat_x = mark_x + 320.0
 fn head_stat(label: string, value: string, c: record, x: num, y: num)
   tx(value, x, y: y - 16.0, size: T_BODY, c: c)
   label_caps(label, x, y: y + 7.0, c: FAINT)
-end
 head_stat(label: "healthy", value: str(ok_hosts), c: OK, x: stat_x, y: 38.0)
 head_stat(label: "warning", value: str(warn_hosts), c: WARN, x: stat_x + 86.0, y: 38.0)
 head_stat(label: "critical", value: str(crit_hosts), c: CRIT, x: stat_x + 172.0, y: 38.0)
@@ -522,7 +460,6 @@ head_stat(label: "critical", value: str(crit_hosts), c: CRIT, x: stat_x + 172.0,
 let cluster_net = 0.0
 for hi in range(0, NHOST) do
   cluster_net = cluster_net + sample(h: HOSTS[hi], m: 2, i: tick)
-end
 let rps = int(cluster_net * 21.0)
 head_stat(label: "requests / sec", value: commas(rps), c: TEXT, x: stat_x + 268.0, y: 38.0)
 head_stat(label: "stream clock", value: uptime, c: TEXT, x: stat_x + 428.0, y: 38.0)
@@ -542,11 +479,9 @@ draw_rect_rounded(rate_r, radius: 16, c: RAISED)
 tx_center(RATE_NAME[rate], cx: rate_r.center_x(), y: rate_r.y + 9.0, size: T_SMALL, c: DIM)
 if ui.clicked(rate_r) then
   rate = (rate + 1) % len(RATES)
-end
 if ui.clicked(pill_r) then
   paused = !paused
   pause_toggles = pause_toggles + 1
-end
 
 # ── Fleet column ─────────────────────────────────────────────────────────────
 
@@ -567,10 +502,8 @@ let before_sel = fleet.selected
 fleet = list_update(fleet, item_count: NHOST, visible_rows: VIS_ROWS, r: list_r)
 if fleet.selected != before_sel then
   sel_host = fleet.selected
-end
 if sel_host != fleet.selected then
   fleet = {selected: sel_host, scroll: ensure_visible(scroll: fleet.scroll, selected: sel_host, visible_rows: VIS_ROWS)}
-end
 
 clip(x: list_r.x, y: list_r.y, w: list_r.w, h: list_r.h)
 for k in range(0, VIS_ROWS) do
@@ -587,10 +520,8 @@ for k in range(0, VIS_ROWS) do
       draw_rect(rect(rr.x, rr.y, 3, rr.h), M_COLOR[sel_metric])
     else if hovered(rr) then
       draw_rect(rr, HOVER)
-    end
     if k > 0 then
       draw_line(x1: rr.x + 14, y1: rr.y, x2: rr.x + rr.w - 14, y2: rr.y, r: HAIR.r, g: HAIR.g, b: HAIR.b, a: 150, width: 1)
-    end
 
     # Vertical rhythm inside the row is derived from its height, so the list
     # can absorb the leftover pixels the pane's height leaves over.
@@ -599,7 +530,6 @@ for k in range(0, VIS_ROWS) do
     # Status dot, haloed when it is not nominal.
     if lv > 0 then
       draw_circle(cx: rr.x + 20.0, cy: ry + 12.0, radius: 7.0, r: lc.r, g: lc.g, b: lc.b, a: 40)
-    end
     draw_circle(cx: rr.x + 20.0, cy: ry + 12.0, radius: 3.5, r: lc.r, g: lc.g, b: lc.b, a: 255)
 
     let name_c = if is_sel then BRIGHT else TEXT end
@@ -610,8 +540,6 @@ for k in range(0, VIS_ROWS) do
     tx_right(fmt_bare(sel_metric, v), right_x: rr.x + rr.w - 16, y: ry - 2, size: T_BODY, c: if lv > 0 then lc else TEXT end)
     sparkline(rect(rr.x + rr.w - 100, ry + 22, 84, 14), hst, m: sel_metric, end_i: tick, n: 20,
       c: if is_sel then M_COLOR[sel_metric] else FAINT end, fill_a: 0)
-  end
-end
 clip_none()
 bloom.scrollbar(list_r, count: NHOST, rows: VIS_ROWS, scroll: fleet.scroll)
 
@@ -621,7 +549,6 @@ label_caps("cluster " ++ M_NAME[sel_metric], x: foot_r.x + 14, y: foot_r.y + 12,
 let agg = 0.0
 for hi in range(0, NHOST) do
   agg = agg + sample(h: HOSTS[hi], m: sel_metric, i: tick)
-end
 let agg_avg = agg / float(NHOST)
 tx(fmt_metric(sel_metric, agg_avg), x: foot_r.x + 14, y: foot_r.y + 26, size: T_LEAD, c: M_COLOR[sel_metric])
 tx_right("avg of " ++ str(NHOST), right_x: foot_r.x + foot_r.w - 14, y: foot_r.y + 12, size: T_MICRO, c: FAINT)
@@ -668,8 +595,6 @@ for m in range(0, 4) do
 
   if ui.clicked(tr) then
     sel_metric = m
-  end
-end
 
 # ── Main streaming chart ─────────────────────────────────────────────────────
 
@@ -693,13 +618,11 @@ let series = for k in range(0, WINDOW) do
   if v > hi then hi = v end
   sum = sum + v
   v
-end
 let avg = sum / float(WINDOW)
 
 fn stat_cell(label: string, value: string, c: record, x: num, y: num)
   label_caps(label, x, y, c: FAINT)
   tx_right(value, right_x: x + 72.0, y: y - 3.0, size: T_SMALL, c: c)
-end
 let sx = chart_r.x + 300.0
 stat_cell(label: "min", value: fmt_bare(sel_metric, lo), c: DIM, x: sx, y: chart_r.y + 40)
 stat_cell(label: "avg", value: fmt_bare(sel_metric, avg), c: DIM, x: sx + 96.0, y: chart_r.y + 40)
@@ -733,12 +656,10 @@ let vmax = if hi > M_WARN[sel_metric] * 0.80 then
   min(max(head, M_WARN[sel_metric] * 1.06), M_MAX[sel_metric])
 else
   min(head, M_MAX[sel_metric])
-end
 let vmin = max(0.0, lo - (vmax - lo) * 0.14)
 
 fn plot_y(p: record, v: num, vmin: num, vmax: num)
   p.y + p.h - (v - vmin) / (vmax - vmin) * p.h
-end
 
 # Horizontal grid + y labels.
 for g in range(0, 5) do
@@ -746,7 +667,6 @@ for g in range(0, 5) do
   let gy = plot_y(p: plot, v: gv, vmin: vmin, vmax: vmax)
   draw_line(x1: plot.x, y1: gy, x2: plot.x + plot.w, y2: gy, r: GRID.r, g: GRID.g, b: GRID.b, a: 255, width: 1)
   tx_right(fmt_bare(sel_metric, gv), right_x: plot.x - 10, y: gy - 6, size: T_MICRO, c: FAINT)
-end
 
 # Vertical grid + time labels.
 let stepx = plot.w / float(WINDOW - 1)
@@ -757,19 +677,16 @@ for g in range(0, 5) do
   let secs = WINDOW - 1 - k
   let lbl = if secs == 0 then "now" else "-" ++ str(secs) ++ "s" end
   tx_center(lbl, cx: gx, y: plot.y + plot.h + 12, size: T_MICRO, c: FAINT)
-end
 
 # Threshold lines.
 if M_WARN[sel_metric] > vmin && M_WARN[sel_metric] < vmax then
   let wy = plot_y(p: plot, v: M_WARN[sel_metric], vmin: vmin, vmax: vmax)
   dashed_h(plot.x, plot.x + plot.w, y: wy, c: WARN, a: 110)
   tx("warn", x: plot.x + plot.w - 30, y: wy - 13, size: T_MICRO, c: WARN, spacing: 0)
-end
 if M_CRIT[sel_metric] > vmin && M_CRIT[sel_metric] < vmax then
   let cy2 = plot_y(p: plot, v: M_CRIT[sel_metric], vmin: vmin, vmax: vmax)
   dashed_h(plot.x, plot.x + plot.w, y: cy2, c: CRIT, a: 120)
   tx("crit", x: plot.x + plot.w - 30, y: cy2 - 13, size: T_MICRO, c: CRIT, spacing: 0)
-end
 
 # Area + line. One convex quad per segment gives the fill; the stroke rides on
 # top of it.
@@ -787,10 +704,8 @@ for k in range(0, WINDOW) do
       [x, y + (base - y) * 0.42], [px, py + (base - py) * 0.42]],
       r: mc.r, g: mc.g, b: mc.b, a: 24)
     draw_line(x1: px, y1: py, x2: x, y2: y, r: mc.r, g: mc.g, b: mc.b, a: 255, width: 2)
-  end
   px = x
   py = y
-end
 
 # The live head of the series.
 draw_circle(cx: px, cy: py, radius: 5.0, r: mc.r, g: mc.g, b: mc.b, a: 60)
@@ -820,7 +735,6 @@ if hovered(plot) then
   draw_rect_rounded(rect(tipr.x + 8, tipr.y + 10, 2, tipr.h - 20), radius: 1, c: mc)
   tx(l1, x: tipr.x + 18, y: tipr.y + 10, size: T_BODY, c: mc)
   tx(l2, x: tipr.x + 18, y: tipr.y + 30, size: T_MICRO, c: FAINT)
-end
 
 # ── Per-core heatmap ─────────────────────────────────────────────────────────
 
@@ -848,8 +762,6 @@ fn heat(v: num)
     color_lerp(:8fd07a, :f0b344, t: (t - 0.78) / 0.12)
   else
     color_lerp(:f0b344, :ff5f6d, t: (t - 0.90) / 0.10)
-  end
-end
 
 for c in range(0, NCORE) do
   let cy3 = grid_y + float(c) * (cell_h + 3.0)
@@ -859,8 +771,6 @@ for c in range(0, NCORE) do
     let v = core_load(h: host, core: c, i: i)
     let cx3 = grid_x + float(k) * cell_w
     draw_rect_rounded(rect(cx3, cy3, cell_w - 2.0, cell_h), radius: 3, c: heat(v))
-  end
-end
 
 # Ramp legend.
 let legend_y = grid_y + float(NCORE) * (cell_h + 3.0) + 12.0
@@ -868,14 +778,12 @@ label_caps("0%", x: grid_x, y: legend_y + 3.0, c: FAINT)
 for k in range(0, 60) do
   let v = float(k) / 59.0 * 100.0
   draw_rect(rect(grid_x + 26.0 + float(k) * 4.4, legend_y, 4.4, 8), heat(v))
-end
 label_caps("100%", x: grid_x + 26.0 + 60.0 * 4.4 + 8.0, y: legend_y + 3.0, c: FAINT)
 
 let busiest = 0.0
 for c in range(0, NCORE) do
   let v = core_load(h: host, core: c, i: tick)
   if v > busiest then busiest = v end
-end
 tx_right("peak core " ++ dec(busiest, 1) ++ "%", right_x: cores_r.x + cores_r.w - S4, y: legend_y - 1.0, size: T_MICRO,
   c: if busiest >= 90.0 then CRIT else if busiest >= 78.0 then WARN else DIM end)
 
@@ -889,7 +797,6 @@ if unacked > 0 then
   let badge = rect(alerts_r.x + S4 + 54, alerts_r.y + 11, 22 + 8 * float(len(str(unacked))), 18)
   draw_rect_rounded(badge, radius: 9, c: CRIT, a: 40)
   tx_center(str(unacked), cx: badge.center_x(), y: badge.y + 3, size: T_MICRO, c: CRIT)
-end
 tx_right("a  ack all", right_x: alerts_r.x + alerts_r.w - S4, y: alerts_r.y + 16, size: T_MICRO, c: FAINT)
 
 let AROW_H = 52
@@ -910,7 +817,6 @@ for k in range(0, a_vis) do
 
     if hovered(ar) then
       draw_rect_rounded(ar, radius: 6, c: HOVER)
-    end
     draw_rect_rounded(rect(ar.x + 4, ar.y + 7, 3, AROW_H - 16), radius: 2, c: sc, a: fade)
 
     let hn = HOSTS[al.host]
@@ -926,13 +832,9 @@ for k in range(0, a_vis) do
       sel_host = al.host
       sel_metric = al.metric
       fleet = {selected: al.host, scroll: ensure_visible(scroll: fleet.scroll, selected: al.host, visible_rows: VIS_ROWS)}
-    end
-  end
-end
 clip_none()
 if len(alerts) == 0 then
   tx_center("no alerts", cx: feed_r.center_x(), y: feed_r.y + feed_r.h / 2 - 8, size: T_SMALL, c: FAINT)
-end
 bloom.scrollbar(feed_r, count: len(alerts), rows: a_vis, scroll: alerts_scroll)
 
 # ── Footer hint ──────────────────────────────────────────────────────────────

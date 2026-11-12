@@ -46,7 +46,7 @@ var count = 0
 for i in [1, 2, 3] do
   set count = count + i
 end
-print(count)   // 6
+print(count)   # 6
 ```
 
 A `var` is a box that functions and closures share, so a write from inside one
@@ -70,7 +70,7 @@ fn describe()
 end
 
 set hits = 3
-print(describe())   // hits so far: 3
+print(describe())   # hits so far: 3
 ```
 
 ### Mutable state shared by several functions
@@ -185,17 +185,17 @@ means exactly the call around the whole initializer. The declared value goes
 in as the **first argument**, before the annotation's own arguments:
 
 ```petal
-@tunable(0, 10) let SPEED = 4.0        // let SPEED = tunable(4.0, 0, 10)
-@tunable let KICK = 6.0                // let KICK = tunable(6.0)
+@tunable(0, 10) let SPEED = 4.0        # let SPEED = tunable(4.0, 0, 10)
+@tunable let KICK = 6.0                # let KICK = tunable(6.0)
 @tunable(min: 3.0, max: 12.0)
-pub let RUN = 7.0                      // pub let RUN = tunable(7.0, min: 3.0, max: 12.0)
-@rigid let G = 9.8                     // let G = rigid(9.8)
+pub let RUN = 7.0                      # pub let RUN = tunable(7.0, min: 3.0, max: 12.0)
+@rigid let G = 9.8                     # let G = rigid(9.8)
 
 @const
 let KINDS = {
   sedan: {mass: 1200.0, max_speed: 30.0},
   van: {mass: 1800.0, max_speed: 25.0},
-}                                      // let KINDS = const({ … })
+}                                      # let KINDS = const({ … })
 print(SPEED, KICK, RUN, G, KINDS.van.mass)
 ```
 
@@ -257,23 +257,23 @@ them fail the exit code (see [CLI.md](CLI.md#lint--check-programs-without-runnin
 
 ```petal
 let count: int = 0
-let name: string = "Petal"        // `str` is also accepted for `string`
+let name: string = "Petal"        # `str` is also accepted for `string`
 
-fn area(r: float) -> float        // `:` before a param type, `->` before the return type
+fn area(r: float) -> float        # `:` before a param type, `->` before the return type
   3.14159 * r * r
 end
 
-fn greet(who: string)             // the return type is optional
+fn greet(who: string)             # the return type is optional
   print("Hello, {who}!")
 end
 
-// Typed and un-annotated code mix freely — an omitted annotation is inferred
-// where possible, otherwise treated as `any` (which suppresses checking).
+# Typed and un-annotated code mix freely — an omitted annotation is inferred
+# where possible, otherwise treated as `any` (which suppresses checking).
 fn scale(v, factor: float) -> float
   v * factor
 end
 
-let double = fn(n: int) -> n * 2  // lambda params take annotations too
+let double = fn(n: int) -> n * 2  # lambda params take annotations too
 ```
 
 A lambda's `->` already introduces its body, so a lambda has **no** return-type
@@ -284,7 +284,7 @@ and it means more there than on a `let`:
 
 ```petal
 var total: int = 0
-set total = "oops"        // warning: `total` declared `int` but assigned `string`
+set total = "oops"        # warning: `total` declared `int` but assigned `string`
 
 state count: int = 0
 state var seen: list = []
@@ -314,9 +314,9 @@ fn scale_by(v: num, factor: num) -> num
   v * factor
 end
 
-scale_by(3, 2)        // ok
-scale_by(3.5, 2)      // ok
-scale_by("3", 2)      // warning: argument 1 to `scale_by`: expected `num`, found `string`
+scale_by(3, 2)        # ok
+scale_by(3.5, 2)      # ok
+scale_by("3", 2)      # warning: argument 1 to `scale_by`: expected `num`, found `string`
 ```
 
 The name of any [class](#classes--methods) — declared or built in — is a type
@@ -336,17 +336,17 @@ fn plural(n: int, one: string, many: string? = nil) -> string
   if n == 1 then "1 {one}" else "{n} {many ?? one ++ "s"}" end
 end
 
-fn lookup(k: string) -> record?        // a record, or nil when there is none
+fn lookup(k: string) -> record?        # a record, or nil when there is none
   if k == "" then return nil end
   {key: k}
 end
 
 class Val
   code: string,
-  lit: int?,                            // nil unless the value is a literal
+  lit: int?,                            # nil unless the value is a literal
 end
 
-state var hud: record? = nil            // "not built yet"
+state var hud: record? = nil            # "not built yet"
 ```
 
 `nil` and a `T` both fill a `T?` slot; anything that would not fill `T` still
@@ -376,9 +376,9 @@ promotion arithmetic already does), but the reverse is not allowed — there is 
 implicit casting. Cross types explicitly with `int()`, `float()`, or `str()`:
 
 ```petal
-let n: int = 3.9          // warning: `n` declared `int` but assigned `float`
-let n: int = int(3.9)     // ok — explicit cast, n is 3
-let x: float = 5          // ok — int promotes to float
+let n: int = 3.9          # warning: `n` declared `int` but assigned `float`
+let n: int = int(3.9)     # ok — explicit cast, n is 3
+let x: float = 5          # ok — int promotes to float
 ```
 
 `num` widens but never narrows: an `int` and a `float` both satisfy a
@@ -388,13 +388,13 @@ forbids.
 
 ```petal
 fn width(r: Rect) -> num
-  r.w                     // ok — a rect edge is a num
+  r.w                     # ok — a rect edge is a num
 end
 
 fn pixels(n: int) n end
 fn place(x: num)
-  pixels(x)               // warning: argument 1 to `pixels`: expected `int`, found `num`
-  pixels(int(x))          // ok — explicit cast
+  pixels(x)               # warning: argument 1 to `pixels`: expected `int`, found `num`
+  pixels(int(x))          # ok — explicit cast
 end
 ```
 
@@ -409,13 +409,13 @@ a direct call is:
 
 ```petal
 let double = fn(n: int) -> n * 2
-double("hi")              // warning: argument 1 to `double`: expected `int`, found `string`
+double("hi")              # warning: argument 1 to `double`: expected `int`, found `string`
 
 fn greet(who: string)
   print("Hello, {who}!")
 end
 let hello = greet
-hello(7)                  // warning: argument 1 to `hello`: expected `string`, found `int`
+hello(7)                  # warning: argument 1 to `hello`: expected `string`, found `int`
 ```
 
 Re-assigning the binding drops what was known about it — the slot holds a
@@ -431,13 +431,13 @@ the program and exits non-zero:
 fn f(a, b)
   a
 end
-f(1)            // error: `f` expects 2 arguments, got 1
+f(1)            # error: `f` expects 2 arguments, got 1
 
 class Point
   x: int,
   y: int,
 end
-Point(1)        // error: `Point` expects 2 arguments, got 1
+Point(1)        # error: `Point` expects 2 arguments, got 1
 ```
 
 Every declared arity counts as a candidate — with `fn f(a)` and `fn f(a, b)`
@@ -456,12 +456,12 @@ prefers missing a mismatch to inventing one.
 ## Arithmetic
 
 ```petal
-let a = 10 + 3    // 13
-let b = 10 - 3    // 7
-let c = 10 * 3    // 30
-let d = 10 / 3    // 3
-let e = 10 % 3    // 1
-let f = -a        // -13
+let a = 10 + 3    # 13
+let b = 10 - 3    # 7
+let c = 10 * 3    # 30
+let d = 10 / 3    # 3
+let e = 10 % 3    # 1
+let f = -a        # -13
 ```
 
 Float arithmetic works the same way. Mixed int/float operations promote to float.
@@ -483,10 +483,10 @@ Components read as fields.
 import vec2
 let p = vec3(1.0, 2.0, 3.0)
 let v = vec3(0.5, 0.0, -1.0)
-print(p + v * 2)     // vec3(2.0, 2.0, 1.0)
-print(-p)            // vec3(-1.0, -2.0, -3.0)
-print(p.x + p.z)     // 4.0
-print(p == vec3(1.0, 2.0, 3.0))   // true
+print(p + v * 2)     # vec3(2.0, 2.0, 1.0)
+print(-p)            # vec3(-1.0, -2.0, -3.0)
+print(p.x + p.z)     # 4.0
+print(p == vec3(1.0, 2.0, 3.0))   # true
 ```
 
 `mag`, `distance`, `normalize`, `dot`, `limit` and `lerp` take either kind;
@@ -500,16 +500,16 @@ is falsy, whereas every `vec3` is truthy (like a record).
 
 ```petal
 let x = 10
-x += 5   // x is now 15
-x -= 3   // x is now 12
-x *= 2   // x is now 24
-x /= 4   // x is now 6
-x %= 4   // x is now 2
+x += 5   # x is now 15
+x -= 3   # x is now 12
+x *= 2   # x is now 24
+x /= 4   # x is now 6
+x %= 4   # x is now 2
 
 let s = "pe"
-s ++= "tal"       // "petal" — also works on lists: xs ++= [4]
+s ++= "tal"       # "petal" — also works on lists: xs ++= [4]
 let port = nil
-port ??= 8080     // 8080 — assigns only when the value is nil
+port ??= 8080     # 8080 — assigns only when the value is nil
 ```
 
 Each `x op= e` is exactly `x = x op e`: a rebind of a `let`, or with `set`, a
@@ -550,7 +550,7 @@ far from its cause.
 For a literal brace, escape it or use a raw string:
 
 ```petal
-print("\{" ++ name ++ "\}")   // {Petal}
+print("\{" ++ name ++ "\}")   # {Petal}
 print("""{""" ++ name ++ """}""")
 ```
 
@@ -581,13 +581,13 @@ the line it opened on.)
 ### String Builtins
 
 ```petal
-len("hello")          // 5
-split("a,b,c", ",")   // ["a", "b", "c"]
-join(["a", "b"], ",")  // "a,b"
-contains("hello", "ell")  // true
-reverse("hello")       // "olleh"
-slice("hello", 1, 3)   // "el"
-index_of("hello", "l") // 2
+len("hello")          # 5
+split("a,b,c", ",")   # ["a", "b", "c"]
+join(["a", "b"], ",")  # "a,b"
+contains("hello", "ell")  # true
+reverse("hello")       # "olleh"
+slice("hello", 1, 3)   # "el"
+index_of("hello", "l") # 2
 ```
 
 ### Characters and Offsets
@@ -597,10 +597,10 @@ A string position counts **characters** (Unicode code points), never bytes.
 
 ```petal
 let name = "Óscar Delgado"
-print(len(name))                         // 13
-print(name[0])                           // Ó
-print(name[-1])                          // o
-print(slice(name, 0, index_of(name, " ")))  // Óscar
+print(len(name))                         # 13
+print(name[0])                           # Ó
+print(name[-1])                          # o
+print(slice(name, 0, index_of(name, " ")))  # Óscar
 ```
 
 `s[i]` gives a one-character string. As with a list, a negative index counts
@@ -619,15 +619,15 @@ returns a position.
 ## Comparison and Logical Operators
 
 ```petal
-// Comparisons (return bool)
+# Comparisons (return bool)
 x == y    x != y
 x < y     x <= y
 x > y     x >= y
 
-// Logical operators (short-circuit)
-a && b    // true if both true
-a || b    // true if either true
-!a        // negation
+# Logical operators (short-circuit)
+a && b    # true if both true
+a || b    # true if either true
+!a        # negation
 ```
 
 `==` compares by value. Lists, records and enum variants are equal when their
@@ -656,7 +656,7 @@ else
     print("small")
 end
 
-// As an expression
+# As an expression
 let label = if x > 5 then "big" else "small" end
 ```
 
@@ -671,7 +671,7 @@ fn classify(n)
   end
 end
 
-// Reads well for the multi-way branches common in drawer code:
+# Reads well for the multi-way branches common in drawer code:
 let color = if line.kind == "hunk" then HUNK
   else if line.kind == "add" then GREEN
   else if line.kind == "del" then RED
@@ -735,10 +735,10 @@ branch or `match` arm whose value is used, or of another collecting loop.
 let squares = for i in range(1, 6) do
     i * i
 end
-// squares == [1, 4, 9, 16, 25]
+# squares == [1, 4, 9, 16, 25]
 
 fn doubled(xs)
-    for x in xs do x * 2 end        // the function's tail: [2, 4, 6] for [1, 2, 3]
+    for x in xs do x * 2 end        # the function's tail: [2, 4, 6] for [1, 2, 3]
 end
 ```
 
@@ -762,11 +762,11 @@ outermost, and a later iterable may use the names before it:
 
 ```petal
 for a in [1, 2], b in ["x", "y"] do
-    print("{a}{b}")          // 1x, 1y, 2x, 2y
+    print("{a}{b}")          # 1x, 1y, 2x, 2y
 end
 
 let below = for a in range(3), b in range(a) do [a, b] end
-// below == [[1, 0], [2, 0], [2, 1]]
+# below == [[1, 0], [2, 0], [2, 1]]
 ```
 
 In value position it collects **one flat list**, every combination in that
@@ -783,7 +783,7 @@ cell a piece could move to, with [`set_in`](#paths-as-data):
 ```petal
 let board = {cells: [[0, 0], [0, 0]]}
 let moves = for r in range(2), c in range(2) do set_in(board, ["cells", r, c], 1) end
-print(len(moves))   // 4
+print(len(moves))   # 4
 ```
 
 ### While Loops
@@ -803,10 +803,10 @@ end
 ```petal
 for i in range(0, 100) do
     if i == 5 then
-        break       // exit the loop
+        break       # exit the loop
     end
     if i % 2 == 0 then
-        continue    // skip to next iteration
+        continue    # skip to next iteration
     end
     print(i)
 end
@@ -821,7 +821,7 @@ fn add(a, b)
     a + b
 end
 
-print(add(2, 3))  // 5
+print(add(2, 3))  # 5
 ```
 
 The implicit return reaches into a trailing `if`, `match` or `for`, and a
@@ -850,8 +850,8 @@ fn scale(value, by, offset)
     value * by + offset
 end
 
-print(scale(2, by: 10, offset: 1))    // 21
-print(scale(by: 10, offset: 1, value: 2))  // 21
+print(scale(2, by: 10, offset: 1))    # 21
+print(scale(by: 10, offset: 1, value: 2))  # 21
 ```
 
 See [Named arguments](syntax/function-overloading.md#named-arguments) for the
@@ -869,9 +869,9 @@ fn greet(name, greeting = "Hello", punct = "!")
     "{greeting}, {name}{punct}"
 end
 
-print(greet("Ada"))                  // Hello, Ada!
-print(greet("Ada", "Hi"))            // Hi, Ada!
-print(greet("Ada", punct: "?"))      // Hello, Ada?
+print(greet("Ada"))                  # Hello, Ada!
+print(greet("Ada", "Hi"))            # Hi, Ada!
+print(greet("Ada", punct: "?"))      # Hello, Ada?
 ```
 
 See [Default parameter values](syntax/function-overloading.md#default-parameter-values)
@@ -891,11 +891,11 @@ fn toll(id: string, cents: int = 5, note = "none")
     "{id}: {cents} ({note})"
 end
 
-print(toll(...["bridge", 25]))                // bridge: 25 (none)
-print(toll(...{id: "bridge", note: "peak"}))  // bridge: 5 (peak)
+print(toll(...["bridge", 25]))                # bridge: 25 (none)
+print(toll(...{id: "bridge", note: "peak"}))  # bridge: 5 (peak)
 
 let request = {id: "tunnel", cents: 40}
-print(toll(...request))                       // tunnel: 40 (none)
+print(toll(...request))                       # tunnel: 40 (none)
 ```
 
 Positional arguments may come first, and the spread is always the last
@@ -946,7 +946,7 @@ let tools = {toll: toll, close: close}
 fn call_tool(name, args)
     let f = tools[name] ?? nil
     if f == nil then return "no tool named {name}" end
-    // The declaration is the schema: reject a key it does not have.
+    # The declaration is the schema: reject a key it does not have.
     let known = fn_info(f).params.map(fn(p) -> p.name)
     for key in keys(args) do
         if !contains(known, key) then return "{name} has no parameter {key}" end
@@ -954,9 +954,9 @@ fn call_tool(name, args)
     f(...args)
 end
 
-print(call_tool("toll", {id: "bridge", cents: 25}))  // toll on bridge is 25
-print(call_tool("close", {id: "tunnel"}))            // tunnel closed
-print(call_tool("close", {name: "tunnel"}))          // close has no parameter name
+print(call_tool("toll", {id: "bridge", cents: 25}))  # toll on bridge is 25
+print(call_tool("close", {id: "tunnel"}))            # tunnel closed
+print(call_tool("close", {name: "tunnel"}))          # close has no parameter name
 ```
 
 `petal lint` does not look inside a spread: what the call binds is known only
@@ -1010,7 +1010,7 @@ fn is_odd(n)
     if n == 0 then false else is_even(n - 1) end
 end
 
-print(is_even(10))  // true
+print(is_even(10))  # true
 ```
 
 The hoist is deliberately conservative, because moving a declaration must never
@@ -1045,7 +1045,7 @@ Anonymous functions use `fn` without a name:
 
 ```petal
 let double = fn(x) -> x * 2
-print(double(5))  // 10
+print(double(5))  # 10
 ```
 
 A lambda body can also be an `end`-terminated block, and a lambda that takes
@@ -1057,9 +1057,9 @@ let describe = fn(x)
     x * 2
 end
 
-let answer = fn -> 42        // argless arrow lambda
+let answer = fn -> 42        # argless arrow lambda
 let greet = fn print("hi") end
-let nothing = fn end         // empty body, returns nil
+let nothing = fn end         # empty body, returns nil
 ```
 
 Argless lambdas are the usual way to pass a callback that needs no arguments:
@@ -1083,7 +1083,7 @@ fn make_adder(n)
 end
 
 let add5 = make_adder(5)
-print(add5(10))  // 15
+print(add5(10))  # 15
 ```
 
 A captured `let` is captured by value, where the function is written: a
@@ -1098,7 +1098,7 @@ The pipe operator `|>` passes a value as the first argument to a function:
 
 ```petal
 let result = [3, 1, 2] |> sort |> reverse
-print(result)  // [3, 2, 1]
+print(result)  # [3, 2, 1]
 ```
 
 ### Method Syntax
@@ -1111,7 +1111,7 @@ fn greet(person)
 end
 
 let alice = {name: "Alice"}
-alice.greet()  // same as greet(alice)
+alice.greet()  # same as greet(alice)
 ```
 
 This is the last of four things `value.name(...)` can resolve to; a callable
@@ -1121,9 +1121,9 @@ record field and a [class's methods](#resolution-order) are tried first.
 
 ```petal
 let nums = [1, 2, 3]
-print(nums[0])        // 1 (zero-indexed)
-nums = append(nums, 4)   // append returns a new list — rebind to keep it
-print(len(nums))      // 4
+print(nums[0])        # 1 (zero-indexed)
+nums = append(nums, 4)   # append returns a new list — rebind to keep it
+print(len(nums))      # 4
 ```
 
 Lists are immutable values: `append` produces a new list rather than changing
@@ -1143,7 +1143,7 @@ let xs = [
     2,
     3,
 ]
-print(len(xs))    // 3
+print(len(xs))    # 3
 ```
 
 See [Commas](syntax/commas.md) for the full rule.
@@ -1151,21 +1151,21 @@ See [Commas](syntax/commas.md) for the full rule.
 ### List Builtins
 
 ```petal
-sort([3, 1, 2])                // [1, 2, 3]
-reverse([1, 2, 3])             // [3, 2, 1]
-slice([1, 2, 3, 4], 1, 3)     // [2, 3]
-flat([[1, 2], [3, 4]])         // [1, 2, 3, 4]
-contains([1, 2, 3], 2)         // true
-enumerate(["a", "b"])           // [[0, "a"], [1, "b"]]
-zip([1, 2], ["a", "b"])        // [[1, "a"], [2, "b"]]
+sort([3, 1, 2])                # [1, 2, 3]
+reverse([1, 2, 3])             # [3, 2, 1]
+slice([1, 2, 3, 4], 1, 3)     # [2, 3]
+flat([[1, 2], [3, 4]])         # [1, 2, 3, 4]
+contains([1, 2, 3], 2)         # true
+enumerate(["a", "b"])           # [[0, "a"], [1, "b"]]
+zip([1, 2], ["a", "b"])        # [[1, "a"], [2, "b"]]
 ```
 
 ### Higher-Order Functions
 
 ```petal
-map([1, 2, 3], fn(x) -> x * 2)              // [2, 4, 6]
-filter([1, 2, 3, 4], fn(x) -> x > 2)        // [3, 4]
-reduce([1, 2, 3], 0, fn(acc, x) -> acc + x) // 6
+map([1, 2, 3], fn(x) -> x * 2)              # [2, 4, 6]
+filter([1, 2, 3, 4], fn(x) -> x > 2)        # [3, 4]
+reduce([1, 2, 3], 0, fn(acc, x) -> acc + x) # 6
 ```
 
 ### Sorting
@@ -1179,9 +1179,9 @@ list, and the sorts are stable.
 ```petal
 let rows = [{name: "Ada", score: 3}, {name: "Bo", score: 9}, {name: "Cy", score: 3}]
 
-sort_by(rows, fn(r) -> r.score)           // Ada, Cy, Bo
-sort_by(rows, fn(r) -> r.score, "desc")   // Bo, Ada, Cy
-sort(rows, fn(a, b) -> a.score < b.score) // lowest score first
+sort_by(rows, fn(r) -> r.score)           # Ada, Cy, Bo
+sort_by(rows, fn(r) -> r.score, "desc")   # Bo, Ada, Cy
+sort(rows, fn(a, b) -> a.score < b.score) # lowest score first
 ```
 
 A key must be a number or a string, and `petal lint` reports any other key
@@ -1197,8 +1197,8 @@ Records are key-value structures with string keys:
 
 ```petal
 let person = {name: "Alice", age: 30}
-print(person.name)      // "Alice"
-person.age = 31          // mutation
+print(person.name)      # "Alice"
+person.age = 31          # mutation
 ```
 
 ### Nested Records
@@ -1211,7 +1211,7 @@ let user = {
         region: "OR"
     }
 }
-print(user.address.city)  // "Portland"
+print(user.address.city)  # "Portland"
 ```
 
 ### Field assignment
@@ -1221,14 +1221,14 @@ records stored inside lists.
 
 ```petal
 let p = {x: 1, y: 2}
-p.x = 10                     // field assignment
+p.x = 10                     # field assignment
 p.y = p.y + 1
 
 let pts = [{x: 0, y: 0}, {x: 0, y: 0}]
-pts[0].x = 100               // through a list element
+pts[0].x = 100               # through a list element
 
 let user = {name: "Bob", address: {city: "Portland"}}
-user.address.city = "Seattle" // nested field
+user.address.city = "Seattle" # nested field
 ```
 
 This is a *rebind of the name*, exactly like `p = ...`: it produces an updated
@@ -1239,7 +1239,7 @@ old one keeps it, and the compiler can still trace where each value came from.
 let r = {a: 1}
 let s = r
 r.a = 2
-print(r, s)   // { a: 2 } { a: 1 }
+print(r, s)   # { a: 2 } { a: 1 }
 ```
 
 The same is true across a call: a function that assigns to a field of its
@@ -1257,8 +1257,8 @@ negative counts from the end) or a map key.
 ```petal
 let st = {meetings: [{room: 1}, {room: 2}, {room: 5}]}
 let moved = set_in(st, ["meetings", 2, "room"], 3)
-print(get_in(moved, ["meetings", 2, "room"]))   // 3
-print(st.meetings[2].room)                      // 5
+print(get_in(moved, ["meetings", 2, "room"]))   # 3
+print(st.meetings[2].room)                      # 5
 ```
 
 `set_in` is the expression form of the path assignment `st.meetings[2].room =
@@ -1278,7 +1278,7 @@ Fields that follow the spread override the copied values.
 
 ```petal
 let defaults = {x: 0, y: 0, color: "gray"}
-let moved = {...defaults, x: 100}    // {x: 100, y: 0, color: "gray"}
+let moved = {...defaults, x: 100}    # {x: 100, y: 0, color: "gray"}
 ```
 
 Spread and field assignment both produce an updated record — spread names the
@@ -1294,8 +1294,8 @@ do: a later field of the same name overrides an earlier one.
 ```petal
 let stat = "speed"
 let car = {name: "coupe", [stat]: 120, [stat ++ "_max"]: 180}
-print(car.speed, car.speed_max)        // 120 180
-print({speed: 1, [stat]: 5})           // { speed: 5 }
+print(car.speed, car.speed_max)        # 120 180
+print({speed: 1, [stat]: 5})           # { speed: 5 }
 ```
 
 With a spread it is how a record is built or updated by a name that is data,
@@ -1307,7 +1307,7 @@ fn index_by(xs, key)
 end
 
 let towns = [{id: "ames", pop: 66}, {id: "bend", pop: 99}]
-print(index_by(towns, fn(t) -> t.id).bend.pop)   // 99
+print(index_by(towns, fn(t) -> t.id).bend.pop)   # 99
 ```
 
 A key that is not a string is an error that says so (`A computed record key
@@ -1322,7 +1322,7 @@ a typo'd field name should fail where it is written, not silently read as nil.
 
 ```petal
 let el = {tag: "p"}
-print(el.fragment)     // error (No field 'fragment' on record)
+print(el.fragment)     # error (No field 'fragment' on record)
 ```
 
 Data that is legitimately ragged — decoded JSON, a partial style record — says
@@ -1331,8 +1331,8 @@ field (or `[key]`) the record does not carry reads as nil there, so the fallback
 runs instead of the frame aborting.
 
 ```petal
-print(el.fragment ?? "")        // "" — no error
-print(el["fragment"] ?? "")     // "" — same for index syntax
+print(el.fragment ?? "")        # "" — no error
+print(el["fragment"] ?? "")     # "" — same for index syntax
 ```
 
 The tolerance covers the whole access chain on the left of `??`, so a link
@@ -1340,7 +1340,7 @@ missing partway down is fine too:
 
 ```petal
 let cfg = {}
-print(cfg.window.width ?? 800)  // 800
+print(cfg.window.width ?? 800)  # 800
 ```
 
 It covers *only* an absent record key. A wrong-typed base and an out-of-bounds
@@ -1349,17 +1349,17 @@ operator:
 
 ```petal
 let n = 3
-print(n.width ?? 800)           // error (Cannot access field 'width' on int)
-print([1, 2][9] ?? 0)           // error (Index 9 out of bounds)
+print(n.width ?? 800)           # error (Cannot access field 'width' on int)
+print([1, 2][9] ?? 0)           # error (Index 9 out of bounds)
 ```
 
 When there is no sensible fallback to write — the value is simply absent and the
 caller will deal with it — `?.` asks for the tolerance on its own:
 
 ```petal
-print(el?.fragment)             // nil — no error, no fallback needed
-print(el?.fragment ?? "")       // "" — the two compose
-print(el?.["fragment"])         // nil — the index spelling
+print(el?.fragment)             # nil — no error, no fallback needed
+print(el?.fragment ?? "")       # "" — the two compose
+print(el?.["fragment"])         # nil — the index spelling
 ```
 
 One `?.` covers the rest of its chain, the way JavaScript's does, so a missing
@@ -1367,14 +1367,14 @@ link partway down does not then fail on the link written after it:
 
 ```petal
 let cfg = {}
-print(cfg?.window.width)        // nil
+print(cfg?.window.width)        # nil
 ```
 
 `?.` softens absence and nothing else — the same line the `??` rule draws:
 
 ```petal
-print(3?.width)                 // error (Cannot access field 'width' on int)
-print([1, 2]?.[9])              // error (Index 9 out of bounds)
+print(3?.width)                 # error (Cannot access field 'width' on int)
+print([1, 2]?.[9])              # error (Index 9 out of bounds)
 ```
 
 It is a read, not a write: `a?.b = v` is not an assignment target.
@@ -1384,16 +1384,16 @@ When the key is computed, a builtin spells the same rule as a function —
 `??` cannot answer (a key that is present but nil):
 
 ```petal
-field({a: 1}, "zz", 7)          // 7
-has_field({a: nil}, "a")        // true
-field({a: nil}, "a", 7)         // 7 — nil coalesces
+field({a: 1}, "zz", 7)          # 7
+has_field({a: nil}, "a")        # true
+field({a: nil}, "a", 7)         # 7 — nil coalesces
 ```
 
 ### Record Builtins
 
 ```petal
-keys({a: 1, b: 2})     // ["a", "b"]
-values({a: 1, b: 2})   // [1, 2]
+keys({a: 1, b: 2})     # ["a", "b"]
+values({a: 1, b: 2})   # [1, 2]
 ```
 
 ## Maps
@@ -1407,8 +1407,8 @@ let ages = Map([["ana", 31], ["bo", 27]])
 let grid = Map()
 grid[[0, 0]] = "start"
 grid[[3, 1]] = "goal"
-print(grid[[3, 1]])     // goal
-print(type(grid))       // map
+print(grid[[3, 1]])     # goal
+print(type(grid))       # map
 ```
 
 The constructor is capitalized, like a class's, because `map` is the
@@ -1421,8 +1421,8 @@ finds it whatever its field order, and `2` and `2.0` are one key because
 
 ```petal
 let m = Map([[2, "two"], [{x: 1, y: 2}, "point"]])
-print(m[2.0])             // two
-print(m[{y: 2, x: 1}])    // point
+print(m[2.0])             # two
+print(m[{y: 2, x: 1}])    # point
 ```
 
 A key must be something `==` compares by content and that is equal to
@@ -1434,8 +1434,8 @@ needs, because asking is how a lookup table is used. `??` supplies a default:
 
 ```petal
 let counts = Map()
-print(counts["apple"])           // nil
-print(counts["apple"] ?? 0)      // 0
+print(counts["apple"])           # nil
+print(counts["apple"] ?? 0)      # 0
 ```
 
 **Writing** follows the rules of every other Petal value. `m[k] = v` on a
@@ -1453,7 +1453,7 @@ end
 for w in ["a", "b", "a"] do
     count(w)
 end
-print(get counts)                // Map([["a", 2], ["b", 1]])
+print(get counts)                # Map([["a", 2], ["b", 1]])
 ```
 
 These writes happen in place, as they do for a list or record in a cell, so
@@ -1480,12 +1480,12 @@ The record and list builtins take a map:
 
 ```petal
 let m = Map([[1, "one"], ["k", true]])
-len(m)             // 2
-keys(m)            // [1, "k"]
-values(m)          // ["one", true]
-entries(m)         // [[1, "one"], ["k", true]] — Map(entries(m)) == m
-contains(m, "k")   // true: membership is by key
-remove(m, 1)       // Map([["k", true]]), a new map
+len(m)             # 2
+keys(m)            # [1, "k"]
+values(m)          # ["one", true]
+entries(m)         # [[1, "one"], ["k", true]] — Map(entries(m)) == m
+contains(m, "k")   # true: membership is by key
+remove(m, 1)       # Map([["k", true]]), a new map
 ```
 
 A map prints as the call that rebuilds it (`Map([[1, "one"]])`, or `Map()`
@@ -1500,9 +1500,9 @@ A color literal is a `:` followed by hex digits, as in CSS but with `:` for the
 integers 0–255.
 
 ```petal
-let red = :ff0000        // {r: 255, g: 0, b: 0}
-let coral = :ff7f50      // {r: 255, g: 127, b: 80}
-print(coral.r)           // 255
+let red = :ff0000        # {r: 255, g: 0, b: 0}
+let coral = :ff7f50      # {r: 255, g: 127, b: 80}
+print(coral.r)           # 255
 ```
 
 Four formats are supported:
@@ -1522,10 +1522,10 @@ by 3, 4, 6 or 8 hex digits, and not directly after a name or a value. The rule
 looks at the token before the `:`, not at spaces:
 
 ```petal
-let theme = {tint: :000, edge: :ff8800aa}   // colors, after the field's own `:`
-let tint = :f80                             // a color
-let size = {w:100, h:200}                   // separators: `w` and `h` are names
-print(theme.edge.a, tint.g, size.w)         // 170 136 100
+let theme = {tint: :000, edge: :ff8800aa}   # colors, after the field's own `:`
+let tint = :f80                             # a color
+let size = {w:100, h:200}                   # separators: `w` and `h` are names
+print(theme.edge.a, tint.g, size.w)         # 170 136 100
 ```
 
 A color cannot follow a value or a name directly, so the body of a one-line
@@ -1551,10 +1551,10 @@ end
 let c = Color.red
 let pink = Color.custom(255, 192, 203)
 
-print(c)                    // Color.red
-print(c == Color.red)       // true
-print(c == Color.green)     // false
-print(type(c))              // Color
+print(c)                    # Color.red
+print(c == Color.red)       # true
+print(c == Color.green)     # false
+print(type(c))              # Color
 ```
 
 A variant name is any identifier, lowercase or uppercase. Variants are
@@ -1588,11 +1588,11 @@ enum Op
 end
 
 let op = Op.fight("bridge", true)
-print(op)                               // Op.fight("bridge", true)
-print(op.place)                         // bridge
-print(op.won)                           // true
-print(op == Op.fight("bridge", true))   // true
-print(op == Op.fight("tunnel", true))   // false
+print(op)                               # Op.fight("bridge", true)
+print(op.place)                         # bridge
+print(op.won)                           # true
+print(op == Op.fight("bridge", true))   # true
+print(op == Op.fight("tunnel", true))   # false
 ```
 
 A constructor takes exactly its fields: `Op.fight("bridge")` is the compile
@@ -1617,8 +1617,8 @@ enum Kind
     park(shape: "area", use: Use.green),
 end
 
-print(Kind.park.shape)                 // area
-print(Kind.parkway.use == Use.road)    // true
+print(Kind.park.shape)                 # area
+print(Kind.parkway.use == Use.road)    # true
 ```
 
 Payload fields and constant data may be mixed in one variant. The payload
@@ -1631,9 +1631,9 @@ enum Op
 end
 
 let op = Op.fight("bridge", true)
-print(op.place)             // bridge
-print(op.tone)              // bad
-print(Op.gift(100).tone)    // good
+print(op.place)             # bridge
+print(op.tone)              # bad
+print(Op.gift(100).tone)    # good
 ```
 
 Every variant of one enum declares the same data keys, so a data read works
@@ -1665,7 +1665,7 @@ enum Tier
     silver(cost: 5),
 end
 
-print(Tier.gold.cost)    // 10
+print(Tier.gold.cost)    # 10
 ```
 
 Two variants whose data read each other are a compile error.
@@ -1679,7 +1679,7 @@ enum Scale
     same(apply: fn(n) -> n),
 end
 
-print(Scale.double.apply(4))    // 8
+print(Scale.double.apply(4))    # 8
 ```
 
 ### Reading a variant
@@ -1691,11 +1691,11 @@ enum Op
 end
 
 let op = Op.fight("bridge", true)
-print(op.place)    // bridge    a payload field, by name
-print(op.tone)     // bad       constant data
-print(op.name)     // fight     the variant's name, as a string
-print(type(op))    // Op
-print(op)          // Op.fight("bridge", true)
+print(op.place)    # bridge    a payload field, by name
+print(op.tone)     # bad       constant data
+print(op.name)     # fight     the variant's name, as a string
+print(type(op))    # Op
+print(op)          # Op.fight("bridge", true)
 ```
 
 Every variant answers `.name`, so a payload field or data key may not be
@@ -1716,9 +1716,9 @@ enum Kind
     park(shape: "area"),
 end
 
-print(Kind.all)            // [Kind.parkway, Kind.park]
-print(Kind.from("park"))   // Kind.park
-print(Kind.from("lake"))   // nil
+print(Kind.all)            # [Kind.parkway, Kind.park]
+print(Kind.from("park"))   # Kind.park
+print(Kind.from("lake"))   # nil
 
 for k in Kind.all do
     print("{k.name}: {k.shape}")
@@ -1762,7 +1762,7 @@ fn Ty.is_vec(t: Ty) -> bool
     t.dim > 1
 end
 
-print(Ty.vec2.text(), Ty.named("Fx").text(), Ty.vec2.is_vec())   // vec2 Fx true
+print(Ty.vec2.text(), Ty.named("Fx").text(), Ty.vec2.is_vec())   # vec2 Fx true
 ```
 
 **Data or a method?** Use [constant data](#constant-data) for a fixed value
@@ -1802,17 +1802,17 @@ The enum's name is an ordinary binding. `pub enum` exports the name, and the
 variants come with it as its members:
 
 ```petal no-check
-// palette.ptl
+# palette.ptl
 pub enum Color
     red,
     green,
 end
 
-// main.ptl
+# main.ptl
 import ./palette
 print(palette.Color.red)
 
-// or, importing the name itself
+# or, importing the name itself
 import ./palette: Color
 print(Color.red)
 ```
@@ -1841,9 +1841,9 @@ fn pick(k: Kind, wide: bool) -> Kind
     if wide then Kind.parkway else k end
 end
 
-pick(Kind.park, true)    // ok
-pick(Use.road, true)     // warning: argument 1 to `pick`: expected `Kind`, found `Use`
-pick("park", true)       // warning: argument 1 to `pick`: expected `Kind`, found `string`
+pick(Kind.park, true)    # ok
+pick(Use.road, true)     # warning: argument 1 to `pick`: expected `Kind`, found `Use`
+pick("park", true)       # warning: argument 1 to `pick`: expected `Kind`, found `string`
 ```
 
 A value the checker knows to be a `Kind` — through an annotation, or because
@@ -1857,12 +1857,12 @@ enum Kind
 end
 
 fn label(k: Kind)
-    k.shap             // warning: no variant of enum `Kind` has a field `shap`
-                       //          (fields of `Kind`: shape, name)
+    k.shap             # warning: no variant of enum `Kind` has a field `shap`
+                       #          (fields of `Kind`: shape, name)
 end
 
-Kind.park.colour       // warning: `Kind.park` has no field `colour`
-                       //          (it has: shape, name)
+Kind.park.colour       # warning: `Kind.park` has no field `colour`
+                       #          (it has: shape, name)
 ```
 
 Both are warnings, like every type check, and both describe a line that fails
@@ -1885,8 +1885,8 @@ class Box
 end
 
 let r = Box(0, 0, 100, 40)
-print(r.x)        // 0 — field access, exactly as on a record
-print(type(r))    // "Box"
+print(r.x)        # 0 — field access, exactly as on a record
+print(type(r))    # "Box"
 ```
 
 Fields are comma-separated, on one line or many, and follow the
@@ -1928,7 +1928,7 @@ fn center_x(r: Rect) -> int
   r.x + r.w / 2
 end
 
-center_x("nope")   // warning: argument 1 to `center_x`: expected `Rect`, found `string`
+center_x("nope")   # warning: argument 1 to `center_x`: expected `Rect`, found `string`
 ```
 
 A field read is typed by its declaration, so with `class Point x: int end`,
@@ -1943,7 +1943,7 @@ name the class does not declare is a warning:
 
 ```petal
 fn label(r: Rect) -> string
-  r.caption          // warning: class `Rect` has no field `caption`
+  r.caption          # warning: class `Rect` has no field `caption`
 end
 ```
 
@@ -1966,8 +1966,8 @@ fn Rect.shifted(rect: Rect, dx: int, dy: int) -> Rect
 end
 
 let r = Rect(0, 0, 100, 40)
-print(r.center_x())            // 50
-print(r.shifted(10, 0).center_x())   // 60
+print(r.center_x())            # 50
+print(r.shifted(10, 0).center_x())   # 60
 ```
 
 Methods may be declared on your own classes and on the built-in ones alike.
@@ -1988,8 +1988,8 @@ fn Rect.scaled(rect: Rect, by: num) -> Rect
 end
 
 let r = Rect(0, 0, 10, 10)
-r.scaled("2")                  // warning: argument 1 to `scaled`: expected `num`, found `string`
-let s: string = r.scaled(2)    // warning: `s` declared `string` but assigned `Rect`
+r.scaled("2")                  # warning: argument 1 to `scaled`: expected `num`, found `string`
+let s: string = r.scaled(2)    # warning: `s` declared `string` but assigned `Rect`
 ```
 
 The receiver is not one of the arguments you write, so `argument 1` is the
@@ -2058,14 +2058,14 @@ fn C.value(c: C)
   c.a
 end
 
-let pinned = C(1)             // pinned: the initializer says so
-state also: C = C(1)          // pinned: the annotation says so
-fn takes_one(c: C)            // pinned: the parameter is annotated
+let pinned = C(1)             # pinned: the initializer says so
+state also: C = C(1)          # pinned: the annotation says so
+fn takes_one(c: C)            # pinned: the parameter is annotated
   c.value()
 end
 
-state loose = C(1)            // not pinned — un-annotated, so `any`
-fn takes_any(c)               // not pinned
+state loose = C(1)            # not pinned — un-annotated, so `any`
+fn takes_any(c)               # not pinned
   c.value()
 end
 
@@ -2085,7 +2085,7 @@ class the program no longer has. A pinned call instead runs the method the code
 already live:
 
 ```petal
-// before the edit
+# before the edit
 class C
   x: int,
 end
@@ -2093,13 +2093,13 @@ fn C.value(c: C)
   c.x
 end
 state c: C = C(1)
-print(c.value())        // 1
+print(c.value())        # 1
 ```
 
 ```petal
-// after: the class is renamed and the method rewritten. `c` still holds the
-// instance built above, labelled `C` — but the call is bound to `D.value`, so
-// the edit lands on it.
+# after: the class is renamed and the method rewritten. `c` still holds the
+# instance built above, labelled `C` — but the call is bound to `D.value`, so
+# the edit lands on it.
 class D
   x: int,
 end
@@ -2107,7 +2107,7 @@ fn D.value(d: D)
   d.x + 100
 end
 state c: D = D(1)
-print(c.value())        // 101, computed from the old value
+print(c.value())        # 101, computed from the old value
 ```
 
 Petal does **not** migrate state: a field the edit adds is not invented on an
@@ -2143,9 +2143,9 @@ fn Square.area(q: Square)
 end
 
 state shape = Circle(2)
-print(shape.area())        // 12 — dispatches on the label
+print(shape.area())        # 12 — dispatches on the label
 shape = Square(3)
-print(shape.area())        // 9  — still the label, not the declaration
+print(shape.area())        # 9  — still the label, not the declaration
 ```
 
 Methods on enums follow the same two rules. A variant in `state` keeps its
@@ -2189,10 +2189,10 @@ methods.
 
 ```petal
 let card = Rect(0, 0, 100, 40)
-card.center_x()        // 50
-card.right()           // 100  (x + w)
-card.inset(5)          // Rect(5, 5, 90, 30)
-card.offset(10, 10)    // Rect(10, 10, 100, 40)
+card.center_x()        # 50
+card.right()           # 100  (x + w)
+card.inset(5)          # Rect(5, 5, 90, 30)
+card.offset(10, 10)    # Rect(10, 10, 100, 40)
 ```
 
 An edge may be an `int` or a `float`, and stays the one it was given: there is
@@ -2268,8 +2268,8 @@ fn describe(x)
     end
 end
 
-print(describe(0))    // zero
-print(describe(7))    // other: 7
+print(describe(0))    # zero
+print(describe(7))    # other: 7
 ```
 
 Each arm is `when pattern -> body`. A pattern is one of:
@@ -2318,9 +2318,9 @@ fn step(cmd)
     end
 end
 
-print(step(Cmd.move(2, 3)))    // moved to 2, 3
-print(step(Cmd.say("hi")))     // hi!
-print(step(Cmd.quit))          // bye
+print(step(Cmd.move(2, 3)))    # moved to 2, 3
+print(step(Cmd.say("hi")))     # hi!
+print(step(Cmd.quit))          # bye
 ```
 
 A name bound by a pattern or in a body is local to its arm. `break`,
@@ -2341,7 +2341,7 @@ for k in [Kind.park, Kind.road(3), Kind.plaza, Kind.road(2)] do
         when Kind.road(n) -> set lanes += n
     end
 end
-print(get lanes)    // 5
+print(get lanes)    # 5
 ```
 
 A `match` may be nested in a body: the inner one takes its own `when`s and
@@ -2371,9 +2371,9 @@ fn area(shape)
     end
 end
 
-print(area(Shape.circle(2)))    // 12
-print(area(Shape.rect(2, 5)))   // 10
-print(area(Shape.unit))         // 1
+print(area(Shape.circle(2)))    # 12
+print(area(Shape.rect(2, 5)))   # 10
+print(area(Shape.unit))         # 1
 ```
 
 A pattern lists every payload field of its variant, with `_` for the ones it
@@ -2415,9 +2415,9 @@ fn is_vowel(ch)
     end
 end
 
-print(surface(Kind.plaza))      // open
-print(surface(Kind.lane(2)))    // paved, 2 wide
-print(is_vowel("e"))            // true
+print(surface(Kind.plaza))      # open
+print(surface(Kind.lane(2)))    # paved, 2 wide
+print(is_vowel("e"))            # true
 ```
 
 Every alternative must bind the same names, so the body can use them
@@ -2466,7 +2466,7 @@ fn rank(name)
     end
 end
 
-print(rank("gold"))    // 1
+print(rank("gold"))    # 1
 ```
 
 Here `rank("tin")` stops the program with
@@ -2491,8 +2491,8 @@ fn first(list)
     end
 end
 
-print(first([4, 5, 6]))    // 4
-print(first([]))           // nil
+print(first([4, 5, 6]))    # 4
+print(first([]))           # nil
 ```
 
 ### Record Patterns
@@ -2510,10 +2510,10 @@ fn where(p)
     end
 end
 
-print(where({x: 0, y: 0}))          // origin
-print(where({x: 0, y: 4}))          // on the y axis at 4
-print(where({x: 2, y: 4, z: 9}))    // 2, 4
-print(where({x: 2}))                // not a point
+print(where({x: 0, y: 0}))          # origin
+print(where({x: 0, y: 4}))          # on the y axis at 4
+print(where({x: 2, y: 4, z: 9}))    # 2, 4
+print(where({x: 2}))                # not a point
 ```
 
 ### Guards
@@ -2531,9 +2531,9 @@ fn classify(n)
     end
 end
 
-print(classify(-3))     // negative
-print(classify(500))    // big
-print(classify(7))      // small positive
+print(classify(-3))     # negative
+print(classify(500))    # big
+print(classify(7))      # small positive
 ```
 
 A guard applies to the whole pattern, so with an or-pattern it is tested
@@ -2557,7 +2557,7 @@ reload. It is how a script that re-runs every frame remembers anything.
 ```petal
 state hits = 0
 hits += 1
-print(hits)   // 1 on the first run, 2 on the second, ...
+print(hits)   # 1 on the first run, 2 on the second, ...
 ```
 
 Each call path that reaches a declaration gets its own slot, so two callsites
@@ -2585,10 +2585,10 @@ path, so every caller that asks for the same key shares it.
 
 ```petal
 fn glyph_width(ch)
-    memo(ch) w = len(ch) * 7   // computed once per character
+    memo(ch) w = len(ch) * 7   # computed once per character
     w
 end
-print(glyph_width("a") + glyph_width("a"))   // 14
+print(glyph_width("a") + glyph_width("a"))   # 14
 ```
 
 A memo cannot be reassigned, is dropped when a run does not use it, and is a
@@ -2613,9 +2613,9 @@ fn bump()
   speculate_place("n", n)
 end
 let r = speculate(bump)
-print(r.value)              // 1
-print(r.places[0].value)    // 1
-print(speculate(bump).value) // 1
+print(r.value)              # 1
+print(r.places[0].value)    # 1
+print(speculate(bump).value) # 1
 ```
 
 `speculating()` is true inside one; a `speculate` inside another is an
@@ -2709,11 +2709,11 @@ A program can be split across files, and everything beyond the core builtins
 arrives through an `import` at the top of the file:
 
 ```petal ignore
-import ./level              // level.ptl beside this file: go(), level.go()
-import ./level as lv        // the same, with the qualifier renamed
-import ./level: go, reset   // only these names, and no qualifier
-import noise                // a package: noise(x), noise.noise(x)
-import ui                   // the petal-ui interface, for a UI script
+import ./level              # level.ptl beside this file: go(), level.go()
+import ./level as lv        # the same, with the qualifier renamed
+import ./level: go, reset   # only these names, and no qualifier
+import noise                # a package: noise(x), noise.noise(x)
+import ui                   # the petal-ui interface, for a UI script
 ```
 
 A path that starts with `./` or `../` is a file relative to the importing one;
@@ -2808,11 +2808,11 @@ fn f(x)
 end
 
 let d = deriv(f, 3.0)
-print(round(d.value, 6), d.quality)   // 8.0 smooth
+print(round(d.value, 6), d.quality)   # 8.0 smooth
 
-// The input that makes f(x) == 15
+# The input that makes f(x) == 15
 let s = solve(fn(xs) f(xs[0]) end, [1.0], 15.0)
-print(round(s.xs[0], 4))              // 3.0
+print(round(s.xs[0], 4))              # 3.0
 ```
 
 The answer is a close approximation; `quality` says how far to trust it.

@@ -22,9 +22,9 @@ let c = color(0, 1, 2)
    comma.
 
 ```petal
-let a = [1, 2, 3]      // fine
-let b = [1, 2, 3,]     // fine — trailing comma
-let c = [              // fine — one element per line
+let a = [1, 2, 3]      # fine
+let b = [1, 2, 3,]     # fine — trailing comma
+let c = [              # fine — one element per line
     1,
     2,
     3
@@ -32,8 +32,8 @@ let c = [              // fine — one element per line
 ```
 
 ```petal ignore
-let d = [1 2 3]        // ERROR: Expected ',' between list elements
-let e = [              // ERROR: a newline is not a comma
+let d = [1 2 3]        # ERROR: Expected ',' between list elements
+let e = [              # ERROR: a newline is not a comma
     1
     2
 ]
@@ -100,11 +100,11 @@ expressions:
 ```petal
 let x = 1
 let y = 2
-print([1, -2])          // [1, -2] — negation
-print(len([1, 2]) - 1)  // 1 — subtraction
-print(x -y)             // -1 — subtraction
-print(x - y)            // -1 — identical
-print(x-y)              // -1 — identical
+print([1, -2])          # [1, -2] — negation
+print(len([1, 2]) - 1)  # 1 — subtraction
+print(x -y)             # -1 — subtraction
+print(x - y)            # -1 — identical
+print(x-y)              # -1 — identical
 ```
 
 Negative literals in patterns work (`when -1 -> …`), as does negation in any

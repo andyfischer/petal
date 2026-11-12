@@ -26,8 +26,6 @@ if len(movers) == 0 then
       g: int(random(100.0, 255.0)),
       b: int(random(150.0, 255.0))
     })
-  end
-end
 
 let mx = float(mouse_x())
 let my = float(mouse_y())
@@ -54,7 +52,6 @@ for m in movers do
   if speed > max_speed then
     nvx = nvx / speed * max_speed
     nvy = nvy / speed * max_speed
-  end
 
   # Update position
   let nx = m.x + nvx * delta
@@ -68,7 +65,6 @@ for m in movers do
     x: nx, y: ny, vx: nvx, vy: nvy,
     mass: m.mass, r: m.r, g: m.g, b: m.b
   })
-end
 movers = new_movers
 
 # === Drawing ===
@@ -85,9 +81,6 @@ for i in range(0, len(movers)) do
     if dist < 120.0 then
       let alpha = int((1.0 - dist / 120.0) * 60.0)
       draw_line(int(a.x), int(a.y), int(b.x), int(b.y), alpha, alpha, alpha + 20)
-    end
-  end
-end
 
 # Draw movers
 for m in movers do
@@ -109,7 +102,6 @@ for m in movers do
   # Highlight
   draw_circle(cx: int(m.x) - radius / 3, cy: int(m.y) - radius / 3, radius: max(2, radius / 3),
     r: min(255, m.r + 80), g: min(255, m.g + 80), b: min(255, m.b + 80))
-end
 
 # Mouse indicator
 draw_circle(cx: int(mx), cy: int(my), radius: 6, r: 255, g: 255, b: 100)

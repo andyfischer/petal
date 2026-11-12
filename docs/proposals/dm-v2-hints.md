@@ -14,10 +14,10 @@ Add two builtins that do nothing at runtime and tell the direct-manipulation
 (DM) solver which literals it may move:
 
 ```petal
-tunable(x)                              // prefer moving x's literal
-tunable(x, min, max)                    // ... and keep it in range
+tunable(x)                              # prefer moving x's literal
+tunable(x, min, max)                    # ... and keep it in range
 tunable(x, min: 0, max: 255, step: 1)
-rigid(x)                                // never move x's literal; nothing upstream of x receives feedback through it
+rigid(x)                                # never move x's literal; nothing upstream of x receives feedback through it
 ```
 
 Each returns its first argument unchanged. The solver reads them from the IR.
@@ -141,9 +141,9 @@ an extract with `petal run`). "After" is proposed.
 **1. The common case: top-level knobs.** `examples/games/asteroids/app.ptl:50-57`.
 
 ```petal
-// before (and after: unchanged)
+# before (and after: unchanged)
 config let start_lives   = 3
-config let turn_rate     = 4.4      // rad/s
+config let turn_rate     = 4.4      # rad/s
 ```
 
 No change. `config let` is still the better spelling here: it is visible to
@@ -152,12 +152,12 @@ No change. `config let` is still the better spelling here: it is visible to
 **2. A literal that must not move.** `server-monitoring/app.ptl:490-493`.
 
 ```petal
-// before
+# before
 let orb = time() * 1.1
 draw_circle(cx: mark_x + cos(orb) * 11.0, cy: mark_y + sin(orb) * 11.0, radius: 2.6, color: ACCENT)
 ```
 ```petal
-// after (proposed)
+# after (proposed)
 let orb = time() * rigid(1.1)
 ```
 
@@ -168,13 +168,13 @@ hint makes it certain and saves the extra run.
 **3. A range on a helper constant.**
 
 ```petal
-// before: server-monitoring/app.ptl:84-86
+# before: server-monitoring/app.ptl:84-86
 fn label_caps(s: string, x: num, y: num, c: record)
   draw_text(upper(s), pos: {x: x, y: y}, style: {size: T_MICRO, color: c, spacing: 1.4})
 end
 ```
 ```petal
-// after (proposed)
+# after (proposed)
   draw_text(upper(s), pos: {x: x, y: y}, style: {size: T_MICRO, color: c, spacing: tunable(1.4, 0, 4)})
 ```
 
@@ -184,9 +184,9 @@ wrapping a computed value (`tunable(gap * 2)`). The lint catches it.
 **4. A call-site literal, without a new binding.**
 
 ```petal
-// before: server-monitoring/app.ptl:495
+# before: server-monitoring/app.ptl:495
 tx("ORBITAL", x: mark_x + 24.0, y: 21.0, size: T_LEAD, c: TEXT, spacing: 2.2)
-// after (proposed): only the offset moves when the wordmark is dragged
+# after (proposed): only the offset moves when the wordmark is dragged
 tx("ORBITAL", x: mark_x + tunable(24.0), y: tunable(21.0), size: T_LEAD, c: TEXT, spacing: 2.2)
 ```
 
@@ -197,10 +197,10 @@ this pair shows that the heuristics carry most programs.
 **5. Interaction with `state`.**
 
 ```petal
-// before
+# before
 state var n = 0
 set n = n + 1
-// after (proposed): lint warning dm-hint-state-init
+# after (proposed): lint warning dm-hint-state-init
 state var n = tunable(0)
 ```
 

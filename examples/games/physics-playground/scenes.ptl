@@ -28,11 +28,9 @@ let NO_EMIT = {x: 0.0, y: 0.0, every: 1.0, left: 0, r: 7.0}
 
 fn rod(wd: record, a: int, b: int) -> record
   ph.add_link(wd, a, b, ph.ROD, 0.0, -1.0)
-end
 
 fn spring(wd: record, a: int, b: int, hz: num) -> record
   ph.add_link(wd, a, b, ph.SPRING, hz, -1.0)
-end
 
 # A soft wheel: a hub and `k` rim discs, laced with springs round the rim,
 # across every second disc, and in to the hub.
@@ -42,7 +40,6 @@ fn wheel(wd: record, cx: num, cy: num, rad: num, k: int, node_r: num, c: int) ->
   for i in range(0, k) do
     let a = 6.2832 * float(i) / float(k)
     out = ph.add_ball(out, cx + cos(a) * rad, cy + sin(a) * rad, node_r, c)
-  end
   for i in range(0, k) do
     let a = hub + 1 + i
     let b = hub + 1 + (i + 1) % k
@@ -50,9 +47,7 @@ fn wheel(wd: record, cx: num, cy: num, rad: num, k: int, node_r: num, c: int) ->
     out = spring(out, a, b, 11.0)
     out = spring(out, a, c2, 9.0)
     out = spring(out, hub, a, 8.0)
-  end
   out
-end
 
 fn cradle(W: num, H: num) -> record
   let wd = ph.empty_world()
@@ -64,13 +59,11 @@ fn cradle(W: num, H: num) -> record
   wd = ph.add_seg(wd, x0 - 34.0, top - 9.0, x0 + gap * 4.0 + 34.0, top - 9.0)
   for i in range(0, 5) do
     wd = ph.add_pin(wd, x0 + gap * float(i), top, 4, 6)
-  end
   for i in range(0, 5) do
     # The first bob starts lifted 41 degrees, ready to fall.
     let a = if i == 0 then 0.72 else 0.0 end
     wd = ph.add_ball(wd, x0 + gap * float(i) - sin(a) * drop, top + cos(a) * drop, r, i)
     wd = ph.add_link(wd, i, 5 + i, ph.ROD, 0.0, drop)
-  end
   # The double pendulum, started high so it goes chaotic at once. It hangs
   # in the corner the bobs never reach.
   let px = W * 0.80
@@ -82,7 +75,6 @@ fn cradle(W: num, H: num) -> record
   wd = rod(wd, p0, p0 + 1)
   wd = rod(wd, p0 + 1, p0 + 2)
   {world: wd, bounce: 1.0, fric: 0.05, drag: 0.0, trails: true, emit: NO_EMIT}
-end
 
 fn bridge(W: num, H: num) -> record
   let wd = ph.empty_world()
@@ -94,12 +86,10 @@ fn bridge(W: num, H: num) -> record
   wd = ph.add_pin(wd, xl, y0, 7, 6)
   for i in range(1, planks) do
     wd = ph.add_body(wd, xl + dx * float(i), y0, 8, 1, false, 5.0, 0.0, 0.0)
-  end
   wd = ph.add_pin(wd, xr, y0, 7, 6)
   for i in range(0, planks) do
     # A little slack in every plank, so the deck hangs in a curve.
     wd = ph.add_link(wd, i, i + 1, ph.ROD, 0.0, dx * 1.012)
-  end
   # Two weights slung under the deck on springs.
   let wa = wd.n
   wd = ph.add_ball(wd, xl + dx * 6.0, y0 + 96.0, 15, 2)
@@ -111,7 +101,6 @@ fn bridge(W: num, H: num) -> record
   wd = ph.add_ball(wd, W * 0.53, H * 0.07, 18, 3)
   wd = ph.add_body(wd, W * 0.70, H * 0.20, 32, 4, false, 0.7, 0.0, 0.0)
   {world: wd, bounce: 0.25, fric: 0.5, drag: 0.02, trails: false, emit: NO_EMIT}
-end
 
 # The pegboard's proportions, shared with whoever counts the bins.
 let G_SP   = 44.0      # peg pitch, and bin width
@@ -131,24 +120,19 @@ fn pegboard(W: num, H: num) -> record
     for j in range(0, if short then 10 else 11 end) do
       let off = if short then float(j) - 4.5 else float(j) - 5.0 end
       wd = ph.add_pin(wd, cx + off * G_SP, top + G_DY * float(i), 5, 6)
-    end
-  end
   # Ten bins under the last row, closed at the sides by the walls.
   let bin_top = top + G_DY * float(G_ROWS) + 2.0
   let wall = 5.0 * G_SP + 8.0
   for j in range(1, 10) do
     wd = ph.add_seg(wd, cx + (float(j) - 5.0) * G_SP, bin_top, cx + (float(j) - 5.0) * G_SP, H + 4.0)
-  end
   wd = ph.add_seg(wd, cx - wall, top - 70.0, cx - wall, H + 4.0)
   wd = ph.add_seg(wd, cx + wall, top - 70.0, cx + wall, H + 4.0)
   {world: wd, bounce: 0.1, fric: 0.1, drag: 0.5, trails: false,
     emit: {x: cx, y: top - 40.0, every: 0.25, left: 56, r: 8.0}}
-end
 
 # Where the pegboard's bins sit, for whoever wants to count what is in them.
 pub fn bin_layout(W: num, H: num) -> record
   {x0: W * 0.5 - 5.0 * G_SP, sp: G_SP, n: 10, bin_top: H * G_TOP + G_DY * float(G_ROWS) + 2.0}
-end
 
 fn wrecker(W: num, H: num) -> record
   let wd = ph.empty_world()
@@ -163,7 +147,6 @@ fn wrecker(W: num, H: num) -> record
   for i in range(1, links + 1) do
     wd = ph.add_body(wd, ax + ux * step * float(i), ay + uy * step * float(i), 5, 6, false, 24.0, 0.0, 0.0)
     wd = rod(wd, i - 1, i)
-  end
   let reach = step * float(links) + 39.0
   wd = ph.add_body(wd, ax + ux * reach, ay + uy * reach, 34, 0, false, 4.0, 0.0, 0.0)
   wd = rod(wd, links, links + 1)
@@ -184,10 +167,7 @@ fn wrecker(W: num, H: num) -> record
     for k in range(0, 5 - row) do
       wd = ph.add_ball(wd, bx + pitch * (float(k) + float(row) * 0.5), by - float(row) * pitch * 0.868,
         r, 1 + (row + k) % 5)
-    end
-  end
   {world: wd, bounce: 0.3, fric: 0.5, drag: 0.02, trails: false, emit: NO_EMIT}
-end
 
 fn jelly(W: num, H: num) -> record
   let wd = ph.empty_world()
@@ -214,7 +194,6 @@ fn jelly(W: num, H: num) -> record
   wd = ph.add_ball(wd, W * 0.86, H * 0.52, 20, 4)
   wd = ph.add_ball(wd, W * 0.26, H * 0.90, 22, 0)
   {world: wd, bounce: 0.2, fric: 0.7, drag: 0.03, trails: false, emit: NO_EMIT}
-end
 
 pub fn build(k: int, W: num, H: num) -> record
   if k == 0 then cradle(float(W), float(H))
@@ -224,5 +203,3 @@ pub fn build(k: int, W: num, H: num) -> record
   else if k == 4 then jelly(float(W), float(H))
   else
     {world: ph.empty_world(), bounce: 0.45, fric: 0.4, drag: 0.02, trails: false, emit: NO_EMIT}
-  end
-end

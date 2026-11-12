@@ -33,15 +33,10 @@ pub fn fold(bars: list, secs: num) -> list
     else
       if cur != nil then
         out = append(out, cur)
-      end
       cur = {t: g, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v}
-    end
-  end
   if cur != nil then
     out = append(out, cur)
-  end
   out
-end
 
 # The completed bars plus the one still forming, which either extends the
 # last bucket or opens the next.
@@ -53,8 +48,6 @@ pub fn with_tail(bars: list, cur: record, secs: num) -> list
       v: tail.v + cur.v})
   else
     append(bars, {t: g, o: cur.o, h: cur.h, l: cur.l, c: cur.c, v: cur.v})
-  end
-end
 
 # ── Axes ────────────────────────────────────────────────────────────────────
 
@@ -65,12 +58,8 @@ pub fn nice_step(raw: num) -> int
     for m in [1, 2, 5] do
       if step * m >= raw then
         return step * m
-      end
-    end
     step *= 10
-  end
   step
-end
 
 let TIME_STEPS = [300, 900, 1800, 3600, 7200, 14400, 21600, 43200, 86400, 172800, 345600]
 
@@ -78,14 +67,10 @@ fn time_step(secs: num, slot: num) -> int
   for s in TIME_STEPS do
     if float(s) / float(secs) * slot >= 84.0 then
       return s
-    end
-  end
   last(TIME_STEPS)
-end
 
 fn time_label(t: num, step: num) -> string
   if step >= 86400 || t % 86400 == 0 then nf.day(t) else nf.hhmm(t) end
-end
 
 # The wash under a line: three-pixel columns from the line down to `base`,
 # each fading out at the same rate. The columns sit on whole pixels, because
@@ -101,23 +86,18 @@ fn area_under(pts: list, base: num, c: record) -> nil
     let mid = float(x) + float(w) / 2.0
     while i < len(pts) - 2 && pts[i + 1].x <= mid do
       i += 1
-    end
     let a = pts[i]
     let b = pts[i + 1]
     let y = int(a.y + (b.y - a.y) * clamp((mid - a.x) / max(0.001, b.x - a.x), lo: 0.0, hi: 1.0))
     if base > y then
       draw_rect_gradient({x: x, y: y, w: w, h: int(base) - y}, c, c, 1.5707963, 52, 0)
-    end
     x += w
-  end
-end
 
 # A value tag on the right-hand price axis.
 fn axis_tag(x: num, y: num, text: string, face: record, ink: record) -> nil
   let r = Rect(x + 1, y - 9, AXIS_W - 5, 18)
   draw_rect_rounded(r, 4, face)
   tl.draw_text_line(text, Rect(r.x + 7, r.y, r.w - 12, r.h), lk.mono(11, ink))
-end
 
 # ── The chart ───────────────────────────────────────────────────────────────
 
@@ -140,7 +120,6 @@ pub fn chart(r: record, series: list, o: record) -> record
   if inside && scroll_y() != 0 then
     let f = if scroll_y() > 0 then 1.15 else 0.87 end
     vis = clamp(int(round(float(vis) * f)), lo: MIN_VIS, hi: MAX_VIS)
-  end
   let nv = min(vis, n)
   let max_pan = n - nv
   let pan = clamp(int(o.pan), lo: 0, hi: max_pan)
@@ -158,19 +137,14 @@ pub fn chart(r: record, series: list, o: record) -> record
     drag_x = mx
     drag_pan = pan
     drag_moved = false
-  end
   if drag_on && mouse_down(0) then
     if abs(mx - drag_x) > 4.0 then
       drag_moved = true
-    end
     if drag_moved then
       pan = clamp(drag_pan + int(round((mx - drag_x) / slot)), lo: 0, hi: max_pan)
-    end
-  end
   if drag_on && (mouse_released(0) || !mouse_down(0)) then
     released = !drag_moved && inside
     drag_on = false
-  end
 
   let stop = n - pan
   let start = stop - nv
@@ -187,9 +161,7 @@ pub fn chart(r: record, series: list, o: record) -> record
     else
       lo = min(lo, b.l)
       hi = max(hi, b.h)
-    end
     vmax = max(vmax, b.v)
-  end
   let room = max(4.0, float(hi - lo) * 0.09)
   let top = float(hi) + room
   let bot = float(lo) - room
@@ -199,7 +171,6 @@ pub fn chart(r: record, series: list, o: record) -> record
   let cursor_px = int(round(top - (my - pz.y) / pz.h * span))
   if released then
     clicked = max(1, cursor_px)
-  end
 
   # The last trade, which the axis labels step aside for.
   let tail = series[n - 1]
@@ -217,10 +188,7 @@ pub fn chart(r: record, series: list, o: record) -> record
       lk.hline(plot.x, y, plot.w, lk.GRID)
       if !live_on || y < live_y - 15.0 || y > live_y + 28.0 then
         tl.draw_text_line(nf.px(p), Rect(plot.x + plot.w + 9, y - 9, AXIS_W - 12, 18), lk.mono(11, lk.DIM))
-      end
-    end
     p += pstep
-  end
   lk.hline(plot.x, plot.y + plot.h, plot.w + AXIS_W, lk.LINE)
   draw_rect(plot.x + plot.w, plot.y, 1, plot.h, lk.LINE)
 
@@ -233,8 +201,6 @@ pub fn chart(r: record, series: list, o: record) -> record
       let day_mark = tstep < 86400 && b.t % 86400 == 0
       tl.draw_text_line(time_label(b.t, tstep), Rect(x - 40, plot.y + plot.h + 2, 80, TIME_H - 4),
         lk.mono(11, if day_mark then lk.MUTED else lk.DIM end), "center")
-    end
-  end
 
   # ── Volume ──
   clip_push(plot)
@@ -244,20 +210,17 @@ pub fn chart(r: record, series: list, o: record) -> record
     let b = series[k]
     let h = max(1.0, float(b.v) / float(vmax) * vol_h)
     draw_rect(x_of(k) - body / 2.0, vbase - h, body, h, if b.c >= b.o then lk.UP else lk.DOWN end, 70)
-  end
 
   # The column under the pointer.
   let hover_k = -1
   if inside && !drag_moved then
     hover_k = clamp(start + int((mx - plot.x) / slot), lo: start, hi: stop - 1)
     draw_rect(x_of(hover_k) - slot / 2.0, plot.y + LEGEND_H, slot, plot.h - LEGEND_H, lk.TEXT, 9)
-  end
 
   # ── Price ──
   if o.mode == "line" then
     let pts = for k in range(start, stop) do
       {x: x_of(k), y: y_of(series[k].c)}
-    end
     area_under(pts, pz.y + pz.h + vol_h + 10.0, lk.ACCENT)
     draw_polyline(pts, lk.ACCENT, 255, 1.8)
   else
@@ -270,8 +233,6 @@ pub fn chart(r: record, series: list, o: record) -> record
       let yo = y_of(b.o)
       let yc = y_of(b.c)
       draw_rect(x - body / 2.0, min(yo, yc), body, max(1.0, abs(yc - yo)), c)
-    end
-  end
 
   # The account's own executions: a wedge under the bar it bought in, over
   # the bar it sold in. Bars are contiguous, so the bar is an index away.
@@ -289,9 +250,6 @@ pub fn chart(r: record, series: list, o: record) -> record
         let y = y_of(if o.mode == "line" then b.c else b.h end) - 6.0
         fill_triangle(x - 6.0, y - 9.0, x + 6.0, y - 9.0, x, y, lk.PANEL)
         fill_triangle(x - 4.0, y - 7.5, x + 4.0, y - 7.5, x, y - 2.0, c)
-      end
-    end
-  end
 
   # The moving average, from a running sum.
   let ma_pts = []
@@ -302,18 +260,13 @@ pub fn chart(r: record, series: list, o: record) -> record
     sum += series[k].c
     if k - first >= MA_LEN then
       sum -= series[k - MA_LEN].c
-    end
     if k >= start && k >= MA_LEN - 1 then
       let v = float(sum) / float(MA_LEN)
       ma_pts = append(ma_pts, {x: x_of(k), y: y_of(v)})
       if k == hover_k || (hover_k < 0 && k == stop - 1) then
         ma_at = {v: v}
-      end
-    end
-  end
   if len(ma_pts) >= 2 then
     draw_polyline(ma_pts, lk.VIOLET, 210, 1.4)
-  end
 
   # Working orders and the position's average cost.
   for mk in o.marks do
@@ -326,8 +279,6 @@ pub fn chart(r: record, series: list, o: record) -> record
       draw_rect_rounded(tag, 4, mix(lk.PANEL, mk.color, 0.16))
       draw_rect_rounded_outline(tag, 4, mix(lk.PANEL, mk.color, 0.6))
       tl.draw_text_line(mk.label, tag, style, "center")
-    end
-  end
 
   # The last price: a rule across the plot, a pulse at the live edge.
   if live_on then
@@ -337,8 +288,6 @@ pub fn chart(r: record, series: list, o: record) -> record
       let beat = fract(float(o.pulse))
       draw_circle({x: px, y: live_y}, 3.0 + 7.0 * beat, live_c, int(90.0 * (1.0 - beat)))
       draw_circle({x: px, y: live_y}, 3.0, live_c)
-    end
-  end
   clip_pop()
 
   if live_on then
@@ -349,8 +298,6 @@ pub fn chart(r: record, series: list, o: record) -> record
     else "{left / 60}:{pad_start(str(left % 60), 2, "0")}" end
     if live_y + 26.0 < plot.y + plot.h then
       tl.draw_text_line(cd, Rect(plot.x + plot.w + 9, live_y + 9, AXIS_W - 12, 16), lk.mono(10, lk.DIM))
-    end
-  end
 
   # ── Crosshair ──
   if hover_k >= 0 then
@@ -368,7 +315,6 @@ pub fn chart(r: record, series: list, o: record) -> record
     draw_rect_rounded(tag, 4, lk.RAISED)
     draw_rect_rounded_outline(tag, 4, lk.DIM)
     tl.draw_text_line(stamp, tag, st, "center")
-  end
 
   # ── Legend: the bar under the crosshair, or the forming one ──
   let lb = if hover_k >= 0 then series[hover_k] else tail end
@@ -377,18 +323,14 @@ pub fn chart(r: record, series: list, o: record) -> record
     ["", nf.pct(float(lb.c - lb.o) / float(max(1, lb.o))), lc], ["Vol", nf.compact(lb.v), lk.TEXT]]
   if has_field(ma_at, "v") then
     cells = append(cells, ["MA{MA_LEN}", nf.px(ma_at.v), lk.VIOLET])
-  end
   let lx = plot.x + 10.0
   let row = Rect(lx, plot.y + 2, 10, LEGEND_H - 4)
   for cell in cells do
     if cell[0] != "" then
       lx += tl.draw_text_line(cell[0], Rect(lx, row.y, 10, row.h), lk.ui(11, lk.DIM)) + 5.0
-    end
     lx += tl.draw_text_line(cell[1], Rect(lx, row.y, 10, row.h), lk.mono(11, cell[2])) + 12.0
-  end
   clip_pop()
 
   {vis: vis, pan: pan, hover_t: if hover_k >= 0 then series[hover_k].t else -1 end,
     cursor_px: if inside then cursor_px else 0 end, clicked: clicked, shown: nv, dragging: drag_on && drag_moved,
     lo: int(bot), hi: int(top)}
-end

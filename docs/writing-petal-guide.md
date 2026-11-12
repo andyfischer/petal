@@ -117,7 +117,7 @@ three different questions.
 
 ```petal
 let x = 10
-x = 20          // rebinds the name; not a write to a slot
+x = 20          # rebinds the name; not a write to a slot
 ```
 
 `x = 20` does not overwrite a cell — it *rebinds the name to a new value*. The
@@ -144,18 +144,18 @@ ordinary accumulator needs no special machinery.
 fn tally(xs)
   let total = 0
   for x in xs do
-    total = total + x      // carries to the next iteration, and out of the loop
+    total = total + x      # carries to the next iteration, and out of the loop
   end
-  total                    // 6 for [1, 2, 3]
+  total                    # 6 for [1, 2, 3]
 end
 
-// Threading a value through a loop works the same way — this is how you write
-// a simulation step, and why a *bare* `for` is not a dead end.
+# Threading a value through a loop works the same way — this is how you write
+# a simulation step, and why a *bare* `for` is not a dead end.
 let flock = [1, 2, 3]
 for i in range(0, 3) do
   flock = map(flock, fn(x) -> x * 2)
 end
-print(flock)               // [8, 16, 24]
+print(flock)               # [8, 16, 24]
 ```
 
 The boundary is the **function**, not the block. `=` crossing into a nested
@@ -204,7 +204,7 @@ or a recursive helper — which is exactly the case `=` refuses:
 fn count_matching(xs, pred)
   var hits = 0
   forEach(xs, fn(x)
-    if pred(x) then set hits += 1 end   // a plain `hits = …` here is an error
+    if pred(x) then set hits += 1 end   # a plain `hits = …` here is an error
   end)
   get hits
 end
@@ -242,7 +242,7 @@ loops and branches:
 let fx = 30
 fx += 40
 fx += 40
-print(fx)   // 110
+print(fx)   # 110
 ```
 
 `petal lint` makes this rewrite for you (`var` → `let`, dropping `set`/`get`)
@@ -264,7 +264,7 @@ the short version; [Inline state](features/inline-state.md) is the reference.
 ```petal
 state hits = 0
 hits += 1
-print(hits)    // 1 on the first run, 2 on the second, ...
+print(hits)    # 1 on the first run, 2 on the second, ...
 ```
 
 A host that runs the script every frame keeps the slots between runs. `petal
@@ -285,7 +285,7 @@ fn counter()
 end
 fn left()   counter() end
 fn right()  counter() end
-print(left(), right())   // 1 1 — two callsites, two independent slots
+print(left(), right())   # 1 1 — two callsites, two independent slots
 ```
 
 Consequences worth memorizing:
@@ -319,7 +319,7 @@ Consequences worth memorizing:
   ([How long a slot lives](features/inline-state.md#how-long-a-slot-lives)).
 
 ```petal
-state var total = 0                          // one cell for the whole program
+state var total = 0                          # one cell for the whole program
 
 fn accumulate(v)
   set total = get total + v
@@ -332,7 +332,7 @@ from the top level as much as callbacks. Only module scope itself reads the
 cell bare, and a bare read inside a function is a compile error.
 
 ```petal
-state var hp = Map()                         // one entry per entity id
+state var hp = Map()                         # one entry per entity id
 
 fn health(id, damage)
   set hp[id] = (get hp[id] ?? 100) - damage
@@ -351,13 +351,13 @@ Lists, records and class instances are values. Nothing mutates in place.
 
 ```petal
 let nums = [1, 2, 3]
-nums = append(nums, 4)      // append returns a NEW list — capture it
-print(nums)                 // [1, 2, 3, 4]
+nums = append(nums, 4)      # append returns a NEW list — capture it
+print(nums)                 # [1, 2, 3, 4]
 
 let r = {a: 1}
 let s = r
 r.a = 2
-print(r, s)                 // { a: 2 } { a: 1 }
+print(r, s)                 # { a: 2 } { a: 1 }
 ```
 
 `r.a = 2` is a *rebind of `r`* to an updated record, exactly like `r = …`. So a
@@ -373,12 +373,12 @@ practical:
 
 ```petal
 let row = [1, 2, 3]
-row[0] = 99                 // row is now [99, 2, 3]
+row[0] = 99                 # row is now [99, 2, 3]
 
 let grid = for r in range(0, 3) do
   for c in range(0, 3) do 0 end
-end                         // a 3x3 of zeros — nested collecting loops
-grid[1][2] = 5              // one cell, by row then column
+end                         # a 3x3 of zeros — nested collecting loops
+grid[1][2] = 5              # one cell, by row then column
 ```
 
 Since it is a rebind, the same function-boundary rule applies: a helper cannot
@@ -394,7 +394,7 @@ end
 fn fill(r, c)
   if r < 0 || r > 3 || c < 0 || c > 3 then return nil end
   if get board[r][c] == 1 then return nil end
-  set board[r][c] = 1                    // `set` writes an index or a field
+  set board[r][c] = 1                    # `set` writes an index or a field
   fill(r + 1, c)
   fill(r, c + 1)
   nil
@@ -452,12 +452,12 @@ operand — not Python's always-positive modulo, so it does not wrap a negative
 index for you.
 
 ```petal
-print(7 / 2)          // 3     — not 3.5
-print(-7 / 2)         // -3    — toward zero, not -4
-print(7.0 / 2)        // 3.5   — one float is enough
-print(float(7) / 2)   // 3.5   — how to force it
-print(-1 % 5)         // -1    — not 4
-print((-1 % 5 + 5) % 5)   // 4 — the wrap you probably meant
+print(7 / 2)          # 3     — not 3.5
+print(-7 / 2)         # -3    — toward zero, not -4
+print(7.0 / 2)        # 3.5   — one float is enough
+print(float(7) / 2)   # 3.5   — how to force it
+print(-1 % 5)         # -1    — not 4
+print((-1 % 5 + 5) % 5)   # 4 — the wrap you probably meant
 ```
 
 **Ints overflow loudly.** `9223372036854775807 + 1` aborts the run with
@@ -474,9 +474,9 @@ good one — it names `++` in the message). `++` also stringifies a number on
 either side, and interpolation is usually nicer than either:
 
 ```petal
-print("n=" ++ 5)          // n=5
-print("n={5}")            // n=5   — prefer this
-print(str(5) ++ "!")      // 5!    — `str` converts explicitly
+print("n=" ++ 5)          # n=5
+print("n={5}")            # n=5   — prefer this
+print(str(5) ++ "!")      # 5!    — `str` converts explicitly
 ```
 
 **Every `{` in a string literal opens an interpolation hole**, so hand-written
@@ -484,7 +484,7 @@ JSON or a brace-bearing format string fails with
 `Expected string part in interpolation, got Colon`. Escape the brace: `"\{"`.
 
 ```petal
-print("\{\"a\": 1}")     // {"a": 1}
+print("\{\"a\": 1}")     # {"a": 1}
 ```
 
 (For real JSON, `import json` gives you `json_stringify` and `json_parse`; see
@@ -500,7 +500,7 @@ wants (there is no `"-" * 20`):
 
 ```petal
 print(repeat("-", 20))
-print("[" ++ repeat("#", 3) ++ repeat(".", 7) ++ "]")   // [###.......]
+print("[" ++ repeat("#", 3) ++ repeat(".", 7) ++ "]")   # [###.......]
 ```
 
 **Do not build a long string by appending in a loop.** `out = out ++ piece`
@@ -565,11 +565,11 @@ record field, or in tail position — collects the last expression of each
 iteration into a list.
 
 ```petal
-let squares = for i in range(1, 6) do i * i end   // [1, 4, 9, 16, 25]
+let squares = for i in range(1, 6) do i * i end   # [1, 4, 9, 16, 25]
 
 let tasks = [{title: "a", done: true}, {title: "b", done: false}]
 let titles = for t in tasks do
-  if t.done then continue end                     // `continue` filters
+  if t.done then continue end                     # `continue` filters
   t.title
 end
 ```
@@ -654,7 +654,7 @@ enum then points at every match that has to learn about it.
 
 ```petal
 let person = {name: "Alice", age: 30}
-let moved  = {...person, age: 31}     // spread; later fields win
+let moved  = {...person, age: 31}     # spread; later fields win
 ```
 
 There are **no tuples** and no destructuring `let`: `let [a, b] = pair` is a
@@ -669,7 +669,7 @@ fn slide(row)
 end
 
 let res = slide([2, 0, 0, 4])
-print(res.row, res.gained)    // [2, 4] 2
+print(res.row, res.gained)    # [2, 4] 2
 ```
 
 **Reading a field a record does not carry is a hard error** — a typo'd field
@@ -678,8 +678,8 @@ legitimately ragged (decoded JSON, a partial style record) says so:
 
 ```petal
 let cfg = {}
-print(cfg.window.width ?? 800)   // 800 — `??` makes its whole left side tolerant
-print(cfg?.window.width)         // nil — `?.` when there's no fallback to write
+print(cfg.window.width ?? 800)   # 800 — `??` makes its whole left side tolerant
+print(cfg?.window.width)         # nil — `?.` when there's no fallback to write
 ```
 
 Both soften *absent keys only*. A wrong-typed base (`3.width`) and an
@@ -704,7 +704,7 @@ fn Circle.area(c: Circle) -> num
   3.14159 * c.radius * c.radius
 end
 
-print(Circle(2).area())   // 12.56636
+print(Circle(2).area())   # 12.56636
 ```
 
 `enum` declares variants, with or without payloads, and pairs with `match`.
@@ -723,7 +723,7 @@ fn area(s)
   end
 end
 
-print(area(Shape.rect(2, 3)))   // 6
+print(area(Shape.rect(2, 3)))   # 6
 ```
 
 Reach for an enum whenever a value is one of a fixed set of names — a stage,
@@ -739,11 +739,11 @@ enum Kind
   park(shape: "area", lanes: 0),
 end
 
-print(Kind.park.shape)           // area
-print(Kind.park.name)            // park
-print(Kind.all)                  // [Kind.parkway, Kind.park]
-print(Kind.from("parkway"))      // Kind.parkway
-print(Kind.from("lake"))         // nil
+print(Kind.park.shape)           # area
+print(Kind.park.name)            # park
+print(Kind.all)                  # [Kind.parkway, Kind.park]
+print(Kind.from("parkway"))      # Kind.parkway
+print(Kind.from("lake"))         # nil
 ```
 
 Payload fields are read by name as well (`Shape.rect(2, 3).w`). See
@@ -770,7 +770,7 @@ end
 ```petal
 let tasks = [{title: "a", done: true}, {title: "b", done: false}]
 let done_count = tasks |> filter(fn(t) -> t.done) |> len()
-print(done_count)             // 1
+print(done_count)             # 1
 ```
 
 **Lambdas are `fn(args) -> expr`, with no `end`.** The `->` introduces a
@@ -839,7 +839,7 @@ bindings and leave the rest of the program alone
 
 ```petal
 let offset = tunable(10)
-let speed = tunable(4.0, 0, 10)   // a setting with a slider range
+let speed = tunable(4.0, 0, 10)   # a setting with a slider range
 ```
 
 A setting holds any data. Give a number a range with
@@ -858,7 +858,7 @@ names the assert that held it back
 **Split files with `import`; declarations are private until marked `pub`.**
 
 ```petal ignore
-// shapes.ptl
+# shapes.ptl
 pub class Circle
   radius: num,
 end
@@ -866,9 +866,9 @@ pub fn Circle.area(c: Circle) -> num
   3.14159 * c.radius * c.radius
 end
 
-// app.ptl
-import ./shapes                // every export bare, plus the qualifier `shapes`
-print(Circle(2).area())        // or: import ./shapes: Circle  /  import ./shapes as s
+# app.ptl
+import ./shapes                # every export bare, plus the qualifier `shapes`
+print(Circle(2).area())        # or: import ./shapes: Circle  /  import ./shapes as s
 ```
 
 `import ./shapes` is `shapes.ptl` next to the importing file; a path with no
@@ -890,9 +890,9 @@ starting a fresh statement. So this compiles and returns the wrong number.
 fn score(a, b, c)
   1.0 * a
   - 2.0 * b
-  - 3.0 * c      // only THIS line is the return value
+  - 3.0 * c      # only THIS line is the return value
 end
-print(score(1, 2, 3))   // -9.0, not -12.0
+print(score(1, 2, 3))   # -9.0, not -12.0
 ```
 
 Every earlier line becomes a discarded statement. Put the operator at the end of
@@ -904,7 +904,7 @@ fn score(a, b, c)
   2.0 * b -
   3.0 * c
 end
-print(score(1, 2, 3))   // -12.0
+print(score(1, 2, 3))   # -12.0
 ```
 
 A weighted sum written down the page is exactly where this bites. When in doubt,
@@ -973,7 +973,7 @@ let SEED = 20260830
 fn pick(i: int, limit: int) -> int
   hash_int(SEED, i) % limit
 end
-print(pick(0, 6), pick(1, 6), pick(2, 6))   // 1 2 1
+print(pick(0, 6), pick(1, 6), pick(2, 6))   # 1 2 1
 ```
 
 `hash01` is the same hash as a float in `[0, 1)`, and `hash_str(text)` hashes

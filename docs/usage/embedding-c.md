@@ -1295,7 +1295,6 @@ console, a socket) has its arguments as JSON. `call_json`
 ```petal no-check
 fn toll(id: string, cents: int = 25, rate: float = 0.5)
   ...
-end
 ```
 
 ```cpp
@@ -1347,7 +1346,7 @@ has said what it means, and nothing is converted.
 
 ## Running the script's tests
 
-A script's `test "title" do … end` blocks ([testing.md](../testing.md)) run under
+A script's `test "title" do` blocks ([testing.md](../testing.md)) run under
 the host, with its natives present. `petal test` cannot do that for a script
 that calls a host native.
 

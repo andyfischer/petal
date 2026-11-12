@@ -443,7 +443,7 @@ a failed one, so a broken save is reported once rather than every frame.
 
 ### Running a script's tests
 
-A script's `test "name" do … end` blocks are listed by `Env::tests(pid)` and
+A script's `test "name" do` blocks are listed by `Env::tests(pid)` and
 run one at a time with `Env::test_begin(stack, &test.function)` and
 `Env::test_resume(stack)`, with the host's natives present. A native that
 calls `PetalCxt::suspend()` sets the test aside (`TestStep::Suspended`) so the

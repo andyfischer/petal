@@ -65,6 +65,35 @@ In a `match`, a line that begins with `|` continues the or-pattern above it
 Blank lines and comment lines between the two halves are fine; the continuation
 rule looks past them.
 
+## Continuation and indentation
+
+A continuation line is part of the statement it continues, so its indentation
+is not measured as a block's would be ([Indentation and Blocks](indentation.md)):
+indent it however reads best. Two consequences are worth knowing.
+
+A line that starts with an operator continues the statement above it wherever
+it is indented. After a block closed by its indentation, that statement is the
+block's *last* one, not the block. Close the block with `end` to go on with
+its value:
+
+```petal
+let xs = ["a", "b"]
+let each = for x in xs do
+  [x, x]
+|> join("-")
+print(each) # ["a-a", "b-b"]
+
+let all = for x in xs do
+  [x, x]
+end |> len()
+print(all) # 2
+```
+
+A line that starts with `-` is a new statement, so it must sit at its block's
+column like any other. Indented further, as a continuation would be, it is an
+"unexpected indent" error whose message says to end the line above with the
+`-`.
+
 ## What does not continue
 
 - `.` — a field access or method call stays on the line of its receiver.

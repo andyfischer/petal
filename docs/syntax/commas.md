@@ -60,9 +60,9 @@ Error: Expected ',' between list elements [line 3, column 5]
 | Record patterns       | `{ x: a, y: b }`       |
 | List patterns         | `[a, b, ...rest]`      |
 | Enum variant patterns | `Shape.rect(w, h)`     |
-| Enum declarations     | `enum E a, b(x), c end` |
+| Enum declarations     | `enum E a, b(x), c`    |
 | Enum variant fields and data | `park(size, shape: "area")` |
-| Class declarations    | `class P x: int, end`  |
+| Class declarations    | `class P x: int,`      |
 
 Multi-line `enum` and `class` bodies carry their commas too:
 
@@ -77,13 +77,13 @@ class Point
   y: int,
 ```
 
-Because `end` closes these bodies rather than a bracket, a body that runs past
-its `end` reports ``Expected ',' between class fields, or `end` to close class
-`Point` ``.
+No bracket closes these bodies: one ends where its indentation ends, or at
+an `end`. So a field or variant with no comma before the next one reports
+``Expected ',' between class fields, or `end` to close class `Point` ``.
 
 ### Not comma-separated
 
-- Blocks (`then … end`, `do … end`, function bodies) are sequences of
+- Blocks (the bodies of `then`, `do` and functions) are sequences of
   statements separated by newlines. No commas.
 - JSX attributes are separated by whitespace, HTML-style:
   `<div class="x" id={y}/>`.

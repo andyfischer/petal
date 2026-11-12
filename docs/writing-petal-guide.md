@@ -57,7 +57,7 @@ class Task
   done: bool,
 
 fn Task.label(t: Task) -> string
-  let mark = if t.done then "x" else " " end
+  let mark = if t.done then "x" else " "
   "[{mark}] {t.title}"
 
 let tasks = [
@@ -76,10 +76,16 @@ for t in tasks do
 
 Things to notice, because each is a rule you will meet again:
 
-- **Indentation delimits blocks, and `end` closes one too.** `if … then`,
-  `for … do` and `fn …` open a block that ends where the indentation ends;
-  the `end` written here is optional, and must line up with the line that
-  opened its block. No braces. See
+- **Indentation delimits blocks.** `if … then`, `for … do`, a `fn` header and
+  a `class` header open a block, and it ends at the first line indented less
+  than its statements. Every statement of a block starts at the same column:
+  two spaces in, no tabs. Code on the opener's own line is a one-line body
+  that runs to the end of the line (`if t.done then "x" else " "`). No braces,
+  and no closing keyword: `end` still closes a block, and you need it only to
+  stop a one-line body before the end of its line
+  (`if c then a else b end + 1`) or to give one two statements
+  (`if c then a; b end`). Older code writes an `end` on every block; it is
+  still valid, and `petal migrate-old-code` removes them. See
   [Indentation and blocks](syntax/indentation.md).
 - **The last expression is the return value.** `Task.label` has no `return`.
   An explicit `return expr` exists for early exit; a bare `return` returns
@@ -478,7 +484,7 @@ print("\{\"a\": 1}")     # {"a": 1}
 [§9](#9-the-builtins-you-will-actually-use).)
 
 **`nil` compares with `==` and `!=`**, and every other value is `!= nil`. So
-`last(xs) == nil` and `if x != nil then … end` both work; `??` is the
+`last(xs) == nil` and `if x != nil then …` both work; `??` is the
 shorthand for the common "or a default" case, and `?.` for reading a field of
 something that may be nil.
 
@@ -538,9 +544,9 @@ fn classify(n)
   else "positive"
 ```
 
-One `end` per chain: `else if` on one line continues the same `if` and never
-opens a nested one. (An `if` on the line *after* `else` is nested, and takes
-its own `end`.) `elsif` is the old spelling; write `else if`.
+One chain, one construct: `else if` on one line continues the same `if` and
+never opens a nested one. (An `if` on the line *after* `else`, indented under
+it, is nested.) `elsif` is the old spelling; write `else if`.
 
 ### `for` in value position builds a list
 
@@ -576,10 +582,12 @@ fn draw_all(items) -> nil
 any caller uses the result. Every position that does and does not capture a
 loop is listed in [Implicit Return Values](syntax/implicit-return-values.md).
 
-`while` is statement-only — no collecting form. A `for … end` that starts a
+`while` is statement-only — no collecting form. A `for` that starts a
 statement cannot be piped where it stands (a line `for x in xs do x end |>
 len()` is a parse error, `Unexpected token: '|>'`); in value position it can
-(`let n = for x in xs do x end |> len()`).
+(`let n = for x in xs do x end |> len()`). The `end` matters there: without
+it the one-line body runs to the end of the line, so `for x in xs do x |> f()`
+pipes each `x`, not the list.
 
 One thing to keep straight: a collecting loop cannot thread an accumulator — its
 value is the list of its iterations, not a running total. When you want to carry
@@ -746,10 +754,11 @@ print(done_count)             # 1
 **Lambdas are `fn(args) -> expr`, with no `end`.** The `->` introduces a
 single expression body, which is why a lambda has no return-type annotation —
 and why `filter(xs, fn(b) -> b.kind == "h" end)` fails with
-`Expected ',' between arguments`: every named `fn … end` primes the habit, but
-the arrow form takes no terminator. A multi-statement lambda is the block form
-`fn(args) … end` (no arrow), and the parameter list can be left off when there
-are no parameters: `fn 42 end`.
+`Expected ',' between arguments`: the arrow form takes no terminator. A
+multi-statement lambda is the block form, `fn(args)` with its body indented
+under it and the call's `)` on a line of its own, or `fn(args) … end` on one
+line. The parameter list can be left off when there are no parameters:
+`fn 42`.
 
 **Arguments can be passed by name**: `f(x: 1)`, in any order, after any
 positional ones. Reach for it when a call is a row of same-typed literals —
@@ -831,10 +840,9 @@ names the assert that held it back
 # shapes.ptl
 pub class Circle
   radius: num,
-end
+
 pub fn Circle.area(c: Circle) -> num
   3.14159 * c.radius * c.radius
-end
 
 # app.ptl
 import ./shapes                # every export bare, plus the qualifier `shapes`
@@ -911,7 +919,7 @@ guess costs a compile round-trip (`unknown function \`flatten\``).
 | **Tables** | `interp(table, x)` — piecewise linear through `[[x, y], …]`, clamped at the ends |
 | **Noise** (`import noise`) | `noise(x[, y[, z]])`, `noise_seed(n)` |
 | **Vectors, color, JSON** | `import vec2` (`vec2`, `vec3`, `normalize`, `dot`, …), `import color` (`hsv`, `hsl`, `color_lerp`), `import json` (`json_parse`, `json_stringify`) |
-| **Checks** | `assert(cond, msg)`, `assert_eq(actual, expected)` stop the program. `expect(cond, msg)`, `expect_eq(actual, expected)`, `expect_near(actual, expected, tolerance)` record the failure and carry on: use them inside a `test "name" do … end` block, which `petal test` runs and `petal run` does not ([testing.md](testing.md)) |
+| **Checks** | `assert(cond, msg)`, `assert_eq(actual, expected)` stop the program. `expect(cond, msg)`, `expect_eq(actual, expected)`, `expect_near(actual, expected, tolerance)` record the failure and carry on: use them inside a `test "name" do` block, which `petal test` runs and `petal run` does not ([testing.md](testing.md)) |
 
 Three of these are shaped differently than you will expect:
 
@@ -980,7 +988,7 @@ these names (`shadows-builtin`) or only forwards to one
 | a multiply-and-modulo generator in a `var`, a string hashed with a character table | `hash_int(seed, i)`, `hash01(seed, i)`, `hash_str(text)` |
 | a second parameter list of the same function with fewer arguments | a default: `fn button(label, w = 120)`; a call names what it passes: `button("Save", w: 80)` |
 | a `{name, fn, params}` table and an `if name == …` chain to call the right one | `f(...args)` with a record (by name) or a list (by position), and `fn_info(f).params` for the schema |
-| `fn check(name, ok)` with a counter and a printed "OK" line | `test "name" do … end` with `expect`, `expect_eq`, `expect_near`; `petal test` runs them. `assert` for a condition that must stop the program |
+| `fn check(name, ok)` with a counter and a printed "OK" line | `test "name" do` block with `expect`, `expect_eq`, `expect_near`; `petal test` runs them. `assert` for a condition that must stop the program |
 | breaking a paragraph into lines that fit a width (petal-ui) | `text_wrap(text, style, max_width)` |
 | trimming a label to fit with an ellipsis (petal-ui) | `text_ellipsize(text, style, max_width)` |
 

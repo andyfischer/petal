@@ -178,6 +178,57 @@ Strings are opaque to layout. A string may span lines, and a line that begins
 inside one is not measured; what follows the string on its last line belongs
 to the statement the string is in.
 
+## The rules in brief
+
+Each rule is covered above or on the page linked from it.
+
+1. **A one-line body runs as far as the expression reaches.**
+   `let x = if c then 1 else 2 + 3` is `else (2 + 3)`. An `end` stops it
+   sooner.
+2. **`else` binds to the nearest open `if`.** `if a then if b then 1 else 2`
+   gives the `else` to the inner `if`.
+3. **`;` after a one-line body with no `end` is an error.** Write
+   `if c then a; b end`, or an indented block.
+4. **A line that starts with `else` or `else if` continues the nearest open
+   `if` that starts at or left of its column.**
+5. **An `end` on a line of its own sits at the column of the line that opened
+   its block.** Two more columns are accepted for a construct that starts in
+   the middle of a line (`let x = if c then`): the column of its own keyword,
+   and the column of the line its last `else` starts. An `end` with no open
+   block is an error.
+6. **A block inside brackets is measured from the line that opens it,** and
+   the closing bracket ends it.
+7. **Only a block closed with `end` can be continued:** `end |> f()`,
+   `end.len()`. With no `end`, bind the block to a name first, or put the
+   whole construct in parentheses. See
+   [Line Continuation](line-continuation.md#continuation-and-indentation)
+   for what a leading operator does after a block with no `end`.
+8. **A named function may be one line:** `fn area(w, h) w * h`. The body
+   runs to the end of the line, or to an `end` on it.
+9. **So may a lambda:** `fn(v) v * 2`. Prefer the arrow form,
+   `fn(v) -> v * 2`.
+10. **A `match` arm's body** is the rest of the `->` line, or an indented
+    block under the arm. `when p do … end` still works.
+11. **Tabs in indentation are an error.** `petal fmt` converts them.
+12. **The first statement sets the left margin.** No later top-level line may
+    start left or right of it.
+13. **A continued line is not measured.** A header that runs over several
+    lines inside brackets or after a trailing operator
+    (`if (a &&` / `b) then`) opens a block measured from the line the
+    statement started on.
+14. **`#` starts a comment.** `#f80`, the old color spelling, is an error and
+    never silently a comment. See
+    [Comments](../language-guide.md#comments).
+15. **Comments and blank lines are not measured.** A block starts at the next
+    line of code after its opener.
+16. **`:f80` is a color only where a value can start.** After a name, a
+    literal or a closing bracket, `:` is a separator, so `{x: :f80}` holds a
+    color and `{x:100}` a number. See
+    [Color Literals](../language-guide.md#color-literals).
+17. **`else if` on one line always continues the chain.** For an `if` nested
+    in an `else`, put the `if` on the next line. See
+    [If / Else](../language-guide.md#if--else).
+
 ## Errors
 
 | Message | Cause |
@@ -188,6 +239,13 @@ to the statement the string is in.
 | `end` at column 4 does not line up with the `for` block opened at line 14 (column 3) | An `end` on its own line is not at the column of the line that opened its block. |
 | `;` after a one-line `then` is ambiguous | A one-line body with no `end` holds a `;`. |
 | a tab in the indentation of this line | Indent with spaces. |
+| this line is indented less than the first line of the program | A top-level line starts left of the first statement. |
+| Unexpected token: `end` | An `end` with no block left to close. After an `else if` chain, a hint says the second `end` is the old nested spelling (`else if … end end`) and names the `else-if-nesting` migration. |
+| `#f80` is no longer a color literal; write `:f80` (or `# f80` for a comment) | The old color spelling. `petal migrate-old-code` rewrites it. |
+
+Each message goes on to give the columns involved, for example "unexpected
+indent: this line starts at column 5, and the block it is in starts at
+column 3".
 
 ## Code written before this change
 

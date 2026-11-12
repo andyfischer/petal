@@ -21,6 +21,63 @@ philosophy behind the language, see the [README](../README.md#goals).
 print("hello, world")
 ```
 
+## Comments
+
+A comment starts with `#` and runs to the end of the line. `/* … */` is a
+block comment, which can sit inside a line and nests.
+
+```petal
+# a whole-line comment
+let speed = 4      # a trailing comment
+let area = 3 /* width */ * 2 /* height */
+print(speed, area) # 4 6
+```
+
+`#!` on the first line is a shebang and is skipped. `//` is the old
+line-comment marker: it still works, `petal lint` reports it, and
+`petal migrate-old-code` rewrites it (`hash-comments`). A `#` directly
+followed by a color-shaped word (`#f80`) is an error, because that was a
+[color literal](#color-literals) before `#` became the comment marker; put a
+space after the `#` to write such a comment.
+
+## Blocks and Indentation
+
+Indentation delimits blocks. A block starts after its opener (`then`, `else`,
+`do`, the `->` of a `match` arm, or the header of a `fn`, `class`, `enum` or
+`match`) and ends at the first line indented less than its statements:
+
+```petal
+fn describe(n)
+  if n > 2 then
+    print("big")       # in the `if`
+    print("really")    # still in the `if`
+  print("done")        # after the `if`, still in the function
+
+describe(3)
+```
+
+Every statement of a block starts at the same column. Indent with spaces (two
+is the convention, and what `petal fmt` writes); a tab in indentation is an
+error.
+
+Code on the opener's own line is a one-line body, which runs to the end of the
+line:
+
+```petal
+fn double(x) x * 2
+let label = if double(2) > 3 then "big" else "small"
+print(label)   # big
+```
+
+`end` closes a block too, and is optional. It is how a one-line body stops
+before the end of its line (`if c then 1 else 2 end + 3`), how one holds two
+statements (`if c then a; b end`), and how a block is piped onward
+(`end |> join(", ")`). On a line of its own it must line up with the line that
+opened its block. Code written with an `end` on every block is still valid, and
+`petal migrate-old-code` removes the ones indentation makes redundant
+(`end-lines`). The full rules, and the error messages, are in
+[Indentation and Blocks](syntax/indentation.md).
+
 ## Variables
 
 Variables are declared with `let` and can be reassigned:
@@ -407,7 +464,7 @@ hello(7)                  # warning: argument 1 to `hello`: expected `string`, f
 
 Re-assigning the binding drops what was known about it — the slot holds a
 different function now. A function that merely *arrives* as an argument
-(`fn apply(f, x) f(x) end`) is unknown, and unknown callables are never checked.
+(`fn apply(f, x) f(x)`) is unknown, and unknown callables are never checked.
 
 **Argument counts.** A call that no declaration can accept is an **error**,
 not a warning: Petal [overloads by arity](syntax/function-overloading.md), so
@@ -553,7 +610,6 @@ source code or any text full of braces and quotes:
 let src = """
     fn step(input)
         str(input) ++ "!"
-    end
     step
 """
 ```
@@ -641,11 +697,11 @@ else
   print("small")
 
 # As an expression
-let label = if x > 5 then "big" else "small" end
+let label = if x > 5 then "big" else "small"
 ```
 
-Chain conditions with `else if` — it continues the same `if` and shares the
-single closing `end` (no nested blocks):
+Chain conditions with `else if`. It continues the same `if`, so the chain is
+one construct, with no nested blocks:
 
 ```petal
 fn classify(n)
@@ -661,16 +717,20 @@ let color = if line.kind == "hunk" then HUNK
 ```
 
 `else if` on one line always continues the chain. To nest an `if` inside an
-`else` block instead, put it on the next line; that `if` takes its own `end`:
+`else` block instead, put it on the next line, indented under the `else`:
 
 ```petal
 fn describe(n)
   if n < 0 then
     "negative"
   else
-    if n == 0 then print("zero!") end
+    if n == 0 then print("zero!")
     "not negative"
 ```
+
+A line that starts with `else` or `else if` continues the nearest open `if`
+that starts at or left of its column, which is what lets a one-line chain run
+over several lines as `color` does above.
 
 `elsif` is the old spelling of `else if`. It still works; `petal lint`
 reports it and `petal migrate-old-code` rewrites it (`elsif-to-else-if`). Code
@@ -1003,8 +1063,9 @@ let double = fn(x) -> x * 2
 print(double(5))  # 10
 ```
 
-A lambda body can also be an `end`-terminated block, and a lambda that takes
-no arguments may leave the parameter list out altogether:
+A lambda body can also be a block, indented under the `fn(…)` or written on
+its line and closed with `end`, and a lambda that takes no arguments may leave
+the parameter list out altogether:
 
 ```petal
 let describe = fn(x)
@@ -1477,7 +1538,7 @@ print(theme.edge.a, tint.g, size.w)         # 170 136 100
 ```
 
 A color cannot follow a value or a name directly, so the body of a one-line
-function takes parentheses: `fn ink() (:fff) end`.
+function takes parentheses: `fn ink() (:fff)`.
 
 `#ff8800` is the old spelling, removed when `#` became the comment marker: it
 is an error that says to write `:ff8800`. `petal migrate-old-code` rewrites it
@@ -1505,7 +1566,7 @@ print(type(c))              # Color
 ```
 
 A variant name is any identifier, lowercase or uppercase. Variants are
-separated by commas, on one line (`enum Axis x, y end`) or one per line.
+separated by commas, on one line (`enum Axis x, y`) or one per line.
 
 Because a variant lives inside its enum, two enums may declare the same
 variant name. `Kind.park` and `Use.park` are different values and never
@@ -1738,9 +1799,8 @@ variants come with it as its members:
 ```petal no-check
 # palette.ptl
 pub enum Color
-    red,
-    green,
-end
+  red,
+  green,
 
 # main.ptl
 import ./palette
@@ -1819,7 +1879,7 @@ print(type(r))    # "Box"
 
 Fields are comma-separated, on one line or many, and follow the
 [comma rule](syntax/commas.md) exactly as an `enum` body does — a newline is not
-a separator, and a trailing comma before `end` is fine. Field annotations use
+a separator, and a trailing comma after the last field is fine. Field annotations use
 the same grammar as a parameter's, and an un-annotated field is `any`.
 
 A `class` is a **top-level declaration**: it belongs at the top level of a file,
@@ -1858,7 +1918,7 @@ fn center_x(r: Rect) -> int
 center_x("nope")   # warning: argument 1 to `center_x`: expected `Rect`, found `string`
 ```
 
-A field read is typed by its declaration, so with `class Point x: int end`,
+A field read is typed by its declaration, so with `class Point x: int`,
 `Point(4).x` is an `int`. An un-annotated field is `any` and reads as `any`. The
 built-in `Rect`'s edges are declared [`num`](#type-annotations), since an edge
 may be an `int` or a `float`. Two classes are never interchangeable, however
@@ -2087,7 +2147,7 @@ by the time the call executes.
 ### The built-in `Rect`
 
 `Rect` is built into the language — no declaration and no import. Writing
-`class Rect … end` yourself in the entry file is allowed and *replaces* it for
+`class Rect` yourself in the entry file is allowed and *replaces* it for
 that program, the same way a user binding shadows a builtin anywhere else.
 Because every library method and annotation that meant the built-in then meets
 yours, the compile check warns: ``class `Rect` replaces the built-in `Rect` in
@@ -2200,8 +2260,9 @@ case, so a variant must be written through its enum to be matched.
 ### Arm bodies
 
 After `->` an arm's body is a statement list, like an `if` branch. It runs
-until the next `when` of the same match, or the match's `end`, and its last
-expression is the arm's value. A one-expression arm is the short form of the
+until the next `when` of the same match, or the end of the match (the line
+where its indentation ends, or its `end`), and its last expression is the
+arm's value. A one-expression arm is the short form of the
 same thing.
 
 ```petal
@@ -2247,8 +2308,8 @@ for k in [Kind.park, Kind.road(3), Kind.plaza, Kind.road(2)] do
 print(get lanes)    # 5
 ```
 
-A `match` may be nested in a body: the inner one takes its own `when`s and
-its own `end`.
+A `match` may be nested in a body: the inner one's `when`s are indented under
+it, and it ends where they do.
 
 An arm must have a body. One that does nothing is written `when _ -> nil`.
 There is no `else` arm; the arm for everything else is `when _ ->`. The older
@@ -2350,7 +2411,7 @@ that matches every value.
 
 ### When no arm matches
 
-A match that reaches its `end` without any arm matching is a runtime error
+A match that reaches its end without any arm matching is a runtime error
 naming the value and the match's position. It does not evaluate to `nil`.
 
 ```petal

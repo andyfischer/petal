@@ -100,6 +100,14 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `Lexer::token_tab_indented` are new, and `Parser::with_tab_indentation`
   takes the latter. docs/tasks/pythonic-syntax.md, P3.
 
+  Hints and suggestions show the new spelling: the state-in-callback help,
+  the unknown-class and test-header errors, the `prefer-match` and
+  `prefer-repeat` fixes and `petal help` write multi-line blocks with no
+  `end`. The language guide, the syntax pages and the writing guide are
+  rewritten for it, and their examples carry no multi-line `end`. In short,
+  for a project from before these four changes (`end` lines, `elsif`, `//`
+  comments, `#f80` colors): **run `petal migrate-old-code <dir>`** once
+  (`--check` to preview, `--markdown` for the fences of `.md` files).
 - **`else if` continues an `if` chain; `elsif` is deprecated.** `else` and
   `if` on one line (only spaces or tabs between them) are now one keyword,
   which continues the chain exactly as `elsif` did: one `end` closes the whole

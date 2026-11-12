@@ -30,7 +30,6 @@ definition of one function it never calls.
 ```petal ignore
 test "name" do
   …
-end
 ```
 
 - A test is written at the **top level** of a file, in any file: an entry

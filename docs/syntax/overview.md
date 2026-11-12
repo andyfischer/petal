@@ -66,9 +66,9 @@ working. `const` is reserved too: `let X = const(e)` is an
 [annotation](../language-guide.md#annotations), and the declaration
 `const X = e` is its deprecated spelling.
 
-`as` (in `import ui as u`), `class` (in `class Rect … end`), `config` (in
+`as` (in `import ui as u`), `class` (in `class Rect`), `config` (in
 the deprecated `config let x = …`), `native` (in `native fn sqrt(x: num) -> float`) and
-`test` (in `test "name" do … end`) are **contextual**: recognised only in
+`test` (in `test "name" do`) are **contextual**: recognised only in
 those positions, not globally reserved. `class` in particular stays usable as
 an ordinary identifier and as the JSX attribute `<div class="…">`.
 
@@ -105,9 +105,10 @@ one, continues the expression ([Line Continuation](line-continuation.md)).
 
 Indentation delimits blocks: the body of an `if`, a loop, a `fn`, a `match`
 arm, a `class` or an `enum` is the lines indented under it, or the rest of
-the opener's own line. `end` closes a block too and is optional; on a line of
-its own it must line up with the line that opened the block. The examples in
-this document write the `end`. See [Indentation and Blocks](indentation.md).
+the opener's own line. Statements of one block start at the same column, and
+a tab in indentation is an error. `end` closes a block too and is optional; on
+a line of its own it must line up with the line that opened the block. See
+[Indentation and Blocks](indentation.md).
 
 **Commas are required** between adjacent elements of every comma-separated
 construct. Whitespace and newlines are not separators (`[1 2]` is a parse
@@ -354,15 +355,18 @@ collection early.
 
 ### Blocks
 
-A block is a statement sequence delimited by a construct's keywords (e.g.
-`then … end`, `do … end`). It evaluates to its last expression.
+A block is the statement sequence after an opener (`then`, `else`, `do`, an
+arm's `->`, a `fn` header): the lines indented under it, or the rest of its
+line. It evaluates to its last expression.
 
 ### `if` / `else if` / `else`
 
-An expression. `then` introduces each branch; a single `end` closes the whole
-chain. `else if` on one line continues the same `if` (the lexer reads the two
-words as one keyword); `else` at the end of a line followed by an `if` on the
-next is an `else` block holding a nested `if`, which takes its own `end`.
+An expression. `then` introduces each branch, and the whole chain is one
+construct (one `end` closes it, when one is written). `else if` on one line
+continues the same `if` (the lexer reads the two words as one keyword); `else`
+at the end of a line followed by an indented `if` on the next is an `else`
+block holding a nested `if`. A line that starts with `else` or `else if`
+continues the nearest open `if` at or left of its column.
 `elsif` is the deprecated spelling of `else if`. See
 [If / Else](../language-guide.md#if--else).
 
@@ -378,7 +382,7 @@ let color = if line.kind == "add" then GREEN
 
 Tests a subject against `when` arms in order and evaluates the first whose
 pattern matches. After `->` an arm's body is a statement list that runs to the
-next `when` or the match's `end`. See
+next `when` or the end of the match. See
 [Pattern Matching](../language-guide.md#pattern-matching).
 
 ```petal
@@ -426,7 +430,7 @@ let squares = for i in range(1, 6) do i * i end
 # squares == [1, 4, 9, 16, 25]
 ```
 
-Iterates over a list or range with `in … do … end`. As a statement it runs for
+Iterates over a list or range with `in … do`. As a statement it runs for
 side effects only. In value position it collects the last expression of each
 iteration into a list. See [Loops](implicit-return-values.md#loops) for what
 counts as value position.

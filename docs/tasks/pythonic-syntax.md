@@ -1,6 +1,35 @@
 # Indentation-delimited blocks (Scala 3 style), `#` comments, `:hex` colours and `else if`
 
-Status: proposed plan, revised 2026-11-11. P1, P2, P3 (parser, fmt, lint, LSP) and P4 (`end-lines`, Markdown mode, this repo migrated) are implemented (§3.3, §3.6, §3.7, §5.3, §7.4); the other projects' migration and the tooling are not.
+Status: implemented through P5 in this repo, revised 2026-11-12. What remains is listed under "Remaining" below.
+
+Implemented (2026-11-12):
+- P1: `:hex` colours and `#` comments, with the transitional `#hex` error
+  (§3.3).
+- P2: `else if` as one token; `elsif` accepted and reported by `petal lint`
+  (§3.6).
+- P3: the layout parser, fmt, lint fixes, LSP folding and source_diff (§3.7,
+  §5.3).
+- P4: `end-lines`, Markdown mode, and this repo's `.ptl` migrated (§7.4).
+- P5 docs: the guide, the syntax pages and the writing guide describe blocks
+  closed by indentation, and the fences of the user-facing docs have no
+  multi-line `end` (`docs/proposals`, `docs/tasks`, `docs/plan` and `docs/dev`
+  are left as written). The rules B1–B17 and the error messages are in
+  [docs/syntax/indentation.md](../syntax/indentation.md).
+- P6, in part: hint and suggestion text shows blocks with no `end`, and the
+  bytecode fuzzers also run on programs with no `end`.
+
+Remaining:
+- P5 tooling: tree-sitter, vim, the website highlighter and Garden's
+  indentation are tracked by their own work.
+- Migrating the other projects (website, worlds-fair, petal-creative,
+  cheesecake) and re-vendoring Petal where it is vendored (§7.3).
+- Markdown outside `docs/` (README files, `examples/`), and re-running the
+  website's `scripts/import-docs.ts`.
+- P6: `end-inline` for one-liners (waits on open question 1); dropping the
+  transitional `#hex` error (waits on the vendored projects, open
+  question 2); removing `elsif`.
+- Open questions 1 to 4 (§11). No `redundant-end` lint exists and fmt removes
+  no `end` until question 1 is decided.
 
 Decided 2026-11-11:
 - Comments are `#`. `--` was considered and rejected.

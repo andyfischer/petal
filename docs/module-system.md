@@ -357,10 +357,9 @@ is the usual `unknown type name` warning.
 # shapes.ptl
 class Hidden          # no `pub`
   a: int
-end
+
 pub class Circle
   radius: int
-end
 
 # app.ptl
 import ./shapes

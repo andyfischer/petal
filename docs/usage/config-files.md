@@ -82,7 +82,7 @@ a config file a call names a constructor the *host* interprets (a color, a
 layout, a pane), not a computation to run. Interpret it yourself, or write it
 back unchanged.
 
-**A variant is static.** With `enum Mode dark, light end` in the file,
+**A variant is static.** With `enum Mode dark, light` in the file,
 `let mode = Mode.light` reads back as
 `StaticValue::Variant { of: "Mode", name: "light", args: [] }`, and
 `Shape.circle(2)` carries its payload in `args`. The enum may be declared
@@ -101,7 +101,7 @@ takes a run.
 | `StaticValueError::NotFound` | no top-level binding of that name | fall back to the default |
 | `StaticValueError::NotStatic` | bound, but needs running to know | fall back, and maybe warn |
 
-`NotFound` and `NotStatic` are separate on purpose. `fn font_size() … end` or
+`NotFound` and `NotStatic` are separate on purpose. `fn font_size() …` or
 `state font_size = 14` report as `NotStatic`, not `NotFound`, because the name
 *is* in the file; telling the user it is missing would misdirect them.
 

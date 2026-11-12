@@ -47,7 +47,6 @@ create a random number and store it.
 fn stable_random() 
   state val = rand_int(100)
   return val
-end
 
 print(stable_random())
 ```
@@ -66,7 +65,6 @@ Then, let's say we have multiple calls to the same function:
 fn stable_random() 
   state val = rand_int(100)
   return val
-end
 
 print("first: ", stable_random())
 print("second: ", stable_random())

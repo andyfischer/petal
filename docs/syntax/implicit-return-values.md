@@ -75,9 +75,9 @@ fn name_of(code)
   match code
     when 0 -> "ok"
     when 1 -> "warning"
-    when _ do
+    when _ ->
       print("unknown code {code}")
-      "error"          # a `do … end` arm yields its last statement
+      "error"          # a block arm yields its last statement
 
 print(sign(-4))        # negative
 print(name_of(1))      # warning
@@ -131,12 +131,12 @@ A loop is in value position — and collects — when its value is used:
 
 | Position | Example |
 |---|---|
-| bound to a name | `let xs = for … end`, `xs = for … end` |
-| `return`ed | `return for … end` |
-| an argument | `len(for … end)` |
-| a list element or record field | `[for … end]`, `{rows: for … end}` |
-| interpolated | `"{for … end}"` |
-| **the tail of a function** (its implicit return) | `fn f(xs) for x in xs do x * 2 end end` |
+| bound to a name | `let xs = for …`, `xs = for …` |
+| `return`ed | `return for …` |
+| an argument | `len(for …)` |
+| a list element or record field | `[for …]`, `{rows: for …}` |
+| interpolated | `"{for …}"` |
+| **the tail of a function** (its implicit return) | `fn f(xs) for x in xs do x * 2` |
 | **the tail of an `if` branch or `match` arm** whose value is used | below |
 | **the tail of a collecting loop's body** | nested loops give nested lists |
 

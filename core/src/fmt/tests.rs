@@ -423,17 +423,340 @@ fn annotations_keep_their_lines() {
 /// Indentation delimits blocks, so re-indenting is no longer free: the
 /// output must be the program the input was.
 #[test]
-fn a_block_closed_by_indentation_is_laid_out_the_same_or_refused() {
+fn a_block_closed_by_indentation_keeps_its_structure() {
     // Already in canonical layout: unchanged.
     let src = "fn f(c)\n  if c then\n    print(1)\n  print(2)\nprint(f(true))\n";
-    match format_source(src) {
-        Ok(out) => assert_eq!(ast_shape(&out), ast_shape(src), "{out}"),
-        Err(e) => assert!(e.contains("cannot yet lay out"), "{e}"),
-    }
+    assert_eq!(fmt(src), src);
     // Spacing only: the same program, respaced.
-    let src = "fn f(c)\n  if c then\n    print( 1 )\n  print(2)\nprint(f(true))\n";
-    match format_source(src) {
-        Ok(out) => assert_eq!(ast_shape(&out), ast_shape(src), "{out}"),
-        Err(e) => assert!(e.contains("cannot yet lay out"), "{e}"),
-    }
+    let spaced = "fn f(c)\n  if c then\n    print( 1 )\n  print(2)\nprint(f(true))\n";
+    assert_eq!(fmt(spaced), src);
+    // Any indent width becomes two columns, level by level.
+    let wide = "fn f(c)\n    if c then\n          print(1)\n    print(2)\nprint(f(true))\n";
+    assert_eq!(fmt(wide), src);
+    assert_eq!(ast_shape(wide), ast_shape(src));
+}
+
+/// Every construct, with no `end` anywhere, written four columns deep.
+#[test]
+fn lays_out_every_construct_without_its_end() {
+    let src = "\
+fn clamp_all(xs, lo, hi)
+    for x in xs do
+        if x < lo then lo
+        else if x > hi then hi
+        else x
+fn g(c)
+    if c then
+        print(1)
+    else if c == 2 then
+        print(3)
+    else
+        print(2)
+    match c
+        when 1 ->
+            let a = 1
+            a
+        when 2 -> 3
+        when 3 do
+            4
+    let f = fn(x)
+        x * 2
+    defer_paint(fn()
+        draw(1)
+    )
+    while c do
+        c -= 1
+    let r = for i in [1, 2] do i * i
+    let h = fn(v) v * 2
+    r
+class P
+    x: int,
+    y: int,
+enum Shape
+    circle(radius),
+    rect(w, h),
+test \"t\" do
+    expect_eq(1 + 1, 2)
+fn box(w) \"{w}\"
+print(box(1))
+";
+    let want = "\
+fn clamp_all(xs, lo, hi)
+  for x in xs do
+    if x < lo then lo
+    else if x > hi then hi
+    else x
+fn g(c)
+  if c then
+    print(1)
+  else if c == 2 then
+    print(3)
+  else
+    print(2)
+  match c
+    when 1 ->
+      let a = 1
+      a
+    when 2 -> 3
+    when 3 do
+      4
+  let f = fn(x)
+    x * 2
+  defer_paint(fn()
+    draw(1)
+  )
+  while c do
+    c -= 1
+  let r = for i in [1, 2] do i * i
+  let h = fn(v) v * 2
+  r
+class P
+  x: int,
+  y: int,
+enum Shape
+  circle(radius),
+  rect(w, h),
+test \"t\" do
+  expect_eq(1 + 1, 2)
+fn box(w) \"{w}\"
+print(box(1))
+";
+    assert_eq!(fmt(src), want);
+    assert_eq!(fmt(want), want);
+    assert_eq!(ast_shape(src), ast_shape(want));
+}
+
+/// A file may close some blocks with `end` and others by indentation.
+#[test]
+fn lays_out_a_mix_of_ended_and_unended_blocks() {
+    let src = "\
+fn f(c)
+      if c then
+            for i in [1] do
+                  print(i)
+            end
+      else
+            match c
+                when 1 -> 2
+                when _ ->
+                    if c then 3 else 4 end
+      let xs = map([1], fn(v)
+            v + 1
+      end)
+      xs
+end
+fn g()
+   let y = if a then 1
+           else 2
+   y
+";
+    let want = "\
+fn f(c)
+  if c then
+    for i in [1] do
+      print(i)
+    end
+  else
+    match c
+      when 1 -> 2
+      when _ ->
+        if c then 3 else 4 end
+  let xs = map([1], fn(v)
+    v + 1
+  end)
+  xs
+end
+fn g()
+  let y = if a then 1
+          else 2
+  y
+";
+    assert_eq!(fmt(src), want);
+    assert_eq!(fmt(want), want);
+    assert_eq!(ast_shape(src), ast_shape(want));
+}
+
+/// A comment after a block that indentation closed belongs to the level it
+/// was lined up with, whatever the indent width.
+#[test]
+fn a_comment_after_an_unended_block_keeps_its_level() {
+    let src = "\
+fn f(c)
+    if c then
+        a()
+        # still in the if
+    # the rest of f
+    b()
+    # the last line of f
+# about g
+fn g()
+    1
+    # in g, at the end of the file
+";
+    let want = "\
+fn f(c)
+  if c then
+    a()
+    # still in the if
+  # the rest of f
+  b()
+  # the last line of f
+# about g
+fn g()
+  1
+  # in g, at the end of the file
+";
+    assert_eq!(fmt(src), want);
+    assert_eq!(fmt(want), want);
+}
+
+/// Tabs in indentation are an error to the language (B11) and fmt's to
+/// convert: by the file's `end`s when it has them, and otherwise when every
+/// reading of a tab's width gives the same program.
+#[test]
+fn converts_tabs_in_indentation() {
+    let ended = "fn f(c)\n\tif c then\n\t\tprint(1)\n\tend\nend\n";
+    assert_eq!(fmt(ended), "fn f(c)\n  if c then\n    print(1)\n  end\nend\n");
+    let unended = "fn f(c)\n\tif c then\n\t\tprint(1)\n\tprint(2)\nf(1)\n";
+    assert!(crate::rewrite::parse_ast(unended).is_err());
+    let want = "fn f(c)\n  if c then\n    print(1)\n  print(2)\nf(1)\n";
+    assert_eq!(fmt(unended), want);
+    assert_eq!(ast_shape(want), ast_shape(&unended.replace('\t', "    ")));
+    // A tab that is one level or two depending on its width: refused, with
+    // the language's own error.
+    let unclear = "fn f(c)\n  if c then\n    print(1)\n\tprint(2)\nf(1)\n";
+    let e = format_source(unclear).unwrap_err();
+    assert!(e.contains("tab"), "{e}");
+}
+
+/// What `petal fmt` cannot give a meaning to, it refuses: nothing is ever
+/// guessed from a layout the parser rejects.
+#[test]
+fn refuses_unended_blocks_whose_indentation_does_not_parse() {
+    let src = "fn f(c)\n  if c then\n      print(1)\n    print(2)\n";
+    assert!(format_source(src).is_err());
+}
+
+#[test]
+fn remove_block_ends_drops_the_redundant_ones() {
+    let src = "\
+fn f(c)
+  if c then
+    for i in [1] do
+      print(i)
+    end # each
+  else
+    print(0)
+  end
+  let xs = map([1], fn(v)
+    v + 1
+  end)
+  let g = fn()
+  end
+  let y = if c then 1 else 2 end
+  let z = for i in [1] do
+    i
+  end |> len
+  let w = if c then
+    [1]
+  else
+    [2]
+  end
+    ++ [3]
+  slice(xs, start: 0, end: 1)
+end
+";
+    let want = "\
+fn f(c)
+  if c then
+    for i in [1] do
+      print(i)
+      # each
+  else
+    print(0)
+  let xs = map([1], fn(v)
+    v + 1
+  )
+  let g = fn()
+  end
+  let y = if c then 1 else 2 end
+  let z = for i in [1] do
+    i
+  end |> len
+  let w = if c then
+    [1]
+  else
+    [2]
+  end
+    ++ [3]
+  slice(xs, start: 0, end: 1)
+";
+    let out = remove_block_ends(src).unwrap();
+    assert_eq!(out.text, want);
+    assert_eq!(out.removed, 4);
+    assert_eq!(out.kept, vec![13, 17, 22]);
+    assert_eq!(ast_shape(src), ast_shape(want));
+    // Laid out already, and nothing left to remove.
+    assert_eq!(fmt(want), want);
+    let again = remove_block_ends(want).unwrap();
+    assert_eq!((again.text.as_str(), again.removed), (want, 0));
+}
+
+/// An `end` the rules would drop but the program needs is found and kept.
+#[test]
+fn remove_block_ends_keeps_an_end_the_parse_needs() {
+    // `if c then a; b` with no `end` is ambiguous (B3).
+    let src = "fn f(c)\n  if c then a(); b()\n  end\n  c\nend\n";
+    let out = remove_block_ends(src).unwrap();
+    assert_eq!(out.text, "fn f(c)\n  if c then a(); b()\n  end\n  c\n");
+    assert_eq!((out.removed, out.kept), (1, vec![3]));
+}
+
+/// The `end`-less spelling of every repo file: formatted, then stripped of
+/// its redundant `end`s. It must be the same program, already laid out, and
+/// what formatting gives back from any other indentation of it.
+#[test]
+#[ignore = "expensive corpus sweep: run with `make expensive_lint_tests`"]
+fn fmt_lays_out_the_repo_corpus_without_its_ends() {
+    let files = crate::test_corpus::repo_ptl_files();
+    let checked = crate::test_corpus::par_map(&files, |path| {
+        let Ok(src) = std::fs::read_to_string(path) else {
+            return (0, 0);
+        };
+        let Ok(formatted) = format_source(&src) else {
+            return (0, 0);
+        };
+        if formatted.contains(OFF) || formatted.contains(IGNORE_NEXT) {
+            return (0, 0);
+        }
+        let stripped = remove_block_ends(&formatted)
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let text = stripped.text;
+        assert_eq!(ast_shape(&formatted), ast_shape(&text), "{}", path.display());
+        let again = format_source(&text)
+            .unwrap_or_else(|e| panic!("fmt failed without `end`s: {}: {e}", path.display()));
+        assert_eq!(again, text, "not a fixed point without `end`s: {}", path.display());
+        // Indented as a whole (B12), and with every indent doubled.
+        if let Some(mangled) = mangle_indentation(&text) {
+            let back = format_source(&mangled)
+                .unwrap_or_else(|e| panic!("fmt failed on mangled {}: {e}", path.display()));
+            assert_eq!(back, text, "fmt did not undo the mangle for {}", path.display());
+            let doubled: String = text
+                .lines()
+                .map(|l| {
+                    let indent = l.len() - l.trim_start_matches(' ').len();
+                    format!("{}{l}\n", " ".repeat(indent))
+                })
+                .collect();
+            let back = format_source(&doubled)
+                .unwrap_or_else(|e| panic!("fmt failed on doubled {}: {e}", path.display()));
+            assert_eq!(ast_shape(&back), ast_shape(&text), "{}", path.display());
+            assert_eq!(format_source(&back).unwrap(), back, "{}", path.display());
+        }
+        (1, stripped.removed)
+    });
+    let files = checked.iter().map(|c| c.0).sum::<usize>();
+    let removed = checked.iter().map(|c| c.1).sum::<usize>();
+    assert!(files > 150, "expected a real corpus, checked {files}");
+    assert!(removed > 5000, "expected most `end` lines to go, removed {removed}");
 }

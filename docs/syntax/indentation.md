@@ -192,3 +192,8 @@ Code whose indentation agrees with its `end`s parses exactly as it did. Code
 whose indentation disagrees with them (a body that is not indented, a line
 dedented inside a block) is now an error, never a different program.
 `petal fmt` reads such a file by its `end`s and indents it by them.
+
+`petal fmt` lays out both spellings: it takes the blocks from the parse, so a
+block with no `end` keeps its extent while every level moves to two columns.
+It converts tabs in indentation to spaces, and it neither adds nor removes an
+`end`.

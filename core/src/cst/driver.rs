@@ -75,11 +75,43 @@ pub fn parse_source_by_end(source: &str) -> Result<(Rc<GreenNode>, Vec<Stmt>), S
         .map_err(|e| e.to_string())
 }
 
+/// [`parse_source`] with a tab in a line's indentation counted as one
+/// column instead of refused. For `petal fmt` only, which turns the tabs of
+/// a file indented with nothing else into spaces; nothing compiles this
+/// parse.
+pub(crate) fn parse_source_tabs_as_columns(
+    source: &str,
+) -> Result<(Rc<GreenNode>, Vec<Stmt>), String> {
+    parse_reading(Lexer::new_in_file(source, ENTRY_FILE), source, ENTRY_FILE, Reading::TabColumns)
+        .map_err(|e| e.to_string())
+}
+
+/// How a parse reads the layout of its source.
+#[derive(Clone, Copy, PartialEq)]
+enum Reading {
+    /// The language's own: indentation delimits blocks, tabs are refused.
+    Layout,
+    /// [`Reading::Layout`], a tab being one column wide.
+    TabColumns,
+    /// [`crate::parse::Parser::by_end`].
+    ByEnd,
+}
+
 fn parse_with(
-    mut lexer: Lexer,
+    lexer: Lexer,
     source: &str,
     file: FileId,
     layout: bool,
+) -> Result<(Rc<GreenNode>, Vec<Stmt>), LoadError> {
+    let reading = if layout { Reading::Layout } else { Reading::ByEnd };
+    parse_reading(lexer, source, file, reading)
+}
+
+fn parse_reading(
+    mut lexer: Lexer,
+    source: &str,
+    file: FileId,
+    reading: Reading,
 ) -> Result<(Rc<GreenNode>, Vec<Stmt>), LoadError> {
     let phased = |phase: Phase| {
         move |e: String| {
@@ -92,10 +124,10 @@ fn parse_with(
     };
     lexer.tokenize().map_err(phased(Phase::Lex))?;
     let mut parser = crate::parse::Parser::new(lexer.tokens.clone(), lexer.token_spans.clone());
-    parser = if layout {
-        parser.with_tab_indentation(&lexer.token_tab_indented)
-    } else {
-        parser.by_end()
+    parser = match reading {
+        Reading::Layout => parser.with_tab_indentation(&lexer.token_tab_indented),
+        Reading::TabColumns => parser,
+        Reading::ByEnd => parser.by_end(),
     };
     let direct = parser.parse_program().map_err(phased(Phase::Parse))?;
     let green = build_tree(

@@ -705,9 +705,16 @@ DESCRIPTION
        column, and a continuation line lined up under its open bracket all
        survive, moving only as far as the code they hang from moves.
 
+       Indentation delimits blocks, so fmt keeps the block structure the
+       file parses to and only normalises how deep each level is indented.
+       A block closed by 'end' and one closed by its indentation are laid
+       out the same; fmt adds and removes no 'end'. Tabs in indentation
+       become spaces. A file whose indentation disagrees with its 'end's
+       (code from before indentation delimited blocks) is indented by them.
+
        Every result is checked before it is written: the formatted text must
-       lex to exactly the original tokens. A file that does not parse is
-       reported and left alone.
+       lex to exactly the original tokens and parse to the same program. A
+       file that does not parse is reported and left alone.
 
        To keep lines exactly as written, put '# petal-fmt-ignore' on the
        line before one line, or wrap a region in '# petal-fmt-off' and

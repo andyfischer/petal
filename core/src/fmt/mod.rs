@@ -31,24 +31,35 @@
 //! string, a raw string, or JSX text. Choices about *which* code to write —
 //! `var` versus `let`, an `if` chain versus a `match` — are `petal lint`'s.
 //!
-//! **The gate.** Petal is newline-significant but not whitespace-significant,
-//! except where the lexer looks at spacing (`a < b` versus the tag `a <b`).
-//! [`format_source`] therefore re-lexes its output and refuses it unless the
-//! token stream is the one it started from (blank-line runs aside), so a
-//! spacing rule that fused two tokens can cost a file its formatting, never
-//! its meaning. The corpus tests additionally hold every repo `.ptl` to
-//! identical compiled IR.
+//! **The gate.** Indentation delimits blocks, and the lexer looks at spacing
+//! too (`a < b` versus the tag `a <b`). [`format_source`] therefore re-reads
+//! its output and refuses it unless it is the program it started from: the
+//! same token stream (blank-line runs aside) and the same AST (spans aside),
+//! so a rule that fused two tokens or moved a line out of its block can cost
+//! a file its formatting, never its meaning. The corpus tests additionally
+//! hold every repo `.ptl` to identical compiled IR.
+//!
+//! **Blocks.** A block may be closed by an `end` or by its indentation alone,
+//! and a file may mix the two. The indentation pass takes the block
+//! structure from the parse ([`Blocks`]) and only normalises how far each
+//! level is indented; it adds and removes no `end`. Removing the `end`s that
+//! indentation makes redundant is a separate transform,
+//! [`remove_block_ends`], which `petal fmt` does not run.
 //!
 //! **Opting out.** `// petal-fmt-ignore` on its own line keeps the next line
 //! exactly as written; `// petal-fmt-off` … `// petal-fmt-on` keeps every line
 //! between them; `// petal-fmt-ignore-file` anywhere leaves the whole file
 //! alone. Use them for hand-aligned tables, where the columns carry meaning.
 
+pub mod blocks;
 mod comments;
+mod ends;
 pub mod reindent;
 mod spacing;
 
 pub(crate) use comments::trailing_comments;
+pub use blocks::Blocks;
+pub use ends::{EndRemoval, remove_block_ends};
 pub use reindent::reindent;
 
 use crate::lexer::{Lexer, Token};
@@ -60,19 +71,18 @@ pub const ON: &str = "petal-fmt-on";
 
 /// Format `source`. Errors when it does not parse (nothing is ever written for
 /// such a file) and — a formatter bug, not a user error — when the result
-/// would not lex to the same tokens.
+/// would not be the same program.
 pub fn format_source(source: &str) -> Result<String, String> {
-    // Parsed first: nothing is written for a file that does not parse. A
-    // file from before indentation delimited blocks may be indented in a way
-    // that disagrees with its `end`s; it is read by its `end`s, the passes
-    // below derive the indentation from them, and the result must then be
-    // the same program to the language's own parser.
-    let (_tree, stmts, by_end) = crate::rewrite::parse_ast_or_by_end(source)?;
+    // Parsed first: nothing is written for a file that does not parse, and
+    // the parse is where the blocks are: one closed by its indentation alone
+    // shows in no token.
+    let (tree, stmts, reading) = read_layout(source)?;
     let directives = Directives::scan(source)?;
     if directives.ignore_file {
         return Ok(source.to_string());
     }
     let protected = &directives.protected;
+    let blocks = Blocks::of(&tree);
 
     // Alignment is judged against the neighbouring lines as they currently
     // stand, and respacing one line can knock its neighbour out of line, so
@@ -81,7 +91,7 @@ pub fn format_source(source: &str) -> Result<String, String> {
     let mut text = source.to_string();
     for _ in 0..8 {
         let spaced = spacing::respace(&text, protected)?;
-        let indented = reindent::reindent_protected(&spaced, protected)?;
+        let indented = reindent::reindent_protected(&spaced, protected, &blocks)?;
         let aligned = comments::align_trailing_comments(&indented, protected)?;
         if aligned == text {
             break;
@@ -106,41 +116,111 @@ pub fn format_source(source: &str) -> Result<String, String> {
             after.get(at)
         ));
     }
-    // The same tokens are no longer the same program: indentation delimits
-    // blocks, so the indentation pass can move a statement out of its block.
-    // The output must parse to the AST the input did. (Skipped when nothing
-    // changed; a pass that only respaced inside lines still pays for it.)
-    if by_end || output != source {
-        let (_tree, after) = crate::rewrite::parse_ast(&output).map_err(|e| {
-            if by_end {
-                format!(
-                    "the indentation of this file disagrees with its `end`s, and indenting \
-                     it by its `end`s did not make it parse ({e})"
-                )
-            } else {
-                format!("{NO_END_YET} (the formatted text no longer parses: {e})")
+    // The same tokens are not yet the same program: indentation delimits
+    // blocks, so moving a line can move a statement out of its block. The
+    // output must parse to the AST the input did. (Skipped when nothing
+    // changed.)
+    if reading != Reading::Layout || output != source {
+        same_program(&stmts, &output).map_err(|e| match reading {
+            Reading::ByEnd => format!(
+                "the indentation of this file disagrees with its `end`s, and indenting it by \
+                 its `end`s did not give the same program ({e})"
+            ),
+            Reading::Tabs => format!(
+                "this file is indented with tabs, and replacing them did not give the same \
+                 program ({e})"
+            ),
+            Reading::Layout => {
+                format!("fmt bug: {e} — refusing to produce output")
             }
         })?;
-        if crate::rewrite::ast_shape(&stmts)? != crate::rewrite::ast_shape(&after)? {
-            return Err(if by_end {
-                "fmt bug: re-indenting a file by its `end`s changed its parse — refusing to \
-                 produce output"
-                    .to_string()
-            } else {
-                format!("{NO_END_YET} (formatting would change what the file means)")
-            });
-        }
     }
     Ok(output)
 }
 
-/// The indentation pass derives a block's extent from its `end`
-/// ([`reindent`]). A block closed by its indentation alone has none, so the
-/// pass can lay it out wrongly; the AST gate catches that, and this is what
-/// the refusal says.
-const NO_END_YET: &str = "`petal fmt` cannot yet lay out this file: it indents a block by its \
-                          `end`, and a block here is closed by its indentation alone. Nothing \
-                          was changed";
+/// Check that `text` parses, by the language's own rules, to the program
+/// `stmts` is: the same AST with the spans dropped. The gate of every
+/// rewrite that may only change layout (`petal fmt`, [`remove_block_ends`]).
+fn same_program(stmts: &[crate::ast::Stmt], text: &str) -> Result<(), String> {
+    let (_tree, after) = crate::rewrite::parse_ast(text)
+        .map_err(|e| format!("the rewritten text no longer parses: {e}"))?;
+    if crate::rewrite::ast_shape(stmts)? != crate::rewrite::ast_shape(&after)? {
+        return Err("the rewritten text parses to a different program".to_string());
+    }
+    Ok(())
+}
+
+/// Which reading of a file's layout `petal fmt` formats it by.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Reading {
+    /// The language's own.
+    Layout,
+    /// By its `end`s alone ([`crate::cst::parse_source_by_end`]): a file from
+    /// before indentation delimited blocks, indented in a way that disagrees
+    /// with them.
+    ByEnd,
+    /// The language's own, were tabs allowed in indentation.
+    Tabs,
+}
+
+/// Parse `source` for formatting. The language's own reading comes first.
+/// A file it rejects is read by its `end`s, which is what its author's
+/// compiler did; the indentation pass then derives the indentation from
+/// them. A file that is rejected only for the tabs it is indented with is
+/// read with a tab as one column, provided the width of a tab does not
+/// decide what the file means. The error, when no reading parses, is the
+/// language's own.
+fn read_layout(
+    source: &str,
+) -> Result<(std::rc::Rc<crate::cst::GreenNode>, Vec<crate::ast::Stmt>, Reading), String> {
+    let (tree, stmts, by_end) = match crate::rewrite::parse_ast_or_by_end(source) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            let Ok((tree, stmts)) = crate::cst::parse_source_tabs_as_columns(source) else {
+                return Err(e);
+            };
+            // The same program whether a tab is one column or eight?
+            let wide = expand_tab_indentation(source, 8)?;
+            if same_program(&stmts, &wide).is_err() {
+                return Err(e);
+            }
+            return Ok((tree, stmts, Reading::Tabs));
+        }
+    };
+    Ok((tree, stmts, if by_end { Reading::ByEnd } else { Reading::Layout }))
+}
+
+/// `source` with each tab in the indentation of a line of code written as
+/// `width` spaces. Only the whitespace in front of the first token of a line
+/// is indentation; the lines of a raw string are left alone.
+fn expand_tab_indentation(source: &str, width: usize) -> Result<String, String> {
+    let mut lexer = Lexer::new(source);
+    lexer.tokenize()?;
+    let chars: Vec<char> = source.chars().collect();
+    let mut out = String::with_capacity(source.len());
+    let mut copied = 0usize;
+    for (k, span) in lexer.token_spans.iter().enumerate() {
+        if !lexer.token_tab_indented.get(k).copied().unwrap_or(false) {
+            continue;
+        }
+        let at = span.start.offset as usize;
+        let mut start = at;
+        while start > 0 && matches!(chars[start - 1], ' ' | '\t') {
+            start -= 1;
+        }
+        out.extend(&chars[copied..start]);
+        for &c in &chars[start..at] {
+            if c == '\t' {
+                out.push_str(&" ".repeat(width));
+            } else {
+                out.push(c);
+            }
+        }
+        copied = at;
+    }
+    out.extend(&chars[copied..]);
+    Ok(out)
+}
 
 /// The tokens of `source`, with every run of `Newline`s collapsed to one and
 /// none at either end: blank lines are layout, a line break is not.

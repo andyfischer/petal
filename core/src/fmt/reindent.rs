@@ -2,6 +2,8 @@
 
 use crate::lexer::{Lexer, Token};
 
+use super::blocks::{Blocks, ordinals};
+
 /// The open-construct stack: one entry per unclosed construct, holding the
 /// column its *contents* get — the column the line that opened it is shown
 /// at, plus one step. Keying content to the opening line (rather than raw
@@ -17,6 +19,12 @@ use crate::lexer::{Lexer, Token};
 /// entry — lint runs on parseable source, so they always correspond. The one
 /// construct without a closer is the body of a `when … ->` arm, which the next
 /// `when` or the match's own `end` ends ([`Open::arm_body`]).
+///
+/// A construct may also be closed by its indentation alone, with no `end`.
+/// The tokens cannot show that, so the parse says where each such construct
+/// ends ([`Blocks`]), and its entry is dropped once its last token has gone
+/// by ([`Open::closes_after`]). The pass thereby keeps the block structure
+/// the parse found and only normalises how far each level is indented.
 ///
 /// A construct that *hangs* ([`Hang`]) — `draw(a, b,` with `c)` wrapped
 /// below — is a visual continuation: the author lined the wrapped lines up
@@ -39,6 +47,14 @@ struct Open {
     /// arrow. It has no closer of its own: the next `when`, or the match's
     /// `end`, ends it.
     arm_body: bool,
+    /// For a construct no `end` closes: the ordinal of its last token
+    /// ([`Blocks`]). The construct is over at the first token past it.
+    closes_after: Option<usize>,
+    /// The column the first line of the contents was written at, once one
+    /// has been seen. Only a comment needs it: one written after a block
+    /// that indentation closed belongs to whichever open level it was
+    /// lined up with.
+    written_at: Option<usize>,
 }
 
 /// A construct whose contents the author may have aligned by eye: a delimiter
@@ -59,8 +75,35 @@ impl Open {
             content,
             hang: None,
             arm_body: false,
+            closes_after: None,
+            written_at: None,
         }
     }
+
+    /// A keyword construct, which [`Blocks`] may know to have no `end`.
+    fn construct(content: usize, closes_after: Option<usize>) -> Self {
+        Open {
+            closes_after,
+            ..Open::block(content)
+        }
+    }
+}
+
+/// Drop the constructs that indentation closed before the token of ordinal
+/// `at`. They nest, so everything opened inside the outermost of them goes
+/// with it (the body of its last `when … ->` arm included).
+fn close_by_layout(stack: &mut OpenStack, at: usize) {
+    if let Some(p) = layout_closed_from(stack, at) {
+        stack.truncate(p);
+    }
+}
+
+/// The depth of the outermost open construct that indentation closed before
+/// the token of ordinal `at`.
+fn layout_closed_from(stack: &OpenStack, at: usize) -> Option<usize> {
+    stack
+        .iter()
+        .position(|o| o.closes_after.is_some_and(|last| last < at))
 }
 
 /// The header of a match arm being read: `when pattern [if guard]`, up to
@@ -149,17 +192,30 @@ fn is_continuation_op(t: &Token) -> bool {
 /// Re-indent `source` to 2-space indentation, trim trailing whitespace, and
 /// end with exactly one newline. Only whitespace outside tokens is touched;
 /// lines that start inside a multi-line token (raw string, JSX text) are
-/// copied verbatim. Works from the token stream alone, so it needs the source
-/// to lex but not to parse.
+/// copied verbatim.
+///
+/// The source need only lex. When it also parses, the parse says which blocks
+/// are closed by indentation alone; when it does not, every block is taken to
+/// run to its `end`.
 pub fn reindent(source: &str) -> Result<String, String> {
-    reindent_protected(source, &[])
+    let blocks = match crate::rewrite::parse_ast_or_by_end(source) {
+        Ok((tree, _, _)) => Blocks::of(&tree),
+        Err(_) => Blocks::all_closed_by_end(),
+    };
+    reindent_protected(source, &[], &blocks)
 }
 
 /// [`reindent`], copying each line marked in `protected` (0-based) verbatim —
 /// the lines a `// petal-fmt-ignore` / `petal-fmt-off` comment fenced off.
 /// Their tokens still open and close constructs, so the lines after them
-/// indent as if the fence were not there.
-pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, String> {
+/// indent as if the fence were not there. `blocks` is the block structure of
+/// the file's parse; its ordinals name the same tokens in `source` as long as
+/// `source` differs from the parsed text in whitespace only.
+pub fn reindent_protected(
+    source: &str,
+    protected: &[bool],
+    blocks: &Blocks,
+) -> Result<String, String> {
     if source.is_empty() {
         return Ok(String::new());
     }
@@ -167,6 +223,7 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
     lexer.tokenize()?;
     let tokens = &lexer.tokens;
     let spans = &lexer.token_spans;
+    let ord = ordinals(tokens);
     let chars: Vec<char> = source.chars().collect();
 
     // Line table: (start, end) char offsets, `end` at the `\n` (or EOF).
@@ -254,6 +311,23 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
             .clone()
             .filter(|&k| !matches!(tokens[k], Token::Newline | Token::Eof))
             .collect();
+        // The constructs indentation closed before this line's first token
+        // are over. A line with no token of its own (a comment, a blank
+        // line) is placed among the levels still open before the next code:
+        // the deepest one it was written at least as deep as.
+        let next_code = (first_ti..tokens.len()).find(|&k| !matches!(tokens[k], Token::Newline));
+        let next_ord = next_code.map_or(usize::MAX, |k| ord[k]);
+        let old_cols = ws_end - ls;
+        let mut depth = stack.len();
+        if sig.is_empty() {
+            let keep = layout_closed_from(&stack, next_ord).unwrap_or(depth);
+            while depth > keep && stack[depth - 1].written_at.is_none_or(|c| c > old_cols) {
+                depth -= 1;
+            }
+        } else {
+            close_by_layout(&mut stack, next_ord);
+            depth = stack.len();
+        }
         // A line opening with `when` or `end` ends the arm body above it, so
         // it is laid out as a line of the match, not of that body.
         if let Some(&k) = sig.first()
@@ -262,6 +336,7 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
             && stack.last().is_some_and(|o| o.arm_body)
         {
             stack.pop();
+            depth = stack.len();
         }
         let mut dedent = 0usize;
         let mut si = 0usize;
@@ -304,10 +379,19 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
             let open = stack.last();
             (open, open.map_or(0, |o| o.content.saturating_sub(INDENT)))
         } else {
-            let open = stack.last();
+            let open = stack[..depth].last();
             (open, open.map_or(0, |o| o.content))
         };
-        let old_cols = ws_end - ls;
+        let governing = governing.copied();
+        if !sig.is_empty()
+            && dedent == 0
+            && !leads_with_else
+            && !in_jsx_text
+            && let Some(open) = stack.last_mut()
+            && open.written_at.is_none()
+        {
+            open.written_at = Some(old_cols);
+        }
         // A hanging continuation keeps its column, moved with the line it
         // hangs from, as long as it still sits deeper than that line.
         let keep = |shift: isize, floor: usize| {
@@ -358,6 +442,10 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
         // the column this line is shown at, however many of them open here.
         let content = shown_cols + INDENT;
         for k in line_tokens {
+            if !matches!(tokens[k], Token::Newline) {
+                close_by_layout(&mut stack, ord[k]);
+            }
+            let construct = |content: usize| Open::construct(content, blocks.closed_by_layout(ord[k]));
             match &tokens[k] {
                 _ if is_label(tokens, k) => {}
                 // An or-pattern may run over several lines, each ending or
@@ -402,12 +490,13 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
                     if pending_do {
                         pending_do = false;
                     } else {
-                        stack.push(Open::block(content)); // `when … do` arm body
+                        // The body of a `when … do` arm or of a `test`.
+                        stack.push(construct(content));
                     }
                 }
                 Token::For | Token::While => {
                     pending_do = true;
-                    stack.push(Open::block(content));
+                    stack.push(construct(content));
                 }
                 Token::If => {
                     let guard = when_header
@@ -418,19 +507,18 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
                     } else {
                         let mid_line = sig.first() != Some(&k);
                         stack.push(Open {
-                            content,
                             hang: mid_line.then_some(this_line),
-                            arm_body: false,
+                            ..construct(content)
                         });
                     }
                 }
-                Token::Match | Token::Enum => stack.push(Open::block(content)),
+                Token::Match | Token::Enum => stack.push(construct(content)),
                 // `class Name … end` — contextual, so it arrives as an
                 // identifier; only the declaration form (a name follows) opens
                 // a block, never a variable or a JSX `class=` attribute.
                 Token::Ident(w) if w == crate::parse::CLASS_KEYWORD => {
                     if matches!(tokens.get(k + 1), Some(Token::Ident(_))) {
-                        stack.push(Open::block(content));
+                        stack.push(construct(content));
                     }
                 }
                 Token::Fn => {
@@ -438,7 +526,7 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
                     let native = k > 0
                         && matches!(&tokens[k - 1], Token::Ident(w) if w == crate::parse::NATIVE_KEYWORD);
                     if !native && fn_takes_end(tokens, k) {
-                        stack.push(Open::block(content));
+                        stack.push(construct(content));
                     }
                 }
                 Token::LParen | Token::LBracket | Token::LBrace => {
@@ -446,9 +534,8 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
                         !matches!(tokens.get(k + 1), Some(Token::Newline | Token::Eof) | None)
                             && spans[k + 1].start.line == spans[k].start.line;
                     stack.push(Open {
-                        content,
                         hang: hanging.then_some(this_line),
-                        arm_body: false,
+                        ..Open::block(content)
                     });
                 }
                 Token::End => {
@@ -498,10 +585,11 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
     Ok(out)
 }
 
-/// Whether the `fn` at token index `k` opens an `end`-terminated block: a
-/// declaration (`fn name(…) … end`) or a block-bodied lambda, parenthesized
+/// Whether the `fn` at token index `k` opens a block: a declaration
+/// (`fn name(…) … end`) or a block-bodied lambda, parenthesized
 /// (`fn(…) … end`) or argless (`fn … end`). Only an arrow lambda
-/// (`fn(…) -> expr` or `fn -> expr`) doesn't consume an `end`.
+/// (`fn(…) -> expr` or `fn -> expr`) opens none. The block runs to its `end`,
+/// or to where [`Blocks`] says indentation closed it.
 fn fn_takes_end(tokens: &[Token], k: usize) -> bool {
     let mut i = k + 1;
     while i < tokens.len() && matches!(tokens[i], Token::Newline) {

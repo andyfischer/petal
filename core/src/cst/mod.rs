@@ -43,6 +43,7 @@ mod green;
 mod red;
 
 pub use driver::{parse_cst, parse_source, parse_source_by_end, parse_source_phased};
+pub(crate) use driver::parse_source_tabs_as_columns;
 pub(crate) use driver::parse_source_unmerged_else_if;
 pub use events::{Checkpoint, Event, EventBuilder, build_lossless, build_tree};
 pub use green::{GreenChild, GreenNode, GreenNodeBuilder, GreenToken};

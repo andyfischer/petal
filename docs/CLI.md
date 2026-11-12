@@ -992,7 +992,12 @@ the rest still run.
 
 fmt touches whitespace only (see [dev/linter-plan.md](dev/linter-plan.md)):
 
-- **Indentation** — 2 spaces per open construct, from the token stream.
+- **Indentation** — 2 spaces per open construct. Indentation delimits blocks
+  ([syntax/indentation.md](syntax/indentation.md)), so fmt keeps the block
+  structure the file parses to and only normalises how deep each level sits:
+  a block closed by an `end` and one closed by its indentation are laid out
+  the same, and a file may mix them. fmt adds and removes no `end`. Tabs in
+  indentation become spaces.
 - **Spacing within a line** — one space around binary and assignment operators,
   `->` and `|>`, and after `,` and `:`; none inside `()` `[]` `{}` or a string's
   `{…}` hole, none before `,` `:` `;`, none around `.` `?.` `..`, none after a
@@ -1017,7 +1022,13 @@ survive, moving only as far as the line they hang from moves.
 
 It never wraps lines, reorders anything, or edits strings, raw strings or JSX
 text, and it checks every result: the output must lex to exactly the input's
-tokens, or the file is refused with a `fmt bug` error.
+tokens and parse to the same program (the same AST, positions aside), or the
+file is refused with a `fmt bug` error.
+
+A file from before indentation delimited blocks, indented in a way that
+disagrees with its `end`s, is read by its `end`s and indented by them. A file
+with no reading at all (a block with no `end` whose lines do not line up) is
+reported with the parser's error and left alone.
 
 Opt out with `# petal-fmt-ignore` (the next line stays as written),
 `# petal-fmt-off` … `# petal-fmt-on` (a region), or `# petal-fmt-ignore-file`.

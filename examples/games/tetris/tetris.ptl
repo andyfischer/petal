@@ -138,7 +138,7 @@ fn collides(board: list, cells: list, px: int, py: int) -> bool
     # drop those minoes. A kick that lifts the piece out of the well is refused.
     if x < 0 || x >= WIDTH || y >= HEIGHT || y < 0 then
       hit = true
-    elsif board[y][x] != nil then
+    else if board[y][x] != nil then
       hit = true
     end
   end
@@ -228,8 +228,8 @@ fn board_features(board: list) -> record
         run = 0
       else
         if roof then holes = holes + 1 end
-        let left = if x == 0 then 1 elsif row[x - 1] != nil then 1 else 0 end
-        let right = if x == WIDTH - 1 then 1 elsif row[x + 1] != nil then 1 else 0 end
+        let left = if x == 0 then 1 else if row[x - 1] != nil then 1 else 0 end
+        let right = if x == WIDTH - 1 then 1 else if row[x + 1] != nil then 1 else 0 end
         if left == 1 && right == 1 then
           run = run + 1
         else
@@ -391,7 +391,7 @@ while running do
           # Every kick was blocked; give up on turning and drop as we are.
           plan = {rot: rot, x: plan.x}
         end
-      elsif px != plan.x then
+      else if px != plan.x then
         let dx = if plan.x > px then 1 else -1 end
         if collides(board, cells, px: px + dx, py: py) then
           plan = {rot: rot, x: px}
@@ -444,7 +444,7 @@ while running do
         "piece {pieces_played} ({kind.name}) at x={px} rot={rot} — " ++
         "{label}! +{gained}  score={score}  lines={lines_total}  level={level}")
       print("")
-    elsif pieces_played % 20 == 0 then
+    else if pieces_played % 20 == 0 then
       render(board, "piece {pieces_played} ({kind.name}) — no clear, score={score}")
       print("")
     end

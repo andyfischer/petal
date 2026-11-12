@@ -224,7 +224,7 @@ fn _place(key, value)
     # those values; `vary`: everything is drawn where the solved state puts
     # it. Either way at once, with no easing, so it tracks the pointer.
     let bv = if live.blend != nil then _blend_key(live.blend, key) else nil end
-    let shown = if bv != nil then bv elsif live.instant then value else nil end
+    let shown = if bv != nil then bv else if live.instant then value else nil end
     if shown != nil then
       set _anim[key] = _shift(shown, o, -1)
       return shown
@@ -432,11 +432,11 @@ fn _map_leaves(spec, f)
   let t = spec.d2
   if t == "fixed" || t == "drop_target" || t == "switch_to" then
     f(spec)
-  elsif t == "closest" then
+  else if t == "closest" then
     {...spec, options: for o in spec.options do _map_leaves(o, f) end}
-  elsif t == "floating" || t == "snap_radius" then
+  else if t == "floating" || t == "snap_radius" then
     {...spec, inner: _map_leaves(spec.inner, f)}
-  elsif t == "when_far" then
+  else if t == "when_far" then
     {...spec, inner: _map_leaves(spec.inner, f), far: _map_leaves(spec.far, f)}
   else
     # between / vary: a drop state that is only known per frame. The
@@ -450,11 +450,11 @@ fn _leaves(spec)
   let t = spec.d2
   if t == "fixed" || t == "drop_target" || t == "switch_to" || t == "vary" then
     [spec]
-  elsif t == "closest" || t == "between" then
+  else if t == "closest" || t == "between" then
     flat(for o in spec.options do _leaves(o) end)
-  elsif t == "floating" || t == "snap_radius" || t == "on_drop" then
+  else if t == "floating" || t == "snap_radius" || t == "on_drop" then
     _leaves(spec.inner)
-  elsif t == "when_far" then
+  else if t == "when_far" then
     _leaves(spec.inner) ++ _leaves(spec.far)
   else
     []
@@ -475,17 +475,17 @@ fn _res(spec)
     let at2 = if at == nil && t == "switch_to" then _placed(sp, spec.key) else at end
     let zone = if t == "drop_target" then _placed(_spec_run(w.base), spec.key) else nil end
     {...spec, id: get _leaf_n, at: at2, zone: zone}
-  elsif t == "closest" then
+  else if t == "closest" then
     {...spec, options: for o in spec.options do _res(o) end}
-  elsif t == "floating" || t == "snap_radius" then
+  else if t == "floating" || t == "snap_radius" then
     {...spec, inner: _res(spec.inner)}
-  elsif t == "when_far" then
+  else if t == "when_far" then
     {...spec, inner: _res(spec.inner), far: _res(spec.far)}
-  elsif t == "between" then
+  else if t == "between" then
     _res_between(spec)
-  elsif t == "vary" then
+  else if t == "vary" then
     _res_vary(spec)
-  elsif t == "on_drop" then
+  else if t == "on_drop" then
     {...spec, inner: _res(spec.inner)}
   else
     assert(false, "ui/drag: not a drag spec: {spec}")
@@ -541,9 +541,9 @@ fn _eval(spec, c)
     let p = _center(spec.at)
     if p == nil then return _NONE end
     {leaf: spec, gap: hypot(p.x - c.ex, p.y - c.ey), float: false, snapped: false, chain: t == "switch_to"}
-  elsif t == "drop_target" then
+  else if t == "drop_target" then
     if _inside(c.px, c.py, spec.zone) then {..._NONE, leaf: spec, gap: 0} else _NONE end
-  elsif t == "closest" then
+  else if t == "closest" then
     let best = _NONE
     let bg = 1.0e13
     for o in spec.options do
@@ -557,24 +557,24 @@ fn _eval(spec, c)
       end
     end
     best
-  elsif t == "floating" then
+  else if t == "floating" then
     let r = _eval(spec.inner, c)
     {...r, float: !r.snapped}
-  elsif t == "snap_radius" then
+  else if t == "snap_radius" then
     let r = _eval(spec.inner, c)
     if r.leaf != nil && r.gap <= spec.px then
       {...r, float: false, snapped: true, chain: r.chain || spec.chain}
     else
       r
     end
-  elsif t == "when_far" then
+  else if t == "when_far" then
     let r = _eval(spec.inner, c)
     if r.gap > spec.px then _eval(spec.far, c) else r end
-  elsif t == "between" then
+  else if t == "between" then
     _eval_between(spec, c)
-  elsif t == "vary" then
+  else if t == "vary" then
     _eval_vary(spec, c)
-  elsif t == "on_drop" then
+  else if t == "on_drop" then
     let r = _eval(spec.inner, c)
     # `f` maps a leaf (on_drop's own transform of its `drop`).
     let f = _fn(spec.f)
@@ -881,7 +881,7 @@ pub fn drag_session(model, view, opts = {})
     if p != nil then
       if !down then
         set _press = nil
-      elsif hypot(mx - p.x, my - p.y) > slop then
+      else if hypot(mx - p.x, my - p.y) > slop then
         let st = _start(model, view, p)
         if st != nil then
           set _press = nil
@@ -1171,9 +1171,9 @@ fn _kids(spec)
   let t = spec.d2
   if t == "closest" || t == "between" then
     spec.options
-  elsif t == "when_far" then
+  else if t == "when_far" then
     [spec.inner, spec.far]
-  elsif t == "floating" || t == "snap_radius" || t == "on_drop" then
+  else if t == "floating" || t == "snap_radius" || t == "on_drop" then
     [spec.inner]
   else
     []
@@ -1264,13 +1264,13 @@ fn _tree(spec, depth, choice)
     let p = _center(spec.at ?? nil)
     let where = if p == nil then "not placed" else "at ({_dbg_n(p.x)}, {_dbg_n(p.y)})" end
     "#{spec.id ?? nil} {t} {where}"
-  elsif t == "closest" then
+  else if t == "closest" then
     let st = if spec.stickiness > 0 then ", stickiness {spec.stickiness}" else "" end
     "closest, {len(spec.options)} options{st}"
-  elsif t == "snap_radius" then
+  else if t == "snap_radius" then
     let ch = if spec.chain then ", chain" else "" end
     "snap_radius {spec.px}{ch}"
-  elsif t == "when_far" then
+  else if t == "when_far" then
     "when_far {spec.px}"
   else
     t

@@ -112,9 +112,9 @@ fn compact(x: num) -> string
   let a = abs(x)
   if a >= 1000000.0 then
     dec(x / 1000000.0, 1) ++ "M"
-  elsif a >= 10000.0 then
+  else if a >= 10000.0 then
     dec(x / 1000.0, 1) ++ "k"
-  elsif a >= 1000.0 then
+  else if a >= 1000.0 then
     dec(x / 1000.0, 2) ++ "k"
   else
     dec(x, 0)
@@ -141,7 +141,7 @@ end
 fn day_label(d: num) -> string
   if d <= 31 then
     "Jan {d}"
-  elsif d <= 59 then
+  else if d <= 59 then
     "Feb {d - 31}"
   else
     "Mar {d - 59}"
@@ -238,7 +238,7 @@ end
 fn fmt_value(v: num, unit: string) -> string
   if unit == "usd" then
     "$" ++ commas(int(round(v)))
-  elsif unit == "pct" then
+  else if unit == "pct" then
     dec(v, 2) ++ "%"
   else
     commas(int(round(v)))
@@ -248,7 +248,7 @@ end
 fn fmt_axis(v: num, unit: string) -> string
   if unit == "usd" then
     "$" ++ compact(v)
-  elsif unit == "pct" then
+  else if unit == "pct" then
     dec(v, 1) ++ "%"
   else
     compact(v)
@@ -258,7 +258,7 @@ end
 fn fmt_headline(v: num, unit: string) -> string
   if unit == "usd" then
     "$" ++ compact(v)
-  elsif unit == "pct" then
+  else if unit == "pct" then
     dec(v, 2) ++ "%"
   else
     compact(v)
@@ -344,9 +344,9 @@ fn nice_step(span: num, target: num) -> float
   let mag = pow(10.0, floor(log(max(raw, 0.000001)) / log(10.0)))
   let norm = raw / mag
   let mult = if norm <= 1.0 then 1.0
-  elsif norm <= 2.0 then 2.0
-  elsif norm <= 2.5 then 2.5
-  elsif norm <= 5.0 then 5.0
+  else if norm <= 2.0 then 2.0
+  else if norm <= 2.5 then 2.5
+  else if norm <= 5.0 then 5.0
   else 10.0
   end
   mult * mag
@@ -743,7 +743,7 @@ state hover_i = -1
 if over_plot then
   let t = (float(mouse_x()) - plot.x) / max(plot.w, 1.0)
   hover_i = iclamp(int(round(t * float(nsamp - 1))), lo: 0, hi: nsamp - 1)
-elsif !show_readout then
+else if !show_readout then
   hover_i = -1
 end
 
@@ -989,9 +989,9 @@ text_right("{nsamp} points  ·  {chart_mode}  ·  {w}×{h}", right_x: content_x 
 for p in pills do
   let on = p.i == range_i
   let hot = hovered(p.r)
-  let bg = if on then :2b3546 elsif hot then RAISED else SURFACE end
+  let bg = if on then :2b3546 else if hot then RAISED else SURFACE end
   draw_rect_rounded(p.r, radius: 8, c: bg)
   draw_rect_outline(p.r, c: if on then :47597a else HAIRLINE end, a: 255, width: 1)
-  let fg = if on then TEXT elsif hot then :c3cbd8 else DIM end
+  let fg = if on then TEXT else if hot then :c3cbd8 else DIM end
   text_center(RANGES[p.i].label, cx: p.r.x + p.r.w / 2.0, y: p.r.y + 8, style: {size: 12, color: fg})
 end

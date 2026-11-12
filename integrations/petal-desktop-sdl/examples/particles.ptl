@@ -205,19 +205,19 @@ if frame_count() % 90 == 45 && len(particles) < max_particles - 30 then
       rr = 255
       gg = int(phase * 255.0)
       bb = 0
-    elsif phase < 2.0 then
+    else if phase < 2.0 then
       rr = int((2.0 - phase) * 255.0)
       gg = 255
       bb = 0
-    elsif phase < 3.0 then
+    else if phase < 3.0 then
       rr = 0
       gg = 255
       bb = int((phase - 2.0) * 255.0)
-    elsif phase < 4.0 then
+    else if phase < 4.0 then
       rr = 0
       gg = int((4.0 - phase) * 255.0)
       bb = 255
-    elsif phase < 5.0 then
+    else if phase < 5.0 then
       rr = int((phase - 4.0) * 255.0)
       gg = 0
       bb = 255
@@ -290,7 +290,7 @@ particles = map(particles, fn(p)
   if p.kind == 0 then
     # Normal: gravity + slight drag
     new_vy = p.vy + gravity * delta
-  elsif p.kind == 1 then
+  else if p.kind == 1 then
     # Floaters: reduced gravity, more drag, slight upward bias
     new_vy = p.vy + gravity * 0.3 * delta
     drag = 0.97

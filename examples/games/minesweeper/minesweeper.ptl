@@ -146,11 +146,11 @@ end
 fn cell_char(r: int, c: int) -> string
   if get exploded && get mines[r][c] && !get flagged[r][c] then
     "*"
-  elsif get flagged[r][c] then
+  else if get flagged[r][c] then
     "F"
-  elsif !get revealed[r][c] then
+  else if !get revealed[r][c] then
     "."
-  elsif get mines[r][c] then
+  else if get mines[r][c] then
     "*"
   else
     count_char(get counts[r][c])
@@ -215,7 +215,7 @@ do_reveal(2, 6)   # ...and this one is a mine
 print("")
 if get exploded then
   print("BOOM — you hit a mine. Game over.")
-elsif is_won() then
+else if is_won() then
   print("Cleared! All safe cells revealed.")
 else
   print("Still playing: {hidden_safe_count()} safe cells left.")

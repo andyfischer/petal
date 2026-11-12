@@ -180,7 +180,7 @@ end
 fn compact(v: num) -> string
   let a = abs(float(v))
   if a >= 1000000.0 then "{fixed2(a / 1000000.0)}M"
-  elsif a >= 1000.0 then "{round(a / 1000.0, 1)}k"
+  else if a >= 1000.0 then "{round(a / 1000.0, 1)}k"
   else str(int(a)) end
 end
 
@@ -226,9 +226,9 @@ end
 fn dir_name(a: num) -> string
   let deg = (int(round(degrees(float(a)))) % 360 + 360) % 360
   if deg == 90 then "down"
-  elsif deg == 270 then "up"
-  elsif deg == 0 then "right"
-  elsif deg == 180 then "left"
+  else if deg == 270 then "up"
+  else if deg == 0 then "right"
+  else if deg == 180 then "left"
   else "{deg}°" end
 end
 
@@ -480,7 +480,7 @@ if key_pressed("escape") then
   let held = ph.index_of_id(world, grab_id)
   if aiming || linking || cutting then
     cancel_gestures()
-  elsif held >= 0 then
+  else if held >= 0 then
     # Let go without a throw: the body is left where it is, at rest.
     set world = ph.set_velocity(world, held, 0.0, 0.0)
     set grab_id = -1
@@ -503,11 +503,11 @@ end
 # A push button. Returns true on the frame it is clicked.
 fn ui_btn(x: num, y: num, w: num, h: num, label: string, on: bool, tone: record) -> bool
   let over = hit(x, y, w, h)
-  let face = if on then blend(C_CARD, tone, 0.22) elsif over then blend(C_CARD, C_TEXT, 0.08) else C_WELL end
-  let edge = if on then blend(C_CARD, tone, 0.75) elsif over then C_EDGE else C_LINE end
+  let face = if on then blend(C_CARD, tone, 0.22) else if over then blend(C_CARD, C_TEXT, 0.08) else C_WELL end
+  let edge = if on then blend(C_CARD, tone, 0.75) else if over then C_EDGE else C_LINE end
   draw_rect_rounded(rect(x, y, w, h), 6, face)
   draw_rect_rounded_outline(rect(x, y, w, h), 6, edge, 255, 1)
-  let st = {...S_CAP, color: if on then tone elsif over then C_TEXT else C_DIM end}
+  let st = {...S_CAP, color: if on then tone else if over then C_TEXT else C_DIM end}
   tx_center(label, x + w / 2, y + (h - 15) / 2, st)
   over && mouse_pressed(0)
 end
@@ -589,19 +589,19 @@ fn tool_icon(k: int, cx: num, cy: num, col: record)
     draw_line(cx + 2, cy - 2, cx + 10, cy - 10, col, 255, 2)
     draw_line(cx + 10, cy - 10, cx + 4, cy - 10, col, 255, 2)
     draw_line(cx + 10, cy - 10, cx + 10, cy - 4, col, 255, 2)
-  elsif k == 1 then
+  else if k == 1 then
     draw_circle_outline(cx, cy, 9, col, 255, 2)
     draw_line(cx - 4, cy, cx + 4, cy, col, 255, 2)
     draw_line(cx, cy - 4, cx, cy + 4, col, 255, 2)
-  elsif k == 2 then
+  else if k == 2 then
     draw_line(cx - 8, cy + 6, cx + 8, cy - 6, col, 255, 2)
     draw_circle(cx - 8, cy + 6, 4, col)
     draw_circle(cx + 8, cy - 6, 4, col)
-  elsif k == 3 then
+  else if k == 3 then
     draw_polyline(coil_points(cx - 10, cy + 5, cx + 10, cy - 5, 5, 4.0), col, 255, 2)
     draw_circle(cx - 10, cy + 5, 3, col)
     draw_circle(cx + 10, cy - 5, 3, col)
-  elsif k == 4 then
+  else if k == 4 then
     draw_circle_outline(cx, cy - 3, 7, col, 255, 2)
     draw_circle(cx, cy - 3, 2, col)
     draw_line(cx, cy + 4, cx, cy + 11, col, 255, 2)
@@ -628,11 +628,11 @@ for i in range(0, len(sc.NAMES)) do
   if on then
     draw_rect_rounded(rect(tab_x, 30, tab_w[i], 30), 8, blend(C_BG, C_ACC, 0.14))
     draw_rect_rounded(rect(tab_x + 10, 57, tab_w[i] - 20, 2), 1, C_ACC)
-  elsif over then
+  else if over then
     draw_rect_rounded(rect(tab_x, 30, tab_w[i], 30), 8, C_CARD)
   end
   tx_center(sc.NAMES[i], tab_x + tab_w[i] / 2, 37,
-    {...S_TAB, color: if on then C_ACC elsif over then C_TEXT else C_DIM end})
+    {...S_TAB, color: if on then C_ACC else if over then C_TEXT else C_DIM end})
   if over && mouse_pressed(0) then want_scene = i end
   tab_x += tab_w[i] + 6
 end
@@ -642,9 +642,9 @@ for i in range(0, len(TOOLS)) do
   let by = HEAD + i * 68
   let on = i == tool
   let over = hit(rail_x, by, RAIL, 60)
-  let tone = if on then C_ACC elsif over then C_TEXT else C_DIM end
+  let tone = if on then C_ACC else if over then C_TEXT else C_DIM end
   draw_rect_rounded(rect(rail_x, by, RAIL, 60), 10,
-    if on then blend(C_CARD, C_ACC, 0.13) elsif over then blend(C_CARD, C_TEXT, 0.05) else C_CARD end)
+    if on then blend(C_CARD, C_ACC, 0.13) else if over then blend(C_CARD, C_TEXT, 0.05) else C_CARD end)
   draw_rect_rounded_outline(rect(rail_x, by, RAIL, 60), 10,
     if on then blend(C_CARD, C_ACC, 0.7) else C_LINE end, 255, 1)
   tool_icon(i, rail_x + RAIL / 2, by + 24, tone)
@@ -666,7 +666,7 @@ for i in range(0, len(BALL_SIZES)) do
   if on || over then
     draw_rect_rounded(rect(cx0 + 1, cy0 + 1, 30, 30), 7, if on then blend(C_BG, C_ACC, 0.14) else C_CARD end)
   end
-  draw_circle_outline(cx0 + 16, cy0 + 16, 3.5 + float(i) * 2.6, if on then C_ACC elsif over then C_TEXT else C_MUTE end, 255, 2)
+  draw_circle_outline(cx0 + 16, cy0 + 16, 3.5 + float(i) * 2.6, if on then C_ACC else if over then C_TEXT else C_MUTE end, 255, 2)
   if over && mouse_pressed(0) then size_i = i end
 end
 
@@ -784,7 +784,7 @@ if in_stage && free_mouse && mouse_pressed(1) then
   set wake = true
   if aiming || linking || cutting then
     cancel_gestures()
-  elsif hover >= 0 then
+  else if hover >= 0 then
     want_pin = hover
   else
     set sel_id = -1
@@ -802,22 +802,22 @@ if in_stage && free_mouse && mouse_pressed(0) then
     else
       set sel_id = -1
     end
-  elsif tool == 1 then
+  else if tool == 1 then
     set aiming = true
     aim_x = wx
     aim_y = wy
-  elsif tool == 2 || tool == 3 then
+  else if tool == 2 || tool == 3 then
     set linking = true
     link_id = if hover >= 0 then world.id[hover] else -1 end
     link_x = wx
     link_y = wy
-  elsif tool == 4 then
+  else if tool == 4 then
     if hover >= 0 then want_pin = hover end
   else
     cut_saved = false
     if hover >= 0 then
       want_remove = hover
-    elsif hover_link >= 0 then
+    else if hover_link >= 0 then
       checkpoint()
       cut_saved = true
       set world = ph.remove_link(world, hover_link)
@@ -900,9 +900,9 @@ if mouse_released(0) || !mouse_down(0) then
     let dragged = ph.norm(wx - link_x, wy - link_y) > 14.0
     if la >= 0 && lb == la then
       set said = ""
-    elsif la < 0 && lb < 0 then
+    else if la < 0 && lb < 0 then
       if dragged then set said = "A {noun} needs a body at one end" end
-    elsif world.n >= max_bodies && (la < 0 || lb < 0) then
+    else if world.n >= max_bodies && (la < 0 || lb < 0) then
       set said = "The stage is full ({max_bodies} bodies)"
     else
       checkpoint()
@@ -970,7 +970,7 @@ let env = {gx: gx, gy: gy, bounce: bounce, fric: fric, drag: drag, w: SW, h: SH,
   tx: if grab >= 0 then clamp(wx + grab_ox, world.r[grab], SW - world.r[grab]) else 0.0 end,
   ty: if grab >= 0 then clamp(wy + grab_oy, world.r[grab], SH - world.r[grab]) else 0.0 end}
 
-let sim_dt = if want_step then 1.0 / 60.0 elsif paused || asleep then 0.0 else frame_dt * SPEEDS[speed_i] end
+let sim_dt = if want_step then 1.0 / 60.0 else if paused || asleep then 0.0 else frame_dt * SPEEDS[speed_i] end
 
 if sim_dt > 0.0 then
   # The dispenser (Pegboard): one ball every `every` seconds until it is empty.
@@ -1170,7 +1170,7 @@ for i in range(0, n) do
     else
       draw_circle(cx, cy, 1, C_STAGE)
     end
-  elsif r < 6.5 then
+  else if r < 6.5 then
     draw_circle(cx, cy, r, HUE_DIM[world.c[i]])
     draw_circle_outline(cx, cy, r, col, 255, 1)
   else
@@ -1270,7 +1270,7 @@ if n == 0 then
 end
 
 # State badge, top-right; toast, bottom-centre.
-let badge = if paused then "PAUSED" elsif asleep && n > 0 then "AT REST" else "" end
+let badge = if paused then "PAUSED" else if asleep && n > 0 then "AT REST" else "" end
 if badge != "" then
   let bw = text_width(badge, S_LABEL) + 22
   let tone = if paused then C_ACC else C_SPRING end

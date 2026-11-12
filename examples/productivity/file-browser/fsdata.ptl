@@ -402,7 +402,7 @@ end
 fn parse_size(s: string) -> int
   let unit = slice(s, -1)
   let n = parse_float(slice(s, 0, len(s) - 1)) ?? 0.0
-  let mul = if unit == "G" then 1000000000 elsif unit == "M" then 1000000 else 1000 end
+  let mul = if unit == "G" then 1000000000 else if unit == "M" then 1000000 else 1000 end
   # A size that is not a round number of kilobytes reads as a real file's.
   int(n * mul) + (len(s) * 137) % 911
 end
@@ -412,7 +412,7 @@ end
 fn camera_roll() -> list
   for i in range(0, 40) do
     let n = 4780 + i
-    let ext = if i % 9 == 4 then "mov" elsif i % 5 == 2 then "heic" else "jpg" end
+    let ext = if i % 9 == 4 then "mov" else if i % 5 == 2 then "heic" else "jpg" end
     let size = if ext == "mov" then "{38 + (i * 17) % 90}.{i % 10}M" else "{2 + (i * 7) % 5}.{(i * 3) % 10}M" end
     let hm = 700 + ((i * 37) % 13) * 100 + (i * 23) % 60
     "Pictures/Camera Roll/IMG_{n}.{ext}|{size}|{17 - i / 3}|{pad_start(str(hm), 4, "0")}"
@@ -526,9 +526,9 @@ end
 pub fn fmt_size(bytes: num) -> string
   if bytes < 1000 then
     "{int(bytes)} bytes"
-  elsif bytes < 1000000 then
+  else if bytes < 1000000 then
     "{int(round(bytes / 1000.0))} KB"
-  elsif bytes < 1000000000 then
+  else if bytes < 1000000000 then
     let mb = bytes / 1000000.0
     if mb < 100.0 then "{round(mb, 1)} MB" else "{int(round(mb))} MB" end
   else
@@ -572,7 +572,7 @@ pub fn fmt_date(mt: int, long: bool = false) -> string
   let at = clock(mt % 1440)
   if day == TODAY then
     "Today, {at}"
-  elsif day == TODAY - 1 then
+  else if day == TODAY - 1 then
     "Yesterday, {at}"
   else
     let c = civil(day)

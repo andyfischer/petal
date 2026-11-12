@@ -114,7 +114,7 @@ pub fn cycle(r: record, options: list, index: num, opts: record) -> num
   let labels = field(opts, "labels", nil)
   let shown = if n == 0 then
     ""
-  elsif labels != nil && i < len(labels) then
+  else if labels != nil && i < len(labels) then
     str(labels[i])
   else
     str(options[i])
@@ -209,7 +209,7 @@ pub fn table_columns(r: record, cols: list) -> list
     let w = float(field(c, "w", 0))
     if w >= 1.0 then
       fixed += int(w)
-    elsif w > 0.0 then
+    else if w > 0.0 then
       weights += w
     else
       weights += 1.0
@@ -326,9 +326,9 @@ fn _table(r: record, cols: list, rows: list, opts: record) -> record
     let rr = Rect(body.x, body.y + vi * row_h, body.w, row_h)
     if idx == sel then
       draw_rect(rr, field(opts, "selection", t.selection))
-    elsif pointer_free(rr) && point_in(mouse_x(), mouse_y(), rr) then
+    else if pointer_free(rr) && point_in(mouse_x(), mouse_y(), rr) then
       draw_rect(rr, t.hover)
-    elsif zebra && idx % 2 == 1 then
+    else if zebra && idx % 2 == 1 then
       draw_rect(rr, over(on, t.hover, 70))
     end
     let cells = rows[idx]

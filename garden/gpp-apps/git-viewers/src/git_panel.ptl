@@ -131,7 +131,7 @@ if !log_ready then
     log = rd
     log_ready = true
     log_err = ""
-  elsif is_error(rd) then
+  else if is_error(rd) then
     log_err = error_of(rd) ?? "git log failed"
   end
 end
@@ -252,7 +252,7 @@ if want != "" && want != loaded_key then
       prev_file = -1
       loaded_commit = base_want
     end
-  elsif is_error(fetched) then
+  else if is_error(fetched) then
     diff_loading = false
     diff_err = error_of(fetched) ?? "diff failed"
   else
@@ -346,7 +346,7 @@ if total_rows == 0 then
   if len(log_err) > 0 then
     draw_text("git error:", {x: PAD + 4, y: commits_rect.y + 6}, FS, RED)
     draw_text(ellipsize(log_err, subj_px, FS), {x: PAD + 4, y: commits_rect.y + 24}, FS, MUT)
-  elsif !log_ready then
+  else if !log_ready then
     draw_text("loading history {bloom.spinner_glyph()}", {x: PAD + 4, y: commits_rect.y + 6}, FS, DIM)
   else
     bloom.empty_state(commits_rect, "No commits yet", "")
@@ -465,10 +465,10 @@ end
 if len(diff_err) > 0 then
   draw_text("git error:", {x: right_x, y: diff_top + 8}, FS, RED)
   draw_text(ellipsize(diff_err, right_w, FS), {x: right_x, y: diff_top + 28}, FS, MUT)
-elsif len(data_err) > 0 then
+else if len(data_err) > 0 then
   draw_text("git error:", {x: right_x, y: diff_top + 8}, FS, RED)
   draw_text(ellipsize(data_err, right_w, FS), {x: right_x, y: diff_top + 28}, FS, MUT)
-elsif diff_loading && file_count == 0 then
+else if diff_loading && file_count == 0 then
   bloom.spinner(diff_rect.x + diff_rect.w / 2, diff_rect.y + 56, 12)
   draw_text_center("loading diff", diff_rect.x + diff_rect.w / 2, diff_rect.y + 80, FS, DIM)
 else

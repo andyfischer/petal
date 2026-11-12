@@ -61,14 +61,14 @@ end
 # Shortest signed offset on a wrapped axis of length `size`.
 fn wrap_delta(d: num, size: num) -> num
   if d > size / 2.0 then d - size
-  elsif d < 0.0 - size / 2.0 then d + size
+  else if d < 0.0 - size / 2.0 then d + size
   else d
   end
 end
 
 fn wrap_coord(v: num, size: num) -> num
   if v < 0.0 then v + size
-  elsif v >= size then v - size
+  else if v >= size then v - size
   else v
   end
 end
@@ -111,11 +111,11 @@ fn Boid.steer(self: Boid, flock: list) -> Boid
     let rx = other.x - sx
     let ry = other.y - sy
     let dx = if rx > half_w then rx - FIELD_W
-    elsif rx < 0.0 - half_w then rx + FIELD_W
+    else if rx < 0.0 - half_w then rx + FIELD_W
     else rx
     end
     let dy = if ry > half_h then ry - FIELD_H
-    elsif ry < 0.0 - half_h then ry + FIELD_H
+    else if ry < 0.0 - half_h then ry + FIELD_H
     else ry
     end
     let d2 = dx * dx + dy * dy
@@ -151,7 +151,7 @@ fn Boid.steer(self: Boid, flock: list) -> Boid
   let nvy = self.vy + ay
   let speed = sqrt(nvx * nvx + nvy * nvy)
   let scale = if speed > MAX_SPEED then MAX_SPEED / speed
-  elsif speed < MIN_SPEED && speed > 0.0 then MIN_SPEED / speed
+  else if speed < MIN_SPEED && speed > 0.0 then MIN_SPEED / speed
   else 1.0
   end
   let fvx = nvx * scale

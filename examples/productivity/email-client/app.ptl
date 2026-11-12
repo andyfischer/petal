@@ -158,7 +158,7 @@ fn edit_area(t0: string, c0: int, ev: record, style: record, w: num) -> record
     let from = if ev.word then word_start(t, c) else c - 1 end
     t = char_slice(t, 0, from) ++ char_slice(t, c)
     c = from
-  elsif ev.del && c < char_len(t) then
+  else if ev.del && c < char_len(t) then
     t = char_slice(t, 0, c) ++ char_slice(t, c + 1)
   end
   let ins = clean_typed(ev.typed)
@@ -391,7 +391,7 @@ fn draw_area(x: num, y: num, w: num, text: string, caret: int, style: record, st
 end
 
 fn button_primary(r: record, label: string, hot: bool, enabled: bool)
-  let face = if !enabled then tint(PAPER, ACCENT, 38) elsif hot then ACCENT_HI else ACCENT end
+  let face = if !enabled then tint(PAPER, ACCENT, 38) else if hot then ACCENT_HI else ACCENT end
   if enabled then draw_shadow(r, {radius: 9, blur: 10, dy: 3, color: ACCENT, a: 60}) end
   draw_rect_rounded(r, 9, face)
   label_line(label, r, sb(13, WHITE), "center")
@@ -418,12 +418,12 @@ end
 
 fn draw_row(t: record, r: record, v: string, is_sel: bool, is_checked: bool, hot: bool, picking: bool, terms: list, tagged: bool)
   let card = rect(r.x + 8, r.y + 3, r.w - 16, r.h - 6)
-  let ground = if is_sel then PAPER elsif is_checked then ACCENT_SOFT elsif hot then tint(LIST_BG, INK, 4) else LIST_BG end
+  let ground = if is_sel then PAPER else if is_checked then ACCENT_SOFT else if hot then tint(LIST_BG, INK, 4) else LIST_BG end
   if is_sel then
     draw_shadow(card, {radius: 12, blur: 14, dy: 3, color: :1a2040, a: 26})
     draw_rect_rounded(card, 12, PAPER)
     draw_rect_rounded(card.x, card.y + 14, 3, card.h - 28, 2, ACCENT)
-  elsif is_checked || hot then
+  else if is_checked || hot then
     draw_rect_rounded(card, 12, ground)
   end
 
@@ -714,7 +714,7 @@ if focus == "reply" then
   let e = edit_area(reply, reply_c, ev, REPLY_STYLE, reply_w)
   reply = e.t
   reply_c = e.c
-elsif focus == "body" then
+else if focus == "body" then
   let e = edit_area(c_body, c_body_c, ev, FIELD_STYLE, body_w)
   c_body = e.t
   c_body_c = e.c
@@ -760,7 +760,7 @@ checked = for id in checked do
   id
 end
 let picking = len(checked) > 0
-let targets = if picking then checked elsif sel_t != nil then [sel] else [] end
+let targets = if picking then checked else if sel_t != nil then [sel] else [] end
 
 let foot_h = if elsewhere > 0 then 64 else 16 end
 let list_h = n * ROW_H + foot_h
@@ -772,7 +772,7 @@ let can_reply = sel_t != nil && sel_t.box != "drafts" && sel_t.box != "trash"
 let reply_open = can_reply && (focus == "reply" || char_len(reply) > 0)
 let reply_lines = if reply_open then text_wrap_rows(reply, REPLY_STYLE, float(reply_w)) else [] end
 let reply_vis = clamp(len(reply_lines), 3, 7)      # rows the editor shows before it scrolls
-let reply_h = if !can_reply then 0 elsif reply_open then 132 + reply_vis * AREA_STEP else 76 end
+let reply_h = if !can_reply then 0 else if reply_open then 132 + reply_vis * AREA_STEP else 76 end
 let detail_view = rect(DX, TOOL_H, DW, H - TOOL_H - reply_h)
 let detail_max = max(0.0, detail_h - float(detail_view.h))
 if hit(detail_view, m_main) then detail_scroll = detail_scroll + scroll_y() * 56.0 end
@@ -789,11 +789,11 @@ let by_key = false
 if key_pressed("escape") then
   if compose then
     act = "close_compose"
-  elsif focus != "" then
+  else if focus != "" then
     focus = ""
-  elsif picking then
+  else if picking then
     checked = []
-  elsif char_len(q) > 0 then
+  else if char_len(q) > 0 then
     q = ""
   end
 end
@@ -811,17 +811,17 @@ if compose then
   if key_pressed("return") then
     if mod_cmd() then
       act = "send"
-    elsif focus == "to" && to_guess != "" then
+    else if focus == "to" && to_guess != "" then
       act = "complete"
-    elsif focus == "to" then
+    else if focus == "to" then
       focus = "subj"
-    elsif focus == "subj" then
+    else if focus == "subj" then
       focus = "body"
     end
   end
-elsif focus == "reply" then
+else if focus == "reply" then
   if key_pressed("return") && mod_cmd() then act = "send_reply" end
-elsif focus == "q" then
+else if focus == "q" then
   # Return or Down hands the keyboard back to the list, on the first result.
   if key_pressed("return") || key_pressed("down") then
     focus = ""
@@ -831,7 +831,7 @@ elsif focus == "q" then
       by_key = true
     end
   end
-elsif mod_cmd() then
+else if mod_cmd() then
   if key_pressed("a") then checked = row_ids end
 else
   let typed = text_input()
@@ -922,10 +922,10 @@ for i in range(0, len(mb.BOXES)) do
   let hot = hit(r, m_main)
   if on then
     draw_rect_rounded(r, 9, RAIL_ON)
-  elsif hot then
+  else if hot then
     draw_rect_rounded(r, 9, RAIL_HOT)
   end
-  let tone = if on then WHITE elsif hot then RAIL_TEXT else RAIL_DIM end
+  let tone = if on then WHITE else if hot then RAIL_TEXT else RAIL_DIM end
   if b.key == "starred" then
     icons.star(rect(r.x + 14, r.y + 9, 16, 16), tone, false)
   else
@@ -940,7 +940,7 @@ for i in range(0, len(mb.BOXES)) do
     let badge = rect(r.x + r.w - bw - 10, r.y + 8, bw, 18)
     draw_rect_rounded(badge, 9, ACCENT)
     label_line(str(unread_n), badge, ts, "center")
-  elsif b.key == "drafts" || b.key == "starred" then
+  else if b.key == "drafts" || b.key == "starred" then
     let total = mb.count_view(threads, b.key)
     if total > 0 then
       label_line(str(total), rect(r.x, r.y, r.w - 16, r.h), st(12, RAIL_FAINT), "right")
@@ -962,7 +962,7 @@ for i in range(0, len(mb.LABELS)) do
   let hot = hit(r, m_main)
   if on then
     draw_rect_rounded(r, 9, RAIL_ON)
-  elsif hot then
+  else if hot then
     draw_rect_rounded(r, 9, RAIL_HOT)
   end
   draw_circle({x: r.x + 22, y: r.y + 16}, 4.5, l.color)
@@ -1005,10 +1005,10 @@ for i in range(0, n) do
     if on_action >= 0 then
       act = ["archive", "trash", "star"][on_action]
       act_ids = [t.id]
-    elsif hit(row_check_rect(r), true) || mod_cmd() then
+    else if hit(row_check_rect(r), true) || mod_cmd() then
       act = "check"
       act_arg = str(t.id)
-    elsif mod_shift() && anchor != 0 then
+    else if mod_shift() && anchor != 0 then
       act = "range"
       act_arg = str(t.id)
     else
@@ -1079,13 +1079,13 @@ draw_field(q_text_r, q, q_ed, Q_STYLE, q_on, "Search mail")
 let q_clear = rect(search_r.x + search_r.w - 34, search_r.y + 7, 26, 26)
 if char_len(q) > 0 then
   icon_button(q_clear, "close", hit(q_clear, m_main), MUTED, RULE_SOFT)
-elsif !q_on then
+else if !q_on then
   keycap(search_r.x + search_r.w - 32, search_r.y + 10, "/", RULE_SOFT, MUTED)
 end
 if press && hit(q_clear, m_main) && char_len(q) > 0 then
   q = ""
   focus_hit = "q"
-elsif press && hit(search_r, m_main) then
+else if press && hit(search_r, m_main) then
   focus_hit = "q"
 end
 
@@ -1133,7 +1133,7 @@ else
     let w = text_width(chip.name, ts) + 22
     let cr = rect(chip_x - w, title_r.y + 1, w, 26)
     let hot = hit(cr, m_main)
-    draw_rect_rounded(cr, 13, if on then ACCENT_SOFT elsif hot then tint(LIST_BG, INK, 9) else tint(LIST_BG, INK, 5) end)
+    draw_rect_rounded(cr, 13, if on then ACCENT_SOFT else if hot then tint(LIST_BG, INK, 9) else tint(LIST_BG, INK, 5) end)
     if on then draw_rect_rounded_outline(cr, 13, tint(PAPER, ACCENT, 45)) end
     label_line(chip.name, cr, ts, "center")
     if hot && press then
@@ -1260,7 +1260,7 @@ else
     let hot = hit(br, m_main)
     if tools[i].icon == "star" then
       if hot then draw_rect_rounded(br, 8, RULE_SOFT) end
-      icons.star(br.inset(9), if sel_t.starred then GOLD elsif hot then INK else MUTED end, sel_t.starred)
+      icons.star(br.inset(9), if sel_t.starred then GOLD else if hot then INK else MUTED end, sel_t.starred)
     else
       icon_button(br, tools[i].icon, hot, MUTED, RULE_SOFT)
     end
@@ -1320,7 +1320,7 @@ else
       draw_text(keys_hint, {x: box.x + 20, y: box.y + box.h - 36}, st(12, FAINT))
       if hot && press then
         act = "send_reply"
-      elsif press && hit(box, m_main) then
+      else if press && hit(box, m_main) then
         focus_hit = "reply"
         reply_c = area_caret_at(reply, REPLY_STYLE, reply_w, ax, ay - reply_shift, AREA_STEP, mouse_x(), mouse_y())
       end
@@ -1437,7 +1437,7 @@ if compose then
   let send_hot = hit(send_r, m_modal)
   button_primary(send_r, "Send", send_hot && to_ready, to_ready)
   if send_hot && press then act = "send" end
-  let hint = if to_ready then "Cmd + Return to send" elsif len(to_keys) > 0 then "That recipient is not an address yet" else "Add a recipient to send" end
+  let hint = if to_ready then "Cmd + Return to send" else if len(to_keys) > 0 then "That recipient is not an address yet" else "Add a recipient to send" end
   draw_text(hint, {x: send_r.x + send_r.w + 16, y: text_layout.text_line_y(send_r, st(12, FAINT))}, st(12, FAINT))
   let drop_r = rect(mr.x + mr.w - 32 - 84, send_r.y, 84, 36)
   let keep_r = rect(drop_r.x - 104, send_r.y, 98, 36)
@@ -1486,7 +1486,7 @@ if act == "view" || act == "view_keep" then
   list_scroll = 0.0
   focus = ""
   if act == "view" then q = "" end
-elsif act == "select" then
+else if act == "select" then
   sel = int(act_arg)
   anchor = sel
   if !by_key then checked = [] end
@@ -1497,7 +1497,7 @@ elsif act == "select" then
       end
     end
   end
-elsif act == "check" then
+else if act == "check" then
   let id = int(act_arg)
   anchor = id
   checked = if contains(checked, id) then
@@ -1508,7 +1508,7 @@ elsif act == "check" then
   else
     append(checked, id)
   end
-elsif act == "range" then
+else if act == "range" then
   let a = index_of(row_ids, anchor)
   let b = index_of(row_ids, int(act_arg))
   if a >= 0 && b >= 0 then
@@ -1516,7 +1516,7 @@ elsif act == "range" then
       if !contains(checked, row_ids[i]) then checked = append(checked, row_ids[i]) end
     end
   end
-elsif act == "fold" then
+else if act == "fold" then
   let i = int(act_arg)
   open_msgs = if contains(open_msgs, i) then
     for k in open_msgs do
@@ -1526,7 +1526,7 @@ elsif act == "fold" then
   else
     append(open_msgs, i)
   end
-elsif act == "archive" && len(act_ids) > 0 then
+else if act == "archive" && len(act_ids) > 0 then
   # A draft has nowhere to be archived to, so a mixed selection (a label can
   # hold both) leaves its drafts where they are.
   let movable = for id in act_ids do
@@ -1546,7 +1546,7 @@ elsif act == "archive" && len(act_ids) > 0 then
     checked = []
     toast = {msg: if dest == "inbox" then "{moved} moved to Inbox" else "{moved} archived" end, left: 6.0, can_undo: true}
   end
-elsif act == "trash" && len(act_ids) > 0 then
+else if act == "trash" && len(act_ids) > 0 then
   # Each conversation goes by where it is: a draft, or one already in Trash,
   # is deleted; anything else moves to Trash.
   let dead = for id in act_ids do
@@ -1560,10 +1560,10 @@ elsif act == "trash" && len(act_ids) > 0 then
   sel = reselect(threads, rows, act_ids, sel, view)
   checked = []
   toast = {msg: if gone then "{how_many} deleted" else "{how_many} moved to Trash" end, left: 6.0, can_undo: true}
-elsif act == "star" && len(act_ids) > 0 then
+else if act == "star" && len(act_ids) > 0 then
   let first = mb.find_thread(threads, act_ids[0])
   threads = mb.set_starred(threads, act_ids, !first.starred)
-elsif act == "read" && len(act_ids) > 0 then
+else if act == "read" && len(act_ids) > 0 then
   # Anything read among them means "mark these unread"; otherwise read them.
   let any_read = false
   for id in act_ids do
@@ -1573,7 +1573,7 @@ elsif act == "read" && len(act_ids) > 0 then
   threads = mb.set_unread(threads, act_ids, any_read)
   if any_read && contains(act_ids, sel) then keep_unread = sel end
   if !any_read && keep_unread != 0 && contains(act_ids, keep_unread) then keep_unread = 0 end
-elsif act == "undo" then
+else if act == "undo" then
   if len(undo) > 0 then
     let snap = undo[len(undo) - 1]
     threads = mb.restore(threads, snap.was)
@@ -1584,7 +1584,7 @@ elsif act == "undo" then
   else
     toast = {msg: "Nothing to undo", left: 2.5, can_undo: false}
   end
-elsif act == "compose" then
+else if act == "compose" then
   compose = true
   c_draft = 0
   c_to = ""
@@ -1592,7 +1592,7 @@ elsif act == "compose" then
   c_body = ""
   c_body_c = 0
   focus = "to"
-elsif act == "edit_draft" && sel_t != nil then
+else if act == "edit_draft" && sel_t != nil then
   let m = sel_t.msgs[0]
   let addrs = for k in m.to do mb.person(k).email end
   compose = true
@@ -1602,12 +1602,12 @@ elsif act == "edit_draft" && sel_t != nil then
   c_body = join(m.body, "\n\n")
   c_body_c = char_len(c_body)
   focus = "body"
-elsif act == "complete" then
+else if act == "complete" then
   # Swap the fragment being typed for the contact's address.
   let kept = for i in range(0, len(to_parts) - 1) do mb.trim_spaces(to_parts[i]) end
   c_to = join(append(kept, mb.person(to_guess).email), ", ")
   focus = "subj"
-elsif act == "send" then
+else if act == "send" then
   if !to_ready then
     focus = "to"
     toast = {msg: "Add a recipient with an address first", left: 3.0, can_undo: false}
@@ -1625,7 +1625,7 @@ elsif act == "send" then
     focus = ""
     toast = {msg: "Sent to {mb.person(to[0]).name}", left: 4.0, can_undo: false}
   end
-elsif act == "close_compose" then
+else if act == "close_compose" then
   # Closing never loses words: anything written is kept as a draft.
   let wrote = char_len(mb.trim_spaces(c_to ++ c_subj ++ c_body)) > 0
   if wrote then
@@ -1643,7 +1643,7 @@ elsif act == "close_compose" then
   end
   compose = false
   focus = ""
-elsif act == "discard" then
+else if act == "discard" then
   if c_draft != 0 then
     undo = push_undo(undo, threads, [c_draft], sel, "discard")
     threads = mb.drop_threads(threads, [c_draft])
@@ -1652,7 +1652,7 @@ elsif act == "discard" then
   end
   compose = false
   focus = ""
-elsif act == "send_reply" && sel_t != nil then
+else if act == "send_reply" && sel_t != nil then
   if char_len(mb.trim_spaces(reply)) > 0 then
     seq = seq + 1
     sent_n = sent_n + 1

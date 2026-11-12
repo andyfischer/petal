@@ -147,10 +147,10 @@ for obj in objects do
   let cg = 0
   let cb = 0
   if h < 60 then cr = 255; cg = h * 4; cb = 0
-  elsif h < 120 then cr = (120 - h) * 4; cg = 255; cb = 0
-  elsif h < 180 then cr = 0; cg = 255; cb = (h - 120) * 4
-  elsif h < 240 then cr = 0; cg = (240 - h) * 4; cb = 255
-  elsif h < 300 then cr = (h - 240) * 4; cg = 0; cb = 255
+  else if h < 120 then cr = (120 - h) * 4; cg = 255; cb = 0
+  else if h < 180 then cr = 0; cg = 255; cb = (h - 120) * 4
+  else if h < 240 then cr = 0; cg = (240 - h) * 4; cb = 255
+  else if h < 300 then cr = (h - 240) * 4; cg = 0; cb = 255
   else cr = 255; cg = 0; cb = (360 - h) * 4
   end
   cr = min(255, cr)

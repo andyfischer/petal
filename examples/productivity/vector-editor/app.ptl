@@ -152,14 +152,14 @@ end
 fn unit_pts(kind: string) -> list
   if kind == "tri" then
     [[0.0, -1.0], [1.0, 1.0], [-1.0, 1.0]]
-  elsif kind == "ellipse" then
+  else if kind == "ellipse" then
     let out = []
     for i in range(0, 44) do
       let a = float(i) * TAU / 44.0
       out = append(out, [cos(a), sin(a)])
     end
     out
-  elsif kind == "star" then
+  else if kind == "star" then
     let out = []
     for i in range(0, 10) do
       let a = 0.0 - TAU / 4.0 + float(i) * TAU / 10.0
@@ -333,7 +333,7 @@ fn draw_shape(s: record, ox: num, oy: num)
   if s.kind == "text" then
     let st = text_style(s)
     draw_text(s.text, pos: {x: int(ox + s.x), y: int(oy + s.y + (s.h - float(st.size) * 1.4) / 2.0)}, style: st)
-  elsif (s.kind == "rect" || s.kind == "line") && s.rot == 0.0 then
+  else if (s.kind == "rect" || s.kind == "line") && s.rot == 0.0 then
     draw_rect(x: int(ox + s.x), y: int(oy + s.y), w: max(1, int(s.w)), h: max(1, int(s.h)),
       r: s.fill.r, g: s.fill.g, b: s.fill.b, a: s.alpha)
   else
@@ -567,7 +567,7 @@ fn apply_order(doc: list, sel: list, mode: string) -> list
         rest = append(rest, s)
       end
       rest
-    elsif mode == "back" then
+    else if mode == "back" then
       let picked = []
       for i in idxs do
         picked = append(picked, d[i])
@@ -578,7 +578,7 @@ fn apply_order(doc: list, sel: list, mode: string) -> list
         end
       end
       picked
-    elsif mode == "forward" then
+    else if mode == "forward" then
       # walk from the top so a run of selected shapes keeps its order
       let k = len(d) - 2
       while k >= 0 do
@@ -614,13 +614,13 @@ fn apply_align(doc: list, sel: list, mode: string, b: record) -> list
       let sb = bounds(s)
       if mode == "left" then
         s.x = s.x + (b.x - sb.x)
-      elsif mode == "right" then
+      else if mode == "right" then
         s.x = s.x + (b.x + b.w - (sb.x + sb.w))
-      elsif mode == "hcenter" then
+      else if mode == "hcenter" then
         s.x = s.x + (b.x + b.w / 2.0 - (sb.x + sb.w / 2.0))
-      elsif mode == "top" then
+      else if mode == "top" then
         s.y = s.y + (b.y - sb.y)
-      elsif mode == "bottom" then
+      else if mode == "bottom" then
         s.y = s.y + (b.y + b.h - (sb.y + sb.h))
       else
         s.y = s.y + (b.y + b.h / 2.0 - (sb.y + sb.h / 2.0))
@@ -751,7 +751,7 @@ if !blocked && !scrubbing && over_canvas && mouse_pressed(0) then
           else
             sel = append(sel, hitid)
           end
-        elsif !contains(sel, hitid) then
+        else if !contains(sel, hitid) then
           sel = [hitid]
         end
         let base = []
@@ -985,14 +985,14 @@ for i in range(0, len(row_rects)) do
       s.vis = !s.vis
       doc = put(doc, i: si, s: s)
       ops = ops + 1
-    elsif !blocked && ui.clicked(lockr) then
+    else if !blocked && ui.clicked(lockr) then
       hist = push_hist(hist, doc)
       fut = []
       let s = doc[si]
       s.lock = !s.lock
       doc = put(doc, i: si, s: s)
       ops = ops + 1
-    elsif !blocked && ui.clicked(r) then
+    else if !blocked && ui.clicked(r) then
       let id = doc[si].id
       if mod_shift() then
         if contains(sel, id) then
@@ -1217,11 +1217,11 @@ draw_text(meta, {x: 58 + text_width("aurora-poster.ptl", 17) + 18, y: 36}, 11, F
 
 fn pill(r: record, label: string, keycap: string, on: bool, enabled: bool)
   let hov = enabled && hovered(r)
-  let fill = if on then ACCENT elsif hov then HOVER else ELEV end
+  let fill = if on then ACCENT else if hov then HOVER else ELEV end
   draw_rect_rounded(r.inset(-1), radius: 8, c: if on then ACCENT else OUTLINE end)
   draw_rect_rounded(r, radius: 7, c: fill)
-  let fg = if on then :0b0d12 elsif enabled then TEXT else FAINT end
-  let kc = if on then :0b0d12 elsif enabled then FAINT else :333b4a end
+  let fg = if on then :0b0d12 else if enabled then TEXT else FAINT end
+  let kc = if on then :0b0d12 else if enabled then FAINT else :333b4a end
   let tw = text_width(label, 12)
   let kw = text_width(keycap, 10)
   let tx = r.x + (r.w - (tw + 7 + kw)) / 2
@@ -1244,17 +1244,17 @@ fn tool_icon(id: string, r: record, c: record)
   if id == "select" then
     fill_poly(points: [[cx - 6, cy - 9], [cx + 7, cy + 2], [cx + 1, cy + 2], [cx - 1, cy + 9]],
       r: c.r, g: c.g, b: c.b, a: 245)
-  elsif id == "rect" then
+  else if id == "rect" then
     draw_rect_outline(x: cx - 10, y: cy - 7, w: 20, h: 15, r: c.r, g: c.g, b: c.b, a: 255, width: 2)
-  elsif id == "ellipse" then
+  else if id == "ellipse" then
     draw_circle(cx, cy, radius: 9, r: c.r, g: c.g, b: c.b, a: 60)
     draw_circle(cx, cy, radius: 9, r: c.r, g: c.g, b: c.b, a: 255)
     draw_circle(cx, cy, radius: 7, r: if hovered(r) then HOVER.r else PANEL.r end,
       g: if hovered(r) then HOVER.g else PANEL.g end,
       b: if hovered(r) then HOVER.b else PANEL.b end, a: 255)
-  elsif id == "tri" then
+  else if id == "tri" then
     fill_poly(points: [[cx, cy - 9], [cx + 10, cy + 8], [cx - 10, cy + 8]], r: c.r, g: c.g, b: c.b, a: 235)
-  elsif id == "star" then
+  else if id == "star" then
     let pts = []
     for i in range(0, 10) do
       let a = 0.0 - TAU / 4.0 + float(i) * TAU / 10.0
@@ -1280,7 +1280,7 @@ for i in range(0, len(TOOLS)) do
   let on = t.id == tool
   let hov = hovered(r)
   if hov then tip = i end
-  draw_rect_rounded(r, radius: 10, c: if on then ELEV elsif hov then HOVER else PANEL end)
+  draw_rect_rounded(r, radius: 10, c: if on then ELEV else if hov then HOVER else PANEL end)
   if on then
     draw_rect_rounded(x: r.x - 12, y: r.y + 13, w: 4, h: r.h - 26, radius: 2, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b)
   end
@@ -1309,7 +1309,7 @@ if one2 >= 0 then
   draw_text(ellipsize(s.name, avail_px: pw, size: 17), {x: px, y: name_y}, 17, TEXT)
   draw_text("{kind_label(s.kind)}   ·   #{s.id}   ·   layer {one2 + 1} of {len(doc)}",
     {x: px, y: kind_y}, 11, DIM)
-elsif len(sel) > 1 then
+else if len(sel) > 1 then
   draw_text("{len(sel)} objects", {x: px, y: name_y}, 17, TEXT)
   draw_text("multiple selection   ·   align & stack", {x: px, y: kind_y}, 11, DIM)
 else
@@ -1340,7 +1340,7 @@ for i in range(0, len(FILLS)) do
   let on = act && hex_of(c) == cur_fill
   if on then
     draw_rect_rounded(r.inset(-3), radius: 8, c: TEXT)
-  elsif hovered(r) && len(sel) > 0 then
+  else if hovered(r) && len(sel) > 0 then
     draw_rect_rounded(r.inset(-2), radius: 7, c: OUTLINE)
   end
   draw_rect_rounded(r, radius: 5, c: c)
@@ -1365,19 +1365,19 @@ for i in range(0, len(ALIGN)) do
     draw_rect(x: cx - 8, y: cy - 8, w: 2, h: 16, r: c.r, g: c.g, b: c.b, a: 255)
     draw_rect(x: cx - 4, y: cy - 5, w: 11, h: 4, r: c.r, g: c.g, b: c.b, a: 220)
     draw_rect(x: cx - 4, y: cy + 2, w: 7, h: 4, r: c.r, g: c.g, b: c.b, a: 220)
-  elsif m == "hcenter" then
+  else if m == "hcenter" then
     draw_rect(x: cx - 1, y: cy - 8, w: 2, h: 16, r: c.r, g: c.g, b: c.b, a: 255)
     draw_rect(x: cx - 6, y: cy - 5, w: 12, h: 4, r: c.r, g: c.g, b: c.b, a: 220)
     draw_rect(x: cx - 4, y: cy + 2, w: 8, h: 4, r: c.r, g: c.g, b: c.b, a: 220)
-  elsif m == "right" then
+  else if m == "right" then
     draw_rect(x: cx + 6, y: cy - 8, w: 2, h: 16, r: c.r, g: c.g, b: c.b, a: 255)
     draw_rect(x: cx - 7, y: cy - 5, w: 11, h: 4, r: c.r, g: c.g, b: c.b, a: 220)
     draw_rect(x: cx - 3, y: cy + 2, w: 7, h: 4, r: c.r, g: c.g, b: c.b, a: 220)
-  elsif m == "top" then
+  else if m == "top" then
     draw_rect(x: cx - 8, y: cy - 8, w: 16, h: 2, r: c.r, g: c.g, b: c.b, a: 255)
     draw_rect(x: cx - 5, y: cy - 4, w: 4, h: 11, r: c.r, g: c.g, b: c.b, a: 220)
     draw_rect(x: cx + 2, y: cy - 4, w: 4, h: 7, r: c.r, g: c.g, b: c.b, a: 220)
-  elsif m == "vcenter" then
+  else if m == "vcenter" then
     draw_rect(x: cx - 8, y: cy - 1, w: 16, h: 2, r: c.r, g: c.g, b: c.b, a: 255)
     draw_rect(x: cx - 5, y: cy - 6, w: 4, h: 12, r: c.r, g: c.g, b: c.b, a: 220)
     draw_rect(x: cx + 2, y: cy - 4, w: 4, h: 8, r: c.r, g: c.g, b: c.b, a: 220)
@@ -1418,23 +1418,23 @@ for i in range(0, len(row_rects)) do
     if on then
       draw_rect_rounded(r, radius: 6, c: :1e2a44)
       draw_rect_rounded(rect(r.x, r.y, 3, r.h), radius: 2, c: ACCENT)
-    elsif hov then
+    else if hov then
       draw_rect_rounded(r, radius: 6, c: HOVER)
     end
     # kind chip
     let ch = rect(r.x + 10, r.y + 6, 16, 16)
     if s.kind == "ellipse" then
       dot(x: ch.x + 8, y: ch.y + 8, rad: 7, c: s.fill, a: if s.vis then 255 else 90 end)
-    elsif s.kind == "tri" then
+    else if s.kind == "tri" then
       fill_poly(points: [[ch.x + 8, ch.y + 1], [ch.x + 15, ch.y + 15], [ch.x + 1, ch.y + 15]],
         r: s.fill.r, g: s.fill.g, b: s.fill.b, a: if s.vis then 255 else 90 end)
-    elsif s.kind == "text" then
+    else if s.kind == "text" then
       if clear_of(mr, y: r.y, h: r.h) then
         draw_text("T", {x: ch.x + 4, y: ch.y + 2}, 13, if s.vis then s.fill else FAINT end)
       end
-    elsif s.kind == "line" then
+    else if s.kind == "line" then
       draw_rect(x: ch.x + 1, y: ch.y + 7, w: 14, h: 3, r: s.fill.r, g: s.fill.g, b: s.fill.b, a: if s.vis then 255 else 90 end)
-    elsif s.kind == "star" then
+    else if s.kind == "star" then
       let pl = []
       for k in range(0, 10) do
         let a = 0.0 - TAU / 4.0 + float(k) * TAU / 10.0
@@ -1451,13 +1451,13 @@ for i in range(0, len(row_rects)) do
       draw_rect(x: ch.x + 1, y: ch.y + 3, w: 14, h: 11, r: s.fill.r, g: s.fill.g, b: s.fill.b,
         a: if s.vis then 255 else 90 end)
     end
-    let namec = if !s.vis then :4a5468 elsif on then TEXT else :c3ccdb end
+    let namec = if !s.vis then :4a5468 else if on then TEXT else :c3ccdb end
     if clear_of(mr, y: r.y, h: r.h) then
       draw_text(ellipsize(s.name, avail_px: r.w - 112, size: 13), {x: r.x + 34, y: r.y + 7}, 13, namec)
     end
     # eye toggle
     let eye = rect(r.x + r.w - 30, r.y + 5, 22, 20)
-    let ec = if hovered(eye) then TEXT elsif s.vis then DIM else :3d4658 end
+    let ec = if hovered(eye) then TEXT else if s.vis then DIM else :3d4658 end
     if s.vis then
       draw_circle(cx: eye.x + 11, cy: eye.y + 10, radius: 6, r: ec.r, g: ec.g, b: ec.b, a: 200)
       draw_circle(cx: eye.x + 11, cy: eye.y + 10, radius: 3, r: PANEL.r, g: PANEL.g, b: PANEL.b, a: 255)
@@ -1467,7 +1467,7 @@ for i in range(0, len(row_rects)) do
     end
     # lock toggle
     let lockr = rect(r.x + r.w - 56, r.y + 5, 22, 20)
-    let lc = if hovered(lockr) then TEXT elsif s.lock then :f0a83c else :3d4658 end
+    let lc = if hovered(lockr) then TEXT else if s.lock then :f0a83c else :3d4658 end
     draw_rect_rounded(x: lockr.x + 5, y: lockr.y + 9, w: 12, h: 8, radius: 2, r: lc.r, g: lc.g, b: lc.b,
       a: if s.lock then 235 else 120 end)
     if s.lock then
@@ -1485,13 +1485,13 @@ draw_rect(x: 0, y: H - STATUS_H, w: W, h: STATUS_H, r: PANEL.r, g: PANEL.g, b: P
 seg(x1: 0, y1: H - STATUS_H, x2: W, y2: H - STATUS_H, c: :000000, a: 150, wd: 1)
 
 let hint = if drag.mode == "scale" then "Scaling — ⇧ keeps the aspect, ⌥ scales about the center"
-elsif drag.mode == "rotate" then "Rotating — ⇧ snaps to 15°"
-elsif drag.mode == "move" then "Moving — ⌥ ignores the snap grid"
-elsif drag.mode == "marquee" then "Marquee — release to select what it touches"
-elsif drag.mode == "create" then "Drag out the shape, release to place it"
-elsif tool != "select" then tool_hint(tool)
-elsif len(sel) == 0 then "Click to select  ·  drag a marquee over the locked backdrop  ·  ⇧-click adds"
-elsif len(sel) == 1 then "Drag to move  ·  handles scale  ·  the top knob rotates  ·  [ ] restack  ·  D duplicates"
+else if drag.mode == "rotate" then "Rotating — ⇧ snaps to 15°"
+else if drag.mode == "move" then "Moving — ⌥ ignores the snap grid"
+else if drag.mode == "marquee" then "Marquee — release to select what it touches"
+else if drag.mode == "create" then "Drag out the shape, release to place it"
+else if tool != "select" then tool_hint(tool)
+else if len(sel) == 0 then "Click to select  ·  drag a marquee over the locked backdrop  ·  ⇧-click adds"
+else if len(sel) == 1 then "Drag to move  ·  handles scale  ·  the top knob rotates  ·  [ ] restack  ·  D duplicates"
 else "{len(sel)} objects  ·  align from the inspector  ·  arrows nudge  ·  [ ] restack"
 end
 if clear_of(mr, y: H - STATUS_H, h: STATUS_H) then

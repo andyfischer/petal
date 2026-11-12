@@ -798,7 +798,7 @@ fn menu_entries() -> list
         mi(if one then "New Folder with Selection" else "New Folder with Selection ({n} Items)" end, "group"), msep(),
         mi("Move to Trash", "trash")]
     end
-  elsif ctx.kind == "bg" then
+  else if ctx.kind == "bg" then
     let key = get sort_key
     [mi(tick(false, "New Folder"), "new", !trashed), msep(),
       mi(tick(get view == "list", "as List"), "view_list"), mi(tick(get view == "grid", "as Icons"), "view_grid"), msep(),
@@ -806,7 +806,7 @@ fn menu_entries() -> list
       mi(tick(key == "size", "Sort by Size"), "sort_size"), mi(tick(key == "kind", "Sort by Kind"), "sort_kind"), msep(),
       mi(tick(false, "Select All"), "all", len(get items) > 0),
       mi(tick(false, "Empty Trash"), "empty", trashed && len(get fsx.kids[fs.TRASH]) > 0)]
-  elsif ctx.kind == "side" then
+  else if ctx.kind == "side" then
     if ctx.id == fs.TRASH then
       [mi("Open", "side_open"), msep(), mi("Empty Trash", "empty", len(get fsx.kids[fs.TRASH]) > 0)]
     else
@@ -934,9 +934,9 @@ if renaming >= 0 then
     set rename_buf = r_ed.text
     if r_ed.submitted then
       end_rename(true)
-    elsif key_pressed("escape") then
+    else if key_pressed("escape") then
       end_rename(false)
-    elsif (mouse_pressed(0) || mouse_pressed(1)) && !point_in(mx, my, ren_r) then
+    else if (mouse_pressed(0) || mouse_pressed(1)) && !point_in(mx, my, ren_r) then
       end_rename(true)
       # A refused name still gives way to a click elsewhere.
       if renaming >= 0 then
@@ -959,7 +959,7 @@ if focus0 == "filter" && focus == "filter" then
   if key_pressed("escape") then
     set query = ""
     set focus = "main"
-  elsif q_ed.submitted || key_pressed("down") then
+  else if q_ed.submitted || key_pressed("down") then
     set focus = "main"
     want_first = true
   end
@@ -976,7 +976,7 @@ if modal && !blocked then
   if key_pressed("escape") || key_pressed("space") then
     set ql = -1
   else
-    let step = if key_pressed("right") || key_pressed("down") then 1 elsif key_pressed("left") || key_pressed("up") then -1 else 0 end
+    let step = if key_pressed("right") || key_pressed("down") then 1 else if key_pressed("left") || key_pressed("up") then -1 else 0 end
     let at = index_of(items, ql)
     if step != 0 && at >= 0 then
       let to = items[clamp(at + step, 0, len(items) - 1)]
@@ -985,38 +985,38 @@ if modal && !blocked then
       set want_reveal = to
     end
   end
-elsif free && (focus0 == "main" || focus0 == "tree") && focus == focus0 then
+else if free && (focus0 == "main" || focus0 == "tree") && focus == focus0 then
   if key_pressed("tab") then
     set focus = if focus == "main" then "tree" else "main" end
-  elsif cmd && key_pressed("f") then
+  else if cmd && key_pressed("f") then
     set focus = "filter"
-  elsif cmd && key_pressed("z") then
+  else if cmd && key_pressed("z") then
     op_undo(shift)
-  elsif cmd && key_pressed("y") then
+  else if cmd && key_pressed("y") then
     op_undo(true)
-  elsif cmd && key_pressed("1") then
+  else if cmd && key_pressed("1") then
     set view = "list"
     set scroll = 0.0
     set want_reveal = lead
-  elsif cmd && key_pressed("2") then
+  else if cmd && key_pressed("2") then
     set view = "grid"
     set scroll = 0.0
     set want_reveal = lead
-  elsif cmd && key_pressed("i") then
+  else if cmd && key_pressed("i") then
     set show_info = !show_info
-  elsif cmd && key_pressed("left") then
+  else if cmd && key_pressed("left") then
     go_hist(-1)
-  elsif cmd && key_pressed("right") then
+  else if cmd && key_pressed("right") then
     go_hist(1)
-  elsif cmd && key_pressed("up") then
+  else if cmd && key_pressed("up") then
     go_up()
-  elsif cmd && shift && key_pressed("n") then
+  else if cmd && shift && key_pressed("n") then
     if in_trash(cwd) then
       say("Nothing can be created in the Trash", true)
     else
       op_new_folder(cwd, [])
     end
-  elsif focus == "tree" then
+  else if focus == "tree" then
     # The tree: Up and Down walk the visible rows, Right opens, Left closes
     # (or steps out to the parent).
     let rows = filter(side, fn(s) -> s.kind == "tree")
@@ -1028,21 +1028,21 @@ elsif free && (focus0 == "main" || focus0 == "tree") && focus == focus0 then
     end
     if key_pressed("down") && len(rows) > 0 then
       go(rows[clamp(at + 1, 0, len(rows) - 1)].id)
-    elsif key_pressed("up") && len(rows) > 0 then
+    else if key_pressed("up") && len(rows) > 0 then
       go(rows[clamp(at - 1, 0, len(rows) - 1)].id)
-    elsif key_pressed("right") && at >= 0 then
+    else if key_pressed("right") && at >= 0 then
       if rows[at].kids && !rows[at].open then
         toggle_open(cwd)
-      elsif rows[at].kids then
+      else if rows[at].kids then
         go(rows[at + 1].id)
       end
-    elsif key_pressed("left") && at >= 0 then
+    else if key_pressed("left") && at >= 0 then
       if rows[at].open && rows[at].kids then
         toggle_open(cwd)
       else
         go_up()
       end
-    elsif key_pressed("return") then
+    else if key_pressed("return") then
       set focus = "main"
       want_first = len(sel) == 0
     end
@@ -1052,55 +1052,55 @@ elsif free && (focus0 == "main" || focus0 == "tree") && focus == focus0 then
       set sel = items
       set lead = last(items) ?? -1
       set anchor = if len(items) > 0 then items[0] else -1 end
-    elsif cmd && key_pressed("d") then
+    else if cmd && key_pressed("d") then
       if in_trash(cwd) then
         say("Items in the Trash can’t be duplicated", true)
       else
         op_duplicate(sel)
       end
-    elsif cmd && (key_pressed("down") || key_pressed("o")) then
+    else if cmd && (key_pressed("down") || key_pressed("o")) then
       if lead_i >= 0 then
         open_node(lead)
       end
-    elsif (cmd && key_pressed("backspace")) || key_pressed("delete") then
+    else if (cmd && key_pressed("backspace")) || key_pressed("delete") then
       if in_trash(cwd) then
         op_delete(sel)
       else
         op_trash(sel)
       end
-    elsif key_pressed("return") then
+    else if key_pressed("return") then
       if len(sel) == 1 && !in_trash(cwd) then
         begin_rename(sel[0])
       end
-    elsif key_pressed("escape") then
+    else if key_pressed("escape") then
       if typed != "" && clock - typed_at <= 0.9 then
         set typed = ""
-      elsif query != "" then
+      else if query != "" then
         set query = ""
       else
         select_none()
       end
-    elsif key_pressed("down") then
+    else if key_pressed("down") then
       move_lead(if lead_i < 0 then 0 else lead_i + cols_now end, shift)
-    elsif key_pressed("up") then
+    else if key_pressed("up") then
       move_lead(if lead_i < 0 then len(items) - 1 else max(lead_i - cols_now, if cols_now > 1 && lead_i < cols_now then lead_i else 0 end) end, shift)
-    elsif key_pressed("right") && view == "grid" then
+    else if key_pressed("right") && view == "grid" then
       move_lead(lead_i + 1, shift)
-    elsif key_pressed("left") && view == "grid" then
+    else if key_pressed("left") && view == "grid" then
       move_lead(max(0, lead_i - 1), shift)
-    elsif key_pressed("home") then
+    else if key_pressed("home") then
       move_lead(0, shift)
-    elsif key_pressed("end") then
+    else if key_pressed("end") then
       move_lead(len(items) - 1, shift)
-    elsif key_pressed("pagedown") then
+    else if key_pressed("pagedown") then
       move_lead(max(0, lead_i) + page_rows, shift)
-    elsif key_pressed("pageup") then
+    else if key_pressed("pageup") then
       move_lead(max(0, lead_i - page_rows), shift)
-    elsif key_pressed("space") && !(typed != "" && clock - typed_at <= 0.9) then
+    else if key_pressed("space") && !(typed != "" && clock - typed_at <= 0.9) then
       if lead_i >= 0 then
         set ql = lead
       end
-    elsif !cmd && !mod_alt() && text_input() != "" then
+    else if !cmd && !mod_alt() && text_input() != "" then
       type_ahead(text_input())
     end
   end
@@ -1151,28 +1151,28 @@ let on_field = renaming0 >= 0 && point_in(mx, my, ren_r)
 if free && mouse_pressed(0) && !on_field then
   if point_in(mx, my, back_r) then
     go_hist(-1)
-  elsif point_in(mx, my, fwd_r) then
+  else if point_in(mx, my, fwd_r) then
     go_hist(1)
-  elsif point_in(mx, my, up_r) then
+  else if point_in(mx, my, up_r) then
     go_up()
-  elsif point_in(mx, my, info_r) then
+  else if point_in(mx, my, info_r) then
     set show_info = !show_info
-  elsif point_in(mx, my, seg_r) then
+  else if point_in(mx, my, seg_r) then
     set view = if mx < seg_r.x + seg_r.w / 2 then "list" else "grid" end
     set scroll = 0.0
     set want_reveal = lead
-  elsif query != "" && point_in(mx, my, clear_r) then
+  else if query != "" && point_in(mx, my, clear_r) then
     set query = ""
     set focus = "main"
-  elsif point_in(mx, my, filter_r) then
+  else if point_in(mx, my, filter_r) then
     set focus = "filter"
-  elsif my < TOP_H && mx >= SIDE_W then
+  else if my < TOP_H && mx >= SIDE_W then
     for c in crumbs do
       if point_in(mx, my, c.r) then
         go(c.id)
       end
     end
-  elsif mx < SIDE_W then
+  else if mx < SIDE_W then
     set focus = "tree"
     for s in side do
       if point_in(mx, my, s.r) && (s.kind != "tree" || (my >= tree_top && my < tree_bottom)) then
@@ -1183,7 +1183,7 @@ if free && mouse_pressed(0) && !on_field then
         end
       end
     end
-  elsif point_in(mx, my, main) then
+  else if point_in(mx, my, main) then
     set focus = "main"
     if view == "list" && my < main.y + HDR_H then
       for c in COLS do
@@ -1202,7 +1202,7 @@ if free && mouse_pressed(0) && !on_field then
         let id = items[i]
         if cmd then
           toggle_sel(id)
-        elsif shift then
+        else if shift then
           select_range(id)
         else
           # A press on a selected item waits for the release, so a drag can
@@ -1231,7 +1231,7 @@ if free && mouse_pressed(1) then
   if hit_side >= 0 then
     set menu_ctx = {kind: "side", id: hit_side}
     bloom.menu_open_at("ctx", mx, my)
-  elsif point_in(mx, my, body) then
+  else if point_in(mx, my, body) then
     set focus = "main"
     let i = item_at(mx, my)
     if i >= 0 then
@@ -1261,10 +1261,10 @@ if press.id >= 0 then
         op_move(carried, dest)
         select_none()
       end
-    elsif press.twice then
+    else if press.twice then
       select_only(press.id)
       open_node(press.id)
-    elsif press.collapse then
+    else if press.collapse then
       select_only(press.id)
     end
     set press = {id: -1, x: 0, y: 0, moved: false, collapse: false, twice: false}
@@ -1297,7 +1297,7 @@ end
 if free && scroll_y() != 0 then
   if point_in(mx, my, body) then
     set scroll += scroll_y() * 40.0
-  elsif mx < SIDE_W then
+  else if mx < SIDE_W then
     set tree_scroll += scroll_y() * 40.0
   end
 end
@@ -1345,7 +1345,7 @@ if want_reveal >= 0 then
     let top = r.y - body.y - 6.0
     if top < scroll then
       set scroll = top
-    elsif top + r.h + 12.0 > scroll + body.h then
+    else if top + r.h + 12.0 > scroll + body.h then
       set scroll = top + r.h + 12.0 - body.h
     end
   end
@@ -1361,7 +1361,7 @@ if want_tree then
       let top = s.r.y + tree_scroll - tree_top
       if top < tree_scroll then
         set tree_scroll = top
-      elsif top + SROW > tree_scroll + tree_view_h then
+      else if top + SROW > tree_scroll + tree_view_h then
         set tree_scroll = top + SROW - tree_view_h
       end
     end
@@ -1415,7 +1415,7 @@ fn draw_row(n: record, r: record, o: record) -> nil
     if o.below then
       draw_rect(Rect(pill.x, pill.y + pill.h - 7, pill.w, 7), SEL)
     end
-  elsif o.hov then
+  else if o.hov then
     draw_rect_rounded(pill, 6, C.hover)
   end
   if o.drop then
@@ -1482,7 +1482,7 @@ fn draw_tile(n: record, r: record, o: record) -> nil
   let art = Rect(r.x + (r.w - 72) / 2.0, r.y + 4, 72, 72)
   if o.on then
     draw_rect_rounded(Rect(art.x - 6, art.y - 2, art.w + 12, art.h + 4), 9, if main_active then mix(C.bg, C.accent, 0.30) else C.idle end)
-  elsif o.hov then
+  else if o.hov then
     draw_rect_rounded(Rect(art.x - 6, art.y - 2, art.w + 12, art.h + 4), 9, C.hover)
   end
   if o.drop then
@@ -1529,10 +1529,10 @@ fn tool_button(r: record, name: string, enabled: bool, lit: bool) -> nil
   let hov = enabled && point_in(mouse_x(), mouse_y(), r)
   if lit then
     draw_rect_rounded(r, 7, C.raised)
-  elsif hov then
+  else if hov then
     draw_rect_rounded(r, 7, C.hover)
   end
-  ic.glyph(name, Rect(r.x + 7, r.y + 7, 16, 16), if !enabled then mix(C.bar, C.dim, 0.6) elsif lit || hov then C.text else C.muted end, 1.7)
+  ic.glyph(name, Rect(r.x + 7, r.y + 7, 16, 16), if !enabled then mix(C.bar, C.dim, 0.6) else if lit || hov then C.text else C.muted end, 1.7)
 end
 
 # ── the main view ───────────────────────────────────────────────────────────
@@ -1545,13 +1545,13 @@ if len(items) == 0 then
   let er = Rect(body.x, body.y + body.h * 0.30, body.w, 160)
   if cwd == fs.TRASH then
     ic.trash(Rect(er.x + er.w / 2 - 28, er.y, 56, 56), false)
-  elsif query != "" then
+  else if query != "" then
     ic.glyph("search", Rect(er.x + er.w / 2 - 20, er.y + 8, 40, 40), C.dim, 2.4)
   else
     ic.folder(Rect(er.x + er.w / 2 - 30, er.y - 2, 60, 60), true)
   end
-  let title = if query != "" then "No items match “{trim(query)}”" elsif cwd == fs.TRASH then "The Trash is empty" else "This folder is empty" end
-  let hint_text = if query != "" then "Press Escape to clear the filter." elsif trashed then "Items you move here stay until the Trash is emptied."
+  let title = if query != "" then "No items match “{trim(query)}”" else if cwd == fs.TRASH then "The Trash is empty" else "This folder is empty" end
+  let hint_text = if query != "" then "Press Escape to clear the filter." else if trashed then "Items you move here stay until the Trash is emptied."
     else "Drag items here, or press ⇧⌘N for a new folder." end
   tl.draw_text_line(title, Rect(er.x, er.y + 72, er.w, 24), tsb(15, C.text), "center")
   tl.draw_text_line(hint_text, Rect(er.x, er.y + 98, er.w, 20), ts(12.5, C.muted), "center")
@@ -1623,7 +1623,7 @@ for id in sel do
 end
 let status_text = if len(sel) > 0 then
   "{len(sel)} of {len(items)} selected  ·  {fs.fmt_size(sel_bytes)}"
-elsif query != "" then
+else if query != "" then
   "{count_label(len(items), "match", "matches")} for “{trim(query)}” in {nodes[cwd].name}"
 else
   if len(items) == 0 then "No items" else "{count_label(len(items), "item", "items")}  ·  {fs.fmt_size(fsx.total[cwd])}" end
@@ -1636,13 +1636,13 @@ if len(drag_ids) > 0 then
   let style = ts(11.5, if drop_id >= 0 then C.text else C.muted end)
   tl.draw_text_line(if drop_id >= 0 then "Move {what} to “{nodes[drop_id].name}”" else "Drop {what} on a folder to move" end,
     Rect(status_r.x + status_r.w * 0.4, status_r.y, status_r.w * 0.6 - 14, STATUS_H), style, "right")
-elsif typing_now then
+else if typing_now then
   let style = tsb(11.5, C.text)
   let tw = text_width(typed, style) + 16
   let chip = Rect(status_r.x + status_r.w - tw - 12, status_r.y + 5, tw, 18)
   draw_rect_rounded(chip, 5, C.raised)
   tl.draw_text_line(typed, chip, style, "center")
-elsif notice.text != "" && note_age < 5.0 then
+else if notice.text != "" && note_age < 5.0 then
   let fade = clamp((5.0 - note_age) / 0.6, 0.0, 1.0)
   let style = ts(11.5, mix(C.bar, if notice.bad then C.danger else C.text end, fade))
   tl.draw_text_line(tl.elide(notice.text, style, status_r.w * 0.5 - 20), Rect(status_r.x + status_r.w * 0.5, status_r.y, status_r.w * 0.5 - 14, STATUS_H), style, "right")
@@ -1666,7 +1666,7 @@ for i in range(0, len(crumbs)) do
   if c.id == drop_id then
     draw_rect_rounded(c.r, 6, mix(C.bar, C.accent, 0.35))
     draw_rect_rounded_outline(c.r, 6, C.accent_hi, 255, 1.5)
-  elsif hov then
+  else if hov then
     draw_rect_rounded(c.r, 6, C.hover)
   end
   tl.draw_text_line(c.label, c.r, if cur then CRUMB_STYLE else ts(13, if hov then C.text else C.muted end) end, "center")
@@ -1732,14 +1732,14 @@ fn draw_side_row(s: record, name: string, glyph_name: string, o: record) -> nil
   let x = r.x + 10 + s.depth * 14
   if o.cur then
     draw_rect_rounded(r, 6, if o.strong then C.accent else C.idle end)
-  elsif o.hov then
+  else if o.hov then
     draw_rect_rounded(r, 6, C.hover)
   end
   if o.drop then
     draw_rect_rounded(r, 6, mix(C.side, C.accent, 0.30))
     draw_rect_rounded_outline(r, 6, C.accent_hi, 255, 1.5)
   end
-  let ink = if o.cur && o.strong then C.on_accent elsif o.cur || o.hov then C.text else mix(C.side, C.text, 0.82) end
+  let ink = if o.cur && o.strong then C.on_accent else if o.cur || o.hov then C.text else mix(C.side, C.text, 0.82) end
   if s.kind == "tree" then
     if s.kids then
       ic.glyph(if s.open then "chevron_down" else "chevron_right" end, Rect(x - 4, r.y + 9, 10, 10),
@@ -1751,7 +1751,7 @@ fn draw_side_row(s: record, name: string, glyph_name: string, o: record) -> nil
       ic.folder(Rect(x + 11, r.y + 5, 18, 18), s.open && s.kids, o.cur && o.strong)
     end
     tl.draw_text_line(tl.elide(name, ts(13, ink), r.w - (x - r.x) - 44), Rect(x + 36, r.y, r.w - (x - r.x) - 40, r.h), ts(13, ink))
-  elsif s.kind == "fav" then
+  else if s.kind == "fav" then
     ic.glyph(glyph_name, Rect(x + 2, r.y + 6, 16, 16), if o.cur && o.strong then C.on_accent else C.accent_hi end, 1.5)
     tl.draw_text_line(name, Rect(x + 28, r.y, r.w - 44, r.h), ts(13, ink))
   else
@@ -1828,7 +1828,7 @@ if show_info then
   let x = pr.x + 20
   let w = pr.w - 40
   let art = Rect(x, pr.y + 22, w, 176)
-  let subject = if len(sel) == 1 then sel[0] elsif len(sel) == 0 then cwd else -1 end
+  let subject = if len(sel) == 1 then sel[0] else if len(sel) == 0 then cwd else -1 end
   let y = art.y + art.h + 20.0
   if subject >= 0 then
     let n = nodes[subject]
@@ -1861,7 +1861,7 @@ if show_info then
     tl.draw_text_line("INFORMATION", Rect(x, y, w, 22), CAPS)
     y += 26
     info_line(x, y, w, "Kind", k.label)
-    info_line(x, y + 24, w, "Size", if !n.dir then fs.fmt_size(n.size) elsif fsx.deep[subject] == 0 then "Empty"
+    info_line(x, y + 24, w, "Size", if !n.dir then fs.fmt_size(n.size) else if fsx.deep[subject] == 0 then "Empty"
       else "{fs.fmt_size(fsx.total[subject])} for {count_label(fsx.deep[subject], "file", "files")}" end)
     info_line(x, y + 48, w, "Where", if n.parent < 0 then "This computer" else path_text(n.parent) end, "tail")
     info_line(x, y + 72, w, "Modified", fs.fmt_date(n.mt, true))

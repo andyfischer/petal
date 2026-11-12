@@ -84,7 +84,7 @@ fn button_impl(r: record, label: string, opts: record) -> bool
 
   if !solid && variant != "ghost" && variant != "quiet" then
     stroke(t, face, radius, mix(hair(t), t.accent, p.hot * 0.35), 1, fill)
-  elsif solid || p.hot + p.active > 0.01 then
+  else if solid || p.hot + p.active > 0.01 then
     # A ghost at rest paints *nothing*: it is the hover wash alone, and an
     # opaque panel-colored face would hide whatever it sits on (a selection
     # marker under a rail item, a card's own tint).

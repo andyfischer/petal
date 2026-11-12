@@ -144,8 +144,8 @@ end
 fn cell_hp(lvl, row, col)
   let p = lvl % 4
   let solid = if p == 0 then true
-  elsif p == 1 then !(row < 3 && (col < 2 || col >= COLS - 2))
-  elsif p == 2 then (row + col) % 3 != 0
+  else if p == 1 then !(row < 3 && (col < 2 || col >= COLS - 2))
+  else if p == 2 then (row + col) % 3 != 0
   else !(col % 4 == 1 && row % 3 != 0)
   end
   if !solid then 0 else 3 - row / 3 end
@@ -290,13 +290,13 @@ if advance then
     set balls = [{x: padx + float(pad_w()) / 2.0, y: float(pad_y) - float(BR) - 2.0,
       vx: speed * cos(ang), vy: speed * sin(ang)}]
     set bits = burst(bits, x: balls[0].x, y: balls[0].y, n: 12, col: C_BALL, dirx: 0.0, diry: -1.0, power: 1.0)
-  elsif phase == "play" then
+  else if phase == "play" then
     set phase = "paused"
     set banner = "PAUSED"
     set subbanner = "press SPACE or click to resume"
-  elsif phase == "paused" then
+  else if phase == "paused" then
     set phase = "play"
-  elsif phase == "cleared" then
+  else if phase == "cleared" then
     set level = level + 1
     set speed = min(ball_speed_0 + float(level - 1) * 22.0, ball_speed_max)
     set wide_t = 0.0
@@ -308,7 +308,7 @@ if advance then
     set phase = "serve"
     set banner = "LEVEL {level}"
     set subbanner = LAYOUTS[level % 4] ++ "  ·  press SPACE or click to launch"
-  elsif phase == "over" then
+  else if phase == "over" then
     new_game()
   end
 end
@@ -510,9 +510,9 @@ if phase == "play" || phase == "serve" then
     set bits = burst(bits, x: padx + float(pad_w()) / 2.0, y: float(pad_y), n: 18, col: p.c, dirx: 0.0, diry: -1.0, power: 1.2)
     if k == "wide" then
       set wide_t = power_secs
-    elsif k == "slow" then
+    else if k == "slow" then
       set slow_t = power_secs
-    elsif k == "life" then
+    else if k == "life" then
       set lives = min(6, lives + 1)
     else
       # Multiball: every live ball splits in two.
@@ -595,9 +595,9 @@ tx_right("BRICKS LEFT", right_x: cell2, y: 30, style: S_LABEL)
 tx_right(str(left), right_x: cell2, y: 46, style: if left > 0 then S_STAT else S_STATD end)
 let cmult = 1 + combo / 6
 tx_right("COMBO", right_x: cell3, y: 30, style: S_LABEL)
-tx_right(if combo == 0 then "—" elsif cmult > 1 then "{combo}  ×{cmult}" else str(combo) end,
+tx_right(if combo == 0 then "—" else if cmult > 1 then "{combo}  ×{cmult}" else str(combo) end,
   right_x: cell3, y: 46,
-  style: if cmult > 1 then {...S_STAT, color: :ffd166} elsif combo > 0 then S_STAT else S_STATD end)
+  style: if cmult > 1 then {...S_STAT, color: :ffd166} else if combo > 0 then S_STAT else S_STATD end)
 tx_right("BEST COMBO {best_combo}   ·   {broken} BRICKS BROKEN", right_x: cell3, y: 76, style: S_HINT)
 
 # ── Draw: court ──────────────────────────────────────────────────────────

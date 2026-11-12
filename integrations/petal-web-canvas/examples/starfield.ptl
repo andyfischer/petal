@@ -13,7 +13,7 @@ let depth = 1000.0
 let fov = 400.0
 
 fn clip(v)
-  if v > 30000.0 then 30000.0 else if v < -30000.0 then -30000.0 else v end end
+  if v > 30000.0 then 30000.0 else if v < -30000.0 then -30000.0 else v end
 end
 
 if !initialized then

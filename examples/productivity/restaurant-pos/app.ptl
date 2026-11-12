@@ -176,8 +176,8 @@ state focus = ""
 # press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
 fn field_focus(key: string, focus: string, had: bool, pointer: bool) -> string
   if !pointer || !mouse_pressed(0) then focus
-  elsif has_focus(key) then key
-  elsif had then ""
+  else if has_focus(key) then key
+  else if had then ""
   else focus
   end
 end
@@ -367,7 +367,7 @@ fn tap_item(it: record) -> nil
   if it.tag == "86" then
     set counts.refused += 1
     toast("{it.name} is 86'd tonight. The kitchen is out", "warn")
-  elsif len(it.groups) > 0 then
+  else if len(it.groups) > 0 then
     open_mods(it.id, -1)
   else
     add_line(it.id, 1, [], "")
@@ -400,7 +400,7 @@ let can_pay = len(live_lines(T)) > 0 && B.due > 0
 if key_pressed("escape") then
   if focus != "" then
     focus = ""
-  elsif sheet == "pay" && pay.phase == "done" then
+  else if sheet == "pay" && pay.phase == "done" then
     # The money is taken; escape is "done", the same as the button.
     if pay.result.closed then close_table() end
     set sheet = ""
@@ -577,7 +577,7 @@ for i in range(0, len(items)) do
   # The tag rides the top-right corner: amber for a favourite, the accent for
   # the chef's pick, red for 86'd (sold out).
   if it.tag != "" then
-    let tone = if out then lk.RED elsif it.tag == "Popular" then lk.AMBER else lk.ACCENT end
+    let tone = if out then lk.RED else if it.tag == "Popular" then lk.AMBER else lk.ACCENT end
     let label = if out then "86'D" else upper(it.tag) end
     let tw = text_width(label, lk.caps(tone)) + 18
     let pr = Rect(r.x + r.w - tw - 12, r.y + r.h - 36, tw, 22)
@@ -589,7 +589,7 @@ for i in range(0, len(items)) do
     let bc = {x: r.x + r.w - 22, y: r.y + 22}
     draw_circle(bc, 15.0, c_now.tone)
     lk.txt(str(cnt), Rect(bc.x - 15, bc.y - 15, 30, 30), lk.uib(14, lk.WHITE), "center")
-  elsif len(it.groups) > 0 && !out then
+  else if len(it.groups) > 0 && !out then
     # A dish with choices shows three dots: tapping it opens a sheet.
     for d in range(0, 3) do
       draw_circle({x: r.x + r.w - 32 + d * 7, y: r.y + 22}, 2.2, lk.FAINT)
@@ -620,7 +620,7 @@ for k in range(0, min(fit_tk, len(tickets))) do
   let tk = tickets[k]
   let r = Rect(tk_area.x + float(k) * (tk_w + 12.0), tk_area.y, tk_w, tk_area.h)
   let age = clock - tk.at
-  let tone = if age < 10 * 60 then lk.SAGE elsif age < 20 * 60 then lk.AMBER else lk.RED end
+  let tone = if age < 10 * 60 then lk.SAGE else if age < 20 * 60 then lk.AMBER else lk.RED end
   draw_rect_rounded(r, 12, mix(lk.CARD, lk.PAPER, 0.5))
   draw_rect_rounded_outline(r, 12, lk.LINE)
   let head = Rect(r.x, r.y, r.w, 46)
@@ -789,7 +789,7 @@ for rw in rows do
     draw_rect_rounded(Rect(r.x, r.y + 10, 4, r.h - 20), 2, lk.ACCENT, int(255 * k))
   end
   # Quantity, in a well tinted by where the line is: sent or new.
-  let qtone = if voided then lk.FAINT elsif l.sent then lk.SAGE else lk.ACCENT end
+  let qtone = if voided then lk.FAINT else if l.sent then lk.SAGE else lk.ACCENT end
   let qb = Rect(r.x + 14, r.y + 12, 36, 28)
   draw_rect_rounded(qb, 8, mix(lk.CARD, qtone, 0.13))
   lk.txt(str(l.qty), qb, lk.mono(15, mix(qtone, :000000, 0.2)), "center")
@@ -828,7 +828,7 @@ for rw in rows do
     let ay = r.y + r.h - 58
     if voided then
       lk.txt("Voided: {l.void}", Rect(r.x + LX, ay + 4, r.w - LX - 14, 44), lk.ui(13, lk.RED))
-    elsif l.sent then
+    else if l.sent then
       lk.txt("Fired {clock_text(l.sent_at)} to {station_of(l)}", Rect(r.x + LX, ay + 4, 200, 44), lk.ui(13, lk.SOFT))
       if lk.ghost(Rect(r.x + r.w - 130, ay + 4, 116, 44), "Void item", lk.RED, true, {size: 14, radius: 10}) then
         act = "void"
@@ -1000,9 +1000,9 @@ if sheet == "mods" then
     let chosen = picks[gi]
     let need = g.req && len(chosen) == 0
     if need then missing = append(missing, g.name) end
-    let rule = if g.req then "Required, choose 1" elsif g.pick == "one" then "Optional, choose 1" else "Optional, any" end
+    let rule = if g.req then "Required, choose 1" else if g.pick == "one" then "Optional, choose 1" else "Optional, any" end
     let gw = lk.txt(g.name, Rect(x0, gy, 300, 24), lk.uib(16, lk.INK))
-    let rt = if need then lk.ACCENT elsif g.req then lk.SAGE else lk.MUTED end
+    let rt = if need then lk.ACCENT else if g.req then lk.SAGE else lk.MUTED end
     let rl = if g.req && !need then "Done" else rule end
     let rw = text_width(upper(rl), lk.caps(rt, 9)) + 18
     let rr = Rect(x0 + gw + 12, gy + 3, rw, 19)
@@ -1019,7 +1019,7 @@ if sheet == "mods" then
       if lk.chip(cr, o.label, on, tone, {sub: sub}) then
         let next = if g.pick == "one" then
           (if on && !g.req then [] else [oi] end)
-        elsif on then filter(chosen, fn(x) -> x != oi)
+        else if on then filter(chosen, fn(x) -> x != oi)
         else sort(append(chosen, oi))
         end
         set draft.picks[gi] = next
@@ -1100,7 +1100,7 @@ if sheet == "mods" then
   let note = join(if trim(draft.text) == "" then chip_notes else append(chip_notes, trim(draft.text)) end, ", ")
   let ok = len(missing) == 0
   let primary = Rect(r.x + r.w - 32 - 300, foot_y + 20, 300, 50)
-  let verb = if draft.edit >= 0 then "Update line" elsif draft.qty > 1 then "Add {draft.qty}" else "Add to check" end
+  let verb = if draft.edit >= 0 then "Update line" else if draft.qty > 1 then "Add {draft.qty}" else "Add to check" end
   if lk.ghost(Rect(primary.x - 122, foot_y + 20, 110, 50), "Cancel", lk.SOFT) then
     close_now = true
   end
@@ -1325,14 +1325,14 @@ if sheet == "pay" then
         if p.state == "now" then
           draw_rect_rounded(pr, 8, mix(lk.CARD, lk.ACCENT, 0.08))
         end
-        let tone = if p.state == "paid" then lk.SAGE elsif p.state == "now" then lk.ACCENT else lk.FAINT end
+        let tone = if p.state == "paid" then lk.SAGE else if p.state == "now" then lk.ACCENT else lk.FAINT end
         if p.state == "paid" then
           lk.check_mark(pr.x + 14, pr.y + 15, 5.0, lk.SAGE, 2.0)
         else
           draw_circle({x: pr.x + 14, y: pr.y + 15}, 4.5, tone)
         end
         lk.txt("Guest {k + 1}", Rect(pr.x + 30, pr.y, 100, 30), lk.uib(14, if p.state == "later" then lk.MUTED else lk.INK end))
-        let st = if p.state == "paid" then "paid by {lower(p.method)}" elsif p.state == "now" then "paying now" else "waiting" end
+        let st = if p.state == "paid" then "paid by {lower(p.method)}" else if p.state == "now" then "paying now" else "waiting" end
         lk.txt(st, Rect(pr.x + 120, pr.y, 140, 30), lk.ui(13, mix(tone, :000000, 0.1)))
         lk.txt(lk.usd(p.amount), Rect(pr.x, pr.y, pr.w - 12, 30), lk.mono(14, if p.state == "later" then lk.MUTED else lk.INK end),
           "right")
@@ -1439,9 +1439,9 @@ if sheet == "pay" then
       end
       if typed == "del" then
         set pay.tendered = tend / 10
-      elsif typed == "00" then
+      else if typed == "00" then
         set pay.tendered = min(9999999, tend * 100)
-      elsif typed != "" then
+      else if typed != "" then
         set pay.tendered = min(9999999, tend * 10 + parse_int(typed))
       end
       ry += 4 * 54 + 6
@@ -1450,7 +1450,7 @@ if sheet == "pay" then
       let ch = tend2 - charge
       if tend2 == 0 then
         lk.txt("Key in what the guest handed you", Rect(rx0, ry, RW, 24), lk.ui(14, lk.MUTED), "center")
-      elsif short then
+      else if short then
         lk.txt("Short by {lk.usd(-ch)}", Rect(rx0, ry, RW, 24), lk.uib(15, lk.RED), "center")
       else
         lk.txt("Change due", Rect(rx0, ry, RW, 24), lk.uib(15, lk.SAGE))
@@ -1555,7 +1555,7 @@ end
 # Toasts wait while a sheet is up: the sheet already says what happened.
 for k in range(0, if sheet == "" then len(toasts) else 0 end) do
   let t = toasts[k]
-  let tone = if t.kind == "ok" then lk.SAGE elsif t.kind == "warn" then lk.AMBER else lk.INK end
+  let tone = if t.kind == "ok" then lk.SAGE else if t.kind == "warn" then lk.AMBER else lk.INK end
   let style = lk.uib(14, lk.BAR_INK)
   let w = text_width(t.text, style) + 56
   let a_in = clamp(t.age / 0.15, lo: 0.0, hi: 1.0)
@@ -1592,7 +1592,7 @@ let obs_cat = mn.CATS[cat].name
 let obs_sheet = sheet
 let obs_sel = sel
 let obs_lines = for l in TF.lines do
-  let tag = if l.void != "" then " VOID" elsif l.sent then " sent" else "" end
+  let tag = if l.void != "" then " VOID" else if l.sent then " sent" else "" end
   let extra = (if len(l.mods) > 0 then " [" ++ join(l.mods, ", ") ++ "]" else "" end) ++
   (if l.note != "" then " ({l.note})" else "" end)
   "{l.qty}x {mn.item_by_id(l.item).name}{extra} {lk.usd(line_cents(l))}{tag}"

@@ -167,11 +167,11 @@ fn kind_label(k: string) -> string
 end
 
 fn status_label(st: int) -> string
-  if st == 2 then "failing" elsif st == 1 then "degraded" else "healthy" end
+  if st == 2 then "failing" else if st == 1 then "degraded" else "healthy" end
 end
 
 fn status_color(st: int) -> record
-  if st == 2 then BAD elsif st == 1 then WARN else GOOD end
+  if st == 2 then BAD else if st == 1 then WARN else GOOD end
 end
 
 # ── Graph structure, built once ──────────────────────────────────────────
@@ -459,11 +459,11 @@ fn node_fill(kind: string, cx: num, cy: num, r: num, c: record, a: num)
   if kind == "store" then
     let h = r * 0.88
     draw_rect_rounded(rect(cx - h, cy - h, h * 2.0, h * 2.0), max(2.0, r * 0.28), c, int(a))
-  elsif kind == "queue" then
+  else if kind == "queue" then
     fill_polygon(ngon(cx, cy, r * 1.16, 4, 0.0), c, int(a))
-  elsif kind == "edge" then
+  else if kind == "edge" then
     fill_polygon(ngon(cx, cy, r * 1.1, 6, 0.0), c, int(a))
-  elsif kind == "ext" then
+  else if kind == "ext" then
     draw_circle({x: cx, y: cy}, r, CANVAS, 255)
     draw_circle_outline(cx, cy, r - 1.0, c, int(a), max(2, int(r * 0.34)))
   else
@@ -477,9 +477,9 @@ fn node_ring(kind: string, cx: num, cy: num, r: num, c: record, a: num, wd: num)
   if kind == "store" then
     let h = r * 0.88
     rr_outline(rect(cx - h, cy - h, h * 2.0, h * 2.0), max(2.0, r * 0.28), c, a, w)
-  elsif kind == "queue" then
+  else if kind == "queue" then
     draw_polygon_outline(ngon(cx, cy, r * 1.16, 4, 0.0), c, int(a), w)
-  elsif kind == "edge" then
+  else if kind == "edge" then
     draw_polygon_outline(ngon(cx, cy, r * 1.1, 6, 0.0), c, int(a), w)
   else
     draw_circle_outline(cx, cy, r, c, int(a), w)
@@ -490,7 +490,7 @@ end
 # A small pill button in the app's own chrome. True on click.
 fn pill_btn(r: Rect, label: string, active: bool, live: bool) -> bool
   let hov = hovered(r) && live
-  let fill = if active then over(PANEL, ACCENT, 0.2) elsif hov then HOVER else ELEV end
+  let fill = if active then over(PANEL, ACCENT, 0.2) else if hov then HOVER else ELEV end
   draw_rect_rounded(r, 7, fill)
   rr_outline(r, 7, if active then ACCENT else LINE end, 255, 1)
   let st = ts(12, if active || hov then TEXT else DIM end)
@@ -509,7 +509,7 @@ fn segmented(r: Rect, labels: list, active: int, live: bool) -> int
     let hov = hovered(cell) && live
     if i == active then
       draw_rect_rounded(cell, 5, over(ELEV, ACCENT, 0.26))
-    elsif hov then
+    else if hov then
       draw_rect_rounded(cell, 5, HOVER)
     end
     txt_c(labels[i], cell.x + cell.w / 2, cell.y + (cell.h - 11) / 2 - 2, ts(11, if i == active || hov then TEXT else DIM end))
@@ -794,11 +794,11 @@ if keys_ok then
         vy = drag.snap.vy
         pins = drag.snap.pins
         alpha = drag.snap.alpha
-      elsif drag.mode == "pan" && drag.moved then
+      else if drag.mode == "pan" && drag.moved then
         cam = {...cam, x: drag.cx, y: drag.cy}
       end
       drag = {...drag, mode: "none"}
-    elsif len(sel) > 0 then
+    else if len(sel) > 0 then
       sel = []
     else
       query = ""
@@ -916,9 +916,9 @@ if drag.mode == "none" && !ui_block then
   if over_mini && mouse_pressed(0) then
     drag = {...drag, mode: "mini", moved: false}
     clicks = clicks + 1
-  elsif over_canvas && mouse_pressed(2) then
+  else if over_canvas && mouse_pressed(2) then
     drag = {...drag, mode: "pan", sx: float(mx), sy: float(my), cx: cam.x, cy: cam.y, moved: false, shift: false}
-  elsif over_canvas && mouse_pressed(0) then
+  else if over_canvas && mouse_pressed(0) then
     clicks = clicks + 1
     if typing then focus_request(nil) end
     if hit >= 0 then
@@ -936,12 +936,12 @@ if drag.mode == "none" && !ui_block then
         drag = {...drag, mode: "node", id: hit, wx: wmx, wy: wmy, starts: starts, moved: false, shift: false,
           snap: {px: px, py: py, vx: vx, vy: vy, pins: pins, alpha: alpha}}
       end
-    elsif mod_shift() then
+    else if mod_shift() then
       drag = {...drag, mode: "marquee", wx: wmx, wy: wmy, moved: false, shift: true}
     else
       drag = {...drag, mode: "pan", sx: float(mx), sy: float(my), cx: cam.x, cy: cam.y, moved: false, shift: false}
     end
-  elsif over_canvas && mouse_pressed(1) then
+  else if over_canvas && mouse_pressed(1) then
     if hit >= 0 && !contains(sel, hit) then sel = [hit] end
     menu_tag = if hit >= 0 then {what: "node", id: hit} else {what: "canvas", id: -1} end
     bloom.menu_open_at("graph", mx, my)
@@ -991,9 +991,9 @@ end
 if mouse_released(0) || mouse_released(2) then
   if drag.mode == "pan" && !drag.moved && mouse_released(0) then
     sel = []
-  elsif drag.mode == "node" && !drag.moved && len(sel) > 1 then
+  else if drag.mode == "node" && !drag.moved && len(sel) > 1 then
     sel = [drag.id]
-  elsif drag.mode == "marquee" then
+  else if drag.mode == "marquee" then
     let x0 = min(drag.wx, wmx)
     let y0 = min(drag.wy, wmy)
     let x1 = max(drag.wx, wmx)
@@ -1107,14 +1107,14 @@ let z = cam.z
 #  focus: the selection, or the hovered node when nothing is selected.
 #  depth[i] >= 0 means node i is part of the highlighted neighbourhood.
 
-let hover_node = if drag.mode == "node" then drag.id elsif hit >= 0 then hit else link_hover end
-let focus = if len(sel) > 0 then sel elsif hover_node >= 0 && act[hover_node] then [hover_node] else [] end
+let hover_node = if drag.mode == "node" then drag.id else if hit >= 0 then hit else link_hover end
+let focus = if len(sel) > 0 then sel else if hover_node >= 0 && act[hover_node] then [hover_node] else [] end
 let has_focus = len(focus) > 0
 let depth = if !has_focus then
   for i in all_idx do -1 end
-elsif mode == 1 then
+else if mode == 1 then
   bfs(G.inn, focus, act, 99)
-elsif mode == 2 then
+else if mode == 2 then
   bfs(G.out, focus, act, 99)
 else
   bfs(G.und, focus, act, 1)
@@ -1131,11 +1131,11 @@ let filtering = has_focus || q != "" || group_hover >= 0
 let emph = for i in all_idx do
   if contains(sel, i) then
     2
-  elsif has_focus then
+  else if has_focus then
     if depth[i] >= 0 || on_path[i] then 1 else 0 end
-  elsif q != "" then
+  else if q != "" then
     if match_flag[i] then 1 else 0 end
-  elsif group_hover >= 0 then
+  else if group_hover >= 0 then
     if NODES[i].g == group_hover then 1 else 0 end
   else
     1
@@ -1160,7 +1160,7 @@ clip(canvas.x, canvas.y, canvas.w, canvas.h)
 # A soft pool of light under the graph, then a dot grid that pans and zooms
 # with the camera so motion always has something to read against.
 draw_circle_gradient({x: to_sx(cam, canvas, 0.0), y: to_sy(cam, canvas, 0.0)}, 620.0 * z, :141a26, CANVAS, 255, 0)
-let gstep = if z < 0.45 then 192.0 elsif z < 0.9 then 96.0 else 48.0 end
+let gstep = if z < 0.45 then 192.0 else if z < 0.9 then 96.0 else 48.0 end
 let gx = floor(to_wx(cam, canvas, canvas.x) / gstep) * gstep
 while to_sx(cam, canvas, gx) < float(canvas.x + canvas.w) do
   let gsx = to_sx(cam, canvas, gx)
@@ -1207,9 +1207,9 @@ for pass in range(0, 2) do
         let tip = srs[e.b] * 1.12 + 2.0
         let bx = x1 - ux * tip
         let by = y1 - uy * tip
-        let c = if is_path then TEXT elsif lit then GROUPS[NODES[e.a].g].c else EDGE end
-        let a = if is_path then 255 elsif lit then 220 elsif filtering then 26 elsif NODES[e.a].g == NODES[e.b].g then 120 else 78 end
-        let wd = G.wide[ei] * clamp(z, 0.7, 1.5) + (if is_path then 1.4 elsif lit then 0.5 else 0.0 end)
+        let c = if is_path then TEXT else if lit then GROUPS[NODES[e.a].g].c else EDGE end
+        let a = if is_path then 255 else if lit then 220 else if filtering then 26 else if NODES[e.a].g == NODES[e.b].g then 120 else 78 end
+        let wd = G.wide[ei] * clamp(z, 0.7, 1.5) + (if is_path then 1.4 else if lit then 0.5 else 0.0 end)
         if d > srs[e.a] + tip + 2.0 then
           let ah = clamp(5.5 * z, 3.5, 9.0) + (if lit then 1.5 else 0.0 end)
           let show_head = lit || z >= 0.6
@@ -1268,11 +1268,11 @@ for level in range(0, 3) do
           end
           if level == 2 then
             node_ring(nd.k, cx, cy, r + 3.0, TEXT, 255, 2)
-          elsif on_path[i] then
+          else if on_path[i] then
             node_ring(nd.k, cx, cy, r + 2.5, TEXT, 200, 1.5)
-          elsif is_hover then
+          else if is_hover then
             node_ring(nd.k, cx, cy, r + 2.5, TEXT, 150, 1.5)
-          elsif q != "" && match_flag[i] then
+          else if q != "" && match_flag[i] then
             node_ring(nd.k, cx, cy, r + 3.0, ACCENT, 255, 2)
           end
         end
@@ -1291,7 +1291,7 @@ let LBL = 11
 # The floating chrome is seeded as already-placed, so labels steer round it.
 let placed = [lg_r, mini, rect(b_out.x, zb_y, b_fit.x + b_fit.w - b_out.x, 30)]
 let labels_drawn = 0
-let auto_min = if z >= 1.3 then 0 elsif z >= 0.95 then 3 elsif z >= 0.7 then 5 elsif z >= 0.5 then 7 else 10 end
+let auto_min = if z >= 1.3 then 0 else if z >= 0.95 then 3 else if z >= 0.7 then 5 else if z >= 0.5 then 7 else 10 end
 if label_mode != 2 || has_focus then
   for pass in range(0, 3) do
     for i in G.order do
@@ -1301,9 +1301,9 @@ if label_mode != 2 || has_focus then
         # The selection and the hovered node claim their space first, then the
         # rest of what is lit, then whatever the zoom level has room for.
         let top = emph[i] == 2 || i == hover_node
-        let rank = if top then 0 elsif forced then 1 else 2 end
+        let rank = if top then 0 else if forced then 1 else 2 end
         if wanted && pass == rank then
-          let st = if emph[i] == 2 then tb(12, TEXT) elsif forced then ts(LBL, TEXT) else ts(LBL, DIM) end
+          let st = if emph[i] == 2 then tb(12, TEXT) else if forced then ts(LBL, TEXT) else ts(LBL, DIM) end
           let name = NODES[i].n
           let tw = text_width(name, st)
           # try below, above, right, then left of the node; take the first
@@ -1317,8 +1317,8 @@ if label_mode != 2 || has_focus then
           for side_i in range(0, 4) do
             if clash then
               let cand = if side_i == 0 then lr
-                elsif side_i == 1 then rect(lr.x, sys[i] - gap - 17.0, lr.w, 17)
-                elsif side_i == 2 then rect(sxs[i] + gap, sys[i] - 8.5, lr.w, 17)
+                else if side_i == 1 then rect(lr.x, sys[i] - gap - 17.0, lr.w, 17)
+                else if side_i == 2 then rect(sxs[i] + gap, sys[i] - 8.5, lr.w, 17)
                 else rect(sxs[i] - gap - float(lr.w), sys[i] - 8.5, lr.w, 17) end
               let bad = false
               for p in placed do
@@ -1505,7 +1505,7 @@ sy = sy + 22
 mode = segmented(rect(sxl, sy, sw, 30), ["Nearby", "Dependents", "Requires"], mode, side_live)
 sy = sy + 40
 let mode_note = if mode == 0 then "A selection lights its direct callers and callees."
-  elsif mode == 1 then "Everything that breaks if the selection does."
+  else if mode == 1 then "Everything that breaks if the selection does."
   else "Everything the selection needs to stay up." end
 for line in wrap_px(mode_note, sw, ts(11, FAINT)) do
   txt(line, sxl, sy, ts(11, FAINT))
@@ -1543,10 +1543,10 @@ end
 
 # temperature
 let temp_r = rect(sxl, sy + 18, sw, 5)
-let temp_label = if frozen then "frozen" elsif alpha < ALPHA_MIN then "settled" else "cooling" end
+let temp_label = if frozen then "frozen" else if alpha < ALPHA_MIN then "settled" else "cooling" end
 txt("Temperature", sxl, sy, ts(12, TEXT))
 txt_r(if alpha < ALPHA_MIN || frozen then temp_label else temp_label ++ " " ++ str(int(round(alpha * 100.0))) ++ "%" end, sxl + sw, sy + 1,
-  mono(11, if frozen then WARN elsif alpha < ALPHA_MIN then GOOD else ACCENT end))
+  mono(11, if frozen then WARN else if alpha < ALPHA_MIN then GOOD else ACCENT end))
 draw_rect_rounded(temp_r, 2, ELEV)
 if alpha > 0.0 then
   draw_rect_gradient_rounded(rect(temp_r.x, temp_r.y, max(5, int(float(sw) * clamp(alpha, 0.0, 1.0))), 5), 2, ACCENT, :ff9d6b, 0.0)
@@ -1583,12 +1583,12 @@ fn node_row(r: Rect, i: int, live: bool, act: list, right: string) -> string
   let hov = hovered(r) && live && on
   if hov then draw_rect_rounded(r, 6, HOVER) end
   node_fill(nd.k, r.x + 14, r.y + r.h / 2, 5.0, if on then GROUPS[nd.g].c else FAINT end, 255)
-  txt(nd.n, r.x + 30, r.y + (r.h - 13) / 2 - 2, ts(13, if !on then FAINT elsif hov then TEXT else DIM end))
+  txt(nd.n, r.x + 30, r.y + (r.h - 13) / 2 - 2, ts(13, if !on then FAINT else if hov then TEXT else DIM end))
   if nd.st > 0 && on then
     draw_circle({x: r.x + 36 + text_width(nd.n, ts(13, DIM)), y: r.y + r.h / 2}, 3, status_color(nd.st), 255)
   end
   txt_r(if on then right else "hidden" end, r.x + r.w - 8, r.y + (r.h - 11) / 2 - 2, mono(11, FAINT))
-  if hov && mouse_pressed(0) then "click" elsif hov then "hover" else "" end
+  if hov && mouse_pressed(0) then "click" else if hov then "hover" else "" end
 end
 
 fn metric_tile(r: Rect, label: string, value: string, unit: string, c: record)
@@ -1623,9 +1623,9 @@ if len(sel) == 1 then
   let tw2 = (iw - 10) / 2
   metric_tile(rect(ix, iy, tw2, 62), "THROUGHPUT", fmt_rps(nd.rps), "req/s", TEXT)
   metric_tile(rect(ix + tw2 + 10, iy, tw2, 62), "P99 LATENCY", if nd.p99 >= 1000 then str(round(float(nd.p99) / 1000.0, 2)) else str(nd.p99) end,
-    if nd.p99 >= 1000 then "s" else "ms" end, if nd.p99 >= 1000 then BAD elsif nd.p99 >= 400 then WARN else TEXT end)
+    if nd.p99 >= 1000 then "s" else "ms" end, if nd.p99 >= 1000 then BAD else if nd.p99 >= 400 then WARN else TEXT end)
   iy = iy + 72
-  metric_tile(rect(ix, iy, tw2, 62), "ERROR RATE", str(nd.err), "%", if nd.err >= 5.0 then BAD elsif nd.err >= 1.0 then WARN else TEXT end)
+  metric_tile(rect(ix, iy, tw2, 62), "ERROR RATE", str(nd.err), "%", if nd.err >= 5.0 then BAD else if nd.err >= 1.0 then WARN else TEXT end)
   metric_tile(rect(ix + tw2 + 10, iy, tw2, 62), "DEGREE", str(G.deg[i]), str(len(G.inn[i])) ++ " in · " ++ str(len(G.out[i])) ++ " out", TEXT)
   iy = iy + 78
 
@@ -1705,7 +1705,7 @@ if len(sel) == 1 then
       k
     end
   end
-elsif len(sel) > 1 then
+else if len(sel) > 1 then
   caps("SELECTION", ix, iy, FAINT)
   iy = iy + 22
   txt(str(len(sel)) ++ " services", ix, iy, tb(21, TEXT))
@@ -1731,7 +1731,7 @@ elsif len(sel) > 1 then
     end
     for k in range(0, min(len(path), 12)) do
       let j = path[k]
-      let res = node_row(rect(ix - 8, iy, iw + 16, 26), j, insp_live, act, if k == 0 then "from" elsif k == len(path) - 1 then "to" else str(k) end)
+      let res = node_row(rect(ix - 8, iy, iw + 16, 26), j, insp_live, act, if k == 0 then "from" else if k == len(path) - 1 then "to" else str(k) end)
       if res == "click" then picked_row = j end
       if res != "" then next_link_hover = j end
       iy = iy + 26
@@ -1903,7 +1903,7 @@ draw_rect(sb, PANEL)
 draw_rect(0, sb.y, W, 1, LINE)
 let left_t = if len(sel) > 0 then
   plural(len(sel), "selected", "selected") ++ "  ·  " ++ plural(lit_n - len(sel), "service lit", "services lit") ++ "  ·  " ++ plural(lit_edges, "call", "calls")
-elsif q != "" then
+else if q != "" then
   plural(len(matches), "match", "matches") ++ " for “" ++ query ++ "”"
 else
   str(len(filter(act, fn(a) -> a))) ++ " services  ·  " ++ str(len(filter(G.edges, fn(e) -> act[e.a] && act[e.b]))) ++ " calls"
@@ -1912,27 +1912,27 @@ txt(left_t, 22, sb.y + 7, ts(12, DIM))
 
 let hint = if drag.mode == "node" && drag.moved then
   "release to pin it here"
-elsif drag.mode == "marquee" then
+else if drag.mode == "marquee" then
   "release to add everything inside to the selection"
-elsif drag.mode == "pan" && drag.moved then
+else if drag.mode == "pan" && drag.moved then
   "panning"
-elsif typing then
+else if typing then
   "↑ ↓ choose  ·  return selects  ·  esc clears"
-elsif hit >= 0 then
+else if hit >= 0 then
   "click select  ·  shift-click add  ·  drag to pin  ·  double-click focus  ·  right-click for more"
-elsif over_mini then
+else if over_mini then
   "drag to move the view"
-elsif over_canvas then
+else if over_canvas then
   "drag pan  ·  wheel zoom  ·  shift-drag box select  ·  / search"
 else
   "F fit  ·  R reheat  ·  S scatter  ·  space freeze  ·  1 2 3 highlight  ·  L labels"
 end
 txt_c(hint, canvas.x + canvas.w / 2, sb.y + 7, ts(12, FAINT))
 
-let live_t = if frozen then "❚❚ frozen" elsif hot then "● simulating" else "○ settled" end
-let live_c = if frozen then WARN elsif hot then ACCENT else FAINT end
+let live_t = if frozen then "❚❚ frozen" else if hot then "● simulating" else "○ settled" end
+let live_c = if frozen then WARN else if hot then ACCENT else FAINT end
 txt_r(live_t, W - 22, sb.y + 7, ts(12, live_c))
-let lbl_t = "labels " ++ (if label_mode == 0 then "auto" elsif label_mode == 1 then "all" else "off" end)
+let lbl_t = "labels " ++ (if label_mode == 0 then "auto" else if label_mode == 1 then "all" else "off" end)
 txt_r(lbl_t, W - 22 - text_width(live_t, ts(12, live_c)) - 22, sb.y + 7, ts(12, FAINT))
 
 # ── Draw: search dropdown (over everything but the menu) ─────────────────
@@ -1984,21 +1984,21 @@ if picked.index >= 0 then
       let flip = !pins[id]
       for i in tgt do pins[i] = flip end
       alpha = max(alpha, 0.25)
-    elsif picked.label == "Focus camera" then
+    else if picked.label == "Focus camera" then
       cam_to = focus_target(px, py, id, max(z, 1.7))
       auto_fit = false
-    elsif picked.label == "Select neighbours" then
+    else if picked.label == "Select neighbours" then
       let d = bfs(G.und, [id], act, 1)
       sel = for k in all_idx do
         if d[k] < 0 then continue end
         k
       end
-    elsif picked.label == "Select group" then
+    else if picked.label == "Select group" then
       sel = for k in all_idx do
         if NODES[k].g != NODES[id].g then continue end
         k
       end
-    elsif picked.label == "Hide group" then
+    else if picked.label == "Hide group" then
       hidden = toggle_in(hidden, NODES[id].g)
       alpha = max(alpha, 0.5)
     end
@@ -2006,14 +2006,14 @@ if picked.index >= 0 then
     if picked.label == "Fit to view" then
       cam_to = fit_target(px, py, G.rad, act, canvas)
       auto_fit = true
-    elsif picked.label == "Reheat layout" then
+    else if picked.label == "Reheat layout" then
       alpha = 1.0
-    elsif picked.label == "Scatter" then
+    else if picked.label == "Scatter" then
       queued = "scatter"
-    elsif picked.label == "Unpin all" then
+    else if picked.label == "Unpin all" then
       pins = for i in all_idx do false end
       alpha = max(alpha, 0.4)
-    elsif picked.label == "Show all groups" then
+    else if picked.label == "Show all groups" then
       hidden = []
       alpha = max(alpha, 0.5)
     end

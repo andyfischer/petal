@@ -231,7 +231,7 @@ fn screen_fade()
   # picture above them goes all the way to black and all the way to white.
   map_rect(0, 24, 32, 6, 0, 3)
 
-  let toward = if level < 0 then "TO BLACK" elsif level > 0 then "TO WHITE" else "NONE    " end
+  let toward = if level < 0 then "TO BLACK" else if level > 0 then "TO WHITE" else "NONE    " end
   map_text(1, 25, "FADE {level}  {toward}", 3)
   map_text(1, 27, "UD LEVEL  A AUTO  SEL NEXT", 3)
 end
@@ -240,7 +240,7 @@ end
 
 if scene() == "master" then
   screen_master()
-elsif scene() == "cycle" then
+else if scene() == "cycle" then
   screen_cycle()
 else
   screen_fade()

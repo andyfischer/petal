@@ -178,7 +178,7 @@ for i in range(0, len(nodes)) do
     # Pinned nodes are gold
     draw_circle(cx: int(n.x), cy: int(n.y), radius: 6, r: 200, g: 180, b: 50)
     draw_circle(cx: int(n.x), cy: int(n.y), radius: 4, r: 255, g: 220, b: 80)
-  elsif i == dragging then
+  else if i == dragging then
     # Dragged node
     draw_circle(cx: int(n.x), cy: int(n.y), radius: 8, r: 255, g: 100, b: 100)
   else

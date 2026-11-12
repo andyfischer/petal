@@ -54,7 +54,7 @@ fn _wrap_segment(seg, max_chars)
     end
     if len(cur) == 0 then
       cur = w
-    elsif len(cur) + 1 + len(w) <= max_chars then
+    else if len(cur) + 1 + len(w) <= max_chars then
       cur = cur ++ " " ++ w
     else
       lines = append(lines, cur)

@@ -327,7 +327,7 @@ end
 fn fmt(v: num) -> string
   if abs(v) >= 1000.0 then
     str(int(round(v)))
-  elsif abs(v) >= 100.0 then
+  else if abs(v) >= 100.0 then
     str(round(v, 1))
   else
     str(round(v, 2))
@@ -389,7 +389,7 @@ end
 # A small pill button drawn in the app's own chrome. True on click.
 fn pill_btn(r: Rect, label: string, active: bool) -> bool
   let hov = hovered(r)
-  let fill = if active then over(bg: PANEL, fg: ACCENT, a: 0.22) elsif hov then HOVER else ELEV end
+  let fill = if active then over(bg: PANEL, fg: ACCENT, a: 0.22) else if hov then HOVER else ELEV end
   draw_rect_rounded(r, radius: 7, c: fill)
   rr_outline(r, radius: 7, c: if active then ACCENT else OUTLINE end, a: 255, wd: 1)
   let st = ts(12, if active then TEXT else DIM end)
@@ -524,11 +524,11 @@ fn parse_patch(raw: string) -> record
     let f = split(line, " ")
     if len(f) >= 2 && f[0] == "V1" then
       next_id = parse_int(f[1]) ?? 1
-    elsif len(f) == 7 && f[0] == "N" then
+    else if len(f) == 7 && f[0] == "N" then
       nodes = append(nodes, {id: parse_int(f[1]) ?? 0, kind: f[2],
         x: parse_float(f[3]) ?? 0.0, y: parse_float(f[4]) ?? 0.0,
         ins: str_to_nums(f[5]), params: str_to_nums(f[6])})
-    elsif len(f) == 4 && f[0] == "L" then
+    else if len(f) == 4 && f[0] == "L" then
       links = append(links, {from: parse_int(f[1]) ?? 0, to: parse_int(f[2]) ?? 0, port: parse_int(f[3]) ?? 0})
     end
   end
@@ -780,10 +780,10 @@ end
 if over_canvas && !blocked && drag.mode == "none" then
   if mouse_pressed(2) || (mouse_pressed(0) && (space_held || mod_alt())) then
     drag = {...drag, mode: "pan", x0: float(mx), y0: float(my), cx: cam.x, cy: cam.y, moved: false}
-  elsif mouse_pressed(0) then
+  else if mouse_pressed(0) then
     if hit.kind == "out" then
       drag = {...drag, mode: "link", node: hit.node, port: 0, dir: "out", moved: false}
-    elsif hit.kind == "in" then
+    else if hit.kind == "in" then
       let li = link_into(links, id: hit.node, port_i: hit.port)
       if li >= 0 then
         # Pick the wire back up from its source and drop it elsewhere.
@@ -796,14 +796,14 @@ if over_canvas && !blocked && drag.mode == "none" then
       else
         drag = {...drag, mode: "link", node: hit.node, port: hit.port, dir: "in", moved: false}
       end
-    elsif hit.kind == "node" then
+    else if hit.kind == "node" then
       if mod_shift() then
         if contains(sel, hit.node) then
           sel = filter(sel, fn(id) -> id != hit.node)
         else
           sel = append(sel, hit.node)
         end
-      elsif !contains(sel, hit.node) then
+      else if !contains(sel, hit.node) then
         sel = [hit.node]
       end
       nodes = raise(nodes, sel)
@@ -814,7 +814,7 @@ if over_canvas && !blocked && drag.mode == "none" then
     else
       drag = {...drag, mode: "marquee", x0: wmx, y0: wmy, moved: false}
     end
-  elsif mouse_pressed(1) then
+  else if mouse_pressed(1) then
     if hit.kind == "node" && !contains(sel, hit.node) then
       sel = [hit.node]
     end
@@ -883,7 +883,7 @@ if mouse_released(0) || mouse_released(2) then
       else
         flash = note(flash, text: "That wire would make a loop", now: time())
       end
-    elsif drag.dir == "in" && hit.kind == "out" && hit.node != drag.node then
+    else if drag.dir == "in" && hit.kind == "out" && hit.node != drag.node then
       if !reaches(links, from: hit.node, target: drag.node, depth: 0) then
         hist = push_hist(hist, nodes, links)
         fut = []
@@ -894,7 +894,7 @@ if mouse_released(0) || mouse_released(2) then
       end
     end
     if ok then ops = ops + 1 end
-  elsif drag.mode == "marquee" then
+  else if drag.mode == "marquee" then
     let x0 = min(drag.x0, wmx)
     let y0 = min(drag.y0, wmy)
     let x1 = max(drag.x0, wmx)
@@ -911,7 +911,7 @@ if mouse_released(0) || mouse_released(2) then
       else
         sel = inside
       end
-    elsif !mod_shift() then
+    else if !mod_shift() then
       sel = []
     end
   end
@@ -1117,13 +1117,13 @@ for n in nodes key n.id do
     let pr = rect(sx + 10.0 * z, py0, sw - 20.0 * z, (ph - 4.0) * z)
     if n.kind == "scope" then
       draw_scope(pr, samples: scope_push(v, playing), c: c)
-    elsif n.kind == "gauge" then
+    else if n.kind == "gauge" then
       draw_gauge(pr, v, lo: n.params[0], hi: n.params[1], c: c)
       let gs = mono(max(6, int(10.0 * z)), DIM)
       draw_text(fmt(n.params[0]), pos: {x: pr.x, y: pr.y + pr.h - 12.0 * z}, style: gs)
       let hi_t = fmt(n.params[1])
       draw_text(hi_t, pos: {x: pr.x + pr.w - text_width(hi_t, gs), y: pr.y + pr.h - 12.0 * z}, style: gs)
-    elsif n.kind == "color" then
+    else if n.kind == "color" then
       let col = {r: to_rgb(ivals[0]), g: to_rgb(ivals[1]), b: to_rgb(ivals[2])}
       draw_rect_rounded(pr, radius: 5.0 * z, c: col)
       rr_outline(pr, radius: 5.0 * z, c: TEXT, a: 40, wd: 1)
@@ -1372,7 +1372,7 @@ if one >= 0 then
     sel = []
     ops = ops + 1
   end
-elsif len(sel) > 1 then
+else if len(sel) > 1 then
   caps("SELECTION", x: ix, y: iy, c: FAINT)
   iy = iy + 20
   draw_text("{len(sel)} nodes", pos: {x: ix, y: iy}, style: ts(18, TEXT))
@@ -1496,17 +1496,17 @@ draw_text(left_t, pos: {x: 22, y: sb.y + 8}, style: ts(12, DIM))
 
 let hint = if drag.mode == "link" then
   "release on a port to wire it · anywhere else to cancel"
-elsif drag.mode == "place" then
+else if drag.mode == "place" then
   "drop it on the canvas"
-elsif drag.mode == "marquee" then
+else if drag.mode == "marquee" then
   "release to select everything inside"
-elsif hit.kind == "out" then
+else if hit.kind == "out" then
   "drag from the output to wire it into an input"
-elsif hit.kind == "in" then
+else if hit.kind == "in" then
   if link_into(links, id: hit.node, port_i: hit.port) >= 0 then "drag to move this wire · drop away to remove it" else "drag to an output to wire it" end
-elsif hit.kind == "node" then
+else if hit.kind == "node" then
   "drag to move · shift-click to add to the selection · right-click for actions"
-elsif over_canvas then
+else if over_canvas then
   "right-click to add a node here"
 else
   ""
@@ -1551,13 +1551,13 @@ if chosen >= 0 then
       links = d.links
       sel = d.sel
       next_id = d.next
-    elsif picked.label == "Disconnect all" then
+    else if picked.label == "Disconnect all" then
       hist = push_hist(hist, nodes, links)
       fut = []
       links = links_without_nodes(links, sel)
-    elsif picked.label == "Bring to front" then
+    else if picked.label == "Bring to front" then
       nodes = raise(nodes, sel)
-    elsif picked.label == "Delete" then
+    else if picked.label == "Delete" then
       hist = push_hist(hist, nodes, links)
       fut = []
       links = links_without_nodes(links, sel)
@@ -1568,7 +1568,7 @@ if chosen >= 0 then
   else
     if picked.label == "Fit to view" then
       cam = fit_all(nodes, canvas)
-    elsif picked.label == "Reset demo patch" then
+    else if picked.label == "Reset demo patch" then
       hist = push_hist(hist, nodes, links)
       fut = []
       nodes = seed_nodes()

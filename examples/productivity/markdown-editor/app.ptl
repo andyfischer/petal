@@ -319,7 +319,7 @@ fn list_marker(s: string) -> record
   let m = ch(t, 0)
   if (m == "-" || m == "*" || m == "+") && ch(t, 1) == " " then
     let rest = slice(t, start: 2, end: len(t))
-    let task = if starts(rest, "[ ] ") then 0 elsif starts(rest, "[x] ") || starts(rest, "[X] ") then 1 else -1 end
+    let task = if starts(rest, "[ ] ") then 0 else if starts(rest, "[x] ") || starts(rest, "[X] ") then 1 else -1 end
     {kind: "bullet", indent: ind, mlen: 2 + if task >= 0 then 4 else 0 end, num: 0, task: task}
   else
     let d = 0
@@ -375,16 +375,16 @@ fn match_at(s: string, i: num) -> record
   if c == "`" then
     let j = find_from(s, needle: "`", from: i + 1)
     if j > i + 1 then {kind: "code", ml: 1, close: j, url: ""} else none end
-  elsif c == "*" && ch(s, i + 1) == "*" && ch(s, i + 2) == "*" then
+  else if c == "*" && ch(s, i + 1) == "*" && ch(s, i + 2) == "*" then
     let j = find_from(s, needle: "***", from: i + 3)
     if j > i + 3 then {kind: "bolditalic", ml: 3, close: j, url: ""} else none end
-  elsif c == "*" && ch(s, i + 1) == "*" then
+  else if c == "*" && ch(s, i + 1) == "*" then
     let j = find_from(s, needle: "**", from: i + 2)
     if j > i + 2 then {kind: "bold", ml: 2, close: j, url: ""} else none end
-  elsif c == "~" && ch(s, i + 1) == "~" then
+  else if c == "~" && ch(s, i + 1) == "~" then
     let j = find_from(s, needle: "~~", from: i + 2)
     if j > i + 2 then {kind: "strike", ml: 2, close: j, url: ""} else none end
-  elsif (c == "*" || c == "_") && ch(s, i + 1) != " " && ch(s, i + 1) != "" then
+  else if (c == "*" || c == "_") && ch(s, i + 1) != " " && ch(s, i + 1) != "" then
     # Emphasis opens only at a word boundary so snake_case stays plain.
     let prev = ch(s, i - 1)
     if c == "_" && prev != "" && prev != " " && prev != "(" then
@@ -393,7 +393,7 @@ fn match_at(s: string, i: num) -> record
       let j = find_from(s, needle: c, from: i + 1)
       if j > i + 1 && ch(s, j - 1) != " " then {kind: "italic", ml: 1, close: j, url: ""} else none end
     end
-  elsif c == "[" then
+  else if c == "[" then
     let mid = find_from(s, needle: "](", from: i + 1)
     if mid < 0 then
       none
@@ -415,7 +415,7 @@ fn inline_ranges(s: string) -> list
     let m = match_at(s, i)
     if m.kind == "none" then
       i = i + 1
-    elsif m.kind == "link" then
+    else if m.kind == "link" then
       out = append(out, {a: i, b: m.end_ + 1, kind: "link"})
       i = m.end_ + 1
     else
@@ -445,7 +445,7 @@ fn parse_inline(s: string, st: record) -> list
       if m.kind == "code" then
         out = append(out, {...st, text: inner, code: true})
         i = m.close + 1
-      elsif m.kind == "link" then
+      else if m.kind == "link" then
         for t in parse_inline(inner, {...st, url: m.url}) do
           out = append(out, t)
         end
@@ -505,16 +505,16 @@ fn parse_blocks(lines: list) -> list
       end
       blocks = append(blocks, {kind: "code", line: i, lang: lang, lines: body})
       i = j + 1
-    elsif len(t) == 0 then
+    else if len(t) == 0 then
       i = i + 1
-    elsif heading_level(s) > 0 then
+    else if heading_level(s) > 0 then
       let lv = heading_level(s)
       blocks = append(blocks, {kind: "heading", line: i, level: lv, inl: inline(trim(slice(s, start: lv + 1, end: len(s))))})
       i = i + 1
-    elsif is_rule(s) then
+    else if is_rule(s) then
       blocks = append(blocks, {kind: "rule", line: i})
       i = i + 1
-    elsif starts(t, ">") then
+    else if starts(t, ">") then
       let text = ""
       let j = i
       while j < n && starts(trim(lines[j]), ">") do
@@ -524,7 +524,7 @@ fn parse_blocks(lines: list) -> list
       end
       blocks = append(blocks, {kind: "quote", line: i, inl: inline(text)})
       i = j
-    elsif is_table_row(s) then
+    else if is_table_row(s) then
       let rows = []
       let j = i
       let has_head = false
@@ -542,7 +542,7 @@ fn parse_blocks(lines: list) -> list
       end
       blocks = append(blocks, {kind: "table", line: i, head: has_head, rows: rows})
       i = j
-    elsif list_marker(s).kind != "none" then
+    else if list_marker(s).kind != "none" then
       let m = list_marker(s)
       let text = slice(s, start: m.indent + m.mlen, end: len(s))
       # Lazy continuation: following indented plain lines belong to the item.
@@ -657,8 +657,8 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
     let b = blocks[bi]
     # Spacing before a block depends on the pair: items pack, headings breathe.
     let gap = if prev == "none" then 0
-    elsif b.kind == "item" && prev == "item" then 4
-    elsif b.kind == "heading" then if b.level <= 2 then 26 else 20 end
+    else if b.kind == "item" && prev == "item" then 4
+    else if b.kind == "heading" then if b.level <= 2 then 26 else 20 end
     else 14 end
     y = y + gap
     anchors = append(anchors, {line: b.line, y: y})
@@ -674,16 +674,16 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
         items = append(items, {kind: "line", x1: x0, y1: y, x2: x0 + width, y2: y, c: RULE, w: 1})
         y = y + 4
       end
-    elsif b.kind == "para" then
+    else if b.kind == "para" then
       let f = flow(tokens: b.inl, x0: x0, y0: y, width: width, base: PV_TS, lh: PV_LH)
       for it in f.items do items = append(items, it) end
       y = f.y
-    elsif b.kind == "quote" then
+    else if b.kind == "quote" then
       let f = flow(tokens: b.inl, x0: x0 + 22, y0: y + 4, width: width - 22, base: {...PV_TS, color: INK_SOFT, italic: true}, lh: PV_LH)
       items = append(items, {kind: "rect", r: rect(x0 + 2, y, 4, f.y + 4 - y), c: QUOTE_BAR, a: 255, rad: 2})
       for it in f.items do items = append(items, it) end
       y = f.y + 4
-    elsif b.kind == "item" then
+    else if b.kind == "item" then
       let ind = x0 + 8 + b.depth * 22
       let tx = ind + 22
       let ty = y + (PV_LH - PV_FS) / 2 - 1
@@ -694,20 +694,20 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
         let f = flow(tokens: b.inl, x0: tx + 2, y0: y, width: width - (tx + 2 - x0), base: ts, lh: PV_LH)
         for it in f.items do items = append(items, it) end
         y = f.y
-      elsif b.ordered then
+      else if b.ordered then
         let num_ts = {...PV_TS, color: INK_SOFT, weight: 600}
         items = append(items, {kind: "text", x: ind + 2, y: ty, text: "{b.num}.", ts: num_ts, url: ""})
         let f = flow(tokens: b.inl, x0: tx, y0: y, width: width - (tx - x0), base: PV_TS, lh: PV_LH)
         for it in f.items do items = append(items, it) end
         y = f.y
       else
-        let dot_c = if b.depth == 0 then INK_SOFT elsif b.depth == 1 then INK_FAINT else RULE end
+        let dot_c = if b.depth == 0 then INK_SOFT else if b.depth == 1 then INK_FAINT else RULE end
         items = append(items, {kind: "rect", r: rect(ind + 5, y + PV_LH / 2 - 3, 6, 6), c: dot_c, a: 255, rad: 3})
         let f = flow(tokens: b.inl, x0: tx, y0: y, width: width - (tx - x0), base: PV_TS, lh: PV_LH)
         for it in f.items do items = append(items, it) end
         y = f.y
       end
-    elsif b.kind == "code" then
+    else if b.kind == "code" then
       let code_ts = {size: 13, font: "mono", color: CODE_INK}
       let clh = 20
       let hgt = len(b.lines) * clh + 24
@@ -720,10 +720,10 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
         items = append(items, {kind: "text", x: x0 + 14, y: y + 12 + li * clh + 2, text: b.lines[li], ts: code_ts, url: ""})
       end
       y = y + hgt
-    elsif b.kind == "rule" then
+    else if b.kind == "rule" then
       items = append(items, {kind: "line", x1: x0 + width * 0.3, y1: y + 8, x2: x0 + width * 0.7, y2: y + 8, c: RULE, w: 1})
       y = y + 16
-    elsif b.kind == "table" then
+    else if b.kind == "table" then
       let ncol = 0
       for r in b.rows do
         ncol = max(ncol, len(r))
@@ -756,7 +756,7 @@ fn layout_preview(blocks: list, x0: num, width: num) -> record
           let is_head = b.head && ri == 0
           if is_head then
             items = append(items, {kind: "rect", r: rect(x0, ty, min(width, total), rh), c: TABLE_HEAD, a: 255, rad: 4})
-          elsif ri % 2 == (if b.head then 0 else 1 end) then
+          else if ri % 2 == (if b.head then 0 else 1 end) then
             items = append(items, {kind: "rect", r: rect(x0, ty, min(width, total), rh), c: PAPER_LOW, a: 120, rad: 0})
           end
           let cx = x0
@@ -858,7 +858,7 @@ fn delete_range(lines: list, s: record, e: record) -> list
   for i in range(0, len(lines)) do
     if i < s.line || i > e.line then
       out = append(out, lines[i])
-    elsif i == s.line then
+    else if i == s.line then
       out = append(out, slice(lines[s.line], start: 0, end: s.col) ++ slice(lines[e.line], start: e.col, end: len(lines[e.line])))
     end
   end
@@ -875,7 +875,7 @@ fn insert_text(lines: list, p: record, txt: string) -> record
   for i in range(0, len(lines)) do
     if i != p.line then
       out = append(out, lines[i])
-    elsif len(parts) == 1 then
+    else if len(parts) == 1 then
       out = append(out, head ++ parts[0] ++ tail)
     else
       out = append(out, head ++ parts[0])
@@ -932,7 +932,7 @@ fn continuation(s: string) -> string
   let m = list_marker(s)
   if m.kind == "none" then
     ""
-  elsif len(trim(slice(s, start: m.indent + m.mlen, end: len(s)))) == 0 then
+  else if len(trim(slice(s, start: m.indent + m.mlen, end: len(s)))) == 0 then
     ""
   else
     let pad = slice(s, start: 0, end: m.indent)
@@ -953,12 +953,12 @@ fn line_runs(s: string, in_fence: bool) -> list
   let n = len(s)
   if in_fence || is_fence(s) then
     [{a: 0, b: n, c: if is_fence(s) then SYN_FENCE else SYN_CODE end}]
-  elsif heading_level(s) > 0 then
+  else if heading_level(s) > 0 then
     let lv = heading_level(s)
     [{a: 0, b: lv, c: SYN_MARK}, {a: lv, b: n, c: SYN_HEAD}]
-  elsif is_rule(s) then
+  else if is_rule(s) then
     [{a: 0, b: n, c: SYN_MARK}]
-  elsif is_table_row(s) then
+  else if is_table_row(s) then
     let runs = []
     for i in range(0, n) do
       runs = append(runs, {a: i, b: i + 1, c: if ch(s, i) == "|" || is_table_sep(s) then SYN_MARK else TEXT end})
@@ -1097,8 +1097,8 @@ let lines = doc.lines
 # ── Layout of the two panes ──────────────────────────────────────────────
 let s = bloom.splitter(MAIN, pane_frac, {min_a: 300, min_b: 300, line: OUTLINE, active: ACCENT, band: 9, gap: 0})
 pane_frac = s.frac
-let ed_r = if mode == "editor" then MAIN elsif mode == "preview" then rect(0, 0, 0, 0) else s.a end
-let pv_r = if mode == "preview" then MAIN elsif mode == "editor" then rect(0, 0, 0, 0) else s.b end
+let ed_r = if mode == "editor" then MAIN else if mode == "preview" then rect(0, 0, 0, 0) else s.a end
+let pv_r = if mode == "preview" then MAIN else if mode == "editor" then rect(0, 0, 0, 0) else s.b end
 let show_ed = mode != "preview"
 let show_pv = mode != "editor"
 
@@ -1132,7 +1132,7 @@ if show_ed && click && point_in(px: mx, py: my, r: text_r) && !s.dragging then
     anchor = {line: p.line, col: word_start(ln, p.col)}
     cur = {line: p.line, col: word_end(ln, p.col)}
     dragging = false
-  elsif mod_shift() then
+  else if mod_shift() then
     cur = p
     dragging = true
   else
@@ -1198,7 +1198,7 @@ if cmd && key_pressed("z") then
       did_edit = true
       edit_kind = "history"
     end
-  elsif len(undo) > 0 then
+  else if len(undo) > 0 then
     let snap = undo[len(undo) - 1]
     undo = drop_last(undo)
     redo = append(redo, {lines: lines, cur: cur, anchor: anchor})
@@ -1208,13 +1208,13 @@ if cmd && key_pressed("z") then
     did_edit = true
     edit_kind = "history"
   end
-elsif cmd && key_pressed("a") then
+else if cmd && key_pressed("a") then
   anchor = {line: 0, col: 0}
   cur = {line: len(lines) - 1, col: len(lines[len(lines) - 1])}
-elsif cmd && key_pressed("e") then
-  mode = if mode == "editor" then "split" elsif mode == "split" then "preview" else "editor" end
-elsif cmd && (key_pressed("b") || key_pressed("i") || key_pressed("k")) then
-  let mark = if key_pressed("b") then "**" elsif key_pressed("i") then "*" else "[" end
+else if cmd && key_pressed("e") then
+  mode = if mode == "editor" then "split" else if mode == "split" then "preview" else "editor" end
+else if cmd && (key_pressed("b") || key_pressed("i") || key_pressed("k")) then
+  let mark = if key_pressed("b") then "**" else if key_pressed("i") then "*" else "[" end
   let suffix = if key_pressed("k") then "](https://)" else mark end
   let w = wrap_sel(lines, lo, hi, hassel, cur, mark, suffix)
   new_lines = w.lines
@@ -1222,51 +1222,51 @@ elsif cmd && (key_pressed("b") || key_pressed("i") || key_pressed("k")) then
   cur = w.cur
   did_edit = true
   edit_kind = "wrap"
-elsif key_pressed("left") then
+else if key_pressed("left") then
   moved = true
   if hassel && !sh then
     cur = lo
-  elsif cur.col > 0 then
+  else if cur.col > 0 then
     cur = {line: cur.line, col: cur.col - 1}
-  elsif cur.line > 0 then
+  else if cur.line > 0 then
     cur = {line: cur.line - 1, col: len(lines[cur.line - 1])}
   end
-elsif key_pressed("right") then
+else if key_pressed("right") then
   moved = true
   if hassel && !sh then
     cur = hi
-  elsif cur.col < len(lines[cur.line]) then
+  else if cur.col < len(lines[cur.line]) then
     cur = {line: cur.line, col: cur.col + 1}
-  elsif cur.line < len(lines) - 1 then
+  else if cur.line < len(lines) - 1 then
     cur = {line: cur.line + 1, col: 0}
   end
-elsif key_pressed("up") || key_pressed("down") || key_pressed("pageup") || key_pressed("pagedown") then
+else if key_pressed("up") || key_pressed("down") || key_pressed("pageup") || key_pressed("pagedown") then
   moved = true
   keep_goal = true
   let step = if key_pressed("up") then -1
-  elsif key_pressed("down") then 1
-  elsif key_pressed("pageup") then -(TEXT_H / LH) + 1
+  else if key_pressed("down") then 1
+  else if key_pressed("pageup") then -(TEXT_H / LH) + 1
   else (TEXT_H / LH) - 1 end
   let nr = iclamp(ri + step, lo: 0, hi: len(rows) - 1)
   let row = rows[nr]
   cur = {line: row.li, col: iclamp(row.a + goal, lo: row.a, hi: row.b)}
-elsif key_pressed("home") then
+else if key_pressed("home") then
   moved = true
   cur = {line: cur.line, col: if cmd then 0 else rows[ri].a end}
-elsif key_pressed("end") then
+else if key_pressed("end") then
   moved = true
   cur = {line: cur.line, col: if cmd then len(lines[cur.line]) else rows[ri].b end}
-elsif key_pressed("backspace") then
+else if key_pressed("backspace") then
   did_edit = true
   edit_kind = "delete"
   if hassel then
     new_lines = delete_range(lines, s: lo, e: hi)
     cur = lo
-  elsif cur.col > 0 then
+  else if cur.col > 0 then
     let p0 = {line: cur.line, col: cur.col - 1}
     new_lines = delete_range(lines, s: p0, e: cur)
     cur = p0
-  elsif cur.line > 0 then
+  else if cur.line > 0 then
     let p0 = {line: cur.line - 1, col: len(lines[cur.line - 1])}
     new_lines = delete_range(lines, s: p0, e: cur)
     cur = p0
@@ -1274,21 +1274,21 @@ elsif key_pressed("backspace") then
     did_edit = false
   end
   anchor = cur
-elsif key_pressed("delete") then
+else if key_pressed("delete") then
   did_edit = true
   edit_kind = "delete"
   if hassel then
     new_lines = delete_range(lines, s: lo, e: hi)
     cur = lo
-  elsif cur.col < len(lines[cur.line]) then
+  else if cur.col < len(lines[cur.line]) then
     new_lines = delete_range(lines, s: cur, e: {line: cur.line, col: cur.col + 1})
-  elsif cur.line < len(lines) - 1 then
+  else if cur.line < len(lines) - 1 then
     new_lines = delete_range(lines, s: cur, e: {line: cur.line + 1, col: 0})
   else
     did_edit = false
   end
   anchor = cur
-elsif key_pressed("return") then
+else if key_pressed("return") then
   did_edit = true
   edit_kind = "newline"
   let base = if hassel then delete_range(lines, s: lo, e: hi) else lines end
@@ -1305,7 +1305,7 @@ elsif key_pressed("return") then
     cur = res.cur
   end
   anchor = cur
-elsif key_pressed("tab") then
+else if key_pressed("tab") then
   did_edit = true
   edit_kind = "type"
   let base = if hassel then delete_range(lines, s: lo, e: hi) else lines end
@@ -1314,7 +1314,7 @@ elsif key_pressed("tab") then
   new_lines = res.lines
   cur = res.cur
   anchor = cur
-elsif key_pressed("escape") then
+else if key_pressed("escape") then
   anchor = cur
 end
 
@@ -1417,8 +1417,8 @@ if show_ed then
     end
     # selection band
     if hassel2 && lo2.line <= r.li && hi2.line >= r.li then
-      let s0 = if lo2.line < r.li then r.a elsif lo2.line == r.li then max(r.a, lo2.col) else r.b + 1 end
-      let s1 = if hi2.line > r.li then r.b elsif hi2.line == r.li then min(r.b, hi2.col) else r.a - 1 end
+      let s0 = if lo2.line < r.li then r.a else if lo2.line == r.li then max(r.a, lo2.col) else r.b + 1 end
+      let s1 = if hi2.line > r.li then r.b else if hi2.line == r.li then min(r.b, hi2.col) else r.a - 1 end
       if s1 >= s0 then
         let sw = if s1 == s0 && hi2.line > r.li then CW * 0.6 else (s1 - s0) * CW end
         draw_rect_rounded(rect(TEXT_X + (s0 - r.a) * CW, ry - 3, max(3, sw), LH), radius: 3, c: SELBG)
@@ -1487,12 +1487,12 @@ if show_pv then
           hover_link = it.url
         end
       end
-    elsif it.kind == "rect" then
+    else if it.kind == "rect" then
       let rr = rect(it.r.x, it.r.y + oy, it.r.w, it.r.h)
       if it.rad > 0 then draw_rect_rounded(rr, radius: it.rad, c: it.c, a: it.a) else draw_rect(rr, c: it.c, a: it.a) end
-    elsif it.kind == "line" then
+    else if it.kind == "line" then
       draw_line({x: it.x1, y: it.y1 + oy}, {x: it.x2, y: it.y2 + oy}, it.c, 255, it.w)
-    elsif it.kind == "check" then
+    else if it.kind == "check" then
       let br = rect(it.r.x, it.r.y + oy, it.r.w, it.r.h)
       let hot = point_in(px: mx, py: my, r: rect(br.x - 4, br.y - 4, br.w + 8, br.h + 8))
       if it.on then
@@ -1505,7 +1505,7 @@ if show_pv then
           g: if hot then ACCENT_INK.g else INK_FAINT.g end, b: if hot then ACCENT_INK.b else INK_FAINT.b end, a: 255, width: 1.5)
       end
       if hot && click then toggle_line = it.line end
-    elsif it.kind == "jump" then
+    else if it.kind == "jump" then
       let jr = rect(it.r.x, it.r.y + oy, it.r.w, it.r.h)
       if point_in(px: mx, py: my, r: jr) && click then
         jump_to = it.line
@@ -1562,7 +1562,7 @@ for d in docs do
   if on then
     draw_rect_rounded(r, radius: 7, c: RAIL_ROW)
     draw_rect_rounded(rect(r.x, r.y + 10, 3, r.h - 20), radius: 1.5, c: ACCENT)
-  elsif hot then
+  else if hot then
     draw_rect_rounded(r, radius: 7, c: RAIL_ROW, a: 140)
   end
   draw_text(ellipsize(doc_title(d), avail_px: r.w - 24, size: FS), pos: {x: r.x + 12, y: r.y + 6},
@@ -1612,7 +1612,7 @@ for h in heads do
     for t in h.inl do txt = txt ++ t.text end
     let ind = 12 + (h.level - 1) * 12
     draw_text(ellipsize(txt, avail_px: r.w - ind - 8, size: FS_SM), pos: {x: r.x + ind, y: r.y + 5},
-      style: {size: if h.level == 1 then FS else FS_SM end, color: if on then TEXT elsif h.level <= 2 then DIM else FAINT end,
+      style: {size: if h.level == 1 then FS else FS_SM end, color: if on then TEXT else if h.level <= 2 then DIM else FAINT end,
         weight: if h.level == 1 then 600 else 400 end})
     if hot && click then
       jump_to = h.line
@@ -1669,7 +1669,7 @@ for i in range(0, 3) do
   let hot = hovered(r)
   if on then
     draw_rect_rounded(rect(r.x + 2, r.y + 2, r.w - 4, r.h - 4), radius: 6, c: ACCENT_INK)
-  elsif hot then
+  else if hot then
     draw_rect_rounded(rect(r.x + 2, r.y + 2, r.w - 4, r.h - 4), radius: 6, c: RAIL_ROW)
   end
   draw_text_center(seg_labels[i], cx: r.x + r.w / 2, y: r.y + 7, style: {size: FS_SM, color: if on then TEXT else DIM end, weight: if on then 600 else 400 end})
@@ -1682,7 +1682,7 @@ let sync_hot = hovered(sync_r)
 draw_rect_rounded(sync_r, radius: 7, c: if sync then ACCENT_INK else SLATE_HI end, a: if sync then 60 else 255 end)
 draw_rect_outline(sync_r, if sync then ACCENT_INK else OUTLINE end)
 draw_circle(center: {x: sync_r.x + 14, y: sync_r.y + 14}, radius: 4, c: if sync then ACCENT else FAINT end)
-draw_text("sync scroll", pos: {x: sync_r.x + 26, y: sync_r.y + 7}, style: {size: FS_SM, color: if sync then TEXT elsif sync_hot then TEXT else DIM end})
+draw_text("sync scroll", pos: {x: sync_r.x + 26, y: sync_r.y + 7}, style: {size: FS_SM, color: if sync then TEXT else if sync_hot then TEXT else DIM end})
 if sync_hot && click then
   sync = !sync
   last_escroll = -1
@@ -1704,13 +1704,13 @@ for p in left_parts do
   draw_text(p, pos: {x: lx, y: sy + 7}, style: {size: FS_TINY, color: DIM})
   lx = lx + text_width(p, FS_TINY) + 22
 end
-let save_c = if dirty then CARET elsif now - flash < 2.0 then :7fd39a else FAINT end
+let save_c = if dirty then CARET else if now - flash < 2.0 then :7fd39a else FAINT end
 draw_circle(center: {x: lx + 4, y: sy + 13}, radius: 3, c: save_c)
-draw_text(if dirty then "unsaved" elsif now - flash < 2.0 then "saved" else "up to date" end,
+draw_text(if dirty then "unsaved" else if now - flash < 2.0 then "saved" else "up to date" end,
   pos: {x: lx + 14, y: sy + 7}, style: {size: FS_TINY, color: save_c})
 let undo_n = len(undo)
 let redo_n = len(redo)
 let right_txt = if hover_link != "" then hover_link
-elsif s.dragging then "{int(s.frac * 100)}% editor"
+else if s.dragging then "{int(s.frac * 100)}% editor"
 else "⌘B bold · ⌘I italic · ⌘K link · ⌘Z undo · ⌘E view · {undo_n} undo · {redo_n} redo" end
 draw_text_right(right_txt, right_x: W - 16, y: sy + 7, style: {size: FS_TINY, color: if hover_link != "" then ACCENT else FAINT end})

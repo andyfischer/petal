@@ -327,7 +327,7 @@ if edit == "" then
   if key_pressed("f") then tab = 2 end
   if key_pressed("q") || key_pressed("tab") then edit = "qty" end
   if key_pressed("return") then want_submit = true end
-elsif key_pressed("tab") then
+else if key_pressed("tab") then
   edit = if edit == "qty" && kind == "lmt" then "px" else "qty" end
 end
 let typing_key = edit == "" && (key_pressed("q") || key_pressed("tab"))
@@ -394,7 +394,7 @@ if tf >= 2 && agg_key != _agg_key then
   _agg_key = agg_key
 end
 let _series = if tf == 0 then append(slice(m.done1[sel], -SERIES_KEEP), q.b1)
-elsif tf == 1 then append(slice(sel_d5, -SERIES_KEEP), q.b5)
+else if tf == 1 then append(slice(sel_d5, -SERIES_KEEP), q.b5)
 else pc.with_tail(_agg, q.b5, secs)
 end
 
@@ -722,7 +722,7 @@ if tab == 0 then
     let act = Rect(tb.x + cols[8].x + cols[8].w - 54, row.y + 3, 54, ROW_H - 6)
     if lk.ghost(act, "Close", lk.DOWN) then
       close_i = i
-    elsif lk.press(row) then
+    else if lk.press(row) then
       sel = i
     end
     let pc_c = lk.dir_color(pnl)
@@ -763,7 +763,7 @@ if tab == 0 then
     leg_x += txt(part.label, Rect(leg_x, ay + 28, 10, 20), lk.ui(11, lk.MUTED)) + 6.0
     leg_x += txt(slice(nf.pct(part.share), 1), Rect(leg_x, ay + 28, 10, 20), lk.mono(11, lk.TEXT)) + 20.0
   end
-elsif tab == 1 then
+else if tab == 1 then
   let cols = columns(tb.w, [["TIME", 1.0, "left"], ["SIDE", 0.7, "left"], ["SYMBOL", 0.9, "left"],
     ["TYPE", 0.8, "left"], ["QTY", 0.9, "right"], ["FILLED", 0.9, "right"], ["LIMIT", 1.0, "right"],
     ["LAST", 1.0, "right"], ["AWAY", 0.9, "right"], ["STATUS", 1.1, "right"], ["", 1.0, "right"]])
@@ -782,14 +782,14 @@ elsif tab == 1 then
     let ink = if live then lk.TEXT else lk.DIM end
     let sc = if !live then lk.DIM else lk.dir_color(o.side) end
     let away = if o.kind == "lmt" then nf.pct(float(o.limit - px_last) / float(px_last)) else "" end
-    let status_c = if live then lk.AMBER elsif o.status == "filled" then lk.MUTED else lk.DIM end
+    let status_c = if live then lk.AMBER else if o.status == "filled" then lk.MUTED else lk.DIM end
     table_row(Rect(tb.x, row.y, tb.w, ROW_H), cols, [[nf.hhmmss(o.t), lk.mono(12, lk.DIM), "left"],
       [side_word(o.side), lk.uib(12, sc), "left"], [mk.UNIVERSE[o.i].tk, lk.uib(12, ink), "left"],
       [if o.kind == "mkt" then "Market" else "Limit" end, lk.ui(12, lk.MUTED), "left"],
       [nf.commas(o.qty), lk.mono(12, ink), "right"], [nf.commas(o.qty - o.rem), lk.mono(12, lk.MUTED), "right"],
       [if o.kind == "lmt" then nf.px(o.limit) else "MKT" end, lk.mono(12, ink), "right"],
       [nf.px(px_last), lk.mono(12, lk.MUTED), "right"], [if live then away else "" end, lk.mono(12, lk.MUTED), "right"],
-      [if live then "Working" elsif o.status == "filled" then "Filled" else "Cancelled" end, lk.ui(12, status_c),
+      [if live then "Working" else if o.status == "filled" then "Filled" else "Cancelled" end, lk.ui(12, status_c),
         "right"]])
     if live then
       let act = Rect(tb.x + cols[10].x + cols[10].w - 58, row.y + 3, 58, ROW_H - 6)
@@ -914,10 +914,10 @@ for k in range(0, 5) do
     if lk.ghost(cr, str(presets[k]), lk.ACCENT) then
       qty_text = str(presets[k])
     end
-  elsif lk.ghost(cr, "Max", lk.ACCENT) then
+  else if lk.ghost(cr, "Max", lk.ACCENT) then
     let unit = if kind == "lmt" then nf.parse_cents(px_text) ?? 0 else tq.ask end
     qty_text = if side < 0 then str(max(0, free_sh))
-    elsif unit > 0 then str(clamp(int(float(buying_power - 200) / (float(unit) * 1.004 + 0.5)), lo: 0, hi: MAX_QTY))
+    else if unit > 0 then str(clamp(int(float(buying_power - 200) / (float(unit) * 1.004 + 0.5)), lo: 0, hi: MAX_QTY))
     else "0"
     end
   end
@@ -951,18 +951,18 @@ end
 let t_qty = parse_int(qty_text) ?? 0
 let t_px = if limit_on then nf.parse_cents(px_text) ?? 0 else 0 end
 let sweep = mk.sweep(sel, tq.bid, tq.ask, clock, side, max(1, t_qty), 0)
-let est = if t_qty <= 0 then 0 elsif limit_on then t_qty * t_px else sweep.cost end
+let est = if t_qty <= 0 then 0 else if limit_on then t_qty * t_px else sweep.cost end
 let est_px = if t_qty <= 0 then 0.0 else float(est) / float(t_qty) end
 let fee = if t_qty > 0 then fee_for(t_qty) else 0 end
 let off_market = float(abs(t_px - tq.last)) > COLLAR * float(tq.last)
 let ticket_error = if side < 0 && held <= 0 then "No {tu.tk} shares to sell"
-elsif t_qty <= 0 then "Enter a share quantity"
-elsif t_qty > MAX_QTY then "Order size is capped at {nf.commas(MAX_QTY)} shares"
-elsif limit_on && t_px <= 0 then "Enter a limit price"
-elsif limit_on && off_market then "Limit is more than 20% away from the last trade"
-elsif side > 0 && est + fee > buying_power then "Needs {nf.usd(est + fee)}, buying power is {nf.usd(buying_power)}"
-elsif side < 0 && t_qty > free_sh && free_sh < held then "Only {nf.commas(free_sh)} free; the rest back working orders"
-elsif side < 0 && t_qty > free_sh then "The account holds only {nf.commas(held)} {tu.tk}"
+else if t_qty <= 0 then "Enter a share quantity"
+else if t_qty > MAX_QTY then "Order size is capped at {nf.commas(MAX_QTY)} shares"
+else if limit_on && t_px <= 0 then "Enter a limit price"
+else if limit_on && off_market then "Limit is more than 20% away from the last trade"
+else if side > 0 && est + fee > buying_power then "Needs {nf.usd(est + fee)}, buying power is {nf.usd(buying_power)}"
+else if side < 0 && t_qty > free_sh && free_sh < held then "Only {nf.commas(free_sh)} free; the rest back working orders"
+else if side < 0 && t_qty > free_sh then "The account holds only {nf.commas(held)} {tu.tk}"
 else ""
 end
 let can_submit = ticket_error == ""
@@ -970,7 +970,7 @@ let can_submit = ticket_error == ""
 let is_prompt = (t_qty <= 0 || (limit_on && t_px <= 0)) && !(side < 0 && held <= 0)
 
 let after_bp = if side > 0 then buying_power - est - fee
-elsif limit_on then buying_power
+else if limit_on then buying_power
 else buying_power + est - fee
 end
 let lines = [
@@ -995,7 +995,7 @@ let msg_r = Rect(tx + wobble, r_ticket.y + 444, tw, 18)
 if can_submit then
   let ok = if limit_on && ((side > 0 && t_px >= tq.ask) || (side < 0 && t_px <= tq.bid))
     then "Marketable: fills now, up to the limit"
-  elsif limit_on then "Rests in the book until the market reaches it"
+  else if limit_on then "Rests in the book until the market reaches it"
   else "Fills now against the book"
   end
   txt(ok, msg_r, lk.ui(11, lk.DIM), "center")
@@ -1114,7 +1114,7 @@ set toasts = for t in toasts do
 end
 for k in range(0, len(toasts)) do
   let t = toasts[k]
-  let tone = if t.kind == "buy" then lk.UP elsif t.kind == "sell" then lk.DOWN else lk.AMBER end
+  let tone = if t.kind == "buy" then lk.UP else if t.kind == "sell" then lk.DOWN else lk.AMBER end
   let style = lk.ui(12, lk.TEXT)
   let w = text_width(t.text, style) + 44
   # A toast raised on a frame with no time in it (an injected click) is

@@ -59,7 +59,7 @@ end
 fn round_lot(n: num) -> int
   let v = int(n)
   if v >= 1000 then v / 100 * 100
-  elsif v >= 150 then v / 10 * 10
+  else if v >= 150 then v / 10 * 10
   else max(1, v)
   end
 end
@@ -227,7 +227,7 @@ pub fn step(m: record) -> record
       q.ask = mid + hs
       # Buyers lift the offer on the way up, sellers hit the bid on the way
       # down, and a quiet tape mostly repeats its last side.
-      let lean = if ret > 0.0 then 0.72 elsif ret < 0.0 then 0.28 else 0.5 end
+      let lean = if ret > 0.0 then 0.72 else if ret < 0.0 then 0.28 else 0.5 end
       let pick = if rnd() < 0.55 then (if q.side > 0 then 0.85 else 0.15 end) else lean end
       q.side = if rnd() < pick then 1 else -1 end
       q.last = if q.side > 0 then q.ask else q.bid end

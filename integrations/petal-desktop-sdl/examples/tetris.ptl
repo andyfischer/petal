@@ -88,12 +88,12 @@ let all_pieces = [piece_i, piece_o, piece_t, piece_s, piece_z, piece_j, piece_l]
 # I=1 cyan, O=2 yellow, T=3 purple, S=4 green, Z=5 red, J=6 blue, L=7 orange
 fn piece_color(t)
   if t == 1 then :00f0f0
-  elsif t == 2 then :f0f000
-  elsif t == 3 then :b432ff
-  elsif t == 4 then :32f032
-  elsif t == 5 then :f03232
-  elsif t == 6 then :3264f0
-  elsif t == 7 then :f0a01e
+  else if t == 2 then :f0f000
+  else if t == 3 then :b432ff
+  else if t == 4 then :32f032
+  else if t == 5 then :f03232
+  else if t == 6 then :3264f0
+  else if t == 7 then :f0a01e
   else :282828
   end
 end
@@ -101,12 +101,12 @@ end
 # Lighter highlight color for 3D top/left edge
 fn piece_highlight(t)
   if t == 1 then :96ffff
-  elsif t == 2 then :ffff96
-  elsif t == 3 then :dc96ff
-  elsif t == 4 then :96ff96
-  elsif t == 5 then :ff9696
-  elsif t == 6 then :96aaff
-  elsif t == 7 then :ffd28c
+  else if t == 2 then :ffff96
+  else if t == 3 then :dc96ff
+  else if t == 4 then :96ff96
+  else if t == 5 then :ff9696
+  else if t == 6 then :96aaff
+  else if t == 7 then :ffd28c
   else :3c3c3c
   end
 end
@@ -114,12 +114,12 @@ end
 # Darker shadow color for 3D bottom/right edge
 fn piece_shadow(t)
   if t == 1 then :008c8c
-  elsif t == 2 then :969600
-  elsif t == 3 then :641496
-  elsif t == 4 then :148c14
-  elsif t == 5 then :961414
-  elsif t == 6 then :143296
-  elsif t == 7 then :965a0a
+  else if t == 2 then :969600
+  else if t == 3 then :641496
+  else if t == 4 then :148c14
+  else if t == 5 then :961414
+  else if t == 6 then :143296
+  else if t == 7 then :965a0a
   else :141414
   end
 end
@@ -282,9 +282,9 @@ fn clear_lines(g)
     end
   end
   if cleared == 1 then set score += 100
-  elsif cleared == 2 then set score += 300
-  elsif cleared == 3 then set score += 500
-  elsif cleared == 4 then set score += 800
+  else if cleared == 2 then set score += 300
+  else if cleared == 3 then set score += 500
+  else if cleared == 4 then set score += 800
   end
   if cleared > 0 then
     set flash_timer = 0.3

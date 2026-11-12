@@ -251,7 +251,7 @@ pub fn load_view(r: record, ls: record, opts: record) -> bool
     if load_failed(ls) then
       _empty_state(r, field(opts, "error_title", "Something went wrong"), str(ls.error),
         {fg: t.danger})
-    elsif load_loading(ls) then
+    else if load_loading(ls) then
       spinner(r.x + r.w / 2.0, r.y + r.h / 2.0, field(opts, "radius", 10), t.accent)
     else
       _empty_state(r, field(opts, "idle_title", "Nothing loaded"), "", {})

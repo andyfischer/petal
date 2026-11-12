@@ -143,7 +143,7 @@ end
 pub fn palette(index: num, colors: list)
   if len(colors) >= 4 then
     set_palette(index, colors[0], colors[1], colors[2], colors[3])
-  elsif len(colors) == 3 then
+  else if len(colors) == 3 then
     set_palette(index, backdrop(), colors[0], colors[1], colors[2])
   end
 end
@@ -913,7 +913,7 @@ pub fn btn_repeat(pad: num, name: string, delay: num, rate: num) -> bool
     # First frame of the hold — fire immediately, then wait out `delay`.
     fire = true
     at = time() + delay
-  elsif time() >= at then
+  else if time() >= at then
     fire = true
     # Advance by one period rather than from `now`, so a slow frame does not
     # stretch the repeat; a *very* slow frame resyncs instead of firing in a
@@ -1044,7 +1044,7 @@ fn _menu_sel(id: string, write: bool, v: num) -> num
   let e = get _nes_menu_sel[id]
   let s = if write then
     v
-  elsif e != nil && e.seen >= frame_count() - 1 then
+  else if e != nil && e.seen >= frame_count() - 1 then
     e.sel
   else
     0
@@ -1177,7 +1177,7 @@ pub fn solid_box(r: record) -> bool
     for cx in range(x0, x1 + 1) do
       if cx < 0 || cy < 0 || cx >= map_cols() || cy >= map_rows() then
         hit = true
-      elsif solid_tile(get_tile(cx, cy)) then
+      else if solid_tile(get_tile(cx, cy)) then
         hit = true
       end
     end

@@ -377,7 +377,7 @@ end
 
 fn stars_for(moves: int, pairs: int) -> int
   if moves * 4 <= pairs * 7 then 3
-  elsif moves * 2 <= pairs * 5 then 2
+  else if moves * 2 <= pairs * 5 then 2
   else 1
   end
 end
@@ -684,13 +684,13 @@ end
 if key_pressed("left") && cursor % COLS > 0 then
   set cursor -= 1
   set kbd = true
-elsif key_pressed("right") && cursor % COLS < COLS - 1 then
+else if key_pressed("right") && cursor % COLS < COLS - 1 then
   set cursor += 1
   set kbd = true
-elsif key_pressed("up") && cursor >= COLS then
+else if key_pressed("up") && cursor >= COLS then
   set cursor -= COLS
   set kbd = true
-elsif key_pressed("down") && cursor + COLS < len(cards) then
+else if key_pressed("down") && cursor + COLS < len(cards) then
   set cursor += COLS
   set kbd = true
 end
@@ -699,7 +699,7 @@ if key_pressed("left") || key_pressed("right") || key_pressed("up") || key_press
 if (key_pressed("space") || key_pressed("return")) then
   if phase == "won" then
     new_game(level)
-  elsif can_play then
+  else if can_play then
     set kbd = true
     let r = slot(cursor)
     flip_card(cursor, {x: r.center_x(), y: r.y})

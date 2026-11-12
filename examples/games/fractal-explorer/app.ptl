@@ -224,9 +224,9 @@ end
 # Magnification: 1.0x, 240x, 12.5kx, 3.4Mx, then powers of ten.
 fn fmt_mag(m: num) -> string
   if m < 10.0 then "{fixed(m, 2)}x"
-  elsif m < 1000.0 then "{fixed(m, 0)}x"
-  elsif m < 1000000.0 then "{fixed(m / 1000.0, 1)}k x"
-  elsif m < 1000000000.0 then "{fixed(m / 1000000.0, 1)}M x"
+  else if m < 1000.0 then "{fixed(m, 0)}x"
+  else if m < 1000000.0 then "{fixed(m / 1000.0, 1)}k x"
+  else if m < 1000000000.0 then "{fixed(m / 1000000.0, 1)}M x"
   else
     let e = int(floor(log(m) / log(10.0)))
     "{fixed(m / pow(10.0, float(e)), 1)}e{e} x"
@@ -754,7 +754,7 @@ fn fit_tile(s: int, lod: int, dens: float) -> bool
             set sgb[so + n] = vn
             k += 2
           end
-        elsif last == count - 1 then
+        else if last == count - 1 then
           # The ramp reaches the tile's last sample: run it on to the
           # edge instead of spending a call on the final cell.
           let v_end = get vals[rb + last * st]
@@ -897,7 +897,7 @@ fn work(budget: int, cap: int, dens: float, fit_key: int) -> int
           end
         else
           if k == K_JULIA then mu = esc_quad(x, y, c_re, c_im, chunks)
-          elsif k == K_SHIP then mu = esc_ship(x, y, chunks)
+          else if k == K_SHIP then mu = esc_ship(x, y, chunks)
           else mu = esc_tri(x, y, chunks)
           end
           spent += if mu < 0.0 then inside_cost else int(mu) + sample_cost end
@@ -944,7 +944,7 @@ fn build_queue(fx: num, fy: num) -> nil
         set t_uni[s] = 0
         set t_cap[s] = MAXLOD
         set t_n[s] = 0
-      elsif s == get job_s then
+      else if s == get job_s then
         keep_job = true
       end
       let dx = float(tile_x * TPX + TPX / 2 - vx0) - fx
@@ -977,7 +977,7 @@ fn build_map(k: int) -> record
       if i < cols then
         let re = g.wx0 + (float(i) + 0.5) * float(MM_CELL) * g.ms
         let mu = if k == K_SHIP then esc_ship(re, im, 12)
-        elsif k == K_TRI then esc_tri(re, im, 12)
+        else if k == K_TRI then esc_tri(re, im, 12)
         else esc_quad(0.0, 0.0, re, im, 12)
         end
         level = if mu < 0.0 then 13 else min(int(sqrt(max(mu, 0.0)) * 2.2), 12) end
@@ -1256,7 +1256,7 @@ if (mouse_pressed(1) && in_cv) || key_pressed("j") then
     set ji = im
     set views[K_JULIA] = nil
     switch_kind(K_JULIA)
-  elsif kind == K_JULIA then
+  else if kind == K_JULIA then
     switch_kind(K_MANDEL)
   end
 end
@@ -1433,7 +1433,7 @@ tx(rule_s, x: head_pill.x + 14 + name_w + 14, y: head_pill.y + 6, style: S_MONO_
 if in_cv && !dragging then
   let pos_s = fmt_complex(cur_re, cur_im, places_n)
   let what_s = if cur_mu == -2.0 then "not sampled yet"
-  elsif cur_mu < 0.0 then "bounded after {maxit} iterations"
+  else if cur_mu < 0.0 then "bounded after {maxit} iterations"
   else "escapes after {fixed(cur_mu, 1)} iterations"
   end
   let pw = max(text_width(pos_s, S_MONO), text_width(what_s, S_HINT)) + 28
@@ -1451,8 +1451,8 @@ end
 # Bottom right: what the renderer is doing.
 let cap_px = STEPS[cap] * CELL
 let status_s = if complete && n_capped > 0 then "DONE - {n_capped} BUSY TILES AT 4 PX"
-elsif complete then "SHARP AT {cap_px} PX"
-elsif n_blank > 0 then "SKETCHING 16 PX"
+else if complete then "SHARP AT {cap_px} PX"
+else if n_blank > 0 then "SKETCHING 16 PX"
 else "REFINING TO {STEPS[min(pass_lod, cap)] * CELL} PX"
 end
 let pct_s = "{int(progress * 100.0)}%"
@@ -1516,9 +1516,9 @@ end
 # A chip that is either the selected one of a set, or a plain button.
 fn chip(r: Rect, label: string, on: bool, mx: int, my: int) -> nil
   let hov = point_in(px: mx, py: my, r: r)
-  draw_rect_rounded(r, radius: 7, c: if on then mix(C_CHIP, C_ACCENT, 0.16) elsif hov then C_EDGE else C_CHIP end)
+  draw_rect_rounded(r, radius: 7, c: if on then mix(C_CHIP, C_ACCENT, 0.16) else if hov then C_EDGE else C_CHIP end)
   if on then draw_rect_rounded_outline(r, radius: 7, c: C_ACCENT, a: 150, width: 1) end
-  tx_center(label, cx: r.x + r.w / 2, y: r.y + 6, style: if on then {...S_UI, color: C_ACCENT} elsif hov then S_UI else S_UI_M end)
+  tx_center(label, cx: r.x + r.w / 2, y: r.y + 6, style: if on then {...S_UI, color: C_ACCENT} else if hov then S_UI else S_UI_M end)
 end
 
 fn toggle_chip(r: Rect, label: string, on: bool, mx: int, my: int) -> nil
@@ -1606,7 +1606,7 @@ for i in range(0, len(PALS)) do
   clip_pop()
   if on then
     draw_rect_rounded_outline(r.inset(-2), radius: 8, c: C_TEXT, a: 255, width: 2)
-  elsif point_in(px: mx, py: my, r: r) then
+  else if point_in(px: mx, py: my, r: r) then
     draw_rect_rounded_outline(r.inset(-1), radius: 7, c: C_DIM, a: 255, width: 1)
   end
 end
@@ -1630,7 +1630,7 @@ for i in range(0, len(places)) do
   let on = place_now == i
   if hov then draw_rect_rounded(r, radius: 6, c: C_CHIP) end
   draw_circle({x: r.x + 14, y: r.y + r.h / 2}, 2, if on then C_ACCENT else C_MUTE end, 255)
-  tx(p.name, x: r.x + 26, y: r.y + 4, style: if on then S_UI elsif hov then S_UI else S_UI_M end)
+  tx(p.name, x: r.x + 26, y: r.y + 4, style: if on then S_UI else if hov then S_UI else S_UI_M end)
   let note = if kind == K_JULIA then fmt_complex(p.x, p.y, 3) else fmt_mag(KINDS[kind].span / p.span) end
   tx_right(note, right_x: r.x + r.w - 10, y: r.y + 6, style: {...S_KEY, color: if on then C_DIM else C_MUTE end})
 end

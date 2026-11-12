@@ -406,8 +406,8 @@ end
 let hr = cell_rect(ox: bx, oy: by, c: body[0], inset: 0)
 let hcx = hr.x + CELL / 2
 let hcy = hr.y + CELL / 2
-let ex = if dir == 1 then 4 elsif dir == 3 then -4 else 0 end
-let ey = if dir == 2 then 4 elsif dir == 0 then -4 else 0 end
+let ex = if dir == 1 then 4 else if dir == 3 then -4 else 0 end
+let ey = if dir == 2 then 4 else if dir == 0 then -4 else 0 end
 let px = if dir == 0 || dir == 2 then 5 else 0 end
 let py = if dir == 1 || dir == 3 then 5 else 0 end
 draw_circle(center: {x: hcx + ex + px, y: hcy + ey + py}, radius: 2, c: :0b2318)
@@ -506,10 +506,10 @@ end
 # Buttons
 fn chip(r: record, text: string, on: bool, accent: record)
   let hot = hovered(r)
-  let bg = if on then mix(CARD, accent, t: 0.16) elsif hot then CARD_HI else CARD end
+  let bg = if on then mix(CARD, accent, t: 0.16) else if hot then CARD_HI else CARD end
   draw_rect_rounded(r, radius: 8, c: bg)
   draw_rect_outline(r, c: if on then accent else EDGE end, a: if on then 160 else 110 end)
-  let fg = if on then accent elsif hot then TEXT else DIM end
+  let fg = if on then accent else if hot then TEXT else DIM end
   draw_text_center(text, cx: r.x + r.w / 2, y: r.y + (r.h - 13) / 2, size: 13, c: fg)
 end
 

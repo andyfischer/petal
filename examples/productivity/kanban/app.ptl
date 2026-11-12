@@ -67,13 +67,13 @@ end
 
 fn pri_color(p: num) -> record
   if p == 2 then DANGER
-  elsif p == 1 then :d9a441
+  else if p == 1 then :d9a441
   else :3d4653
   end
 end
 
 fn pri_name(p: num) -> string
-  if p == 2 then "urgent" elsif p == 1 then "normal" else "low" end
+  if p == 2 then "urgent" else if p == 1 then "normal" else "low" end
 end
 
 # ── Board state ──────────────────────────────────────────────────────────
@@ -210,13 +210,13 @@ fn draw_card(r: record, card: record, mode: string)
     draw_rect_rounded(rect(r.x + 2, r.y + 9, r.w, r.h), radius: 12, c: :000000, a: 120)
   end
   let bg = if mode == "lift" then CARD_LIFT
-  elsif mode == "hover" then CARD_HOV
+  else if mode == "hover" then CARD_HOV
   else CARD_BG
   end
   draw_rect_rounded(r, radius: 12, c: bg)
   if mode == "lift" then
     draw_rect_outline(r, c: ACCENT, a: 170, width: 1)
-  elsif mode == "sel" then
+  else if mode == "sel" then
     draw_rect_outline(r, c: ACCENT, a: 200, width: 1)
   else
     draw_rect_outline(r, c: RULE, a: 255, width: 1)
@@ -318,8 +318,8 @@ fn view(cs: list, sc: list, sel: string)
         let r = place(card.id, rect(x + COL_PAD, y, INNER_W, h))
         draggable(card.id, r, fn() closest(moves_nested(cs, card.id)) |> floating() end)
         let mode = if is_dragging(card.id) then "lift"
-        elsif card.id == sel then "sel"
-        elsif card.id == get hover_id then "hover"
+        else if card.id == sel then "sel"
+        else if card.id == get hover_id then "hover"
         else "plain"
         end
         place(card.id, r, fn(p) draw_card(p, card, mode) end)
@@ -377,7 +377,7 @@ end
 # Press: select the card, or clear the selection on bare well space.
 if mouse_pressed(0) && hit != "" then
   sel_id = hit
-elsif mouse_pressed(0) then
+else if mouse_pressed(0) then
   let over_board = false
   for c in range(0, 4) do
     if point_in(px: mx, py: my, r: col_surf(c)) then
@@ -396,10 +396,10 @@ if cur.c < 0 && arrowed && len(cols[0]) > 0 then
   # Nothing selected: the first arrow lands on the first card.
   cur = {c: 0, i: 0}
   sel_id = cols[0][0].id
-elsif key_pressed("escape") then
+else if key_pressed("escape") then
   sel_id = ""
   cur = {c: -1, i: -1}
-elsif mod_shift() && cur.c >= 0 then
+else if mod_shift() && cur.c >= 0 then
   if key_pressed("up") && cur.i > 0 then
     let card = cols[cur.c][cur.i]
     cols[cur.c] = list_insert(list_remove(cols[cur.c], cur.i), k: cur.i - 1, v: card)
@@ -422,7 +422,7 @@ elsif mod_shift() && cur.c >= 0 then
     cols[cur.c + 1] = list_insert(cols[cur.c + 1], k: min(cur.i, len(cols[cur.c + 1])), v: card)
     moves = moves + 1
   end
-elsif cur.c >= 0 then
+else if cur.c >= 0 then
   if key_pressed("up") && cur.i > 0 then
     sel_id = cols[cur.c][cur.i - 1].id
   end

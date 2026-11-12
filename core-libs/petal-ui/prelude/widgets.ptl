@@ -612,7 +612,7 @@ pub fn context_menu(m, items, style)
   if gone then
     {menu: {...m, open: false, x: 0, y: 0, hover: -1, live: false, waited: false},
      index: -1, label: "", tag: m.tag, rect: {x: 0, y: 0, w: 0, h: 0}}
-  elsif !m.open || len(items) == 0 then
+  else if !m.open || len(items) == 0 then
     {menu: m, index: -1, label: "", tag: m.tag, rect: {x: 0, y: 0, w: 0, h: 0}}
   else
     let t = _palette()
@@ -997,12 +997,12 @@ pub fn commit_field(id, r, current, style)
     if res.cancelled then
       focus_request(nil)
       editing = false
-    elsif res.submitted then
+    else if res.submitted then
       out = buf
       focus_request(nil)
       editing = false
     end
-  elsif editing then
+  else if editing then
     # The keyboard went elsewhere (a click, Tab) mid-edit: apply it.
     editing = false
     out = buf
@@ -1040,7 +1040,7 @@ pub fn number_field(id, r, value, style)
     if res.cancelled then
       focus_request(nil)
       editing = false
-    elsif res.submitted || !has_focus(id) then
+    else if res.submitted || !has_focus(id) then
       let v = parse_float(trim(buf))
       if v != nil then out = v end
       focus_request(nil)
@@ -1055,7 +1055,7 @@ pub fn number_field(id, r, value, style)
     end
     let it = interact(r, id)
     let bg = if it.down then _get(style, "active", t.selection)
-             elsif it.hover then _get(style, "hover", t.hover)
+             else if it.hover then _get(style, "hover", t.hover)
              else _get(style, "bg", t.overlay) end
     draw_rect_rounded(r, _get(style, "radius", t.radius_sm), bg)
     let size = _get(style, "size", t.font_sm)
@@ -1128,7 +1128,7 @@ pub fn swatches(r, colors, current, style)
       draw_rect_rounded(cr, rad, c)
       if same_color(c, current) then
         draw_rect_rounded_outline(pad(cr, -2), rad + 1, _get(style, "ring", t.accent), 255, 2)
-      elsif it.hover then
+      else if it.hover then
         draw_rect_rounded_outline(pad(cr, -1), rad + 1, _get(style, "hover", t.border_strong), 255, 1)
       end
       if it.click then picked = c end
@@ -1209,7 +1209,7 @@ pub fn segmented(r, labels, index, style)
     let it = interact(sr, id ++ "-" ++ str(i))
     if i == index then
       draw_rect_rounded(pad(sr, inset), max(0, rad - inset), _get(style, "on", t.panel))
-    elsif it.hover then
+    else if it.hover then
       draw_rect_rounded(pad(sr, inset), max(0, rad - inset), _get(style, "hover", t.hover))
     end
     if it.click then out = i end
@@ -1240,7 +1240,7 @@ pub fn dropdown(r, options, current, style)
   let shown = if i >= 0 then label_of(i) else _get(style, "placeholder", str(current ?? "")) end
   let it = interact(r, id)
   let rad = _get(style, "radius", t.radius_sm)
-  let bg = if m.open then t.selection elsif it.hover then _get(style, "hover", t.hover) else _get(style, "bg", t.overlay) end
+  let bg = if m.open then t.selection else if it.hover then _get(style, "hover", t.hover) else _get(style, "bg", t.overlay) end
   draw_rect_rounded(r, rad, bg)
   let size = _get(style, "size", t.font_sm)
   let ts = _ts(_face(t, style), size, _get(style, "fg", t.text))
@@ -1718,7 +1718,7 @@ pub fn table_col_rects(r, cols)
     let w = float(_get(c, "w", 0))
     if w >= 1.0 then
       fixed = fixed + int(w)
-    elsif w > 0.0 then
+    else if w > 0.0 then
       weights = weights + w
     else
       weights = weights + 1.0
@@ -1797,9 +1797,9 @@ pub fn table(tb, r, cols, rows_data, style)
     let rr = rect(body.x, body.y + vi * row_h, body.w, row_h)
     if idx == lst.selected then
       draw_rect(rr, _get(style, "selection", t.selection))
-    elsif _over(rr) then
+    else if _over(rr) then
       draw_rect(rr, t.hover)
-    elsif zebra && idx % 2 == 1 then
+    else if zebra && idx % 2 == 1 then
       draw_rect(rr, over(on, t.hover, 70))
     end
     let cells = rows_data[idx]
@@ -1833,7 +1833,7 @@ pub fn draw_load(r, ls, style)
     let t = _palette()
     if load_failed(ls) then
       empty_state(r, _get(style, "error_title", "Something went wrong"), ls.error, {fg: t.danger})
-    elsif load_loading(ls) then
+    else if load_loading(ls) then
       spinner(r.x + r.w / 2, r.y + r.h / 2, _get(style, "radius", 10))
     else
       empty_state(r, _get(style, "idle_title", "Nothing loaded"), "")

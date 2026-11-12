@@ -236,7 +236,7 @@ end
 if key_pressed("p") || key_pressed("escape") then
   if phase == Phase.play then
     set phase = Phase.paused
-  elsif phase == Phase.paused then
+  else if phase == Phase.paused then
     set phase = Phase.play
   end
 end
@@ -338,7 +338,7 @@ end
 
 # Tilt follows the velocity: nose up right after a flap, then dives.
 let want_ang = if phase == Phase.title then 0.0
-elsif phase == Phase.dead || phase == Phase.over then 1.45
+else if phase == Phase.dead || phase == Phase.over then 1.45
 else clamp(bvy / 600.0, lo: -0.45, hi: 1.2) end
 set bang = approach(cur: bang, target: want_ang, rate: if bvy < 0.0 then 18.0 else 6.0 end)
 
@@ -529,8 +529,8 @@ if card_text != nil then
   if phase == Phase.over then
     # Medal + the run's numbers.
     let medal = if score >= 30 then {c: C_GOLD, t: "GOLD"}
-    elsif score >= 15 then {c: C_SILVER, t: "SILVER"}
-    elsif score >= 5 then {c: C_BRONZE, t: "BRONZE"}
+    else if score >= 15 then {c: C_SILVER, t: "SILVER"}
+    else if score >= 5 then {c: C_BRONZE, t: "BRONZE"}
     else {c: C_MUTE, t: "NO MEDAL"} end
     let my = card.y + 122
     draw_circle({x: card.x + 46, y: my + 8}, 14, medal.c, 40)

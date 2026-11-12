@@ -85,7 +85,7 @@ pub fn picture(name: string, h: int, r: record, radius: num) -> nil
   clip_push(r, radius)
   if starts_with(low, "screenshot") || starts_with(low, "scan") then
     screenshot(h, r)
-  elsif contains(low, "logo") || contains(low, "wordmark") || contains(low, "favicon") || contains(low, "icon") then
+  else if contains(low, "logo") || contains(low, "wordmark") || contains(low, "favicon") || contains(low, "icon") then
     logo(h, r, low)
   else
     landscape(h, r)
@@ -118,7 +118,7 @@ fn text_card(text: string, r: record, code: bool, big: bool) -> nil
     let t = trim(line)
     let style = if starts_with(t, "//") || (code && starts_with(t, "#")) then
       {size: size, font: "mono", color: soft}
-    elsif !code && starts_with(t, "#") then
+    else if !code && starts_with(t, "#") then
       {size: size, font: "mono", color: :1c1e22, weight: 700}
     else
       {size: size, font: "mono", color: ink}
@@ -222,17 +222,17 @@ pub fn draw(n: record, r: record, T: record, o: record) -> nil
     let f = Rect(r.x + (r.w - w) / 2.0, r.y + (r.h - w / ar) / 2.0, w, w / ar)
     draw_shadow(f, {radius: 6, blur: 16, spread: 0, dx: 0, dy: 5, color: :000000, a: 80})
     picture(n.name, o.h, f, 6)
-  elsif (key == "text" || key == "code") && o.text != "" then
+  else if (key == "text" || key == "code") && o.text != "" then
     text_card(o.text, r, key == "code", o.big)
-  elsif key == "sheet" && o.text != "" then
+  else if key == "sheet" && o.text != "" then
     table_card(o.text, r, o.big)
-  elsif key == "pdf" || key == "doc" || key == "text" || key == "sheet" || key == "code" then
+  else if key == "pdf" || key == "doc" || key == "text" || key == "sheet" || key == "code" then
     page_card(o.h, r, c)
-  elsif key == "audio" then
+  else if key == "audio" then
     # About a megabyte a minute compressed, ten uncompressed.
     let rate = if ends_with(lower(n.name), ".wav") then 176000 else 24000 end
     wave_card(o.h, r, c, duration(n.size / rate), T)
-  elsif key == "video" then
+  else if key == "video" then
     let w = min(r.w, r.h * 16.0 / 9.0)
     let f = Rect(r.x + (r.w - w) / 2.0, r.y + (r.h - w * 9.0 / 16.0) / 2.0, w, w * 9.0 / 16.0)
     draw_shadow(f, {radius: 6, blur: 16, spread: 0, dx: 0, dy: 5, color: :000000, a: 80})
@@ -245,7 +245,7 @@ pub fn draw(n: record, r: record, T: record, o: record) -> nil
     fill_triangle({x: cx - pr * 0.3, y: cy - pr * 0.45}, {x: cx - pr * 0.3, y: cy + pr * 0.45}, {x: cx + pr * 0.5, y: cy}, :1b1d22)
     tl.draw_text_line(duration(n.size / 1900000), Rect(f.x, f.y + f.h - 24, f.w - 10, 16),
       {size: 11, font: "ui", color: :ffffff, weight: 600}, "right")
-  elsif key == "folder" && len(o.kids) > 0 then
+  else if key == "folder" && len(o.kids) > 0 then
     # What is inside, as a shelf of small icons.
     let cell = if o.big then 72.0 else 40.0 end
     let cols = max(1, int(r.w / cell))

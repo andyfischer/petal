@@ -243,7 +243,7 @@ pub fn merged(stored: record) -> record
     let v = field(stored, k, nil)
     if v != nil && type(v) == type(d[k]) then
       d[k] = v
-    elsif v != nil && (type(v) == "int" || type(v) == "float") && (type(d[k]) == "int" || type(d[k]) == "float") then
+    else if v != nil && (type(v) == "int" || type(v) == "float") && (type(d[k]) == "int" || type(d[k]) == "float") then
       d[k] = v
     end
   end
@@ -258,7 +258,7 @@ end
 pub fn show_num(s: record, v: num) -> string
   if s.fmt == "hour" then
     "{two(v)}:00"
-  elsif s.places > 0 then
+  else if s.places > 0 then
     let scaled = int(round(float(v) * pow(10.0, float(s.places))))
     let unit_n = int(pow(10.0, float(s.places)))
     let whole = scaled / unit_n
@@ -299,13 +299,13 @@ pub fn problem(s: record, v: string) -> string
     let at = index_of(t, "@")
     let domain = if at >= 0 then slice(t, at + 1) else "" end
     if t == "" then "An email address is required."
-    elsif contains(t, " ") then "Addresses cannot contain spaces."
-    elsif at < 1 || domain == "" then "Add an @ and a domain."
-    elsif contains(domain, "@") then "Only one @ is allowed."
-    elsif index_of(domain, ".") < 1 || ends_with(domain, ".") then "The domain needs a dot, like fern.dev."
+    else if contains(t, " ") then "Addresses cannot contain spaces."
+    else if at < 1 || domain == "" then "Add an @ and a domain."
+    else if contains(domain, "@") then "Only one @ is allowed."
+    else if index_of(domain, ".") < 1 || ends_with(domain, ".") then "The domain needs a dot, like fern.dev."
     else ""
     end
-  elsif t == "" then
+  else if t == "" then
     "This cannot be empty."
   else
     ""

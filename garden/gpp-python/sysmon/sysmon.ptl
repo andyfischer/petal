@@ -67,7 +67,7 @@ if ready then
   let cpu_color = T.success
   if cpu_frac > 0.7 then
     cpu_color = T.danger
-  elsif cpu_frac > 0.35 then
+  else if cpu_frac > 0.35 then
     cpu_color = T.warn
   end
   let b2 = bloom.pill(b1.x + b1.w + 8, by, "cpu " ++ str(d.cpu_total) ++ "%", cpu_color)

@@ -218,10 +218,10 @@ end
 
 pub fn build(k: int, W: num, H: num) -> record
   if k == 0 then cradle(float(W), float(H))
-  elsif k == 1 then bridge(float(W), float(H))
-  elsif k == 2 then pegboard(float(W), float(H))
-  elsif k == 3 then wrecker(float(W), float(H))
-  elsif k == 4 then jelly(float(W), float(H))
+  else if k == 1 then bridge(float(W), float(H))
+  else if k == 2 then pegboard(float(W), float(H))
+  else if k == 3 then wrecker(float(W), float(H))
+  else if k == 4 then jelly(float(W), float(H))
   else
     {world: ph.empty_world(), bounce: 0.45, fric: 0.4, drag: 0.02, trails: false, emit: NO_EMIT}
   end

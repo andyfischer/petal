@@ -98,40 +98,40 @@ fn parse_level(src: string) -> record
     if tag == "" then continue end
     if tag == "name" then
       L.name = join(slice(toks, start: 1, end: len(toks)), " ")
-    elsif tag == "width" then
+    else if tag == "width" then
       L.width = int(toks[1])
-    elsif tag == "bg" then
+    else if tag == "bg" then
       L.bg_r = int(toks[1]); L.bg_g = int(toks[2]); L.bg_b = int(toks[3])
-    elsif tag == "start" then
+    else if tag == "start" then
       L.start = {x: float(toks[1]), y: float(toks[2])}
-    elsif tag == "goal" then
+    else if tag == "goal" then
       L.goal = {x: float(toks[1]), y: float(toks[2])}
-    elsif tag == "plat" then
+    else if tag == "plat" then
       L.plats = append(L.plats, {
         x: int(toks[1]), y: int(toks[2]),
         w: int(toks[3]), h: int(toks[4])
       })
-    elsif tag == "oneway" then
+    else if tag == "oneway" then
       L.oneways = append(L.oneways, {x: int(toks[1]), y: int(toks[2]), w: int(toks[3])})
-    elsif tag == "coin" then
+    else if tag == "coin" then
       L.coins = append(L.coins, {x: int(toks[1]), y: int(toks[2]), collected: false})
-    elsif tag == "spike" then
+    else if tag == "spike" then
       L.spikes = append(L.spikes, {x: int(toks[1]), y: int(toks[2])})
-    elsif tag == "goomba" then
+    else if tag == "goomba" then
       L.enemies = append(L.enemies, {
         kind: "goomba",
         x: float(toks[1]), y: float(toks[2]),
         origin_y: float(toks[2]),
         patrol: float(toks[3])
       })
-    elsif tag == "jumper" then
+    else if tag == "jumper" then
       L.enemies = append(L.enemies, {
         kind: "jumper",
         x: float(toks[1]), y: float(toks[2]),
         origin_y: float(toks[2]),
         patrol: 0.0
       })
-    elsif tag == "check" then
+    else if tag == "check" then
       L.checks = append(L.checks, {x: int(toks[1]), y: int(toks[2])})
     end
   end
@@ -315,27 +315,27 @@ if mouse_pressed(1) then
   let wy = hover_world.y
   if tool == 1 then
     drag_start = {x: wx, y: wy}
-  elsif tool == 2 then
+  else if tool == 2 then
     drag_start = {x: wx, y: wy}
-  elsif tool == 3 then
+  else if tool == 3 then
     set level.coins = append(level.coins, {x: wx, y: wy, collected: false})
-  elsif tool == 4 then
+  else if tool == 4 then
     set level.spikes = append(level.spikes, {x: wx, y: wy})
-  elsif tool == 5 then
+  else if tool == 5 then
     set level.enemies = append(level.enemies, {
       kind: "goomba", x: float(wx), y: float(wy) - 22.0,
       origin_y: float(wy) - 22.0, patrol: 100.0
     })
-  elsif tool == 6 then
+  else if tool == 6 then
     set level.enemies = append(level.enemies, {
       kind: "jumper", x: float(wx), y: float(wy) - 24.0,
       origin_y: float(wy) - 24.0, patrol: 0.0
     })
-  elsif tool == 7 then
+  else if tool == 7 then
     set level.checks = append(level.checks, {x: wx, y: wy})
-  elsif tool == 8 then
+  else if tool == 8 then
     set level.start = {x: float(wx), y: float(wy)}
-  elsif tool == 9 then
+  else if tool == 9 then
     set level.goal = {x: float(wx), y: float(wy)}
   end
 end
@@ -352,7 +352,7 @@ if mouse_down(1) == false && drag_start != nil then
   let h  = max(grid_size, y1 - y0)
   if tool == 1 then
     set level.plats = append(level.plats, {x: x0, y: y0, w: w, h: max(grid_size, h)})
-  elsif tool == 2 then
+  else if tool == 2 then
     set level.oneways = append(level.oneways, {x: x0, y: y0, w: w})
   end
   drag_start = nil
@@ -444,7 +444,7 @@ if drag_start != nil then
   let h  = max(grid_size, abs(wy - drag_start.y))
   if tool == 1 then
     draw_rect_outline(world_x(x0), y0, w, h, 220, 220, 100)
-  elsif tool == 2 then
+  else if tool == 2 then
     draw_rect_outline(world_x(x0), y0, w, 6, 200, 160, 90)
   end
 end

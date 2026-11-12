@@ -361,9 +361,9 @@ end
 
 fn sample(id: num, u: num, v: num) -> record
   if id == 0 then scene_harbour(u, v)
-  elsif id == 1 then scene_alpine(u, v)
-  elsif id == 2 then scene_neon(u, v)
-  elsif id == 3 then scene_desert(u, v)
+  else if id == 1 then scene_alpine(u, v)
+  else if id == 2 then scene_neon(u, v)
+  else if id == 3 then scene_desert(u, v)
   else scene_orchard(u, v)
   end
 end
@@ -630,7 +630,7 @@ if live then
     draft_img = build_dev(base: base_half, vals: adj, gw: GRID_W / 2, gh: GRID_H / 2)
     draft_sig = want_dev
   end
-elsif dev_sig != want_dev then
+else if dev_sig != want_dev then
   dev_img = build_dev(base: base_img, vals: adj, gw: GRID_W, gh: GRID_H)
   hist = analyse(dev_img)
   dev_sig = want_dev
@@ -670,7 +670,7 @@ for k in range(0, len(PHOTOS)) do
   let r = rect(20, TOP_H + 44 + k * (CARD_H + 9), LEFT_W - 40, CARD_H)
   let on = k == photo
   let hov = hovered(r)
-  let bgc = if on then ELEV elsif hov then HOVER else CARD end
+  let bgc = if on then ELEV else if hov then HOVER else CARD end
   draw_rect_rounded(r, radius: 6, c: bgc)
   if on then
     draw_rect(x: r.x, y: r.y + 8, w: 3, h: r.h - 16, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b)
@@ -712,7 +712,7 @@ let ah = if live then GRID_H / 2 else GRID_H end
 let ac = if live then CELL * 2 else CELL end
 if shown == "before" then
   draw_img(img: base_img, x: cx0, y: cy0, cw: GRID_W, ch: GRID_H, cs: CELL, from_col: 0, to_col: GRID_W)
-elsif shown == "after" then
+else if shown == "after" then
   draw_img(img: after_img, x: cx0, y: cy0, cw: ag, ch: ah, cs: ac, from_col: 0, to_col: ag)
 else
   draw_img(img: base_img, x: cx0, y: cy0, cw: GRID_W, ch: GRID_H, cs: CELL, from_col: 0, to_col: split_col)
@@ -750,7 +750,7 @@ var clicked_mode = ""
 for k in range(0, 3) do
   let r = rect(cx0 + k * 92, strip_y, 88, 28)
   let on = view == MODES[k]
-  draw_rect_rounded(r, radius: 4, c: if on then ELEV elsif hovered(r) then HOVER else CARD end)
+  draw_rect_rounded(r, radius: 4, c: if on then ELEV else if hovered(r) then HOVER else CARD end)
   if on then
     draw_rect_outline(r, LINE)
   end
@@ -833,7 +833,7 @@ for i in range(0, len(SLIDERS)) do
   let hov = hovered(r)
   if sel then
     draw_rect_rounded(rect(r.x - 10, r.y - 2, r.w + 20, r.h - 4), radius: 4, c: ELEV)
-  elsif hov then
+  else if hov then
     draw_rect_rounded(rect(r.x - 10, r.y - 2, r.w + 20, r.h - 4), radius: 4, c: CARD)
   end
   let v = adj[i]
@@ -847,7 +847,7 @@ for i in range(0, len(SLIDERS)) do
   let zx = track.x + if sl.bipolar then track.w / 2 else 0 end
   if kx > zx then
     draw_rect_rounded(rect(zx, track.y, kx - zx, 4), radius: 2, c: ACCENT)
-  elsif kx < zx then
+  else if kx < zx then
     draw_rect_rounded(rect(kx, track.y, zx - kx, 4), radius: 2, c: ACCENT)
   end
   if sl.bipolar then
@@ -885,7 +885,7 @@ for k in range(0, len(PRESETS)) do
   let row = k / 2
   let r = rect(PX + col * (PW / 2 + 4), PRE_Y + 22 + row * 38, PW / 2 - 4, 30)
   let on = preset == k && adj == PRESETS[k].vals
-  draw_rect_rounded(r, radius: 4, c: if on then ELEV elsif hovered(r) then HOVER else CARD end)
+  draw_rect_rounded(r, radius: 4, c: if on then ELEV else if hovered(r) then HOVER else CARD end)
   if on then
     draw_rect_outline(r, c: ACCENT, a: 150)
   end

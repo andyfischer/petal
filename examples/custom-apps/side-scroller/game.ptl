@@ -150,34 +150,34 @@ fn parse_level(src: string) -> record
     if tag == "name" then
       # join everything after the tag so multi-word names work
       L.name = join(slice(toks, start: 1, end: len(toks)), " ")
-    elsif tag == "width" then
+    else if tag == "width" then
       L.width = parse_int(toks[1])
-    elsif tag == "bg" then
+    else if tag == "bg" then
       L.bg_r = parse_int(toks[1])
       L.bg_g = parse_int(toks[2])
       L.bg_b = parse_int(toks[3])
-    elsif tag == "start" then
+    else if tag == "start" then
       L.start = {x: parse_float(toks[1]), y: parse_float(toks[2])}
-    elsif tag == "goal" then
+    else if tag == "goal" then
       L.goal = {x: parse_float(toks[1]), y: parse_float(toks[2])}
-    elsif tag == "plat" then
+    else if tag == "plat" then
       L.plats = append(L.plats, {
         x: parse_int(toks[1]), y: parse_int(toks[2]),
         w: parse_int(toks[3]), h: parse_int(toks[4])
       })
-    elsif tag == "oneway" then
+    else if tag == "oneway" then
       L.oneways = append(L.oneways, {
         x: parse_int(toks[1]), y: parse_int(toks[2]),
         w: parse_int(toks[3])
       })
-    elsif tag == "coin" then
+    else if tag == "coin" then
       L.coins = append(L.coins, {
         x: parse_int(toks[1]), y: parse_int(toks[2]),
         collected: false
       })
-    elsif tag == "spike" then
+    else if tag == "spike" then
       L.spikes = append(L.spikes, {x: parse_int(toks[1]), y: parse_int(toks[2])})
-    elsif tag == "goomba" then
+    else if tag == "goomba" then
       # y here is the surface y (plat top); enemy stands on it
       let sx = parse_float(toks[1])
       let sy = parse_float(toks[2])
@@ -189,7 +189,7 @@ fn parse_level(src: string) -> record
         origin: sx, origin_y: sy - 22.0, patrol: pat,
         alive: true, squash: 0.0, anim: 0.0
       })
-    elsif tag == "jumper" then
+    else if tag == "jumper" then
       let sx = parse_float(toks[1])
       let sy = parse_float(toks[2])
       L.enemies = append(L.enemies, {
@@ -199,7 +199,7 @@ fn parse_level(src: string) -> record
         origin: sx, origin_y: sy - 24.0, patrol: 0.0,
         alive: true, squash: 0.0, anim: 0.0
       })
-    elsif tag == "check" then
+    else if tag == "check" then
       L.checks = append(L.checks, {x: parse_int(toks[1]), y: parse_int(toks[2])})
     else
       # unknown tag: ignore the line
@@ -347,7 +347,7 @@ if phase == Phase.Playing then
     let plx = float(p.x); let ply = float(p.y)
     let plw = float(p.w); let plh = float(p.h)
     if aabb(ax: new_px, ay: py, aw: pw, ah: ph, bx: plx, by: ply, bw: plw, bh: plh) then
-      if vx > 0.0 then new_px = plx - pw elsif vx < 0.0 then new_px = plx + plw end
+      if vx > 0.0 then new_px = plx - pw else if vx < 0.0 then new_px = plx + plw end
       set vx = 0.0
     end
   end
@@ -383,7 +383,7 @@ if phase == Phase.Playing then
         end
         set on_ground = true
         set vy = 0.0
-      elsif vy < 0.0 then
+      else if vy < 0.0 then
         new_py = ply + plh
         set vy = 0.0
       end
@@ -470,7 +470,7 @@ if phase == Phase.Playing then
           set vy = -260.0
         end
       end
-    elsif e.kind == "jumper" then
+    else if e.kind == "jumper" then
       # sinusoidal bounce around its origin_y
       let bounce = abs(sin(e.anim * 4.0)) * 60.0
       e.y = e.origin_y - bounce
@@ -829,7 +829,7 @@ fn draw_enemies()
       # feet
       draw_at(x: int(e.x) + 2, y: int(e.y) + 22 - foot_off, w: 8, h: 4, r: 60, g: 30, b: 10)
       draw_at(x: int(e.x) + 14, y: int(e.y) + 22 + foot_off, w: 8, h: 4, r: 60, g: 30, b: 10)
-    elsif e.kind == "jumper" then
+    else if e.kind == "jumper" then
       # e.y already carries the bounce from the update loop
       let by = int(e.y)
       # small squash when near apex
@@ -1059,7 +1059,7 @@ end
 
 if phase == Phase.Title then
   draw_title()
-elsif phase == Phase.AllDone then
+else if phase == Phase.AllDone then
   draw_alldone_overlay()
 else
   clear(level.bg_r, level.bg_g, level.bg_b)

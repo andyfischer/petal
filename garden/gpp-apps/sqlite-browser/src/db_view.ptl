@@ -123,7 +123,7 @@ if !cat_ready then
     cat = rd
     cat_ready = true
     cat_err = ""
-  elsif is_error(rd) then
+  else if is_error(rd) then
     cat_err = error_of(rd) ?? "could not open database"
   end
 end
@@ -185,7 +185,7 @@ if !is_overview && want != loaded_arg then
     detail_loading = false
     detail_err = ""
     if selected != prev_sel then detail_scroll = 0; prev_sel = selected end
-  elsif is_error(fetched) then
+  else if is_error(fetched) then
     detail_loading = false
     detail_err = error_of(fetched) ?? "load failed"
   else
@@ -272,7 +272,7 @@ bloom.section_label("TABLES · {table_count}", PAD, content_top, has_focus("cata
 if len(cat_err) > 0 then
   draw_text("open error:", {x: PAD + 4, y: cat_rect.y + 4}, FS, RED)
   draw_text(ellipsize(cat_err, cat_rect.w, FS), {x: PAD + 4, y: cat_rect.y + 22}, FS, MUT)
-elsif !cat_ready then
+else if !cat_ready then
   draw_text("loading {bloom.spinner_glyph()}", {x: PAD + 4, y: cat_rect.y + 4}, FS, DIM)
 end
 
@@ -373,7 +373,7 @@ else
     # Sized to the right pane it draws into, not to the whole window — the
     # window-wide budget let a long error run past the pane edge.
     draw_text(ellipsize(detail_err, right_w, FS), {x: right_x, y: content_top + 60}, FS, MUT)
-  elsif detail_loading && detail_lines == 0 then
+  else if detail_loading && detail_lines == 0 then
     bloom.spinner(grid_rect.x + grid_rect.w / 2, grid_rect.y + 48, 12)
     draw_text_center("loading table", grid_rect.x + grid_rect.w / 2, grid_rect.y + 72, FS, DIM)
   else

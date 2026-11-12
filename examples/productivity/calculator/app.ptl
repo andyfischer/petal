@@ -147,15 +147,15 @@ fn tokenize(src: string) -> record
       end
       toks = append(toks, {t: "num", s: num, v: parse_num(num)})
       prev = "num"
-    elsif c == "(" then
+    else if c == "(" then
       toks = append(toks, {t: "lp", s: "(", v: 0.0})
       i = i + 1
       prev = "lp"
-    elsif c == ")" then
+    else if c == ")" then
       toks = append(toks, {t: "rp", s: ")", v: 0.0})
       i = i + 1
       prev = "rp"
-    elsif contains(OPS, c) then
+    else if contains(OPS, c) then
       let op = c
       if (c == "-" || c == "+") && (prev == "start" || prev == "op" || prev == "lp") then
         op = if c == "-" then "u-" else "u+" end
@@ -165,7 +165,7 @@ fn tokenize(src: string) -> record
       end
       i = i + 1
       prev = "op"
-    elsif c == " " then
+    else if c == " " then
       i = i + 1
     else
       err = "unexpected '" ++ c ++ "'"
@@ -179,7 +179,7 @@ end
 
 fn prec(op: string) -> int
   if op == "u-" then 3
-  elsif op == "*" || op == "/" || op == "%" then 2
+  else if op == "*" || op == "/" || op == "%" then 2
   else 1
   end
 end
@@ -192,9 +192,9 @@ fn to_rpn(toks: list) -> record
     if err == "" then
       if tok.t == "num" then
         out = append(out, tok)
-      elsif tok.t == "lp" then
+      else if tok.t == "lp" then
         ops = append(ops, tok)
-      elsif tok.t == "rp" then
+      else if tok.t == "rp" then
         let closed = false
         while !closed && len(ops) > 0 do
           let top = ops[len(ops) - 1]
@@ -242,7 +242,7 @@ fn eval_rpn(rpn: list) -> record
     if err == "" then
       if tok.t == "num" then
         st = append(st, tok.v)
-      elsif tok.s == "u-" then
+      else if tok.s == "u-" then
         if len(st) < 1 then
           err = "incomplete"
         else
@@ -260,11 +260,11 @@ fn eval_rpn(rpn: list) -> record
           let r = 0.0
           if tok.s == "+" then
             r = a + b
-          elsif tok.s == "-" then
+          else if tok.s == "-" then
             r = a - b
-          elsif tok.s == "*" then
+          else if tok.s == "*" then
             r = a * b
-          elsif tok.s == "/" then
+          else if tok.s == "/" then
             if b == 0.0 then
               err = "divide by zero"
             else
@@ -451,9 +451,9 @@ if len(typed) > 0 then
   let c = slice(typed, start: len(typed) - 1, end: len(typed))
   if contains(DIGITS ++ OPS ++ "()", c) then
     act = c
-  elsif c == "=" then
+  else if c == "=" then
     act = "eq"
-  elsif c == "c" || c == "C" then
+  else if c == "c" || c == "C" then
     act = "clear"
   end
 end
@@ -520,13 +520,13 @@ if act != "" then
   if act == "clear" then
     expr = ""
     ans = ""
-  elsif act == "back" then
+  else if act == "back" then
     if len(expr) > 0 then
       expr = slice(expr, start: 0, end: len(expr) - 1)
     end
-  elsif act == "sign" then
+  else if act == "sign" then
     expr = toggle_sign(expr)
-  elsif act == "mplus" || act == "mminus" then
+  else if act == "mplus" || act == "mminus" then
     let r = eval_str(trim_ops(expr))
     if r.ok then
       memory = if act == "mplus" then memory + r.v else memory - r.v end
@@ -534,15 +534,15 @@ if act != "" then
     else
       err = r.err
     end
-  elsif act == "mrecall" then
+  else if act == "mrecall" then
     if mem_set then
       expr = expr ++ fmt(memory)
     end
-  elsif act == "eq" then
+  else if act == "eq" then
     let r = eval_str(expr)
     if len(expr) == 0 then
       ans = ""
-    elsif r.ok then
+    else if r.ok then
       let out = fmt(r.v)
       # `append` only pushes onto the tail, so a prepend is a flatten.
       tape = flat([[{e: expr, v: out}], tape])
@@ -557,7 +557,7 @@ if act != "" then
     else
       err = r.err
     end
-  elsif len(act) > 6 && slice(act, start: 0, end: 6) == "paste:" then
+  else if len(act) > 6 && slice(act, start: 0, end: 6) == "paste:" then
     expr = expr ++ slice(act, start: 6, end: len(act))
   else
     # A digit, a dot, an operator or a paren: plain append, except that an
@@ -599,7 +599,7 @@ draw_rect_rounded(disp_r, radius: 12, c: CARD)
 draw_rect_rounded(rect(disp_r.x, disp_r.y, disp_r.w, 1), radius: 0, c: CARD_EDGE)
 
 # A status rail down the card's left edge: the readout's health at a glance.
-let rail = if len(expr) == 0 then FAINT elsif live.ok then AMBER else RED end
+let rail = if len(expr) == 0 then FAINT else if live.ok then AMBER else RED end
 draw_rect_rounded(rect(disp_r.x, disp_r.y + 16, 3, DISP_H - 32), radius: 2, c: rail)
 
 # Top row of the card: the memory chip on the left, the last answer on the right.
@@ -609,11 +609,11 @@ draw_rect_outline(mem_chip, CARD_EDGE)
 draw_text("M", pos: {x: mem_chip.x + 9, y: mem_chip.y + 5}, style: {size: T_MICRO, color: if mem_set then TEAL else FAINT end})
 let mtxt = if mem_set then group(fmt(memory)) else "—" end
 draw_text_right(ellipsize_tail(mtxt, avail_px: mem_chip.w - 40, size: T_MICRO), right_x: mem_chip.x + mem_chip.w - 9, y: mem_chip.y + 5, size: T_MICRO,
-  c: if mem_hot then TEXT else if mem_set then DIM else FAINT end end)
+  c: if mem_hot then TEXT else if mem_set then DIM else FAINT end)
 
 if len(err) > 0 then
   draw_text(err, pos: {x: mem_chip.x + mem_chip.w + 14, y: disp_r.y + 19}, style: {size: T_SMALL, color: RED})
-elsif mem_set then
+else if mem_set then
   draw_text("click to clear", pos: {x: mem_chip.x + mem_chip.w + 14, y: disp_r.y + 21}, style: {size: T_MICRO, color: FAINT})
 end
 if len(ans) > 0 then
@@ -622,7 +622,7 @@ end
 
 # The expression being built — or, right after `=`, the one that produced the
 # answer below, so the card reads as a two-line statement instead of an echo.
-let expr_shown = if len(src_line) > 0 then src_line elsif len(expr) == 0 then "0" else expr end
+let expr_shown = if len(src_line) > 0 then src_line else if len(expr) == 0 then "0" else expr end
 let expr_col = if len(expr) == 0 && len(src_line) == 0 then FAINT else DIM end
 draw_text_right(ellipsize_tail(expr_shown, avail_px: disp_r.w - 36, size: T_BODY), right_x: disp_r.x + disp_r.w - 18, y: disp_r.y + 44, size: T_BODY, c: expr_col)
 
@@ -662,11 +662,11 @@ for i in range(0, len(KEYS)) do
   if k.k == "op" then
     fg = AMBER
     size = T_BODY
-  elsif k.k == "mem" then
+  else if k.k == "mem" then
     fg = TEAL
-  elsif k.k == "clr" then
+  else if k.k == "clr" then
     fg = RED
-  elsif k.k == "fn" then
+  else if k.k == "fn" then
     fg = DIM
   end
   if k.k == "eq" then

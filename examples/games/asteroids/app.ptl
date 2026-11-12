@@ -127,7 +127,7 @@ end
 
 fn wrap_x(x: num, lo: num, hi: num, margin: num) -> num
   if x < lo - margin then hi + margin
-  elsif x > hi + margin then lo - margin
+  else if x > hi + margin then lo - margin
   else x end
 end
 
@@ -196,7 +196,7 @@ let fb = float(court.y + court.h - 2)
 
 fn rock_speed(lvl: int, tier: int) -> num
   let base = 38.0 + float(lvl - 1) * 9.0
-  base * (if tier == 2 then 1.0 elsif tier == 1 then 1.55 else 2.2 end) * random(0.8, 1.25)
+  base * (if tier == 2 then 1.0 else if tier == 1 then 1.55 else 2.2 end) * random(0.8, 1.25)
 end
 
 fn build_level(lvl: int)
@@ -277,15 +277,15 @@ if advance && phase != "play" then
   if phase == "title" then
     set phase = "play"
     set safe_t = safe_secs
-  elsif phase == "paused" then
+  else if phase == "paused" then
     set phase = "play"
-  elsif phase == "cleared" then
+  else if phase == "cleared" then
     set level += 1
     build_level(level)
     set safe_t = safe_secs
     set phase = "play"
     say("LEVEL {level}", C_GOLD)
-  elsif phase == "over" then
+  else if phase == "over" then
     new_game()
   end
 end
@@ -295,7 +295,7 @@ if key_pressed("p") || key_pressed("escape") then
     set phase = "paused"
     set banner = "PAUSED"
     set subbanner = "press P, SPACE or click to resume"
-  elsif phase == "paused" then
+  else if phase == "paused" then
     set phase = "play"
   end
 end
@@ -639,7 +639,7 @@ if safe_t > 0.0 && phase == "play" then
 end
 if warp_t > 0.0 then
   badges = append(badges, {t: "WARP", s: "{int(warp_t) + 1}s", c: C_VIOLET})
-elsif phase == "play" then
+else if phase == "play" then
   badges = append(badges, {t: "WARP READY", s: "", c: C_VIOLET})
 end
 let brail = int(fr) - 10

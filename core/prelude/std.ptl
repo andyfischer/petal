@@ -169,7 +169,7 @@ pub fn list_and(xs, word = "and")
   let n = len(xs)
   if n == 0 then
     ""
-  elsif n == 1 then
+  else if n == 1 then
     str(xs[0])
   else
     join(slice(xs, 0, n - 1), ", ") ++ " {word} " ++ str(xs[n - 1])

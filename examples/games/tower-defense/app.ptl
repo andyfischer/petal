@@ -241,7 +241,7 @@ fn route_at(rt: record, d: num) -> record
 end
 
 fn step_of(a: int, b: int) -> int
-  if b > a then 1 elsif b < a then -1 else 0 end
+  if b > a then 1 else if b < a then -1 else 0 end
 end
 
 # The board as a grid of ints: 0 buildable, 1 path, 2 scenery.
@@ -492,10 +492,10 @@ let advance = key_pressed("space") || key_pressed("return")
 if phase == "title" && (advance || click) then
   set phase = "build"
   say("PLANT YOUR DEFENCES, THEN SEND THE FIRST WAVE", C_TEXT)
-elsif (phase == "won" || phase == "lost") && (advance || click) then
+else if (phase == "won" || phase == "lost") && (advance || click) then
   new_game()
   set phase = "build"
-elsif playing && advance then
+else if playing && advance then
   if wave < NW then
     send_wave()
   end
@@ -562,12 +562,12 @@ if playing && click && over_board then
       set rings = append(rings, {x: float(hc) + 0.5, y: float(hr) + 0.5, r0: 0.2, r1: 0.9,
         life: 0.35, max: 0.35, c: T.c})
       if gold < T.cost then set build_sel = -1 end
-    elsif !can_build then
-      say(if hover_tower >= 0 then "THAT PLOT IS TAKEN" elsif grid[hr][hc] == 1 then "CANNOT PLANT ON THE PATH" else "NOTHING GROWS THERE" end, C_WARN)
+    else if !can_build then
+      say(if hover_tower >= 0 then "THAT PLOT IS TAKEN" else if grid[hr][hc] == 1 then "CANNOT PLANT ON THE PATH" else "NOTHING GROWS THERE" end, C_WARN)
     else
       say("NOT ENOUGH GOLD", C_WARN)
     end
-  elsif hover_tower >= 0 then
+  else if hover_tower >= 0 then
     set sel_id = towers[hover_tower].id
     sel_i = hover_tower
   else
@@ -648,7 +648,7 @@ while t_left > 0.0001 do
           # Thorn: a homing dart.
           set darts = append(darts, {x: tw.x + cos(ang) * 0.34, y: tw.y + sin(ang) * 0.34,
             tid: c.id, tx: c.x, ty: c.y, dmg: T.dmg[L], src: tw.id})
-        elsif tw.k == 1 then
+        else if tw.k == 1 then
           # Frostcap: everything in reach is chilled and nicked.
           let r2 = T.reach[L] * T.reach[L]
           for j in range(0, len(creeps)) do
@@ -659,7 +659,7 @@ while t_left > 0.0001 do
           end
           set rings = append(rings, {x: tw.x, y: tw.y, r0: 0.3, r1: T.reach[L],
             life: 0.45, max: 0.45, c: T.c})
-        elsif tw.k == 2 then
+        else if tw.k == 2 then
           # Puffball: lob a shell at where the target WILL be. The lead comes
           # straight off the route: advance the pest's distance by its
           # current speed times the flight time.
@@ -846,14 +846,14 @@ fn draw_tower(k: int, lvl: int, px: num, py: num, ang: num, s: num, flash: num, 
     draw_line(px, py, px + cos(ang) * reachx, py + sin(ang) * reachx, col, a, max(2, int(s * 0.1)))
     draw_circle(px, py, s * 0.17, col, a)
     draw_circle(px, py, s * 0.07, C_TBASE, a)
-  elsif k == 1 then
+  else if k == 1 then
     for i in range(0, 6) do
       let an = float(i) * 1.0472 + 0.5236
       draw_line(px + cos(an) * s * 0.1, py + sin(an) * s * 0.1,
         px + cos(an) * s * (0.27 + 0.06 * kick), py + sin(an) * s * (0.27 + 0.06 * kick), col, a, 2)
     end
     draw_circle(px, py, s * 0.11, col, a)
-  elsif k == 2 then
+  else if k == 2 then
     draw_circle(px, py, s * 0.26, col, a)
     let off = s * (0.09 - 0.07 * kick)
     draw_circle(px + cos(ang) * off, py + sin(ang) * off, s * 0.14, C_TBASE, a)
@@ -884,19 +884,19 @@ fn draw_creep(c: record, px: num, py: num, s: num)
       px - c.dx * r + nx * r, py - c.dy * r + ny * r,
       px - c.dx * r - nx * r, py - c.dy * r - ny * r, col)
     draw_circle(px - c.dx * r * 0.2, py - c.dy * r * 0.2, max(1.0, r * 0.32), dark)
-  elsif c.k == 3 then
+  else if c.k == 3 then
     # Snail: a shell with a whorl.
     draw_circle(px, py, r, col)
     draw_circle_outline(px, py, r * 0.62, dark, 255, 2)
     draw_circle(px, py, max(1.0, r * 0.22), dark)
-  elsif c.k == 4 then
+  else if c.k == 4 then
     # Queen: a crowned, breathing mass.
     let breath = 1.0 + 0.06 * sin(c.d * 6.0)
     draw_circle(px, py, r * breath + 3.0, C_GOLD, 60)
     draw_circle(px, py, r * breath, col)
     draw_circle_outline(px, py, r * breath, C_GOLD, 255, 2)
     draw_circle(px + c.dx * r * 0.45, py + c.dy * r * 0.45, r * 0.3, dark)
-  elsif c.k == 1 then
+  else if c.k == 1 then
     # Beetle: a split carapace.
     draw_circle(px, py, r, col)
     draw_line(px - c.dx * r, py - c.dy * r, px + c.dx * r, py + c.dy * r, dark, 255, 2)
@@ -913,7 +913,7 @@ fn draw_creep(c: record, px: num, py: num, s: num)
     let frac = c.hp / c.max
     draw_rect(bar, C_TBASE)
     draw_rect(bar.x, bar.y, max(1, int(float(bw) * frac)), 3,
-      if frac > 0.5 then C_THORN elsif frac > 0.25 then C_GOLD else C_WARN end)
+      if frac > 0.5 then C_THORN else if frac > 0.25 then C_GOLD else C_WARN end)
   end
   nil
 end
@@ -926,7 +926,7 @@ end
 # A sidebar button. Returns true on the frame it is clicked while enabled.
 fn press(r: Rect, label: string, note: string, enabled: bool, accent: record) -> bool
   let hot = enabled && hovered(r)
-  let face = if !enabled then C_CHIP elsif hot then lerp_color(C_CARD, accent, 0.22) else lerp_color(C_CARD, accent, 0.1) end
+  let face = if !enabled then C_CHIP else if hot then lerp_color(C_CARD, accent, 0.22) else lerp_color(C_CARD, accent, 0.1) end
   draw_rect_rounded(r, 8, face)
   draw_rect_rounded_outline(r, 8, if enabled then accent else C_LINE end, if hot then 220 else 110 end, 1)
   let ls = {...S_CAP, color: if enabled then C_TEXT else C_MUTE end}
@@ -962,7 +962,7 @@ stat(st_x - 340, "WAVE", "{wave} / {NW}", C_TEXT)
 let done_waves = if phase == "wave" then wave - 1 else wave end
 for i in range(0, NW) do
   let seg = rect(side.x + i * (side.w + 4) / NW, 78, (side.w + 4) / NW - 4, 3)
-  let col = if i < done_waves then C_THORN elsif i == wave - 1 && phase == "wave" then C_GOLD else C_LINE end
+  let col = if i < done_waves then C_THORN else if i == wave - 1 && phase == "wave" then C_GOLD else C_LINE end
   draw_rect_rounded(seg, 1, col)
 end
 
@@ -1020,7 +1020,7 @@ for d in DECOR do
       [cxp + 12, cyp + 5], [cxp + 3, cyp + 10]], C_ROCK)
     draw_line(cxp - 9, cyp - 5, cxp + 2, cyp, C_EDGE, 255, 1)
     draw_line(cxp + 2, cyp, cxp + 9, cyp - 6, C_EDGE, 255, 1)
-  elsif d[2] == 1 then
+  else if d[2] == 1 then
     draw_circle(cxp - 5, cyp + 3, 9, C_SHRUB)
     draw_circle(cxp + 6, cyp + 2, 8, C_SHRUB)
     draw_circle(cxp, cyp - 5, 9, lerp_color(C_SHRUB, C_THORN, 0.12))
@@ -1052,7 +1052,7 @@ end
 if sel_i >= 0 then
   let tw = towers[sel_i]
   range_ring(tw.x, tw.y, TOWERS[tw.k].reach[tw.lvl - 1], TOWERS[tw.k].c, true)
-elsif hover_tower >= 0 && build_sel < 0 && playing then
+else if hover_tower >= 0 && build_sel < 0 && playing then
   let tw = towers[hover_tower]
   range_ring(tw.x, tw.y, TOWERS[tw.k].reach[tw.lvl - 1], TOWERS[tw.k].c, false)
 end
@@ -1156,8 +1156,8 @@ for i in range(0, len(TOWERS)) do
   let armed = build_sel == i
   let afford = gold >= T.cost
   let hot = playing && hovered(card)
-  draw_rect_rounded(card, 10, if armed then lerp_color(C_CARD, T.c, 0.14) elsif hot then lerp_color(C_CARD, C_TEXT, 0.05) else C_CARD end)
-  draw_rect_rounded_outline(card, 10, if armed then T.c elsif hot then C_EDGE else C_LINE end, 255, 1)
+  draw_rect_rounded(card, 10, if armed then lerp_color(C_CARD, T.c, 0.14) else if hot then lerp_color(C_CARD, C_TEXT, 0.05) else C_CARD end)
+  draw_rect_rounded_outline(card, 10, if armed then T.c else if hot then C_EDGE else C_LINE end, 255, 1)
   let tile = rect(card.x + 8, card.y + 8, 38, 38)
   draw_rect_rounded(tile, 7, C_TBASE)
   draw_tower(i, 0, tile.x + 19, tile.y + 19, -0.7, 40.0, 0.0, if afford then 255 else 110 end)
@@ -1198,7 +1198,7 @@ if sel_i >= 0 then
   tx_right("LEVEL {tw.lvl}", ix + iw, info.y + 14, {...S_TINY, color: T.c})
 
   # Four stats in a row.
-  let aux_s = if tw.k == 0 then "{tw.kills}" elsif tw.k == 1 then "{int((1.0 - T.aux[L]) * 100.0)}%" elsif tw.k == 2 then "{round(T.aux[L], 1)}" else "{int(T.aux[L])}" end
+  let aux_s = if tw.k == 0 then "{tw.kills}" else if tw.k == 1 then "{int((1.0 - T.aux[L]) * 100.0)}%" else if tw.k == 2 then "{round(T.aux[L], 1)}" else "{int(T.aux[L])}" end
   let cells = [
     {l: "DAMAGE", v: "{int(T.dmg[L])}"},
     {l: "REACH", v: "{round(T.reach[L], 1)}"},
@@ -1222,7 +1222,7 @@ if sel_i >= 0 then
     let seg = rect(ix + i * segw, info.y + 102, segw - 3, 22)
     let on = tw.mode == i
     let hot = hovered(seg) && playing
-    draw_rect_rounded(seg, 5, if on then lerp_color(C_CARD, T.c, 0.3) elsif hot then lerp_color(C_CARD, C_TEXT, 0.08) else C_TBASE end)
+    draw_rect_rounded(seg, 5, if on then lerp_color(C_CARD, T.c, 0.3) else if hot then lerp_color(C_CARD, C_TEXT, 0.08) else C_TBASE end)
     if on then draw_rect_rounded_outline(seg, 5, T.c, 200, 1) end
     tx_center(MODES[i], seg.x + seg.w / 2, seg.y + 4, {...S_TINY, spacing: 0, color: if on then C_TEXT else C_DIM end})
     if hot && click then set_mode = i end
@@ -1245,7 +1245,7 @@ if sel_i >= 0 then
 else
   let nxt = if wave < NW then wave + 1 else 0 end
   let over = phase == "won" || phase == "lost"
-  tx(if over then "DEBRIEF" elsif nxt == 0 then "FINAL WAVE" elsif phase == "wave" then "NEXT UP" else "INCOMING" end, side.x, info.y - 22, S_LABEL)
+  tx(if over then "DEBRIEF" else if nxt == 0 then "FINAL WAVE" else if phase == "wave" then "NEXT UP" else "INCOMING" end, side.x, info.y - 22, S_LABEL)
   draw_rect_rounded(info, 10, C_CARD)
   draw_rect_rounded_outline(info, 10, C_LINE, 255, 1)
   let ix = info.x + 14
@@ -1271,7 +1271,7 @@ else
     draw_rect(ix, ry - 6, iw, 1, C_LINE)
     tx("SCORE", ix, ry + 2, {...S_TINY, color: C_MUTE})
     tx_right("{score}", ix + iw, ry, {...S_NUM, color: if won then C_GOLD else C_TEXT end})
-  elsif nxt == 0 then
+  else if nxt == 0 then
     tx("The last of them", ix, info.y + 12, S_NAME)
     tx("{count_of(len(creeps) + len(queue), "pest", "pests")} still between you", ix, info.y + 38, S_BODY)
     tx("and a quiet night.", ix, info.y + 54, S_BODY)
@@ -1309,10 +1309,10 @@ let idle_label = match phase
   when "lost" -> "TRY AGAIN"
   when _ -> ""
 end
-let send_label = if len(idle_label) > 0 then idle_label elsif wave >= NW then "ALL WAVES SENT" elsif phase == "wave" then "CALL WAVE {wave + 1} EARLY" else "SEND WAVE {wave + 1}" end
-let send_note = if len(idle_label) > 0 then "SPACE" elsif wave >= NW then "" elsif phase == "wave" then "+{10 + 4 * wave}" else "SPACE" end
+let send_label = if len(idle_label) > 0 then idle_label else if wave >= NW then "ALL WAVES SENT" else if phase == "wave" then "CALL WAVE {wave + 1} EARLY" else "SEND WAVE {wave + 1}" end
+let send_note = if len(idle_label) > 0 then "SPACE" else if wave >= NW then "" else if phase == "wave" then "+{10 + 4 * wave}" else "SPACE" end
 let send_on = len(idle_label) > 0 || (playing && wave < NW)
-let send_hit = press(sendr, send_label, send_note, send_on, if phase == "wave" then C_GOLD elsif phase == "lost" then C_WARN else C_THORN end)
+let send_hit = press(sendr, send_label, send_note, send_on, if phase == "wave" then C_GOLD else if phase == "lost" then C_WARN else C_THORN end)
 if send_hit && playing && wave < NW then
   send_wave()
 end
@@ -1329,10 +1329,10 @@ if sel_i >= 0 && (do_upgrade || do_sell || do_mode != 0 || set_mode >= 0) then
     set sel_id = -1
     set floaters = append(floaters, {x: tw.x, y: tw.y - 0.3, life: 0.9, s: "+{refund}", c: C_GOLD})
     say("{upper(T.name)} SOLD  +{refund}", C_GOLD)
-  elsif do_upgrade then
+  else if do_upgrade then
     if tw.lvl >= 3 then
       say("ALREADY FULLY GROWN", C_DIM)
-    elsif gold < T.up[tw.lvl - 1] then
+    else if gold < T.up[tw.lvl - 1] then
       say("NOT ENOUGH GOLD", C_WARN)
     else
       let price = T.up[tw.lvl - 1]
@@ -1356,12 +1356,12 @@ end
 let show_card = phase == "title" || phase == "won" || phase == "lost" || paused
 if show_card then
   draw_rect_rounded(board, 14, C_BG, 170)
-  let head = if paused then "PAUSED" elsif phase == "won" then "THE GREENHOUSE HOLDS" elsif phase == "lost" then "OVERRUN" else "THORNWALL" end
+  let head = if paused then "PAUSED" else if phase == "won" then "THE GREENHOUSE HOLDS" else if phase == "lost" then "OVERRUN" else "THORNWALL" end
   let sub = if paused then "press P to carry on"
-    elsif phase == "won" then "press SPACE or click to play again"
-    elsif phase == "lost" then "press SPACE or click to try again"
+    else if phase == "won" then "press SPACE or click to play again"
+    else if phase == "lost" then "press SPACE or click to try again"
     else "press SPACE or click to begin" end
-  let accent = if paused then C_DIM elsif phase == "won" then C_GOLD elsif phase == "lost" then C_WARN else C_THORN end
+  let accent = if paused then C_DIM else if phase == "won" then C_GOLD else if phase == "lost" then C_WARN else C_THORN end
   let cw = max(max(text_width(head, S_BIG), text_width(sub, S_SUB)) + 96, 420)
   let ccx = bx + board.w / 2
   let ccy = by + board.h / 2
@@ -1373,7 +1373,7 @@ if show_card then
   tx_center(head, ccx + 8, ccy - 46, {...S_BIG, color: accent})
   tx_center(sub, ccx + 8, ccy + 2, S_SUB)
   let line = if phase == "title" then "Pests walk the path to the greenhouse. Plant along it."
-    elsif paused then "WAVE {wave} OF {NW}   ·   {len(creeps)} ON THE PATH"
+    else if paused then "WAVE {wave} OF {NW}   ·   {len(creeps)} ON THE PATH"
     else "SCORE {score}   ·   WAVE {wave} OF {NW}   ·   {count_of(kills, "PEST", "PESTS")} STOPPED   ·   {leaks} THROUGH" end
   tx_center(line, ccx + 8, ccy + 34, {...S_HINT, color: C_MUTE})
 end
@@ -1403,10 +1403,10 @@ fx += key_chip(fx, fy, "P", "pause")
 fx += key_chip(fx, fy, "R", "restart")
 
 let status = if paused then "PAUSED"
-  elsif phase == "wave" then "{len(creeps)} ON THE PATH  ·  {len(queue)} TO COME"
-  elsif phase == "build" then "PLANTING"
-  elsif phase == "won" then "VICTORY"
-  elsif phase == "lost" then "OVERRUN"
+  else if phase == "wave" then "{len(creeps)} ON THE PATH  ·  {len(queue)} TO COME"
+  else if phase == "build" then "PLANTING"
+  else if phase == "won" then "VICTORY"
+  else if phase == "lost" then "OVERRUN"
   else "READY" end
 let status_s = "{speed}× SPEED   ·   {status}"
 if fx + text_width(status_s, S_HINT) <= W - PAD then

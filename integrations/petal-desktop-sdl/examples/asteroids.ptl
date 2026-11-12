@@ -72,19 +72,19 @@ if !game_over then
   # Input: change direction
   if key_down("left") && key_down("up") then
     ship_dir = 7
-  elsif key_down("right") && key_down("up") then
+  else if key_down("right") && key_down("up") then
     ship_dir = 1
-  elsif key_down("left") && key_down("down") then
+  else if key_down("left") && key_down("down") then
     ship_dir = 5
-  elsif key_down("right") && key_down("down") then
+  else if key_down("right") && key_down("down") then
     ship_dir = 3
-  elsif key_down("up") then
+  else if key_down("up") then
     ship_dir = 0
-  elsif key_down("right") then
+  else if key_down("right") then
     ship_dir = 2
-  elsif key_down("down") then
+  else if key_down("down") then
     ship_dir = 4
-  elsif key_down("left") then
+  else if key_down("left") then
     ship_dir = 6
   end
 
@@ -168,13 +168,13 @@ if !game_over then
       ay = -30.0
       adx = random(-60.0, 60.0)
       ady = random(30.0, 80.0)
-    elsif edge == 1 then
+    else if edge == 1 then
       # Bottom
       ax = random(0.0, swf)
       ay = shf + 30.0
       adx = random(-60.0, 60.0)
       ady = random(-80.0, -30.0)
-    elsif edge == 2 then
+    else if edge == 2 then
       # Left
       ax = -30.0
       ay = random(0.0, shf)

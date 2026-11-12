@@ -125,14 +125,14 @@ fn tokenize(src: string) -> list
     let c = slice(s, start: i, end: i + 1)
     if c == " " then
       i = i + 1
-    elsif c == "\"" then
+    else if c == "\"" then
       let j = i + 1
       while j < n && slice(s, start: j, end: j + 1) != "\"" do
         j = j + 1
       end
       toks = append(toks, {t: "str", s: slice(s, start: i + 1, end: j), n: 0.0})
       i = min(j + 1, n)
-    elsif is_digit(c) || c == "." then
+    else if is_digit(c) || c == "." then
       let j = i
       while j < n && (is_digit(slice(s, start: j, end: j + 1)) || slice(s, start: j, end: j + 1) == ".") do
         j = j + 1
@@ -140,14 +140,14 @@ fn tokenize(src: string) -> list
       let lit = str_num(slice(s, start: i, end: j))
       toks = append(toks, {t: "num", s: slice(s, start: i, end: j), n: lit.v})
       i = j
-    elsif is_alpha(c) then
+    else if is_alpha(c) then
       let j = i
       while j < n && (is_alpha(slice(s, start: j, end: j + 1)) || is_digit(slice(s, start: j, end: j + 1))) do
         j = j + 1
       end
       toks = append(toks, {t: "name", s: upper(slice(s, start: i, end: j)), n: 0.0})
       i = j
-    elsif c == ">" || c == "<" then
+    else if c == ">" || c == "<" then
       let nx = if i + 1 < n then slice(s, start: i + 1, end: i + 2) else "" end
       if nx == "=" || (c == "<" && nx == ">") then
         toks = append(toks, {t: "op", s: c ++ nx, n: 0.0})
@@ -226,7 +226,7 @@ fn agg(vals: list, kind: string) -> record
   for v in vals do
     if v.k == "err" && len(err) == 0 then
       err = v.s
-    elsif v.k == "num" then
+    else if v.k == "num" then
       if count == 0 || (kind == "min" && v.n < best) || (kind == "max" && v.n > best) then
         best = v.n
       end
@@ -236,13 +236,13 @@ fn agg(vals: list, kind: string) -> record
   end
   if len(err) > 0 then
     verr(err)
-  elsif kind == "sum" then
+  else if kind == "sum" then
     vnum(total)
-  elsif kind == "count" then
+  else if kind == "count" then
     vnum(float(count))
-  elsif count == 0 then
+  else if count == 0 then
     verr("#DIV/0!")
-  elsif kind == "avg" then
+  else if kind == "avg" then
     vnum(total / float(count))
   else
     vnum(best)
@@ -251,26 +251,26 @@ end
 
 fn call_fn(name: string, vals: list) -> record
   if name == "SUM" then agg(vals, "sum")
-  elsif name == "AVG" || name == "AVERAGE" then agg(vals, "avg")
-  elsif name == "MIN" then agg(vals, "min")
-  elsif name == "MAX" then agg(vals, "max")
-  elsif name == "COUNT" then agg(vals, "count")
-  elsif name == "ABS" && len(vals) == 1 then
+  else if name == "AVG" || name == "AVERAGE" then agg(vals, "avg")
+  else if name == "MIN" then agg(vals, "min")
+  else if name == "MAX" then agg(vals, "max")
+  else if name == "COUNT" then agg(vals, "count")
+  else if name == "ABS" && len(vals) == 1 then
     let a = as_num(vals[0])
     if a.k == "err" then a else vnum(abs(a.n)) end
-  elsif name == "ROUND" && len(vals) == 2 then
+  else if name == "ROUND" && len(vals) == 2 then
     let a = as_num(vals[0])
     let d = as_num(vals[1])
     if a.k == "err" then a
-    elsif d.k == "err" then d
+    else if d.k == "err" then d
     else
       let scale = pow(10.0, d.n)
       vnum(round(a.n * scale) / scale)
     end
-  elsif name == "IF" && len(vals) == 3 then
+  else if name == "IF" && len(vals) == 3 then
     let c = as_num(vals[0])
     if c.k == "err" then c
-    elsif c.n != 0.0 then vals[1]
+    else if c.n != 0.0 then vals[1]
     else vals[2]
     end
   else
@@ -308,7 +308,7 @@ fn parse_args(cx: record, toks: list, i0: num) -> record
       end
       if is_op(toks, i, s: ",") then
         i = i + 1
-      elsif is_op(toks, i, s: ")") then
+      else if is_op(toks, i, s: ")") then
         i = i + 1
         done = true
       else
@@ -324,16 +324,16 @@ fn parse_primary(cx: record, toks: list, i: num) -> record
   let t = tok_at(toks, i)
   if t.t == "num" then
     {v: vnum(t.n), i: i + 1}
-  elsif t.t == "str" then
+  else if t.t == "str" then
     {v: vtext(t.s), i: i + 1}
-  elsif t.t == "op" && t.s == "(" then
+  else if t.t == "op" && t.s == "(" then
     let inner = get _expr(cx, toks, i0: i + 1)
     if is_op(toks, i: inner.i, s: ")") then
       {v: inner.v, i: inner.i + 1}
     else
       {v: verr("#SYNTAX"), i: inner.i}
     end
-  elsif t.t == "name" then
+  else if t.t == "name" then
     if is_op(toks, i: i + 1, s: "(") then
       let args = parse_args(cx, toks, i0: i + 2)
       if len(args.err) > 0 then
@@ -359,7 +359,7 @@ fn parse_unary(cx: record, toks: list, i: num) -> record
     let inner = parse_unary(cx, toks, i: i + 1)
     let a = as_num(inner.v)
     {v: if a.k == "err" then a else vnum(-a.n) end, i: inner.i}
-  elsif is_op(toks, i, s: "+") then
+  else if is_op(toks, i, s: "+") then
     parse_unary(cx, toks, i: i + 1)
   else
     parse_primary(cx, toks, i)
@@ -372,7 +372,7 @@ fn parse_pow(cx: record, toks: list, i: num) -> record
     let b = parse_pow(cx, toks, i: a.i + 1)
     let x = as_num(a.v)
     let y = as_num(b.v)
-    let v = if x.k == "err" then x elsif y.k == "err" then y else vnum(pow(x.n, y.n)) end
+    let v = if x.k == "err" then x else if y.k == "err" then y else vnum(pow(x.n, y.n)) end
     {v: v, i: b.i}
   else
     a
@@ -389,9 +389,9 @@ fn parse_mul(cx: record, toks: list, i0: num) -> record
     let x = as_num(v)
     let y = as_num(rhs.v)
     if x.k == "err" then v = x
-    elsif y.k == "err" then v = y
-    elsif op == "/" && y.n == 0.0 then v = verr("#DIV/0!")
-    elsif op == "*" then v = vnum(x.n * y.n)
+    else if y.k == "err" then v = y
+    else if op == "/" && y.n == 0.0 then v = verr("#DIV/0!")
+    else if op == "*" then v = vnum(x.n * y.n)
     else v = vnum(x.n / y.n)
     end
     i = rhs.i
@@ -409,8 +409,8 @@ fn parse_add(cx: record, toks: list, i0: num) -> record
     let x = as_num(v)
     let y = as_num(rhs.v)
     if x.k == "err" then v = x
-    elsif y.k == "err" then v = y
-    elsif op == "+" then v = vnum(x.n + y.n)
+    else if y.k == "err" then v = y
+    else if op == "+" then v = vnum(x.n + y.n)
     else v = vnum(x.n - y.n)
     end
     i = rhs.i
@@ -437,7 +437,7 @@ fn parse_cmp(cx: record, toks: list, i0: num) -> record
     let x = as_num(a.v)
     let y = as_num(b.v)
     let v = if x.k == "err" then x
-    elsif y.k == "err" then y
+    else if y.k == "err" then y
     else vnum(if cmp_apply(t.s, x, y) then 1.0 else 0.0 end)
     end
     {v: v, i: b.i}
@@ -450,7 +450,7 @@ set _expr = parse_cmp
 
 fn raw_at(cells: list, r: num, c: num) -> string
   if r < 0 || r >= len(cells) then ""
-  elsif c < 0 || c >= len(cells[r]) then ""
+  else if c < 0 || c >= len(cells[r]) then ""
   else cells[r][c]
   end
 end
@@ -462,13 +462,13 @@ end
 fn eval_at(cx: record, r: num, c: num) -> record
   if r < 0 || r >= len(cx.cells) || c < 0 || c >= len(cx.cells[0]) then
     verr("#REF!")
-  elsif cx.depth > 24 then
+  else if cx.depth > 24 then
     verr("#CYCLE")
   else
     let raw = raw_at(cx.cells, r, c)
     if len(raw) == 0 then
       vempty()
-    elsif slice(raw, start: 0, end: 1) == "=" then
+    else if slice(raw, start: 0, end: 1) == "=" then
       let toks = tokenize(slice(raw, start: 1, end: len(raw)))
       if len(toks) == 0 then
         vempty()
@@ -543,8 +543,8 @@ end
 fn kind_label(raw: string, v: record) -> string
   if len(raw) > 0 && slice(raw, start: 0, end: 1) == "=" then
     if v.k == "err" then "formula · error" else "formula" end
-  elsif v.k == "num" then "number"
-  elsif v.k == "text" then "text"
+  else if v.k == "num" then "number"
+  else if v.k == "text" then "text"
   else "empty"
   end
 end
@@ -737,7 +737,7 @@ if undo_click then
   undo = drop_last(undo)
   rev = rev + 1
   editing = false
-elsif mouse_pressed(0) then
+else if mouse_pressed(0) then
   if hit.ok then
     if editing then
       undo = append(undo, cells)
@@ -756,11 +756,11 @@ elsif mouse_pressed(0) then
       editing = true
       buf = raw_at(cells, r: sel_r, c: sel_c)
     end
-  elsif point_in(px: mouse_x(), py: mouse_y(), r: bar_rect) && !editing then
+  else if point_in(px: mouse_x(), py: mouse_y(), r: bar_rect) && !editing then
     editing = true
     buf = raw_at(cells, r: sel_r, c: sel_c)
   end
-elsif mouse_down(0) && drag_active() && hit.ok && !editing then
+else if mouse_down(0) && drag_active() && hit.ok && !editing then
   sel_r = hit.r
   sel_c = hit.c
 end
@@ -790,7 +790,7 @@ if editing then
   if key_pressed("escape") then
     editing = false
     buf = ""
-  elsif key_pressed("return") then
+  else if key_pressed("return") then
     undo = append(undo, cells)
     cells[sel_r][sel_c] = buf
     rev = rev + 1
@@ -798,7 +798,7 @@ if editing then
     editing = false
     dr = if shift then -1 else 1 end
     moved = true
-  elsif key_pressed("tab") then
+  else if key_pressed("tab") then
     undo = append(undo, cells)
     cells[sel_r][sel_c] = buf
     rev = rev + 1
@@ -878,14 +878,14 @@ else
   # takes the undo or disarms.
   if key_pressed("escape") then
     armed = true
-  elsif armed && len(typed) > 0 then
+  else if armed && len(typed) > 0 then
     if typed == "z" && len(undo) > 0 then
       cells = last(undo)
       undo = drop_last(undo)
       rev = rev + 1
     end
     armed = false
-  elsif len(typed) > 0 then
+  else if len(typed) > 0 then
     editing = true
     buf = typed
   end
@@ -928,8 +928,8 @@ let sub = "quarterly model  ·  " ++ str(ROWS) ++ " x " ++ str(COLS) ++ " cells"
 draw_text(sub, pos: {x: PAD + text_width("fy26-plan", 24) + 16, y: 53}, style: {size: 12, color: FAINT})
 
 # The mode chip.
-let mode_label = if armed then "UNDO?" elsif editing then "EDIT" else "READY" end
-let mode_col = if armed then :8ab4ff elsif editing then AMBER else ACCENT end
+let mode_label = if armed then "UNDO?" else if editing then "EDIT" else "READY" end
+let mode_col = if armed then :8ab4ff else if editing then AMBER else ACCENT end
 draw_rect_rounded(chip_r, radius: 11, c: PANEL)
 draw_rect_outline(chip_r, c: mode_col, a: 90)
 draw_circle(cx: chip_r.x + 13, cy: chip_r.y + 11, radius: 3, r: mode_col.r, g: mode_col.g, b: mode_col.b)
@@ -963,7 +963,7 @@ if editing then
     let cx = bar_text_x + min(text_width(buf, 13), bar_avail)
     draw_rect(rect(cx + 1, BAR_Y + 11, 2, 17), ACCENT)
   end
-elsif len(raw_sel) > 0 then
+else if len(raw_sel) > 0 then
   let c = if is_formula(sel_r, sel_c) then FORMULA else TEXT end
   draw_text(ellipsize(raw_sel, avail_px: bar_avail, size: 13), pos: {x: bar_text_x, y: BAR_Y + 13}, style: {size: 13, color: c})
 else
@@ -1009,7 +1009,7 @@ for i in range(0, VIS) do
       let inrange = rsel && c >= selc0 && c <= selc1
       if inrange then
         draw_rect(cr, c: ACCENT, a: 26)
-      elsif hover_cell.ok && hover_cell.r == r && hover_cell.c == c then
+      else if hover_cell.ok && hover_cell.r == r && hover_cell.c == c then
         # A flat tint, not white-at-low-alpha: the renderer composites in
         # linear space, so even `a: 10` white over this background lands
         # around #383838 — far brighter than the 4% it reads as.
@@ -1023,9 +1023,9 @@ for i in range(0, VIS) do
         draw_rect(cr, c: ERRC, a: 15)
       end
       let col = if v.k == "err" then ERRC
-      elsif v.k == "text" then (if r == 0 then DIM else TEXT end)
-      elsif v.n < 0.0 then NEG
-      elsif fml then FORMULA
+      else if v.k == "text" then (if r == 0 then DIM else TEXT end)
+      else if v.n < 0.0 then NEG
+      else if fml then FORMULA
       else TEXT
       end
       let txt = display(v)
@@ -1121,7 +1121,7 @@ ry = ry + 10
 ry = rail_label("VALUE", ry)
 let shown_val = if len(display(sel_val)) > 0 then display(sel_val) else "—" end
 draw_text(ellipsize(shown_val, avail_px: RAIL_W - 32, size: 17), pos: {x: RAIL_X + 16, y: ry}, style: {size: 17,
-  color: if sel_val.k == "err" then ERRC elsif sel_val.k == "empty" then FAINT else TEXT end})
+  color: if sel_val.k == "err" then ERRC else if sel_val.k == "empty" then FAINT else TEXT end})
 ry = ry + 32
 
 # A four-quarter profile of the selected row (columns B..E), the numbers the

@@ -286,7 +286,7 @@ fn load_scene(k: int, count: int, sw: num, sh: num) -> nil
       spawn(cx + cos(a) * r, cy + sin(a) * r, -sin(a) * s, cos(a) * s,
         hue: 4.0 + r / reach * 40.0 + random(-3.0, 3.0))
     end
-  elsif k == 1 then
+  else if k == 1 then
     # Binary: two wells, a disc of particles in orbit around each.
     let sep = min(sw * 0.2, 190.0)
     add_well(cx - sep, cy, well_strength)
@@ -300,7 +300,7 @@ fn load_scene(k: int, count: int, sw: num, sh: num) -> nil
       spawn(ox + cos(a) * r, cy + sin(a) * r, -sin(a) * s, cos(a) * s,
         hue: (if left then 34.0 else 2.0 end) + r / sep * 14.0)
     end
-  elsif k == 2 then
+  else if k == 2 then
     # Currents: a gas at rest in a wrapping box, stirred by the flow field.
     set flow = true
     set drag = true
@@ -541,7 +541,7 @@ if force_tool then
   if tool == T_ATTRACT then
     frs = append(frs, ms)
     fts = append(fts, 0.0)
-  elsif tool == T_REPEL then
+  else if tool == T_REPEL then
     frs = append(frs, -ms)
     fts = append(fts, 0.0)
   else
@@ -654,20 +654,20 @@ for i in range(0, n) do
     x += u * h
     y += v * h
     if wrap then
-      if x < 0.0 then x += SW elsif x >= SW then x -= SW end
-      if y < 0.0 then y += SH elsif y >= SH then y -= SH end
+      if x < 0.0 then x += SW else if x >= SW then x -= SW end
+      if y < 0.0 then y += SH else if y >= SH then y -= SH end
     else
       if x < 0.0 then
         x = min(-x, SW)
         u *= bounce
-      elsif x > SW then
+      else if x > SW then
         x = max(SW2 - x, 0.0)
         u *= bounce
       end
       if y < 0.0 then
         y = min(-y, SH)
         v *= bounce
-      elsif y > SH then
+      else if y > SH then
         y = max(SH2 - y, 0.0)
         v *= bounce
         u *= 0.985
@@ -715,7 +715,7 @@ if in_stage then
   let p = {x: mx, y: my}
   if tool == T_WELL then
     let hit = well_at(smx, smy, 18.0)
-    let c = if hit >= 0 then C_WARM elsif invert then C_WARM else C_GOLD end
+    let c = if hit >= 0 then C_WARM else if invert then C_WARM else C_GOLD end
     draw_circle_outline(p, 16, c, 220, 1)
     draw_rect(mx - 5, my, 11, 1, c.r, c.g, c.b, 230)
     if hit < 0 && !invert then draw_rect(mx, my - 5, 1, 11, c.r, c.g, c.b, 230) end
@@ -815,25 +815,25 @@ fn tool_glyph(i: int, cx: num, cy: num, c: record, a: int) -> nil
   if i == T_ATTRACT then
     draw_circle_outline(p, 6, c, a, 1)
     draw_circle(p, 2, c, a)
-  elsif i == T_REPEL then
+  else if i == T_REPEL then
     draw_circle(p, 2, c, a)
     for q in range(0, 4) do
       let ang = float(q) * 1.5708 + 0.7854
       draw_line(cx + cos(ang) * 4.0, cy + sin(ang) * 4.0, cx + cos(ang) * 7.5, cy + sin(ang) * 7.5, c, a, 1)
     end
-  elsif i == T_VORTEX then
+  else if i == T_VORTEX then
     fill_arc(p, 5, 7, 0.3, 2.6, c, a)
     fill_arc(p, 5, 7, 3.44, 5.74, c, a)
     draw_circle(p, 1, c, a)
-  elsif i == T_GRAB then
+  else if i == T_GRAB then
     draw_rect_rounded_outline(rect(cx - 6, cy - 6, 12, 12), 3, c, a, 1)
     draw_rect_rounded(rect(cx - 2, cy - 2, 5, 5), radius: 1, c: c, a: a)
-  elsif i == T_EMIT then
+  else if i == T_EMIT then
     draw_circle({x: cx - 5, y: cy}, 2, c, a)
     draw_circle({x: cx + 1, y: cy - 4}, 1, c, a)
     draw_circle({x: cx + 2, y: cy + 4}, 1, c, a)
     draw_circle({x: cx + 6, y: cy}, 1, c, a)
-  elsif i == T_ERASE then
+  else if i == T_ERASE then
     draw_circle_outline(p, 6, c, a, 1)
     draw_line(cx - 4, cy + 4, cx + 4, cy - 4, c, a, 1)
   else
@@ -853,8 +853,8 @@ end
 
 fn plain_chip(r: Rect, label: string, on: bool, mx: int, my: int) -> nil
   let hov = point_in(px: mx, py: my, r: r)
-  draw_rect_rounded(r, radius: 7, c: if on then C_ACCENT elsif hov then C_EDGE else C_CHIP end,
-    a: if on then 38 elsif hov then 150 else 255 end)
+  draw_rect_rounded(r, radius: 7, c: if on then C_ACCENT else if hov then C_EDGE else C_CHIP end,
+    a: if on then 38 else if hov then 150 else 255 end)
   if on then draw_rect_rounded_outline(r, radius: 7, c: C_ACCENT, a: 150, width: 1) end
   tx_center(label, cx: r.x + r.w / 2, y: r.y + 5, style: if on then {...S_UI, color: C_ACCENT} else S_UI_M end)
 end
@@ -869,11 +869,11 @@ for i in range(0, len(TOOLS)) do
   if on then
     draw_rect_rounded(r, radius: 7, c: t.color, a: 30)
     draw_rect_rounded(rect(r.x, r.y + 6, 3, r.h - 12), radius: 2, c: t.color)
-  elsif hov then
+  else if hov then
     draw_rect_rounded(r, radius: 7, c: C_CHIP)
   end
   tool_glyph(i, cx: r.x + 20, cy: r.y + r.h / 2, c: if on then t.color else C_DIM end, a: 255)
-  tx(t.name, x: r.x + 38, y: r.y + 4, style: if on then S_UI_B elsif hov then S_UI else S_UI_M end)
+  tx(t.name, x: r.x + 38, y: r.y + 4, style: if on then S_UI_B else if hov then S_UI else S_UI_M end)
   key_cap(t.key, right_x: r.x + r.w - 8, y: r.y + 5, lit: on)
 end
 

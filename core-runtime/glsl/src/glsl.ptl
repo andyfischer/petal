@@ -490,9 +490,9 @@ fn capture(c: Ctx, name: string, value, node: record) -> Val
     return fail(c, "`" ++ name ++ "` is a function; a function can only be called here", node)
   end
   let ty = if t == "float" then Ty.float
-    elsif t == "vec2" then Ty.vec2
-    elsif t == "vec3" then Ty.vec3
-    elsif is_color(value) then Ty.vec3
+    else if t == "vec2" then Ty.vec2
+    else if t == "vec3" then Ty.vec3
+    else if is_color(value) then Ty.vec3
     else nil end
   if ty == nil then
     return fail(c, "captured `" ++ name ++ "` is a " ++ t ++ ", which has no GLSL form", node)
@@ -586,7 +586,7 @@ fn e_binary(c: Ctx, node: record) -> Val
       return fail(c, if is_vec(ty) then "vectors do not order" else "cannot order " ++ ty_text(ty) end, node)
     end
     ty = Ty.bool
-  elsif !is_num(ty) && !is_vec(ty) then
+  else if !is_num(ty) && !is_vec(ty) then
     return fail(c, "no GLSL operation `" ++ o.sym ++ "` on " ++ ty_text(ty), node)
   end
   let cv = nil
@@ -898,7 +898,7 @@ fn stmt(c: Ctx, node: record) -> nil
       return nil
     end
     emit(c, ty_text(v.ty) ++ " " ++ declare(c, node.name, v.ty) ++ " = " ++ v.code ++ ";")
-  elsif tag == "Set" || tag == "Assign" then
+  else if tag == "Set" || tag == "Assign" then
     if node.target.kind != "Name" then
       fail(c, "only whole variables can be assigned (vectors are immutable in Petal)", node)
       return nil
@@ -915,19 +915,19 @@ fn stmt(c: Ctx, node: record) -> nil
     let v = coerce(c, expr(c, node.value), found.ty, node)
     if failed(c) then return nil end
     emit(c, found.glsl ++ " = " ++ v.code ++ ";")
-  elsif tag == "Expr" then
+  else if tag == "Expr" then
     let e = node.expr
     if e.tag == "If" then
       if_stmt(c, e)
-    elsif e.tag == "For" then
+    else if e.tag == "For" then
       for_stmt(c, e)
     else
       let v = expr(c, e)
       if !failed(c) then emit(c, v.code ++ ";") end
     end
-  elsif tag == "For" then
+  else if tag == "For" then
     for_stmt(c, node)
-  elsif tag == "While" then
+  else if tag == "While" then
     let cv = cond(c, node.condition)
     emit(c, "while (" ++ cv.code ++ ") \{")
     let s = c.read()
@@ -939,15 +939,15 @@ fn stmt(c: Ctx, node: record) -> nil
     s2.loop_factor = saved
     c.write(s2)
     emit(c, "}")
-  elsif tag == "Return" then
+  else if tag == "Return" then
     if node.value == nil then
       ret(c, nil, node)
     else
       ret(c, expr(c, node.value), node.value)
     end
-  elsif tag == "Break" then
+  else if tag == "Break" then
     emit(c, "break;")
-  elsif tag == "Continue" then
+  else if tag == "Continue" then
     emit(c, "continue;")
   else
     fail(c, tag ++ " has no GLSL form", node)
@@ -1152,11 +1152,11 @@ fn param(c: Ctx, p: record, pinfo: record, node) -> Ty
     let d = p.default
     if d.tag == "Literal" && (d.type == "float" || d.type == "int") then
       ty = Ty.float
-    elsif d.tag == "UnaryOp" && d.op == "Neg" && d.operand.tag == "Literal" then
+    else if d.tag == "UnaryOp" && d.op == "Neg" && d.operand.tag == "Literal" then
       ty = Ty.float
-    elsif color_of(d) != nil then
+    else if color_of(d) != nil then
       ty = Ty.vec3
-    elsif d.tag == "Call" && d.function.tag == "Ident" && vec_ctor(d.function.name) != nil then
+    else if d.tag == "Call" && d.function.tag == "Ident" && vec_ctor(d.function.name) != nil then
       ty = vec_ctor(d.function.name)
     else
       fail(c, "cannot tell the type of param `" ++ p.name ++ "` from its default; annotate it", d)
@@ -1324,7 +1324,7 @@ fn live_captures(info: record, prefix: string, inline: bool, depth: int) -> reco
         key = concat(key, sub.key)
         values = {...values, ...sub.values}
       end
-    elsif t == "int" || t == "bool" || inline then
+    else if t == "int" || t == "bool" || inline then
       key = append(key, [prefix ++ cap.name, v])
     else
       key = append(key, [prefix ++ cap.name, t])

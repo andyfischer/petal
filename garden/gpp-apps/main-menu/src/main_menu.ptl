@@ -93,7 +93,7 @@ if !recents_ready then
     recents = rd
     recents_ready = true
     recents_err = ""
-  elsif is_error(rd) then
+  else if is_error(rd) then
     # A reader failure is never fatal (a missing database answers with empty
     # lists), so this is a genuine surprise — show it, keep the buttons live.
     recents_err = error_of(rd) ?? "could not read recents"

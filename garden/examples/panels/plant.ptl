@@ -183,9 +183,9 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
   # the shape of the tree is ever chosen.
   let children = if was.children != 0 then
     was.children
-  elsif dist > min_distance_between_branches then
+  else if dist > min_distance_between_branches then
     2
-  elsif length >= max_segment_length && radius > minimum_thickness then
+  else if length >= max_segment_length && radius > minimum_thickness then
     1
   else
     0
@@ -201,7 +201,7 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
   if children == 1 then
     # Straight extension: same lineage, so this branch's leaves stay with it.
     grow(id: id ++ ".c", lineage: lineage, depth: depth + 1, base: handoff, bend: 0.0, ratio: 1.0, parent_end_radius: end_radius, dist_before: dist)
-  elsif children == 2 then
+  else if children == 2 then
     # A fork. One child inherits the leaf pair (so those leaves keep the age
     # they have already accumulated and stay the big ones); the other starts
     # a lineage of its own, with fresh buds.

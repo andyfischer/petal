@@ -117,7 +117,7 @@ fn predict_y(x: num, y: num, dx: num, dy: num, target_x: num, top: num, bot: num
   for i in range(0, 80) do
     if yy < top then
       set yy = 2.0 * top - yy
-    elsif yy > bot then
+    else if yy > bot then
       set yy = 2.0 * bot - yy
     else
       break
@@ -230,13 +230,13 @@ if key_pressed("space") then
     set by = float(cy)
     set trail = []
     set bits = burst(bits, x: float(cx), y: float(cy), n: 14, col: C_BALL, dirx: serve_dir, spread: 1.2)
-  elsif phase == "play" then
+  else if phase == "play" then
     set phase = "paused"
     set banner = "PAUSED"
     set subbanner = "press SPACE to resume"
-  elsif phase == "paused" then
+  else if phase == "paused" then
     set phase = "play"
-  elsif phase == "over" then
+  else if phase == "over" then
     set phase = "title"
     set s_you = 0
     set s_cpu = 0
@@ -509,7 +509,7 @@ if phase != "play" then
   draw_rect_rounded(card, radius: 14, c: C_COURT)
   draw_rect_outline(card, c: C_EDGE, a: 255, width: 1)
   let accent = if phase == "over" then (if s_you >= win_score then C_YOU else C_CPU end)
-  elsif phase == "paused" then C_DIM
+  else if phase == "paused" then C_DIM
   else C_TEXT end
   draw_rect_rounded(rect(card.x + 20, cy - 26, 3, 52), radius: 2, c: accent, a: 190)
   tx_center(banner, cx: cx + 8, y: cy - 34, style: {...S_BIG, color: accent})

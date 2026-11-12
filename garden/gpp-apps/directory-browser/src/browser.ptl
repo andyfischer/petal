@@ -164,9 +164,9 @@ draw_line({x: 0, y: header_h - 6}, {x: w, y: header_h - 6}, P.border)
 
 if len(listing_err) > 0 then
   draw_text(ellipsize(listing_err, w - 2 * PAD, FS), {x: PAD, y: content_top + 6}, FS, RED)
-elsif !listing_ready then
+else if !listing_ready then
   draw_text("loading…", {x: PAD, y: content_top + 6}, FS, FAINT)
-elsif row_count == 0 then
+else if row_count == 0 then
   draw_text("(empty directory)", {x: PAD, y: content_top + 6}, FS, FAINT)
 end
 
@@ -179,7 +179,7 @@ for i in range(0, row_count) do
     let row_r = rect(0, ry, w, ROW_H)
     if i == selected then
       draw_rect(row_r, SEL)
-    elsif hovered(row_r) then
+    else if hovered(row_r) then
       draw_rect(row_r, HOVER)
     end
     let name_c = MUT

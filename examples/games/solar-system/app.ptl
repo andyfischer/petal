@@ -152,7 +152,7 @@ end
 
 fn fmt_days(d: num) -> string
   if abs(d) < 1.0 then "{fmt1(d * 24.0)} h"
-  elsif abs(d) < 400.0 then "{fmt1(d)} d"
+  else if abs(d) < 400.0 then "{fmt1(d)} d"
   else "{fmt1(d / 365.25)} y" end
 end
 
@@ -367,7 +367,7 @@ fn side_rows() -> list
   # or a moon of it is selected.
   let rows = []
   let s = get sel
-  let open_parent = if s < 0 then -1 elsif BODIES[s].kind == "moon" then BODIES[s].parent else s end
+  let open_parent = if s < 0 then -1 else if BODIES[s].kind == "moon" then BODIES[s].parent else s end
   for i in range(0, 9) do
     rows = append(rows, i)
     if i == open_parent then
@@ -508,7 +508,7 @@ fn try_label(i: int, force: bool) -> bool
   end
   if clash && !force then return false end
   set placed = append(get placed, lr)
-  let col = if get sel == i then C_ACCENT elsif b.kind == "moon" then C_DIM else C_TEXT end
+  let col = if get sel == i then C_ACCENT else if b.kind == "moon" then C_DIM else C_TEXT end
   draw_line({x: lr.x - 4, y: lr.y + 8}, {x: int(s.x + r + 1), y: int(s.y)}, col, 120, 1)
   draw_text(b.name, pos: {x: lr.x + 4, y: lr.y + 1}, style: {...style, color: col})
   set labels_drawn += 1
@@ -535,9 +535,9 @@ end
 if hover >= 0 then
   let b = BODIES[hover]
   let parent = if b.parent >= 0 then BODIES[b.parent].name else "" end
-  let line1 = if b.kind == "star" then "Star" elsif b.kind == "planet" then "Planet · orbits the Sun" else "Moon of {parent}" end
+  let line1 = if b.kind == "star" then "Star" else if b.kind == "planet" then "Planet · orbits the Sun" else "Moon of {parent}" end
   let line2 = if b.kind == "star" then "radius {fmt_int(b.km)} km"
-  elsif b.kind == "planet" then "{fmt1(b.au)} AU · {fmt_days(b.period)} · {fmt_int(b.km)} km"
+  else if b.kind == "planet" then "{fmt1(b.au)} AU · {fmt_days(b.period)} · {fmt_int(b.km)} km"
   else "{fmt_int(b.au)}k km · {fmt_days(abs(b.period))} · {fmt_int(b.km)} km" end
   let cw = max(text_width(b.name, S_UI_B), max(text_width(line1, S_UI_M), text_width(line2, S_UI_M))) + 28
   let cx0 = clamp(mx + 18, lo: view.x + 8, hi: view.x + view.w - cw - 8)
@@ -563,10 +563,10 @@ if sel >= 0 then
   let b = BODIES[sel]
   draw_circle(center: {x: side.x + 28, y: side.y + 30}, radius: 9, c: b.color)
   draw_text(b.name, pos: {x: side.x + 46, y: side.y + 18}, style: S_H)
-  let kind = if b.kind == "star" then "STAR" elsif b.kind == "planet" then "PLANET" else "MOON OF " ++ upper(BODIES[b.parent].name) end
+  let kind = if b.kind == "star" then "STAR" else if b.kind == "planet" then "PLANET" else "MOON OF " ++ upper(BODIES[b.parent].name) end
   tx(kind, x: side.x + 46, y: side.y + 44, style: S_LABEL)
   let facts = if b.kind == "star" then [["radius", "{fmt_int(b.km)} km"], ["moons", str(len(children_of(sel)))]]
-  elsif b.kind == "planet" then [["distance", "{fmt1(b.au)} AU"], ["year", fmt_days(b.period)], ["radius", "{fmt_int(b.km)} km"], ["moons", str(len(children_of(sel)))]]
+  else if b.kind == "planet" then [["distance", "{fmt1(b.au)} AU"], ["year", fmt_days(b.period)], ["radius", "{fmt_int(b.km)} km"], ["moons", str(len(children_of(sel)))]]
   else [["distance", "{fmt_int(b.au)},000 km"], ["period", fmt_days(abs(b.period)) ++ (if b.period < 0.0 then " retro" else "" end)], ["radius", "{fmt_int(b.km)} km"]] end
   let fy = side.y + 72
   let fx = side.x + 16
@@ -593,13 +593,13 @@ for k in range(0, len(rows2)) do
   if is_sel then
     draw_rect_rounded(r, radius: 6, c: C_ACCENT, a: 40)
     draw_rect_rounded(rect(r.x, r.y + 6, 3, r.h - 12), radius: 2, c: C_ACCENT)
-  elsif hov then
+  else if hov then
     draw_rect_rounded(r, radius: 6, c: C_CHIP)
   end
   let indent = if b.kind == "moon" then 22 else 0 end
   draw_circle(center: {x: r.x + 16 + indent, y: r.y + 12}, radius: if b.kind == "moon" then 3 else 5 end, c: b.color)
   draw_text(b.name, pos: {x: r.x + 30 + indent, y: r.y + 4}, style: if is_sel then {...S_UI, color: C_ACCENT} else (if b.kind == "moon" then S_UI_M else S_UI end) end)
-  let right = if b.kind == "star" then "" elsif b.kind == "planet" then "{fmt1(b.au)} AU" else fmt_days(abs(b.period)) end
+  let right = if b.kind == "star" then "" else if b.kind == "planet" then "{fmt1(b.au)} AU" else fmt_days(abs(b.period)) end
   draw_text_right(right, right_x: r.x + r.w - 10, y: r.y + 5, style: {...S_NAME_M, color: C_MUTE})
   let kids = len(children_of(i))
   if b.kind == "planet" && kids > 0 && !is_sel then

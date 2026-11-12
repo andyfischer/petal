@@ -143,9 +143,9 @@ end
 
 fn ago(d: num) -> string
   if d == 0 then "today"
-  elsif d == 1 then "yesterday"
-  elsif d < 7 then "{d}d ago"
-  elsif d < 60 then "{int(d / 7)}w ago"
+  else if d == 1 then "yesterday"
+  else if d < 7 then "{d}d ago"
+  else if d < 60 then "{int(d / 7)}w ago"
   else "{int(d / 30)}mo ago"
   end
 end
@@ -155,7 +155,7 @@ end
 fn freshness(days: num) -> record
   let f = clamp(1.0 - float(days) / 45.0, lo: 0.0, hi: 1.0)
   let c = if days <= 7 then TEAL
-  elsif days <= 30 then AMBER
+  else if days <= 30 then AMBER
   else ROSE
   end
   {frac: f, color: c}
@@ -248,7 +248,7 @@ fn row_less(a: record, b: record, key: string, dir: num) -> bool
   let bv = sort_val(b, key)
   if av == bv then
     lower(a.name) < lower(b.name)
-  elsif dir == 1 then
+  else if dir == 1 then
     av < bv
   else
     av > bv
@@ -479,9 +479,9 @@ if focus == "value" then ed_value = digits(edited(ed_value, typed, backsp)) end
 if key_pressed("escape") then
   if len(focus) > 0 then
     focus = ""
-  elsif editing then
+  else if editing then
     editing = false
-  elsif len(q) > 0 then
+  else if len(q) > 0 then
     q = ""
   end
 end
@@ -577,7 +577,7 @@ for i in range(0, len(STAGES) + 1) do
   if on then
     draw_rect_rounded(r, radius: 8, c: CARD_HI)
     draw_rect_rounded(rect(r.x, r.y + 6, 3, r.h - 12), radius: 2, c: ACCENT)
-  elsif hov then
+  else if hov then
     draw_rect_rounded(r, radius: 8, c: CARD, a: 140)
   end
   let dot = if i == 0 then FAINT else stage_color(label) end
@@ -623,7 +623,7 @@ if !q_focus then
 end
 
 let sort_label = if sort_key == "days" then "last contact"
-elsif sort_key == "value" then "deal size"
+else if sort_key == "value" then "deal size"
 else sort_key
 end
 let dir_label = if sort_dir == 1 then "ascending" else "descending" end
@@ -666,7 +666,7 @@ for i in range(0, shown) do
   if on then
     draw_rect_rounded(r, radius: 8, c: CARD_HI)
     draw_rect_rounded(rect(TABLE_X + 10, y + 8, 3, ROW_H - 16), radius: 2, c: ACCENT)
-  elsif hov then
+  else if hov then
     draw_rect_rounded(r, radius: 8, c: CARD, a: 150)
   end
 
@@ -768,7 +768,7 @@ else
       if on then
         draw_rect_rounded(pr, radius: 7, c: sc, a: 52)
         draw_rect_rounded(rect(pr.x, pr.y, pr.w, pr.h), radius: 7, c: sc, a: 52)
-      elsif hovered(pr) then
+      else if hovered(pr) then
         draw_rect_rounded(pr, radius: 7, c: CARD_HI)
       else
         draw_rect_rounded(pr, radius: 7, c: CARD)

@@ -265,13 +265,13 @@ fn place(d: record, c: record) -> record
     let oe = o.s + o.n
     if o.t != c.t || oe <= cs || os >= ce then
       out = append(out, o)
-    elsif os >= cs && oe <= ce then
+    else if os >= cs && oe <= ce then
       nil
-    elsif os < cs && oe > ce then
+    else if os < cs && oe > ce then
       out = append(out, {...o, n: cs - os})
       out = append(out, {...o, id: next, s: ce, n: oe - ce, i: o.i + (ce - os)})
       next += 1
-    elsif os < cs then
+    else if os < cs then
       out = append(out, {...o, n: cs - os})
     else
       out = append(out, {...o, s: ce, n: oe - ce, i: o.i + (ce - os)})
@@ -427,7 +427,7 @@ if in_tracks && drag.kind == "" then
     if c.t == hov_t && mx >= r.x && mx < r.x + r.w then
       hov_id = c.id
       let grip = if r.w >= 24 then 7 else 3 end
-      hov_edge = if mx < r.x + grip then "l" elsif mx >= r.x + r.w - grip then "r" else "" end
+      hov_edge = if mx < r.x + grip then "l" else if mx >= r.x + r.w - grip then "r" else "" end
     end
   end
 end
@@ -480,7 +480,7 @@ let blocked = drag.kind != ""
 if !blocked then
   if key_pressed("z") && mod_cmd() then
     act = if mod_shift() then "redo" else "undo" end
-  elsif !mod_cmd() then
+  else if !mod_cmd() then
     if key_pressed("space") then playing = !playing end
     if key_pressed("k") then playing = false end
     if key_pressed("l") then playing = true end
@@ -528,15 +528,15 @@ if !blocked && mouse_pressed(0) then
   end
   if hit_btn != "" then
     act = lower(hit_btn)
-  elsif point_in(mx, my, R_PLAY) then
+  else if point_in(mx, my, R_PLAY) then
     playing = !playing
-  elsif point_in(mx, my, R_BACK) then
+  else if point_in(mx, my, R_BACK) then
     playing = false
     playhead = max(0.0, float(int(floor(playhead)) - 1))
-  elsif point_in(mx, my, R_FWD) then
+  else if point_in(mx, my, R_FWD) then
     playing = false
     playhead = float(int(floor(playhead)) + 1)
-  elsif point_in(mx, my, R_PREV) || point_in(mx, my, R_NEXT) then
+  else if point_in(mx, my, R_PREV) || point_in(mx, my, R_NEXT) then
     playing = false
     let here = int(round(playhead))
     let pts = edit_points(doc.clips)
@@ -547,32 +547,32 @@ if !blocked && mouse_pressed(0) then
       let nxt = filter(pts, fn(p) -> p > here)
       if len(nxt) > 0 then playhead = float(nxt[0]) end
     end
-  elsif point_in(mx, my, R_ZOUT) then
+  else if point_in(mx, my, R_ZOUT) then
     act = "zoom_out"
-  elsif point_in(mx, my, R_ZIN) then
+  else if point_in(mx, my, R_ZIN) then
     act = "zoom_in"
-  elsif point_in(mx, my, R_FIT) then
+  else if point_in(mx, my, R_FIT) then
     act = "fit"
-  elsif point_in(mx, my, rect(R_ZOOM.x - 4, R_ZOOM.y - 6, R_ZOOM.w + 8, R_ZOOM.h + 12)) then
+  else if point_in(mx, my, rect(R_ZOOM.x - 4, R_ZOOM.y - 6, R_ZOOM.w + 8, R_ZOOM.h + 12)) then
     drag = {...DRAG0, kind: "zoom"}
-  elsif point_in(mx, my, rect(R_RULER.x, R_RULER.y - 2, R_RULER.w, R_RULER.h + 2)) then
+  else if point_in(mx, my, rect(R_RULER.x, R_RULER.y - 2, R_RULER.w, R_RULER.h + 2)) then
     playing = false
     drag = {...DRAG0, kind: "scrub"}
-  elsif point_in(mx, my, rect(R_SB.x, R_SB.y - 4, R_SB.w, R_SB.h + 8)) then
+  else if point_in(mx, my, rect(R_SB.x, R_SB.y - 4, R_SB.w, R_SB.h + 8)) then
     drag = {...DRAG0, kind: "scroll", mx0: mx, f0: view0}
-  elsif hov_id >= 0 then
+  else if hov_id >= 0 then
     let c = doc.clips[find_clip(doc.clips, hov_id)]
     sel = c.id
     if hov_edge == "l" then
       drag = {...DRAG0, kind: "trim_l", id: c.id, t: c.t, s: c.s, n: c.n, mx0: mx}
-    elsif hov_edge == "r" then
+    else if hov_edge == "r" then
       drag = {...DRAG0, kind: "trim_r", id: c.id, t: c.t, s: c.s, n: c.n, mx0: mx}
     else
       drag = {...DRAG0, kind: "move", id: c.id, off: f_at(V, mx) - c.s, t: c.t, s: c.s, n: c.n, m: c.m, mx0: mx}
     end
-  elsif in_tracks then
+  else if in_tracks then
     sel = -1
-  elsif hov_bin >= 0 then
+  else if hov_bin >= 0 then
     drag = {...DRAG0, kind: "bin", m: hov_bin, mx0: mx, f0: my}
   else
     for t in range(0, N_TRK) do
@@ -610,17 +610,17 @@ if drag.kind != "" && (mouse_down(0) || mouse_released(0)) then
       end
     end
     playhead = f
-  elsif drag.kind == "zoom" then
+  else if drag.kind == "zoom" then
     let u = clamp((mx - R_ZOOM.x) / float(R_ZOOM.w), 0.0, 1.0)
     let np = PPF_LO * pow(PPF_HI / PPF_LO, u)
     let anchor = clamp(playhead, view0, view0 + TW / ppf)
     let ax = fx(V, anchor)
     ppf = np
     view0 = anchor - (ax - TX0) / np
-  elsif drag.kind == "scroll" then
+  else if drag.kind == "scroll" then
     let total = max(float(end_f + FPS * 4), view0 + TW / ppf)
     view0 = drag.f0 + (mx - drag.mx0) * total / TW
-  elsif drag.kind == "move" then
+  else if drag.kind == "move" then
     let k = find_clip(doc.clips, drag.id)
     if k >= 0 then
       let c = doc.clips[k]
@@ -637,7 +637,7 @@ if drag.kind != "" && (mouse_down(0) || mouse_released(0)) then
       drag.s = max(0, s)
       drag.t = t
     end
-  elsif drag.kind == "trim_l" || drag.kind == "trim_r" then
+  else if drag.kind == "trim_l" || drag.kind == "trim_r" then
     let k = find_clip(doc.clips, drag.id)
     if k >= 0 && drag.moved then
       let c = doc.clips[k]
@@ -667,7 +667,7 @@ if drag.kind != "" && (mouse_down(0) || mouse_released(0)) then
         snap_line = -1
       end
     end
-  elsif drag.kind == "bin" then
+  else if drag.kind == "bin" then
     let m = MEDIA[drag.m]
     let ht = if point_in(mx, my, R_TRACKS) then track_at(my) else -1 end
     let n = match m.kind
@@ -702,12 +702,12 @@ if drag.kind != "" && !mouse_down(0) then
         if snap_line >= 0 then n_snaps += 1 end
       end
     end
-  elsif drag.kind == "trim_l" || drag.kind == "trim_r" then
+  else if drag.kind == "trim_l" || drag.kind == "trim_r" then
     if doc != g_doc then
       n_trims += 1
       if snap_line >= 0 then n_snaps += 1 end
     end
-  elsif drag.kind == "bin" && drag.ok then
+  else if drag.kind == "bin" && drag.ok then
     let m = MEDIA[drag.m]
     let c = cl(doc.next, drag.m, drag.t, drag.s, drag.n, if m.kind == "video" then 24 else 0 end)
     doc = place({...doc, next: doc.next + 1}, c)
@@ -794,7 +794,7 @@ if drag.kind == "" && (wy != 0 || wx != 0) then
       let d = if wx != 0 then wx else wy end
       view0 += d * 40 / ppf
     end
-  elsif point_in(mx, my, R_BINLIST) then
+  else if point_in(mx, my, R_BINLIST) then
     let total = len(bin_items) * BIN_ROW
     bin_scroll = clamp(bin_scroll + wy * 30, 0.0, max(0.0, float(total - R_BINLIST.h)))
   end
@@ -914,10 +914,10 @@ fn key_cap(x: num, y: num, s: string) -> float
 end
 
 fn btn(r: Rect, text: string, hot: bool, on: bool, enabled: bool) -> nil
-  let bg = if on then tint(WELL, ACCENT, 22) elsif hot && enabled then WELL_HI else WELL end
+  let bg = if on then tint(WELL, ACCENT, 22) else if hot && enabled then WELL_HI else WELL end
   draw_rect_rounded(r, 6, bg)
   draw_rect_rounded_outline(r, 6, if on then tint(WELL, ACCENT, 55) else LINE end)
-  let fg = if on then ACCENT elsif !enabled then GHOST elsif hot then TEXT else DIM end
+  let fg = if on then ACCENT else if !enabled then GHOST else if hot then TEXT else DIM end
   label(text, r, {...S_BTN, color: fg}, "center")
 end
 
@@ -965,7 +965,7 @@ fn draw_thumb(m: record, r: Rect, t: num) -> nil
       let h = max(1.0, a * (r.h - 8))
       draw_rect(r.x + 2 + k * 3, r.y + r.h / 2 - h / 2, 2, h, m.color, 200)
     end
-  elsif m.kind == "title" then
+  else if m.kind == "title" then
     draw_rect_rounded(r, 4, :101320)
     for k in range(0, int(r.w / 6) + 1) do
       for j in range(0, int(r.h / 6) + 1) do
@@ -987,7 +987,7 @@ fn draw_bin(items: list, hov: int, tab: int, scroll: num, dragging: int) -> nil
     let r = BIN_TAB_R[k]
     let on = k == tab
     let hot = point_in(mouse_x(), mouse_y(), r)
-    draw_rect_rounded(r, 6, if on then WELL_HI elsif hot then WELL else CARD end)
+    draw_rect_rounded(r, 6, if on then WELL_HI else if hot then WELL else CARD end)
     if on then draw_rect_rounded_outline(r, 6, LINE) end
     label(BIN_TABS[k], r, {...S_SMALL, color: if on then TEXT else FAINT end, weight: if on then 600 else 400 end}, "center")
   end
@@ -1026,7 +1026,7 @@ fn draw_monitor(air: list, ph: num, play: bool, endf: int, lv: list, pk: list, m
   label("PROGRAM", rect(R_MON.x + 16, R_MON.y + 8, 100, 22), S_CAP, "left")
   label("Sequence 01 — Teaser cut", rect(R_MON.x + 80, R_MON.y + 8, 300, 22), S_SMALL, "left")
   let top = if len(air) > 0 then last(air) else nil end
-  let now = if mode != "" then "{mode}  ·  {MEDIA[top.m].name}" elsif top == nil then "Gap" else "{TRACKS[top.t].code}  {MEDIA[top.m].name}" end
+  let now = if mode != "" then "{mode}  ·  {MEDIA[top.m].name}" else if top == nil then "Gap" else "{TRACKS[top.t].code}  {MEDIA[top.m].name}" end
   label(now, rect(R_MON.x, R_MON.y + 8, R_MON.w - 16, 22), {...S_SMALL, color: if top == nil then FAINT else DIM end}, "right")
 
   draw_shadow(R_SCR, {radius: 2, blur: 22, spread: 0, dx: 0, dy: 8, color: :000000, a: 160})
@@ -1059,7 +1059,7 @@ fn draw_monitor(air: list, ph: num, play: bool, endf: int, lv: list, pk: list, m
     let lit = int(v * segs)
     for k in range(0, lit) do
       let u = k / float(segs)
-      let c = if u > 0.88 then :ff5d55 elsif u > 0.7 then :f2b766 else :4fc28a end
+      let c = if u > 0.88 then :ff5d55 else if u > 0.7 then :f2b766 else :4fc28a end
       draw_rect(r.x + 1, r.y + r.h - 2 - (k + 1) * 4 + 1, 5, 3, c)
     end
     if pk[ch] > 0.02 then
@@ -1176,7 +1176,7 @@ end
 fn draw_ruler(v: record, d: record, ph: num, endf: int) -> nil
   draw_rect(R_RULER, WELL)
   let step = tick_step(v.ppf)
-  let minor = if step % 4 == 0 then step / 4 elsif step % 3 == 0 then step / 3 else step / 2 end
+  let minor = if step % 4 == 0 then step / 4 else if step % 3 == 0 then step / 3 else step / 2 end
   let f0 = int(floor(v.v0 / minor)) * minor
   let f1 = int(v.v0 + v.w / v.ppf) + minor
   clip_push(R_RULER)
@@ -1226,7 +1226,7 @@ fn draw_track_heads(dead: list, d: record) -> nil
     draw_rect_rounded(er, 5, if hot then WELL_HI else WELL end)
     let cx = er.x + er.w / 2
     let cy = er.y + er.h / 2
-    let ic = if dead[t] then GHOST elsif hot then TEXT else DIM end
+    let ic = if dead[t] then GHOST else if hot then TEXT else DIM end
     if tr.kind == "video" then
       draw_ellipse_outline(cx, cy, 7, 4.5, ic, 255, 1.5)
       draw_circle(cx, cy, 2.2, ic)
@@ -1284,7 +1284,7 @@ fn draw_clip(v: record, c: record, r: Rect, selected: bool, hot: bool, edge: str
   draw_rect(r, body)
   if m.kind == "video" then
     draw_filmstrip(v, c, m, r)
-  elsif m.kind == "audio" then
+  else if m.kind == "audio" then
     draw_waveform(v, c, m, r, tint(body, col, 70))
   else
     draw_rect_gradient(rect(r.x, r.y + 13, r.w, r.h - 13), tint(:0c0f15, col, 34), tint(:0c0f15, col, 18), 0)
@@ -1293,7 +1293,7 @@ fn draw_clip(v: record, c: record, r: Rect, selected: bool, hot: bool, edge: str
       draw_text(text_ellipsize(m.file, S_TINY, r.w - 30), {x: r.x + 24, y: r.y + 20}, {...S_TINY, color: tint(body, col, 55)})
     end
   end
-  draw_rect(r.x, r.y, r.w, 13, tint(:0c0f15, col, if selected then 75 elsif hot then 55 else 45 end))
+  draw_rect(r.x, r.y, r.w, 13, tint(:0c0f15, col, if selected then 75 else if hot then 55 else 45 end))
   if r.w > 26 then
     let name_x = max(r.x + 5, float(TX0 + 4))
     let avail = r.x + r.w - name_x - 6
@@ -1305,7 +1305,7 @@ fn draw_clip(v: record, c: record, r: Rect, selected: bool, hot: bool, edge: str
   clip_pop()
   if selected then
     draw_rect_rounded_outline(r, 5, :ffffff, 255, 2)
-  elsif hot then
+  else if hot then
     draw_rect_rounded_outline(r, 5, tint(body, col, 80), 255, 1)
   else
     draw_rect_rounded_outline(r, 5, :000000, 110, 1)
@@ -1315,7 +1315,7 @@ fn draw_clip(v: record, c: record, r: Rect, selected: bool, hot: bool, edge: str
     draw_rect_rounded(r.x - 1, r.y - 1, 5, r.h + 2, 2, ACCENT)
     draw_rect(r.x + 4, r.y - 1, 5, 2, ACCENT)
     draw_rect(r.x + 4, r.y + r.h - 1, 5, 2, ACCENT)
-  elsif edge == "r" then
+  else if edge == "r" then
     draw_rect_rounded(r.x + r.w - 4, r.y - 1, 5, r.h + 2, 2, ACCENT)
     draw_rect(r.x + r.w - 9, r.y - 1, 5, 2, ACCENT)
     draw_rect(r.x + r.w - 9, r.y + r.h - 1, 5, 2, ACCENT)
@@ -1376,7 +1376,7 @@ fn draw_timeline(v: record, d: record, sel_id: int, hid: int, hedge: string, dr:
       continue
     end
     let trimming = (dr.kind == "trim_l" || dr.kind == "trim_r") && dr.id == c.id
-    let edge = if trimming then (if dr.kind == "trim_l" then "l" else "r" end) elsif c.id == hid then hedge else "" end
+    let edge = if trimming then (if dr.kind == "trim_l" then "l" else "r" end) else if c.id == hid then hedge else "" end
     draw_clip(v, c, r, c.id == sel_id, c.id == hid, edge, false, dead[c.t])
   end
   # The clip being dragged, at its candidate position, over everything.
@@ -1462,8 +1462,8 @@ draw_timeline(V, doc, sel, hov_id, hov_edge, drag, off, snap_line, playhead, end
 if drag.kind == "scrub" || drag.kind == "trim_l" || drag.kind == "trim_r" || drag.kind == "move" && drag.moved then
   let k = find_clip(doc.clips, drag.id)
   let f = if drag.kind == "scrub" || k < 0 then PH
-    elsif drag.kind == "move" then drag.s
-    elsif drag.kind == "trim_l" then doc.clips[k].s
+    else if drag.kind == "move" then drag.s
+    else if drag.kind == "trim_l" then doc.clips[k].s
     else doc.clips[k].s + doc.clips[k].n
   end
   let s = tc(f)

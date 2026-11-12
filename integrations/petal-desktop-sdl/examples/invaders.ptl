@@ -376,7 +376,7 @@ for a in aliens do
     let b = 100
     if a.row == 0 then
       r = 255  g = 60  b = 60
-    elsif a.row == 1 || a.row == 2 then
+    else if a.row == 1 || a.row == 2 then
       r = 255  g = 180  b = 50
     else
       r = 80  g = 255  b = 80

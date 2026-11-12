@@ -159,58 +159,58 @@ end
 # ── small helpers ───────────────────────────────────────────────────────────
 fn prio_color(p: num) -> record
   if p == 3 then RED
-  elsif p == 2 then AMBER
-  elsif p == 1 then BLUE
+  else if p == 2 then AMBER
+  else if p == 1 then BLUE
   else GHOST
   end
 end
 
 fn prio_name(p: num) -> string
   if p == 3 then "High"
-  elsif p == 2 then "Medium"
-  elsif p == 1 then "Low"
+  else if p == 2 then "Medium"
+  else if p == 1 then "Low"
   else "None"
   end
 end
 
 fn due_label(d: num) -> string
   if d >= SOMEDAY then "someday"
-  elsif d < -1 then "{-d} days late"
-  elsif d == -1 then "yesterday"
-  elsif d == 0 then "today"
-  elsif d == 1 then "tomorrow"
-  elsif d < 7 then "in {d} days"
-  elsif d < 14 then "next week"
-  elsif d < 60 then "in {int(d / 7)} weeks"
+  else if d < -1 then "{-d} days late"
+  else if d == -1 then "yesterday"
+  else if d == 0 then "today"
+  else if d == 1 then "tomorrow"
+  else if d < 7 then "in {d} days"
+  else if d < 14 then "next week"
+  else if d < 60 then "in {int(d / 7)} weeks"
   else "in {int(d / 30)} months"
   end
 end
 
 fn due_color(d: num, done: bool) -> record
   if done then FAINT
-  elsif d >= SOMEDAY then GHOST
-  elsif d < 0 then RED
-  elsif d == 0 then AMBER
-  elsif d <= 3 then DIM
+  else if d >= SOMEDAY then GHOST
+  else if d < 0 then RED
+  else if d == 0 then AMBER
+  else if d <= 3 then DIM
   else FAINT
   end
 end
 
 fn ago(d: num) -> string
   if d == 0 then "today"
-  elsif d == 1 then "yesterday"
-  elsif d < 7 then "{d}d ago"
-  elsif d < 60 then "{int(d / 7)}w ago"
+  else if d == 1 then "yesterday"
+  else if d < 7 then "{d}d ago"
+  else if d < 60 then "{int(d / 7)}w ago"
   else "{int(d / 30)}mo ago"
   end
 end
 
 fn group_key(t: record) -> string
   if t.done then "done"
-  elsif t.due < 0 then "over"
-  elsif t.due == 0 then "today"
-  elsif t.due <= 7 then "soon"
-  elsif t.due < SOMEDAY then "later"
+  else if t.due < 0 then "over"
+  else if t.due == 0 then "today"
+  else if t.due <= 7 then "soon"
+  else if t.due < SOMEDAY then "later"
   else "someday"
   end
 end
@@ -288,7 +288,7 @@ fn btn(r: record, label: string, kind: num, enabled: bool) -> bool
   else
     let base = if kind == 2 then RED else DIM end
     rr(r, radius: r.h / 2, fill: if hov then CARD_HI else CARD end, border: LINE)
-    let fg = if !enabled then GHOST elsif hov then base else DIM end
+    let fg = if !enabled then GHOST else if hov then base else DIM end
     draw_text_center(label, cx: r.x + r.w / 2, y: r.y + (r.h - FS) / 2, size: FS, c: fg)
   end
   hov && mouse_pressed(0)
@@ -304,17 +304,17 @@ fn parse_line(s: string, dflt_list: string) -> record
   for w in split(s, " ") do
     if len(w) == 0 then
       continue
-    elsif w == "!" then
+    else if w == "!" then
       set prio = 2
-    elsif w == "!!" then
+    else if w == "!!" then
       set prio = 3
-    elsif w == "@today" then
+    else if w == "@today" then
       set due = 0
-    elsif w == "@tomorrow" then
+    else if w == "@tomorrow" then
       set due = 1
-    elsif w == "@week" then
+    else if w == "@week" then
       set due = 7
-    elsif w == "@someday" then
+    else if w == "@someday" then
       set due = SOMEDAY
     else
       var matched = false
@@ -336,7 +336,7 @@ end
 fn task_less(a: record, b: record) -> bool
   if a.prio != b.prio then
     a.prio > b.prio
-  elsif a.due != b.due then
+  else if a.due != b.due then
     a.due < b.due
   else
     a.id < b.id
@@ -459,10 +459,10 @@ if mouse_pressed(0) then
   if point_in(px: mx, py: my, r: search_r) then
     focus = "search"
     grabbed = true
-  elsif point_in(px: mx, py: my, r: comp_r) then
+  else if point_in(px: mx, py: my, r: comp_r) then
     focus = "compose"
     grabbed = true
-  elsif !point_in(px: mx, py: my, r: rect(DX0, 0, DETAIL_W, H)) then
+  else if !point_in(px: mx, py: my, r: rect(DX0, 0, DETAIL_W, H)) then
     focus = ""
   end
 end
@@ -582,7 +582,7 @@ if do_toggle then
   let ti = find_by_id(tasks, toggle_id)
   if ti >= 0 && tasks[ti].done then
     completed_today = completed_today + 1
-  elsif completed_today > 0 then
+  else if completed_today > 0 then
     completed_today = completed_today - 1
   end
   rev = rev + 1
@@ -613,14 +613,14 @@ end
 
 # Due date nudging: "," pulls a task a day earlier, "." pushes it a day later.
 let nudge = if !typing && has_sel && key_pressed("comma") then -1
-elsif !typing && has_sel && key_pressed("period") then 1
+else if !typing && has_sel && key_pressed("period") then 1
 else 0
 end
 if nudge != 0 then
   tasks = for t in tasks do
     if t.id == sel_id && t.due < SOMEDAY then
       {...t, due: max(-30, min(SOMEDAY - 1, t.due + nudge))}
-    elsif t.id == sel_id then
+    else if t.id == sel_id then
       {...t, due: 0}
     else
       t
@@ -733,7 +733,7 @@ end
 if key_pressed("escape") then
   if len(focus) > 0 then
     focus = ""
-  elsif len(q) > 0 then
+  else if len(q) > 0 then
     q = ""
   end
 end
@@ -773,7 +773,7 @@ for i in range(0, len(PROJECTS) + 1) do
   if on then
     draw_rect_rounded(r, radius: 9, c: CARD_HI)
     draw_rect_rounded(rect(r.x, r.y + 7, 3, r.h - 14), radius: 2, c: AMBER)
-  elsif hov then
+  else if hov then
     draw_rect_rounded(r, radius: 9, c: CARD, a: 150)
   end
   let dot = if i == 0 then FAINT else list_color(name) end
@@ -878,7 +878,7 @@ for i in range(0, len(SEGS)) do
   if on then
     draw_rect_rounded(r, radius: 14, c: CARD_HI)
     draw_rect_rounded(r, radius: 14, c: AMBER, a: 30)
-  elsif hov then
+  else if hov then
     draw_rect_rounded(r, radius: 14, c: CARD, a: 150)
   end
   draw_text_center(SEGS[i], cx: r.x + r.w / 2, y: r.y + 7, size: FS_SM, c: if on then TEXT else FAINT end)
@@ -908,7 +908,7 @@ for it in items do
     if on then
       draw_rect_rounded(r, radius: 11, c: CARD_HI)
       draw_rect_rounded(rect(r.x, r.y + 10, 3, r.h - 20), radius: 2, c: list_color(t.list))
-    elsif hov then
+    else if hov then
       draw_rect_rounded(r, radius: 11, c: CARD, a: 140)
     end
 
@@ -918,7 +918,7 @@ for it in items do
     let tx = feed_x + 48
     let right_pad = 132
     let avail = feed_w - 48 - right_pad
-    let tcol = if t.done then FAINT elsif on then :ffffff else TEXT end
+    let tcol = if t.done then FAINT else if on then :ffffff else TEXT end
     let title = ellipsize(t.title, avail_px: avail, size: FS_ROW)
     let ty = iy + 12
     draw_text(title, pos: {x: tx, y: ty}, style: {size: FS_ROW, color: tcol})
@@ -985,7 +985,7 @@ else
   let editing_title = focus == "title"
   if editing_title then
     rr(rect(dx - 8, 92, dw + 16, 66), radius: 10, fill: :0d1118, border: AMBER)
-  elsif point_in(px: mx, py: my, r: title_r) then
+  else if point_in(px: mx, py: my, r: title_r) then
     draw_rect_rounded(rect(dx - 8, 92, dw + 16, 66), radius: 10, c: CARD, a: 120)
   end
   let shown_title = if editing_title then ed_title else cur.title end
@@ -1026,7 +1026,7 @@ else
     if on then
       draw_rect_rounded(r, radius: 8, c: c, a: 52)
       draw_rect_rounded(rect(r.x, r.y, r.w, r.h), radius: 8, c: c, a: 30)
-    elsif point_in(px: mx, py: my, r: r) then
+    else if point_in(px: mx, py: my, r: r) then
       draw_rect_rounded(r, radius: 8, c: CARD_HI)
     else
       draw_rect_rounded(r, radius: 8, c: CARD)

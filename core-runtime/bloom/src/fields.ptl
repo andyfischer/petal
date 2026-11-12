@@ -306,12 +306,12 @@ fn commit_impl(r: record, current, opts: record) -> record
     if res.cancelled then
       focus_request(nil)
       editing = false
-    elsif res.submitted then
+    else if res.submitted then
       out = buf
       focus_request(nil)
       editing = false
     end
-  elsif editing then
+  else if editing then
     # The keyboard went elsewhere (a click, Tab) mid-edit: apply it.
     editing = false
     out = buf
@@ -354,7 +354,7 @@ fn number_impl(r: record, value: num, opts: record) -> record
     if res.cancelled then
       focus_request(nil)
       editing = false
-    elsif res.submitted || !has_focus(id) then
+    else if res.submitted || !has_focus(id) then
       let v = parse_float(trim(buf))
       if v != nil then out = v end
       focus_request(nil)
@@ -453,7 +453,7 @@ fn swatches_impl(r: record, colors: list, current, opts: record) -> any
       draw_rect_rounded(cr, rad, c)
       if same_color(c, current) then
         draw_rect_rounded_outline(pad(cr, -2), rad + 1, field(opts, "ring", t.accent), 255, 2)
-      elsif p.hot > 0.01 then
+      else if p.hot > 0.01 then
         draw_rect_rounded_outline(pad(cr, -1), rad + 1, field(opts, "hover", mix(hair(t), t.text, 0.4)),
           int(255 * p.hot), 1)
       end

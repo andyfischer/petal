@@ -218,7 +218,7 @@ if !ready then
       mode = doc.initial_mode
       mode_applied = true
     end
-  elsif is_error(rd) then
+  else if is_error(rd) then
     err = error_of(rd) ?? "diff failed"
   end
 end
@@ -289,13 +289,13 @@ if ready && len(err) == 0 && !stale then
           stale = true
         end
       end
-    elsif is_error(pd) then
+    else if is_error(pd) then
       # A probe that fails (mid-rebase, say) is not an error the review should
       # wear — the loaded doc still stands. Back off and try again.
       probing = false
       next_probe = time() + PROBE_SECS
     end
-  elsif time() >= next_probe then
+  else if time() >= next_probe then
     invalidate("doc", scope)
     probing = true
   end
@@ -410,7 +410,7 @@ fn refresh_button(r, on)
   let glyph = DIM
   if on then
     glyph = contrast_text(ACCENT)
-  elsif hovered(r) then
+  else if hovered(r) then
     glyph = ACCENT
   end
   let gx = float(r.x) + float(r.w) / 2.0
@@ -639,7 +639,7 @@ else
       let row_r = rect(PAD, y, list_w - 12, list_row_h)
       if idx == sel then
         draw_rect(row_r, SELBG)
-      elsif point_in(mx, my, row_r) then
+      else if point_in(mx, my, row_r) then
         draw_rect(row_r, ROWALT)
       end
       let tx = PAD + 6 + r.depth * 12
@@ -672,7 +672,7 @@ else
 
     if !commits_ready then
       draw_text("loading commits {bloom.spinner_glyph()}", {x: PAD, y: body_top + 4}, FS, DIM)
-    elsif commit_rows == 0 then
+    else if commit_rows == 0 then
       bloom.empty_state(clist_r, "no commits yet", "this review is uncommitted work vs {doc.base}")
     else
       bloom.scrollbar(clist_r, commit_rows, cvisible, commit_scroll)
@@ -687,7 +687,7 @@ else
         let is_scoped = len(scope) > 0 && idx == csel
         if is_scoped then
           draw_rect(row_r, SELBG)
-        elsif point_in(mx, my, row_r) then
+        else if point_in(mx, my, row_r) then
           draw_rect(row_r, ROWALT)
         end
         # The newest commit leads the list and is what "the latest commit"
@@ -721,7 +721,7 @@ else
         end
       end
     end
-  elsif mode == "split" then
+  else if mode == "split" then
     let half = int((views_w - 6) / 2)
     let before_x = views_x
     let after_x = views_x + half + 6
@@ -755,7 +755,7 @@ else
       text_view_scroll_to(1, doc.outline[jump].line_before)
       text_view_scroll_to(2, doc.outline[jump].line_after)
     end
-  elsif mode == "unified" then
+  else if mode == "unified" then
     let ulabel = "UNIFIED · editable"
     if has_pr then ulabel = "UNIFIED · editable · review comments inline" end
     if !editable then ulabel = "UNIFIED · read-only · one commit" end
@@ -945,14 +945,14 @@ if menu_tag >= 0 && menu_tag < len(commits) then
     want_scope = "commit:{mc.sha}"
     want_label = "{mc.short} {mc.subject}"
     scope_pending = true
-  elsif picked == 1 then
+  else if picked == 1 then
     # Still a working-tree diff, just from a nearer base — so unlike "only this
     # commit" it stays editable.
     csel = mi
     want_scope = "since:{mc.sha}"
     want_label = "since {mc.short}"
     scope_pending = true
-  elsif picked == 3 then
+  else if picked == 3 then
     # 3, not 2: the separator occupies an index of its own in the item list.
     want_scope = ""
     want_label = ""

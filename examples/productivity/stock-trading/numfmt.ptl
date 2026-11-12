@@ -46,7 +46,7 @@ pub fn compact(n: num) -> string
   let v = int(n)
   if v >= 1000000 then
     "{v / 1000000}.{pad_start(str(v % 1000000 / 10000), 2, "0")}M"
-  elsif v >= 10000 then
+  else if v >= 10000 then
     "{v / 1000}.{v % 1000 / 100}K"
   else
     commas(v)
@@ -103,7 +103,7 @@ pub fn digits_only(s: string, decimal: bool) -> string
         out = append(out, c)
         if seen_dot then after += 1 end
       end
-    elsif c == "." && decimal && !seen_dot then
+    else if c == "." && decimal && !seen_dot then
       seen_dot = true
       out = append(out, c)
     end

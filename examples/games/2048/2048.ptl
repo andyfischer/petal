@@ -227,7 +227,7 @@ for dir in get moves do
   if has_won(get board) then
     set finished = true
     set outcome = "reached {target}"
-  elsif !can_move(get board) then
+  else if !can_move(get board) then
     set finished = true
     set outcome = "no moves left"
   end

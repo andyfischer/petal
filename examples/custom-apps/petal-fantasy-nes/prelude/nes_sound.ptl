@@ -90,10 +90,10 @@ pub fn note(spec) -> num
   if cs[1] == "#" then
     acc = 1
     i = 2
-  elsif cs[1] == "b" then
+  else if cs[1] == "b" then
     acc = -1
     i = 2
-  elsif cs[1] == "-" then
+  else if cs[1] == "-" then
     i = 2
   end
   let tail = join(slice(cs, start: i, end: len(cs)), "")
@@ -560,7 +560,7 @@ fn _apply_row(v: record, r: record) -> record
   if r.note == note_off then
     n.rel = true
     n.t = 0
-  elsif r.note >= 0 then
+  else if r.note >= 0 then
     n.note = r.note
     n.tgt = float(r.note)
     # Portamento glides from wherever the channel already is; every other
@@ -581,7 +581,7 @@ fn _step_pitch(v: record) -> record
     let step = n.val / 16.0
     if n.cur < n.tgt then
       n.cur = min(n.tgt, n.cur + step)
-    elsif n.cur > n.tgt then
+    else if n.cur > n.tgt then
       n.cur = max(n.tgt, n.cur - step)
     end
   else
@@ -592,7 +592,7 @@ fn _step_pitch(v: record) -> record
   if n.fx == "s" && n.val > 0 then
     n.tgt = n.tgt + n.val / 16.0
     n.cur = n.tgt
-  elsif n.fx == "d" && n.val > 0 then
+  else if n.fx == "d" && n.val > 0 then
     n.tgt = n.tgt - n.val / 16.0
     n.cur = n.tgt
   end
@@ -639,7 +639,7 @@ fn _read_row(s: record) -> record
         vs[ch] = _apply_row(vs[ch], r)
         if r.fx == "t" && r.val > 0 then
           st.ticks = r.val
-        elsif r.fx == "b" then
+        else if r.fx == "b" then
           st.brk = true
         end
       end
@@ -997,9 +997,9 @@ end
 pub fn env_adsr(t: num, attack: num, decay: num, sustain: num, release: num, dur: num) -> num
   if t < attack then
     if attack <= 0.0 then 1.0 else t / attack end
-  elsif t < attack + decay then
+  else if t < attack + decay then
     lerp(1.0, sustain, t: (t - attack) / max(0.0001, decay))
-  elsif t < dur then
+  else if t < dur then
     sustain
   else
     sustain * env_decay(t - dur, max(0.0001, release))

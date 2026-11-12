@@ -87,7 +87,7 @@ fn commit(id: string, v) -> nil
   if continues && top.was == v then
     # The gesture ended where it began: there is nothing to undo.
     set undo = drop_last(get undo)
-  elsif continues then
+  else if continues then
     set undo[len(get undo) - 1] = {id: id, was: top.was, now: v}
   else
     set undo = append(get undo, {id: id, was: was, now: v})
@@ -244,7 +244,7 @@ if len(keys(pal_to)) == 0 then
   set pal_from = target_pal
   set pal_to = target_pal
   set pal_t = 1.0
-elsif target_pal != pal_to then
+else if target_pal != pal_to then
   set pal_from = mix_palette(pal_from, pal_to, bloom.ease_out(pal_t))
   set pal_to = target_pal
   set pal_t = if motion <= 0.0 then 1.0 else 0.0 end
@@ -358,7 +358,7 @@ for i in range(0, len(SETTINGS)) key SETTINGS[i].id do
   # A folding row eases open and shut with its parent. A search shows it
   # whole, since the query asked for it by name.
   let open = if !on_page then 0.0
-    elsif s.reveal && !searching then wd.anim(flag(ok), 20.0)
+    else if s.reveal && !searching then wd.anim(flag(ok), 20.0)
     else 1.0
     end
   if open < 0.01 then
@@ -468,9 +468,9 @@ let focus_at = index_of(nav, focus)
 if !blocked then
   if key_pressed("tab") then
     step_focus(if mod_shift() then -1 else 1 end)
-  elsif key_pressed("down") then
+  else if key_pressed("down") then
     step_focus(1)
-  elsif key_pressed("up") then
+  else if key_pressed("up") then
     if edit == "search" || focus_at == 0 then
       # Up from the first row goes back to the search box.
       set focus = ""
@@ -478,24 +478,24 @@ if !blocked then
     else
       step_focus(-1)
     end
-  elsif key_pressed("escape") then
+  else if key_pressed("escape") then
     if edit == "search" || (edit == "" && focus == "" && query != "") then
       set query = ""
       set edit = ""
       set scroll = 0.0
-    elsif edit != "" then
+    else if edit != "" then
       set edit = ""
     else
       set focus = ""
     end
-  elsif mod_cmd() && key_pressed("f") then
+  else if mod_cmd() && key_pressed("f") then
     set edit = "search"
     set focus = ""
-  elsif mod_cmd() && key_pressed("z") && !typing then
+  else if mod_cmd() && key_pressed("z") && !typing then
     set act = if mod_shift() then "redo" else "undo" end
-  elsif mod_cmd() && key_pressed("y") && !typing then
+  else if mod_cmd() && key_pressed("y") && !typing then
     set act = "redo"
-  elsif !typing then
+  else if !typing then
     for n in range(0, len(SECTIONS)) do
       if mod_cmd() && key_pressed(str(n + 1)) then
         go_section(n)
@@ -545,7 +545,7 @@ if jump != "" then
   if row_y[j] >= 0.0 then
     if row_y[j] - 46.0 < scroll then
       set scroll = row_y[j] - 46.0
-    elsif row_y[j] + row_hh[j] + 14.0 > scroll + view.h then
+    else if row_y[j] + row_hh[j] + 14.0 > scroll + view.h then
       set scroll = row_y[j] + row_hh[j] + 14.0 - view.h
     end
   end
@@ -647,18 +647,18 @@ fn draw_row(s: record, r: record, o: record) -> nil
     ctl_x = cr.x
     set hits[s.id] = {x: cr.x + 20, y: cy}
     commit(s.id, wd.toggle(s.id, cr, v, on))
-  elsif s.kind == "seg" then
+  else if s.kind == "seg" then
     let sw = wd.seg_width(s.opts)
     let cr = Rect(x1 - sw, cy - 15, sw, 30)
     ctl_x = cr.x
     set hits[s.id] = {x: cr.x, y: cy, w: sw, n: len(s.opts)}
     commit(s.id, wd.segmented(s.id, cr, s.opts, v, on))
-  elsif s.kind == "select" then
+  else if s.kind == "select" then
     let cr = Rect(x1 - 186, cy - h32 / 2.0, 186, h32)
     ctl_x = cr.x
     set hits[s.id] = {x: cr.x + 93, y: cy}
     commit(s.id, wd.select(s.id, cr, s.opts, v, on))
-  elsif s.kind == "slider" then
+  else if s.kind == "slider" then
     let vw = 54.0
     let cr = Rect(x1 - vw - 176, cy - 12, 176, 24)
     ctl_x = cr.x
@@ -666,7 +666,7 @@ fn draw_row(s: record, r: record, o: record) -> nil
     let raw = wd.slider(s.id, cr, v, s.lo, s.hi, s.step, on)
     tl.draw_text_line(sc.show_num(s, v), Rect(x1 - vw, r.y, vw, r.h), wd.ts(12.5, ink), "right")
     commit(s.id, sc.snap(s, raw))
-  elsif s.kind == "stepper" then
+  else if s.kind == "stepper" then
     let cr = Rect(x1 - 118, cy - h32 / 2.0, 118, h32)
     ctl_x = cr.x
     set hits[s.id] = {x: cr.x + 16, y: cy, plus: cr.x + 102}
@@ -674,13 +674,13 @@ fn draw_row(s: record, r: record, o: record) -> nil
     if d != 0 then
       commit(s.id, sc.snap(s, v + d * s.step))
     end
-  elsif s.kind == "swatch" then
+  else if s.kind == "swatch" then
     let sw = len(sc.ACCENTS) * 32.0 - 8.0
     let cr = Rect(x1 - sw, r.y, sw, r.h)
     ctl_x = cr.x
     set hits[s.id] = {x: cr.x + 12, y: cy, step: 32}
     commit(s.id, wd.swatches(s.id, cr, sc.ACCENTS, v, on))
-  elsif s.kind == "text" then
+  else if s.kind == "text" then
     let cr = Rect(x1 - 240, cy - h32 / 2.0, 240, h32)
     ctl_x = cr.x
     set hits[s.id] = {x: cr.x + 120, y: cy}
@@ -694,9 +694,9 @@ fn draw_row(s: record, r: record, o: record) -> nil
       set edit = ""
     end
     commit(s.id, res.text)
-  elsif s.kind == "action" then
+  else if s.kind == "action" then
     let idle = s.id == "act_cache" && (get cache_mb <= 0.0 || get clearing)
-    let label = if s.id == "act_cache" && get clearing then "Clearing…" elsif idle then "Empty" else s.def end
+    let label = if s.id == "act_cache" && get clearing then "Clearing…" else if idle then "Empty" else s.def end
     let style = wd.ts(13, T.text)
     let bw = max(96, text_width(label, style) + 34)
     let cr = Rect(x1 - bw, cy - h32 / 2.0, bw, h32)
@@ -716,7 +716,7 @@ fn draw_row(s: record, r: record, o: record) -> nil
   let lh = 19.0 * SCALE
   let dh = 17.0 * SCALE
   let label_r = if is_radio then Rect(x0, r.y + 6, x1 - x0, 30 * SCALE)
-    elsif has_desc then Rect(x0 + lead, cy - (lh + dh) / 2.0, ctl_x - x0 - lead - 18, lh)
+    else if has_desc then Rect(x0 + lead, cy - (lh + dh) / 2.0, ctl_x - x0 - lead - 18, lh)
     else Rect(x0 + lead, r.y, ctl_x - x0 - lead - 18, r.h)
     end
   let shown = tl.elide(s.label, label_style, label_r.w)
@@ -735,10 +735,10 @@ fn draw_row(s: record, r: record, o: record) -> nil
     let rr = Rect(x0 - 6, r.y + 36 * SCALE, x1 - x0 + 6, wd.radio_height(len(s.opts)))
     set hits[s.id] = {x: rr.x + 19, y: rr.y + rr.h / len(s.opts) / 2, step: rr.h / len(s.opts)}
     commit(s.id, wd.radios(s.id, rr, s.opts, s.notes, v, on))
-  elsif has_desc then
+  else if has_desc then
     let problem = if s.kind == "text" then sc.problem(s, v) else "" end
     let desc = if s.id == "act_cache" then "{int(round(get cache_mb))} MB of search indexes, thumbnails and compiled grammars."
-      elsif problem != "" then problem
+      else if problem != "" then problem
       else s.desc
       end
     let ds = wd.ts(12, if problem != "" then T.danger else soft end)
@@ -764,7 +764,7 @@ let mods_here = if searching then 0 else mod_by_sec[sec] end
 if searching then
   tl.draw_text_line("Search results", Rect(card_x, 24, card_w, 30), wd.tsb(21, T.text))
   let found = if n_shown == 0 then "Nothing matches “{trim(query)}”."
-    elsif n_shown == 1 then "1 setting matches “{trim(query)}”."
+    else if n_shown == 1 then "1 setting matches “{trim(query)}”."
     else "{n_shown} settings match “{trim(query)}”."
     end
   tl.draw_text_line(found, Rect(card_x, 30 + 28 * SCALE, card_w, 20), wd.ts(13, T.muted))
@@ -912,7 +912,7 @@ if query != "" then
     set query = ""
     set scroll = 0.0
   end
-elsif !sres.has then
+else if !sres.has then
   wd.keycap(sr.x + sr.w - 28, sr.y + 7, "/")
 end
 
@@ -1105,12 +1105,12 @@ if act == "undo" || act == "redo" then
   else
     bloom.toast(did, "info")
   end
-elsif act == "reset_section" then
+else if act == "reset_section" then
   commit_all(with_defaults(sec))
   bloom.toast("{SECTIONS[sec].label} is back to its defaults", "success")
-elsif act == "act_reset" then
+else if act == "act_reset" then
   bloom.dialog_open("restore")
-elsif act == "act_export" then
+else if act == "act_export" then
   let out = {}
   for s in SETTINGS do
     if s.kind != "action" && vals[s.id] != s.def then
@@ -1119,7 +1119,7 @@ elsif act == "act_export" then
   end
   clipboard_set(json_stringify(out, 2))
   bloom.toast("Copied {len(keys(out))} settings as JSON", "success")
-elsif act == "act_cache" then
+else if act == "act_cache" then
   set clearing = true
 end
 
@@ -1137,7 +1137,7 @@ end
 let dlg = bloom.dialog("restore", 420, 196, "Restore all defaults?")
 if dlg.open then
   let body = if n_modified == 0 then "Every setting is already at its default."
-    elsif n_modified == 1 then "1 setting on one page goes back to its default. Undo brings it back."
+    else if n_modified == 1 then "1 setting on one page goes back to its default. Undo brings it back."
     else "{n_modified} settings across every page go back to their defaults. Undo brings them back."
     end
   bloom.text_block_in(body, Rect(dlg.content.x, dlg.content.y + 4, dlg.content.w, 50),

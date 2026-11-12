@@ -56,9 +56,9 @@ fn sorted_rows(rows, ci, asc)
       if !used[j] then
         if best < 0 then
           best = j
-        elsif asc && str(rows[j][ci]) < str(rows[best][ci]) then
+        else if asc && str(rows[j][ci]) < str(rows[best][ci]) then
           best = j
-        elsif !asc && str(rows[j][ci]) > str(rows[best][ci]) then
+        else if !asc && str(rows[j][ci]) > str(rows[best][ci]) then
           best = j
         end
       end
@@ -169,7 +169,7 @@ if tab == 1 then
   # The blessed async pattern: loading for the first moments, then ready.
   if time() < 1.5 then
     ls = load_begin(ls, "demo")
-  elsif !load_ready(ls) then
+  else if !load_ready(ls) then
     ls = load_ok(ls, "42 rows in 12ms")
   end
   let lbox = rect(s.b.x, by + 34, s.b.w, 54)

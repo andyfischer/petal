@@ -146,7 +146,7 @@ fn schedule_replies(q: list, c: record, text: string, ms: list, target: int, thr
   let named = d.addressed(c, text)
   let who = if named != "" then
     named
-  elsif parent != nil && parent.who != d.ME then
+  else if parent != nil && parent.who != d.ME then
     parent.who
   else
     d.responder(c, text, last_other, seed)
@@ -179,7 +179,7 @@ fn react_one(x: record, e: string, who: string, only_add: bool) -> record
     let rs = for r in x.reacts do
       if r.e != e then
         r
-      elsif contains(r.who, who) then
+      else if contains(r.who, who) then
         if only_add then r else {e: e, who: filter(r.who, fn(k) -> k != who)} end
       else
         {e: e, who: append(r.who, who)}
@@ -279,10 +279,10 @@ fn draw_rich_row(text: string, row: record, spans: list, x: num, y: num, style: 
       draw_rect_rounded(cx - 3, y + 1, w + 6, LINE - 2, 4, CODE_BG)
       draw_text(seg, {x: cx, y: y}, {...style, color: CODE_INK})
       cx += 3
-    elsif kind == "me" then
+    else if kind == "me" then
       draw_rect_rounded(cx - 2, y + 1, w + 4, LINE - 2, 4, :fde7a6)
       draw_text(seg, {x: cx, y: y}, {...style, color: MENTION_INK})
-    elsif kind == "mention" then
+    else if kind == "mention" then
       draw_rect_rounded(cx - 2, y + 1, w + 4, LINE - 2, 4, ACCENT_SOFT)
       draw_text(seg, {x: cx, y: y}, {...style, color: ACCENT})
     else
@@ -436,9 +436,9 @@ fn draw_msg(it: record, x: num, y: num, w: num, hot: bool, fresh: float, summari
   if mention then
     draw_rect(r, MENTION_BG)
     draw_rect(x, y, 3, it.h, MENTION_BAR)
-  elsif open then
+  else if open then
     draw_rect(r, ACCENT_SOFT)
-  elsif hot then
+  else if hot then
     draw_rect(r, WASH)
   end
   if fresh > 0.0 then
@@ -453,7 +453,7 @@ fn draw_msg(it: record, x: num, y: num, w: num, hot: bool, fresh: float, summari
     draw_text(p.name, {x: tx, y: y + 9}, name_st)
     let base = text_layout.text_baseline(rect(tx, y + 9, 200, 20), name_st)
     text_layout.draw_text_baseline(d.clock_text(m.at), tx + text_width(p.name, name_st) + 8, base, st(12, FAINT), "left")
-  elsif hot then
+  else if hot then
     let tst = st(11, FAINT)
     text_layout.draw_text_baseline(char_slice(d.clock_text(m.at), 0, char_len(d.clock_text(m.at)) - 3), x + GUTTER - 10, by + 15, tst, "right")
   end
@@ -468,7 +468,7 @@ fn draw_msg(it: record, x: num, y: num, w: num, hot: bool, fresh: float, summari
       let cr = rects[k]
       let mine = contains(re.who, d.ME)
       let over = hit(cr, true)
-      let bg = if mine then ACCENT_SOFT elsif over then RULE_SOFT else WASH end
+      let bg = if mine then ACCENT_SOFT else if over then RULE_SOFT else WASH end
       draw_rect_rounded(cr, 13, bg)
       draw_rect_rounded_outline(cr, 13, if mine then tint(PAPER, ACCENT, 55) else RULE end, 255, 1)
       draw_text(re.e, {x: cr.x + 9, y: cr.y + 4}, st(14, INK))
@@ -566,7 +566,7 @@ fn draw_composer(box: record, text_r: record, res: record, has: bool, hint: stri
   let send_r = rect(box.x + box.w - 46, bar_y + 4, 38, 30)
   let ready = trim_text(res.text) != ""
   let over = hit(send_r, ok)
-  let face = if !ready then tint(PAPER, INK, 8) elsif over then ACCENT_HI else ACCENT end
+  let face = if !ready then tint(PAPER, INK, 8) else if over then ACCENT_HI else ACCENT end
   draw_rect_rounded(send_r, 8, face)
   icon_send(send_r, if ready then WHITE else FAINT end)
   if !compact then
@@ -699,8 +699,8 @@ let press = mouse_pressed(0) && !blocking
 # press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
 fn field_focus(key, focus, had, pointer)
   if !pointer || !mouse_pressed(0) then focus
-  elsif has_focus(key) then key
-  elsif had then ""
+  else if has_focus(key) then key
+  else if had then ""
   else focus
   end
 end
@@ -750,7 +750,7 @@ let send_thread = ""
 if plain_return && was_focus == "composer" then
   draft = c_before
   send_main = trim_text(draft)
-elsif plain_return && was_focus == "thread" then
+else if plain_return && was_focus == "thread" then
   thread_draft = t_before
   send_thread = trim_text(thread_draft)
 end
@@ -881,7 +881,7 @@ for it in items do
   if it.kind == "day" then
     let label = if it.m.day == 1 then "Today" else "Yesterday" end
     draw_day(label, FX, y, FW)
-  elsif it.kind == "new" then
+  else if it.kind == "new" then
     draw_new_line(FX, y, FW)
   else
     let m = it.m
@@ -942,7 +942,7 @@ if !stuck then
   jump_r = rect(FX + (FW - pw) / 2, FR.y + FR.h - 46, pw, 34)
   let over = hit(jump_r, !blocking)
   draw_shadow(jump_r, {radius: 17, blur: 12, dy: 3, color: :1c1e2a, a: 40})
-  draw_rect_rounded(jump_r, 17, if unseen_here > 0 then (if over then ACCENT_HI else ACCENT end) elsif over then :2e3144 else INK end)
+  draw_rect_rounded(jump_r, 17, if unseen_here > 0 then (if over then ACCENT_HI else ACCENT end) else if over then :2e3144 else INK end)
   # A down arrow drawn as strokes.
   let ax = jump_r.x + 19
   let ay = jump_r.y + 17
@@ -1097,23 +1097,23 @@ for section in ["channel", "dm"] do
     let over = hit(r, !blocking)
     if on then
       draw_rect_rounded(r, 8, ACCENT)
-    elsif over then
+    else if over then
       draw_rect_rounded(r, 8, SIDE_HOT)
     end
     let bright = on || unread > 0
-    let name_st = if on then sb(14, WHITE) elsif unread > 0 then sb(14, WHITE) else st(14, if over then SIDE_TEXT else SIDE_DIM end) end
+    let name_st = if on then sb(14, WHITE) else if unread > 0 then sb(14, WHITE) else st(14, if over then SIDE_TEXT else SIDE_DIM end) end
     if c.kind == "channel" then
       text_layout.draw_text_line("#", rect(r.x + 12, r.y, 14, r.h), st(15, if bright then (if on then WHITE else SIDE_TEXT end) else SIDE_FAINT end), "center")
     else
       let peer = d.dm_peer(c)
       avatar(peer, r.x + 10, r.y + 6, 20)
-      presence(r.x + 28, r.y + 25, d.person(peer).away, if on then ACCENT elsif over then SIDE_HOT else SIDE end)
+      presence(r.x + 28, r.y + 25, d.person(peer).away, if on then ACCENT else if over then SIDE_HOT else SIDE end)
     end
     text_layout.draw_text_line(c.name, rect(r.x + 38, r.y, r.w - 80, r.h), name_st, "left")
     let has_draft = !on && trim_text(field(drafts, c.id, "")) != ""
     if pings > 0 then
       count_badge(r.x + r.w - 10, r.y + 16, pings, RED)
-    elsif has_draft then
+    else if has_draft then
       text_layout.draw_text_line("draft", rect(r.x, r.y, r.w - 12, r.h), st(11, SIDE_FAINT), "right")
     end
     if over && press then switch_to = c.id end

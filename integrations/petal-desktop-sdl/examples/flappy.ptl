@@ -257,7 +257,7 @@ if started && !game_over then
   # Wing flaps based on frame
   if frame % 12 < 4 then
     wing_offset = -8
-  elsif frame % 12 < 8 then
+  else if frame % 12 < 8 then
     wing_offset = 0
   else
     wing_offset = 6

@@ -393,7 +393,7 @@ fn _edit_keys(st0, h, multiline)
       st = last(undo)
       undo = slice(undo, 0, len(undo) - 1)
     end
-  elsif cmd && (key_pressed("y") || (key_pressed("z") && shift)) then
+  else if cmd && (key_pressed("y") || (key_pressed("z") && shift)) then
     stepped = true
     if len(redo) > 0 then
       undo = append(undo, st)
@@ -420,7 +420,7 @@ fn _edit_keys(st0, h, multiline)
       lo = min(st.caret, st.anchor)
       hi = max(st.caret, st.anchor)
       if lo == hi && lo > 0 then
-        lo = if mod_cmd() then 0 elsif word then _word_start(st.text, hi) else hi - 1 end
+        lo = if mod_cmd() then 0 else if word then _word_start(st.text, hi) else hi - 1 end
       end
       if lo < hi then
         st = _field_splice(st, lo, hi, "")
@@ -545,11 +545,11 @@ pub fn text_field_update(id, r, buf, style)
     if clicks >= 3 then
       anchor = 0
       caret = n
-    elsif clicks == 2 then
+    else if clicks == 2 then
       let w = _word_at(text, at)
       anchor = w.a
       caret = w.b
-    elsif mod_shift() then
+    else if mod_shift() then
       caret = at
     else
       caret = at
@@ -557,7 +557,7 @@ pub fn text_field_update(id, r, buf, style)
     end
     dragging = clicks < 2
     typing = false
-  elsif dragging then
+  else if dragging then
     if mouse_down(0) then
       caret = text_index_at(text, ts, float(mouse_x() - (r.x + inset) + scroll))
     else
@@ -585,10 +585,10 @@ pub fn text_field_update(id, r, buf, style)
     # Movement. Without shift a selection collapses to the side moved toward.
     let to = -1
     if key_pressed("left") then
-      to = if mod_cmd() then 0 elsif word then _word_start(text, caret) elsif lo < hi && !shift then lo else max(0, caret - 1) end
+      to = if mod_cmd() then 0 else if word then _word_start(text, caret) else if lo < hi && !shift then lo else max(0, caret - 1) end
     end
     if key_pressed("right") then
-      to = if mod_cmd() then n elsif word then _word_end(text, caret) elsif lo < hi && !shift then hi else min(n, caret + 1) end
+      to = if mod_cmd() then n else if word then _word_end(text, caret) else if lo < hi && !shift then hi else min(n, caret + 1) end
     end
     if key_pressed("home") then to = 0 end
     if key_pressed("end") then to = n end
@@ -748,11 +748,11 @@ pub fn text_area_update(id, r, buf, style)
     if clicks >= 3 then
       anchor = 0
       caret = n
-    elsif clicks == 2 then
+    else if clicks == 2 then
       let w = _word_at(text, at)
       anchor = w.a
       caret = w.b
-    elsif mod_shift() then
+    else if mod_shift() then
       caret = at
     else
       caret = at
@@ -760,7 +760,7 @@ pub fn text_area_update(id, r, buf, style)
     end
     dragging = clicks < 2
     typing = false
-  elsif dragging then
+  else if dragging then
     if mouse_down(0) then
       caret = _area_index_at(rows, ts, mouse_x() - ox, mouse_y() - oy, lh)
     else
@@ -798,10 +798,10 @@ pub fn text_area_update(id, r, buf, style)
     # Movement. Without shift a selection collapses to the side moved toward.
     let to = -1
     if key_pressed("left") then
-      to = if mod_cmd() then rows[cur.row].start elsif word then _word_start(text, caret) elsif lo < hi && !shift then lo else max(0, caret - 1) end
+      to = if mod_cmd() then rows[cur.row].start else if word then _word_start(text, caret) else if lo < hi && !shift then lo else max(0, caret - 1) end
     end
     if key_pressed("right") then
-      to = if mod_cmd() then rows[cur.row].end elsif word then _word_end(text, caret) elsif lo < hi && !shift then hi else min(n, caret + 1) end
+      to = if mod_cmd() then rows[cur.row].end else if word then _word_end(text, caret) else if lo < hi && !shift then hi else min(n, caret + 1) end
     end
     if key_pressed("up") || key_pressed("down") then
       let gx = if goal_x >= 0 then goal_x else cur.x end
@@ -1030,13 +1030,13 @@ pub fn color_from_hex(text)
     let g = _hex_digit(s, 1)
     let b = _hex_digit(s, 2)
     if r < 0 || g < 0 || b < 0 then nil else {r: r * 17, g: g * 17, b: b * 17} end
-  elsif n == 6 || n == 8 then
+  else if n == 6 || n == 8 then
     let r = _hex_pair(s, 0)
     let g = _hex_pair(s, 2)
     let b = _hex_pair(s, 4)
     let a = if n == 8 then _hex_pair(s, 6) else 255 end
     if r < 0 || g < 0 || b < 0 || a < 0 then nil
-    elsif n == 8 then {r: r, g: g, b: b, a: a}
+    else if n == 8 then {r: r, g: g, b: b, a: a}
     else {r: r, g: g, b: b} end
   else
     nil
@@ -1127,7 +1127,7 @@ pub fn load_poll(ls, key, pv)
   if s.status == "loading" then
     if is_error(pv) then
       s = load_fail(s, error_of(pv) ?? "load failed")
-    elsif is_ready(pv) then
+    else if is_ready(pv) then
       s = load_ok(s, pv)
     end
   end

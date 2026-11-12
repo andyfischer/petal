@@ -183,7 +183,7 @@ end
 
 if chan == 3 then
   sketch_noise(cfg.per)
-elsif chan == 2 then
+else if chan == 2 then
   sketch_triangle()
 else
   sketch_pulse(cfg.duty)

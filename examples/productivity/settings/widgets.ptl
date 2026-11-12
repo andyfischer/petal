@@ -408,8 +408,8 @@ end
 # press elsewhere lets go of it. `had` is `has_focus(key)` before the field.
 fn field_focus(key: string, focus: string, had: bool, pointer: bool) -> string
   if !pointer || !mouse_pressed(0) then focus
-  elsif has_focus(key) then key
-  elsif had then ""
+  else if has_focus(key) then key
+  else if had then ""
   else focus
   end
 end

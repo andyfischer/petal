@@ -371,34 +371,34 @@ let ART_GROUPS = 8
 fn define_group(i: num, world: num) -> int
   if i == 0 then
     define_art_run(T_BG, gfx.tileset(world))
-  elsif i == 1 then
+  else if i == 1 then
     let hs = gfx.hero_grids()
     for p in range(0, 4) do
       define_meta(T_HERO + p * 4, hs[p], PAL_HERO)
     end
-  elsif i == 2 then
+  else if i == 2 then
     let hs = gfx.hero_grids()
     for p in range(4, 8) do
       define_meta(T_HERO + p * 4, hs[p], PAL_HERO)
     end
-  elsif i == 3 then
+  else if i == 3 then
     let ss = gfx.slime_grids()
     let js = gfx.hopper_grids()
     for p in range(0, 2) do
       define_meta(T_SLIME + p * 4, ss[p], PAL_ENEMY)
       define_meta(T_HOP + p * 4, js[p], PAL_ENEMY)
     end
-  elsif i == 4 then
+  else if i == 4 then
     let bs = gfx.bat_grids()
     for p in range(0, 2) do
       define_meta(T_BAT + p * 4, bs[p], PAL_BOSS)
     end
-  elsif i == 5 then
+  else if i == 5 then
     let ks = gfx.boss_grids()
     for p in range(0, 2) do
       define_meta(T_BOSS + p * 16, ks[p], PAL_BOSS)
     end
-  elsif i == 6 then
+  else if i == 6 then
     define_art_run(T_COIN, gfx.coin_grids())
     define_art_run(T_HEART, gfx.pickup_grids())
     let ps = gfx.poof_grids()
@@ -483,7 +483,7 @@ fn slot_palettes(world: num) -> list
   # world has: the one tile that hurts must never read as scenery.
   if world == 1 then
     [0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 0, 0, 0, 2, 3, 3]
-  elsif world == 2 then
+  else if world == 2 then
     [0, 0, 0, 1, 1, 1, 1, 1, 1, 3, 3, 2, 2, 2, 1, 1]
   else
     [0, 0, 0, 1, 1, 1, 1, 1, 3, 1, 3, 2, 2, 2, 1, 3]
@@ -492,8 +492,8 @@ end
 
 fn slot_kind(slot: num) -> int
   if slot >= B_LEDGE_L && slot <= B_LEDGE_R then K_ONEWAY
-  elsif slot >= B_TOP && slot <= B_HARD then K_SOLID
-  elsif slot == B_SPIKE then K_HURT
+  else if slot >= B_TOP && slot <= B_HARD then K_SOLID
+  else if slot == B_SPIKE then K_HURT
   else K_AIR
   end
 end
@@ -556,9 +556,9 @@ fn build_level(n: num, src: record, rev: num) -> record
           let wy = float((r + ROW0) * 8)
           if obj == "spawn" then
             spawn = {x: wx, y: wy + 8.0 - float(HERO_BH)}
-          elsif obj == "coin" then
+          else if obj == "coin" then
             coins = append(coins, {x: wx, y: wy})
-          elsif obj == "boss" then
+          else if obj == "boss" then
             boss_at = {x: wx - 8.0, y: wy - 24.0}
           else
             spawns = append(spawns, {kind: obj, x: wx, y: wy - 8.0})
@@ -621,9 +621,9 @@ fn cell_kind(lv: record, cx: num, cy: num)
   let r = cy - ROW0
   if cx < 0 || cx >= lv.cols then
     K_SOLID                  # the level's ends are walls
-  elsif r < 0 then
+  else if r < 0 then
     K_SOLID                  # the ceiling, under the status bar
-  elsif r >= LEVEL_ROWS then
+  else if r >= LEVEL_ROWS then
     K_AIR                    # below the level: the pit
   else
     lv.sol[r][cx]
@@ -717,7 +717,7 @@ fn move_body(lv: record, x: num, y: num, w: num, h: num, dx: num, dy: num, drop:
     let ny = cy + step * s
     if box_solid(lv, x: cx, y: ny, w: w, h: h) then
       hy = true
-    elsif !drop && oneway_block(lv, x: cx, w: w, old_bottom: cy + float(h), new_bottom: ny + float(h)) then
+    else if !drop && oneway_block(lv, x: cx, w: w, old_bottom: cy + float(h), new_bottom: ny + float(h)) then
       hy = true
     else
       cy = ny
@@ -920,7 +920,7 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
   if dx != 0 then
     h.vx = approach(h.vx, float(dx) * top, acc)
     h.face = dx
-  elsif h.ground then
+  else if h.ground then
     h.vx = approach(h.vx, 0.0, FRICTION)
   else
     h.vx = approach(h.vx, 0.0, FRICTION * 0.25)
@@ -932,12 +932,12 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
   # Coyote time and the jump buffer, both counted down in frames.
   if h.ground then
     h.coyote = COYOTE
-  elsif h.coyote > 0 then
+  else if h.coyote > 0 then
     h.coyote = h.coyote - 1
   end
   if ctl && btnp("a") then
     h.buffer = BUFFER
-  elsif h.buffer > 0 then
+  else if h.buffer > 0 then
     h.buffer = h.buffer - 1
   end
 
@@ -997,9 +997,9 @@ end
 fn hero_pose(h: record)
   if h.mode == "hurt" || h.mode == "dying" then
     7
-  elsif !h.ground then
+  else if !h.ground then
     if h.vy < 0.0 then 5 else 6 end
-  elsif abs(h.vx) > 0.25 then
+  else if abs(h.vx) > 0.25 then
     anim([2, 3, 4, 3], 5.0 + abs(h.vx) * 3.0, h.anim_t)
   else
     anim([0, 1], 1.6, h.anim_t)
@@ -1065,7 +1065,7 @@ end
 fn ent_box(e: record) -> record
   if e.kind == "flyer" then
     {x: e.x + 1.0, y: e.y + 3.0, w: 14, h: 10}
-  elsif e.kind == "jumper" then
+  else if e.kind == "jumper" then
     {x: e.x + 2.0, y: e.y + 3.0, w: 12, h: 13}
   else
     {x: e.x + 2.0, y: e.y + 5.0, w: 12, h: 11}
@@ -1135,7 +1135,7 @@ fn update_entities(g: record, lv: record, cam: num) -> record
     if e.alive && abs(e.x - cam) < 400.0 then
       if e.kind == "walker" then
         e = update_walker(e, lv)
-      elsif e.kind == "jumper" then
+      else if e.kind == "jumper" then
         e = update_jumper(e, lv, hero)
       else
         e = update_flyer(e, lv, hero)
@@ -1149,7 +1149,7 @@ end
 
 fn ent_tile(e: record)
   let base = if e.kind == "walker" then T_SLIME
-  elsif e.kind == "jumper" then T_HOP
+  else if e.kind == "jumper" then T_HOP
   else T_BAT end
   let fps = if e.kind == "flyer" then 8.0 else 3.5 end
   base + anim([0, 1], fps, time() + float(int(e.hx)) * 0.01) * 4
@@ -1194,7 +1194,7 @@ fn collide_entities(g: record) -> record
           h.vy = STOMP_V
           h.buffer = 0            # no double-bounce from a buffered jump
           g.hero = h
-        elsif g.hero.star > 0 then
+        else if g.hero.star > 0 then
           g = kill_entity(g, i)
         else
           g = hurt_hero(g, e.x)
@@ -1222,7 +1222,7 @@ fn collide_items(g: record) -> record
         if g.coins % 25 == 0 then
           g.lives = g.lives + 1
         end
-      elsif it.kind == "life" then
+      else if it.kind == "life" then
         g.lives = g.lives + 1
         g.poofs = append(g.poofs, {x: it.x - 4.0, y: it.y - 4.0, t: 0})
         sfx("power")
@@ -1245,7 +1245,7 @@ fn draw_items(g: record, cam: num) -> int
     if !it.taken && it.x > cam - 16.0 && it.x < cam + 260.0 then
       if it.kind == "coin" then
         sprite_world(it.x, it.y, T_COIN + coin_t, PAL_ITEM)
-      elsif it.kind == "life" then
+      else if it.kind == "life" then
         sprite_world(it.x, it.y, T_HEART, PAL_BOSS)
       else
         sprite_world(it.x, it.y, T_STAR + anim([0, 1], 10.0), PAL_ITEM)
@@ -1304,7 +1304,7 @@ fn update_boss(g: record, cam: num) -> record
   if bs.x < cam + 24.0 then
     bs.x = cam + 24.0
     bs.vx = abs(bs.vx)
-  elsif bs.x > cam + 200.0 then
+  else if bs.x > cam + 200.0 then
     bs.x = cam + 200.0
     bs.vx = -abs(bs.vx)
   end
@@ -1325,7 +1325,7 @@ fn update_boss(g: record, cam: num) -> record
       bs.phase = "shut"
       bs.t = 0
     end
-  elsif bs.phase == "shut" then
+  else if bs.phase == "shut" then
     # Sinks to stomping height and holds there — the window. 145 is chosen
     # against the hero's numbers, not by eye: his jump apexes with his feet
     # at y=155, and the box here spans 151..173, so a standing hero (top 177)
@@ -1387,7 +1387,7 @@ fn update_shots(g: record, cam: num) -> record
     s.y = s.y + s.vy
     if overlaps(hb.x, hb.y, hb.w, hb.h, s.x, s.y, 8, 8) then
       g = hurt_hero(g, s.x)
-    elsif s.x > cam - 8.0 && s.x < cam + 264.0 && s.y > 24.0 && s.y < 240.0 then
+    else if s.x > cam - 8.0 && s.x < cam + 264.0 && s.y > 24.0 && s.y < 240.0 then
       out = append(out, s)
     end
   end
@@ -1624,10 +1624,10 @@ fn title_frame() -> int
     ng.opts = g.opts
     put_game(ng)
     set_scene("game")
-  elsif m.chosen == 1 then
+  else if m.chosen == 1 then
     sfx("select")
     set_scene("options")
-  elsif m.chosen == 2 then
+  else if m.chosen == 2 then
     sfx("select")
     set_scene("howto")
   end
@@ -1688,13 +1688,13 @@ fn options_frame() -> int
   if toggle then
     if m.index == 0 then
       g.opts.music = !g.opts.music
-    elsif m.index == 1 then
+    else if m.index == 1 then
       g.opts.sfx = !g.opts.sfx
-    elsif m.index == 2 then
+    else if m.index == 2 then
       g.opts.crt = !g.opts.crt
-    elsif m.index == 3 then
+    else if m.index == 3 then
       g.opts.scale = 2 + pmod(g.opts.scale - 1, 3)
-    elsif m.chosen == 4 then
+    else if m.chosen == 4 then
       set_scene("title")
     end
     put_game(g)
@@ -1840,17 +1840,17 @@ fn audio_frame() -> int
   let sc = scene()
   if !g.opts.music then
     music_stop()
-  elsif sc == "game" && g.paused then
+  else if sc == "game" && g.paused then
     music_pause()
-  elsif sc == "title" || sc == "options" || sc == "howto" then
+  else if sc == "title" || sc == "options" || sc == "howto" then
     music_play(tunes().title)
     if !music_playing() then music_resume() end
-  elsif sc == "game" then
+  else if sc == "game" then
     if g.boss == nil then
       music_play(tunes().play)
     end
     if !music_playing() then music_resume() end
-  elsif sc == "victory" then
+  else if sc == "victory" then
     music_play(tunes().title)
     if !music_playing() then music_resume() end
   end

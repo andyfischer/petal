@@ -165,7 +165,7 @@ fn draw_editor(r: record, t: record, v: record, x: record) -> nil
         if x.cursor_on then
           if v.ed_cursor == 0 then
             draw_rect(Rect(cx, ry + 2, 2, lh - 4), t.accent)
-          elsif v.ed_cursor == 1 then
+          else if v.ed_cursor == 1 then
             draw_rect_rounded(Rect(cx, ry + 2, cw, lh - 4), 1, t.accent, 150)
           else
             draw_rect(Rect(cx, ry + lh - 4, cw, 2), t.accent)
@@ -222,15 +222,15 @@ fn draw_alert(area: record, t: record, v: record, words: record) -> nil
   draw_rect_rounded(r, t.radius, t.raised, a)
   draw_rect_rounded_outline(r, t.radius, t.line, a)
   # Held alerts go grey: still there, not asking for attention.
-  let live_c = if event == nil then t.dim elsif event.id == "ev_tests" then t.danger else t.accent end
+  let live_c = if event == nil then t.dim else if event.id == "ev_tests" then t.danger else t.accent end
   let tone_c = mix(live_c, t.dim, quiet)
   glyph("bell", Rect(r.x + 10, r.y + 9, 14, 14), tone_c, 1.4)
   let title = if event == nil then "No events selected"
-    elsif event.title == "" then words.built
+    else if event.title == "" then words.built
     else event.title
     end
   let body = if v.qt_on then "{words.held} {sc.show_num({fmt: "hour", places: 0, unit: ""}, v.qt_to)}"
-    elsif event == nil then "Nothing will alert you"
+    else if event == nil then "Nothing will alert you"
     else event.body
     end
   let ts_t = {size: 11.5, font: "ui", color: {...mix(t.text, t.muted, quiet), a: a}, weight: 600}

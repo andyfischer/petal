@@ -169,9 +169,9 @@ let wave_names = ["PULSE 50%", "PULSE 12%", "SAW", "TRIANGLE", "SINE"]
 
 fn wave_at(kind: num, t: num, hz: num) -> float
   if kind == 0 then osc_square(t, hz, 2)
-  elsif kind == 1 then osc_square(t, hz, 0)
-  elsif kind == 2 then osc_saw(t, hz)
-  elsif kind == 3 then osc_tri(t, hz)
+  else if kind == 1 then osc_square(t, hz, 0)
+  else if kind == 2 then osc_saw(t, hz)
+  else if kind == 3 then osc_tri(t, hz)
   else osc_sine(t, hz) end
 end
 
@@ -232,7 +232,7 @@ apu_mute()
 # it off on the banked screen is the point — otherwise the cost meter would be
 # measuring a synth nobody on that screen asked for.
 state var probe = false
-enable_dsp(if realtime then "dsp_block" elsif probe then "probe_block" else "" end)
+enable_dsp(if realtime then "dsp_block" else if probe then "probe_block" else "" end)
 
 # ── Input ─────────────────────────────────────────────────────────────────
 
@@ -266,11 +266,11 @@ if realtime then
     let k = knobs[pick]
     if pick == 0 then
       set dsp_note = clamp(dsp_note + step, lo: k[1], hi: k[2])
-    elsif pick == 1 then
+    else if pick == 1 then
       set dsp_wave = clamp(dsp_wave + step, lo: k[1], hi: k[2])
-    elsif pick == 2 then
+    else if pick == 2 then
       set dsp_detune = clamp(dsp_detune + step, lo: k[1], hi: k[2])
-    elsif pick == 3 then
+    else if pick == 3 then
       set dsp_vib = clamp(dsp_vib + step, lo: k[1], hi: k[2])
     else
       set dsp_level = clamp(dsp_level + step, lo: k[1], hi: k[2])
@@ -422,8 +422,8 @@ fn screen_realtime(pick: num, knobs: list, vals: list, on: bool)
 
   let headroom = if ms <= 0.0 then 0.0 else dsp_budget_ms / ms end
   let verdict = if ms <= 0.0 then "MEASURING..."
-  elsif frac < 0.5 then "VIABLE: {round(headroom, 1)}X HEADROOM"
-  elsif frac < 1.0 then "TIGHT: {round(headroom, 1)}X HEADROOM"
+  else if frac < 0.5 then "VIABLE: {round(headroom, 1)}X HEADROOM"
+  else if frac < 1.0 then "TIGHT: {round(headroom, 1)}X HEADROOM"
   else "OVER SLICE: HOST FADES IT OUT" end
   map_text(1, 26, verdict, if frac < 0.75 then 2 else 1 end)
 

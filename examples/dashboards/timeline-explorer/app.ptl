@@ -164,7 +164,7 @@ end
 fn fmt_at(t, ppd)
   let z = int(floor(t))
   if ppd >= 0.9 then fmt_day(z)
-  elsif ppd >= 0.012 then fmt_mon(z)
+  else if ppd >= 0.012 then fmt_mon(z)
   else str(civil(z).y)
   end
 end
@@ -176,7 +176,7 @@ end
 fn fmt_dur(days)
   if days < 60 then
     plural(days, "day")
-  elsif days < 360 then
+  else if days < 360 then
     plural(int(round(float(days) / 30.44)), "month")
   else
     let months = int(round(float(days) / 30.4375))
@@ -189,7 +189,7 @@ end
 fn fmt_span(days)
   if days >= 730.0 then
     str(round(days / 365.25, 1)) ++ " years"
-  elsif days >= 60.0 then
+  else if days >= 60.0 then
     plural(int(round(days / 30.44)), "month")
   else
     plural(int(round(days)), "day")
@@ -412,14 +412,14 @@ end
 fn fmt_when(e)
   if !is_span(e) then
     fmt_day(e.t0)
-  elsif e.live then
+  else if e.live then
     fmt_day(e.t0) ++ " – present"
   else
     let a = civil(e.t0)
     let b = civil(e.t1)
     if a.y == b.y && a.m == b.m then
       str(a.d) ++ " – " ++ fmt_day(e.t1)
-    elsif a.y == b.y then
+    else if a.y == b.y then
       str(a.d) ++ " " ++ MON[a.m - 1] ++ " – " ++ fmt_day(e.t1)
     else
       fmt_day(e.t0) ++ " – " ++ fmt_day(e.t1)
@@ -524,7 +524,7 @@ fn gen_ticks(level, ta, tb)
   let out = []
   let c = civil(int(floor(ta)))
   if level <= 2 then
-    let n = if level == 0 then 10 elsif level == 1 then 5 else 1 end
+    let n = if level == 0 then 10 else if level == 1 then 5 else 1 end
     let y = (c.y / n) * n
     let t = day_of(y, 1, 1)
     while t <= tb do
@@ -532,7 +532,7 @@ fn gen_ticks(level, ta, tb)
       y = y + n
       t = day_of(y, 1, 1)
     end
-  elsif level <= 5 then
+  else if level <= 5 then
     let n = if level == 3 then 3 else 1 end
     let mi = ((c.y * 12 + c.m - 1) / n) * n
     let going = true
@@ -542,7 +542,7 @@ fn gen_ticks(level, ta, tb)
       let t = day_of(y, m, 1)
       if t > tb then
         going = false
-      elsif level == 5 then
+      else if level == 5 then
         out = append(out, {t: t, label: MON[m - 1], strong: true})
         out = append(out, {t: t + 7, label: "8", strong: false})
         out = append(out, {t: t + 14, label: "15", strong: false})
@@ -576,13 +576,13 @@ fn gen_context(level, ta, tb)
       out = append(out, {t0: day_of(y, 1, 1), t1: day_of(y + 100, 1, 1), label: str(nth) ++ suffix ++ " century"})
       y = y + 100
     end
-  elsif level == 2 then
+  else if level == 2 then
     let y = (c.y / 10) * 10
     while day_of(y, 1, 1) <= tb do
       out = append(out, {t0: day_of(y, 1, 1), t1: day_of(y + 10, 1, 1), label: str(y) ++ "s"})
       y = y + 10
     end
-  elsif level <= 4 then
+  else if level <= 4 then
     let y = c.y
     while day_of(y, 1, 1) <= tb do
       out = append(out, {t0: day_of(y, 1, 1), t1: day_of(y + 1, 1, 1), label: str(y)})
@@ -756,7 +756,7 @@ fn segmented(r, labels, active)
     if on then
       draw_rect_rounded(rect(cr.x + 2, cr.y + 2, cr.w - 4, cr.h - 4), 5, LINE_HI)
     end
-    let st = ui(12, if on then TEXT elsif hot then SOFT else DIM end)
+    let st = ui(12, if on then TEXT else if hot then SOFT else DIM end)
     tx_center(labels[i], cr.x + cw / 2.0, vmid(cr.y, cr.h, 12), st)
     if hot && mouse_pressed(0) then out = i end
   end
@@ -879,15 +879,15 @@ if drag != "" && key_pressed("escape") then
   anc_on = false
   drag = ""
   dbl_press = false
-elsif typing && key_pressed("escape") then
+else if typing && key_pressed("escape") then
   focus_request(nil)
   typing = false
-elsif !was_typing && !typing && ch == "/" then
+else if !was_typing && !typing && ch == "/" then
   focus_request("search")
-elsif !typing && key_pressed("escape") then
+else if !typing && key_pressed("escape") then
   if sel >= 0 then
     sel = -1
-  elsif len(query) > 0 then
+  else if len(query) > 0 then
     query = ""
   end
 end
@@ -975,7 +975,7 @@ if (in_lanes || in_ruler) && drag == "" then
     v_t0 = nv.t0
     anc_on = false
     n_pans = n_pans + 1
-  elsif sy != 0 then
+  else if sy != 0 then
     let at = v_t0 + (mx - px) / ppd_v
     let nv = zoom_at(v_t0, v_span, at, exp(float(sy) * 0.22))
     v_t0 = nv.t0
@@ -1006,16 +1006,16 @@ if mouse_pressed(0) && drag == "" then
     if typing then
       focus_request(nil)
     end
-  elsif in_ruler then
+  else if in_ruler then
     drag = "band"
     drag_x = mx
     drag_t = s_t0 + (mx - px) / (pw / s_span)
     drag_moved = false
-  elsif in_over then
+  else if in_over then
     drag_moved = true
     if wx1 - wx0 >= 16.0 && abs(mx - wx0) <= 5.0 then
       drag = "ov-l"
-    elsif wx1 - wx0 >= 16.0 && abs(mx - wx1) <= 5.0 then
+    else if wx1 - wx0 >= 16.0 && abs(mx - wx1) <= 5.0 then
       drag = "ov-r"
     else
       drag = "ov-move"
@@ -1040,18 +1040,18 @@ if drag == "pan" then
     s_span = v_span
     anc_on = false
   end
-elsif drag == "band" then
+else if drag == "band" then
   if abs(mx - drag_x) > 3.0 then drag_moved = true end
   let cur_t = s_t0 + (clamp(mx, px, px + pw) - px) / (pw / s_span)
   band_a = min(drag_t, cur_t)
   band_b = max(drag_t, cur_t)
-elsif drag == "ov-move" then
+else if drag == "ov-move" then
   let nv = clamp_view(ov_t - drag_off, v_span)
   v_t0 = nv.t0
   s_t0 = nv.t0
   s_span = v_span
   anc_on = false
-elsif drag == "ov-l" then
+else if drag == "ov-l" then
   let t1 = v_t0 + v_span
   let a = max(float(D0), min(ov_t, t1 - MIN_SPAN))
   v_t0 = a
@@ -1059,7 +1059,7 @@ elsif drag == "ov-l" then
   s_t0 = v_t0
   s_span = v_span
   anc_on = false
-elsif drag == "ov-r" then
+else if drag == "ov-r" then
   let b = min(float(D1), max(ov_t, v_t0 + MIN_SPAN))
   v_span = b - v_t0
   s_span = v_span
@@ -1073,13 +1073,13 @@ if mouse_released(0) || (drag != "" && !mouse_down(0) && !mouse_pressed(0)) then
   if drag == "pan" then
     if drag_moved then
       n_pans = n_pans + 1
-    elsif !dbl_press then
+    else if !dbl_press then
       # The second press of a double-click has already zoomed; by the time it
       # is released the view is moving, and whatever has slid under the
       # pointer must not take (or clear) the selection.
       click_in_lanes = true
     end
-  elsif drag == "band" then
+  else if drag == "band" then
     if drag_moved && (band_b - band_a) * (pw / s_span) >= 6.0 then
       let nv = clamp_view(band_a, max(MIN_SPAN, band_b - band_a))
       v_t0 = nv.t0
@@ -1087,7 +1087,7 @@ if mouse_released(0) || (drag != "" && !mouse_down(0) && !mouse_pressed(0)) then
       anc_on = false
       n_band_zooms = n_band_zooms + 1
     end
-  elsif drag == "ov-move" || drag == "ov-l" || drag == "ov-r" then
+  else if drag == "ov-move" || drag == "ov-l" || drag == "ov-r" then
     n_pans = n_pans + 1
   end
   drag = ""
@@ -1132,7 +1132,7 @@ end
 # and one with nothing left to show keeps only a title strip.
 let wt_sum = 0.0
 for c in range(0, 6) do
-  let want = if !cats_on[c] then 0.0 elsif lane_count[c] == 0 then 0.3 else 1.0 end
+  let want = if !cats_on[c] then 0.0 else if lane_count[c] == 0 then 0.3 else 1.0 end
   # Stored only when it moves: an element write into a `state` list from
   # inside a loop counts as a change to the frame gate even when it stores the
   # value already there, and a quiet timeline would never be skipped.
@@ -1197,8 +1197,8 @@ if in_lanes && (drag == "" || !drag_moved) then
     let e = events[p.i]
     let cy = mark_y(p.i, e.cat, lane_y, lane_h, lane_rh, lane_rows, ev_row)
     let on_rail = p.row >= lane_rows[e.cat]
-    let a = if p.mode == 3 then p.lx - 4.0 elsif is_span(e) then p.x0 else p.x0 - 8.0 end
-    let b = if p.mode == 1 then p.lx + float(lab_w[p.i]) + 4.0 elsif is_span(e) then p.x1 else p.x0 + 8.0 end
+    let a = if p.mode == 3 then p.lx - 4.0 else if is_span(e) then p.x0 else p.x0 - 8.0 end
+    let b = if p.mode == 1 then p.lx + float(lab_w[p.i]) + 4.0 else if is_span(e) then p.x1 else p.x0 + 8.0 end
     let reach = if on_rail then 5.0 else 10.0 end
     if mx >= a - 2.0 && mx <= b + 2.0 && abs(my - cy) <= reach then hover = p.i end
   end
@@ -1223,7 +1223,7 @@ if mouse_pressed(0) && in_lanes && click_count() >= 2 then
     anc_f = (at - nv.t0) / nv.span
   end
   n_zooms = n_zooms + 1
-elsif click_in_lanes then
+else if click_in_lanes then
   if hover != sel then n_selects = n_selects + 1 end
   sel = hover
 end
@@ -1363,11 +1363,11 @@ fn draw_event(e, p, cy, on_rail, is_sel, is_hot, px, right)
     end
     return nil
   end
-  let tc = if lit || e.imp == 1 then TEXT elsif e.imp == 2 then SOFT else DIM end
+  let tc = if lit || e.imp == 1 then TEXT else if e.imp == 2 then SOFT else DIM end
   let ty = cy - 8.5
   if is_span(e) then
     let bh = 15.0
-    let fill = mix(BG, col, if is_sel then 0.5 elsif is_hot then 0.42 else 0.27 end)
+    let fill = mix(BG, col, if is_sel then 0.5 else if is_hot then 0.42 else 0.27 end)
     let bx = max(p.x0, px - 12.0)
     let bw = min(p.x1, right + 12.0) - bx
     if e.live then
@@ -1383,15 +1383,15 @@ fn draw_event(e, p, cy, on_rail, is_sel, is_hot, px, right)
     end
     if p.mode == 2 then
       tx(e.title, p.lx, ty, label_style(e.imp, if lit then TEXT else mix(col, TEXT, 0.72) end))
-    elsif p.mode != 0 then
+    else if p.mode != 0 then
       tx(e.title, p.lx, ty, label_style(e.imp, tc))
     end
   else
-    let r = if e.imp == 1 then 6.0 elsif e.imp == 2 then 5.0 else 3.5 end
+    let r = if e.imp == 1 then 6.0 else if e.imp == 2 then 5.0 else 3.5 end
     if is_sel then
       draw_circle(p.x0, cy, r + 5.5, ACCENT, 46)
       draw_circle_outline(p.x0, cy, r + 4.5, ACCENT, 255, 1.5)
-    elsif is_hot then
+    else if is_hot then
       draw_circle(p.x0, cy, r + 4.5, col, 50)
     end
     if e.imp == 3 then
@@ -1448,7 +1448,7 @@ if lanes_n == 0 then
   tx_center("Every category is switched off", px + pw / 2.0, float(lanes_r.y) + float(lanes_r.h) / 2.0 - 22.0, ui(16, SOFT))
   tx_center("Press A to bring them all back, or 1 to 6 for one at a time.", px + pw / 2.0,
     float(lanes_r.y) + float(lanes_r.h) / 2.0 + 6.0, ui(12, DIM))
-elsif shown_n == 0 then
+else if shown_n == 0 then
   let msg = if len(query) > 0 then "No event matches \"" ++ query ++ "\"" else "No event passes these filters" end
   draw_rect_rounded(rect(px + pw / 2.0 - 190.0, float(lanes_r.y) + float(lanes_r.h) / 2.0 - 40.0, 380.0, 76.0), 10, RAISED)
   tx_center(msg, px + pw / 2.0, float(lanes_r.y) + float(lanes_r.h) / 2.0 - 24.0, ui(16, TEXT))
@@ -1475,8 +1475,8 @@ let show_sel_flag = sel >= 0 && !show_cursor && sel_xa >= px && sel_xa <= px + p
 let sel_lab = if sel >= 0 then fmt_day(events[sel].t0) else "" end
 let sel_lw = float(text_width(sel_lab, flag_st)) + 14.0
 let sel_lx = clamp(sel_xa - sel_lw / 2.0, px + 2.0, px + pw - sel_lw - 2.0)
-let flag_a = if show_cursor then cur_lx elsif show_sel_flag then sel_lx else -1.0 end
-let flag_b = if show_cursor then cur_lx + cur_lw elsif show_sel_flag then sel_lx + sel_lw else -1.0 end
+let flag_a = if show_cursor then cur_lx else if show_sel_flag then sel_lx else -1.0 end
+let flag_b = if show_cursor then cur_lx + cur_lw else if show_sel_flag then sel_lx + sel_lw else -1.0 end
 
 # Context band.
 for seg in context do
@@ -1781,7 +1781,7 @@ for o in range(0, len(ORG_NAME)) do
   else
     draw_rect_rounded_outline(cr, 12, if hot then LINE_HI else LINE end, 255, 1)
   end
-  tx(ORG_NAME[o], chip_x + 10.0, vmid(cy, 24, 12), ui(12, if on then TEXT elsif hot then DIM else FAINT end))
+  tx(ORG_NAME[o], chip_x + 10.0, vmid(cy, 24, 12), ui(12, if on then TEXT else if hot then DIM else FAINT end))
   if hot && mouse_pressed(0) then orgs_on[o] = !on end
   chip_x = chip_x + cw + 6.0
 end

@@ -92,13 +92,13 @@ fn palette(id, j, t, rows_f)
     let h_a = (160.0 + p * 40.0 + t * 12.0) % 360.0
     let h_b = (180.0 + p * 60.0 + t * 12.0) % 360.0
     { bg: bg, a: hsv_deg(h: h_a, s: 0.7, v: 0.95), b: hsv_deg(h: h_b, s: 0.5, v: 0.85) }
-  elsif id == 1 then
+  else if id == 1 then
     # Warm sunset
     let bg = { r: 28, g: 12, b: 18 }
     let h_a = (15.0 + p * 35.0 + t * 8.0) % 360.0
     let h_b = (340.0 + p * 25.0 + t * 8.0) % 360.0
     { bg: bg, a: hsv_deg(h: h_a, s: 0.85, v: 0.95), b: hsv_deg(h: h_b, s: 0.7, v: 0.9) }
-  elsif id == 2 then
+  else if id == 2 then
     # Mono ink on parchment
     let bg = { r: 232, g: 224, b: 200 }
     let shade = int(40.0 + p * 60.0)

@@ -117,7 +117,7 @@ pub fn row(r, widths, gap)
     let cw = 0
     if type(w) != "float" then
       cw = w
-    elsif weights > 0.0 then
+    else if weights > 0.0 then
       cw = int(float(leftover) * w / weights)
     end
     out = append(out, rect(x, r.y, cw, r.h))
@@ -145,7 +145,7 @@ pub fn col(r, heights, gap)
     let ch = 0
     if type(h) != "float" then
       ch = h
-    elsif weights > 0.0 then
+    else if weights > 0.0 then
       ch = int(float(leftover) * h / weights)
     end
     out = append(out, rect(r.x, y, r.w, ch))
@@ -232,7 +232,7 @@ fn _wrap_px_segment(seg, avail_px, size)
     end
     if len(cur) == 0 then
       cur = w
-    elsif text_width(cur ++ " " ++ w, size) <= avail_px then
+    else if text_width(cur ++ " " ++ w, size) <= avail_px then
       cur = cur ++ " " ++ w
     else
       lines = append(lines, cur)

@@ -138,7 +138,7 @@ end
 fn axis_label(v: num, step: num) -> string
   if abs(v) < 0.5 then
     "$0"
-  elsif step >= 1000.0 then
+  else if step >= 1000.0 then
     "$" ++ dec(v / 1000.0, 1) ++ "k"
   else
     "$" ++ commas(int(round(v)))
@@ -234,11 +234,11 @@ fn season(ci: num, m: num) -> float
   let ph = float(m) / 12.0 * 2.0 * pi()
   if ci == 2 then
     1.0 + 0.20 * sin(ph - 1.6)
-  elsif ci == 4 then
+  else if ci == 4 then
     1.0 + 0.34 * cos(ph)
-  elsif ci == 5 then
-    if m >= 10 then 1.85 elsif m == 7 then 1.25 else 0.88 end
-  elsif ci == 6 then
+  else if ci == 5 then
+    if m >= 10 then 1.85 else if m == 7 then 1.25 else 0.88 end
+  else if ci == 6 then
     1.0 + 0.18 * cos(ph + 0.8)
   else
     1.0
@@ -379,7 +379,7 @@ fn build_view(txns: list, income: list, ci: num, mi: num, mo: num, sort_mode: nu
     slices = for c in range(0, len(CATS)) do
       {label: CATS[c].name, value: bucket[c], color: CATS[c].color, key: c}
     end
-  elsif mi < 0 then
+  else if mi < 0 then
     let ms = CATS[ci].merchants
     slices = for k in range(0, len(ms)) do
       {label: ms[k].name, value: bucket[k], color: shade(c: CATS[ci].color, i: k, n: len(ms)), key: k}
@@ -479,7 +479,7 @@ fn draw_donut(cx: num, cy: num, r_in: num, r_out: num, slices: list, total: num,
   for i in range(0, len(slices)) do
     let s = slices[i]
     let sweep = if total > 0.0 then s.value / total * 2.0 * pi() * t else 0.0 end
-    let lift = if i == hot then 8.0 elsif i == sel then 3.5 else 0.0 end
+    let lift = if i == hot then 8.0 else if i == sel then 3.5 else 0.0 end
     let alpha = if hot >= 0 && i != hot then 140 else 255 end
     # A hair of padding between wedges reads as separation without a stroke.
     let gap = if sweep > 0.07 then 0.013 else 0.0 end
@@ -498,9 +498,9 @@ fn axis_scale(maxv: num, target: num) -> record
   let mag = pow(10.0, floor(log(raw) / log(10.0)))
   let n = raw / mag
   let mult = if n <= 1.0 then 1.0
-  elsif n <= 2.0 then 2.0
-  elsif n <= 2.5 then 2.5
-  elsif n <= 5.0 then 5.0
+  else if n <= 2.0 then 2.0
+  else if n <= 2.5 then 2.5
+  else if n <= 5.0 then 5.0
   else 10.0
   end
   let step = mult * mag
@@ -540,12 +540,12 @@ fn draw_columns(plot: record, vals: list, base_c: record, hot: num, marked: num,
     let slot = col_rect(plot, i, n: len(vals))
     let h = plot.h * (vals[i] / top) * t
     let c = if i == hot then color_lerp(base_c, WHITE, t: 0.32)
-    elsif marked >= 0 && i != marked then color_lerp(base_c, SURFACE, t: 0.58)
+    else if marked >= 0 && i != marked then color_lerp(base_c, SURFACE, t: 0.58)
     else base_c
     end
     draw_rect_rounded(x: slot.x, y: plot.y + plot.h - h, w: slot.w, h: max(2.0, h), radius: 4,
       r: c.r, g: c.g, b: c.b)
-    let lc = if i == marked then ACCENT elsif i == hot then TEXT else FAINT end
+    let lc = if i == marked then ACCENT else if i == hot then TEXT else FAINT end
     text_mid(MONTHS[i], cx: slot.x + slot.w / 2.0, y: plot.y + plot.h + 10.0,
       st: {size: T_MICRO, color: lc})
     if i == marked then
@@ -638,7 +638,7 @@ let CRUMB = {size: T_SMALL, color: DIM}
 fn crumb_parts(lv: num, ci: num, mi: num) -> list
   if lv == 0 then
     ["All spending"]
-  elsif lv == 1 then
+  else if lv == 1 then
     ["All spending", CATS[ci].name]
   else
     ["All spending", CATS[ci].name, CATS[ci].merchants[mi].name]
@@ -818,8 +818,8 @@ end
 
 # Which slice the pointer or the keyboard is asking to descend into.
 let pick = if mouse_pressed(0) && hot_slice >= 0 then hot_slice
-elsif mouse_pressed(0) && hot_leg >= 0 then hot_leg
-elsif key_pressed("return") || key_pressed("right") then want_sel
+else if mouse_pressed(0) && hot_leg >= 0 then hot_leg
+else if key_pressed("return") || key_pressed("right") then want_sel
 else -1
 end
 
@@ -829,7 +829,7 @@ if pick >= 0 && pick < n_slices && level < 2 then
     want_cat = s.key
     want_level = 1
     want_sel = 0
-  elsif s.key >= 0 then
+  else if s.key >= 0 then
     want_mer = s.key
     want_level = 2
     want_sel = 0
@@ -854,7 +854,7 @@ if climb || crumb_click then
     want_cat = -1
     want_mer = -1
     want_sel = 0
-  elsif to == 1 && level > 1 then
+  else if to == 1 && level > 1 then
     want_level = 1
     want_mer = -1
     want_sel = 0
@@ -895,7 +895,7 @@ let slices = view.slices
 let total = sum_of(for s in slices do s.value end)
 
 let scope_name = if level == 0 then "All spending"
-elsif level == 1 then CATS[sel_cat].name
+else if level == 1 then CATS[sel_cat].name
 else CATS[sel_cat].merchants[sel_mer].name
 end
 # Low-chroma steel means "all of it"; a drill picks up the category's own hue.
@@ -915,7 +915,7 @@ let sepw = text_w("  >  ", CRUMB)
 let cbx = PAD
 for i in range(0, len(parts)) do
   let last = i == len(parts) - 1
-  let c = if last then TEXT elsif i == hot_crumb then ACCENT else DIM end
+  let c = if last then TEXT else if i == hot_crumb then ACCENT else DIM end
   text_at(parts[i], x: cbx, y: 46, st: {size: T_SMALL, color: c})
   if i == hot_crumb && !last then
     draw_line(x1: cbx, y1: 61, x2: cbx + text_w(parts[i], CRUMB), y2: 61,
@@ -984,7 +984,7 @@ end
 
 card(r_donut)
 let d_title = if level == 0 then "SPENDING BY CATEGORY"
-elsif level == 1 then upper(CATS[sel_cat].name) ++ " BY MERCHANT"
+else if level == 1 then upper(CATS[sel_cat].name) ++ " BY MERCHANT"
 else "SHARE OF " ++ upper(CATS[sel_cat].name)
 end
 card_head(r_donut, title: d_title, note: if month < 0 then "12 months" else month_label end)
@@ -993,8 +993,8 @@ draw_donut(cx: dcx, cy: dcy, r_in: d_in, r_out: d_out, slices: slices, total: to
   sel: if hot_leg >= 0 then hot_leg else legend_sel end, t: ease)
 
 let focus = if hot_slice >= 0 then hot_slice
-elsif hot_leg >= 0 then hot_leg
-elsif legend_sel < len(slices) then legend_sel
+else if hot_leg >= 0 then hot_leg
+else if legend_sel < len(slices) then legend_sel
 else -1
 end
 if focus >= 0 && len(slices) > 0 then
@@ -1113,7 +1113,7 @@ for i in range(0, t_rows_visible) do
     let ry = t_view.y + i * TROW
     if idx == hot_row then
       draw_rect_rounded(rect(t_view.x - 7, ry, t_view.w + 14, TROW), radius: 5, c: RAISED)
-    elsif idx % 2 == 1 then
+    else if idx % 2 == 1 then
       draw_rect(x: t_view.x - 7, y: ry, w: t_view.w + 14, h: TROW, r: RAISED.r, g: RAISED.g, b: RAISED.b, a: 80)
     end
     let c = CATS[t.cat]

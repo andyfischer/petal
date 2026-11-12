@@ -33,10 +33,10 @@ fn hue_color(h)
   let cg = 0
   let cb = 0
   if hmod < 1.0 then cr = 255; cg = int(hmod * 255.0); cb = 60
-  elsif hmod < 2.0 then cr = int((2.0 - hmod) * 255.0); cg = 255; cb = 60
-  elsif hmod < 3.0 then cr = 60; cg = 255; cb = int((hmod - 2.0) * 255.0)
-  elsif hmod < 4.0 then cr = 60; cg = int((4.0 - hmod) * 255.0); cb = 255
-  elsif hmod < 5.0 then cr = int((hmod - 4.0) * 195.0) + 60; cg = 60; cb = 255
+  else if hmod < 2.0 then cr = int((2.0 - hmod) * 255.0); cg = 255; cb = 60
+  else if hmod < 3.0 then cr = 60; cg = 255; cb = int((hmod - 2.0) * 255.0)
+  else if hmod < 4.0 then cr = 60; cg = int((4.0 - hmod) * 255.0); cb = 255
+  else if hmod < 5.0 then cr = int((hmod - 4.0) * 195.0) + 60; cg = 60; cb = 255
   else cr = 255; cg = 60; cb = int((6.0 - hmod) * 195.0) + 60
   end
   {r: cr, g: cg, b: cb}

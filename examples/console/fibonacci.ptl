@@ -4,7 +4,7 @@
 # Recursive (simple but slow for large n)
 fn fib_recursive(n: num) -> int
   if n <= 0 then 0
-  elsif n == 1 then 1
+  else if n == 1 then 1
   else fib_recursive(n - 1) + fib_recursive(n - 2)
   end
 end

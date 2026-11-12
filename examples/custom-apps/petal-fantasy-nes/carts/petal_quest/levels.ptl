@@ -473,7 +473,7 @@ pub fn level(n: num) -> record
       chunks: [L2_0, L2_1, L2_2, L2_3, L2_4, L2_5, L2_6, L2_7, L2_8],
       boss: -1
     }
-  elsif n == 2 then
+  else if n == 2 then
     {
       name: "SKY CASTLE",
       world: 2,

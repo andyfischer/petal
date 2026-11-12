@@ -66,9 +66,9 @@ end
 pub fn when_short(age: int) -> string
   let d = days_ago(age)
   if age <= 0 then "now"
-  elsif d == 0 then clock(age)
-  elsif d == 1 then "Yesterday"
-  elsif d < 7 then weekday(d)
+  else if d == 0 then clock(age)
+  else if d == 1 then "Yesterday"
+  else if d < 7 then weekday(d)
   else month_day(d)
   end
 end
@@ -77,8 +77,8 @@ end
 pub fn when_long(age: int) -> string
   let d = days_ago(age)
   if age <= 0 then "Just now"
-  elsif d == 0 then "Today, {clock(age)}"
-  elsif d == 1 then "Yesterday, {clock(age)}"
+  else if d == 0 then "Today, {clock(age)}"
+  else if d == 1 then "Yesterday, {clock(age)}"
   else "{weekday(d)}, {month_day(d)}, {clock(age)}"
   end
 end
@@ -262,13 +262,13 @@ end
 
 pub fn in_view(t: record, view: string) -> bool
   if view == "inbox" then t.box == "inbox"
-  elsif view == "starred" then t.starred && t.box != "trash"
-  elsif view == "sent" then t.box == "sent" || (from_me(t) && (t.box == "inbox" || t.box == "archive"))
-  elsif view == "drafts" then t.box == "drafts"
-  elsif view == "archive" then t.box == "archive"
-  elsif view == "all" then t.box != "trash" && t.box != "drafts"
-  elsif view == "trash" then t.box == "trash"
-  elsif index_of(view, "label:") == 0 then
+  else if view == "starred" then t.starred && t.box != "trash"
+  else if view == "sent" then t.box == "sent" || (from_me(t) && (t.box == "inbox" || t.box == "archive"))
+  else if view == "drafts" then t.box == "drafts"
+  else if view == "archive" then t.box == "archive"
+  else if view == "all" then t.box != "trash" && t.box != "drafts"
+  else if view == "trash" then t.box == "trash"
+  else if index_of(view, "label:") == 0 then
     contains(t.labels, char_slice(view, 6)) && t.box != "trash"
   else false
   end
@@ -315,7 +315,7 @@ pub fn participants(t: record) -> string
       let names = for k in to do person(k).name end
       "To: " ++ join(names, ", ")
     end
-  elsif len(keys) == 1 then
+  else if len(keys) == 1 then
     person(keys[0]).name
   else
     let names = for k in keys do first_name(k) end
@@ -371,13 +371,13 @@ pub fn parse_query(q: string) -> record
     let val = if i > 0 then char_slice(tok, i + 1) else "" end
     if key == "from" then
       pq.from = val
-    elsif key == "is" && val == "unread" then
+    else if key == "is" && val == "unread" then
       pq.unread = true
-    elsif key == "is" && val == "starred" then
+    else if key == "is" && val == "starred" then
       pq.starred = true
-    elsif key == "has" then
+    else if key == "has" then
       pq.att = true
-    elsif key == "label" then
+    else if key == "label" then
       pq.label = val
     else
       pq.terms = append(pq.terms, tok)
@@ -427,7 +427,7 @@ pub fn toggle_token(q: string, tok: string) -> string
       t
     end
     join(kept, " ")
-  elsif len(toks) == 0 then
+  else if len(toks) == 0 then
     tok
   else
     trim_spaces(q) ++ " " ++ tok

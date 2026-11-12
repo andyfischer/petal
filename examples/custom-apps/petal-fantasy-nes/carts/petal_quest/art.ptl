@@ -375,7 +375,7 @@ pub fn tileset(n: num) -> list
   if n == 1 then
     [EMPTY, CAVE_TOP, CAVE_FILL, CAVE_BRICK, HARD, LEDGE_L, LEDGE_M, LEDGE_R,
       CRYSTAL, SKULL, STALAGMITE, WALL_L, WALL_R, POLE, SPIKES, BANNER]
-  elsif n == 2 then
+  else if n == 2 then
     [EMPTY, CASTLE_TOP, CASTLE_FILL, CASTLE_BRICK, HARD, LEDGE_L, LEDGE_M, LEDGE_R,
       BANNER_WALL, WINDOW, STARS, CLOUD_L, CLOUD_R, POLE, SPIKES, BANNER]
   else

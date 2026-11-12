@@ -15,10 +15,6 @@ endif
 " Petal identifiers may contain and end with `?` (e.g. `even?`).
 setlocal iskeyword+=?
 
-" ---- Comments ----
-syn keyword petalTodo contained TODO FIXME XXX NOTE
-syn match   petalComment "//.*$" contains=petalTodo,@Spell
-
 " ---- Keywords ----
 syn keyword petalKeyword     import pub export as config native let const var set get state memo fn enum class return for in while do match when
 syn keyword petalKeyword     break continue
@@ -29,6 +25,8 @@ syn match   petalKeyword     "^\s*\zstest\ze\s\+\""
 " `for t in tasks key t.id do`. Anywhere else it is an ordinary identifier.
 " A lookbehind, because a match starting at `for` would lose to the keyword.
 syn match   petalKeyword     "\(\<for\>.\{-}\<in\>.\{-}\s\)\@<=\zskey\ze\s"
+" `else if` is the two keywords `else` and `if`; `elsif` is its older
+" spelling. `end` is an optional closer: blocks close by indentation.
 syn keyword petalConditional if then elsif else end
 syn keyword petalBoolean     true false
 syn keyword petalConstant    nil
@@ -56,8 +54,13 @@ syn match petalType "\%(:\|->\)\s*\zs\%(any\|nil\|bool\|int\|float\|num\|string\
 syn match petalFloat  "\<\d\+\.\d\+\>"
 syn match petalNumber "\<\d\+\>"
 
-" ---- Colors: #rgb #rgba #rrggbb #rrggbbaa ----
-syn match petalColor "#\%(\x\{8}\|\x\{6}\|\x\{4}\|\x\{3}\)\>"
+" ---- Colors: :rgb :rgba :rrggbb :rrggbbaa ----
+" A `:` directly after a name, a literal or a closing bracket is a separator
+" (`{x:100}`, `f(a:fff)`, `let c:add = 1`), so the colon of a colour must not
+" follow one. The real rule looks at the previous token whatever the spacing;
+" this looks at the previous character, which agrees wherever the separator
+" colon is written against its name.
+syn match petalColor "\%([a-zA-Z0-9_?)\]}\"]\)\@1<!:\%(\x\{8}\|\x\{6}\|\x\{4}\|\x\{3}\)\>"
 
 " ---- Strings ----
 " Double-quoted string with `{expr}` interpolation and backslash escapes.
@@ -72,6 +75,18 @@ syn region petalRawString    start=+"""+ end=+"""+ keepend contains=@Spell
 syn match petalOperator "|>\|->\|++=\|??=\|++\|+=\|-=\|\*=\|/=\|%=\|==\|!=\|<=\|>=\|&&\|||\|??\|?\.\|\.\.\|[-+*/%<>=!|]"
 " `...` is defined after `..` so it wins where both match.
 syn match petalPipe     "\.\.\."
+
+" ---- Comments ----
+" Defined after the operators: when two matches start at the same place Vim
+" takes the one defined last, and `//` and `/*` both start with an operator
+" character.
+syn keyword petalTodo contained TODO FIXME XXX NOTE
+" `#` to the end of the line. `//` is the deprecated spelling, and `/* … */`
+" is a block comment (it does not nest). There is no `#f80` colour any more:
+" colours are written `:f80`, so a `#` is always a comment.
+syn match   petalComment "#.*$" contains=petalTodo,@Spell
+syn match   petalComment "//.*$" contains=petalTodo,@Spell
+syn region  petalComment start="/\*" end="\*/" contains=petalTodo,@Spell
 
 " `@tunable(0, 10) let x = 4`, `@const`, `@rigid`: a declaration annotation
 " (docs/proposals/annotation-syntax.md). The `@` and its name; the arguments

@@ -43,16 +43,17 @@ iterations:
 - Same-named `state` in two functions cannot collide: distinct decl ids by
   construction.
 
-### 2.2 `state(key)` is absolute, and deprecated
+### 2.2 `state(key)` was absolute, and is removed
 
-`state(expr) name` keys the slot by `(decl_id, hash(key value))` and ignores
+`state(expr) name` keyed the slot by `(decl_id, hash(key value))` and ignored
 the call path. It was the escape hatch for "same entity ⇒ same slot, no matter
-who asks" — React's `key=` prop, but absolute. That makes a keyed slot a
-global hidden inside a function: two calls of stateful code that pass the same
-key interfere, which breaks the rule that state is nested per path and that
-stateful code is safe to duplicate. It is therefore deprecated (compile
-warning `state-key-deprecated`, which `petal migrate-old-code` migrates; the
-feature still works). Its
+who asks" — React's `key=` prop, but absolute. That made a keyed slot a
+global hidden inside a function: two calls of stateful code that passed the same
+key interfered, which broke the rule that state is nested per path and that
+stateful code is safe to duplicate. It was deprecated on 2026-10-22 (compile
+warning `state-key-deprecated`) and removed on 2026-11-13: the parser rejects
+it with an error that names the replacements, and `petal migrate-old-code`
+still reads it (`core/src/migrate/state_key.rs`). Its
 uses split three ways:
 
 - **A pure cache** (`nes.ptl`'s `_font_rows`, one build per ink for every
@@ -179,14 +180,15 @@ closure identity instead would be reload-unstable.
 ### 3.2 Runtime key shape
 
 ```rust
-enum PathPart { Call(u64), Index(usize), Key(u64) }
+enum PathPart { Call(u64), Index(usize), Key(u64), Memo(u64) }
 struct RuntimeStateKey { base: StateKey /* decl id */, path: SmallVec<[PathPart; 4]> }
 ```
 
-(`core/src/stack.rs`.) Explicit-key slots are `{base, path: [Key(h)]}`
-(absolute, §2.2); top-level slots have an empty path. A keyed loop's `Key`
-part sits mid-path, where the loop's `Index` would be (§2.2a). The two never
-collide: an explicit-key slot's base is its own declaration's id.
+(`core/src/stack.rs`.) Top-level slots have an empty path. A keyed loop's
+`Key` part sits mid-path, where the loop's `Index` would be (§2.2a). A
+`memo(key)` entry is `{base, path: [Memo(h)]}`: absolute, the one slot that
+ignores the call path ([memo.md](../features/memo.md)); until 2026-11-13 the
+removed `state(key)` was the same shape with a `Key` part (§2.2).
 
 Recursion makes paths grow with depth; `SmallVec<[_; 4]>` covers typical UI
 trees without allocating. A rolling per-frame hash would bound the per-call
@@ -202,7 +204,7 @@ copy; it is designed but not built (§4).
   innermost one with `Key(h)`; the next iteration's `*Next` overwrites it back
   with an `Index`, and `LoopPop` pops either. The guards that keep unbalanced
   IR from rewriting a `Call` part accept both loop shapes.
-- `Vm::state_key` is: explicit key ⇒ `[Key(h)]`; else the frame's own path,
+- `Vm::state_key` is: a memo's key ⇒ `[Memo(h)]`; else the frame's own path,
   minus `path_pop` innermost parts. There is no walk of the frame stack; the
   composition happened incrementally at push time.
 - **`state` in a higher-order builtin's callback is an error.** A callback
@@ -259,7 +261,7 @@ What a caller must still get right:
 - A retained set is what the section touched **the last time it executed**. It
   is correct only while the section's body is not running. It is refreshed
   whenever the section runs again under a capture.
-- Explicit `state(key)` slots are included like any other key, because the
+- `memo(key)` entries are included like any other key, because the
   journal records whole keys rather than path prefixes.
 
 ### 3.4 Compiler / IR / bytecode

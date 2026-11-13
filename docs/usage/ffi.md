@@ -636,8 +636,7 @@ What a host needs to know about it:
   `"ui::scroll"`, `"ui::draw/row"`), so declaration order does not matter.
   `path` is the chain of callsites and loop iterations that reached the
   declaration ([state is nested](../features/inline-state.md#state-is-nested));
-  it is empty for a top-level declaration. The deprecated `state(key)` keys by
-  the value and ignores it. The design is in
+  it is empty for a top-level declaration. The design is in
   [../dev/state-call-paths.md](../dev/state-call-paths.md).
 - After each run, `sweep_untouched_state` drops keys the run did not touch, so
   state for deleted code, removed list items, or paths an edit no longer

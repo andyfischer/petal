@@ -435,6 +435,42 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Removed
 
+- **Breaking: `state(key) name = init` is removed.** Absolute keyed state,
+  deprecated since 2026-10-22, is now a compile error (2026-11-13). A keyed
+  slot ignored the call path, so it was a shared global hidden inside a
+  function, and it broke the rule that state is nested per call path and
+  that stateful code is safe to call twice. The error names what to write
+  instead:
+  - a keyed loop, `for t in tasks key t.id do`, with a plain `state` in its
+    body, for state that follows an item of a list;
+  - a top-level `state var` holding a `Map()` (`set m[k] = v`), for state
+    shared on purpose;
+  - `memo(key) name = init`, for a cache whose initializer reads only its
+    key;
+  - plain `state`, kept per call path, for per-instance state.
+
+  **Run `petal migrate-old-code`**: its `state-key-deprecated` migration
+  still reads the removed form. It rewrites to `memo(key)` each one whose
+  slot nothing writes and whose initializer is plainly a pure function of
+  the key, and lists every other for a hand edit; the other migrations run
+  on such a file as before (only `end-lines`, which formats the file, waits
+  until the listed sites are edited). `memo(key)` and keyed loops
+  (`for … key`) are unchanged. See
+  [Removed: `state(key)`](docs/features/inline-state.md#removed-statekey).
+
+  What went with it: the `key` field of the `State` AST node (`show-ast`,
+  `--json`), the `key` group of the tree-sitter grammar's
+  `state_declaration`, the `[state-key-deprecated]` compile warning (and
+  its `petal-lint-ignore`, which now only keeps the migration off a site),
+  and, in the IR, a `StateInit` with a key input that is not a `memo`
+  (`is_memo`) and a `StateWrite` with a second input: the IR validator
+  rejects both. A state document saved with `--state-storage` by an older
+  build loads as before; the slots of a `state(key)` in it are reached by
+  no declaration any more and are dropped, at load or by the sweep after
+  the next run.
+  The "stack overflow" message for `state` more than 5,000 calls deep no
+  longer suggests `state(key)`.
+
 - **The `@` rebind operator (`f(@x)` for `x = f(x)`) is gone,** so that `@`
   is free for declaration annotations
   ([proposal](docs/proposals/annotation-syntax.md)). An `@` where an
@@ -1122,7 +1158,7 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `state-key-deprecated` fix now applies only to an initializer that is
   plainly built from its key (no calls, no `get`, no other names). Every
   other site is reported without a fix
-  ([Deprecated: `state(key)`](docs/features/inline-state.md#deprecated-statekey)).
+  ([Removed: `state(key)`](docs/features/inline-state.md#removed-statekey)).
 
 - petal-ui: `FrameCore` no longer panics on `wasm32-unknown-unknown`. It
   started on the wall clock (`Instant::now()`, which has no clock to read

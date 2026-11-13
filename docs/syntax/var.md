@@ -349,7 +349,7 @@ so there is one cell per slot:
 - one per callsite/iteration for a `state var` declared inside a function,
 - exactly one for a top-level `state var`, the idiom for shared cross-function
   state, since module scope is a single call path. Holding a `Map` in it gives
-  one value per key, which replaces the deprecated `state(key) var`.
+  one value per key, which replaces the removed `state(key) var`.
 
 ## Cross-function assignment
 

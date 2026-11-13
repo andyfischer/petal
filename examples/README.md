@@ -66,7 +66,7 @@ example and asserts it exits cleanly.
 | `closures.ptl` | Closures and HOFs | Closures, lambdas, `map`, `filter`, `reduce` |
 | `state.ptl` | Persistent state | `state` keyword, counters, accumulators |
 | `mutable_cells.ptl` | Mutable slots and where they're needed | `var`/`set`, writes from callbacks, shared boxes, `state var` |
-| `particles.ptl` | Multi-object simulation | Per-iteration keyed `state`, bounce physics |
+| `particles.ptl` | Multi-object simulation | A `Map` in a top-level `state var` keyed by particle id, bounce physics |
 | `state_machine.ptl` | Traffic light controller | Enums + state, tick-based transitions |
 | `fibonacci.ptl` | Recursive and iterative Fibonacci | Recursion, iteration, string interpolation |
 | `reactive_ui.ptl` | React-like component model | State, records, event-driven render |

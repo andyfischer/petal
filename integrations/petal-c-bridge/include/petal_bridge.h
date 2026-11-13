@@ -1590,8 +1590,8 @@ pb_status pb_vm_get_state(pb_vm* vm, const char* name, const pb_value** out);
  *
  * pb_vm_save_state returns the document (NULL with no program loaded; valid
  * until the next call to it). It holds every slot: top-level and module
- * state, and the slots a declaration inside a function, a loop or a
- * state(key) group owns. Call it between runs.
+ * state, and the slots a declaration inside a function or a loop owns.
+ * Call it between runs.
  *
  * pb_vm_load_state REPLACES the state with a document's: a slot the document
  * does not hold starts from its initial value on the next run. The VM must

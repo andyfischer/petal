@@ -41,7 +41,7 @@ end
 ```
 
 See `docs/dev/state-call-paths.md` and `docs/features/memo.md`. (This
-example first used keyed `state(frame)`, which is now deprecated.)
+example first used keyed `state(frame)`, which has since been removed.)
 
 ---
 
@@ -76,7 +76,7 @@ An unkeyed `state` inside a loop body, or inside a function called from the
 loop, gets one cell per iteration index. State that must follow an item
 across reorders and removals by a domain identifier lives in a top-level
 `state var` holding a Map keyed by that identifier (`set hp[item.id] = ...`).
-This used to be `state(item.id) hp = item.hp`, which is now deprecated; a
+This used to be `state(item.id) hp = item.hp`, which has since been removed; a
 loop key syntax for per-item state is deferred. See
 `docs/dev/state-call-paths.md`.
 

@@ -989,8 +989,7 @@ fn factorial(n)
   else n * factorial(n - 1)
 ```
 
-Calls may nest 20,000 deep (5,000 on the way to a `state` that has no
-explicit key). A recursion that goes deeper, usually one that never reaches
+Calls may nest 20,000 deep (5,000 on the way to a `state`). A recursion that goes deeper, usually one that never reaches
 its base case, stops with an error rather than running out of memory:
 
 ```
@@ -2513,8 +2512,9 @@ of a helper hold two independent values, and a function called inside a `for`
 holds one per iteration, keyed by its position, or by the item with
 `for t in tasks key t.id`. A top-level `state var` is
 the one cell that every function shares; holding a [map](#maps) in it gives
-shared state with one value per key. The keyed form `state(key) name = …` is
-deprecated in favour of keyed loops, that map and [`memo`](#memo--a-cached-result).
+shared state with one value per key. The keyed form `state(key) name = …` was
+removed (it is a compile error) in favour of keyed loops, that map and
+[`memo`](#memo--a-cached-result).
 A callback of a higher-order builtin (`map`, `filter`, `reduce`, …) runs once
 per element and has no place of its own, so declaring `state` in one is an
 error; write the loop instead.

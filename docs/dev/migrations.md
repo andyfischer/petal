@@ -40,7 +40,15 @@ first, then everything else works on it.
    the second: it finds the removed `@x` with the lexer, blanks each `@` to a
    space so the file parses with every offset unchanged, and plans its
    rewrite on that parse. Such a migration runs first in `run()`, since the
-   ones after it need the file to parse. When the form is removed from the
+   ones after it need the file to parse. `state_key.rs`
+   (`state-key-deprecated`) is the example of a removed form most of whose
+   sites are left for a hand edit: it finds each `state` + `(` with the
+   lexer, and every migration's parse (`reparse`) and compile gate reads the
+   file through `state_key::blank_keys`, which turns each `(key)` group to
+   spaces (the same offsets, a plain `state`). So a site nobody can rewrite
+   does not hold the other migrations back; only `end-lines`, which formats
+   the real text, waits for the hand edit, and the CLI's `old-imports` puts
+   the keys back after its own edit (`migrate::restore_state_keys`). When the form is removed from the
    *lexer*, the lexer keeps a legacy mode for the migrator alone:
    `colour_literals.rs` reads the removed `#f80` color with `Lexer::legacy`
    (`legacy_lex`), and it and `hash_comments.rs`, which need tokens and

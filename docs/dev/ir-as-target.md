@@ -260,9 +260,9 @@ emitter should not imitate that.
 | `Call` | ≥1 | 0 | — | `inputs=[callable, arg0, ...]`; optional `call_site` ([State keying](#state-keying)) |
 | `MethodCall` | ≥1 | 0 | `{name: ConstantId, hint?: ConstantId}` | `inputs=[object, arg0, ...]`; `hint` (omitted when absent) names a class for live-edit dispatch; optional `call_site` |
 | `BuiltinCall` | ≥0 | 0 | `ConstantId` (builtin name, a String constant) | direct builtin call, resolved by name at lower time; `inputs=[arg0, ...]` — **the way an emitter calls a builtin**; optional `call_site` |
-| `StateInit` | 0 or 1 | 1 | — | `state_key` required; init expression in `child_blocks=[init_block]` (lazy); optional `inputs=[explicit_key]` for `state(expr) name`. With `is_memo: true` it is a `memo(expr) name` declaration: `inputs=[key]` is then required, and no `StateRead`/`StateWrite` may name its `state_key`. `path_pop` is ignored here (the lowering forces 0): a `StateInit` *is* the declaration |
+| `StateInit` | 0 or 1 | 1 | — | `state_key` required; init expression in `child_blocks=[init_block]` (lazy); no inputs for a `state`. With `is_memo: true` it is a `memo(expr) name` declaration: `inputs=[key]` is then required (and a key input without `is_memo`, the removed `state(expr) name`, is rejected), and no `StateRead`/`StateWrite` may name its `state_key`. `path_pop` is ignored here (the lowering forces 0): a `StateInit` *is* the declaration |
 | `StateRead` | 0 | 0 | — | `state_key` required; optional `path_pop` |
-| `StateWrite` | 1 or 2 | 0 | — | `inputs=[value]` or `[value, explicit_key]`, `state_key` required; optional `path_pop` |
+| `StateWrite` | 1 | 0 | — | `inputs=[value]`, `state_key` required; optional `path_pop` |
 | `CellNew` | 1 | 0 | — | allocate the cell behind a `var`; `inputs=[init]` |
 | `CellRead` | 1 | 0 | — | dereference a cell; `inputs=[cell]` |
 | `CellWrite` | 2 | 0 | — | write through a cell (`set x = …`); `inputs=[cell, value]` |
@@ -308,9 +308,11 @@ Rules for an emitter:
   silently lost. The count is static because Petal rejects assigning to a
   captured binding, so a declaration and its writes are always in one
   function.
-- **An explicit `state(expr)` key ignores the path entirely** (and therefore
-  `path_pop`): the slot is `state_key` plus the hash of the key value. That
-  is the way to say "same entity ⇒ same slot, whoever asks".
+- **There is no keyed `state`.** The absolute `state(expr) name` (a
+  `StateInit` with a key input and no `is_memo`, and the two-input
+  `StateWrite` that wrote its slot) was removed on 2026-11-13; the validator
+  rejects both. "Same entity ⇒ same slot" is a `LoopKey` (below) or a `Map`
+  held in a top-level `state var` cell.
 - **A `LoopKey` term keys a loop's iterations by value, relatively.** Each
   loop iteration contributes one path part, its 0-based index; a `LoopKey`
   at the head of a `for` body swaps that part for the hash of its input, so
@@ -318,10 +320,11 @@ Rules for an emitter:
   path is untouched, and the part is still one part, so `path_pop` counts it
   like any loop step. An equal key twice in one run of the loop is a runtime
   error.
-- **`is_memo` makes a keyed `StateInit` a cache entry** (`memo(expr) name`,
-  [memo.md](../features/memo.md)). The slot is addressed the same way, but
-  under its own kind of key, so it never collides with a `state(expr)` slot,
-  and a host never sees it as state: dumps, `--state-storage`, snapshots and
+- **`is_memo` makes a `StateInit` with a key input a cache entry**
+  (`memo(expr) name`, [memo.md](../features/memo.md)). The slot ignores the
+  path entirely (and therefore `path_pop`): it is `state_key` plus the hash
+  of the key value, under its own kind of key, so it never collides with a
+  `state` slot, and a host never sees it as state: dumps, `--state-storage`, snapshots and
   a reload leave it out. Emit it only for a pure initializer.
 
 ### Block

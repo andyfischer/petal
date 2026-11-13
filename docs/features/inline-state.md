@@ -13,7 +13,7 @@ able to preserve that state across a live code modification.
 - [State is nested](#state-is-nested)
 - [Interaction with control flow](#interaction-with-control-flow)
   - [Keyed loops](#keyed-loops)
-- [Deprecated: `state(key)`](#deprecated-statekey)
+- [Removed: `state(key)`](#removed-statekey)
 - [Sharing on purpose](#sharing-on-purpose)
 - [State is not allowed in callbacks](#state-is-not-allowed-in-callbacks)
 - [`state var`](#state-var)
@@ -153,31 +153,36 @@ fn health(id, damage)
 print(health("goblin", 10), health("orc", 30), health("goblin", 5))  # 90 70 85
 ```
 
-## Deprecated: `state(key)`
+## Removed: `state(key)`
 
-`state(key) name = init` keys its slot by the key's value and ignores the
-call path: every caller that reaches the declaration with an equal key lands
-on one slot. That is a global hidden in a function, so the form is
-deprecated. `petal lint` warns about each one, under the rule
-`state-key-deprecated`. Each use is better written as one of three things:
+Until 2026-11-13 a `state` could carry a key: `state(key) name = init` keyed
+its slot by the key's value and ignored the call path, so every caller that
+reached the declaration with an equal key landed on one slot. That is a
+global hidden in a function, and it broke the rule that state is nested per
+call path. The form was deprecated on 2026-10-22 and is now a compile error
+that names the replacements. Each use is written as one of four things:
 
+- **State per item of a list:** a [keyed loop](#keyed-loops),
+  `for t in tasks key t.id do`, with a plain `state` in its body (or in the
+  functions it calls).
+- **Sharing on purpose:** a top-level `state var` holding a Map, as in
+  [Sharing on purpose](#sharing-on-purpose).
 - **A cache of a pure result:** [`memo(key)`](memo.md), but only when the
   initializer reads nothing except its key. A memo is shared by every
   caller with an equal key, and it is recomputed after a reload or a run
   that does not reach it. So `memo(k) v = k * scale` hands the first
   caller's `scale` to every caller, and `memo(id) tint = random(0.0, 1.0)`
   draws a new tint after each reload.
-- **Sharing on purpose:** a top-level `state var` holding a Map, as in
-  [Sharing on purpose](#sharing-on-purpose).
 - **One slot per caller:** plain `state`.
 
-`petal migrate-old-code` makes the `memo` rewrite only when it can see from the
-syntax that the initializer is a pure function of the key: built from
+`petal migrate-old-code` (migration `state-key-deprecated`) still reads the
+removed form. It makes the `memo` rewrite only when it can see from the
+syntax that the initializer is a pure function of the key (built from
 literals, the names the key reads, operators, and list, record, field and
-index forms. It does not make the rewrite for an initializer that calls
-anything, including a pure helper such as `measure(text)`. Those sites are
-reported for a hand edit, and the author chooses. Silence a site you keep with
-`// petal-lint-ignore state-key-deprecated`.
+index forms) and nothing writes the slot. It does not make the rewrite for
+an initializer that calls anything, including a pure helper such as
+`measure(text)`. Those sites are reported for a hand edit, and the author
+chooses among the four.
 
 ## State is not allowed in callbacks
 

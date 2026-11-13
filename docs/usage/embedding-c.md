@@ -1438,8 +1438,7 @@ file. The format is the one `petal run --state-storage` writes
 and one entry per slot.
 
 - **Every slot is in it**: top-level and module state, and the slots that a
-  `state` inside a function, a loop or a `state(key)` group owns, one per
-  call path.
+  `state` inside a function or a loop owns, one per call path.
 - **Loading replaces the state.** A slot the document does not hold is
   removed and starts from its initial value on the next run, which is what
   an undo wants: state that first appeared after the save point is gone

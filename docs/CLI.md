@@ -232,7 +232,7 @@ $ petal run --state-storage counter.json counter.ptl
 
 The file is created if it does not exist, and a missing or empty file is a
 first run. It holds every slot: top-level state, and the slots a declaration
-inside a function, a loop or a `state(key)` group owns (one per call path). It
+inside a function or a loop owns (one per call path). It
 is JSON:
 
 ```json
@@ -863,8 +863,9 @@ it says which helpers re-run every frame and what to change.
 **Old syntax is not lint's.** Rewriting a deprecated or removed form into
 the current one is [`petal migrate-old-code`](#migrate-old-code--rewrite-old-syntax),
 and `--fix` leaves such forms alone. The compile check warns about most of
-them (`const X = e`, `config let`, `state(key)`) and its warning says to run
-that command; `old-syntax` reports the one it does not. Before 2026-11-09
+them (`const X = e`, `config let`) and its warning says to run
+that command; `old-syntax` reports the one it does not. A removed form
+(`state(key)`, an `@` rebind) is an error that names the command. Before 2026-11-09
 these were the lint rules `prefer-pub`, `const-decl-deprecated`,
 `config-let-deprecated` and `state-key-deprecated`; naming one in
 `--rules-include` or `--rules-exclude` now says where it went.
@@ -1064,7 +1065,7 @@ one is an error that names the command.
 | `export-to-pub` | `export fn f` → `pub fn f`, on any declaration or `import` (trailing comments kept in their column) | accepted without a warning; `petal lint` reports it (`old-syntax`) |
 | `const-decl-deprecated` | `const X = e` → `let X = const(e)`, literals included, with a closing `)` after a multi-line initializer and trailing comments kept in their column ([plan](tasks/lifecycle-annotation-functions-refactor.md)) | warns (Phase 5); removed in Phase 6 |
 | `config-let-deprecated` | `config let X = v` → `let X = tunable(v)`, or only `config` dropped when `v` is already a `tunable(…)` call | warns (Phase 5); removed in Phase 6 |
-| `state-key-deprecated` | `state(k) x = e` → `memo(k) x = e` where the slot is never written and `e` is plainly a pure function of the key (no calls, no `get`, nothing the key does not hold: with the key `[g.id]`, `g.id` and what is read through it, but not `g.name` or `g`): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Any other `state(key)` is listed for a hand edit ([Deprecated: `state(key)`](features/inline-state.md#deprecated-statekey)): a top-level `state var` Map for state shared on purpose, plain `state` for per-instance state | warns |
+| `state-key-deprecated` | `state(k) x = e` → `memo(k) x = e` where the slot is never written and `e` is plainly a pure function of the key (no calls, no `get`, nothing the key does not hold: with the key `[g.id]`, `g.id` and what is read through it, but not `g.name` or `g`): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Any other `state(key)` is listed for a hand edit ([Removed: `state(key)`](features/inline-state.md#removed-statekey)): a keyed loop (`for t in xs key t.id do`) for state per item, a top-level `state var` Map for state shared on purpose, plain `state` for per-instance state. The parser no longer reads the form, so the migration finds each `state` + `(` itself, and the migrations before it plan on the file with each key group read as nothing: a site left for a hand edit does not hold the other rewrites back (only `end-lines`, which formats the file, waits for it) | removed 2026-11-13 (deprecated 2026-10-22): a parse error that names the command |
 | `end-lines` | the `end` on a line of its own: [indentation closes the block](syntax/indentation.md). The file is formatted first (`petal fmt`: a file whose indentation disagrees with its `end`s is indented by them), then each `end` alone on its line is deleted and `end)` / `end]` / `end}` keep the bracket, at the same column. A comment after a deleted `end` stays, on a line of its own at the block's column. What stays: an `end` on the line of the block it closes (`if c then a else b end`); `end,` (the next argument follows: two block lambdas in one call); `end \|> f` and `end.len()`; the `end` of a block with no statement; an `end` before a line that starts with an operator, which would otherwise continue the block's last statement; and any other `end` the parse needs (`if c then a; b` / `end`). The migrated text must parse to the same AST as the original, or the file keeps what the other migrations wrote and is listed as skipped. A file with no `end` at the start of a line is not reformatted. `# petal-lint-ignore-file end-lines` keeps a file's `end`s | still the language: `end` is optional, with no warning and no lint report |
 | `old-imports` | import lines for the current module system: everything [`fix-imports`](#fix-imports--migrate-imports) does | removed: an error |
 
@@ -1088,7 +1089,7 @@ game/main.ptl
   4:1: const-decl-deprecated: `const N = e` is deprecated; write `let N = const(e)`
   9:1: end-lines: 3 `end` line(s) removed: indentation closes the block
   old-imports: line 2: `import level` -> `import ./level`
-game/hp.ptl:2:3: state-key-deprecated: `state(…) h` is deprecated: … (left for a hand edit)
+game/hp.ptl:2:3: state-key-deprecated: `state(…) h` was removed: … (left for a hand edit)
 1 site(s) in an old form are left for a hand edit
 migrated 1 of 2 file(s)
   export-to-pub          1 site(s) in 1 file(s)
@@ -1563,7 +1564,7 @@ The rewrite, over the mentions that resolve to the target:
 | A read inside a nested `fn` or lambda (a default parameter value included) | `x` | `get x` |
 | A read in the declaring function | `x` | `x` |
 
-`pub`, a `state(key)` group and a type annotation stay where they are. The root
+`pub` and a type annotation stay where they are. The root
 of a `set` target and the read a compound `set x += 1` implies are not given a
 `get`; neither has a place to write one.
 
@@ -2416,7 +2417,7 @@ Let m @5:1-8:4
 
 Structural sub-parts that are not themselves nodes get label lines without
 spans: `Then`/`Else` under an `If`, `Arm <pattern>` and `Guard` under a
-`Match`, `Key` under an explicit-key `State` and under every `Memo`, `Part`/`Prop`/`Text` inside
+`Match`, `Key` under every `Memo`, `Part`/`Prop`/`Text` inside
 string interpolations and elements, `Field`/`Spread` inside records. Both
 forms are debug views (see
 [Dump format conventions](#dump-format-conventions)); `--json` is the
@@ -2492,7 +2493,7 @@ Consumers should treat the single key of the `kind` object as the node type
 | `Return` | `{"Return": Expr \| null}` |
 | `Break` | `"Break"` |
 | `Continue` | `"Continue"` |
-| `State` | `{"State": {"name": string, "ty": TypeAnn (omitted when un-annotated), "init": Expr, "key": Expr (omitted when unkeyed), "is_var": bool (omitted when false)}}` — `ty` is the optional declared type annotation; `key` set when the source uses the `state(expr) name = init` per-iteration form; `is_var` for `state var` |
+| `State` | `{"State": {"name": string, "ty": TypeAnn (omitted when un-annotated), "init": Expr, "is_var": bool (omitted when false)}}` — `ty` is the optional declared type annotation; `is_var` for `state var` |
 | `Memo` | `{"Memo": {"name": string, "ty": TypeAnn (omitted when un-annotated), "key": Expr, "init": Expr}}` — `memo(key) name = init`, a content-keyed cache ([memo.md](features/memo.md)). `key` is required, and there is no `var` form |
 | `NativeFn` | `{"NativeFn": {"name": string, "class": string (omitted for a plain function), "params": Param[], "rest": string (omitted when there is no `...rest`), "ret": TypeAnn (omitted when un-annotated)}}` — a `native fn` declaration in an interface package |
 | `Import` | `{"Import": {"module": string, "alias": string (omitted when there is no `as`), "names": string[] (omitted for a plain import)}}` — `import json: json_parse` is `{"module": "json", "names": ["json_parse"]}` |
@@ -2789,9 +2790,9 @@ legacy documents that carry it (and no block `terms` arrays) still load.
 | Call | `"Call"` | [callable, arg0, arg1, ...] | none | |
 | MethodCall | `{"MethodCall": {"name": cid, "hint": cid?}}` | [object, arg0, arg1, ...] | none | Method name as ConstantId; tries record field first, then the receiver's class, then a builtin with `object` prepended. `hint` (omitted when absent) names a class for live-edit dispatch. |
 | BuiltinCall | `{"BuiltinCall": cid}` | [arg0, arg1, ...] | none | Direct builtin call; `cid` is a String constant holding the builtin's name, resolved by name at lower time. |
-| StateInit | `"StateInit"` | [] or [explicit_key] | [init_block] | `state_key` set. Init expression lives in `child_blocks[0]` for lazy evaluation — only entered when the runtime key isn't yet in the persistent state map. Optional `explicit_key` is the value computed for `state(expr) name`. With `is_memo` set it is a `memo(expr) name` declaration and the key is required. |
+| StateInit | `"StateInit"` | [] or [memo_key] | [init_block] | `state_key` set. Init expression lives in `child_blocks[0]` for lazy evaluation — only entered when the runtime key isn't yet in the persistent state map. With `is_memo` set it is a `memo(expr) name` declaration, and its one input is the key's value; a `state` has no inputs. |
 | StateRead | `"StateRead"` | none | none | `state_key` set |
-| StateWrite | `"StateWrite"` | [value] or [value, explicit_key] | none | `state_key` set. Forwards the same `explicit_key` from the matching `StateInit` so the runtime resolves to the same `RuntimeStateKey`. |
+| StateWrite | `"StateWrite"` | [value] | none | `state_key` set: the slot is the matching `StateInit`'s, at the live call path less `path_pop`. |
 | CellNew | `"CellNew"` | [init] | none | Allocate the cell behind a `var`. The one op that produces a `Value::Cell`. |
 | CellRead | `"CellRead"` | [cell] | none | Dereference a cell — every source-level read of a `var`. |
 | CellWrite | `"CellWrite"` | [cell, value] | none | Write through a cell (`set x = …`). Yields the written value. |

@@ -57,7 +57,7 @@ extremes against the exact characterization).
 | `num_eq_is_transitive`, `num_lt_is_transitive`, `num_eq_lt_compose` | `==` and `<` on numbers are transitive and compose, across int and float. |
 | `num_total_cmp_is_antisymmetric`, `num_total_cmp_is_transitive` | The `sort` order is a total order (the precondition of `slice::sort_by`, which panics otherwise). |
 | `num_total_cmp_agrees_with_lt` | The `sort` order agrees with `<` wherever `<` is defined. |
-| `num_key_matches_eq` | The hash key of a number agrees with `==` in both directions, so `state(key)` and a `Map` treat `==` keys as one key. |
+| `num_key_matches_eq` | The hash key of a number agrees with `==` in both directions, so `memo(key)`, a keyed loop and a `Map` treat `==` keys as one key. |
 | `resolve_index_is_exact`, `checked_index_is_exact` | `xs[i]` and `xs[i] = v` address slot `i` (or `len + i` for negative `i`) exactly when it exists, with no truncating `i64 → usize` cast on 32-bit (wasm) targets. A string index `s[i]` goes through the same kernel with `len` as the code-point count. |
 | `clamp_slice_bound_is_exact` | `slice` bounds are the resolved index clamped into `0..=len`, for a list and (in code points) for a string. |
 | `range_nth_is_exact` | Every element of `range(start, end, step)` is computed without wraparound. (The length, `range_len`, is checked exhaustively; see above.) |
@@ -83,7 +83,7 @@ fails if the bug comes back.
 | `==` not transitive across int/float | Kani `num_eq_is_transitive`; exhaustive value laws | `9007199254740993 == 9007199254740992.0` → `true` | Exact comparison |
 | NaN ordering | Kani `num_cmp_is_antisymmetric` (unordered iff NaN) | `nan <= 1` and `nan >= 1` both `true` | All orderings with NaN are `false` |
 | `sort` of a list with NaN aborts the process | Kani `num_total_cmp_is_transitive`; `small_scope` | Rust's `sort_by` panics: "comparison function does not correctly implement a total order" | NaNs sort last |
-| `state(key)` with a record or enum key gets a fresh slot every call | Exhaustive value laws (hash consistency); Kani `num_key_matches_eq` | Key hashed by heap id; state reset every frame | Hashes content, consistent with `==` |
+| A keyed slot (then `state(key)`; today `memo(key)` and `for … key`) with a record or enum key gets a fresh slot every call | Exhaustive value laws (hash consistency); Kani `num_key_matches_eq` | Key hashed by heap id; state reset every frame | Hashes content, consistent with `==` |
 | `-x` for the smallest int panics | Kani `int_neg_is_exact`; `small_scope` | Debug: panic. Release: silent wrap | Runtime error |
 | `abs(x)` for the smallest int panics | Kani `int_abs_is_exact` | Same | Runtime error |
 | `i64::MIN % -1` reports overflow | Kani `int_mod_errors_are_exact` | "Integer overflow" | `0` |

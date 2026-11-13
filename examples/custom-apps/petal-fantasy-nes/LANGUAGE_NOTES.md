@@ -68,7 +68,7 @@ call path, so each callsite of a helper gets its own cell, and a top-level
 `state var` read with `get`/`set` is the way to share one. A cell whose
 identity outlives its callsite (a menu cursor, a button's repeat phase) is an
 entry in a top-level `state var` holding a Map, keyed by that identity; the
-prelude used `state(key)` for these until it was deprecated. The prelude's
+prelude used `state(key)` for these until it was deprecated (it is now removed). The prelude's
 accessor-wrapper idiom was deleted as a result. Rules: `docs/dev/state-call-paths.md`; user-facing description in the
 language guide's State section.
 

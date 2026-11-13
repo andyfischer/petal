@@ -94,8 +94,8 @@ it, so a `state` inside a function holds one value per callsite and loop
 iteration. That shows up here only in the key strings `state` returns: a
 top-level declaration is its bare (module-qualified) name (`score`,
 `ui::theme`), while a pathed slot renders its path with the name last:
-`counter#1/count`, `[3]/row/hovered`, `k1234…/leaf` (a call step, a loop
-step, the key step of a deprecated `state(key)`). A pathed key always contains a `/`; a
+`counter#1/count`, `[3]/row/hovered`, `[key=7]/row/hovered` (a call step, a loop
+step, the step of a `for … key` loop). A pathed key always contains a `/`; a
 top-level one never does.
 
 `set_state` addresses top-level names only. A pathed key is rejected with the

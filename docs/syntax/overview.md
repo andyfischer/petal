@@ -266,7 +266,7 @@ fn hit(id)
 to the next and across a hot reload. A slot is keyed by the call path that
 reached the declaration; `state var` makes the slot a cell, and a top-level
 `state var` holding a map is the way to keep one value per id. The keyed form
-`state(key)` is deprecated. See [Inline state](../features/inline-state.md).
+`state(key)` was removed. See [Inline state](../features/inline-state.md).
 
 ### `fn` (function declaration)
 

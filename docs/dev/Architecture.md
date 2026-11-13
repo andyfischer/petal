@@ -536,8 +536,9 @@ result, source line/column) into a ring buffer. Default capacity is
 A slot is a **declaration** plus the **call path that reached it** — the
 React-`useState` model. One `state` declaration inside a function therefore
 holds one value per callsite, per loop iteration around that callsite, and
-per recursion depth. An explicit `state(expr)` key (deprecated) is absolute
-and ignores the call path.
+per recursion depth. (The absolute `state(expr)` key that ignored the call
+path was removed on 2026-11-13; a `memo(expr)` is the one absolute slot left,
+and it is a cache, not state.)
 
 The declaration id (`Term::state_key`, a `StateKey`) and the callsite id
 (`Term::call_site`) are both built in `compiler/state_ids.rs` from names and

@@ -86,7 +86,7 @@ file down to the declaration.
   ```
 
   Keys must be unique within one run of the loop. The keyed form
-  `state(e.id) hp = 100` is deprecated.
+  `state(e.id) hp = 100` was removed and is a compile error.
 - Cells shared across functions on purpose go at the top level as
   `state var`, read and written with `get` / `set`.
 

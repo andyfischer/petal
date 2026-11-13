@@ -299,7 +299,7 @@ Consequences worth memorizing:
 - State that is shared on purpose lives in a top-level `state var`, a `Map`
   keyed by id when there is one value per entity; remove an entry when its
   entity goes away. A pure value computed from a key is a `memo(key)`.
-  `state(id)` is deprecated.
+  The old keyed form `state(id) x = …` was removed and is a compile error.
 - A callback of `map`, `filter`, `reduce`, `forEach`, `sort_by`, `sort`,
   `any`, `all` or `find` may not declare `state`, itself or in anything it
   calls: it runs once per element, with no place of its own to keep a slot

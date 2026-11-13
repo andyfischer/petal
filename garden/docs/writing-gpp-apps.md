@@ -232,8 +232,8 @@ is one cell for the whole panel. A `state` declared inside a function is keyed
 by the call path that reached it, so each call site (and each iteration of a
 loop around the call) gets its own cell. That is what you want for a reusable
 row helper (`fn row(item) state hovered = false … end`), and not what you want
-for a value two functions share. Key a per-item cell with `state(item.id)` if
-it must follow the item through a reorder.
+for a value two functions share. Key the loop, `for item in items key item.id
+do`, if a per-item cell must follow the item through a reorder.
 
 **Drawing** in panel-local pixels, colors as `:rrggbb`: `draw_rect(rect(x, y,
 w, h), color)`, `draw_text(s, {x, y}, size, color)`, `draw_line`,

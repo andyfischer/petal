@@ -251,20 +251,3 @@ print(bump())
     assert_eq!(out, ["1", "1", "1"]);
 }
 
-#[test]
-fn an_explicit_key_still_slots_by_its_value() {
-    // An explicit key is absolute — it ignores the call path — so the two
-    // callsites of `cell` per id share a slot even though their paths differ.
-    let out = run("\
-fn cell(id, amount)
-  state(id) total = 0
-  total += amount
-  total
-end
-print(cell(\"a\", 1))
-print(cell(\"b\", 10))
-print(cell(\"a\", 1))
-print(cell(\"b\", 10))
-");
-    assert_eq!(out, ["1", "10", "2", "20"]);
-}

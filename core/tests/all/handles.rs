@@ -4,7 +4,7 @@
 // Scope: minting handles host-side, passing them into scripts via bindings,
 // round-tripping, `type()`, equality, truthiness, and host-side eq/hash.
 // NOT in scope (later chunks): method dispatch through `call_method`, the
-// `is_valid` builtin, `state(h)`, JSON state encoding.
+// `is_valid` builtin, a handle as a key, JSON state encoding.
 //
 // Target API (agreed design, in the petal crate root / core/src/handle.rs):
 //

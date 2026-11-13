@@ -871,21 +871,18 @@ impl Cmp {
                     name: n1,
                     ty: t1,
                     init: i1,
-                    key: k1,
                     is_var: v1,
                 },
                 StmtKind::State {
                     name: n2,
                     ty: t2,
                     init: i2,
-                    key: k2,
                     is_var: v2,
                 },
             ) => {
                 n1 == n2
                     && t1 == t2
                     && v1 == v2
-                    && self.opt_expr(k1.as_ref(), k2.as_ref())
                     && self.expr(i1, i2)
             }
             (

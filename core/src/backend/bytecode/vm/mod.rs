@@ -77,8 +77,8 @@ pub const MAX_CALL_DEPTH: usize = 20_000;
 /// by the whole call path that reached it, so a function that declares state
 /// and recurses `d` deep keeps `d` keys of up to `d` parts each: 480 MB at
 /// 5,000, which was the whole call limit until it was raised, and would be
-/// 2 GB at 10,000. An explicit `state(key)` is keyed by its value, not the
-/// path, and is not limited.
+/// 2 GB at 10,000. A `memo(key)` is keyed by its value, not the path, and is
+/// not limited.
 pub const MAX_STATE_CALL_DEPTH: usize = 5_000;
 
 /// The message a `state` access too deep to key fails with.
@@ -87,7 +87,7 @@ pub(crate) fn state_depth_message() -> String {
         "Stack overflow: `state` used more than {MAX_STATE_CALL_DEPTH} nested calls deep. \
          Every call on the way to a `state` gives it a separate slot, so a recursion \
          this deep would keep one per level; move the state out of the recursive \
-         function, or give it an explicit key with state(key)"
+         function (a top-level `state var` holding a Map keeps one value per key)"
     )
 }
 

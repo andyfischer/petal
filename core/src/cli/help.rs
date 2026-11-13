@@ -626,10 +626,12 @@ DESCRIPTION
               config let X = v becomes let X = tunable(v), or only config is
               dropped when v is already a tunable(...) call
        state-key-deprecated
-              state(key) x = e becomes memo(key) x = e when nothing writes x
-              and e is built from its key alone (no calls). Any other
-              state(key) is reported and left for a hand edit: a top-level
-              state var holding a Map, or plain state (kept per call path)
+              state(key), which was removed: state(key) x = e becomes
+              memo(key) x = e when nothing writes x and e is built from its
+              key alone (no calls). Any other state(key) is reported and left
+              for a hand edit: a keyed loop (for t in xs key t.id do), a
+              top-level state var holding a Map, or plain state (kept per
+              call path)
        end-lines
               indentation closes a block, so the 'end' on a line of its own
               goes. The file is formatted first (as 'petal fmt' does: a file
@@ -1014,7 +1016,7 @@ DESCRIPTION
               a deprecated form the compiler accepts without a warning (the
               'export' spelling of 'pub'). Rewriting old syntax is 'petal
               migrate-old-code', not --fix; the deprecated forms the compile
-              check warns about (const X = e, config let, state(key)) are
+              check warns about (const X = e, config let) are
               the same command's
 
        To silence a rule, put '# petal-lint-ignore <rule> [<rule>...]' on

@@ -113,14 +113,11 @@ describe("type annotations on `state`", () => {
     expect(stateStmt(showAstJson("state n = 0")).ty).toBeUndefined();
   });
 
-  it("parses annotations on `state var` and on a keyed state", () => {
+  it("parses annotations on `state var`", () => {
     expect(stateStmt(showAstJson("state var n: float = 0.0")).ty).toEqual({
       name: "float",
       resolved: "Float",
     });
-    const keyed = stateStmt(showAstJson('state(1) n: string = "a"'));
-    expect(keyed.ty).toEqual({ name: "string", resolved: "String" });
-    expect(keyed.key).not.toBeNull();
   });
 
   it("preserves an unknown type name on state", () => {

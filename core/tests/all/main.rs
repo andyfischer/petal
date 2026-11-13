@@ -88,7 +88,7 @@ mod state_call_paths;
 mod state_decl_ids;
 mod state_in_callback_check;
 mod state_json_paths;
-mod state_key_deprecated;
+mod state_key_removed;
 mod state_lifecycle;
 mod state_loop_keys;
 mod static_audit;

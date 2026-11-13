@@ -21,7 +21,7 @@ describe("state keyword", () => {
   it("StateInit has its init expression in a child block (lazy init)", () => {
     // The init expression is compiled into a child block so it only runs
     // on the first encounter of the runtime state key. StateInit's `inputs`
-    // hold only the explicit key (if any), not the init value.
+    // hold only a memo's key, not the init value.
     const ir = showIrJson("state count = 0");
     const init = termsByOp(ir, "StateInit")[0];
     // schema 0.2 omits empty `inputs`, and blocks carry an ordered `terms`

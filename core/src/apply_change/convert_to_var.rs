@@ -26,7 +26,7 @@
 //! binding, or a `fn` of that name. Within that:
 //!
 //! - the declaration's keyword changes: `let` → `var`, `state` → `state var`
-//!   (`pub`, a `state(key)` group and a type annotation stay where they are);
+//!   (`pub` and a type annotation stay where they are);
 //! - every `=` write rooted at the name gains `set`: `x = …`, `x += …`,
 //!   `x.f = …`, `x[i] = …`, in the declaring function and in nested ones;
 //! - every read inside a nested `fn` or lambda — a default parameter value
@@ -278,8 +278,7 @@ fn find_declaration(stmts: &[Stmt], offset: u32) -> Option<(Stmt, Vec<Stmt>)> {
 }
 
 /// The splice that changes the declaration's keyword: `let` → `var`, or
-/// `var ` inserted in front of a `state`'s name (after any `state(key)`
-/// group). Found in the token stream, so a comment or an odd layout between
+/// `var ` inserted in front of a `state`'s name. Found in the token stream, so a comment or an odd layout between
 /// the keyword and the name cannot mislead it.
 fn keyword_splice(source: &str, decl: &Stmt, name: &str) -> Result<Splice, String> {
     let lost = || format!("internal error: could not find the keyword declaring `{name}`");
@@ -308,29 +307,11 @@ fn keyword_splice(source: &str, decl: &Stmt, name: &str) -> Result<Splice, Strin
             })
         }
         StmtKind::State { .. } => {
-            let mut i = tokens
+            let i = tokens
                 .iter()
                 .position(|(t, _)| matches!(t, Token::State))
                 .ok_or_else(lost)?
                 + 1;
-            // Step over a `(key)` group, which may hold parentheses itself.
-            if tokens
-                .get(i)
-                .is_some_and(|(t, _)| matches!(t, Token::LParen))
-            {
-                let mut depth = 0usize;
-                loop {
-                    match tokens.get(i).ok_or_else(lost)?.0 {
-                        Token::LParen => depth += 1,
-                        Token::RParen => depth -= 1,
-                        _ => {}
-                    }
-                    i += 1;
-                    if depth == 0 {
-                        break;
-                    }
-                }
-            }
             match tokens.get(i) {
                 Some((t, at)) if is_name(t) => Ok(Splice {
                     start: *at,

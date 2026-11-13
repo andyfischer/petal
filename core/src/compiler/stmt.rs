@@ -213,10 +213,9 @@ impl Compiler {
                 // does for `let`/`fn`.
                 ty: _,
                 init,
-                key,
                 is_var,
             } => {
-                self.compile_state_decl(name, init, key.as_ref(), *is_var, false, stmt_span);
+                self.compile_state_decl(name, init, None, *is_var, false, stmt_span);
             }
 
             StmtKind::Memo { name, ty: _, key, init } => {
@@ -322,17 +321,17 @@ impl Compiler {
         while_tid
     }
 
-    /// `state name = init` / `state(key) name = init`, and `memo(key) name =
-    /// init` (`is_memo`), which is a keyed `StateInit` flagged as a cache: the
-    /// same lazy init and the same absolute slot, but keyed under
+    /// `state name = init`, and `memo(key) name = init` (`is_memo`), which is
+    /// a keyed `StateInit` flagged as a cache: the same lazy init, but an
+    /// absolute slot keyed under
     /// [`PathPart::Memo`](crate::stack::PathPart::Memo) and bound immutably.
     ///
     /// Lazy initialization: the init expression lives in a child block that is
     /// only entered the first time this declaration is reached on a given call
-    /// path (the `(decl id, path)` slot). The explicit key (if any) is computed
-    /// eagerly in the parent block — its value alone determines which slot to
-    /// consult, since a keyed slot ignores the path
-    /// (docs/dev/state-call-paths.md §2.2).
+    /// path (the `(decl id, path)` slot). A memo's key is computed eagerly in
+    /// the parent block — its value alone determines which slot to consult,
+    /// since a memo's slot ignores the path (docs/features/memo.md). `key` is
+    /// `Some` exactly when `is_memo`.
     fn compile_state_decl(
         &mut self,
         name: &str,
@@ -350,7 +349,7 @@ impl Compiler {
         let key_tid = key.map(|key_expr| self.compile_expr(key_expr));
 
         // StateInit term sits in the current block. Inputs hold only
-        // the (optional) explicit key. The init value is delivered
+        // a memo's key. The init value is delivered
         // via the child block's last term value (see eval).
         let mut inputs: SmallVec<[TermId; 4]> = smallvec![];
         if let Some(k) = key_tid {
@@ -833,15 +832,11 @@ impl Compiler {
             && let Some(init_tid) = self.find_state_init(existing_tid)
         {
             let state_key = self.terms[init_tid.0 as usize].state_key;
-            // StateInit's inputs are [explicit_key]? (the init value
-            // lives in a child block for lazy evaluation). Forward the
-            // key to StateWrite so the runtime resolves to the same
-            // RuntimeStateKey.
-            let mut write_inputs: SmallVec<[TermId; 4]> = smallvec![val_tid];
-            if let Some(&key_input) = self.terms[init_tid.0 as usize].inputs.first() {
-                write_inputs.push(key_input);
-            }
-            let write_tid = self.emit_term(TermOp::StateWrite, write_inputs, None);
+            // The slot is the declaration's, at the frame's own path (less
+            // `path_pop`): the write carries the value and nothing else. A
+            // `memo`, the one keyed declaration, is never written: the
+            // compiler rejects every write to its name.
+            let write_tid = self.emit_term(TermOp::StateWrite, smallvec![val_tid], None);
             self.terms[write_tid.0 as usize].state_key = state_key;
             // A write nested deeper in loops than the declaration still belongs
             // to the declaration's slot: record how many loop levels to pop.

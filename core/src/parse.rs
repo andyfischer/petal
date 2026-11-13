@@ -1827,18 +1827,14 @@ impl Parser {
         }
         self.advance(); // consume 'state'
 
-        // Check for explicit key: state(expr) name = init
-        let key = if matches!(self.peek(), Token::LParen) {
-            self.advance(); // consume '('
-            let key_expr = self.parse_expr()?;
-            self.expect(&Token::RParen)?;
-            Some(key_expr)
-        } else {
-            None
-        };
+        // `state(key) name = init`, absolute keyed state, was removed on
+        // 2026-11-13: one slot per key value whatever call path reached it,
+        // a global hidden in a function. `petal migrate-old-code`
+        // (`state-key-deprecated`) still reads it.
+        if matches!(self.peek(), Token::LParen) {
+            return Err(self.error_at_current(keyed_state_removed_message()));
+        }
 
-        // `state(key) var name = init` — the `var` modifier follows the
-        // optional key group, mirroring the order they are written.
         let is_var = if matches!(self.peek(), Token::Var) {
             self.advance();
             true
@@ -1857,7 +1853,6 @@ impl Parser {
                 name,
                 ty,
                 init,
-                key,
                 is_var,
             },
             start,
@@ -4336,6 +4331,22 @@ fn missing_block_message(opener: &str, indent: u32) -> String {
     format!(
         "expected an indented block after {opener}: the next line must start right of \
          column {indent}, or the body goes on the same line"
+    )
+}
+
+/// The error for `state(key) name = init`, the absolute keyed form of
+/// `state`, removed on 2026-11-13 (deprecated 2026-10-22). It names what
+/// replaces it and the tool that still reads it.
+pub(crate) fn keyed_state_removed_message() -> String {
+    format!(
+        "`state(key)` was removed: a keyed slot ignored the call path, so it was a shared \
+         global hidden in a function. Write one of: a keyed loop (`for t in xs key t.id do`, \
+         with a plain `state` in its body) for per-item state; a top-level `state var` \
+         holding a `Map()` (`set m[k] = v`) for state shared on purpose; `memo(key) name = \
+         init` for a cache whose initializer reads only its key; or plain `state` (kept per \
+         call path) for per-instance state. To rewrite the uses that can be rewritten \
+         safely, {} [state-key-deprecated]",
+        crate::migrate::RUN_HINT
     )
 }
 

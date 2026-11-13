@@ -18,7 +18,6 @@ pub use enums::collect_enums;
 mod expr;
 mod function;
 pub(crate) mod hint_names;
-pub(crate) mod keyed_state;
 mod match_check;
 mod autodiff_removed;
 pub(crate) mod moved_widgets;
@@ -1062,11 +1061,9 @@ impl Compiler {
         }
         self.warnings.extend(misplaced_const_decls(&stmts));
         self.warnings.extend(builtin_class_shadows(&stmts, is_entry));
-        // `state(key)` is deprecated; a bundled first-party package's own
-        // uses are not this program's author's to change.
+        // A bundled first-party package's own uses are not this program's
+        // author's to change.
         if !is_bundled_copy(module) {
-            self.warnings
-                .extend(keyed_state::deprecated_keyed_states(&stmts, &module.source));
             // `const X = e` and `config let X = v` are deprecated
             // (docs/tasks/lifecycle-annotation-functions-refactor.md, Phase 5).
             self.warnings

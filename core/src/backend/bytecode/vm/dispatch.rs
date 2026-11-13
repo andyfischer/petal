@@ -604,7 +604,7 @@ impl<'a> Vm<'a> {
                 if self.stack.callback.is_some() {
                     return Err(self.state_in_callback(origin));
                 }
-                let key = self.state_key(fi, *base, None, *path_pop, false)?;
+                let key = self.state_key(fi, *base, None, *path_pop)?;
                 self.stack.touch_state(&key);
                 if let Some(ip) = self.static_audit_site() {
                     self.static_audit.state_access(ip, origin);
@@ -629,8 +629,9 @@ impl<'a> Vm<'a> {
                     return Err(self.state_in_callback(origin));
                 }
                 let val_v = self.reg(fi, *val);
-                let explicit = key.map(|r| self.reg(fi, r));
-                let k = self.state_key(fi, *base, explicit, *path_pop, *memo)?;
+                // Only a memo's commit write carries a key.
+                let memo_key = key.filter(|_| *memo).map(|r| self.reg(fi, r));
+                let k = self.state_key(fi, *base, memo_key, *path_pop)?;
                 self.stack.touch_state(&k);
                 if let Some(ip) = self.static_audit_site() {
                     self.static_audit.state_access(ip, origin);
@@ -646,7 +647,7 @@ impl<'a> Vm<'a> {
                 // recomputes it).
                 let pending_memo = *memo
                     && (crate::value::holds_pending(&val_v, self.heap)
-                        || explicit.is_some_and(|kv| crate::value::holds_pending(&kv, self.heap)));
+                        || memo_key.is_some_and(|kv| crate::value::holds_pending(&kv, self.heap)));
                 if *init && (matches!(val_v, Value::Pending(_)) || pending_memo) {
                     // Until it resolves, the scope cannot know what a re-run
                     // would initialize it to.
@@ -704,10 +705,10 @@ impl<'a> Vm<'a> {
                 if self.stack.callback.is_some() && !*memo {
                     return Err(self.state_in_callback(origin));
                 }
-                let explicit = key.map(|r| self.reg(fi, r));
+                let memo_key = key.filter(|_| *memo).map(|r| self.reg(fi, r));
                 // A `StateInit` *is* the declaration: it always resolves at the
                 // frame's own path, so nothing to pop.
-                let k = self.state_key(fi, *base, explicit, 0, *memo)?;
+                let k = self.state_key(fi, *base, memo_key, 0)?;
                 self.stack.touch_state(&k);
                 if let Some(ip) = self.static_audit_site() {
                     self.static_audit.state_access(ip, origin);
@@ -718,7 +719,7 @@ impl<'a> Vm<'a> {
                 // does not commit it): the key's id is the same whether the
                 // resource is still loading or has errored.
                 let uncached =
-                    *memo && explicit.is_some_and(|kv| crate::value::holds_pending(&kv, self.heap));
+                    memo_key.is_some_and(|kv| crate::value::holds_pending(&kv, self.heap));
                 if !uncached && let Some(existing) = self.stack.state.get(&k).copied() {
                     self.memo_note_state_read(&k, Some(existing));
                     self.set(fi, *dst, existing);

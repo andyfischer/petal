@@ -9,7 +9,7 @@
 // scheme rests on.
 
 import { describe, it, expect } from "vitest";
-import { runPetal, runIr, showIrJson, showIrJsonRaw, termsByOp } from "./helpers";
+import { runPetal, runIr, runWithStderr, showIrJson, showIrJsonRaw, termsByOp } from "./helpers";
 
 describe("per-callsite state", () => {
   it("gives each callsite of a helper its own counter", () => {
@@ -122,14 +122,14 @@ describe("per-callsite state", () => {
     expect(out).toBe(`["1:1", "2:1", "3:1"]`);
   });
 
-  it("keeps an explicit key absolute across callsites and loops", () => {
-    // Same key ⇒ same slot however deep the caller is: the plant.ptl lineage /
-    // nes.ptl btn_repeat contract (§2.2).
+  it("shares one value per key across callsites and loops through a Map", () => {
+    // Same key ⇒ same value however deep the caller is: a top-level
+    // \`state var\` holding a Map, which replaced the removed \`state(key)\`.
     const out = runPetal(`
+      state var counts = Map()
       fn bump(id)
-        state(id) n = 0
-        n += 1
-        n
+        set counts[id] = (get counts[id] ?? 0) + 1
+        get counts[id]
       end
       fn indirect(id)
         bump(id)
@@ -141,6 +141,12 @@ describe("per-callsite state", () => {
       end
     `);
     expect(out).toBe("1\n2\n3\n4");
+  });
+
+  it("rejects the removed state(key) and names the replacements", () => {
+    const r = runWithStderr("fn bump(id)\n  state(id) n = 0\n  n\nprint(bump(1))");
+    expect(r.stderr).toMatch(/`state\(key\)` was removed/);
+    expect(r.stderr).toMatch(/petal migrate-old-code/);
   });
 });
 

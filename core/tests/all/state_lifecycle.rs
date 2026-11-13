@@ -155,10 +155,10 @@ fn state_list_mutated_by_index_in_loop_persists_across_runs() {
 }
 
 #[test]
-fn explicit_key_state_survives_reset_and_rerun() {
+fn keyed_loop_state_survives_reset_and_rerun() {
     let mut env = Env::new();
     let pid = env
-        .load_program("for v in [\"a\", \"b\"] do\n  state(v) hits = 0\n  hits += 1\nend")
+        .load_program("for v in [\"a\", \"b\"] key v do\n  state hits = 0\n  hits += 1\nend")
         .unwrap();
     let sid = env.create_stack(pid).unwrap();
 
@@ -187,7 +187,7 @@ fn untouched_state_keys_are_swept_after_run() {
 
     // First program touches both "a" and "b".
     let pid1 = env
-        .load_program("for v in [\"a\", \"b\"] do\n  state(v) hits = 0\n  hits += 1\nend")
+        .load_program("for v in [\"a\", \"b\"] key v do\n  state hits = 0\n  hits += 1\nend")
         .unwrap();
     let sid = env.create_stack(pid1).unwrap();
     env.run(sid).unwrap();
@@ -196,7 +196,7 @@ fn untouched_state_keys_are_swept_after_run() {
     // We swap the program but keep the state map; on the next run, "b"
     // should be swept.
     let pid2 = env
-        .load_program("for v in [\"a\"] do\n  state(v) hits = 0\n  hits += 1\nend")
+        .load_program("for v in [\"a\"] key v do\n  state hits = 0\n  hits += 1\nend")
         .unwrap();
     // Reuse the same Stack with a fresh program: snapshot the state, build
     // a stack on the new program, restore the snapshot.
@@ -264,64 +264,6 @@ end
         widget_slots(&env),
         1,
         "the skipped callsite's path was not visited, so it is swept"
-    );
-}
-
-#[test]
-fn an_explicit_key_reached_by_a_new_path_keeps_its_value() {
-    // The counterpart to the sweep: an explicit key is absolute, so visiting it
-    // through a *different* call path on a later run finds the same slot rather
-    // than allocating a second one — and nothing is left unvisited to collect.
-    // This is the plant.ptl lineage contract, where the same leaf is reached one
-    // recursion level deeper every frame.
-    let mut env = Env::new();
-    let pid = env
-        .load_program(
-            "\
-fn leaf(id)
-  state(id) age = 0
-  age += 1
-  age
-end
-fn wrap(id)
-  leaf(id)
-end
-state var deep = false
-if get deep then
-  print(wrap(\"x\"))
-else
-  print(leaf(\"x\"))
-end
-",
-        )
-        .unwrap();
-    let sid = env.create_stack(pid).unwrap();
-    env.run(sid).unwrap();
-    assert_eq!(env.take_output(), ["1"]);
-
-    // Same key, now reached one call deeper.
-    env.set_state(
-        sid,
-        StateKey(petal::compiler::Compiler::hash_state_name("deep")),
-        petal::value::Value::Bool(true),
-    );
-    env.reset_stack(sid).unwrap();
-    env.run(sid).unwrap();
-    assert_eq!(
-        env.take_output(),
-        ["2"],
-        "the absolute key found its slot from the deeper path"
-    );
-
-    let b = StateKey(petal::compiler::Compiler::hash_state_name("leaf/age"));
-    assert_eq!(
-        env.get_all_state(sid)
-            .unwrap()
-            .keys()
-            .filter(|k| k.base == b)
-            .count(),
-        1,
-        "one key, one slot — the deeper path did not fork it"
     );
 }
 

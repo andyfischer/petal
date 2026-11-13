@@ -193,4 +193,21 @@ describe("IR validation rejects malformed graphs", () => {
     });
     expect(runIrError(ir)).toMatch(/state key 7 has no StateInit/);
   });
+
+  // The absolute `state(key)` was removed: a key is a memo's alone.
+  test("a keyed StateInit that is not a memo", () => {
+    const ir = JSON.stringify({
+      ...base,
+      terms: [term("StateInit", { state_key: 7, inputs: [0] })],
+    });
+    expect(runIrError(ir)).toMatch(/StateInit with a key input must be a memo/);
+  });
+
+  test("a StateWrite with a key input", () => {
+    const ir = JSON.stringify({
+      ...base,
+      terms: [term("StateWrite", { state_key: 7, inputs: [0, 0] })],
+    });
+    expect(runIrError(ir)).toMatch(/StateWrite takes one input/);
+  });
 });

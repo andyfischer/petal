@@ -106,28 +106,6 @@ fn nested_loop_indices_are_separate_path_steps() {
 }
 
 #[test]
-fn an_explicit_key_renders_as_k_hash_and_nothing_else() {
-    // `state(expr)` is absolute (§2.2): the path is exactly the key, so
-    // the rendering shows the key and no callsite — which is the point, since
-    // two callsites reach the same slot.
-    let pairs = state_pairs("fn leaf(id)\n  state(id) v = id\n  v\nend\nleaf(7)\nleaf(9)");
-    assert_eq!(
-        pairs.len(),
-        2,
-        "one slot per key, not per callsite: {pairs:?}"
-    );
-    for pair in &pairs {
-        let (path, _) = pair.split_once('=').unwrap();
-        let (part, name) = path.split_once('/').unwrap();
-        assert_eq!(name, "v");
-        assert!(
-            part.starts_with('k') && part[1..].parse::<u64>().is_ok(),
-            "an explicit key renders as k<hash>, got {part}"
-        );
-    }
-}
-
-#[test]
 fn a_top_level_slot_survives_next_to_pathed_ones() {
     // The mixed case a host actually sees: its own top-level vars addressable
     // as always, with in-function slots alongside under pathed names.
@@ -147,7 +125,7 @@ fn every_pathed_name_is_distinguishable_from_a_top_level_one() {
     let pairs = state_pairs(
         "state plain = 1\n\
          fn f()\n  state a = 1\n  a\nend\n\
-         fn g(id)\n  state(id) b = id\n  b\nend\n\
+         fn g(id)\n  state b = id\n  b\nend\n\
          for i in range(0, 2) do\n  state c = i\n  f()\n  g(i)\nend",
     );
     for pair in &pairs {

@@ -847,9 +847,6 @@ pub enum StmtKind {
         #[serde(skip_serializing_if = "Option::is_none")]
         ty: Option<TypeAnn>,
         init: Expr,
-        /// Optional explicit key expression for per-iteration state: `state(expr) name = init`
-        #[serde(skip_serializing_if = "Option::is_none")]
-        key: Option<Expr>,
         /// Written `state var x = …`: a cell that persists across frames.
         #[serde(skip_serializing_if = "is_false")]
         is_var: bool,
@@ -1263,11 +1260,8 @@ pub fn walk_stmt<V: ExprVisitor + ?Sized>(v: &mut V, s: &Stmt) {
             }
         }
         StmtKind::Break | StmtKind::Continue => {}
-        StmtKind::State { init, key, .. } => {
+        StmtKind::State { init, .. } => {
             v.visit_expr(init);
-            if let Some(k) = key {
-                v.visit_expr(k);
-            }
         }
         StmtKind::Memo { key, init, .. } => {
             v.visit_expr(key);
@@ -1438,11 +1432,8 @@ pub fn walk_stmt_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             }
         }
         StmtKind::Break | StmtKind::Continue => {}
-        StmtKind::State { init, key, .. } => {
+        StmtKind::State { init, .. } => {
             v.visit_expr(init);
-            if let Some(k) = key {
-                v.visit_expr(k);
-            }
         }
         StmtKind::Memo { key, init, .. } => {
             v.visit_expr(key);

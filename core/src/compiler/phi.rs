@@ -504,13 +504,8 @@ impl ExprVisitor for AssignedNames<'_> {
                 self.visit_expr(value);
                 self.bind(name);
             }
-            StmtKind::State {
-                name, init, key, ..
-            } => {
+            StmtKind::State { name, init, .. } => {
                 self.visit_expr(init);
-                if let Some(k) = key {
-                    self.visit_expr(k);
-                }
                 self.bind(name);
             }
             StmtKind::Memo {

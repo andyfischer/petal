@@ -500,7 +500,7 @@ mod tests {
     #[test]
     fn keywords_before_parens_keep_their_spacing() {
         assert_eq!(sp("if (a) then 1 end\n"), "if (a) then 1 end\n");
-        assert_eq!(sp("state(id) x = 0\n"), "state(id) x = 0\n");
+        assert_eq!(sp("memo(id) x = 0\n"), "memo(id) x = 0\n");
         assert_eq!(
             sp("let ys = map(xs, fn (x) -> x)\n"),
             "let ys = map(xs, fn(x) -> x)\n"

@@ -158,7 +158,7 @@ fn the_key_takes_the_place_of_the_index_part() {
 #[test]
 fn a_keyed_loop_in_a_function_called_twice_keeps_two_sets_of_slots() {
     // The key is relative to the loop at its call path, which is what keeps
-    // stateful code safe to duplicate — unlike the absolute `state(key)`.
+    // stateful code safe to duplicate — unlike the absolute `state(key)`, since removed.
     let src = "\
 fn list(tag)
   for id in [\"a\"] key id do

@@ -1,6 +1,6 @@
 //! Pure numeric semantics of the core language: checked integer arithmetic,
 //! negation, the exact Int/Float ordering behind `==` and `<`, the total order
-//! `sort` uses, the hash key that keyed state uses, and list index resolution.
+//! `sort` uses, the hash key that `memo` and keyed loops use, and list index resolution.
 //!
 //! Everything here is a pure function over machine scalars with no heap, no
 //! allocation and no formatting, so it can be proven, not just tested: the

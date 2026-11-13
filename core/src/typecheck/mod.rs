@@ -1394,7 +1394,6 @@ impl<'a> Checker<'a> {
                 name,
                 ty,
                 init,
-                key,
                 ..
             } => {
                 if let Some(ann) = ty {
@@ -1402,10 +1401,6 @@ impl<'a> Checker<'a> {
                 }
                 self.slot = CastSlot::Delimited;
                 let inferred = self.check_expr(init);
-                if let Some(k) = key {
-                    self.slot = CastSlot::Delimited;
-                    self.check_expr(k);
-                }
                 let declared = ty.as_ref().and_then(|t| self.resolve_ann(t));
                 self.check_assignment(init.span, name, declared, inferred);
                 // A reactive binding infers *nothing* (`Any`), and shadows any
@@ -3319,17 +3314,6 @@ mod tests {
             "state var n: int = 0\nlet g = fn(b)\n  if b then set n = \"s\" end\nend\ng(true)",
         );
         assert_eq!(inner.len(), 1, "{inner:?}");
-    }
-
-    #[test]
-    fn annotated_state_with_an_explicit_key_is_checked() {
-        assert!(warns("state(1) n: int = 0").is_empty());
-        let w = warns("state(1) n: int = \"hi\"");
-        assert_eq!(w.len(), 1, "{w:?}");
-        // The key expression is still walked for nested diagnostics.
-        let k = warns("fn g(s: string)\n  s\nend\nstate(g(1)) n: int = 0");
-        assert_eq!(k.len(), 1, "{k:?}");
-        assert!(k[0].contains("argument 1"), "{k:?}");
     }
 
     #[test]

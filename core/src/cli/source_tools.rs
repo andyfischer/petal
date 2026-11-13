@@ -641,10 +641,40 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
                 let ignored = text.as_deref().is_some_and(|text| {
                     crate::lint::Ignores::scan_legacy(text).is_ok_and(|i| i.ignores_file(OLD_IMPORTS))
                 });
-                if stuck || ignored || *unparsed || is_markdown(input) { None } else { text.clone() }
+                // A `state(key)` left for a hand edit keeps the file from
+                // parsing too, but its imports can still be fixed: on the
+                // file with each key group read as nothing (the same
+                // exports, so its importers compile against it), and the
+                // keys go back below.
+                if stuck || ignored || *unparsed || is_markdown(input) {
+                    None
+                } else {
+                    text.as_deref().map(crate::migrate::blank_state_keys)
+                }
             })
             .collect();
         fix_imports_batch(&inputs, &parseable, &opts.paths, include_dirs, &mut errors)
+            .into_iter()
+            .zip(&texts)
+            .zip(&inputs)
+            .map(|((fixed, text), input)| {
+                let (mut fixed, text) = (fixed?, text.as_deref()?);
+                match crate::migrate::restore_state_keys(text, &fixed.source) {
+                    Some(source) => {
+                        fixed.source = source;
+                        Some(fixed)
+                    }
+                    None => {
+                        eprintln!(
+                            "note: {}: its imports wait for the next run: a `state(key)` is left for a \
+                             hand edit, and the import fix moved more than import lines",
+                            input.name
+                        );
+                        None
+                    }
+                }
+            })
+            .collect()
     } else {
         inputs.iter().map(|_| None).collect()
     };

@@ -106,9 +106,17 @@ fn check_prints_a_diff_exits_one_and_writes_nothing() {
 #[test]
 fn it_rewrites_in_place_and_a_second_run_changes_nothing() {
     let t = Tree::new("write");
+    // `state(key)` was removed, so `OLD` no longer runs as written; with
+    // that one site spelled as the `memo` it becomes, it does.
     t.write("a.ptl", OLD);
+    let (_, err, code) = petal_in(&t.root, &["run", "a.ptl"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("`state(key)` was removed"), "{err}");
+    assert!(err.contains("run `petal migrate-old-code`"), "{err}");
+    t.write("a.ptl", &OLD.replace("state(t)", "memo(t)"));
     let (before, _, code) = petal_in(&t.root, &["run", "a.ptl"]);
     assert_eq!(code, 0);
+    t.write("a.ptl", OLD);
 
     let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "a.ptl"]);
     assert_eq!(code, 0, "{out}\n{err}");
@@ -217,7 +225,7 @@ fn a_site_left_for_a_hand_edit_is_reported_and_does_not_fail() {
     t.write("a.ptl", src);
     let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--check", "."]);
     assert_eq!(code, 0, "{out}\n{err}");
-    assert!(err.contains("a.ptl:2:3: state-key-deprecated:"), "{err}");
+    assert!(err.contains("a.ptl:2:3: state-key-deprecated: `state(…) h` was removed"), "{err}");
     assert!(err.contains("(left for a hand edit)"), "{err}");
     assert!(err.contains("1 site(s) in an old form are left for a hand edit"), "{err}");
     assert_eq!(t.read("a.ptl"), src);
@@ -394,12 +402,21 @@ fn old_imports_run_after_the_text_migrations_over_the_batch() {
 #[test]
 fn lint_fix_leaves_old_syntax_and_points_here() {
     let t = Tree::new("lint");
+    // A removed form is not lint's to read: the parse error points here.
     t.write("a.ptl", OLD);
-    let (out, err, _) = petal_in(&t.root, &["lint", "--fix", "a.ptl"]);
+    let (out, err, code) = petal_in(&t.root, &["lint", "--fix", "a.ptl"]);
+    assert_eq!(code, 1, "{out}\n{err}");
     assert_eq!(t.read("a.ptl"), OLD, "{out}\n{err}");
+    assert!(err.contains("`state(key)` was removed"), "{err}");
+    assert!(err.contains("run `petal migrate-old-code`"), "{err}");
+
+    // The deprecated forms the compiler still accepts.
+    let old = OLD.replace("state(t)", "memo(t)");
+    t.write("a.ptl", &old);
+    let (out, err, _) = petal_in(&t.root, &["lint", "--fix", "a.ptl"]);
+    assert_eq!(t.read("a.ptl"), old, "{out}\n{err}");
     // The compile check warns about the ones the compiler sees …
     assert!(err.contains("run `petal migrate-old-code` [const-decl-deprecated]"), "{err}");
-    assert!(err.contains("run `petal migrate-old-code` [state-key-deprecated]"), "{err}");
     // … and `old-syntax` reports the spelling it does not.
     assert!(out.contains("a.ptl:1:1: old-syntax:"), "{out}");
 

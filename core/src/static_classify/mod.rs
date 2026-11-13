@@ -239,7 +239,7 @@ pub enum DeclKind {
     Var,
     #[serde(rename = "state")]
     State,
-    /// `memo(key) name = …`: a cache entry, keyed like `state(key)`.
+    /// `memo(key) name = …`: a cache entry, keyed by its key's value.
     #[serde(rename = "memo")]
     Memo,
     #[serde(rename = "fn")]

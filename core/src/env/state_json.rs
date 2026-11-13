@@ -149,8 +149,8 @@ impl Env {
     /// Two documented v1 limitations:
     /// - **Pathed entries are not addressable.** Anything `get_state_json`
     ///   rendered with a path — a slot inside a called function
-    ///   (`counter/count`), a loop iteration (`[0]/xs`), an explicit
-    ///   `state(key)` (`k1234…/leaf`) — is silently skipped, because
+    ///   (`counter/count`), a loop iteration (`[0]/xs`, `[key=42]/xs`) — is
+    ///   silently skipped, because
     ///   `set_state_from_json` matches top-level declaration names only. A slot
     ///   a host means to set from the outside belongs at top level (a
     ///   `state var` cell), which is also the model's answer for shared state.
@@ -191,11 +191,10 @@ impl Env {
 /// | `[Index(3), Call(f)]` (called in a loop) | `[3]/row/hovered` |
 /// | `[Index(0), Index(2)]` (top-level state in nested loops) | `[0]/[2]/xs` |
 /// | `[Key(h), Call(f)]` (called in a `for … key` loop) | `[key=42]/row/hovered` |
-/// | `[Key(h)]` (explicit `state(expr)`) | `k1234…/leaf` |
 ///
 /// A `Key` part renders the key value it was hashed from when the stack has
 /// seen it (`key_labels`, from [`crate::stack::Stack::loop_key_labels`]), and
-/// its hash otherwise.
+/// its hash otherwise (`k1234…/row/hovered`).
 ///
 /// A `Call` part is a hash, so it renders as the callee's spelling recovered
 /// from the program (`counter`, `#1` and up when one function calls the same

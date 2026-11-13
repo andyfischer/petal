@@ -226,7 +226,7 @@ fn num_total_cmp_agrees_with_lt() {
 
 // ── Hash keys ───────────────────────────────────────────────────
 
-/// Keys agree with `==`: equal numbers key equally (so keyed state and
+/// Keys agree with `==`: equal numbers key equally (so a `memo`, a keyed loop and
 /// hashing are consistent with equality), and equal keys mean equal numbers
 /// or two NaNs.
 #[kani::proof]

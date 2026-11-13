@@ -70,7 +70,8 @@ pub(super) fn plan_at_rebind_fixes(source: &str) -> Result<Vec<Fix>, String> {
     }
     let chars: Vec<char> = source.chars().collect();
     let blanked = blank(&chars, &markers);
-    let (_tree, stmts, _by_end) = crate::rewrite::parse_ast_or_by_end(&blanked)
+    // A removed `state(key)` is read as a plain `state` (the same offsets).
+    let (_tree, stmts, _by_end) = crate::rewrite::parse_ast_or_by_end(&super::state_key::blank_keys(&blanked))
         .map_err(|e| format!("cannot read the `@` rebinds in this file: {e}"))?;
 
     let mut p = Planner {
@@ -250,12 +251,7 @@ impl Planner<'_> {
                 }
             }
             StmtKind::Expr(e) | StmtKind::Return(Some(e)) => self.lift(e, &mut hoisted),
-            StmtKind::State { init, key, .. } => {
-                self.lift(init, &mut hoisted);
-                if let Some(k) = key {
-                    self.lift(k, &mut hoisted);
-                }
-            }
+            StmtKind::State { init, .. } => self.lift(init, &mut hoisted),
             // Only the key ran unconditionally; the initializer is a hand edit.
             StmtKind::Memo { key, .. } => self.lift(key, &mut hoisted),
             StmtKind::FnDecl { body, .. } => self.stmts(body),

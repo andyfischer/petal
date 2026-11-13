@@ -372,10 +372,9 @@ impl<'p> FnLowerer<'p> {
                 base: term.state_key.expect("StateWrite without state_key"),
                 path_pop: term.path_pop,
                 val: self.flat(ins[0])?,
-                // Inputs are [value] or [value, explicit_key]; the key is last.
-                key: (ins.len() > 1)
-                    .then(|| self.flat(ins[ins.len() - 1]))
-                    .transpose()?,
+                // A reassignment addresses its declaration's slot by path:
+                // only a memo's commit write carries a key (`emit_state_init`).
+                key: None,
                 // A plain reassignment commits whatever value it is given,
                 // including a Pending (see the StateInit no-commit rule).
                 init: false,
@@ -942,7 +941,7 @@ impl<'p> FnLowerer<'p> {
         Ok(())
     }
 
-    /// `state name = <init>` (optionally `state(key) name`) →
+    /// `state name = <init>` (or `memo(key) name`, whose `key` is set) →
     /// ```text
     ///   state_init dst, base, after=<after>, key   // cache hit: dst=slot; -> after
     ///   <init block>; <init.phi_outs>              // cache miss: compute init
@@ -954,7 +953,7 @@ impl<'p> FnLowerer<'p> {
     fn emit_state_init(&mut self, term: &Term) -> Result<(), String> {
         let dst = self.flat(term.id)?;
         let base = term.state_key.expect("StateInit without state_key");
-        // The explicit `state(expr)` key, if any, is the only input.
+        // A `memo(expr)` key, if this is one, is the only input.
         let key = term.inputs.first().map(|&t| self.flat(t)).transpose()?;
 
         let si = self.emit_placeholder(Inst::StateInit {

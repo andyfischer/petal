@@ -65,11 +65,10 @@ print(total)`),
     expect(
       runPetal(`pub var counter: int = 0
 state var hits = 0
-state(1) var keyed = 0
 set counter += 2
 if true then set hits = hits + 1 end
-print(counter, hits, keyed)`),
-    ).toBe("2 1 0");
+print(counter, hits)`),
+    ).toBe("2 1");
   });
 
   it("lexes `var` and `set` as keywords", () => {

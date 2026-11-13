@@ -67,16 +67,24 @@ print(sort([n, 3, 1, n, 2, 5, n, 4, 0, 9, 8, 7, 6, 11, 10, 12, 13, 14, 15, 16, 1
 }
 
 #[test]
-fn keyed_state_treats_equal_keys_as_one_slot() {
-    let out = run("fn f(k)
-  state(k) n = 0
-  n += 1
-  n
+fn a_map_and_a_memo_treat_equal_keys_as_one_slot() {
+    // A record rebuilt each time, and `2` and `2.0`, are one key each.
+    let out = run("state var counts = Map()
+fn f(k)
+  set counts[k] = (get counts[k] ?? 0) + 1
+  get counts[k]
 end
 for i in range(3) do
   print(f({id: 1}), f(2), f(2.0))
 end");
     assert_eq!(out, ["1 1 2", "2 3 4", "3 5 6"]);
+    // The memo built for `2` answers `2.0`: one entry.
+    let out = run("fn made(k)
+  memo(k) v = [k]
+  v
+end
+print(made(2), made(2.0), made({id: 1}) == made({id: 1}))");
+    assert_eq!(out, ["[2] [2] true"]);
 }
 
 #[test]

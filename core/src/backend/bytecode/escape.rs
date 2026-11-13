@@ -98,12 +98,12 @@
 //!   base key only does that when its **path is statically empty**. A
 //!   `RuntimeStateKey` is `(declaration id, path)`, and the path is composed
 //!   from *live* context: a `Call` part per frame on the way in, an `Index`
-//!   part per enclosing loop iteration, or a single `Key` part hashed from an
-//!   explicit `state(expr)` value. Only a declaration at module scope, outside
+//!   part per enclosing loop iteration, or a single `Memo` part hashed from a
+//!   `memo(expr)` key's value. Only a declaration at module scope, outside
 //!   every loop, runs on the empty path and therefore owns exactly one slot for
 //!   the whole program. A declaration *inside a function* is a slot per
 //!   callsite chain that reaches it, one inside a loop is a slot per iteration,
-//!   and an explicit key is a slot per runtime value — in each case the base key
+//!   and a memo's key is a slot per runtime value — in each case the base key
 //!   alone cannot say which slot a read filled or a write commits to, so no web
 //!   may root on one (docs/dev/state-call-paths.md §3.7). Accesses are checked
 //!   against the same rule rather than assumed: a `StateWrite` nested deeper in loops than its
@@ -376,7 +376,7 @@ struct Analysis<'p> {
     /// [`addresses_the_empty_path`] — inside a function body, so its
     /// `RuntimeStateKey` picks up a `Call` part per callsite chain, or inside a
     /// loop it does not pop back out of, so it picks up an `Index` part per
-    /// iteration) or carries an explicit `state(expr)` key (a `Key` part hashed
+    /// iteration) or carries a `memo(expr)` key (a `Memo` part hashed
     /// from a runtime value). A base key alone does not identify the slot for
     /// these, so no web may root on one.
     multi_slot_keys: HashSet<StateKey>,
@@ -469,7 +469,7 @@ impl<'p> Analysis<'p> {
             let Some(key) = term.state_key else { continue };
             // A non-empty runtime path mixes live context — the callsite chain
             // and the loop iterations reaching this term — into the runtime key,
-            // and an explicit `state(expr)` key hashes a runtime value into it.
+            // and a `memo(expr)` key hashes a runtime value into it.
             // Either way the base key no longer names one slot, and a write
             // executed under a different path than the read commits to a
             // different slot than the one it just mutated. Only a declaration
@@ -479,11 +479,7 @@ impl<'p> Analysis<'p> {
             // `Copy` carriers also inherit the key (so a chain of reassignments
             // still resolves to the `StateInit`), but they touch no slot and
             // carry no `path_pop`, so only the three real state ops are judged.
-            let explicit_key = match term.op {
-                TermOp::StateInit => !term.inputs.is_empty(),
-                TermOp::StateWrite => term.inputs.len() > 1,
-                _ => false,
-            };
+            let explicit_key = matches!(term.op, TermOp::StateInit) && !term.inputs.is_empty();
             let off_the_empty_path = matches!(
                 term.op,
                 TermOp::StateInit | TermOp::StateRead | TermOp::StateWrite

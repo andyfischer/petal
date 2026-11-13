@@ -34,17 +34,17 @@ describe("lazy state init — IR shape", () => {
     expect(inits[0].child_blocks.length).toBe(1);
   });
 
-  it("StateInit with no explicit key has empty inputs (init moved to child block)", () => {
+  it("StateInit of a state has empty inputs (init moved to child block)", () => {
     const ir = showIrJson("state x = 42");
     const inits = termsByOp(ir, "StateInit");
     // schema 0.2 omits empty `inputs` from the wire entirely.
     expect(inits[0].inputs).toBeUndefined();
   });
 
-  it("StateInit with explicit key has [key] inputs (init moved to child block)", () => {
+  it("StateInit of a memo has [key] inputs (init moved to child block)", () => {
     const ir = showIrJson(`
       for x in [1] do
-        state(x) count = 0
+        memo(x) doubled = x * 2
       end
     `);
     const inits = termsByOp(ir, "StateInit");
@@ -151,20 +151,6 @@ describe("lazy state init — runtime", () => {
     expect(out).toBe("init 1\ninit 2\ninit 1\ninit 2");
   });
 
-  it("explicit-key init runs once per unique key, not per visit", () => {
-    const out = runPetal(`
-      let visits = ["a", "b", "a", "c", "b", "a"]
-      for v in visits do
-        state(v) seen = fn()
-          print("init", v)
-          0
-        end()
-      end
-    `);
-    // Only "a", "b", "c" are unique → 3 inits despite 6 visits.
-    expect(out).toBe("init a\ninit b\ninit c");
-  });
-
   it("expensive init only runs on first encounter (idempotent in absence of side effects)", () => {
     // sqrt is deterministic; we just check the value is correctly preserved.
     const out = runPetal(`
@@ -211,13 +197,13 @@ describe("lazy state init — preserves existing semantics", () => {
     expect(out).toBe("1\n1\n1");
   });
 
-  it("explicit-key state preserves value across re-encounters", () => {
+  it("a Map in a top-level state var keeps one value per key across re-encounters", () => {
     const out = runPetal(`
+      state var clicks = Map()
       let items = [{id: 1}, {id: 2}, {id: 1}]
       for item in items do
-        state(item.id) clicks = 0
-        clicks += 1
-        print(clicks)
+        set clicks[item.id] = (clicks[item.id] ?? 0) + 1
+        print(clicks[item.id])
       end
     `);
     expect(out).toBe("1\n1\n2");

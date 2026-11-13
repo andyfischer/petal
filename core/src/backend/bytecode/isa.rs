@@ -595,8 +595,9 @@ pub enum Inst {
     /// immediately after this op (followed by a `StateWrite` that commits it).
     /// On a cache hit the slot's value is loaded into `dst` and control jumps to
     /// `after` (past the inline init block); on a miss it falls through to run
-    /// the init block. `key` is the explicit `state(expr)` key register, if any;
-    /// when present it makes the slot absolute, ignoring the frame's path.
+    /// the init block. `key` is the key register of a `memo(expr)` (set
+    /// exactly when `memo` is); it makes the slot absolute, ignoring the
+    /// frame's path.
     StateInit {
         dst: Reg,
         base: StateKey,

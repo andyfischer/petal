@@ -364,7 +364,7 @@ impl<'a> Vm<'a> {
     /// loop part — an `Index`, or the `Key` a keyed loop's previous iteration
     /// put there — so unbalanced hand-written IR cannot rewrite a `Call` part
     /// and silently misroute every slot below it. A frame path holds no
-    /// absolute `state(key)` part: that one is built in [`Self::state_key`].
+    /// `memo(key)` part: that one is built in [`Self::state_key`].
     pub(super) fn set_loop_idx_top(&mut self, fi: usize, idx: usize) {
         set_loop_part(&mut self.stack.vm_frames[fi].path, PathPart::Index(idx));
     }
@@ -387,38 +387,36 @@ impl<'a> Vm<'a> {
 
     /// Resolve a state declaration's runtime slot key.
     ///
-    /// An explicit `state(expr)` key is **absolute**: it hashes its value and
-    /// ignores the call path entirely, so two callsites asking for the same
-    /// entity get the same slot (docs/dev/state-call-paths.md §2.2).
-    /// Otherwise the slot is the declaration id under the current frame's path
-    /// — the callsite chain that reached it and the loop iterations it is
-    /// inside — which the frame has already composed incrementally.
+    /// The slot of a `state` is the declaration id under the current frame's
+    /// path — the callsite chain that reached it and the loop iterations it
+    /// is inside — which the frame has already composed incrementally.
     ///
     /// `path_pop` drops that many innermost loop `Index` parts, so a
     /// reassignment nested deeper in loops than its declaration still addresses
     /// the declaration's slot (`Term::path_pop`); it is 0 at the declaration
-    /// itself and ignored under an explicit key.
+    /// itself and ignored under a memo's key.
     ///
-    /// `memo` marks a `memo(expr)` declaration, whose key is just as absolute
-    /// but lands in a [`PathPart::Memo`] part, so the slot reads as a cache
-    /// entry to everything that walks the state table.
+    /// `memo_key` is the key value of a `memo(expr)` declaration, the one
+    /// **absolute** slot: it hashes its value into a single
+    /// [`PathPart::Memo`] part and ignores the call path entirely, so two
+    /// callsites asking with an equal key get the same entry
+    /// (docs/features/memo.md), and the slot reads as a cache entry to
+    /// everything that walks the state table.
     pub(super) fn state_key(
         &self,
         fi: usize,
         base: StateKey,
-        explicit: Option<Value>,
+        memo_key: Option<Value>,
         path_pop: u32,
-        memo: bool,
     ) -> Result<RuntimeStateKey, String> {
         // A path-keyed slot costs its path's length; see the constant.
-        if explicit.is_none() && fi >= super::MAX_STATE_CALL_DEPTH {
+        if memo_key.is_none() && fi >= super::MAX_STATE_CALL_DEPTH {
             return Err(super::state_depth_message());
         }
-        let path = match explicit {
+        let path = match memo_key {
             Some(kv) => {
                 let mut v = SmallVec::new();
-                let h = crate::value::hash_value(&kv, self.heap);
-                v.push(if memo { PathPart::Memo(h) } else { PathPart::Key(h) });
+                v.push(PathPart::Memo(crate::value::hash_value(&kv, self.heap)));
                 v
             }
             None => {

@@ -182,16 +182,11 @@ impl Printer {
                 name,
                 ty,
                 init,
-                key,
                 is_var,
             } => {
                 let var = if *is_var { "var " } else { "" };
                 let head = format!("State {export}{var}{name}{}", fmt_ty_suffix(ty));
                 self.line(depth, &head, Some(&stmt.span));
-                if let Some(k) = key {
-                    self.line(depth + 1, "Key", None);
-                    self.expr(k, depth + 2);
-                }
                 self.expr(init, depth + 1);
             }
             StmtKind::Memo { name, ty, key, init } => {
@@ -613,18 +608,6 @@ Let r @1:1-1:48
     Else
       Expr @1:41-1:44
         Literal nil @1:41-1:44
-";
-        assert_eq!(render(src), expected);
-    }
-
-    #[test]
-    fn state_with_explicit_key() {
-        let src = "state(id) hits = 0";
-        let expected = "\
-State hits @1:1-1:19
-  Key
-    Ident id @1:7-1:9
-  Literal 0 @1:18
 ";
         assert_eq!(render(src), expected);
     }

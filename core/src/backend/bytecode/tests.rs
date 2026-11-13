@@ -842,8 +842,6 @@ fn inplace_state_rule_is_the_statically_empty_path() {
         "fn go()\n  state xs = []\n  for i in range(0, 4) do\n    xs = append(xs, i)\n  end\n  len(xs)\nend\nprint(go())",
         // Declared inside a `while` body: a slot per iteration, same as `for`.
         "var n = 0\nwhile n < 2 do\n  state c = [0, 0]\n  for j in range(0, 2) do\n    c[j] = c[j] + n\n  end\n  print(c[0], c[1])\n  set n = n + 1\nend",
-        // An explicit key is absolute but runtime-valued: a slot per key.
-        "state(1) xs = []\nfor i in range(0, 4) do\n  xs = append(xs, i)\nend\nprint(len(xs))",
     ];
     for code in rejected {
         assert_stateful_parity(code, 3);

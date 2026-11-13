@@ -485,14 +485,13 @@ fn stmt_json(s: &Stmt) -> J {
             name,
             ty,
             init,
-            key,
             is_var,
         } => {
             return node(
                 "State",
                 s.span,
                 json!({"name": name, "type": ty_json(ty.as_ref()), "init": expr_json(init),
-                       "key": key.as_ref().map(expr_json), "is_var": is_var}),
+                       "is_var": is_var}),
             );
         }
         StmtKind::Memo { name, ty, key, init } => {

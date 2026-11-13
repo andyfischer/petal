@@ -175,12 +175,12 @@ fn a_state_becomes_a_state_var() {
 }
 
 #[test]
-fn the_var_goes_after_a_state_key_and_before_an_annotation() {
-    let src = "for i in [1, 2] do\n  state(str((i))) n: int = 0\n  n += i\n  print(n)\nend\n";
+fn the_var_goes_before_an_annotation_in_a_keyed_loop() {
+    let src = "for i in [1, 2] key str((i)) do\n  state n: int = 0\n  n += i\n  print(n)\nend\n";
     let got = converted("state-key", src, "n");
     assert_eq!(
         got,
-        "for i in [1, 2] do\n  state(str((i))) var n: int = 0\n  set n += i\n  print(n)\nend\n"
+        "for i in [1, 2] key str((i)) do\n  state var n: int = 0\n  set n += i\n  print(n)\nend\n"
     );
     assert_eq!(run_source("state-key-run", &got), ["1", "2"]);
 }

@@ -421,13 +421,8 @@ impl Walker<'_> {
             // The iterable is evaluated once, before the (possibly empty)
             // body.
             StmtKind::For { iter, .. } => self.expr(iter),
-            StmtKind::State { init, key, .. } => {
-                // `init` runs only on the first frame; the key every frame.
-                if let Some(k) = key {
-                    self.expr(k);
-                }
-                let _ = init;
-            }
+            // `init` runs only on the first frame.
+            StmtKind::State { .. } => {}
             // Likewise a memo: the key every time, `init` only on a miss.
             StmtKind::Memo { key, .. } => self.expr(key),
             StmtKind::FnDecl { .. }

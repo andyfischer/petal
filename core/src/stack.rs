@@ -26,15 +26,14 @@ pub enum PathPart {
     /// One loop iteration: the 0-based iteration index, pushed by a `for`/
     /// `while` at every level of the live frame stack.
     Index(usize),
-    /// A key value, hashed, in one of two places. A `for … key k` iteration
-    /// puts it where its `Index` would be, so the key is relative to the loop
-    /// at that call path (§2.1). An explicit `state(expr)` key (deprecated) is
-    /// absolute: that slot's path is exactly `[Key(h)]`, ignoring the call
-    /// path entirely (§2.2).
+    /// A `for … key k` iteration's key value, hashed. It sits where the
+    /// iteration's `Index` would be, so the key is relative to the loop at
+    /// that call path (§2.1).
     Key(u64),
-    /// A `memo(expr)` key, hashed. Absolute like [`PathPart::Key`]; a separate
-    /// variant so a cache entry is told apart from state by its key alone —
-    /// state dumps, `--state-storage`, snapshots and a reload all leave it out
+    /// A `memo(expr)` key, hashed. Absolute: the slot's path is exactly
+    /// `[Memo(h)]`, ignoring the call path entirely. Its own variant so a
+    /// cache entry is told apart from state by its key alone — state dumps,
+    /// `--state-storage`, snapshots and a reload all leave it out
     /// (docs/features/memo.md).
     Memo(u64),
 }
@@ -47,8 +46,8 @@ impl RuntimeStateKey {
 }
 
 /// Runtime state key: a declaration id (`base`) plus the call path that reached
-/// it. Top-level state has an empty `path`; an explicit `state(expr)` key has
-/// exactly one `Key` part; everything else carries one `Call` part per enclosing
+/// it. Top-level state has an empty `path`; a `memo(expr)` entry has
+/// exactly one `Memo` part; everything else carries one `Call` part per enclosing
 /// call and one part per enclosing loop iteration (an `Index`, or a `Key` for a
 /// `for … key` loop), outermost first.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

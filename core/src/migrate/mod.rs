@@ -23,7 +23,9 @@
 //! `else-if-nesting` (which reads `else if` the old way, as an `if` nested in
 //! an `else`), `elsif-to-else-if`, `at-rebind` (which reads the old `@`
 //! itself, since the parser no longer does), `export-to-pub`, `const-decl-deprecated`, `config-let-deprecated`,
-//! `state-key-deprecated`; and last `end-lines`, which is no rewrite of an
+//! `state-key-deprecated` (which reads the removed `state(key)` itself; the
+//! ones before it plan on the file with each key group blanked, see
+//! [`state_key::blank_keys`]); and last `end-lines`, which is no rewrite of an
 //! old form but of the layout (it formats the file and removes the `end`s
 //! indentation makes redundant, see [`end_lines`]). **`old-imports`** rewrites imports for the current
 //! module system and needs every file of the batch and a module resolver; it
@@ -79,9 +81,12 @@ use crate::lint::{LintOptions, Pipeline, RuleFilter, compiles};
 /// Parse the text a migration plans against. Old source may be indented in
 /// a way that disagrees with its `end`s, which the language now rejects; a
 /// migration still reads it, by its `end`s
-/// ([`crate::rewrite::parse_ast_or_by_end`]).
+/// ([`crate::rewrite::parse_ast_or_by_end`]). It may also still hold the
+/// removed `state(key)`, which is read as a plain `state` with every offset
+/// unchanged ([`state_key::blank_keys`]): the statements are of that
+/// reading, the chars are the source's own.
 fn reparse(source: &str) -> Result<(Vec<char>, Vec<crate::ast::Stmt>), String> {
-    let (_tree, stmts, _by_end) = crate::rewrite::parse_ast_or_by_end(source)?;
+    let (_tree, stmts, _by_end) = crate::rewrite::parse_ast_or_by_end(&state_key::blank_keys(source))?;
     Ok((source.chars().collect(), stmts))
 }
 
@@ -93,10 +98,57 @@ fn reparse(source: &str) -> Result<(Vec<char>, Vec<crate::ast::Stmt>), String> {
 /// indentation alone, so a file indented that way before it is afterwards
 /// too.
 pub(crate) fn indented_by_end(text: &str) -> String {
+    // A `state(key)` left in the text keeps it from parsing at all: it is
+    // returned as it is, and the caller's compile reports it.
     match crate::rewrite::parse_ast_or_by_end(text) {
         Ok((_, _, true)) => crate::fmt::format_source(text).unwrap_or_else(|_| text.to_string()),
         _ => text.to_string(),
     }
+}
+
+/// `source` with each removed `state(key) name` read as a plain `state
+/// name`, every offset unchanged, so that a tool which must parse or compile
+/// a file with such a site left for a hand edit still can (`old-imports`, in
+/// the CLI). [`restore_state_keys`] puts the keys back.
+pub(crate) fn blank_state_keys(source: &str) -> String {
+    state_key::blank_keys(source)
+}
+
+/// `edited` is [`blank_state_keys`]`(original)` after an edit that changed
+/// import lines only: the same text with `original`'s `state(key)` groups
+/// back. `None` unless that is certain, which it is when every line of the
+/// result that is not an import line is `original`'s, in order.
+pub(crate) fn restore_state_keys(original: &str, edited: &str) -> Option<String> {
+    let blanked = state_key::blank_keys(original);
+    if blanked == original {
+        return Some(edited.to_string());
+    }
+    // The lines blanking changed, in order, with what they were.
+    let changed: Vec<(&str, &str)> = blanked
+        .split('\n')
+        .zip(original.split('\n'))
+        .filter(|(b, o)| b != o)
+        .collect();
+    let mut next = 0;
+    let mut lines: Vec<&str> = Vec::new();
+    for line in edited.split('\n') {
+        if next < changed.len() && line == changed[next].0 {
+            lines.push(changed[next].1);
+            next += 1;
+        } else {
+            lines.push(line);
+        }
+    }
+    if next != changed.len() {
+        return None;
+    }
+    let restored = lines.join("\n");
+    let is_import = |l: &&str| {
+        let l = l.trim_start();
+        ["import ", "pub import ", "export import "].iter().any(|p| l.starts_with(p))
+    };
+    let rest = |t: &str| t.split('\n').filter(|l| !is_import(l)).map(str::to_string).collect::<Vec<_>>();
+    (rest(&restored) == rest(original)).then_some(restored)
 }
 
 /// What a deprecation warning or a removed form's error appends: the command
@@ -111,7 +163,7 @@ pub const ELSIF_TO_ELSE_IF: &str = "elsif-to-else-if";
 pub const EXPORT_TO_PUB: &str = "export-to-pub";
 pub const CONST_DECL_DEPRECATED: &str = "const-decl-deprecated";
 pub const CONFIG_LET_DEPRECATED: &str = "config-let-deprecated";
-pub const STATE_KEY_DEPRECATED: &str = crate::compiler::keyed_state::RULE;
+pub const STATE_KEY_DEPRECATED: &str = "state-key-deprecated";
 pub const END_LINES: &str = "end-lines";
 pub const OLD_IMPORTS: &str = "old-imports";
 
@@ -248,8 +300,8 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "`state(key) x = e` becomes `memo(key) x = e` where nothing writes it and `e` \
                   reads only its key; any other `state(key)` is reported for a hand edit",
         added: "2026-11-09",
-        replaces: "keyed `state(key)`, deprecated 2026-10-22",
-        old_form: OldForm::Warns,
+        replaces: "keyed `state(key)`, deprecated 2026-10-22 and removed 2026-11-13",
+        old_form: OldForm::Removed,
         partial: true,
         batch: false,
     },
@@ -534,7 +586,10 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool, tokens_only: bool) -> Re
         let before = p.text.clone();
         nestings = p.apply(ELSE_IF_NESTING, else_if::plan_nesting_fixes(&before)?);
         if nestings > 0 && !else_if::has_nesting(&p.text) {
-            else_if::check_nesting(&before, &p.text, &lint_opts).map_err(MigrateError::gate(ELSE_IF_NESTING))?;
+            // The gate compiles both sides: a removed `state(key)` is read
+            // as a plain `state` in each.
+            else_if::check_nesting(&state_key::blank_keys(&before), &state_key::blank_keys(&p.text), &lint_opts)
+                .map_err(MigrateError::gate(ELSE_IF_NESTING))?;
         }
     }
 
@@ -584,15 +639,22 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool, tokens_only: bool) -> Re
     }
 
     // Each candidate's rewrite is checked by compiling it, so the migration
-    // is skipped outright when it is not selected.
+    // is skipped outright when it is not selected. The parser no longer
+    // reads `state(key)`: the planner keeps its own reading.
     if opts.enabled(STATE_KEY_DEPRECATED) {
-        let (chars, stmts) = reparse(&p.text)?;
-        let fixes = state_key::plan_state_key_fixes(&p.text, &stmts, &chars, &lint_opts);
+        let fixes = state_key::plan_state_key_fixes(&p.text, &lint_opts);
         rewrites += p.apply(STATE_KEY_DEPRECATED, fixes);
     }
 
-    let ends_on = opts.enabled(END_LINES) && !p.ignores_file(END_LINES);
+    let mut ends_on = opts.enabled(END_LINES) && !p.ignores_file(END_LINES);
     let (output, findings) = p.finish();
+    // `end-lines` formats the file, which a `state(key)` still in it (left
+    // for a hand edit, ignored, or its migration not selected) keeps from
+    // parsing. Its site is the report; the `end`s wait for the run after
+    // the hand edit.
+    if ends_on && !state_key::find_sites(&output).is_empty() {
+        ends_on = false;
+    }
     let mut out = done(if rewrites == 0 { source.to_string() } else { output }, findings);
     if rewrites > 0 && gate {
         // Only meaningful when the original compiles here at all; a file
@@ -603,7 +665,8 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool, tokens_only: bool) -> Re
         // `@` rebinds does not parse, each `@` read as nothing (the same
         // names, read instead of written).
         // An `else if` that was nesting is moved to its own line, where it
-        // still is.
+        // still is. A `state(key)`, on either side, is read as a plain
+        // `state` (a `memo` it became is one in the output only).
         let mut original = colour_literals::respell_colour_literals(source)?;
         if nestings > 0 {
             original = else_if::nesting_as_read_today(&original)?;
@@ -611,10 +674,10 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool, tokens_only: bool) -> Re
         if rebinds > 0 {
             original = at_rebind::blank_markers(&original)?;
         }
-        let original = indented_by_end(&original);
+        let original = indented_by_end(&state_key::blank_keys(&original));
         let compiled = compiles(&original, &lint_opts).is_ok();
         if compiled
-            && let Err(e) = compiles(&indented_by_end(&out.output), &lint_opts)
+            && let Err(e) = compiles(&indented_by_end(&state_key::blank_keys(&out.output)), &lint_opts)
         {
             return Err(MigrateError::Gate {
                 migration: "compile",
@@ -702,6 +765,24 @@ fn count_exports(source: &str) -> Result<(usize, usize), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn state_keys_go_back_after_an_edit_of_the_import_lines() {
+        let original = "import tune: *\nfn hp(id, d)\n  state(id) h = 100\n  state     odd = 1\n  h -= d\n  h\n";
+        let blanked = blank_state_keys(original);
+        assert_eq!(blanked.lines().nth(2), Some("  state     h = 100"));
+        // The import line respelled and one added: the key is back where it was.
+        let edited = blanked.replace("import tune: *", "import ./tune\nimport ui");
+        assert_eq!(
+            restore_state_keys(original, &edited).as_deref(),
+            Some("import ./tune\nimport ui\nfn hp(id, d)\n  state(id) h = 100\n  state     odd = 1\n  h -= d\n  h\n")
+        );
+        // An edit that touched anything else is refused.
+        assert_eq!(restore_state_keys(original, &blanked.replace("h -= d", "h -= 2")), None);
+        assert_eq!(restore_state_keys(original, &blanked.replace("  state     h = 100\n", "")), None);
+        // No site: the edited text is the answer.
+        assert_eq!(restore_state_keys("state n = 0\n", "import a\nstate n = 0\n").as_deref(), Some("import a\nstate n = 0\n"));
+    }
 
     #[test]
     fn every_migration_is_named_dated_and_unique() {

@@ -124,51 +124,14 @@ describe("per-iteration loop state", () => {
     });
   });
 
-  describe("explicit key: state(expr)", () => {
-    it("state(key) uses explicit key instead of iteration index", () => {
-      const output = runPetal(`
-        let items = [{id: 1, name: "a"}, {id: 2, name: "b"}, {id: 1, name: "a2"}]
-        for item in items do
-          state(item.id) clicks = 0
-          clicks += 1
-          print(item.name, clicks)
-        end
-      `);
-      // id=1 appears twice, so second occurrence has clicks=2
-      expect(output).toBe("a 1\nb 1\na2 2");
-    });
-
-    it("explicit key survives list reordering", () => {
-      // One declaration, reached from two loops that visit the ids in
-      // opposite orders: the explicit key — not the iteration index — decides
-      // the slot, so each id resumes its own count. (The declaration has to
-      // be shared: two `state count` declarations would be two distinct
-      // declaration ids, hence two independent sets of slots.)
-      const output = runPetal(`
-        fn bump(id)
-          state(id) count = 0
-          count += 1
-          count
-        end
-        for item in [{id: "x"}, {id: "y"}] do
-          bump(item.id)
-        end
-        // Reversed order
-        for item in [{id: "y"}, {id: "x"}] do
-          print(item.id, bump(item.id))
-        end
-      `);
-      // Both were incremented once in first loop, now get incremented again
-      expect(output).toBe("y 2\nx 2");
-    });
-
-    it("StateInit with explicit key has 1 input (the key) and a child init block", () => {
+  describe("memo(key)", () => {
+    it("a memo's StateInit has 1 input (the key) and a child init block", () => {
       // Lazy init: the init value lives in StateInit.child_blocks[0]; only
-      // the explicit key value is an `inputs` (it's evaluated eagerly each
-      // visit so the runtime can decide whether to enter the init block).
+      // the key value is an \`inputs\` (it's evaluated eagerly each visit so
+      // the runtime can decide whether to enter the init block).
       const ir = showIrJson(`
         for x in [1] do
-          state(x) count = 0
+          memo(x) doubled = x * 2
         end
       `);
       const inits = termsByOp(ir, "StateInit");

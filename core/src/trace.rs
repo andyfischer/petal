@@ -139,7 +139,7 @@ impl TraceBuffer {
     /// actually saw.
     ///
     /// Matching is on the `CellId`, not on the declaring term: one declaration
-    /// term mints a fresh cell per execution (`state(key) var` per key, and
+    /// term mints a fresh cell per execution (a `state var` per call path, and
     /// any `var` inside a function or loop body per entry — §8), so a
     /// static-only answer cannot tell two of them apart.
     ///
@@ -761,20 +761,21 @@ mod cell_boundary_tests {
         assert!(result.complete);
     }
 
-    /// One declaration term, two cells. A static-only answer cannot tell the
-    /// two keys apart; the recorded `CellId` can. The same conflation applies
-    /// to any `var` declared inside a function or loop body (§8).
+    /// One declaration term, two cells: a `var` declared inside a function
+    /// body mints one per entry (§8). A static-only answer cannot tell the
+    /// two apart; the recorded `CellId` can.
     #[test]
     fn last_cell_write_before_is_per_cell() {
         let (env, pid) = run(
-            "fn touch(k, n)\n  state(k) var h = 0\n  set h = n\n  h\nend\n\
-             print(touch(1, 10))\nprint(touch(2, 20))\nprint(touch(1, 11))\n",
+            "fn make()\n  var h = 0\n  fn(n)\n    set h = n\n    get h\n  end\nend\n\
+             let a = make()\nlet b = make()\n\
+             print(a(10))\nprint(b(20))\nprint(a(11))\n",
             None,
         );
         let p = env.get_program(pid).expect("program");
         let write = terms_with(p, |o| matches!(o, TermOp::CellWrite))[0];
 
-        // The two keys mint two cells from the one `set` site.
+        // The two closures write two cells from the one `set` site.
         let mut seen: Vec<(CellId, u64)> = Vec::new();
         for e in env.trace().all_for_term(write) {
             if let Value::Cell(c) = e.inputs[0] {
@@ -785,9 +786,9 @@ mod cell_boundary_tests {
         let cell_a = seen[0].0;
         let cell_b = seen[1].0;
         assert_ne!(cell_a, cell_b);
-        assert_eq!(seen[2].0, cell_a, "key 1 reuses its cell");
+        assert_eq!(seen[2].0, cell_a, "`a` writes its own cell again");
 
-        // The last write to key 2's cell is the *middle* event, not the last.
+        // The last write to `b`'s cell is the *middle* event, not the last.
         let last_b = env
             .trace()
             .last_cell_write_before(p, cell_b, u64::MAX)

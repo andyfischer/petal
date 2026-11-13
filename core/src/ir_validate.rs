@@ -496,6 +496,21 @@ impl Program {
                     i
                 ));
             }
+            // A key is a memo's alone: `state(key)`, the keyed `StateInit`
+            // that was not a memo, and the keyed `StateWrite` that wrote its
+            // slot, were removed with the form (2026-11-13).
+            if matches!(term.op, TermOp::StateInit) && !term.inputs.is_empty() && !term.is_memo {
+                return Err(format!(
+                    "t{}: a StateInit with a key input must be a memo (is_memo); keyed `state` was removed",
+                    i
+                ));
+            }
+            if matches!(term.op, TermOp::StateWrite) && term.inputs.len() > 1 {
+                return Err(format!(
+                    "t{}: a StateWrite takes one input (its value), not a key as well; keyed `state` was removed",
+                    i
+                ));
+            }
             // A `LoopKey` names the counted loop whose body block holds it:
             // the lowering finds the loop's cursor that way, so it cannot sit
             // in a nested block or a `while`, which has no item to key by.

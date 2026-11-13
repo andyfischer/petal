@@ -17,7 +17,7 @@
 //!
 //! The rule fires on a declaration that is all of:
 //!
-//! - a plain top-level `state NAME = init` — no key (`state(k) x`), not a
+//! - a plain top-level `state NAME = init` — not a
 //!   `state var`, not inside a function (`pub state` qualifies: importers
 //!   cannot write an export);
 //! - **never assigned**: no write to the cell anywhere in the program the
@@ -87,7 +87,6 @@ pub(super) fn plan_state_fixes(
         .filter_map(|s| match &s.kind {
             StmtKind::State {
                 name,
-                key: None,
                 is_var: false,
                 ..
             } => {

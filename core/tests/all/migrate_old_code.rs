@@ -169,6 +169,10 @@ fn compiled_before(rule: &str, src: &str) -> bool {
         // `else if … end end` no longer parses; it was an `else` block
         // holding the `if`, which is what a line break after `else` still is.
         !compiles(src) && compiles(&nested_today(src))
+    } else if rule == STATE_KEY_DEPRECATED {
+        // `state(key)` no longer parses; the fixture's one is the `memo` it
+        // becomes.
+        !compiles(src) && compiles(&src.replace("state(", "memo("))
     } else {
         compiles(src)
     }
@@ -300,7 +304,11 @@ fn every_old_form_in_one_file() {
                pub config let SPEED = 2.5\n\
                fn w(t)\n  state(t) x = t * 2\n  x\nend\n\
                print(N + SPEED + w(1))\n";
-    assert_eq!(deprecation_warnings(src).len(), 3, "{:?}", deprecation_warnings(src));
+    // The removed `state(key)` keeps the file from compiling; but for it,
+    // the two deprecated declarations warn.
+    assert!(!compiles(src));
+    let warned = deprecation_warnings(&src.replace("state(t)", "memo(t)"));
+    assert_eq!(warned.len(), 2, "{warned:?}");
     let out = migrate_with(src, None);
     assert_eq!(
         out.output,

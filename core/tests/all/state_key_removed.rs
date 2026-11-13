@@ -1,30 +1,20 @@
-//! `state(key)` is deprecated (core/src/compiler/keyed_state.rs): every
-//! keyed declaration is a compile warning carrying the rule id
-//! `state-key-deprecated`, silenced by `// petal-lint-ignore`, and
-//! `petal migrate-old-code` reports the same sites, rewriting the
-//! never-written ones to `memo(key)` (core/src/migrate/state_key.rs). The
-//! feature itself still works.
+//! `state(key) name = init`, absolute keyed state, was removed on 2026-11-13
+//! (deprecated 2026-10-22): the parser rejects it with an error that names
+//! what replaces it and `petal migrate-old-code`, and the migration
+//! `state-key-deprecated` still reads the removed form
+//! (core/src/migrate/state_key.rs): it reports every site and rewrites the
+//! never-written ones whose initializer reads only its key to `memo(key)`.
+//! `memo(key)` and keyed loops (`for … key`) are untouched.
 
 use petal::env::Env;
 use petal::migrate::{MigrateOptions, MigrateOutcome, STATE_KEY_DEPRECATED, migrate_source};
 
-/// Compile `src` and return its compile-time warnings.
-fn warnings(src: &str) -> Vec<String> {
-    let mut env = Env::new();
-    let pid = env.load_program(src).expect("should compile");
-    env.get_program(pid)
-        .expect("program")
-        .warnings
-        .iter()
-        .map(|d| d.message.clone())
-        .collect()
-}
-
-fn deprecations(src: &str) -> Vec<String> {
-    warnings(src)
-        .into_iter()
-        .filter(|m| m.contains("[state-key-deprecated]"))
-        .collect()
+/// The error `src` fails to compile with.
+fn compile_error(src: &str) -> String {
+    match Env::new().load_program(src) {
+        Ok(_) => panic!("should not compile: {src}"),
+        Err(e) => e,
+    }
 }
 
 fn run(src: &str) -> String {
@@ -48,127 +38,90 @@ fn health(id, damage)
   state(id) hp = 100
   hp -= damage
   hp
-end
 print(health(\"goblin\", 10), health(\"orc\", 30), health(\"goblin\", 5))
 ";
 
 #[test]
-fn a_keyed_state_is_a_deprecation_warning_naming_the_replacements() {
-    let found = deprecations(HEALTH);
-    let [message] = found.as_slice() else {
-        panic!("one deprecation warning: {:?}", warnings(HEALTH));
-    };
-    assert!(
-        message.starts_with("`state(…) hp` is deprecated"),
-        "{message}"
-    );
-    for replacement in ["`memo(key)`", "`state var` holding a Map", "plain `state`"] {
-        assert!(message.contains(replacement), "{message}");
+fn a_keyed_state_is_an_error_naming_the_replacements_and_the_tool() {
+    let e = compile_error(HEALTH);
+    assert!(e.contains("`state(key)` was removed"), "{e}");
+    for replacement in [
+        "keyed loop (`for t in xs key t.id do`",
+        "`state var` holding a `Map()`",
+        "`memo(key) name = init`",
+        "plain `state`",
+    ] {
+        assert!(e.contains(replacement), "{replacement}: {e}");
     }
-    assert!(
-        message.ends_with("; run `petal migrate-old-code` [state-key-deprecated]"),
-        "{message}"
-    );
+    assert!(e.contains("run `petal migrate-old-code`"), "{e}");
+    assert!(e.contains("[state-key-deprecated]"), "{e}");
 }
 
 #[test]
-fn the_warning_points_at_the_declaration() {
+fn the_error_points_at_the_key_group() {
+    let e = compile_error(HEALTH);
+    assert!(e.contains("line 2, column 8"), "{e}");
+}
+
+#[test]
+fn every_keyed_spelling_is_rejected() {
+    for src in [
+        "state(1) keyed = 2\n",
+        "state (1) spaced = 2\n",
+        "pub state(1) shared = 0\n",
+        "fn f(k)\n  state(k) var cell = 0\n  get cell\nprint(f(1))\n",
+        "state(1) n: int = 0\n",
+        "for v in [1, 2] do\n  state(v) hits = 0\n  hits += 1\n",
+        "# petal-lint-ignore state-key-deprecated\nstate(1) a = 1\n",
+        "# petal-lint-ignore-file state-key-deprecated\nstate(1) a = 1\n",
+    ] {
+        let e = compile_error(src);
+        assert!(e.contains("`state(key)` was removed"), "{src}: {e}");
+    }
+}
+
+#[test]
+fn an_imported_module_that_uses_it_is_rejected_too() {
     let mut env = Env::new();
-    let pid = env.load_program(HEALTH).expect("should compile");
-    let program = env.get_program(pid).unwrap();
-    let d = program
-        .warnings
-        .iter()
-        .find(|d| d.message.contains("state-key-deprecated"))
-        .expect("the warning");
-    assert_eq!((d.span.start.line, d.span.start.column), (2, 3));
-    assert_eq!(d.severity, petal::diagnostic::Severity::Warning);
+    env.register_module("counter", "pub fn bump(id)\n  state(id) n = 0\n  n += 1\n  n\n");
+    let e = env
+        .load_program("import counter\nprint(counter.bump(1))\n")
+        .expect_err("should not compile");
+    assert!(e.contains("`state(key)` was removed"), "{e}");
 }
 
 #[test]
-fn keyed_state_still_works() {
-    assert_eq!(run(HEALTH), "90 70 85");
-}
-
-#[test]
-fn every_keyed_form_is_reported_and_nothing_else() {
+fn memo_keyed_loops_and_plain_state_are_untouched() {
     let src = "\
 state top = 1
-state(1) keyed = 2
+state var shared = Map()
 fn f(k)
   state plain = 0
-  state(k) var cell = 0
   memo(k) cached = k * 2
-  get cell + cached + plain
-end
-print(top + keyed + f(3))
+  set shared[k] = (get shared[k] ?? 0) + 1
+  let n = get shared[k]
+  cached + plain + n
+for t in [{id: 7}, {id: 9}] key t.id do
+  state seen = 0
+  seen += 1
+  print(seen)
+print(top + f(3) + f(3))
 ";
-    let found = deprecations(src);
-    assert_eq!(found.len(), 2, "{found:?}");
-    assert!(found[0].contains("`state(…) keyed`"), "{found:?}");
-    assert!(found[1].contains("`state(…) cell`"), "{found:?}");
+    assert_eq!(run(src), "1\n1\n16");
 }
 
 #[test]
-fn a_comment_on_the_line_before_silences_it() {
-    let src = "\
-fn f(id)
-  // petal-lint-ignore state-key-deprecated -- shared on purpose
-  state(id) n = 1
-  n
-end
-print(f(1))
+fn each_replacement_does_what_the_keyed_form_did() {
+    // The Map in a top-level `state var`: one slot per key, shared by every
+    // caller, which is what `state(id) hp` was.
+    let shared = "\
+state var hps = Map()
+fn health(id, damage)
+  set hps[id] = (get hps[id] ?? 100) - damage
+  get hps[id]
+print(health(\"goblin\", 10), health(\"orc\", 30), health(\"goblin\", 5))
 ";
-    assert_eq!(deprecations(src), Vec::<String>::new());
-}
-
-#[test]
-fn a_trailing_comment_silences_its_own_line_only() {
-    let src = "\
-fn f(id)
-  state(id) a = 1 // petal-lint-ignore state-key-deprecated
-  state(id) b = 2
-  a + b
-end
-print(f(1))
-";
-    let found = deprecations(src);
-    assert_eq!(found.len(), 1, "{found:?}");
-    assert!(found[0].contains("`state(…) b`"), "{found:?}");
-}
-
-#[test]
-fn a_file_directive_or_a_bare_ignore_silences_it_too() {
-    let file = "// petal-lint-ignore-file state-key-deprecated\nstate(1) a = 1\nprint(a)\n";
-    assert_eq!(deprecations(file), Vec::<String>::new());
-    let bare = "// petal-lint-ignore\nstate(1) a = 1\nprint(a)\n";
-    assert_eq!(deprecations(bare), Vec::<String>::new());
-    // Naming another rule does not.
-    let other = "// petal-lint-ignore prefer-let\nstate(1) a = 1\nprint(a)\n";
-    assert_eq!(deprecations(other).len(), 1);
-}
-
-#[test]
-fn an_imported_module_is_warned_about_where_it_is_written() {
-    let mut env = Env::new();
-    env.register_module(
-        "counter",
-        "pub fn bump(id)\n  state(id) n = 0\n  n += 1\n  n\nend\n",
-    );
-    let pid = env
-        .load_program("import counter\nprint(counter.bump(1))\n")
-        .expect("should compile");
-    let program = env.get_program(pid).unwrap();
-    let d = program
-        .warnings
-        .iter()
-        .find(|d| d.message.contains("state-key-deprecated"))
-        .expect("the module's warning");
-    assert_eq!(d.span.start.line, 2);
-    assert_eq!(
-        program.source_map.file_name_for_span(&d.span).as_deref(),
-        Some("counter"),
-    );
+    assert_eq!(run(shared), "90 70 85");
 }
 
 // ---------------------------------------------------------------------------
@@ -194,11 +147,10 @@ print(width(\"hi\"), width(\"hi\"))
     );
     let expected = src.replace("state(text)", "memo(text)");
     assert_eq!(out.output, expected);
-    // A fixed point, and the same program.
+    // A fixed point, and a program today's compiler runs.
     let again = migrate(&expected);
     assert_eq!(again.findings.len(), 0, "{:?}", again.findings);
-    assert_eq!(run(src), run(&expected));
-    assert_eq!(deprecations(&expected), Vec::<String>::new());
+    assert_eq!(run(&expected), "16 16");
 }
 
 #[test]
@@ -217,8 +169,9 @@ fn an_initializer_that_may_not_be_pure_of_its_key_is_not_rewritten() {
         ("fn f(k, scale)", "if k > 0 then k else scale end"),
     ] {
         let src = format!("{head}\n  state(k) v = {init}\n  v\nend\nprint(f(2, 10), f(2, 100))\n");
-        if Env::new().load_program(&src).is_err() {
-            panic!("does not compile: {src}");
+        // The source compiles but for its `state(key)`.
+        if let Err(e) = Env::new().load_program(&src.replace("state(k)", "state")) {
+            panic!("does not compile: {src}: {e}");
         }
         let out = migrate(&src);
         assert_eq!(
@@ -274,8 +227,9 @@ fn every_kind_of_write_keeps_the_state() {
     ] {
         let src =
             format!("fn f(id)\n  state(id) n = [{{x: 0}}]\n  {write}\n  n\nend\nprint(f(1))\n");
-        // Only sources that compile as written tell us anything.
-        if Env::new().load_program(&src).is_err() {
+        // Only sources that compile but for the `state(key)` tell us
+        // anything.
+        if Env::new().load_program(&src.replace("state(id)", "state")).is_err() {
             continue;
         }
         let out = migrate(&src);
@@ -319,11 +273,11 @@ print(f(1))
 }
 
 #[test]
-fn a_lint_ignore_silences_the_warning_and_keeps_the_migration_off() {
+fn a_lint_ignore_keeps_the_migration_off_a_site() {
     let src = "\
 fn width(text)
-  // petal-lint-ignore state-key-deprecated
-  state(text) w = len(text) * 8
+  # petal-lint-ignore state-key-deprecated
+  state(text) w = text.length * 8
   w
 end
 print(width(\"hi\"))
@@ -339,6 +293,58 @@ fn the_migration_runs_by_default_and_is_not_a_lint_rule() {
     assert_eq!(out.count(STATE_KEY_DEPRECATED), 1, "{:?}", out.findings);
     assert!(petal::migrate::is_migration(STATE_KEY_DEPRECATED));
     assert!(!petal::lint::is_rule(STATE_KEY_DEPRECATED));
-    let lint = petal::lint::lint_source(HEALTH, &petal::lint::LintOptions::default()).unwrap();
-    assert_eq!(lint.count(STATE_KEY_DEPRECATED), 0, "{:?}", lint.findings);
+    assert_eq!(
+        petal::migrate::migration(STATE_KEY_DEPRECATED).map(|m| m.old_form),
+        Some(petal::migrate::OldForm::Removed)
+    );
+    // Lint carries the current syntax only: the file does not parse for it.
+    let lint = petal::lint::lint_source(HEALTH, &petal::lint::LintOptions::default());
+    assert!(lint.is_err_and(|e| e.contains("`state(key)` was removed")));
+}
+
+#[test]
+fn the_other_migrations_still_run_on_a_file_with_a_site_left_for_a_hand_edit() {
+    // `export` → `pub`, `const X = e` → `let X = const(e)`, an old `//`
+    // comment, and the `end`s: all rewritten around a `state(key)` that
+    // nothing can rewrite, which is reported.
+    let src = "\
+// shared per id
+export fn health(id, damage)
+  state(id) hp = 100
+  hp -= damage
+  hp
+end
+const START = 10
+print(health(1, START))
+";
+    let opts = MigrateOptions {
+        except: vec![petal::migrate::END_LINES.to_string()],
+        ..MigrateOptions::default()
+    };
+    let out = migrate_source(src, &opts).expect("migrate");
+    assert_eq!((out.count(STATE_KEY_DEPRECATED), out.left()), (1, 1), "{:?}", out.findings);
+    assert_eq!(
+        out.output,
+        "\
+# shared per id
+pub fn health(id, damage)
+  state(id) hp = 100
+  hp -= damage
+  hp
+end
+let START = const(10)
+print(health(1, START))
+"
+    );
+}
+
+#[test]
+fn a_migrated_file_is_laid_out_by_end_lines_too() {
+    let src = "fn width(text)\n  state(text) w = text.length * 8\n  w\nend\nprint(width(\"hi\"))\n";
+    let out = migrate_source(src, &MigrateOptions::default()).expect("migrate");
+    assert_eq!(
+        out.output,
+        "fn width(text)\n  memo(text) w = text.length * 8\n  w\nprint(width(\"hi\"))\n"
+    );
+    assert!(out.skipped.is_empty(), "{:?}", out.skipped);
 }

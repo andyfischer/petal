@@ -146,13 +146,8 @@ impl ShadowWalker<'_> {
                 };
                 self.bind_value(name, keyword, value, stmt.span);
             }
-            StmtKind::State {
-                name, init, key, ..
-            } => {
+            StmtKind::State { name, init, .. } => {
                 self.walk_expr(init);
-                if let Some(k) = key {
-                    self.walk_expr(k);
-                }
                 self.bind_value(name, "state", init, stmt.span);
             }
             StmtKind::Memo {

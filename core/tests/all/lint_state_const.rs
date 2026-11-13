@@ -123,11 +123,6 @@ fn an_assigned_state_is_left_alone() {
 }
 
 #[test]
-fn a_keyed_state_is_left_alone() {
-    assert_left_alone("let id = 3\nstate(id) open = false\nprint(open)\n");
-}
-
-#[test]
 fn a_state_var_is_left_alone() {
     assert_left_alone("state var total = 0\nprint(get total)\n");
 }

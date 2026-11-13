@@ -10,8 +10,8 @@
 //! run the state this run ended with, so it differs in two ways:
 //!
 //! - **Every slot is addressed.** A slot is saved under its declaration id and
-//!   call path ([`RuntimeStateKey`]), so state declared inside a function, a
-//!   loop or a `state(key)` group comes back too. Both halves are derived
+//!   call path ([`RuntimeStateKey`]), so state declared inside a function or a
+//!   loop comes back too. Both halves are derived
 //!   from names (`compiler::state_ids`), so they are the same in every
 //!   process that compiles the same source.
 //! - **Values round-trip or are not saved.** Anything JSON has no spelling
@@ -805,8 +805,8 @@ for i in range(2) do
   seen += 10
   print(seen)
 end
-for id in [\"a\", \"b\"] do
-  state(id) n = 0
+for id in [\"a\", \"b\"] key id do
+  state n = 0
   n += 100
   print(n)
 end

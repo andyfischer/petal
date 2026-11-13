@@ -171,13 +171,8 @@ impl Walker {
                 self.walk_expr(value, true);
                 self.bind(name);
             }
-            StmtKind::State {
-                name, init, key, ..
-            } => {
+            StmtKind::State { name, init, .. } => {
                 self.walk_expr(init, true);
-                if let Some(k) = key {
-                    self.walk_expr(k, true);
-                }
                 self.bind(name);
             }
             StmtKind::Memo {

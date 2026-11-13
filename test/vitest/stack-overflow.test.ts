@@ -60,7 +60,7 @@ describe("stack overflow", () => {
   });
 
   // A path-keyed `state` slot costs its call path's length, so state keeps
-  // the old 5,000-frame limit; an explicit key does not use the path.
+  // the old 5,000-frame limit; a `memo(key)` does not use the path.
   const DOWN = "fn down(n) if n == 0 then leaf() else down(n - 1) end end\n";
 
   it("stops path-keyed state deeper than its own limit", () => {
@@ -72,9 +72,9 @@ describe("stack overflow", () => {
     expect(r.stderr).toContain("Stack overflow: `state` used more than 5000 nested calls deep");
   });
 
-  it("allows explicitly keyed state at any call depth", () => {
+  it("allows a memo at any call depth", () => {
     const r = run(
-      "fn leaf()\n  state(1) c = 0\n  c += 1\n  c\nend\n" + DOWN + "print(down(6000))",
+      "fn leaf()\n  memo(1) c = 1\n  c\nend\n" + DOWN + "print(down(6000))",
     );
     expect(r.code).toBe(0);
     expect(r.stdout).toBe("1\n");

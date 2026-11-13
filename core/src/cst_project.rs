@@ -523,20 +523,13 @@ impl Projector {
                     .find(|n| n.kind() == SyntaxKind::TypeAnnotation)
                     .and_then(|n| self.type_from_annotation_node(n));
                 // The annotation is not an expression node; what remains is the
-                // init, optionally preceded by an explicit key
-                // (`state(key) name: t = init`).
+                // init.
                 let nodes: Vec<SyntaxNode> = decl_child_nodes(node)
                     .into_iter()
                     .filter(|n| n.kind() != SyntaxKind::TypeAnnotation)
                     .collect();
-                let (key_node, init_node) = match nodes.len() {
-                    1 => (None, &nodes[0]),
-                    2 => (Some(&nodes[0]), &nodes[1]),
-                    n => return Err(format!("state statement with {n} expression nodes")),
-                };
-                let key = match key_node {
-                    Some(k) => Some(self.expr(k)?),
-                    None => None,
+                let [init_node] = nodes.as_slice() else {
+                    return Err(format!("state statement with {} expression nodes", nodes.len()));
                 };
                 let init = self.expr(init_node)?;
                 let is_var = direct_tokens(node)
@@ -546,7 +539,6 @@ impl Projector {
                     name,
                     ty,
                     init,
-                    key,
                     is_var,
                 }
             }
@@ -1763,7 +1755,7 @@ mod tests {
         assert_projects(
             "for i in xs do\n  if i then\n    break\n  else\n    continue\n  end\nend\n",
         );
-        assert_projects("state count = 0\nstate(key) slot = init()\n");
+        assert_projects("state count = 0\nstate slot = init()\n");
         // `var` / `set` — the mutable-cell forms. `var`-ness rides on a token
         // child of the LetStmt/StateStmt node, so the projection has to read it
         // back the same way it reads `pub`.
@@ -1776,7 +1768,7 @@ mod tests {
         assert_projects("config let scale: float = 1.5\n");
         assert_projects("let config = 1\nprint(config)\n");
         assert_projects("pub config let margin = 4\n");
-        assert_projects("state var hits = 0\nstate(key) var slot = 0\n");
+        assert_projects("state var hits = 0\npub state var slot = 0\n");
         assert_projects("var r = {}\nset r.a = 1\nset r.a.b[0] += 2\n");
         assert_projects("enum Shape\n  Circle(r),\n  Point,\n  Rect(w, h),\nend\n");
     }
@@ -1833,11 +1825,11 @@ mod tests {
         assert_projects("fn area(r: float) -> float\n  r\nend\n");
         assert_projects("fn greet(n)\n  n\nend\n"); // no return type
         assert_projects("fn f() -> bool\n  true\nend\n");
-        // `state` bindings take the same `: type` slot as `let`/`var`, in all
-        // three spellings (plain, `var` cell, explicit key).
+        // `state` bindings take the same `: type` slot as `let`/`var`, in
+        // both spellings (plain, `var` cell), and so does a `memo`.
         assert_projects("state n: int = 0\n");
         assert_projects("state var n: float = 0.0\n");
-        assert_projects("state(1) n: string = \"a\"\n");
+        assert_projects("memo(1) n: string = \"a\"\n");
         assert_projects("state n = 0\n"); // un-annotated
         assert_projects("state s: banana = 0\n"); // unknown type name
         assert_projects("pub state n: int = 0\n");

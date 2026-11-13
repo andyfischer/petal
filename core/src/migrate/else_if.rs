@@ -136,12 +136,14 @@ fn merged_else_ifs(source: &str) -> Result<HashSet<usize>, String> {
 /// `source` with each removed `@x` rebind read as a plain `x` (the same
 /// offsets), so a file `at-rebind` has not run on yet still parses.
 fn readable(source: &str) -> String {
+    // Likewise a removed `state(key)`, read as a plain `state`.
+    let source = super::state_key::blank_keys(source);
     if source.contains('@')
-        && let Ok(blanked) = super::at_rebind::blank_markers(source)
+        && let Ok(blanked) = super::at_rebind::blank_markers(&source)
     {
         return blanked;
     }
-    source.to_string()
+    source
 }
 
 fn nesting_sites(source: &str) -> Result<Vec<Site>, String> {

@@ -4,7 +4,7 @@
 //! by **any hashable value**, compared by content: `m[[1, 2]]` finds the entry
 //! stored under another `[1, 2]`, and `m[2]` the one stored under `2.0`,
 //! because the two keys are `==`. Equal keys must hash equally, so the hash is
-//! [`value::hash_value`], the content hash `state(key)` already relies on
+//! [`value::hash_value`], the content hash `memo(key)` and keyed loops already rely on
 //! (see docs/dev/formal-verification.md, `num_key_matches_eq`).
 //!
 //! The hash reads through the heap, so the table cannot hash its keys itself.

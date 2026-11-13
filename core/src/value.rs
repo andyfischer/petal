@@ -664,10 +664,11 @@ pub fn as_num(v: &Value, _heap: &Heap) -> Option<Num> {
     }
 }
 
-/// Hash a value to a u64 for use as an explicit state key.
+/// Hash a value to a u64 for use as a key: a `memo(key)`, a `for … key`
+/// loop iteration, a `Map` entry.
 ///
 /// Consistent with [`values_equal`]: values that are `==` hash equally, so
-/// `state(key)` finds the same slot for every key that is `==` — including a
+/// `memo(key)` finds the same slot for every key that is `==` — including a
 /// record rebuilt each frame, and `2` vs `2.0`. Containers hash their content,
 /// never their heap id (ids differ between two equal values).
 pub fn hash_value(val: &Value, heap: &Heap) -> u64 {

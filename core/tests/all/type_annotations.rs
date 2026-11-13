@@ -79,11 +79,6 @@ fn state_takes_an_annotation_in_all_three_spellings() {
         resolved(state_ty("state var n: float = 0.0")),
         ("float".into(), Some(Type::Float))
     );
-    // The annotation follows the *name*, after the optional key group.
-    assert_eq!(
-        resolved(state_ty("state(1) n: string = \"a\"")),
-        ("string".into(), Some(Type::String))
-    );
     assert_eq!(
         resolved(state_ty("pub state var n: bool = true")),
         ("bool".into(), Some(Type::Bool))

@@ -10,8 +10,8 @@
 //   - a widget called inside a `for` gets per-iteration slots, so the list's
 //     positions are its keys — and reordering the list moves the values (§2.1);
 //   - recursion is one slot per depth;
-//   - `state(expr)` is **absolute**: it ignores the path entirely, which is
-//     what makes lineage keying and shared button-repeat phases work (§2.2);
+//   - a keyed loop's slots follow the item, not the position (§2.2a); the
+//     absolute `state(expr)` was removed (§2.2, state_key_removed.rs);
 //   - top-level `state` is untouched, including the accumulator idiom whose
 //     writes sit inside a loop (§2.3);
 //   - a host call runs on a root path of its own (§2.5).
@@ -139,8 +139,8 @@ print(get builds)
 fn a_top_level_cache_cell_is_built_exactly_once() {
     // The migration for the test above: hoist the declaration to the top level
     // and the initializer runs once for the program, however deep or looped the
-    // readers are. (An absolute `state(key)` is the other answer, and is what
-    // `nes.ptl`'s per-ink `_nes_font_rows` uses.)
+    // readers are. (A `memo(key)` is the other answer for a pure value per
+    // key, and is what `nes.ptl`'s per-ink `_nes_font_rows` uses.)
     let out = run_n(
         "\
 state var builds = 0
@@ -231,32 +231,31 @@ end
 #[test]
 fn reordering_the_list_moves_positional_slots_but_not_keyed_ones() {
     // The documented cost of positional keying, and its escape hatch. Both
-    // widgets run over ["a","b"] and then over ["b","a"]: the unkeyed counter
-    // follows the *position*, the `state(key)` one follows the *item*.
+    // loops run over ["a","b"] and then over ["b","a"]: the counter in the
+    // plain loop follows the *position*, the one in the keyed loop (`for …
+    // key`) follows the *item*.
     let mut env = Env::new();
     let pid = env
         .load_program(
             "\
-fn positional(label)
-  state seen = 0
-  seen += 1
-  seen
-end
-fn keyed(label)
-  state(label) seen = 0
-  seen += 1
-  seen
-end
 state var order = [\"a\", \"b\"]
 for x in get order do
-  print(x ++ \" pos=\" ++ str(positional(x)) ++ \" key=\" ++ str(keyed(x)))
+  state first = x
+  print(\"pos \" ++ x ++ \" first=\" ++ first)
+end
+for x in get order key x do
+  state first = x
+  print(\"key \" ++ x ++ \" first=\" ++ first)
 end
 ",
         )
         .unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
-    assert_eq!(env.take_output(), ["a pos=1 key=1", "b pos=1 key=1"]);
+    assert_eq!(
+        env.take_output(),
+        ["pos a first=a", "pos b first=b", "key a first=a", "key b first=b"]
+    );
 
     // Swap the list in through the state cell, then run again.
     let order = base("order");
@@ -270,47 +269,10 @@ end
     env.run(sid).unwrap();
     assert_eq!(
         env.take_output(),
-        // Position 0 is now "b": it inherits the counter "a" left there.
-        // The keyed counters travelled with their items.
-        ["b pos=2 key=2", "a pos=2 key=2"]
+        // Position 0 is now "b": it inherits the slot "a" left there.
+        // The keyed slots travelled with their items.
+        ["pos b first=a", "pos a first=b", "key b first=b", "key a first=a"]
     );
-}
-
-// ── Explicit keys are absolute ───────────────────────────────────
-
-#[test]
-fn one_explicit_key_is_one_slot_across_different_callsites() {
-    // The plant.ptl lineage / nes.ptl `btn_repeat` contract: same key ⇒ same
-    // slot, no matter who asks or how deep they are.
-    let out = run("\
-fn bump(id)
-  state(id) n = 0
-  n += 1
-  n
-end
-fn indirect(id)
-  bump(id)
-end
-print(bump(\"x\"))
-print(bump(\"x\"))
-print(indirect(\"x\"))
-");
-    assert_eq!(out, ["1", "2", "3"]);
-}
-
-#[test]
-fn an_explicit_key_ignores_the_loop_it_is_reached_from() {
-    let out = run("\
-fn tally(id)
-  state(id) n = 0
-  n += 1
-  n
-end
-for i in range(0, 3) do
-  print(tally(\"shared\"))
-end
-");
-    assert_eq!(out, ["1", "2", "3"]);
 }
 
 // ── Top-level state is untouched ─────────────────────────────────
@@ -428,13 +390,15 @@ fn the_runtime_key_carries_call_and_index_parts_and_a_key_part() {
 fn widget(id)
   state seen = 0
   seen += 1
-  state(id) tagged = 0
-  tagged += 1
 end
 state plain = 0
 plain += 1
 for x in [\"a\"] do
   widget(x)
+end
+for x in [\"a\"] key x do
+  state tagged = 0
+  tagged += 1
 end
 ",
         )
@@ -463,8 +427,9 @@ end
         seen[0]
     );
 
-    // The keyed declaration next to it is absolute: one `Key` part, nothing else.
-    let tagged = shape("widget/tagged");
+    // The declaration in the keyed loop has the iteration's `Key` part where
+    // an `Index` would be.
+    let tagged = shape("tagged");
     assert_eq!(tagged.len(), 1);
     assert!(
         matches!(tagged[0][..], [PathPart::Key(_)]),
@@ -1053,63 +1018,4 @@ fn a_failed_callback_leaves_no_callback_behind() {
     env.reset_stack(sid).unwrap();
     env.run(sid).unwrap();
     assert_eq!(env.take_output(), ["1", "2"]);
-}
-
-// ── Garbage collection, continued ────────────────────────────────
-
-#[test]
-fn a_visited_explicit_key_survives_a_sweep_that_takes_its_positional_neighbour() {
-    // Two declarations reached through the same loop: one positional, one
-    // keyed by the item. Shrinking the list drops the positional slot for the
-    // iteration that no longer happens, while the keyed slot for an item that
-    // is still visited stays — even though the *path* it was first reached by
-    // is gone, because an explicit key is absolute (§2.2).
-    let mut env = Env::new();
-    let pid = env
-        .load_program(
-            "\
-state var items = [\"a\", \"b\"]
-for x in get items do
-  state pos = 0
-  pos += 1
-  state(x) tagged = 0
-  tagged += 1
-end
-",
-        )
-        .unwrap();
-    let sid = env.create_stack(pid).unwrap();
-    env.run(sid).unwrap();
-    assert_eq!(paths_of(&env, sid, "pos").len(), 2);
-    assert_eq!(paths_of(&env, sid, "tagged").len(), 2);
-
-    // Drop "a": "b" moves from index 1 to index 0.
-    let b = env.heap_mut().alloc_string("b".to_string());
-    let shorter = env.heap_mut().alloc_list(vec![Value::String(b)]);
-    env.set_state(sid, base("items"), Value::List(shorter));
-    env.reset_stack(sid).unwrap();
-    env.run(sid).unwrap();
-
-    assert_eq!(
-        paths_of(&env, sid, "pos").len(),
-        1,
-        "the second iteration no longer happens, so its positional slot is swept"
-    );
-    let tagged = paths_of(&env, sid, "tagged");
-    assert_eq!(
-        tagged.len(),
-        1,
-        "\"a\" was not visited, so its keyed slot is swept too"
-    );
-    // "b"'s keyed slot was visited from a different position and survived with
-    // its count: 1 from the first run plus 1 from the second.
-    let key = RuntimeStateKey {
-        base: base("tagged"),
-        path: tagged.iter().next().unwrap().iter().copied().collect(),
-    };
-    assert_eq!(
-        env.snapshot_state(sid).unwrap().get(&key).copied(),
-        Some(Value::Int(2)),
-        "the keyed slot followed its item across the reindex"
-    );
 }

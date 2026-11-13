@@ -252,13 +252,13 @@ module.exports = grammar({
       field('value', $._expression),
     ),
 
-    // `state name = init` or keyed `state(expr) name = init`, with the same
-    // optional `: type` annotation `let`/`var` take.
+    // `state name = init`, with the same optional `: type` annotation
+    // `let`/`var` take. (The keyed `state(expr) name = init` was removed on
+    // 2026-11-13; `memo(key)` and `for … key` are the keyed forms.)
     state_declaration: $ => seq(
       repeat(field('annotation', $.annotation)),
       optional(PUB),
       'state',
-      optional(seq('(', field('key', $._expression), ')')),
       optional('var'),
       field('name', $.identifier),
       optional(field('type', $.type_annotation)),

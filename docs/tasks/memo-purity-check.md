@@ -1,16 +1,20 @@
 # `petal lint`: catch `memo` initializers that are not pure
 
 Status, 2026-11-03: **step 0 done, the check itself open.** A follow-up from
-the soundness review of [`memo`](../features/memo.md).
+the soundness review of [`memo`](../features/memo.md). (2026-11-13:
+`state(key)` was removed from the language. The `state-key-deprecated`
+migration still reads it for legacy source, so the parts below about its
+fix still apply; the purity gate now lives with it in
+`core/src/migrate/state_key.rs`.)
 
 - **Done (step 0):** the `state-key-deprecated` auto-fix no longer creates
   impure memos. It rewrites `state(k)` to `memo(k)` only when the
   initializer is, by its syntax, a pure function of the key: literals, the
   names the key reads, operators, and list, record, field, index and
   interpolation forms (`init_is_pure_of_key` in
-  `core/src/compiler/keyed_state.rs`). Any call, `get`, lambda, branch or
+  `core/src/migrate/state_key.rs`). Any call, `get`, lambda, branch or
   other name means the site is reported without a fix. Tests:
-  `core/tests/all/state_key_deprecated.rs`.
+  `core/tests/all/state_key_removed.rs`.
 - **Open:** nothing checks a hand-written `memo`. `memo(k) v = k * scale`
   still prints `20 20` with a clean `check`. The plan is below
   ([Plan](#plan)).
@@ -163,7 +167,7 @@ data.
    and turns findings into diagnostics. Gate it on
    `program.terms.iter().any(|t| t.is_memo)`, so programs without a memo pay
    nothing. Honour `// petal-lint-ignore memo-impure` the way
-   `keyed_state::deprecated_keyed_states` honours its rule.
+   `migrate::deprecated_lifecycle_decls` honours its rule.
 4. **Replace the syntactic gate.** Have `migrate/state_key.rs` ask the same
    question of the would-be memo (compile the rewrite, run step 1 on it)
    instead of `init_is_pure_of_key`. Then `state(text) w = measure(text)`

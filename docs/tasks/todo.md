@@ -97,6 +97,15 @@ gated on "one release after deprecation": lifecycle Phase 6 (the `const` and
 the `drag_solve_step` alias, `vary`'s ignored `sensitivity` key, loading a
 stored dual from state storage, and eventually `ui`'s deprecated widgets.
 
+Removed ahead of a release, since every known consumer was migrated first:
+absolute keyed state, `state(key) name = init` (deprecated 2026-10-22,
+**removed 2026-11-13**). It is a parse error that names the replacements
+(a keyed loop, a Map in a top-level `state var`, `memo(key)`, plain `state`),
+and `petal migrate-old-code` still reads it (`state-key-deprecated`, now
+`OldForm::Removed`). `memo(key)` and `for … key` are unchanged. Still to
+remove from the same wave of syntax changes: the transitional `#hex` error
+and `elsif` ([pythonic-syntax.md](pythonic-syntax.md), "Remaining").
+
 ## 8. Static-value cache: UI panels and recompile cost
 
 [static-value-optimization.md](static-value-optimization.md).

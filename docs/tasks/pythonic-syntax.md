@@ -1,6 +1,8 @@
 # Indentation-delimited blocks (Scala 3 style), `#` comments, `:hex` colours and `else if`
 
-Status: implemented through P5 in this repo, revised 2026-11-12. What remains is listed under "Remaining" below.
+Status: implemented through P5 in this repo and in every project that uses
+Petal, checked against `650856ac` on 2026-11-12. What remains is P6 and the
+open questions, listed under "Remaining" below.
 
 Implemented (2026-11-12):
 - P1: `:hex` colours and `#` comments, with the transitional `#hex` error
@@ -12,21 +14,38 @@ Implemented (2026-11-12):
 - P4: `end-lines`, Markdown mode, and this repo's `.ptl` migrated (§7.4).
 - P5 docs: the guide, the syntax pages and the writing guide describe blocks
   closed by indentation, and the fences of the user-facing docs have no
-  multi-line `end` (`docs/proposals`, `docs/tasks`, `docs/plan` and `docs/dev`
-  are left as written). The rules B1–B17 and the error messages are in
+  multi-line `end` (`end-lines` ran over them: 312 `end`s in 27 files;
+  `docs/proposals`, `docs/tasks`, `docs/plan` and `docs/dev` are left as
+  written, and a fence that shows `end` on purpose is tagged `no-migrate`).
+  The rules B1–B17 and the error messages are in
   [docs/syntax/indentation.md](../syntax/indentation.md).
+- P5 tooling: tree-sitter (an external scanner for the layout), vim, the
+  website highlighter and editors, and Garden's block indentation, paste
+  reindent and `#` comment toggling have landed.
 - P6, in part: hint and suggestion text shows blocks with no `end`, and the
   bytecode fuzzers also run on programs with no `end`.
-- P5 tooling: tree-sitter, vim, the website highlighter and Garden's
-  indentation have landed.
-- The other projects (website, worlds-fair, petal-creative, cheesecake,
-  `~/.garden`, `~/tools`) are migrated and re-vendored, and the Markdown
-  outside `docs/` is respelled (§7.5).
+- The other projects are migrated, and re-vendored where they carry a copy
+  of Petal (§7.5): the website, worlds-fair, petal-creative, cheesecake,
+  `~/.garden` and `~/tools`, and, also on 2026-11-12, `~/squads/designs`,
+  `~/squads/social` and `~/home/dot/garden`. The Markdown outside `docs/` is
+  respelled. Three places are left in the old syntax on purpose (§7.5).
+- The one old form the migration left in a project by hand,
+  cheesecake's `state(key)` in `petal_fx.ptl`, is resolved: the form was
+  removed from the language on 2026-11-13 and that site rewritten (§7.5).
 
 Remaining:
-- P6: `end-inline` for one-liners (waits on open question 1); dropping the
-  transitional `#hex` error (waits on the vendored projects, open
-  question 2); removing `elsif`.
+- P6:
+  - `end-inline` for one-liners. Waits on open question 1.
+  - Dropping the transitional `#hex` error. Nothing waits on it any more:
+    cheesecake and worlds-fair ran `colour-literals` and were re-vendored on
+    2026-11-12 (open question 2). It is not done yet: the lexer still
+    reports `#f80` as an error that names the migration, and
+    `colour-literals` reads it with `Lexer::legacy`.
+  - Removing `elsif`. It is still accepted without a warning
+    (`OldForm::Accepted`, reported by `petal lint` `old-syntax`); the next
+    step is the warning, then the removal (§3.6).
+  - The emitters that still write an `end` (the lint fixes of §5.3 follow
+    the chain they rewrite; generated one-liners keep theirs).
 - Open questions 1 to 4 (§11). No `redundant-end` lint exists and fmt removes
   no `end` until question 1 is decided.
 
@@ -976,15 +995,20 @@ numbers of the prelude) and the positions asserted in
 reads copies of ten files taken with their `end`s
 (`core/tests/fixtures/with-ends/`).
 
-**The docs' Markdown** got the lexical migrations only (`colour-literals`,
-`hash-comments`, `elsif-to-else-if`: 52 files, so the documentation tests
-now read `print(x) # expected`). `end-lines` was **not** run over `docs/`:
-its prose is tied to the `end`s in its examples ("shares the single closing
-`end`", "this document writes the `end`"), some pages quote line numbers of
-their own snippets (docs/internals/lsp.md), and the guide indents by four.
-A dry run removes 379 `end`s from 43 files with no gate failure, so the
-command is ready when P5 rewrites the prose:
-`petal migrate-old-code --markdown --only end-lines docs/`.
+**The docs' Markdown** first got the lexical migrations only
+(`colour-literals`, `hash-comments`, `elsif-to-else-if`: 52 files, so the
+documentation tests now read `print(x) # expected`). `end-lines` waited for
+P5, because the prose was tied to the `end`s in its examples ("shares the
+single closing `end`", "this document writes the `end`"). With the guides
+and syntax pages rewritten (`47b30213`), it ran over the user-facing docs
+(`70ad43a5`): `petal migrate-old-code --markdown --only end-lines` over
+`docs/*.md`, `docs/features`, `docs/game-engine-features`, `docs/internals`,
+`docs/syntax`, `docs/usage` and `docs/skills` removed 312 `end`s in 27
+files. The design records (`docs/proposals`, `docs/tasks`, `docs/plan`,
+`docs/dev`) are left as written, and the fences that show `end` on purpose
+(this file, `docs/syntax/indentation.md`) are tagged `no-migrate`. The
+Markdown outside `docs/` (READMEs, package docs) was respelled in
+`6b35655f`.
 
 ### 7.5 The other projects, and what they found (done 2026-11-12)
 
@@ -1005,7 +1029,11 @@ with a regression test (`cli/tests/migrate_old_code_cli.rs`,
   colors. It now gets the token migrations, as a Markdown fence does.
 - **`state-key-deprecated`** rewrote `state([name, g.code_hash]) x =
   g.uniforms` to `memo` (cheesecake's petal_fx.ptl). The purity check is on
-  access paths now.
+  access paths now, which left that site for a hand edit: the one old form
+  the migration did not finish in any project. **Resolved 2026-11-13:**
+  `state(key)` was removed from the language (a compile error that names
+  the replacements; the migration still reads it), and the site is a Map in
+  a top-level `state var` (see "Afterwards" below).
 - **`# petal-lint-ignore-file old-imports`** keeps a fixture's bare import.
 - **`<image /> // note`** in element children is text; it is listed once.
 - **stdin** keeps leading blank lines; `--except old-imports` is the
@@ -1026,6 +1054,36 @@ the AST of their migrated selves (10 of them after their colors alone are
 respelled, since `#f80` is the error §3.3 describes); and six example apps
 produce byte-identical 60-frame traces before and after under
 `--scenario monkey:3`.
+
+**More projects, 2026-11-12.** A sweep for consumers the first pass had not
+listed found three more, each migrated with one `petal migrate-old-code`
+run and committed on its own:
+
+- `~/squads/designs` and `~/squads/social`: the `.ptl` design library.
+  petal-creative's petal-design suite reads it, so it had to move with
+  petal-creative.
+- `~/home/dot/garden`: the dotfile source of `~/.garden`.
+
+Left in the old syntax on purpose:
+
+- `~/squads/frontend/public/admin/petal/friend-graph.ptl`: served by the
+  live Squads frontend with its own Petal build, so it changes when that
+  build does.
+- `~/biz/ui-exploration`: generated run outputs.
+- `~/obsidian/petal`: old notes that do not parse.
+
+**Afterwards: `state(key)` removed (2026-11-13).** Not part of
+this plan, but it closes the one item §7.5 left open. Absolute keyed state
+(deprecated 2026-10-22) is now a parse error; `state-key-deprecated` is
+`OldForm::Removed` and reads the form with its own token scan
+(`core/src/migrate/state_key.rs`), so a legacy file still migrates.
+Cheesecake's `petal_fx.ptl` keeps its first-seen uniform defaults in a Map
+held in a top-level `state var`: one entry per effect name, replaced when
+the effect's code or the types of its captures change (it is state, not a
+`memo`: a hot reload must not move the defaults). Cheesecake and worlds-fair
+are re-vendored on the removal. See
+[inline-state.md](../features/inline-state.md#removed-statekey) and the
+CHANGELOG.
 
 ## 8. Phases
 
@@ -1072,10 +1130,12 @@ produce byte-identical 60-frame traces before and after under
 - The guide and docs are rewritten in the `end`-less style.
 
 **P6: cleanup**
-- `end-inline` for one-liners, if open question 1 lands that way.
-- Switch the emitters and fuzzers to the canonical style.
-- Drop the transitional `#hex` error.
-- Remove `elsif`.
+- `end-inline` for one-liners, if open question 1 lands that way. (Open.)
+- Switch the emitters and fuzzers to the canonical style. (Done 2026-11-12
+  for hint text and the fuzzers; the lint fixes still write an `end` where
+  the code they rewrite has one.)
+- Drop the transitional `#hex` error. (Open; unblocked, see open question 2.)
+- Remove `elsif`. (Open; still accepted silently.)
 
 ## 9. Testing
 
@@ -1128,8 +1188,13 @@ produce byte-identical 60-frame traces before and after under
 
    Related: should fmt eventually strip the inline `end` from one-liners where
    it is safe (P6), or leave one-liners as written? P1–P4 don't depend on this.
-2. **How long does the transitional `#hex` error last?** It stays until the
-   vendored projects (cheesecake, worlds-fair) have run `colour-literals`.
+2. **How long does the transitional `#hex` error last?** It was to stay
+   until the vendored projects (cheesecake, worlds-fair) had run
+   `colour-literals`. Both did on 2026-11-12, and no corpus holds a `#f80`
+   color (§7.5), so the condition is met. What is left to decide is whether
+   one release should ship with the error first (see
+   [todo.md](todo.md), "Cut a release"), since an unmigrated file outside
+   these projects would otherwise turn a color into a comment silently.
 3. **Symbol literals.** Is Petal ever likely to want a `:name` symbol literal?
    If so, decide its spelling now, because `:hex` colours make `:add` and
    `:face` colours (§3.3).

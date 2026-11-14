@@ -370,3 +370,10 @@ mod session {
         assert_eq!(d.source(), "1");
     }
 }
+
+#[test]
+fn a_lambda_called_through_a_user_helper_traces_to_the_outer_argument() {
+    let src = "fn apply(f, v)\n  f(v)\nend\n[apply(fn(x) -> <a x={x} />, 5), apply(fn(x) -> <a x={x} />, 6)]\n";
+    let e = edit(resolve_src(&value_runner(), src, |r| set(key_of(r, "a", 1), "x", StaticValue::Int(60))));
+    assert_eq!(e.source, src.replace(", 6)", ", 60)"));
+}

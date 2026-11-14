@@ -124,5 +124,5 @@ before a run, `Env::trace()` after it. The MCP server exposes `explain` as the
 - [`var`: provenance](../syntax/var.md#provenance): what a cell costs these
   tools.
 - [Architecture](../dev/Architecture.md): the term graph itself.
-- [aspirational-ideas/provenance.ptl](../aspirational-ideas/provenance.ptl):
-  where this is meant to go.
+- [aspirational-ideas/programs-as-values.ptl](../aspirational-ideas/programs-as-values.ptl):
+  the same queries from inside a script, where this is meant to go.

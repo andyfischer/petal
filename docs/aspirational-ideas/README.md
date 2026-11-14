@@ -1,36 +1,46 @@
-# Aspirational Examples
+# Aspirational Ideas
 
-These `.ptl` files are **design sketches**, not runnable programs. They show
-how Petal's goal-level features (differentiation via `grad()`, program
-projection, provenance tracing, live editing, self-metaprogramming) could
-feel to use *from inside a script*. Each calls an in-language API the runtime
-does not expose (`grad`, `Program.parse`, `Program.current`, `.slice`,
-`.trace`), so none of them compiles.
+Directions Petal might go, written down before any of it is built. Nothing
+here is a commitment, and nothing here runs. See the
+[README](../../README.md#goals) for the goals behind them.
 
-The features themselves have mostly shipped in another form: through the
-host API and the command line rather than as values a script handles. The
-table says what exists today for each sketch and where it is documented. See
-the [README](../../README.md#goals) for the goals behind them.
-
-When a sketched API lands, rewrite its sketch against the real API and move it
-into [`examples/`](../../examples/) so it runs under the test suite.
+When an idea ships, document it under [`features/`](../features/) (or the
+CLI and dev docs), move any runnable example into
+[`examples/`](../../examples/), and delete or trim the idea here.
 
 ## Design notes
-
-Longer write-ups of a direction, in prose rather than a `.ptl` sketch:
 
 - [programs-as-documents.md](programs-as-documents.md): a script as an
   application's saved document. Covers the write path from GUI edits,
   resolving edits by outcome against programs of many shapes, a schema for
   editable documents, and saved state in a JSON file beside the script.
 
-## Current sketches
+## Sketches
 
-| File | What it sketches | What exists today |
-|------|------------------|-------------------|
-| `differentiation.ptl` | A high-level `grad()` / `gradients()` API for automatic differentiation. | Derivatives by finite differences: `deriv` and `jacobian` from the `autodiff` package, which call any function with its input nudged. See [features/differentiation.md](../features/differentiation.md) and [`examples/console/differentiation.ptl`](../../examples/console/differentiation.ptl). There is no `grad()` and no reverse mode. |
-| `gradient_descent.ptl` | Optimizer sugar on top of `grad()`. | `solve_step` and `solve` in `autodiff`: damped Gauss-Newton steps toward a goal. |
-| `live_editing.ptl` | Editing a running program from a script (`Program.parse`, `prog.edit`), with state reconciled across the edit. | Hot reload with state carried across the edit, driven by the host: [hot-reload.md](../features/hot-reload.md). The ways to edit a program from outside it are surveyed in [program-modification.md](../features/program-modification.md). |
-| `metaprogramming.ptl` | Programs as first-class values: `Program.parse()`, `Program.build()`, `.terms()`, `.functions()`. | A script can read a function value with `fn_info`, `fn_ast` and `code_hash` (experimental): [function-introspection.md](../features/function-introspection.md). The whole program is available outside the script as IR JSON (`petal show-ir --json`, `petal run --ir`): [ir-as-target.md](../dev/ir-as-target.md). |
-| `projection.ptl` | Program slicing as a value: `program.slice(target)`, forward and backward slices. | The same queries from the command line: `petal graph` (backward, forward with `--direction forward`, and a slice for several targets). See [CLI.md](../CLI.md#dataflow-query-commands). |
-| `provenance.ptl` | Data provenance tracing through the dataflow graph, from inside a script (`prog.trace`). | `petal explain --term <name>` walks the value chain that produced a term, and a runtime error prints the nearest named ancestors of the failing value. See [CLI.md](../CLI.md#explain--show-the-value-chain-that-produced-a-term) and [debugging-visibility.md](../dev/debugging-visibility.md). |
+- [programs-as-values.ptl](programs-as-values.ptl): a script holding a
+  program as a value (`Program.current()`, `Program.parse`, `Program.build`)
+  to inspect, slice, edit, transform and compose it. It calls an API the
+  runtime does not have, so it does not compile.
+
+  The analyses behind it mostly exist already, outside the script:
+
+  | In the sketch | What exists today |
+  |---|---|
+  | `.terms()`, `.find()`, inputs and dependents | Function values only: `fn_info`, `fn_ast`, `code_hash` ([function-introspection.md](../features/function-introspection.md)). The whole program as IR JSON: `petal show-ir --json` ([ir-as-target.md](../dev/ir-as-target.md)). |
+  | `.slice()` | `petal graph`, backward and forward, and `Program::slice` in Rust ([provenance.md](../features/provenance.md)). Not yet: dynamic slices, slice algebra, `extract()`. |
+  | `.edit()` with state reconciled | Hot reload, driven by the host ([hot-reload.md](../features/hot-reload.md)); other ways to edit a program are in [program-modification.md](../features/program-modification.md). |
+  | `Program.build`, `.transform`, `.pipe` | Nothing yet. |
+
+## Shipped, sketches removed
+
+These were sketched here and have since shipped in another form, so their
+sketches were deleted (2026-11-14):
+
+- **Differentiation and gradient descent**: the `autodiff` package (`deriv`,
+  `jacobian`, `solve`), by finite differences rather than a reverse-mode
+  `grad()`. See [differentiation.md](../features/differentiation.md).
+- **Provenance tracing**: `petal explain` and `petal graph`. See
+  [provenance.md](../features/provenance.md).
+- **Live editing with state preserved**: [hot-reload.md](../features/hot-reload.md),
+  plus [time-travel.md](../features/time-travel.md) and
+  [speculate.md](../features/speculate.md).

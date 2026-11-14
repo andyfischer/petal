@@ -621,7 +621,7 @@ Findings first, then opinion, in each subsection.
     for the README's "Differentiable programming" section, which already
     over-describes what Petal does (it speaks of backpropagation, and Petal
     has neither reverse mode nor `grad()`, per
-    `docs/aspirational-ideas/README.md:22`).
+    `docs/features/differentiation.md`, "Limits").
 - **Opinion:** Petal should be distinctive at "drag the output, get a code
   edit", not at "has a dual number type". Many languages have AD libraries,
   but few have DM v2.

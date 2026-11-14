@@ -1,0 +1,140 @@
+# Programs as values
+# A script holds a program as a value: it inspects it, slices it, edits it,
+# builds new ones and transforms them. None of this API exists. See the README
+# in this folder for what ships today.
+#
+# Sketched API:
+#   Program.current()                  -- the running program
+#   Program.parse(source)              -- parse source into a Program
+#   Program.build(fn(b) ...)           -- build a program term by term
+#   program.run(args...)               -- execute (state persists across calls)
+#   program.source()                   -- current source as a string
+#   program.terms() / .functions()     -- the term graph
+#   program.find(name)                 -- one term: .op, .inputs, .dependents
+#   program.slice(target)              -- backward slice, as a Projection
+#   program.dynamic_slice(stack, t)    -- only what actually executed
+#   program.edit(old_text, new_text)   -- live edit, returns a Reconciliation
+#   program.transform(fn(term) ...)    -- rewrite every term
+#   program.pipe(other)                -- compose two programs
+#   projection.source() / .extract()   -- render a slice / make it standalone
+#   projection.intersect(p) / .subtract(p)
+
+# --- Example 1: Self-inspection ---
+
+fn add(a, b)
+  a + b
+
+fn mul(a, b)
+  a * b
+
+let me = Program.current()
+print("This program has", len(me.terms()), "terms")
+for func in me.functions() do
+  print("  ", func.name, "-", len(func.terms()), "terms")
+
+# --- Example 2: Inspecting a term's dataflow ---
+
+let prog = Program.parse("""
+    fn f(x, y)
+        let a = x + 1
+        let b = y * 2
+        let c = a + b
+        c
+    f(3, 4)
+""")
+
+let c_term = prog.find("c")
+print("'c' is", c_term.op, "of:")
+for input in c_term.inputs do
+  print("    ", input.name, "(", input.op, ")")
+
+print("'x' feeds into:")
+for d in prog.find("x").dependents do
+  print("    ", d.name)
+
+# --- Example 3: Building programs from code ---
+# A polynomial evaluator generated from its coefficients.
+
+fn make_polynomial(coefficients)
+  Program.build(fn(b)
+    let x = b.param("x")
+    let result = b.literal(0.0)
+    for i in range(0, len(coefficients)) do
+      let power = b.literal(1.0)
+      for _ in range(0, i) do
+        power = b.mul(power, x)
+      result = b.add(result, b.mul(b.literal(coefficients[i]), power))
+    b.return(result)
+  )
+
+# p(x) = 1 + 2x + 3x^2
+let p = make_polynomial([1.0, 2.0, 3.0])
+print(p.source())
+print("p(2) =", p.run(2.0))     # 17
+
+# --- Example 4: Transformation and composition ---
+
+let original = Program.parse("""
+    let a = 2
+    let b = 3
+    a + b
+""")
+let swapped = original.clone()
+swapped.transform(fn(term)
+  match term.op
+    when Add -> term.with_op(Mul)
+    when _ -> term
+)
+print(original.run(), "->", swapped.run())  # 5 -> 6
+
+let double = Program.parse("fn step(input)\n    input * 2\nstep")
+let shout = Program.parse("fn step(input)\n    str(input) ++ \"!\"\nstep")
+print(double.pipe(shout).run(5))  # "10!"
+
+# --- Example 5: Slices a script can hold ---
+# Today `petal graph` prints backward and forward slices. Missing: a slice of
+# only what executed, set algebra on slices, and extracting one as a program.
+
+let classify = Program.parse("""
+    fn classify(n)
+        if n > 0 then
+            "positive"
+        else if n == 0 then
+            "zero"
+        else
+            "negative"
+    classify(5)
+""")
+let stack = classify.create_stack()
+stack.run()
+print(classify.dynamic_slice(stack, "return").source())
+# Only the n > 0 branch
+
+let pipeline = Program.parse("""
+    fn pipeline(input)
+        let parsed = parse_input(input)
+        let validated = validate(parsed)
+        let formatted = format_output(validated)
+        let logged = write_log(validated)
+        {output: formatted, log: logged}
+""")
+let output_deps = pipeline.slice("formatted")
+let log_deps = pipeline.slice("logged")
+print(output_deps.intersect(log_deps).source())  # parsed, validated
+print(output_deps.subtract(log_deps).source())   # formatted
+print(output_deps.extract().source())            # standalone, with params for its inputs
+
+# --- Example 6: Live editing from inside a script ---
+# Hosts already do this (hot reload). Here a script drives it.
+
+let counter = Program.parse("""
+    state count = 0
+    count = count + 1
+    count
+""")
+counter.run()
+counter.run()
+counter.run()                                  # 3
+let recon = counter.edit("count + 1", "count + 10")
+print("Preserved:", recon.preserved)           # [count]
+print(counter.run())                           # 13

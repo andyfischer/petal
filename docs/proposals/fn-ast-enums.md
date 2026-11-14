@@ -334,8 +334,8 @@ declaring `pub enum Node` (test files in the session scratchpad):
 
 **Findings.** The README goals include introspection and goal-based program
 manipulation. `fn_ast` is the in-language half of introspection, and
-`docs/aspirational-ideas/README.md:25` lists programs-as-values as a
-direction. The change makes the tree a little easier and safer to walk. It
+`docs/aspirational-ideas/programs-as-values.ptl` sketches programs-as-values
+as a direction. The change makes the tree a little easier and safer to walk. It
 adds no capability.
 
 **Opinion.** It points the right way but does little on its own. Petal's

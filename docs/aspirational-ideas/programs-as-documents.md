@@ -76,9 +76,12 @@ Petal [goal-based edits](../features/goal-based-editing.md). Because goals
 don't step into an element's children, `edit_in_place` lifts one element into
 a scratch source, edits it there, and splices it back. Structural edits
 (insert, remove, move, wrap, paste) are line splices re-indented by hand.
+Petal's [edit paths](../features/edit-paths.md) now reach into element
+children and do insert, remove and move as minimal splices, so most of this
+can move upstream.
 
 **Computed parts are moved by outcome.** A layer made by a `for` loop or a
-helper has no literal of its own. `solve_computed` asks direct manipulation
+helper has no literal of its own. `solve_computed` asks [direct manipulation](../features/direct-manipulation.md)
 (v2, best effort) which literals to change so the layer lands where it was
 dropped. If no answer stays in the document's own file, the edit is refused
 and nothing is written.
@@ -430,7 +433,7 @@ petal-creative it is the rule.
 | Output source map (site, call path, field provenance, fan-out) for element values | part 1, steps 1 to 3; stable ids | pieces: emit tracing, `explain`, state call paths |
 | `editable_literal(source, name)` with reasons | schema levels | each host repeats the check |
 | Goals that write expressions and named arguments | reference edits; tokens | text splices in petal-design |
-| Goals into element children | structure edits | `edit_in_place` lift-and-splice |
+| Goals into element children | structure edits | done in Petal: [edit paths](../features/edit-paths.md) and path goals; petal-creative still uses `edit_in_place` lift-and-splice |
 | `StaticValue::from_value` | concretize ("write out as source") | JSON round trip in petal-social-media |
 | An `entry` scope selector for direct manipulation | step 4 | edits outside file 0 refused after the fact |
 | The script's single result, read by the host | the schema's entry call | output buffers |

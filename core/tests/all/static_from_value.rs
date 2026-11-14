@@ -55,3 +55,24 @@ fn an_element_converts_and_renders_as_source() {
 fn a_function_has_no_literal() {
     assert_eq!(eval("fn f() 1 end\n[f]"), None);
 }
+
+#[test]
+fn values_round_trip_through_their_source() {
+    // Evaluate, write the value out as source, evaluate that: the same value,
+    // with field order and int-versus-float kept.
+    for src in [
+        "{z: 1, a: 2.0, m: [3, 4.5], s: \"q\\\"uote\", n: nil}",
+        "[round(2.6), 7 / 2, 1.0 * 3]",
+        "fn chip(n) <chip z={n} a={n * 1.5} fill={:ff8800}><dot r={n} />{\"t\"}</chip> end\nchip(2)",
+        "[<a />, {k: <b x={-1} />}]",
+    ] {
+        let v = eval(src).unwrap_or_else(|| panic!("no literal for {src}"));
+        let again = eval(&v.to_source()).unwrap_or_else(|| panic!("no literal for {}", v.to_source()));
+        assert_eq!(again, v, "{src} -> {}", v.to_source());
+    }
+    // A float that is a whole number stays a float.
+    assert_eq!(eval("2.0 * 3").unwrap().to_source(), "6.0");
+    // A color is the record it is at run time, so it round-trips as one.
+    let c = eval(":ff8800").unwrap();
+    assert_eq!(eval(&c.to_source()), Some(c));
+}

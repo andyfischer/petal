@@ -516,6 +516,47 @@ pub fn move_path(source: &str, from: &str, to: &str) -> Result<String, EditError
     }
 }
 
+/// Make the children of the element at `path` read as `children` (text as
+/// [`StaticValue::Str`], elements, other values as `{…}` holes), keeping its
+/// tag and attributes as written. A self-closing element gains a close tag,
+/// and one left with no children closes itself. Children that already read
+/// as `children` are left byte-identical.
+///
+/// This is how an element's text is set (`<text>Hi</text>` to
+/// `<text>Hello</text>`) when its attributes are not static, so the whole
+/// element cannot be set as a value.
+pub fn set_children(source: &str, path: &str, children: &[StaticValue]) -> Result<String, EditError> {
+    let (name, segs) = parse_path(path)?;
+    let doc = Doc::parse(source)?;
+    let (stmt, root) = doc.binding(&name)?;
+    let (segs, target) = locate(root, path, &name, &segs).map_err(|f| f.error)?;
+    let ExprKind::Element { children: old, .. } = &target.kind else {
+        return Err(EditError::invalid(format!(
+            "`{path}` is {}, not an element",
+            describe(target)
+        )));
+    };
+    let bindings = bindings_of(&doc.stmts[..stmt], &doc.chars);
+    let current: Option<Vec<StaticValue>> = old
+        .iter()
+        .map(|c| match c {
+            JsxChild::Text(t) => Some(StaticValue::Str(t.clone())),
+            JsxChild::Expr(e) => eval(e, &bindings).ok(),
+        })
+        .collect();
+    if current.as_deref() == Some(children) {
+        return Ok(source.to_string());
+    }
+    apply(
+        source,
+        &name,
+        &[Op::ReplaceChildren {
+            segs,
+            children: children.to_vec(),
+        }],
+    )
+}
+
 // ── Expressions ──────────────────────────────────────────────────────────
 
 /// [`set_path`] with an expression ([`StaticExpr`]): the value at `path`

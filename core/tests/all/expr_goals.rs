@@ -203,3 +203,20 @@ fn named_argument_calls_read_back() {
     // A value-only binding reads as a value.
     assert_eq!(get_static_expr("let x = [1, 2]\n", "x").unwrap().as_value(), Some(StaticValue::list([1, 2])));
 }
+
+// ── an element's children ──────────────────────────────────────────────────
+
+#[test]
+fn set_children_sets_the_text_of_an_element_whose_attributes_are_computed() {
+    use petal::literal_edit::set_children;
+    let src = "let t = <text size={f(2)}>Hi</text> # greeting\n";
+    let out = set_children(src, "t", &[StaticValue::str("Hello there")]).unwrap();
+    assert_eq!(out, "let t = <text size={f(2)}>Hello there</text> # greeting\n");
+    assert_eq!(set_children(&out, "t", &[StaticValue::str("Hello there")]).unwrap(), out);
+    let src = "let t = <text size={f(2)} />\n";
+    assert_eq!(set_children(src, "t", &[StaticValue::str("Hi")]).unwrap(), "let t = <text size={f(2)}>Hi</text>\n");
+    // Text that would not read back as written is a quoted hole.
+    let out = set_children(src, "t", &[StaticValue::str("a {b} <c>")]).unwrap();
+    assert_eq!(out, "let t = <text size={f(2)}>{\"a \\{b} <c>\"}</text>\n");
+    assert!(set_children("let n = 1\n", "n", &[]).is_err());
+}

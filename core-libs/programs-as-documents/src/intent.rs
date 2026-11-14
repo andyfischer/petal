@@ -788,11 +788,11 @@ fn direct_literal(
 /// "set `x` on <rect> (line 3) to `40`", for the user.
 pub(crate) fn describe_edit(edit: LiteralEdit<'_>, on: &str, at: &str) -> String {
     match edit {
-        LiteralEdit::Set { path, value } if path.is_empty() => format!("set {on} {at} to `{}`", value.to_source()),
+        LiteralEdit::Set { path: "", value } => format!("set {on} {at} to `{}`", value.to_source()),
         LiteralEdit::Set { path, value } => {
             format!("set `{}` of {on} {at} to `{}`", path.trim_start_matches('.'), value.to_source())
         }
-        LiteralEdit::SetExpr { path, expr } if path.is_empty() => format!("write `{expr}` for {on} {at}"),
+        LiteralEdit::SetExpr { path: "", expr } => format!("write `{expr}` for {on} {at}"),
         LiteralEdit::SetExpr { path, expr } => format!("write `{}` = `{expr}` on {on} {at}", path.trim_start_matches('.')),
         LiteralEdit::Remove { path } => format!("remove `{}` from {on} {at}", path.trim_start_matches('.')),
         LiteralEdit::SetChildren { children, .. } => {

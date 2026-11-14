@@ -273,3 +273,24 @@ fn a_field_bound_to_an_imported_token_is_rebound_on_the_element() {
     }));
     assert_eq!(e.source, "import toks\n[<rect id=\"a\" fill={tok.ink} />]\n");
 }
+
+#[test]
+fn a_name_that_means_something_else_at_the_site_is_refused() {
+    // `tok` is the document's tokens at the top, but `swatch`'s parameter
+    // inside it: `fill={tok.color.ink}` written in `swatch` would read the
+    // parameter. The value at the site differs from the value at the top,
+    // so the edit is refused rather than binding to the wrong thing.
+    let src = format!(
+        "{TOKENS}fn swatch(tok)\n  <rect id=\"a\" w={{10}} />\nend\n[swatch({{color: {{ink: {{r: 1, g: 1, b: 1}}}}}})]\n"
+    );
+    let why = refused(resolve_src(&value_runner(), &src, &ResolveOptions::default(), |_| {
+        bind(OutputKey::Id("a".into()), "fill", "tok.color.ink")
+    }));
+    assert!(why.contains("`tok.color.ink`") && why.contains("something else"), "{why}");
+    // The same expression where `tok` is the document's: written.
+    let src = format!("{TOKENS}fn swatch(c)\n  <rect id=\"a\" w={{10}} />\nend\n[swatch(1)]\n");
+    let e = edit(resolve_src(&value_runner(), &src, &ResolveOptions::default(), |_| {
+        bind(OutputKey::Id("a".into()), "fill", "tok.color.ink")
+    }));
+    assert!(e.source.contains("<rect id=\"a\" w={10} fill={tok.color.ink} />"), "{}", e.source);
+}

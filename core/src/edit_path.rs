@@ -211,7 +211,12 @@ fn quoted_key(after: &str) -> Option<(String, &str)> {
     let mut chars = after.char_indices();
     while let Some((i, c)) = chars.next() {
         match c {
-            '\\' => key.push(chars.next()?.1),
+            // The escapes a string literal writes (`render_string_literal`).
+            '\\' => key.push(match chars.next()?.1 {
+                'n' => '\n',
+                't' => '\t',
+                c => c,
+            }),
             '"' => return Some((key, after[i + 1..].strip_prefix(']')?)),
             c => key.push(c),
         }

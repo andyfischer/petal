@@ -1130,6 +1130,24 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- **No value an edit writes can spell code.** A `StaticValue` rendered its
+  call function, variant names, element tag and attribute names as
+  written, so `StaticValue::Call { function: "(launch()) + f" }` given to a
+  goal, to `literal_edit` or inside a `StaticExpr` was written as code.
+  `static_expr::check_value` (used by `StaticExpr::check`, every
+  `literal_edit` value edit and every goal) now refuses a function that is
+  not a member path of identifiers, a variant, tag or attribute name that
+  is not one, and a NaN or infinite float (which rendered as the names
+  `NaN` and `inf`). The binding name of `should_set_value` /
+  `should_set_value_expr` and the function of `should_call` are checked
+  too (a name `x = 1\nlaunch()\nlet y` was written into the source).
+- An edit path's `["key"]` step reads `\n` and `\t` as the newline and
+  tab a quoted record key writes, so such a key's path finds it.
+- programs-as-documents: a reference (`Intent::SetFieldExpr`) whose name
+  is bound differently where it is written (a helper's parameter `tok`
+  shadowing the document's `tok`) is refused, where it was written and
+  read the parameter. When the expression has a value at the end of the
+  document, every value it has at the site must be that one.
 - `petal suggest` spells an imported module's class or enum the way the file
   writes it: `k: lv.Kind?` under `import ./level as lv`, where it printed the
   identity `./level::Kind?`, which is not valid in an annotation (and which

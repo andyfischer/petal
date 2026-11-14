@@ -342,7 +342,12 @@ interpolated string, a lambda, `if`, `match` or a spread argument is an
 `ExprError` saying what was found. Every name, field, argument name, tag and
 attribute is checked when it renders, and every string is quoted by the
 renderer, so text a caller passes becomes a string literal or (after the
-identifier check) a name, never code.
+identifier check) a name, never code. The same holds of the `StaticValue`s
+inside one and of every value goal: `static_expr::check_value` refuses a
+call function that is not a member path of identifiers (`design.modes`), a
+variant, tag or attribute name that is not a name, and a NaN or infinite
+float; a set-value goal's binding name and a call goal's function are
+checked as names.
 
 `free_names()` lists the names it reads from the scope it lands in (the root
 of each path, each callee). `as_value()` is the `StaticValue` when it is one.

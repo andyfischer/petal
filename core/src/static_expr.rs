@@ -360,7 +360,7 @@ impl StaticExpr {
     /// written (identifiers where the syntax needs one).
     pub fn check(&self) -> Result<(), ExprError> {
         match self {
-            StaticExpr::Value(_) => Ok(()),
+            StaticExpr::Value(v) => check_value(v),
             StaticExpr::Name(n) => check_name(n, "a name"),
             StaticExpr::Field { of, .. } => of.check(),
             StaticExpr::Index { of, index } => {
@@ -446,6 +446,61 @@ impl fmt::Display for StaticExpr {
             Err(e) => write!(f, "<invalid expression: {e}>"),
         }
     }
+}
+
+/// Check that every part of `v` that is rendered as written rather than
+/// quoted can be: a call's function is a member path of identifiers
+/// (`modes`, `design.modes`), a variant's enum and name are identifiers,
+/// an element's tag and attribute names are tag names. Strings and record
+/// keys are always quoted by the renderer, so they need no check. Without
+/// this, a [`StaticValue::Call`] whose `function` is `evil() + f` would be
+/// written as code.
+pub fn check_value(v: &StaticValue) -> Result<(), ExprError> {
+    match v {
+        StaticValue::Call { function, args } => {
+            check_function(function)?;
+            args.iter().try_for_each(check_value)
+        }
+        StaticValue::Variant { of, name, args } => {
+            check_name(of, "an enum name")?;
+            check_word(name, "a variant name")?;
+            args.iter().try_for_each(check_value)
+        }
+        StaticValue::List(items) => items.iter().try_for_each(check_value),
+        StaticValue::Record(fields) => fields.iter().try_for_each(|(_, v)| check_value(v)),
+        StaticValue::Element { tag, props, children } => {
+            check_tag(tag)?;
+            for (k, v) in props {
+                check_tag(k)?;
+                check_value(v)?;
+            }
+            children.iter().try_for_each(check_value)
+        }
+        // `{:?}` spells these `NaN` and `inf`: names, not numbers.
+        StaticValue::Float(f) if !f.is_finite() => Err(ExprError::new(format!("{f} is not a number a source can hold"))),
+        StaticValue::Str(_)
+        | StaticValue::Int(_)
+        | StaticValue::Float(_)
+        | StaticValue::Bool(_)
+        | StaticValue::Nil
+        | StaticValue::Color { .. } => Ok(()),
+    }
+}
+
+/// A function as a call names it: an identifier, then field names
+/// (`design.modes`).
+pub fn check_function(function: &str) -> Result<(), ExprError> {
+    let mut parts = function.split('.');
+    check_name(parts.next().unwrap_or_default(), "a function name")?;
+    parts.try_for_each(|p| check_word(p, "a function name's field"))
+}
+
+/// A name after a `.`: letters, digits and `_`, not starting with a digit
+/// (a keyword is fine there).
+fn check_word(name: &str, what: &str) -> Result<(), ExprError> {
+    let mut chars = name.chars();
+    let ok = chars.next().is_some_and(|c| c.is_alphabetic() || c == '_') && chars.all(|c| c.is_alphanumeric() || c == '_');
+    if ok { Ok(()) } else { Err(ExprError::new(format!("`{name}` is not {what}: it must be an identifier"))) }
 }
 
 fn check_name(name: &str, what: &str) -> Result<(), ExprError> {

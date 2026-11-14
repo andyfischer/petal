@@ -467,6 +467,22 @@ pub fn modify_source_with_goals(source: &str, goals: &[Goal]) -> Result<String, 
 
 /// Rewrite `source` to satisfy a single `goal`.
 fn apply_goal(source: &str, goal: &Goal) -> Result<String, GoalError> {
+    // The names a goal writes as code: a binding, a called function.
+    match goal {
+        Goal::ShouldSetValue { name, value, .. } => {
+            check_binding_name(name)?;
+            crate::static_expr::check_value(value).map_err(|e| e.message)?;
+        }
+        Goal::ShouldSetValueExpr { name, expr, .. } => {
+            check_binding_name(name)?;
+            expr.check().map_err(|e| e.message)?;
+        }
+        Goal::ShouldCall { function, params, .. } => {
+            crate::static_expr::check_function(function).map_err(|e| e.message)?;
+            params.iter().try_for_each(crate::static_expr::check_value).map_err(|e| e.message)?;
+        }
+        _ => {}
+    }
     match goal {
         Goal::ShouldCall {
             function,
@@ -513,6 +529,15 @@ fn apply_goal(source: &str, goal: &Goal) -> Result<String, GoalError> {
             let text = call.render(1).map_err(|e| e.message)?;
             ensure_call_text(source, function, &text, placement)
         }
+    }
+}
+
+/// A binding name a goal writes `let <name> = ...` with.
+fn check_binding_name(name: &str) -> Result<(), GoalError> {
+    if crate::static_value::is_identifier(name) {
+        Ok(())
+    } else {
+        Err(format!("`{name}` is not a binding name: it must be an identifier that is not a keyword").into())
     }
 }
 

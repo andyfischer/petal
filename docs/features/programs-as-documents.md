@@ -312,9 +312,11 @@ chain. See [provenance.md](provenance.md#where-an-element-came-from-element-trac
   data list.
 - **Text** is set only as one run of text: text split by `<br />` or mixed
   with holes is refused.
-- **Names in a reference** are checked by the compiler, so a name bound at
-  the site to something else than the host meant (a parameter shadowing a
-  token) is taken; the probe checks the value it has there.
+- **Names in a reference** are checked by the compiler, and a name bound at
+  the site to something else than at the top of the document (a parameter
+  shadowing a token) is refused when the two values differ. A name bound
+  only at the site (a parameter) is taken; the probe checks the value it
+  has there.
 - **One literal that builds several outputs** (a helper's `<box>` children)
   is refused for structural edits, not offered as a choice.
 - **Comments travel with literal_edit's moves.** A comment after an entry on

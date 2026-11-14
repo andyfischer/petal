@@ -122,12 +122,14 @@ impl std::error::Error for EditError {}
 /// naming the step that failed and what is there. A child element step
 /// (`/image[1]`) can only be set to an element.
 pub fn set_path(source: &str, path: &str, value: &StaticValue) -> Result<String, EditError> {
+    checked(value)?;
     let (name, segs) = parse_path(path)?;
     set_at(source, path, &name, &segs, value)
 }
 
 /// [`set_path`] for a whole top-level binding, by name.
 pub fn set_binding(source: &str, name: &str, value: &StaticValue) -> Result<String, EditError> {
+    checked(value)?;
     set_at(source, name, name, &[], value)
 }
 
@@ -199,7 +201,14 @@ pub fn insert_path(
     value: &StaticValue,
     placement: &Placement,
 ) -> Result<String, EditError> {
+    checked(value)?;
     insert_what(source, path, What::Value(value.clone()), placement)
+}
+
+/// `value` can be written as source: no function, variant, tag or
+/// attribute name in it spells code ([`crate::static_expr::check_value`]).
+fn checked(value: &StaticValue) -> Result<(), EditError> {
+    crate::static_expr::check_value(value).map_err(|e| EditError::invalid(e.message))
 }
 
 fn insert_what(
@@ -342,6 +351,7 @@ fn check_child(path: &str, what: &What) -> Result<(), EditError> {
 /// Append `value` to the list (or call arguments) at `path`, or, when `path`
 /// names an element, make `value` (an element) its last child element.
 pub fn append_path(source: &str, path: &str, value: &StaticValue) -> Result<String, EditError> {
+    checked(value)?;
     let (name, segs) = parse_path(path)?;
     let doc = Doc::parse(source)?;
     let (_, root) = doc.binding(&name)?;
@@ -526,6 +536,7 @@ pub fn move_path(source: &str, from: &str, to: &str) -> Result<String, EditError
 /// `<text>Hello</text>`) when its attributes are not static, so the whole
 /// element cannot be set as a value.
 pub fn set_children(source: &str, path: &str, children: &[StaticValue]) -> Result<String, EditError> {
+    children.iter().try_for_each(checked)?;
     let (name, segs) = parse_path(path)?;
     let doc = Doc::parse(source)?;
     let (stmt, root) = doc.binding(&name)?;

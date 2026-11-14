@@ -82,11 +82,13 @@ imported module or package is refused with a reason naming the file.
   other outputs too is returned as an edit with `also_changes`, or as a
   choice beside an override when the host has one.
 - Wrap/unwrap as structural intents, intents as an undo log.
-- A reference intent's names are checked by compiling the edited document,
-  so a name that is bound at the site but means something else there (a
-  parameter shadowing a token) is taken; the probe then checks the value it
-  has there. A site that runs several times passes when the field equals
-  one of the values the expression had there.
+- A reference intent's names are checked by compiling the edited document;
+  a name bound at the site to something else than at the top of the
+  document (a parameter shadowing a token) is refused when the expression
+  has a value at the top that differs from its value at the site. A name
+  bound only at the site (a parameter, `row.x`) is taken on the probe's
+  word. A site that runs several times passes when the field equals one of
+  the values the expression had there.
 - Structural edits move entry texts with Petal's `move_path`: a comment on
   the line after an entry moves with it (into an element's children as a
   `{/* … */}` line), a comment on its own line above an entry stays where it

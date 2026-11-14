@@ -220,3 +220,59 @@ fn set_children_sets_the_text_of_an_element_whose_attributes_are_computed() {
     assert_eq!(out, "let t = <text size={f(2)}>{\"a \\{b} <c>\"}</text>\n");
     assert!(set_children("let n = 1\n", "n", &[]).is_err());
 }
+
+// ── no part of a value is written as code (review, 2026-11) ────────────────
+
+/// A `StaticValue` inside an expression (or given to a value goal) renders
+/// its call function, variant names, tags and attribute names as written,
+/// so each is checked: a function `evil() + f` would otherwise be code.
+#[test]
+fn values_with_code_in_their_names_are_refused() {
+    let src = "let cfg = {fill: :000000}\n";
+    let call = |f: &str| StaticValue::Call { function: f.into(), args: vec![] };
+    let evil = call("(launch(\"x\")) + f");
+    // As an expression, through every expression goal.
+    let e = StaticExpr::call("shadow").arg(StaticExpr::Value(evil.clone()));
+    assert!(e.to_source().is_err());
+    assert!(modify_source_with_goals(src, &[Goal::should_set_path_expr("cfg.fill", e.clone())]).is_err());
+    assert!(modify_source_with_goals(src, &[Goal::should_set_value_expr("x", e)]).is_err());
+    // As a value, through the value goals and literal_edit.
+    for goal in [
+        Goal::should_set_path("cfg.fill", evil.clone()),
+        Goal::should_set_value("x", evil.clone()),
+        Goal::should_insert("cfg.extra", evil.clone()),
+    ] {
+        assert!(modify_source_with_goals(src, &[goal.clone()]).is_err(), "{goal:?}");
+    }
+    let variant = StaticValue::Variant { of: "Mode".into(), name: "dark + launch()".into(), args: vec![] };
+    assert!(modify_source_with_goals(src, &[Goal::should_set_path("cfg.fill", variant)]).is_err());
+    let el = StaticValue::Element { tag: "box".into(), props: vec![("a={launch()} b".into(), StaticValue::Int(1))], children: vec![] };
+    assert!(modify_source_with_goals(src, &[Goal::should_set_path("cfg.fill", el)]).is_err());
+    let tag = StaticValue::Element { tag: "box>{launch()}</box".into(), props: vec![], children: vec![] };
+    assert!(modify_source_with_goals(src, &[Goal::should_set_path("cfg.fill", tag)]).is_err());
+    assert!(modify_source_with_goals(src, &[Goal::should_set_path("cfg.fill", f64::NAN)]).is_err());
+    // A member-path function and an enum variant are fine.
+    let ok = StaticValue::Call { function: "design.modes".into(), args: vec![StaticValue::Int(1)] };
+    assert_eq!(apply(src, &[Goal::should_set_path("cfg.fill", ok)]), "let cfg = {fill: design.modes(1)}\n");
+}
+
+/// The binding name a set-value goal writes `let <name> = …` with, and the
+/// function a call goal writes, are names, never code.
+#[test]
+fn binding_and_function_names_are_checked() {
+    let src = "let a = 1\n";
+    let name = "x = 1\nlaunch()\nlet y";
+    assert!(modify_source_with_goals(src, &[Goal::should_set_value(name, 2)]).is_err());
+    assert!(modify_source_with_goals(src, &[Goal::should_set_value_expr(name, ink())]).is_err());
+    assert!(modify_source_with_goals(src, &[Goal::should_call("launch(); f", [1])]).is_err());
+    assert!(apply(src, &[Goal::should_set_value_expr("b", ink())]).ends_with("let b = tok.color.ink\n"));
+}
+
+/// A key with a newline or tab is written `["a\nb"]` and its path step
+/// reads back as the same key.
+#[test]
+fn a_quoted_key_with_escapes_round_trips_through_a_path() {
+    let src = "let o = {[\"a\\nb\"]: 1, [\"a\\tb\"]: 2}\n";
+    let out = apply(src, &[Goal::should_set_path("o[\"a\\nb\"]", 3), Goal::should_set_path("o[\"a\\tb\"]", 4)]);
+    assert_eq!(out, "let o = {[\"a\\nb\"]: 3, [\"a\\tb\"]: 4}\n");
+}

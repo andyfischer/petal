@@ -676,6 +676,22 @@ fn verify_expr(
     if distinct.is_empty() {
         return Verified::Fails(format!("`{expr}` is never evaluated where it is written"));
     }
+    // A name bound at the top of the document that something else (a
+    // parameter, a local) shadows where the expression is written: the
+    // compiler takes it, but it reads another value there. When the
+    // expression has a value at the end of the document, every value it has
+    // where it is written must be that one.
+    if let Ok(top) = runner.probe(&format!("{new_source}\n{}\n", probed(expr)))
+        && let Some(top) = top.last()
+        && let Some(other) = distinct.iter().find(|v| !same(v, top))
+    {
+        return Verified::Fails(format!(
+            "`{expr}` means something else where it is written ({}) than at the top of the document ({}): \
+             a name in it is bound differently there; nothing was changed",
+            other.to_source(),
+            top.to_source()
+        ));
+    }
     let mut last = None;
     for v in distinct.into_iter().take(4) {
         let as_value = Intent::SetField { target: target.clone(), field: field.clone(), value: v };

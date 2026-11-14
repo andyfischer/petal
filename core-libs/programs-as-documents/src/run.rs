@@ -13,6 +13,7 @@ use std::rc::Rc;
 
 use petal::env::Env;
 use petal::program::{Program, ProgramId};
+use petal::stack::StackKey;
 use petal::static_value::StaticValue;
 use petal::value::Value;
 
@@ -75,15 +76,24 @@ impl Runner {
         &self.output
     }
 
+    /// A fresh env with the host's setup and element tracing on, `source`
+    /// loaded into it, and a stack ready to run it (not yet run): what a run
+    /// starts from, and the checkpoint a direct-manipulation solve re-runs.
+    pub fn prepare(&self, source: &str) -> Result<(Env, ProgramId, StackKey), String> {
+        let mut env = Env::new();
+        (self.setup)(&mut env)?;
+        env.set_echo(false);
+        env.enable_element_trace(true);
+        let program = env.load_program_at(source, &self.path)?;
+        let stack = env.create_stack(program)?;
+        Ok((env, program, stack))
+    }
+
     /// Run `source` in a fresh env with element tracing on, and map its
     /// result. Errors are a load (parse, compile) or run failure, or a
     /// missing emit, as a message for the user.
     pub fn run(&self, source: &str) -> Result<DocumentRun, String> {
-        let mut env = Env::new();
-        (self.setup)(&mut env)?;
-        env.enable_element_trace(true);
-        let program = env.load_program_at(source, &self.path)?;
-        let stack = env.create_stack(program)?;
+        let (mut env, program, stack) = self.prepare(source)?;
         let result = env.run(stack)?;
         let log = env.take_output();
         let outputs = match &self.output {

@@ -12,11 +12,24 @@
 //!    built the output built only it (fan-out 1). Add the attribute there,
 //!    wherever that literal is.
 //!
-//! Anything else comes back as a [`Resolution`] that says why: a literal or
-//! site shared by several outputs is [`Resolution::NeedsChoice`] (with the
-//! edit that would change all of them, for the host to offer); a computed
-//! value is [`Resolution::Unresolved`]; a literal in another file, or an
-//! edit that does not do what was asked, is [`Resolution::Refused`].
+//! 3. **Shared site, chosen scope.** The literal or site built other outputs
+//!    too. The scopes that verify come back as a
+//!    [`Resolution::NeedsChoice`]: edit the shared literal (all of them
+//!    change), edit the data entry a `map` or `for` read the value from, or
+//!    write an override through the host's [`OverrideHook`]. A
+//!    [`ScopePolicy`] can pick one instead ([`crate::scope`]).
+//! 4. **Solve.** The field is computed: Petal's direct-manipulation solver
+//!    finds which numbers of the document to change, holding the fields in
+//!    [`ResolveOptions::hold`] ([`crate::solve`]). A value read per item
+//!    from a data list is edited in the data first (step 3's data scope).
+//! 5. **Concretize.** With the caller's consent
+//!    ([`ResolveOptions::concretize`]), the call that made the output is
+//!    replaced by the literal of its value, and the intent applied to that
+//!    ([`crate::concretize`]).
+//! 6. **Refuse with a reason** that names the place to edit by hand:
+//!    [`Resolution::Unresolved`] (nothing applies), or
+//!    [`Resolution::Refused`] (the edit lands in another file, or does not
+//!    do what was asked when run).
 //!
 //! Every edit is verified by running the edited source: the intent must hold
 //! in the new output, and no other output may change (an edit that changes
@@ -25,8 +38,11 @@
 use petal::source_map::{FileId, SourceSpan};
 use petal::static_value::StaticValue;
 
+use std::rc::Rc;
+
 use crate::output_map::{FieldProvenance, LiteralSource, OutputKey, OutputNode, PathSeg, path_string};
 use crate::run::{DocumentRun, Runner};
+use crate::scope::{OverrideHook, OverrideRequest, Scope, ScopePolicy, data_entry, use_site};
 use crate::splice::{LiteralEdit, edit_span};
 
 /// What the user wants to be true of the output.
@@ -60,6 +76,13 @@ pub enum Step {
     DirectLiteral,
     /// Step 2: the element literal that built the output, in place.
     SingleSite,
+    /// Step 3: an edit in a chosen scope (the shared literal, the data
+    /// entry, an override).
+    Scope(Scope),
+    /// Step 4: numbers the direct-manipulation solver chose.
+    Solve,
+    /// Step 5: the output written out as source, then edited.
+    Concretize,
 }
 
 /// A verified source edit.
@@ -72,12 +95,18 @@ pub struct ResolvedEdit {
     pub span: SourceSpan,
     /// What the edit does, for the user ("set `96` on line 1 to `120`").
     pub description: String,
+    /// The other outputs (or fields of this one) the edit changes too, as
+    /// the rerun saw them: empty for an edit that changes only what was
+    /// asked. A solve or an edit of a shared literal may change others.
+    pub also_changes: Vec<String>,
 }
 
 /// One way to go on when an intent needs the user's say.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Choice {
     pub label: String,
+    /// The scope this choice edits in.
+    pub scope: Scope,
     /// The edit that makes the intent hold this way, verified to make it
     /// hold (but it changes other outputs too). `None` for a choice the host
     /// carries out some other way.
@@ -102,8 +131,8 @@ pub enum Resolution {
     Refused { reason: String },
 }
 
-/// Limits on where [`resolve`] may write.
-#[derive(Debug, Clone, Default)]
+/// Limits on where [`resolve`] may write, and how it chooses.
+#[derive(Clone)]
 pub struct ResolveOptions {
     /// Allow edits outside the document's own file (the entry file). Off by
     /// default: such an edit is refused with a reason naming the file. The
@@ -111,10 +140,111 @@ pub struct ResolveOptions {
     /// on must write other files itself; today this only changes the
     /// refusal into [`Resolution::Unresolved`].
     pub allow_other_files: bool,
+    /// How a shared site's scope is chosen (step 3): ask (the default), or
+    /// take the first verified scope of a list.
+    pub scope_policy: ScopePolicy,
+    /// The host's way of writing a per-instance override, if it has one.
+    pub overrides: Option<Rc<dyn OverrideHook>>,
+    /// Solve computed numeric fields with direct manipulation (step 4). On
+    /// by default; a solve re-runs the document many times.
+    pub solve: bool,
+    /// Fields of the target to keep where they are while solving (a drag
+    /// along `x` holds `y`).
+    pub hold: Vec<String>,
+    /// The caller's consent to write the output out as source when nothing
+    /// else applies (step 5). Off by default.
+    pub concretize: bool,
+}
+
+impl Default for ResolveOptions {
+    fn default() -> Self {
+        ResolveOptions {
+            allow_other_files: false,
+            scope_policy: ScopePolicy::Ask,
+            overrides: None,
+            solve: true,
+            hold: Vec::new(),
+            concretize: false,
+        }
+    }
+}
+
+impl std::fmt::Debug for ResolveOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResolveOptions")
+            .field("allow_other_files", &self.allow_other_files)
+            .field("scope_policy", &self.scope_policy)
+            .field("overrides", &self.overrides.is_some())
+            .field("solve", &self.solve)
+            .field("hold", &self.hold)
+            .field("concretize", &self.concretize)
+            .finish()
+    }
 }
 
 /// Resolve `intent` against `run`, the latest run of `source` with `runner`.
 pub fn resolve(runner: &Runner, run: &DocumentRun, intent: &Intent, opts: &ResolveOptions) -> Resolution {
+    let res = resolve_in_place(runner, run, intent, opts);
+    if !opts.concretize || !matches!(res, Resolution::Unresolved { .. }) {
+        return res;
+    }
+    match concretize_and_apply(runner, run, intent, opts) {
+        Ok(r) => r,
+        Err(why) => match res {
+            Resolution::Unresolved { reason, at } => Resolution::Unresolved { reason: format!("{reason}; {why}"), at },
+            other => other,
+        },
+    }
+}
+
+/// Step 5 on its own: write the output `intent` names out as source (the
+/// caller's consent is calling this), then resolve the intent against the
+/// written-out document. The edit returned does both.
+pub fn concretize_and_apply(
+    runner: &Runner,
+    run: &DocumentRun,
+    intent: &Intent,
+    opts: &ResolveOptions,
+) -> Result<Resolution, String> {
+    let node = run.map.find(intent.target()).ok_or_else(|| format!("the document has no output {}", intent.target()))?;
+    let written = crate::concretize::concretize(runner, run, node)?;
+    let after = runner.run(&written.source)?;
+    let Some(new_node) = after.map.at_path(&node.path) else {
+        return Err("the written-out document lost the output".into());
+    };
+    let retarget = match intent {
+        Intent::SetField { field, value, .. } => {
+            Intent::SetField { target: new_node.key.clone(), field: field.clone(), value: value.clone() }
+        }
+        Intent::RemoveField { field, .. } => Intent::RemoveField { target: new_node.key.clone(), field: field.clone() },
+    };
+    let inner = ResolveOptions { concretize: false, ..opts.clone() };
+    let wrap = |e: ResolvedEdit| ResolvedEdit {
+        source: e.source,
+        step: Step::Concretize,
+        span: written.span,
+        description: format!("{}, then {}", written.description, e.description),
+        also_changes: e.also_changes,
+    };
+    Ok(match resolve_in_place(runner, &after, &retarget, &inner) {
+        Resolution::Edit(e) => Resolution::Edit(wrap(e)),
+        Resolution::AlreadyHolds => Resolution::Edit(ResolvedEdit {
+            source: written.source,
+            step: Step::Concretize,
+            span: written.span,
+            description: written.description,
+            also_changes: Vec::new(),
+        }),
+        Resolution::NeedsChoice { reason, options } => Resolution::NeedsChoice {
+            reason,
+            options: options.into_iter().map(|c| Choice { edit: c.edit.map(wrap), ..c }).collect(),
+        },
+        other => other,
+    })
+}
+
+/// Steps 1 to 4 and 6.
+fn resolve_in_place(runner: &Runner, run: &DocumentRun, intent: &Intent, opts: &ResolveOptions) -> Resolution {
     let Some(node) = run.map.find(intent.target()) else {
         return Resolution::Unresolved {
             reason: format!("the document has no output {}", intent.target()),
@@ -154,10 +284,9 @@ pub fn resolve(runner: &Runner, run: &DocumentRun, intent: &Intent, opts: &Resol
             }
             direct_literal(runner, run, node, intent, lit, LiteralEdit::Remove { path: rest }, opts)
         }
-        (Intent::SetField { .. }, Some(FieldProvenance::Computed { at, reason })) => Resolution::Unresolved {
-            reason: format!("{reason}; edit it by hand"),
-            at: *at,
-        },
+        (Intent::SetField { value, .. }, Some(FieldProvenance::Computed { at, reason })) => {
+            computed(runner, run, node, intent, value, reason, *at, opts)
+        }
         (Intent::RemoveField { .. }, Some(FieldProvenance::Computed { at, reason })) if !rest.is_empty() => {
             Resolution::Unresolved {
                 reason: format!("{reason}; edit it by hand"),
@@ -176,6 +305,139 @@ pub fn resolve(runner: &Runner, run: &DocumentRun, intent: &Intent, opts: &Resol
             let _ = site;
             single_site(runner, run, node, intent, LiteralEdit::Remove { path: &path }, opts)
         }
+    }
+}
+
+/// A computed field: the data entry it was read from (step 3's data scope,
+/// which changes only this output), then a solve (step 4), else a reason.
+#[allow(clippy::too_many_arguments)]
+fn computed(
+    runner: &Runner,
+    run: &DocumentRun,
+    node: &OutputNode,
+    intent: &Intent,
+    value: &StaticValue,
+    reason: &str,
+    at: Option<SourceSpan>,
+    opts: &ResolveOptions,
+) -> Resolution {
+    let mut why = vec![reason.to_string()];
+    let (head, rest) = split_field(intent.field());
+    if let Some(r) = edit_data(runner, run, node, intent, head, rest, value, opts) {
+        match r {
+            Ok(res) => return res,
+            Err(e) => why.push(e),
+        }
+    }
+    if opts.solve {
+        match crate::solve::number(value) {
+            None => why.push(format!("{} is not a number, so it cannot be solved for", value.to_source())),
+            Some(target) => {
+                match crate::solve::solve_field(runner, run, node, intent.field(), target, &opts.hold, opts.allow_other_files) {
+                    Ok(s) => {
+                        let edit = ResolvedEdit {
+                            source: s.source,
+                            step: Step::Solve,
+                            span: s.span,
+                            description: s.description,
+                            also_changes: Vec::new(),
+                        };
+                        let others = match verify(runner, run, node, intent, &edit.source) {
+                            Verified::Holds { others } => others,
+                            Verified::Fails(f) => {
+                                return Resolution::Refused {
+                                    reason: format!("the solver's edit ({}) fails: {f}", edit.description),
+                                };
+                            }
+                        };
+                        let edit = ResolvedEdit { also_changes: others, ..edit };
+                        if edit.also_changes.is_empty() {
+                            return Resolution::Edit(edit);
+                        }
+                        // It changes other outputs too: when the host can
+                        // write an override for this one alone, that is a
+                        // choice.
+                        let more = other_scopes(runner, run, node, intent, opts);
+                        if more.is_empty() {
+                            return Resolution::Edit(edit);
+                        }
+                        let reason = format!("solving moves {} too", edit.also_changes.join(", "));
+                        let mut options =
+                            vec![Choice { label: "Change them all".into(), scope: Scope::EditShared, edit: Some(edit) }];
+                        options.extend(more);
+                        return choose(reason, options, &opts.scope_policy);
+                    }
+                    Err(e) => why.push(e),
+                }
+            }
+        }
+    }
+    let place = at.map(|s| format!(" on line {}", s.start.line)).unwrap_or_default();
+    Resolution::Unresolved { reason: format!("{}; edit it by hand{place}", why.join("; ")), at }
+}
+
+/// Step 3's data scope: the entry of the data list the field was read from.
+/// `None` when the field is not read from one; `Some(Err)` says why the
+/// entry could not be edited.
+#[allow(clippy::too_many_arguments)]
+fn edit_data(
+    runner: &Runner,
+    run: &DocumentRun,
+    node: &OutputNode,
+    intent: &Intent,
+    head: &str,
+    rest: &str,
+    value: &StaticValue,
+    opts: &ResolveOptions,
+) -> Option<Result<Resolution, String>> {
+    let entry = data_entry(run, node, head).ok()?;
+    let edit = match data_edit(runner, run, node, intent, &entry, rest, value, opts) {
+        Ok(e) => e,
+        Err(e) => return Some(Err(e)),
+    };
+    Some(Ok(match edit {
+        DataEdit::Refused(r) => r,
+        DataEdit::Edit(e) if e.also_changes.is_empty() => Resolution::Edit(e),
+        DataEdit::Edit(e) => Resolution::NeedsChoice {
+            reason: format!("changing {} also changes {}", e.description, e.also_changes.join(", ")),
+            options: vec![Choice { label: "Change the data entry".into(), scope: Scope::EditData, edit: Some(e) }],
+        },
+    }))
+}
+
+enum DataEdit {
+    Edit(ResolvedEdit),
+    Refused(Resolution),
+}
+
+#[allow(clippy::too_many_arguments)]
+fn data_edit(
+    runner: &Runner,
+    run: &DocumentRun,
+    node: &OutputNode,
+    intent: &Intent,
+    entry: &crate::scope::DataEntry,
+    rest: &str,
+    value: &StaticValue,
+    opts: &ResolveOptions,
+) -> Result<DataEdit, String> {
+    let line = entry.span.start.line;
+    if let Some(r) = file_check(run, entry.span.file, &format!("the data `{}`", entry.path.trim_start_matches('.')), opts) {
+        return Ok(DataEdit::Refused(r));
+    }
+    let path = format!("{}{rest}", entry.path);
+    let source = edit_span(&run.source, &entry.span, LiteralEdit::Set { path: &path, value })
+        .map_err(|e| format!("could not edit the data entry `{path}` on line {line}: {e}"))?;
+    let description = format!("set the data entry `{path}` on line {line} to `{}`", value.to_source());
+    match verify(runner, run, node, intent, &source) {
+        Verified::Fails(f) => Err(format!("editing the data entry `{path}` on line {line} does not work: {f}")),
+        Verified::Holds { others } => Ok(DataEdit::Edit(ResolvedEdit {
+            source,
+            step: Step::Scope(Scope::EditData),
+            span: entry.span,
+            description,
+            also_changes: others,
+        })),
     }
 }
 
@@ -247,8 +509,8 @@ fn direct_literal(
         }
         LiteralEdit::Remove { path } => format!("remove `{}` from `{text}` on line {}", path.trim_start_matches('.'), lit.span.start.line),
     };
-    let edit = ResolvedEdit { source, step: Step::DirectLiteral, span: lit.span, description };
-    finish(runner, run, node, intent, edit, lit.shared, &format!("`{text}` on line {}", lit.span.start.line))
+    let edit = ResolvedEdit { source, step: Step::DirectLiteral, span: lit.span, description, also_changes: Vec::new() };
+    finish(runner, run, node, intent, edit, lit.shared, &format!("`{text}` on line {}", lit.span.start.line), opts)
 }
 
 fn single_site(
@@ -279,12 +541,13 @@ fn single_site(
             format!("remove `{}` from <{tag}> (line {})", path.trim_start_matches('.'), span.start.line)
         }
     };
-    let edit = ResolvedEdit { source, step: Step::SingleSite, span, description };
-    finish(runner, run, node, intent, edit, site.fan_out, &format!("<{tag}> on line {}", span.start.line))
+    let edit = ResolvedEdit { source, step: Step::SingleSite, span, description, also_changes: Vec::new() };
+    finish(runner, run, node, intent, edit, site.fan_out, &format!("<{tag}> on line {}", span.start.line), opts)
 }
 
 /// Verify `edit`, and turn it into a resolution: the edit, a choice when it
 /// (statically or by rerun) changes other outputs, or a refusal.
+#[allow(clippy::too_many_arguments)]
 fn finish(
     runner: &Runner,
     run: &DocumentRun,
@@ -293,6 +556,7 @@ fn finish(
     edit: ResolvedEdit,
     shared: usize,
     what: &str,
+    opts: &ResolveOptions,
 ) -> Resolution {
     match verify(runner, run, node, intent, &edit.source) {
         Verified::Fails(reason) => Resolution::Refused { reason },
@@ -303,10 +567,58 @@ fn finish(
                 format!("changing {what} also changes {}", others.join(", "))
             };
             let label = if shared > 1 { format!("Change all {shared}") } else { "Change them all".to_string() };
-            Resolution::NeedsChoice { reason, options: vec![Choice { label, edit: Some(edit) }] }
+            let shared_edit = ResolvedEdit { step: Step::Scope(Scope::EditShared), also_changes: others, ..edit };
+            let mut options = vec![Choice { label, scope: Scope::EditShared, edit: Some(shared_edit) }];
+            options.extend(other_scopes(runner, run, node, intent, opts));
+            choose(reason, options, &opts.scope_policy)
         }
         Verified::Holds { .. } => Resolution::Edit(edit),
     }
+}
+
+/// The scopes besides editing the shared site that make `intent` hold:
+/// the data entry, and the host's override.
+fn other_scopes(runner: &Runner, run: &DocumentRun, node: &OutputNode, intent: &Intent, opts: &ResolveOptions) -> Vec<Choice> {
+    let mut out = Vec::new();
+    let (head, rest) = split_field(intent.field());
+    if let Intent::SetField { value, .. } = intent
+        && let Ok(entry) = data_entry(run, node, head)
+        && let Ok(DataEdit::Edit(e)) = data_edit(runner, run, node, intent, &entry, rest, value, opts)
+    {
+        out.push(Choice { label: "Change only this one's data".into(), scope: Scope::EditData, edit: Some(e) });
+    }
+    if let Some(hook) = &opts.overrides {
+        let req = OverrideRequest { run, node, intent, use_site: use_site(run, node) };
+        if let Some(Ok(o)) = hook.write_override(&req)
+            && let Verified::Holds { others } = verify(runner, run, node, intent, &o.source)
+        {
+            let edit = ResolvedEdit {
+                source: o.source,
+                step: Step::Scope(Scope::Override),
+                span: o.span,
+                description: o.description,
+                also_changes: others,
+            };
+            out.push(Choice { label: "Override this one".into(), scope: Scope::Override, edit: Some(edit) });
+        }
+    }
+    out
+}
+
+/// Apply `policy` to the verified `options`.
+fn choose(reason: String, options: Vec<Choice>, policy: &ScopePolicy) -> Resolution {
+    if let ScopePolicy::Prefer(order) = policy {
+        for scope in order {
+            let pick = options.iter().find(|c| {
+                c.scope == *scope
+                    && c.edit.as_ref().is_some_and(|e| *scope == Scope::EditShared || e.also_changes.is_empty())
+            });
+            if let Some(Choice { edit: Some(e), .. }) = pick {
+                return Resolution::Edit(e.clone());
+            }
+        }
+    }
+    Resolution::NeedsChoice { reason, options }
 }
 
 /// The outcome of re-running an edited source.

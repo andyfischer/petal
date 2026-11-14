@@ -18,7 +18,11 @@
 //!   call path, fan-out, per-field provenance and a stable [`OutputKey`]
 //!   ([`output_map`]).
 //! - [`Intent`] / [`resolve`]: an edit stated against the output, resolved
-//!   to a verified source edit, a choice, or a reason ([`intent`]).
+//!   to a verified source edit, a choice, or a reason ([`intent`]), by the
+//!   resolution ladder: direct literal, single site, a shared site's scope
+//!   ([`scope`]: the shared literal, the data entry, a host override), a
+//!   direct-manipulation solve ([`solve`]), and with consent writing the
+//!   output out as source ([`concretize`]).
 //! - [`editable_literal`]: whether a top-level binding is a literal the
 //!   application can write into ([`editable`]).
 //!
@@ -28,15 +32,23 @@
 //! dependency of a host: an embedder that does not edit documents leaves
 //! this crate out.
 
+pub mod concretize;
 pub mod editable;
 pub mod intent;
 pub mod output_map;
 pub mod run;
+pub mod scope;
 pub mod session;
+pub mod solve;
 pub mod splice;
 
 pub use editable::{NotEditable, editable_literal};
-pub use intent::{Choice, Intent, Resolution, ResolveOptions, ResolvedEdit, Step, Verified, resolve, verify};
+pub use concretize::{Concretized, concretize};
+pub use intent::{
+    Choice, Intent, Resolution, ResolveOptions, ResolvedEdit, Step, Verified, concretize_and_apply, resolve, verify,
+};
+pub use scope::{DataEntry, OverrideEdit, OverrideHook, OverrideRequest, Scope, ScopePolicy, UseSite, data_entry};
+pub use solve::{Solved, solve_field};
 pub use output_map::{
     Field, FieldProvenance, LiteralSource, OutputKey, OutputMap, OutputNode, PathSeg, Site, WithinLiteral,
 };

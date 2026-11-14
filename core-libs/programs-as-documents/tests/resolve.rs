@@ -153,13 +153,23 @@ items
         }
         other => panic!("{other:?}"),
     }
-    match resolve_src(&r, src, |r| set(key_of(r, "dot", 1), "x", StaticValue::Int(8))) {
+    // With solving off, a computed field is a reason that names the line.
+    let no_solve = ResolveOptions { solve: false, ..ResolveOptions::default() };
+    let rn = run(&r, src);
+    match resolve(&r, &rn, &set(key_of(&rn, "dot", 1), "x", StaticValue::Int(8)), &no_solve) {
         Resolution::Unresolved { reason, at } => {
-            assert!(reason.contains("computed"), "{reason}");
+            assert!(reason.contains("computed") && reason.contains("line 2"), "{reason}");
             assert_eq!(at.unwrap().start.line, 2);
         }
         other => panic!("{other:?}"),
     }
+    // With it on (the default), the solver changes the loop's number, and
+    // says which other outputs move with it.
+    let e = edit(resolve_src(&r, src, |r| set(key_of(r, "dot", 1), "x", StaticValue::Int(8))));
+    assert_eq!(e.step, Step::Solve);
+    assert_eq!(e.source, src.replace("i * 10", "i * 8"));
+    assert_eq!(e.description, "set `10` on line 2 to `8`");
+    assert_eq!(e.also_changes.len(), 1, "{:?}", e.also_changes);
 }
 
 #[test]

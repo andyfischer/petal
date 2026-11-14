@@ -430,12 +430,13 @@ petal-creative it is the rule.
 
 | Need | For | Today |
 |---|---|---|
-| Output source map (site, call path, field provenance, fan-out) for element values | part 1, steps 1 to 3; stable ids | done: element tracing in core, `OutputMap` in `core-libs/programs-as-documents` (steps 1 and 2 resolve there) |
+| Output source map (site, call path, field provenance, fan-out) for element values | part 1, steps 1 to 3; stable ids | done: element tracing in core, `OutputMap` in `core-libs/programs-as-documents` (steps 1 to 6 of the ladder resolve there) |
 | `editable_literal(source, name)` with reasons | schema levels | done: `programs_as_documents::editable_literal` |
 | Goals that write expressions and named arguments | reference edits; tokens | text splices in petal-design |
 | Goals into element children | structure edits | done in Petal: [edit paths](../features/edit-paths.md) and path goals; petal-creative still uses `edit_in_place` lift-and-splice |
 | `StaticValue::from_value` | concretize ("write out as source") | done in core |
-| An `entry` scope selector for direct manipulation | step 4 | edits outside file 0 refused after the fact |
+| An `entry` scope selector for direct manipulation | step 4 | done: `ParamSelector::EntryFile` (`entry-file`) |
+| Direct-manipulation goals on an element's props | step 4 | done: `Observable::Element { term, occurrence, path }` (no probe native), `ObsValue::Element` |
 | The script's single result, read by the host | the schema's entry call | output buffers |
 | Document schema annotation and `petal check --document` | part 2 | conventions in Rust |
 | State sidecar format with a source hash, and restore-with-report | saved state | `get_state_json` and restore exist; no file format |

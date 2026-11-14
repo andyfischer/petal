@@ -257,6 +257,58 @@ impl StaticValue {
         }
     }
 
+    /// The static value of an evaluated runtime value: the literal that would
+    /// produce it, for writing a run's result back as source ("write out as
+    /// `<slide>`"). Lists, records, elements and scalars convert; a `var`
+    /// cell converts as its contents. `None` when `value` (or anything in
+    /// it) has no literal form: a function, a vector, a map, an enum value,
+    /// a symbol, a pending value. A color comes back as the record it is at
+    /// run time (`{r, g, b}`), not as a `Color`.
+    pub fn from_value(value: &crate::value::Value, heap: &crate::heap::Heap) -> Option<StaticValue> {
+        use crate::value::Value;
+        Some(match value {
+            Value::Nil => StaticValue::Nil,
+            Value::Bool(b) => StaticValue::Bool(*b),
+            Value::Int(n) => StaticValue::Int(*n),
+            Value::Float(f) => StaticValue::Float(*f),
+            Value::String(id) => StaticValue::Str(heap.get_string(*id).to_string()),
+            Value::List(id) => StaticValue::List(
+                heap.get_list(*id)
+                    .iter()
+                    .map(|v| StaticValue::from_value(v, heap))
+                    .collect::<Option<_>>()?,
+            ),
+            Value::F64Array(id) => {
+                StaticValue::List(heap.get_f64_array(*id).iter().map(|f| StaticValue::Float(*f)).collect())
+            }
+            Value::Map(id) => StaticValue::Record(
+                heap.get_map(*id)
+                    .iter()
+                    .map(|(k, v)| Some((k.to_string(), StaticValue::from_value(v, heap)?)))
+                    .collect::<Option<_>>()?,
+            ),
+            Value::Element(id) => {
+                let props = heap
+                    .get_map(heap.get_element_props(*id))
+                    .iter()
+                    .map(|(k, v)| Some((k.to_string(), StaticValue::from_value(v, heap)?)))
+                    .collect::<Option<_>>()?;
+                let children = heap
+                    .get_list(heap.get_element_children(*id))
+                    .iter()
+                    .map(|v| StaticValue::from_value(v, heap))
+                    .collect::<Option<_>>()?;
+                StaticValue::Element {
+                    tag: heap.get_string(heap.get_element_tag(*id)).to_string(),
+                    props,
+                    children,
+                }
+            }
+            Value::Cell(id) => return StaticValue::from_value(&heap.cell_read(*id), heap),
+            _ => return None,
+        })
+    }
+
     /// Render this value as Petal source, starting at column 0.
     ///
     /// The inverse of [`get_static_value`] for everything that module can read,

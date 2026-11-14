@@ -94,6 +94,7 @@ mod state_lifecycle;
 mod state_loop_keys;
 mod static_audit;
 mod static_dispatch;
+mod static_from_value;
 mod static_in_functions;
 mod static_observe;
 mod static_reload;

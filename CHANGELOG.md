@@ -536,6 +536,11 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **bloom: `tab_enters_ring(on)`.** With it off, Tab and Shift+Tab with no
+  control of the focus ring focused leave focus alone, for an app that
+  gives Tab its own meaning then (petal-design steps the canvas selection);
+  from a focused control Tab still walks the ring. On by default.
+
 - **Goals that write expressions.** `petal::static_expr::StaticExpr` is an
   expression an edit writes (a name, a member path, an index, a call with
   positional and named arguments, and literals of those), built

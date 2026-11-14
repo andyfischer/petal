@@ -121,11 +121,14 @@ overlay's own contents.
 | `capture(owner, area)` / `pointer_free(r)` | the claim of an overlay the app draws into (a dialog, a popover): controls drawn *after* it inside `area` stay live, the page under it does not. `pointer_free(r)` is the test `probe` makes, for a control that reads the mouse itself |
 | `focusable(id)` | announce a control in draw order (= tab order) and report whether it has focus |
 | `focused(id)` / `focus_set(id)` / `focus_clear()` / `focus_id()` | `ui`'s runtime focus: `has_focus` / `focus_request` / `focus_owner` |
+| `tab_enters_ring(on)` | whether Tab with nothing in the ring focused focuses its first control (default on) |
 | `key(k)` / `chord(k, mods)` | a key press, ignored while an overlay holds input; `mods` is `"cmd"`, `"ctrl"`, `"alt"`, `"shift"`, or `"cmdctrl"` |
 
 Tab and Shift+Tab walk the ring the previous frame built — the only complete
 ring that exists when the key arrives — so focus moves on the frame after the
-keypress.
+keypress. With nothing in the ring focused, Tab focuses its first control;
+`tab_enters_ring(false)` turns that off for an app that uses Tab itself
+when nothing is focused (Tab from a focused control still walks the ring).
 
 ## Buttons
 

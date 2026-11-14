@@ -220,6 +220,31 @@ fn tab_moves_focus_and_return_fires_the_focused_button() {
 }
 
 #[test]
+fn tab_enters_ring_off_leaves_tab_to_the_app_until_a_control_is_focused() {
+    let mut ui = Ui::new(
+        "import bloom\n\
+         bloom.tab_enters_ring(false)\n\
+         state a = 0\n\
+         state b = 0\n\
+         if bloom.button(rect(20, 20, 100, 28), \"A\", {id: \"a\"}) then a += 1 end\n\
+         if bloom.button(rect(20, 60, 100, 28), \"B\", {id: \"b\"}) then b += 1 end\n",
+    );
+    // Nothing focused: Tab does not focus the first control.
+    ui.key("tab");
+    ui.tick(1);
+    ui.key("return");
+    assert_eq!((ui.int("a"), ui.int("b")), (Some(0), Some(0)));
+
+    // From a focused control, Tab still walks the ring.
+    ui.click(60, 34);
+    assert_eq!(ui.int("a"), Some(1));
+    ui.key("tab");
+    ui.tick(1);
+    ui.key("return");
+    assert_eq!(ui.int("b"), Some(1), "the ring moved on from the focused control");
+}
+
+#[test]
 fn a_text_field_edits_at_the_caret() {
     let mut ui = Ui::new(
         "import bloom: text_field\n\

@@ -151,6 +151,8 @@ pub fn drag(r: record) -> record
 # the top of a frame it still holds what the previous frame built.
 state var _ring = []
 state var _pending = 0
+# Whether Tab with nothing in the ring focused enters it (see tab_enters_ring).
+state var _enters = true
 # This frame's ring so far. A plain module `var` starts over on every run, so
 # "empty" is how the first `focusable` of a frame knows it is first. It used
 # to compare a stored `frame_count()`, which wrote a `state` slot every frame
@@ -175,15 +177,26 @@ fn _begin_frame()
   let step = get _pending
   if step != 0 && len(ring) > 0 then
     let at = index_of(ring, focus_owner())
-    let n = len(ring)
-    let next = if at < 0 then
-      if step > 0 then 0 else n - 1 end
-    else
-      ((at + step) % n + n) % n
-    focus_request(ring[next])
+    if at >= 0 || get _enters then
+      let n = len(ring)
+      let next = if at < 0 then
+        if step > 0 then 0 else n - 1 end
+      else
+        ((at + step) % n + n) % n
+      focus_request(ring[next])
   set _pending = 0
   if key_pressed("tab") then
     set _pending = if mod_shift() then -1 else 1 end
+
+# Whether Tab (Shift+Tab) with no control of the ring focused focuses the
+# first (last) one. On by default. An app that gives Tab a meaning of its own
+# while nothing is focused turns it off (petal-design steps the canvas
+# selection through siblings); Tab still walks the ring from a focused
+# control. It writes its state only when it changes, so calling it every
+# frame is free.
+pub fn tab_enters_ring(on: bool)
+  if get _enters != on then
+    set _enters = on
 
 pub fn focused(id: string) -> bool
   has_focus(id)

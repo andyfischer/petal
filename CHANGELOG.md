@@ -584,6 +584,10 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   comment. `ResolvedEdit::base` and `Document::commit` (now
   `Result<bool, String>`) refuse a choice made against an older source.
 
+  **Breaking:** `ResolvedEdit` has a new field (`base: Option<u64>`; a
+  host's own edit passes `None`), `DocumentRun` has a new field
+  (`derived`), and `Document::commit` returns `Result<bool, String>`.
+
 - **Programs as documents: edit a script through its output.** The new
   optional crate `core-libs/programs-as-documents` is the write path for an
   application whose saved document is a Petal script. The application states

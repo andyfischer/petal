@@ -19,10 +19,17 @@ page is [features/programs-as-documents.md](../features/programs-as-documents.md
   `ObsValue::Element`), the `entry-file` selector, and expression goals
   (`StaticExpr`, `Goal::should_set_path_expr` and friends, named-argument
   calls, quoted record keys).
-- **petal-images is ported.** Every layer edit in its editor goes through
-  the crate (see "Other projects this touches").
-- **What remains.** Porting petal-design, petal-movies and
-  petal-social-media; wrap/unwrap and intents as an undo log; part 2; saved
+- **petal-images and petal-design are ported.** Every layer edit in
+  petal-images' editor goes through the crate. petal-design edits pages,
+  nodes, token references, tokens, instance overrides (its `OverrideHook`)
+  and components through it, by output identity in `design(...)`'s emitted
+  pages, so documents that end in `design({...})` with their own pages are
+  editable (they used to open read-only for lack of a top-level
+  `let pages`). See "Other projects this touches".
+- **What remains.** Porting petal-movies and petal-social-media; part 2 (a
+  schema for documents); wrap/unwrap as intents and intents as an undo log;
+  setting one named argument of a call in place (petal-design rewrites a
+  token's whole `modes(...)`/`per(...)` value when its shape changes); saved
   state (which petal-creative will not use).
 
 The rest of this note is the design as written before it was built, with
@@ -118,7 +125,7 @@ and nothing is written.
   uses". Each host repeats a text check plus a static read.
 - A goal can only write a value. The petal-design inspector can't write
   `fill={tok.color.ink}` or named arguments (`modes(light: …, dark: …)`), so
-  it splices text.
+  it splices text. (Done: expression goals and `Intent::SetFieldExpr`.)
 - Direct manipulation can't see an element's attributes, so the solver
   injects a probe native.
 - There is no way to turn an evaluated value back into source ("write out as
@@ -501,7 +508,7 @@ petal-creative it is the rule.
 |---|---|---|
 | Output source map (site, call path, field provenance, fan-out) for element values | part 1, steps 1 to 3; stable ids | done: element tracing in core, `OutputMap` in `core-libs/programs-as-documents` (steps 1 to 6 of the ladder resolve there) |
 | `editable_literal(source, name)` with reasons | schema levels | done: `programs_as_documents::editable_literal` |
-| Goals that write expressions and named arguments | reference edits; tokens | text splices in petal-design |
+| Goals that write expressions and named arguments | reference edits; tokens | done: `StaticExpr` and the `_expr` goals in core, `Intent::SetFieldExpr` in the crate; petal-design's inspector, tokens and overrides use them |
 | Goals into element children | structure edits | done in Petal: [edit paths](../features/edit-paths.md) and path goals; petal-creative still uses `edit_in_place` lift-and-splice |
 | Structural intents by outcome (reorder, move, insert, remove, duplicate) | structure edits | done: `resolve_structure` in `core-libs/programs-as-documents` (list literals, element children, data lists read by `map`/`for`, concatenation segments) |
 | Copy and paste with free-variable analysis | copy and paste | done: `copy` / `paste` in `core-libs/programs-as-documents` |
@@ -523,7 +530,16 @@ petal-creative it is the rule.
   move, group/ungroup, copy/paste) as an intent against the layer's output
   identity, with `ScopePolicy::Prefer([EditData])` and a named-argument
   `OverrideHook`; choices go to the status bar. Its tests check literal
-  documents edit byte for byte as the old goal-based editor did. petal-design,
+  documents edit byte for byte as the old goal-based editor did.
+  **petal-design is ported** (2026-11-14): its `DesignDoc` runs documents
+  with a `Runner` whose instance expansions are a derived result value,
+  maps each design node to its output element, and edits attributes
+  (`SetField`, `SetFieldExpr` for token references and named-argument
+  calls), the page tree (structural intents), tokens (expression goals) and
+  instance overrides (an `OverrideHook` that verifies itself, since
+  overrides are applied in Rust) through the crate, with
+  `ScopePolicy::Prefer([EditData, Override])`. Pages and components built in
+  an imported module are locked with a reason naming the module.
   petal-movies and petal-social-media are not ported yet.
 - **garden.** Already turns drag-mode drops into goals with `drop_edit`, and
   restores top-level `state` from JSON for panels. It is the natural place

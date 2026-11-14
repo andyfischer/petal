@@ -16,10 +16,13 @@ running the edited script again before anything is written.
   it out. Its [README](../../core-libs/programs-as-documents/README.md) has
   the full API table.
 - **In core:** element-origin tracing (below), `StaticValue::from_value`,
-  direct-manipulation goals on elements (`Observable::Element`) and the
-  `entry-file` selector.
-- **Used by:** petal-images in `~/petal-creative` (every layer edit of its
-  editor).
+  direct-manipulation goals on elements (`Observable::Element`), the
+  `entry-file` selector, and [expression goals](goal-based-editing.md#expression-goals)
+  (`StaticExpr`), which reference intents write with.
+- **Used by:** in `~/petal-creative`, petal-images (every layer edit of its
+  editor) and petal-design (node attributes and token references, the page
+  tree, tokens and instance overrides, by output identity through
+  `design(...)`'s pages).
 - **Tests:** `core-libs/programs-as-documents/tests/` (`cargo test` in that
   directory); the core hook in `core/tests/all/` (element tracing) and the
   DM tests.
@@ -316,11 +319,14 @@ chain. See [provenance.md](provenance.md#where-an-element-came-from-element-trac
   the site to something else than at the top of the document (a parameter
   shadowing a token) is refused when the two values differ. A name bound
   only at the site (a parameter) is taken; the probe checks the value it
-  has there.
+  has there. At a site that runs several times (a loop body, a helper
+  called twice) the probe accepts a field equal to any one of the values
+  the expression had there.
 - **One literal that builds several outputs** (a helper's `<box>` children)
   is refused for structural edits, not offered as a choice.
 - **Comments travel with literal_edit's moves.** A comment after an entry on
-  its line moves with it; one on its own line above stays.
+  its line moves with it; one on its own line above stays. Moving an entry
+  out of an element's children leaves its `{/* … */}` comment line behind.
 - **Not built:** wrap and unwrap, intents kept as an undo log, a
   multi-element clip, document schemas.
 - **Cost.** Every edit reruns the document at least once, and a solve reruns

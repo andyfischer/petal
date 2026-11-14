@@ -500,10 +500,8 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   is `solve_step` ([guide](docs/features/differentiation.md#migrating-from-dual-value_of-and-deriv_of)).
   The answers are close approximations rather than exact derivatives; exact
   differentiation is planned to return as a symbolic analysis, not a value
-  kind. A `--state-storage` file that holds one of the old numbers loads it
-  as its value, with a warning (for one release; the C bridge's load report
-  lists the slots under `converted` when there are any). The `dual-deprecated` warning and
-  lint rule went with them.
+  kind. A `--state-storage` file that holds one of the old numbers no longer
+  loads. The `dual-deprecated` warning and lint rule went with them.
   **Embedders**: `Value` loses a variant. `Value::Dual`, `DualId`,
   `Heap::get_dual`, `Heap::dual_value`, `Heap::derivative_of`,
   `PetalCxt::push_dual`, `AllocKind::Dual` (the alloc stats have 8 kinds,

@@ -310,9 +310,7 @@ here. The usual shapes translate directly:
 | A Newton step written by hand from `deriv_of` | `solve_step(f, xs, target)` |
 
 The answer is now a close approximation, not the exact derivative; check
-`quality` to see how far to trust it. A `state` slot saved by
-`--state-storage` with one of the old numbers in it loads as its value, with
-a warning, for one release.
+`quality` to see how far to trust it.
 
 ## See also
 

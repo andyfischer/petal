@@ -11,8 +11,9 @@ their output").
       to `speculate_value` (Phase 0 shipped it), which drops the result record.
 - [ ] One-release compatibility shims to remove at the next release: the
       `drag_solve_step` alias of `gn_step`, `vary`'s ignored `sensitivity`
-      key (`lint/vary_sensitivity.rs`), and state storage loading a stored
-      dual as its value (`StateStorageLoad::converted`).
+      key (`lint/vary_sensitivity.rs`). (State storage loading a stored dual
+      as its value, `StateStorageLoad::converted`, was removed 2026-11-14:
+      no project on the dev machine held one.)
 - [ ] `tools/dm-mode-integration-test.ts`: 12 of 36 steps fail, before and
       after Phase 3b (01-helper-row's plain drag no longer rewrites `gap`;
       03-fractal-tree's "the root stays").

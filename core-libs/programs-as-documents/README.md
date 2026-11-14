@@ -52,6 +52,11 @@ files. Everything a document saves is written into the `.ptl`.
 Only the entry file (the document) is written. An edit whose site is in an
 imported module or package is refused with a reason naming the file.
 
+## Used by
+
+- petal-images (`~/petal-creative/petal-images/src/doc.rs`): every layer
+  edit of its editor.
+
 ## Not yet
 
 - The data scope finds an entry only when the field is read from the item
@@ -71,6 +76,9 @@ imported module or package is refused with a reason naming the file.
   entry stays where it is. A `{…}` hole among an element's children is not
   an entry: elements it makes are edited through their data list, or are
   locked.
+- A `{…}` hole among an element's children is not an entry, so a helper
+  call can't be moved or inserted between an element's tags ("only an
+  element can be a child element").
 - A data list is recognized only when the `map`/`each`/`for` reads a list
   literal directly (through names); a filtered or sorted list is locked with
   the reason. Several elements built per data item, or a filtered loop, make

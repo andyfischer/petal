@@ -1151,6 +1151,39 @@ fn replace_siblings(
         Some(StaticValue::Element { children, .. }) => children,
         _ => return Err(format!("{} is not a list in the result", d.info.describe)),
     };
+    // An element's children with text between them (`<a /> // note`): the
+    // text after an element is written after its entry, so it goes where
+    // that element goes.
+    let flat = slots.iter().all(|s| s.len() == 1);
+    let texty = items.iter().enumerate().any(|(i, v)| {
+        !slots.contains(&vec![i]) && !matches!(v, StaticValue::Str(t) if t.trim().is_empty())
+    });
+    if d.info.kind == ContainerKind::Children && flat && texty && !slots.is_empty() {
+        let starts: Vec<usize> = slots.iter().map(|s| s[0]).collect();
+        let old = std::mem::take(items);
+        let first = starts.iter().copied().min().unwrap_or(0);
+        let mut out: Vec<StaticValue> = old[..first].to_vec();
+        let trailing = |i: usize| -> Vec<StaticValue> {
+            let at = starts[i];
+            old[at + 1..]
+                .iter()
+                .enumerate()
+                .take_while(|(k, _)| !starts.contains(&(at + 1 + k)))
+                .map(|(_, v)| v.clone())
+                .collect()
+        };
+        for v in &values {
+            match v {
+                Ok(i) => {
+                    out.push(current[*i].clone());
+                    out.extend(trailing(*i));
+                }
+                Err(v) => out.push(v.clone()),
+            }
+        }
+        *items = out;
+        return Ok(());
+    }
     refill(items, &[], &slots, &mut segs);
     if let Some((_, q)) = segs.iter_mut().find(|(s, _)| s.is_empty()) {
         items.extend(q.drain(..));

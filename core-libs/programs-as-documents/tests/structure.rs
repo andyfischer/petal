@@ -503,3 +503,26 @@ fn insert_source_text_among_children_and_into_a_flattened_list() {
     }));
     assert!(e.source.starts_with("let rows = [2, 1]\n"), "{}", e.source);
 }
+
+#[test]
+fn duplicate_keeps_a_multi_line_entry_as_written() {
+    let src = "[\n  # first\n  <a x={1}\n    y={2} />,\n  <b />,\n]\n";
+    let e = edit(resolve_src(&value_runner(), src, |r| StructureIntent::Duplicate { target: key_of(r, "a", 0) }));
+    assert_eq!(e.source, "[\n  # first\n  <a x={1}\n    y={2} />,\n  <a x={1}\n    y={2} />,\n  <b />,\n]\n");
+}
+
+
+#[test]
+fn text_between_children_goes_with_the_element_before_it() {
+    // In JSX, `// note` after a tag is text, written after that entry: an
+    // insert or a move in front of it leaves it after its element.
+    let src = "<g>\n  <a />\n  <b /> // note\n  <c />\n</g>\n";
+    let at = |r: &DocumentRun, index| Place { parent: Parent::Children(key_of(r, "g", 0)), index };
+    let e = edit(resolve_src(&value_runner(), src, |r| StructureIntent::Insert {
+        at: at(r, 1),
+        template: Template::Source("<n />".into()),
+    }));
+    assert_eq!(e.source, "<g>\n  <a />\n  <n />\n  <b /> // note\n  <c />\n</g>\n");
+    let e = edit(resolve_src(&value_runner(), src, |r| StructureIntent::Move { target: key_of(r, "c", 0), to: at(r, 0) }));
+    assert!(e.source.contains("<b /> // note"), "{}", e.source);
+}

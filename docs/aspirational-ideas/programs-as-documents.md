@@ -462,7 +462,14 @@ petal-creative it is the rule.
 
 - **petal-creative.** `SourceFile`, `editable_list`, `list_entries` and the
   lift-and-splice helpers could move upstream, so each tool's `edits/`
-  shrinks to its vocabulary and schema.
+  shrinks to its vocabulary and schema. **petal-images is ported**
+  (2026-11-14): its `Doc` runs documents with `programs_as_documents::Runner`
+  and makes every layer edit (fields, drags, add/insert/remove/duplicate/
+  move, group/ungroup, copy/paste) as an intent against the layer's output
+  identity, with `ScopePolicy::Prefer([EditData])` and a named-argument
+  `OverrideHook`; choices go to the status bar. Its tests check literal
+  documents edit byte for byte as the old goal-based editor did. petal-design,
+  petal-movies and petal-social-media are not ported yet.
 - **garden.** Already turns drag-mode drops into goals with `drop_edit`, and
   restores top-level `state` from JSON for panels. It is the natural place
   for the hand-edit side of the "peers" model, with the intent rebase when

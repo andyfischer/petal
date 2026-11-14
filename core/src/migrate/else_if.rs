@@ -70,8 +70,9 @@ use std::collections::{HashMap, HashSet};
 use crate::ast::{ElseBranch, Expr, ExprKind, ExprVisitor, Stmt, StmtKind, walk_expr};
 use crate::cst::parse_source_unmerged_else_if;
 use crate::lexer::{Lexer, Token};
+use crate::line_index::line_start;
 use crate::lint::{Fix, LintOptions};
-use crate::rewrite::{Splice, apply_splices};
+use crate::rewrite::Splice;
 
 const CHAINED: &str = "`else if` continues the `if` chain, which takes one `end`: the nested \
                        `if`'s own `end` is removed";
@@ -169,7 +170,7 @@ fn nesting_sites(source: &str) -> Result<Vec<Site>, String> {
     }
     impl Finder<'_> {
         fn starts_line(&self, at: usize) -> Option<usize> {
-            let line_start = self.chars[..at].iter().rposition(|&c| c == '\n').map_or(0, |i| i + 1);
+            let line_start = line_start(&self.chars, at);
             self.chars[line_start..at]
                 .iter()
                 .all(|c| matches!(c, ' ' | '\t'))
@@ -230,7 +231,7 @@ fn nesting_sites(source: &str) -> Result<Vec<Site>, String> {
 /// stands alone on it, else the word and the blanks on one side of it.
 fn delete_end(chars: &[char], (start, end): (usize, usize)) -> Splice {
     let blank = |c: &char| matches!(c, ' ' | '\t' | '\r');
-    let line_start = chars[..start].iter().rposition(|&c| c == '\n').map_or(0, |i| i + 1);
+    let line_start = line_start(chars, start);
     let line_end = chars[end..].iter().position(|&c| c == '\n').map_or(chars.len(), |i| end + i);
     let before_blank = chars[line_start..start].iter().all(blank);
     let after_blank = chars[end..line_end].iter().all(blank);
@@ -260,7 +261,7 @@ fn delete_end(chars: &[char], (start, end): (usize, usize)) -> Splice {
 
 /// The splice that moves the `if` of `site` to the line after its `else`.
 fn break_line(chars: &[char], site: &Site, column: Option<usize>) -> Splice {
-    let line_start = chars[..site.else_end].iter().rposition(|&c| c == '\n').map_or(0, |i| i + 1);
+    let line_start = line_start(chars, site.else_end);
     let indent = chars[line_start..].iter().take_while(|c| matches!(c, ' ' | '\t')).count();
     // The block's own column where its next statement shows it; else one
     // level under the line the `else` is on.
@@ -313,10 +314,8 @@ pub(super) fn nesting_as_read_today(source: &str) -> Result<String, String> {
     if fixes.is_empty() {
         return Ok(source.to_string());
     }
-    let mut splices: Vec<Splice> = fixes.into_iter().flat_map(|f| f.splices).collect();
-    splices.sort_by_key(|s| s.start);
     let chars: Vec<char> = source.chars().collect();
-    let out = apply_splices(&chars, &splices);
+    let out = super::apply_fixes(&chars, &fixes);
 
     let signature = |lexer: Lexer| -> Result<Vec<Token>, String> {
         let mut lexer = lexer;
@@ -336,12 +335,12 @@ pub(super) fn nesting_as_read_today(source: &str) -> Result<String, String> {
 /// The gate of `else-if-nesting`: `after` (read today) is the program
 /// `before` was (read the old way). See the module docs.
 pub(super) fn check_nesting(before: &str, after: &str, opts: &LintOptions) -> Result<(), String> {
-    let old = ast_shape(&parse_source_unmerged_else_if(&readable(before))?, true)?;
+    let old = chain_shape(&parse_source_unmerged_else_if(&readable(before))?)?;
     let new = crate::lint::reparse(&readable(after))
         .map_err(|e| {
             format!("migrate bug: rewriting a nested `else if` broke the parse — refusing to produce output ({e})")
         })
-        .and_then(|(_, stmts)| ast_shape(&stmts, true))?;
+        .and_then(|(_, stmts)| chain_shape(&stmts))?;
     if old != new {
         return Err("migrate bug: rewriting a nested `else if` changed the parse — refusing to \
                     produce output"
@@ -377,21 +376,16 @@ pub(super) fn check_nesting(before: &str, after: &str, opts: &LintOptions) -> Re
     })
 }
 
-/// The AST as JSON with every span dropped. With `chains`, an `else` block
-/// that holds exactly one `if` expression reads as the `else if` chain it
-/// compiles to.
-fn ast_shape(stmts: &[Stmt], chains: bool) -> Result<serde_json::Value, String> {
+/// [`crate::rewrite::ast_shape`], with an `else` block that holds exactly
+/// one `if` expression read as the `else if` chain it compiles to.
+fn chain_shape(stmts: &[Stmt]) -> Result<serde_json::Value, String> {
     use serde_json::Value;
-    fn strip(v: &mut Value, chains: bool) {
+    fn fold(v: &mut Value) {
         match v {
-            Value::Array(items) => items.iter_mut().for_each(|i| strip(i, chains)),
+            Value::Array(items) => items.iter_mut().for_each(fold),
             Value::Object(map) => {
-                map.retain(|k, _| !k.ends_with("span"));
-                for (_, child) in map.iter_mut() {
-                    strip(child, chains);
-                }
-                if chains
-                    && map.len() == 1
+                map.values_mut().for_each(fold);
+                if map.len() == 1
                     && let Some(Value::Array(body)) = map.get("Block")
                     && let [only] = body.as_slice()
                     && let Some(inner) = only.get("kind").and_then(|k| k.get("Expr"))
@@ -405,8 +399,8 @@ fn ast_shape(stmts: &[Stmt], chains: bool) -> Result<serde_json::Value, String> 
             _ => {}
         }
     }
-    let mut json = serde_json::to_value(stmts).map_err(|e| e.to_string())?;
-    strip(&mut json, chains);
+    let mut json = crate::rewrite::ast_shape(stmts)?;
+    fold(&mut json);
     Ok(json)
 }
 
@@ -513,7 +507,7 @@ pub(super) fn check_elsif(before: &str, after: &str, parse: bool) -> Result<(), 
     }
     if parse && let Ok((_, old)) = crate::lint::reparse(&readable(before)) {
         let (_, new) = crate::lint::reparse(&readable(after)).map_err(|_| bug("parse"))?;
-        if ast_shape(&old, false)? != ast_shape(&new, false)? {
+        if crate::rewrite::ast_shape(&old)? != crate::rewrite::ast_shape(&new)? {
             return Err(bug("parse"));
         }
     }
@@ -525,9 +519,7 @@ mod tests {
     use super::*;
 
     fn apply(src: &str, fixes: Vec<Fix>) -> String {
-        let mut splices: Vec<Splice> = fixes.into_iter().flat_map(|f| f.splices).collect();
-        splices.sort_by_key(|s| s.start);
-        apply_splices(&src.chars().collect::<Vec<_>>(), &splices)
+        super::super::apply_fixes(&src.chars().collect::<Vec<_>>(), &fixes)
     }
 
     fn nest(src: &str) -> String {

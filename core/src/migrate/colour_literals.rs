@@ -164,14 +164,8 @@ mod tests {
     use super::*;
 
     fn migrate(src: &str) -> String {
-        let fixes = plan_colour_fixes(src).unwrap();
-        let mut out: Vec<char> = src.chars().collect();
-        for f in fixes.iter().rev() {
-            for s in f.splices.iter().rev() {
-                out.splice(s.start..s.end, s.text.chars());
-            }
-        }
-        let out: String = out.into_iter().collect();
+        let chars: Vec<char> = src.chars().collect();
+        let out = super::super::apply_fixes(&chars, &plan_colour_fixes(src).unwrap());
         same_tokens(src, &out).unwrap();
         out
     }

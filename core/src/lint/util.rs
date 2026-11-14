@@ -40,18 +40,6 @@ pub(super) fn ends_its_line(chars: &[char], pos: usize) -> bool {
         .all(|c| *c == ' ' || *c == '\t' || *c == '\r')
 }
 
-/// The spaces and tabs the line holding `pos` starts with.
-pub(super) fn indent_of(chars: &[char], pos: usize) -> String {
-    let mut start = pos.min(chars.len());
-    while start > 0 && chars[start - 1] != '\n' {
-        start -= 1;
-    }
-    chars[start..]
-        .iter()
-        .take_while(|c| **c == ' ' || **c == '\t')
-        .collect()
-}
-
 /// Every name the file binds anywhere: declarations, parameters, loop and
 /// pattern variables, and the names and qualifiers its imports bring in.
 /// A builtin whose name is in this set may be something else somewhere in

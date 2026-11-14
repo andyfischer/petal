@@ -309,10 +309,7 @@ impl NativeDecls {
     pub fn parse(source: &str) -> Result<NativeDecls, String> {
         let mut lexer = crate::lexer::Lexer::new(source);
         lexer.tokenize()?;
-        let stmts = crate::parse::Parser::new(lexer.tokens, lexer.token_spans)
-            .with_tab_indentation(&lexer.token_tab_indented)
-            .with_layout_columns(&lexer.token_layout_column)
-            .parse_program()?;
+        let stmts = crate::parse::Parser::from_lexer(&lexer).parse_program()?;
         let mut decls = NativeDecls::new();
         for stmt in &stmts {
             if let StmtKind::NativeFn(decl) = &stmt.kind {

@@ -34,8 +34,8 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 use petal_ui::draw::DrawCommand;
 use petal_ui::edit_mode::{
-    DragAlternative, DragFilter, DragOutcomeV2, DragProperty, EditSession, GoalTarget, SessionOptions,
-    apply_rewrites_to,
+    CallLabel, DragAlternative, DragFilter, DragOutcomeV2, DragProperty, EditSession, GoalTarget, STALE_MESSAGE,
+    SessionOptions, apply_rewrites_to, describe_call,
 };
 use petal_ui::input::InputState;
 
@@ -244,7 +244,7 @@ pub fn enter(tl: &mut Timeline) {
 pub fn pick(tl: &mut Timeline, env: &Env, program_id: ProgramId, x: i32, y: i32) -> Result<String, String> {
     enter(tl);
     let (index, origin) = item_at(tl, x, y)?;
-    let label = name_call(env, program_id, &origin).unwrap_or_else(|| "a call with no source position".to_string());
+    let label = CallLabel::label_or_unknown(describe_call(env, program_id, &origin).as_ref());
     tl.edit.picked = Some(Picked {
         index,
         generation: tl.generation,
@@ -262,12 +262,6 @@ fn item_at(tl: &Timeline, x: i32, y: i32) -> Result<(usize, EmitSite), String> {
     let index = timeline::hit_test(&rec.commands, x, y).ok_or("nothing is drawn there")?;
     let origin = rec.origins.get(index).cloned().unwrap_or_default();
     Ok((index, origin))
-}
-
-/// "`draw_circle` at line 7: draw_circle(x, 100, 20, …)": the call in the
-/// sketch the emit came through, and its source line.
-fn name_call(env: &Env, program_id: ProgramId, origin: &EmitSite) -> Option<String> {
-    petal_ui::edit_mode::describe_call(env, program_id, origin).map(|c| c.label())
 }
 
 /// Drag the item under (`x`, `y`) by (`dx`, `dy`): a best-effort request
@@ -346,7 +340,7 @@ fn try_drag<H: Host>(
 fn outcome_error(outcome: DragOutcomeV2) -> String {
     match outcome {
         DragOutcomeV2::Refused { why, .. } => why,
-        DragOutcomeV2::Stale => "the program changed under the drag; try again".to_string(),
+        DragOutcomeV2::Stale => STALE_MESSAGE.to_string(),
         DragOutcomeV2::Alternatives { .. } => "no edit reaches the goal".to_string(),
     }
 }

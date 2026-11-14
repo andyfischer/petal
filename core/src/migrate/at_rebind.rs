@@ -311,11 +311,7 @@ impl Planner<'_> {
 
     /// The whitespace before `at` on its line, if nothing else precedes it.
     fn indent_of(&self, at: usize) -> Option<String> {
-        let line_start = self.chars[..at]
-            .iter()
-            .rposition(|&c| c == '\n')
-            .map_or(0, |i| i + 1);
-        let before = &self.chars[line_start..at];
+        let before = &self.chars[crate::line_index::line_start(&self.chars, at)..at];
         before
             .iter()
             .all(|c| *c == ' ' || *c == '\t')

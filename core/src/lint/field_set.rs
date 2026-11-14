@@ -30,7 +30,7 @@ use crate::ast::{
 use super::Fix;
 use super::to_match::Splice;
 use super::util::{
-    bound_names, ends_its_line, indent_of, is_pure, mentions, span_text, squash, starts_its_line,
+    bound_names, ends_its_line, is_pure, mentions, span_text, squash, starts_its_line,
     text,
 };
 
@@ -240,7 +240,7 @@ impl Finder<'_> {
                 return report("");
             }
         }
-        let indent = indent_of(self.chars, start);
+        let indent = crate::line_index::line_indent(self.chars, start);
         let mut splices = Vec::new();
         let mut from = start;
         for (i, ((key, _), (v_start, v_end))) in named.iter().zip(&pieces).enumerate() {

@@ -17,7 +17,7 @@ first, then everything else works on it.
    that rewrite it. A site the migration cannot rewrite safely gets no
    splices: it is listed for a hand edit. Edit the old form and nothing else;
    the output is not reformatted, so re-pad a trailing comment you push out
-   of its column (`lifecycle_keywords.rs` and `export_keyword.rs` show how).
+   of its column (`lifecycle_keywords.rs` and `export_to_pub.rs` show how).
 2. **Register it.** Add a `Migration` row to `MIGRATIONS` in
    `core/src/migrate/mod.rs`: a kebab-case `name` (the same id the compiler's
    warning carries, if it warns), a one-line `summary`, `added` (today, as

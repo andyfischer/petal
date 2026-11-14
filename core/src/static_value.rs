@@ -51,6 +51,7 @@ use crate::ast::{
     AssignTarget, Expr, ExprKind, JsxChild, Literal, RecordField, Stmt, StmtKind, UnaryOp,
 };
 use crate::cst::parse_source;
+use crate::line_index::line_start;
 use crate::source_map::ENTRY_FILE;
 
 /// A statically-known Petal value: what a config binding holds, and what an
@@ -1044,33 +1045,24 @@ fn span_text(chars: &[char], span: crate::source_map::SourceSpan) -> String {
 /// becoming the first binding's doc comment. A comment trailing code on its own
 /// line (`let a = 1 // note`) is not a whole-line comment and stops the run too.
 fn leading_comment(chars: &[char], offset: usize) -> Option<String> {
-    let mut line_start = line_start_at(chars, offset.min(chars.len()));
+    let mut start = line_start(chars, offset);
     let mut lines: Vec<String> = Vec::new();
-    while line_start > 0 {
-        let prev_end = line_start - 1; // the '\n' ending the previous line
-        let prev_start = line_start_at(chars, prev_end);
+    while start > 0 {
+        let prev_end = start - 1; // the '\n' ending the previous line
+        let prev_start = line_start(chars, prev_end);
         let line: String = chars[prev_start..prev_end].iter().collect();
         let trimmed = line.trim();
         let Some(body) = crate::trivia::comment_body(trimmed) else {
             break;
         };
         lines.push(body.strip_prefix(' ').unwrap_or(body).to_string());
-        line_start = prev_start;
+        start = prev_start;
     }
     if lines.is_empty() {
         return None;
     }
     lines.reverse();
     Some(lines.join("\n"))
-}
-
-/// Offset of the start of the line containing `offset`.
-fn line_start_at(chars: &[char], offset: usize) -> usize {
-    chars[..offset]
-        .iter()
-        .rposition(|&c| c == '\n')
-        .map(|i| i + 1)
-        .unwrap_or(0)
 }
 
 /// The current binding for `name`, or `None` if it isn't bound.

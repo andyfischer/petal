@@ -33,6 +33,7 @@
 //! `# petal-lint-ignore-file end-lines` keeps a file's `end`s.
 
 use crate::lexer::{Lexer, Token};
+use crate::lint::Finding;
 
 /// What the migration did to one file.
 pub(super) struct EndLines {
@@ -44,6 +45,28 @@ pub(super) struct EndLines {
     /// The 1-based line, in the text the migration was given, of the first
     /// `end` at the start of a line (where the finding is anchored).
     pub(super) first_line: usize,
+}
+
+impl EndLines {
+    /// The one finding a file gets, anchored at its first `end` line.
+    pub(super) fn finding(&self) -> Finding {
+        Finding {
+            rule: super::END_LINES,
+            line: self.first_line,
+            column: 1,
+            message: if self.removed > 0 {
+                let kept = if self.kept > 0 {
+                    format!(" ({} kept: the program needs them)", self.kept)
+                } else {
+                    String::new()
+                };
+                format!("{} `end` line(s) removed: indentation closes the block{kept}", self.removed)
+            } else {
+                "indented by its `end`s, which the program needs".to_string()
+            },
+            fixable: true,
+        }
+    }
 }
 
 /// Run the migration over `source`. `Ok(None)` when it has nothing to do.

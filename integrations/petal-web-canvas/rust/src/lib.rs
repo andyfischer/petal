@@ -23,7 +23,7 @@ use petal_ui::draw::{
 };
 use petal_ui::draw_wire::DrawWire;
 use petal_ui::edit_mode::{
-    DragAlternative, DragCandidate, DragFilter, DragOutcomeV2, DragProperty, DragSelector,
+    CallLabel, DragAlternative, DragCandidate, DragFilter, DragOutcomeV2, DragProperty, DragSelector,
     EditSession, GoalTarget, SessionOptions, SourceRewrite, describe_call, hit_test,
 };
 use petal_ui::input::{
@@ -673,7 +673,7 @@ impl PetalRuntime {
             "callee": call.as_ref().map(|c| c.callee.clone()),
             "line": call.as_ref().map(|c| c.line),
             "text": call.as_ref().map(|c| c.text.clone()),
-            "label": call.as_ref().map(|c| c.label()).unwrap_or_else(|| "a call with no source position".to_string()),
+            "label": CallLabel::label_or_unknown(call.as_ref()),
             "bounds": bounds.map(|(x, y, w, h)| vec![x as i64, y as i64, w as i64, h as i64]),
         })
         .to_string()
@@ -1049,7 +1049,7 @@ fn outcome_json(outcome: DragOutcomeV2, source: Option<&str>, filter: Option<&Dr
             "candidates": candidates.iter().map(candidate_json).collect::<Vec<_>>(),
         })
         .to_string(),
-        DragOutcomeV2::Stale => err_json("the program changed under the drag; try again"),
+        DragOutcomeV2::Stale => err_json(petal_ui::edit_mode::STALE_MESSAGE),
     }
 }
 

@@ -38,7 +38,7 @@ use crate::ast::{Expr, Stmt, StmtKind};
 use crate::lexer::Token;
 use crate::lint::Fix;
 use crate::parse::CONFIG_KEYWORD;
-use crate::rewrite::{Splice, apply_splices};
+use crate::rewrite::Splice;
 use crate::static_value::tunable_args;
 
 use super::{CONFIG_LET_DEPRECATED, CONST_DECL_DEPRECATED};
@@ -297,13 +297,8 @@ fn plan_comment_padding(
     sites: &[Site],
 ) -> Result<HashMap<usize, Vec<Splice>>, String> {
     let comments = crate::fmt::trailing_comments(source)?;
-    let mut line_starts = vec![0usize];
-    for (i, c) in chars.iter().enumerate() {
-        if *c == '\n' {
-            line_starts.push(i + 1);
-        }
-    }
-    let line_of = |offset: usize| line_starts.partition_point(|&s| s <= offset) - 1;
+    let lines = crate::line_index::LineIndex::from_chars(chars);
+    let line_of = |offset: usize| lines.line_of(offset);
 
     // Per 0-based line: the net growth from every edit on it, and the first
     // site that edits it.
@@ -354,7 +349,7 @@ fn plan_comment_padding(
             let Some(site) = owner.get(&l).copied().or(group_owner) else {
                 continue;
             };
-            let base = line_starts[l];
+            let base = lines.line_start(l);
             out.entry(site).or_default().push(Splice {
                 start: base + code_end,
                 end: base + comment_col,
@@ -428,13 +423,7 @@ pub fn migrate_lifecycle_keywords(source: &str) -> Result<String, String> {
     for consts in [true, false] {
         let (_tree, stmts, _by_end) = crate::rewrite::parse_ast_or_by_end(&text)?;
         let chars: Vec<char> = text.chars().collect();
-        let mut splices: Vec<Splice> = plan_decl_fixes(&stmts, &chars, consts)?
-            .into_iter()
-            .flat_map(|f| f.splices)
-            .collect();
-        // Stable: a fix's own splices at one offset keep their order.
-        splices.sort_by_key(|s| s.start);
-        text = apply_splices(&chars, &splices);
+        text = super::apply_fixes(&chars, &plan_decl_fixes(&stmts, &chars, consts)?);
     }
     Ok(text)
 }

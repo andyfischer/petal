@@ -68,8 +68,6 @@ use crate::query::{self, QueryProvider};
 mod dm;
 mod model_drop;
 pub use model_drop::{propose_model_drop, ModelDrop, ModelDropOutcome};
-pub use dm::{DRAG_ALTERNATIVES, DRAG_ITERS, FINISH_RUNS, FINISH_WALL, OPEN_RUNS, OPEN_WALL};
-use dm::V2Drag;
 
 thread_local! {
     /// Live text of each `edit_view` region on this thread, keyed by region id,
@@ -1189,7 +1187,7 @@ pub struct PanelHost {
     dm_pinned: Option<StackKey>,
     /// The v2 drag in progress, between [`begin_drag_v2`](Self::begin_drag_v2)
     /// and [`finish_drag_v2`](Self::finish_drag_v2).
-    dm_drag: Option<V2Drag>,
+    dm_drag: Option<petal_ui::edit_mode::EditSession>,
     /// The sticky choice: the literals of the alternative the author last
     /// picked ([`prefer_drag_alternative`](Self::prefer_drag_alternative)),
     /// a soft preference for every later drag on this panel until another

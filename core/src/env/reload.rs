@@ -748,10 +748,7 @@ fn binds_at_top_level(source: &str, name: &str) -> bool {
     if !may_bind {
         return false;
     }
-    let mut parser = crate::parse::Parser::new(lexer.tokens.clone(), lexer.token_spans.clone())
-        .with_tab_indentation(&lexer.token_tab_indented)
-        .with_layout_columns(&lexer.token_layout_column);
-    parser
+    crate::parse::Parser::from_lexer(&lexer)
         .parse_program()
         .is_ok_and(|stmts| crate::rewrite::find_binding(&stmts, name).is_some())
 }

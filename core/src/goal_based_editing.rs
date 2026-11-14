@@ -45,6 +45,7 @@
 //! let updated = modify_source_with_goals(&source, &goals)?;
 //! ```
 
+use crate::line_index::line_start;
 use crate::literal_edit;
 use crate::rewrite::{find_binding, find_call, parse_ast, splice, splice_node};
 use crate::static_value::{get_static_value, render_call_at};
@@ -513,9 +514,9 @@ fn line_end_after(chars: &[char], offset: usize) -> usize {
 /// Start of the comment block above the statement beginning at `offset` — or
 /// the start of that statement's own line when nothing documents it.
 fn comment_block_start(chars: &[char], offset: usize) -> usize {
-    let mut start = line_start_at(chars, offset.min(chars.len()));
+    let mut start = line_start(chars, offset.min(chars.len()));
     while start > 0 {
-        let prev_start = line_start_at(chars, start - 1);
+        let prev_start = line_start(chars, start - 1);
         let line: String = chars[prev_start..start - 1].iter().collect();
         if !crate::trivia::starts_comment(line.trim_start()) {
             break;
@@ -523,15 +524,6 @@ fn comment_block_start(chars: &[char], offset: usize) -> usize {
         start = prev_start;
     }
     start
-}
-
-/// Offset of the start of the line containing `offset`.
-fn line_start_at(chars: &[char], offset: usize) -> usize {
-    chars[..offset]
-        .iter()
-        .rposition(|&c| c == '\n')
-        .map(|i| i + 1)
-        .unwrap_or(0)
 }
 
 /// Whether the line starting at `at` is blank (or the source ends there).
@@ -544,7 +536,7 @@ fn starts_blank_line(chars: &[char], at: usize) -> bool {
 
 /// Whether the line *ending* at `at` (exclusive) is blank.
 fn ends_blank_line(chars: &[char], at: usize) -> bool {
-    let start = line_start_at(chars, at.saturating_sub(1));
+    let start = line_start(chars, at.saturating_sub(1));
     chars[start..at.saturating_sub(1).max(start)]
         .iter()
         .all(|c| c.is_whitespace())

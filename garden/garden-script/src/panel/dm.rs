@@ -20,7 +20,9 @@
 //! 3. **First move** ([`PanelHost::begin_drag_v2`]): [`EditSession::open`]
 //!    finds the grabbed command's emit in a speculative baseline and opens a
 //!    session on it: discovery, screening and the Jacobian, the only
-//!    expensive step, bounded by [`OPEN_RUNS`] and [`OPEN_WALL`].
+//!    expensive step, bounded by
+//!    [`OPEN_RUNS`](petal_ui::edit_mode::OPEN_RUNS) and
+//!    [`OPEN_WALL`](petal_ui::edit_mode::OPEN_WALL).
 //! 4. **Every move** ([`PanelHost::live_drag_v2`]): one linear solve
 //!    against the cached Jacobian, spliced into the press-time source and
 //!    hot-reloaded into the running program in place (its literals patched,
@@ -28,7 +30,9 @@
 //!    open: its own live text is never stale. ([`PanelHost::preview_drag_v2`]
 //!    is the same answer without the reload.)
 //! 5. **Release** ([`PanelHost::finish_drag_v2`]): verify, round and rank, with
-//!    a fresh budget of its own ([`FINISH_RUNS`], [`FINISH_WALL`]), from the
+//!    a fresh budget of its own
+//!    ([`FINISH_RUNS`](petal_ui::edit_mode::FINISH_RUNS),
+//!    [`FINISH_WALL`](petal_ui::edit_mode::FINISH_WALL)), from the
 //!    press-time source (the program is patched back to it first); the
 //!    session's linear answer is the warm start of the verification loop.
 //!    The host then writes and reloads the alternative it shows.
@@ -45,17 +49,12 @@ use petal::env::Env;
 use petal_ui::edit_mode::{EditSession, GoalTarget, LivePreview, SessionOptions};
 use petal_ui::frame_core::FrameSpecHost;
 
-pub use petal_ui::edit_mode::{DRAG_ALTERNATIVES, DRAG_ITERS, FINISH_RUNS, FINISH_WALL, OPEN_RUNS, OPEN_WALL};
-
 use super::{swap_edit_view_edits, swap_edit_view_texts, PanelData, PanelHost};
 use crate::panel_trace::{
     native_position_args, DragAlternative, DragFilter, DragOutcomeV2, DragProperty, DragSelector, DragStart,
     SourceRewrite,
 };
 use crate::query::{self, QueryProvider};
-
-/// A v2 drag in progress.
-pub(super) type V2Drag = EditSession;
 
 /// Garden's speculative-run wrapper (plan R11): the frame core's providers
 /// (host data, fonts) plus Garden's own channels (the query provider, the

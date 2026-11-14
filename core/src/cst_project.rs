@@ -28,6 +28,7 @@
 use crate::ast::*;
 use crate::cst::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 use crate::lexer::Token;
+use crate::line_index::LineIndex;
 use crate::parse::{expr_to_assign_target, parse_color_hex, pattern_from_path};
 use crate::source_map::{ENTRY_FILE, FileId, SourcePosition, SourceSpan};
 
@@ -41,14 +42,8 @@ pub fn project(root: &SyntaxNode) -> Result<Vec<Stmt>, String> {
 /// modules, whose positions stay file-local).
 pub fn project_in_file(root: &SyntaxNode, file: FileId) -> Result<Vec<Stmt>, String> {
     let text = root.text();
-    let mut line_starts = vec![0u32];
-    for (i, ch) in text.chars().enumerate() {
-        if ch == '\n' {
-            line_starts.push(i as u32 + 1);
-        }
-    }
     let mut p = Projector {
-        line_starts,
+        lines: LineIndex::new(&text),
         file,
         tests: 0,
     };
@@ -56,8 +51,7 @@ pub fn project_in_file(root: &SyntaxNode, file: FileId) -> Result<Vec<Stmt>, Str
 }
 
 struct Projector {
-    /// Char offset of each line start, for offset → line/column conversion.
-    line_starts: Vec<u32>,
+    lines: LineIndex,
     file: FileId,
     /// How many test blocks have been projected: the next one's position
     /// among the file's tests, which names its function.
@@ -255,15 +249,7 @@ impl Projector {
     // ---- Span reconstruction ----
 
     fn pos_at(&self, offset: u32) -> SourcePosition {
-        let line_idx = match self.line_starts.binary_search(&offset) {
-            Ok(i) => i,
-            Err(i) => i - 1,
-        };
-        SourcePosition {
-            line: (line_idx + 1) as u32,
-            column: offset - self.line_starts[line_idx] + 1,
-            offset,
-        }
+        self.lines.position(offset)
     }
 
     fn span_between(&self, start_offset: u32, end_offset: u32) -> SourceSpan {

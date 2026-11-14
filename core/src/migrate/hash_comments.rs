@@ -211,14 +211,8 @@ mod tests {
     use super::*;
 
     fn migrate(src: &str) -> String {
-        let fixes = plan_comment_fixes(src).unwrap();
-        let mut splices: Vec<&Splice> = fixes.iter().flat_map(|f| &f.splices).collect();
-        splices.sort_by_key(|s| s.start);
-        let mut out: Vec<char> = src.chars().collect();
-        for s in splices.iter().rev() {
-            out.splice(s.start..s.end, s.text.chars());
-        }
-        let out: String = out.into_iter().collect();
+        let chars: Vec<char> = src.chars().collect();
+        let out = super::super::apply_fixes(&chars, &plan_comment_fixes(src).unwrap());
         same_tokens_but_comments(src, &out).unwrap();
         out
     }

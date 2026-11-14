@@ -329,14 +329,7 @@ fn plan_chain_placed(chain: &Chain, chars: &[char], placement: Placement) -> Opt
     let mut splices = Vec::new();
     // Arms go one step in from the line the chain starts on, so what follows
     // them on continuation lines keeps its place when fmt re-indents.
-    let line_start = chars[..if_start]
-        .iter()
-        .rposition(|&c| c == '\n')
-        .map_or(0, |p| p + 1);
-    let lead: String = chars[line_start..if_start]
-        .iter()
-        .take_while(|c| **c == ' ' || **c == '\t')
-        .collect();
+    let lead = crate::line_index::line_indent(chars, if_start);
     let step = if placement == Placement::ByLayout { " " } else { "  " };
     let arm = format!("\n{lead}{step}when ");
     let multi_line = bodies

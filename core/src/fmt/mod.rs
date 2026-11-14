@@ -63,6 +63,7 @@ pub use ends::{EndRemoval, remove_block_ends};
 pub use reindent::reindent;
 
 use crate::lexer::{Lexer, Token};
+use crate::line_index::LineIndex;
 
 pub const IGNORE_NEXT: &str = "petal-fmt-ignore";
 pub const IGNORE_FILE: &str = "petal-fmt-ignore-file";
@@ -311,17 +312,11 @@ pub(crate) fn directive_word(comment: &str) -> Option<&str> {
 fn block_comment_lines(source: &str) -> Result<Vec<usize>, String> {
     let mut lexer = Lexer::new(source);
     lexer.tokenize()?;
-    let mut line_starts = vec![0usize];
-    for (i, c) in source.chars().enumerate() {
-        if c == '\n' {
-            line_starts.push(i + 1);
-        }
-    }
-    let line_of = |offset: usize| line_starts.partition_point(|&s| s <= offset) - 1;
+    let lines = LineIndex::new(source);
     let mut out = Vec::new();
     for t in lexer.token_leading_trivia.iter().flatten() {
         if t.kind == crate::trivia::TriviaKind::BlockComment {
-            let first = line_of(t.start as usize);
+            let first = lines.line_of(t.start as usize);
             let breaks = t.text.matches('\n').count();
             out.extend(first + 1..=first + breaks);
         }
@@ -342,25 +337,18 @@ pub(crate) fn line_comments(source: &str) -> Result<Vec<(usize, String, bool)>, 
 pub(crate) fn line_comments_with(source: &str, legacy: bool) -> Result<Vec<(usize, String, bool)>, String> {
     let mut lexer = if legacy { Lexer::new(source).legacy() } else { Lexer::new(source) };
     lexer.tokenize()?;
-    // Char offset of the start of each line, for offset -> line lookups.
-    let mut line_starts = vec![0usize];
-    for (i, c) in source.chars().enumerate() {
-        if c == '\n' {
-            line_starts.push(i + 1);
-        }
-    }
-    let line_of = |offset: usize| line_starts.partition_point(|&s| s <= offset) - 1;
+    let lines = LineIndex::new(source);
     let mut out = Vec::new();
     for (k, trivia) in lexer.token_leading_trivia.iter().enumerate() {
         for t in trivia {
             if t.kind != crate::trivia::TriviaKind::LineComment {
                 continue;
             }
-            let line = line_of(t.start as usize);
+            let line = lines.line_of(t.start as usize);
             // Alone on its line when no token before it ends on this line.
             let whole_line = k == 0
                 || matches!(lexer.tokens[k - 1], Token::Newline)
-                || line_of(lexer.token_spans[k - 1].end.offset as usize) < line;
+                || lines.line_of(lexer.token_spans[k - 1].end.offset as usize) < line;
             out.push((line, t.text.clone(), whole_line));
         }
     }

@@ -45,12 +45,10 @@ pub fn indent_of(line: &str) -> Option<usize> {
     Some(n)
 }
 
-/// Whether `#` at `chars[i]` is the old colour spelling (`#f80`): 3, 4, 6 or
-/// 8 hex digits and then a character that cannot continue a name. The lexer
+/// Whether `#` at `chars[i]` is the old colour spelling (`#f80`). The lexer
 /// reports that shape as an error, not a comment, so it is not one here.
 fn old_colour_at(chars: &[char], i: usize) -> bool {
-    let digits = chars[i + 1..].iter().take_while(|c| c.is_ascii_hexdigit()).count();
-    matches!(digits, 3 | 4 | 6 | 8) && !chars.get(i + 1 + digits).is_some_and(|c| is_ident(*c))
+    petal::lexer::hash_color_len(&chars[i + 1..]).is_some()
 }
 
 /// The code of one line: the comment (`# …`, the deprecated `// …`, and any

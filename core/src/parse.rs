@@ -357,6 +357,15 @@ impl Parser {
         self
     }
 
+    /// A parser over everything `lexer` read, measuring layout the way the
+    /// loader does: [`Parser::with_tab_indentation`] and
+    /// [`Parser::with_layout_columns`] from the lexer's tables.
+    pub fn from_lexer(lexer: &crate::lexer::Lexer) -> Self {
+        Parser::new(lexer.tokens.clone(), lexer.token_spans.clone())
+            .with_tab_indentation(&lexer.token_tab_indented)
+            .with_layout_columns(&lexer.token_layout_column)
+    }
+
     /// The tokens and their spans, given back when parsing is done.
     pub fn into_tokens(self) -> (Vec<Token>, Vec<SourceSpan>) {
         (self.tokens, self.token_spans)
@@ -1432,7 +1441,7 @@ impl Parser {
     /// `export` is the deprecated spelling of the same modifier and takes
     /// every path here that `pub` does; only the error text below, which
     /// quotes whichever word was written, can tell them apart. Reporting the
-    /// old spelling is [`crate::migrate::export_keyword`]'s job.
+    /// old spelling is the `export-to-pub` migration's job.
     fn parse_export(&mut self, start: usize) -> Result<Stmt, String> {
         match self.tokens.get(self.pos + 1) {
             Some(Token::Fn) => self.parse_fn_decl(start, true),

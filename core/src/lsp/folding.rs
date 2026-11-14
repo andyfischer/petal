@@ -16,18 +16,13 @@ use std::rc::Rc;
 
 use crate::cst::{GreenNode, SyntaxElement, SyntaxKind, SyntaxNode};
 use crate::lexer::Token;
+use crate::line_index::LineIndex;
 use crate::lsp::lsp_types::FoldingRange;
 
 /// The folding ranges of a parsed file, in source order of their start.
 pub fn folding_ranges(tree: &Rc<GreenNode>, source: &str) -> Vec<FoldingRange> {
-    let mut line_starts = vec![0u32];
-    for (i, c) in source.chars().enumerate() {
-        if c == '\n' {
-            line_starts.push(i as u32 + 1);
-        }
-    }
     let mut folder = Folder {
-        line_starts,
+        lines: LineIndex::new(source),
         out: Vec::new(),
     };
     folder.walk(&SyntaxNode::new_root(Rc::clone(tree)));
@@ -37,8 +32,7 @@ pub fn folding_ranges(tree: &Rc<GreenNode>, source: &str) -> Vec<FoldingRange> {
 }
 
 struct Folder {
-    /// Char offset at which each line starts.
-    line_starts: Vec<u32>,
+    lines: LineIndex,
     out: Vec<FoldingRange>,
 }
 
@@ -63,7 +57,7 @@ fn last_code_token(node: &SyntaxNode) -> Option<u32> {
 
 impl Folder {
     fn line_of(&self, offset: u32) -> u32 {
-        self.line_starts.partition_point(|&s| s <= offset) as u32 - 1
+        self.lines.line_of(offset as usize) as u32
     }
 
     fn fold(&mut self, start_line: u32, end_line: u32) {

@@ -78,6 +78,8 @@
 
 use std::path::PathBuf;
 
+use crate::line_index::LineIndex;
+
 mod any_filter;
 mod builtin_names;
 mod casts;
@@ -431,7 +433,7 @@ impl LintOutcome {
 /// splices each earlier stage applied (to map a position back to the
 /// original). `petal migrate-old-code` runs its migrations through it too.
 pub(crate) struct Pipeline<'a> {
-    line_starts: Vec<usize>,
+    lines: LineIndex,
     ignores: Ignores,
     rules: &'a RuleFilter,
     pub(crate) text: String,
@@ -468,14 +470,8 @@ impl<'a> Pipeline<'a> {
     }
 
     fn with_ignores(source: &'a str, rules: &'a RuleFilter, ignores: Ignores) -> Result<Self, String> {
-        let mut line_starts = vec![0usize];
-        for (i, c) in source.chars().enumerate() {
-            if c == '\n' {
-                line_starts.push(i + 1);
-            }
-        }
         Ok(Pipeline {
-            line_starts,
+            lines: LineIndex::new(source),
             ignores,
             rules,
             text: source.to_string(),
@@ -496,14 +492,14 @@ impl<'a> Pipeline<'a> {
                 for stage in self.stages.iter().rev() {
                     at = map_back(at, stage);
                 }
-                let line = self.line_starts.partition_point(|&s| s <= at) - 1;
+                let line = self.lines.line_of(at);
                 if self.ignores.suppresses(rule, line) {
                     continue;
                 }
                 let finding = Finding {
                     rule,
                     line: line + 1,
-                    column: at - self.line_starts[line] + 1,
+                    column: at - self.lines.line_start(line) + 1,
                     message: fix.message,
                     fixable: !fix.splices.is_empty(),
                 };

@@ -758,7 +758,7 @@ impl What {
         let mut out = String::new();
         for line in lead.lines() {
             let line = line.trim();
-            let hole = line.starts_with("{/*") && line.ends_with("*/}");
+            let hole = hole_body(line).is_some();
             out.push_str(indent);
             if with_tail && line.starts_with('#') {
                 // A comment that led a list element: a hole among children.
@@ -808,9 +808,7 @@ impl What {
 /// comment line of element children is written as).
 fn comment_text(line: &str) -> String {
     let line = line.trim();
-    let body = line
-        .strip_prefix("{/*")
-        .and_then(|rest| rest.strip_suffix("*/}"))
+    let body = hole_body(line)
         .or_else(|| crate::trivia::comment_body(line))
         .unwrap_or(line);
     body.trim().replace("*/", "* /")
@@ -820,7 +818,12 @@ fn comment_text(line: &str) -> String {
 /// hole, or the deprecated `//` line. (A `#` line there is text.)
 fn is_child_comment_line(line: &str) -> bool {
     let line = line.trim();
-    line.starts_with("//") || (line.starts_with("{/*") && line.ends_with("*/}"))
+    line.starts_with(crate::trivia::OLD_LINE_COMMENT) || hole_body(line).is_some()
+}
+
+/// The inside of `line` when it is a `{/* … */}` hole.
+fn hole_body(line: &str) -> Option<&str> {
+    line.strip_prefix("{/*")?.strip_suffix("*/}")
 }
 
 /// `text`, which started on a line indented by `from`, re-indented for a line
@@ -1167,10 +1170,7 @@ impl Doc {
     }
 
     fn line_start(&self, at: usize) -> usize {
-        self.chars[..at]
-            .iter()
-            .rposition(|&c| c == '\n')
-            .map_or(0, |i| i + 1)
+        crate::line_index::line_start(&self.chars, at)
     }
 
     /// Just past the newline ending the line `at` is on.

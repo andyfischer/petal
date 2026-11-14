@@ -64,7 +64,6 @@ mod at_rebind;
 mod colour_literals;
 mod else_if;
 mod end_lines;
-pub mod export_keyword;
 mod export_to_pub;
 mod hash_comments;
 mod lifecycle_keywords;
@@ -76,7 +75,7 @@ pub use colour_literals::respell_colour_literals;
 pub(crate) use lifecycle_keywords::deprecated_lifecycle_decls;
 pub use lifecycle_keywords::migrate_lifecycle_keywords;
 
-use crate::lint::{LintOptions, Pipeline, RuleFilter, compiles};
+use crate::lint::{Fix, LintOptions, Pipeline, RuleFilter, compiles};
 
 /// Parse the text a migration plans against. Old source may be indented in
 /// a way that disagrees with its `end`s, which the language now rejects; a
@@ -428,6 +427,18 @@ pub struct MigrateOutcome {
 }
 
 impl MigrateOutcome {
+    fn new(output: String, mut findings: Vec<Finding>) -> Self {
+        findings.sort_by_key(|f| (f.line, f.column));
+        MigrateOutcome {
+            findings,
+            output,
+            ends_removed: 0,
+            ends_kept: 0,
+            skipped: Vec::new(),
+            fragment: false,
+        }
+    }
+
     pub fn changed(&self, original: &str) -> bool {
         self.output != original
     }
@@ -482,33 +493,50 @@ pub(crate) fn silent_old_forms(source: &str) -> Result<Vec<(usize, Finding)>, St
         ..Default::default()
     };
     let out = run(source, &opts, false, false).map_err(|e| e.to_string())?;
-    let mut line_starts = vec![0usize];
-    for (i, c) in source.chars().enumerate() {
-        if c == '\n' {
-            line_starts.push(i + 1);
-        }
-    }
+    let lines = crate::line_index::LineIndex::new(source);
     Ok(out
         .findings
         .into_iter()
-        .map(|f| (line_starts[f.line - 1] + f.column - 1, f))
+        .map(|f| (lines.line_start(f.line - 1) + f.column - 1, f))
         .collect())
+}
+
+/// `chars` with every splice of `fixes` applied. Stable by start: a fix's own
+/// splices at one offset keep their order.
+pub(super) fn apply_fixes(chars: &[char], fixes: &[Fix]) -> String {
+    let mut splices: Vec<&crate::rewrite::Splice> = fixes.iter().flat_map(|f| &f.splices).collect();
+    splices.sort_by_key(|s| s.start);
+    let mut out = chars.to_vec();
+    for s in splices.iter().rev() {
+        out.splice(s.start..s.end, s.text.chars());
+    }
+    out.into_iter().collect()
+}
+
+/// One migration over the pipeline's text, when it is selected: plan its
+/// fixes, apply them, and gate what they wrote against what was there.
+/// Returns how many were applied.
+fn step(
+    p: &mut Pipeline,
+    opts: &MigrateOptions,
+    migration: &'static str,
+    plan: impl FnOnce(&str) -> Result<Vec<Fix>, String>,
+    check: impl FnOnce(&str, &str) -> Result<(), String>,
+) -> Result<usize, MigrateError> {
+    if !opts.enabled(migration) {
+        return Ok(0);
+    }
+    let before = p.text.clone();
+    let applied = p.apply(migration, plan(&before)?);
+    if applied > 0 {
+        check(&before, &p.text).map_err(MigrateError::gate(migration))?;
+    }
+    Ok(applied)
 }
 
 /// `tokens_only`: stop after the migrations that need no parse (the source
 /// is a fragment that does not parse).
 fn run(source: &str, opts: &MigrateOptions, gate: bool, tokens_only: bool) -> Result<MigrateOutcome, MigrateError> {
-    let done = |output: String, mut findings: Vec<Finding>| {
-        findings.sort_by_key(|f| (f.line, f.column));
-        MigrateOutcome {
-            findings,
-            output,
-            ends_removed: 0,
-            ends_kept: 0,
-            skipped: Vec::new(),
-            fragment: false,
-        }
-    };
     // Lint's pipeline: findings mapped back to the original text, and
     // `petal-lint-ignore` honoured under each migration's name.
     let filter = RuleFilter {
@@ -533,24 +561,16 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool, tokens_only: bool) -> Re
     // Color tokens first: one character each, no offset moves, and gated on
     // the token stream (the same tokens are the same parse). Until they are
     // respelled the file does not lex.
-    let mut colours = 0;
-    if opts.enabled(COLOUR_LITERALS) {
-        let before = p.text.clone();
-        colours = p.apply(COLOUR_LITERALS, colour_literals::plan_colour_fixes(&before)?);
-        if colours > 0 {
-            colour_literals::same_tokens(&before, &p.text).map_err(MigrateError::gate(COLOUR_LITERALS))?;
-        }
-    }
+    let colours = step(&mut p, opts, COLOUR_LITERALS, colour_literals::plan_colour_fixes, colour_literals::same_tokens)?;
 
     // Comments next: trivia only, gated on the token stream too.
-    let mut comments = 0;
-    if opts.enabled(HASH_COMMENTS) {
-        let before = p.text.clone();
-        comments = p.apply(HASH_COMMENTS, hash_comments::plan_comment_fixes(&before)?);
-        if comments > 0 {
-            hash_comments::same_tokens_but_comments(&before, &p.text).map_err(MigrateError::gate(HASH_COMMENTS))?;
-        }
-    }
+    let comments = step(
+        &mut p,
+        opts,
+        HASH_COMMENTS,
+        hash_comments::plan_comment_fixes,
+        hash_comments::same_tokens_but_comments,
+    )?;
 
     // A `#f80` left in the file (the migration was not selected, the site
     // is ignored, or it needs a hand edit) keeps it from lexing: report what
@@ -564,44 +584,33 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool, tokens_only: bool) -> Re
             reparse(&p.text)?;
         }
         let (output, findings) = p.finish();
-        return Ok(done(output, findings));
+        return Ok(MigrateOutcome::new(output, findings));
     }
 
     if tokens_only {
-        if opts.enabled(ELSIF_TO_ELSE_IF) {
-            let before = p.text.clone();
-            if p.apply(ELSIF_TO_ELSE_IF, else_if::plan_elsif_fixes(&before)?) > 0 {
-                else_if::check_elsif(&before, &p.text, false).map_err(MigrateError::gate(ELSIF_TO_ELSE_IF))?;
-            }
-        }
+        step(&mut p, opts, ELSIF_TO_ELSE_IF, else_if::plan_elsif_fixes, |before, after| {
+            else_if::check_elsif(before, after, false)
+        })?;
         let (output, findings) = p.finish();
-        return Ok(done(output, findings));
+        return Ok(MigrateOutcome::new(output, findings));
     }
 
     // `else if … end end`: until the nested `if`s are chains (or on lines
     // of their own) the file does not parse. Planned on the old reading of
     // `else if`, and gated on the parse and the compiled program.
-    let mut nestings = 0;
-    if opts.enabled(ELSE_IF_NESTING) {
-        let before = p.text.clone();
-        nestings = p.apply(ELSE_IF_NESTING, else_if::plan_nesting_fixes(&before)?);
-        if nestings > 0 && !else_if::has_nesting(&p.text) {
-            // The gate compiles both sides: a removed `state(key)` is read
-            // as a plain `state` in each.
-            else_if::check_nesting(&state_key::blank_keys(&before), &state_key::blank_keys(&p.text), &lint_opts)
-                .map_err(MigrateError::gate(ELSE_IF_NESTING))?;
+    let nestings = step(&mut p, opts, ELSE_IF_NESTING, else_if::plan_nesting_fixes, |before, after| {
+        if else_if::has_nesting(after) {
+            return Ok(());
         }
-    }
+        // The gate compiles both sides: a removed `state(key)` is read as a
+        // plain `state` in each.
+        else_if::check_nesting(&state_key::blank_keys(before), &state_key::blank_keys(after), &lint_opts)
+    })?;
 
     // `elsif`: one keyword each, gated on the tokens and the parse.
-    let mut elsifs = 0;
-    if opts.enabled(ELSIF_TO_ELSE_IF) {
-        let before = p.text.clone();
-        elsifs = p.apply(ELSIF_TO_ELSE_IF, else_if::plan_elsif_fixes(&before)?);
-        if elsifs > 0 {
-            else_if::check_elsif(&before, &p.text, gate).map_err(MigrateError::gate(ELSIF_TO_ELSE_IF))?;
-        }
-    }
+    let elsifs = step(&mut p, opts, ELSIF_TO_ELSE_IF, else_if::plan_elsif_fixes, |before, after| {
+        else_if::check_elsif(before, after, gate)
+    })?;
 
     // `@` rebinds: until they are gone the file does not parse.
     let mut rebinds = 0;
@@ -617,7 +626,7 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool, tokens_only: bool) -> Re
         // what was done and stop.
         Err(_) if rebinds_left > 0 => {
             let (output, findings) = p.finish();
-            return Ok(done(output, findings));
+            return Ok(MigrateOutcome::new(output, findings));
         }
         Err(e) => return Err(e.into()),
     };
@@ -655,7 +664,7 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool, tokens_only: bool) -> Re
     if ends_on && !state_key::find_sites(&output).is_empty() {
         ends_on = false;
     }
-    let mut out = done(if rewrites == 0 { source.to_string() } else { output }, findings);
+    let mut out = MigrateOutcome::new(if rewrites == 0 { source.to_string() } else { output }, findings);
     if rewrites > 0 && gate {
         // Only meaningful when the original compiles here at all; a file
         // whose imports don't resolve outside its app is migrated ungated.
@@ -710,25 +719,7 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool, tokens_only: bool) -> Re
                 // Lines moved under the earlier findings' feet only below
                 // the first `end`; this one is anchored where the text it
                 // was given has that `end`.
-                out.findings.push(Finding {
-                    rule: END_LINES,
-                    line: ends.first_line,
-                    column: 1,
-                    message: if ends.removed > 0 {
-                        format!(
-                            "{} `end` line(s) removed: indentation closes the block{}",
-                            ends.removed,
-                            if ends.kept > 0 {
-                                format!(" ({} kept: the program needs them)", ends.kept)
-                            } else {
-                                String::new()
-                            }
-                        )
-                    } else {
-                        "indented by its `end`s, which the program needs".to_string()
-                    },
-                    fixable: true,
-                });
+                out.findings.push(ends.finding());
                 out.findings.sort_by_key(|f| (f.line, f.column));
                 out.output = ends.text;
                 out.ends_removed = ends.removed;
@@ -758,7 +749,7 @@ fn count_exports(source: &str) -> Result<(usize, usize), String> {
     for s in &stmts {
         c.visit_stmt(s);
     }
-    let deprecated = export_keyword::deprecated_export_spans(&stmts, &chars).len();
+    let deprecated = export_to_pub::deprecated_export_spans(&stmts, &chars).len();
     Ok((c.0, deprecated))
 }
 

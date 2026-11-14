@@ -47,6 +47,7 @@ use crate::ast::{
     RecordField, Stmt, StmtKind,
 };
 use crate::lexer::{Lexer, Token};
+use crate::line_index::LineIndex;
 use crate::source_map::{FileId, SourcePosition, SourceSpan};
 
 // ---------------------------------------------------------------------------
@@ -314,8 +315,7 @@ struct ParsedSource {
     stmts: Vec<Stmt>,
     tokens: Vec<Token>,
     spans: Vec<SourceSpan>,
-    /// Char offset at which each line of the text starts.
-    line_starts: Vec<u32>,
+    lines: LineIndex,
     /// Length of the text in chars.
     chars: u32,
 }
@@ -328,27 +328,16 @@ impl ParsedSource {
         PARSES.with(|n| n.set(n.get() + 1));
         let mut lexer = Lexer::new_in_file(source, file).without_trivia();
         lexer.tokenize()?;
-        let mut parser = crate::parse::Parser::new(
-            std::mem::take(&mut lexer.tokens),
-            std::mem::take(&mut lexer.token_spans),
-        )
-        .with_tab_indentation(&lexer.token_tab_indented)
-        .with_layout_columns(&lexer.token_layout_column);
+        let mut parser = crate::parse::Parser::from_lexer(&lexer);
         let stmts = parser.parse_program()?;
         let (tokens, spans) = parser.into_tokens();
-        let mut line_starts = vec![0u32];
-        let mut chars = 0u32;
-        for c in source.chars() {
-            chars += 1;
-            if c == '\n' {
-                line_starts.push(chars);
-            }
-        }
+        let lines = LineIndex::new(source);
+        let chars = source.chars().count() as u32;
         Ok(ParsedSource {
             stmts,
             tokens,
             spans,
-            line_starts,
+            lines,
             chars,
         })
     }
@@ -1337,8 +1326,7 @@ struct PositionMap {
     /// Length of the old text in chars: a position there is the end of file.
     old_len: u32,
     new_eof: SourcePosition,
-    /// Char offset at which each line of the new text starts.
-    new_line_starts: Vec<u32>,
+    new_lines: LineIndex,
 }
 
 impl PositionMap {
@@ -1510,28 +1498,16 @@ impl PositionMap {
             return Err(differ());
         }
 
-        let new_line_starts = new.line_starts.clone();
-        let count = new.chars;
-        let new_eof = SourcePosition {
-            line: new_line_starts.len() as u32,
-            column: count - new_line_starts[new_line_starts.len() - 1] + 1,
-            offset: count,
-        };
         Ok(PositionMap {
             pieces,
             old_len: old.chars,
-            new_eof,
-            new_line_starts,
+            new_eof: new.lines.position(new.chars),
+            new_lines: new.lines.clone(),
         })
     }
 
     fn at_offset(&self, offset: u32) -> SourcePosition {
-        let line = self.new_line_starts.partition_point(|&s| s <= offset) - 1;
-        SourcePosition {
-            line: line as u32 + 1,
-            column: offset - self.new_line_starts[line] + 1,
-            offset,
-        }
+        self.new_lines.position(offset)
     }
 
     /// Where an old position is in the new text. `end` says the position is

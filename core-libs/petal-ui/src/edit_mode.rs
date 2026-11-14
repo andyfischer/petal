@@ -343,6 +343,9 @@ impl DragAlternative {
     }
 }
 
+/// What a host shows for [`DragOutcomeV2::Stale`].
+pub const STALE_MESSAGE: &str = "the program changed under the drag; try again";
+
 /// What a drag resolved to on release.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DragOutcomeV2 {
@@ -1182,6 +1185,12 @@ impl CallLabel {
     /// "`draw_circle` at line 7: draw_circle(x, 100, 20, ...)".
     pub fn label(&self) -> String {
         format!("`{}` at line {}: {}", self.callee, self.line, self.text)
+    }
+
+    /// [`label`](Self::label), or what to show for an item whose call
+    /// [`describe_call`] could not name.
+    pub fn label_or_unknown(call: Option<&CallLabel>) -> String {
+        call.map_or_else(|| "a call with no source position".to_string(), CallLabel::label)
     }
 }
 

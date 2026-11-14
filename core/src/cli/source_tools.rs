@@ -507,6 +507,86 @@ impl MigrateSummary {
     }
 }
 
+/// What the text migrations made of one input.
+struct TextPass {
+    /// The migrated text; `None` when the input could not be migrated.
+    text: Option<String>,
+    findings: Vec<crate::migrate::Finding>,
+    /// `end-lines`: (removed, kept).
+    ends: (usize, usize),
+    /// The file does not parse and got the token migrations only.
+    unparsed: bool,
+}
+
+/// Run the text migrations over one input of `petal migrate-old-code`,
+/// reporting its skipped gates and failures into `summary` and `errors`.
+fn migrate_text(
+    input: &Input,
+    options: &crate::migrate::MigrateOptions,
+    markdown: bool,
+    summary: &mut MigrateSummary,
+    errors: &mut usize,
+) -> TextPass {
+    use crate::migrate::{MigrateError, MigrateOptions};
+    if markdown {
+        let out = crate::migrate::markdown::migrate_markdown(&input.source, options);
+        for (line, skipped) in &out.skipped {
+            eprintln!("error: {}:{line}: {}: {}", input.name, skipped.migration, skipped.reason);
+            summary.gated.push(format!("{}:{line}: {}: {}", input.name, skipped.migration, skipped.reason));
+            *errors += 1;
+        }
+        summary.fragments += out.fragments;
+        summary.fences_left += out.unreadable.len();
+        return TextPass {
+            text: Some(out.output),
+            findings: out.findings,
+            ends: (out.ends_removed, out.ends_kept),
+            unparsed: false,
+        };
+    }
+    let e = match crate::migrate::migrate_source_checked(&input.source, options) {
+        Ok(out) => {
+            for skipped in &out.skipped {
+                eprintln!("error: {}: {}: {}", input.name, skipped.migration, skipped.reason);
+                summary.gated.push(format!("{}: {}: {}", input.name, skipped.migration, skipped.reason));
+                *errors += 1;
+            }
+            return TextPass {
+                text: Some(out.output),
+                findings: out.findings,
+                ends: (out.ends_removed, out.ends_kept),
+                unparsed: false,
+            };
+        }
+        Err(e) => e,
+    };
+    eprintln!("error: {}: {}", input.name, e);
+    *errors += 1;
+    match &e {
+        MigrateError::Unreadable(reason) => {
+            let first = reason.lines().next().unwrap_or("");
+            // A file that lexes but does not parse still gets the
+            // migrations that read tokens alone, as a Markdown fence does:
+            // a `#f80` left in it is a hard error, where the parse error
+            // may be years old (a stale generated file). It is still
+            // reported and still fails the run.
+            let tokens = MigrateOptions { fragment: true, ..options.clone() };
+            if let Ok(out) = crate::migrate::migrate_source_checked(&input.source, &tokens)
+                && out.fragment
+                && out.changed(&input.source)
+            {
+                summary.token_only.push(format!("{}: {first}", input.name));
+                return TextPass { text: Some(out.output), findings: out.findings, ends: (0, 0), unparsed: true };
+            }
+            summary.unreadable.push(format!("{}: {first}", input.name));
+        }
+        MigrateError::Gate { migration, reason } => {
+            summary.gated.push(format!("{}: {migration}: {reason}", input.name));
+        }
+    }
+    TextPass { text: None, findings: Vec::new(), ends: (0, 0), unparsed: false }
+}
+
 /// `petal migrate-old-code`: every selected migration ([`crate::migrate`])
 /// over the inputs, the text migrations per file and then `old-imports` over
 /// the batch (and the text migrations once more over a file whose imports
@@ -519,7 +599,7 @@ impl MigrateSummary {
 /// how many sites in how many files, and every file a gate kept a migration
 /// from (which fails the run).
 pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]) {
-    use crate::migrate::{MIGRATIONS, MigrateError, MigrateOptions, OLD_IMPORTS};
+    use crate::migrate::{MIGRATIONS, MigrateOptions, OLD_IMPORTS};
     if opts.list {
         let width = MIGRATIONS.iter().map(|m| m.name.len()).max().unwrap_or(0);
         for m in MIGRATIONS {
@@ -546,79 +626,10 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
     };
 
     // The text migrations, file by file.
-    let mut texts: Vec<Option<String>> = Vec::with_capacity(inputs.len());
-    let mut findings: Vec<Vec<crate::migrate::Finding>> = Vec::with_capacity(inputs.len());
-    let mut ends: Vec<(usize, usize)> = Vec::with_capacity(inputs.len());
-    // Files that do not parse and got the token migrations only.
-    let mut unparsed: Vec<bool> = Vec::with_capacity(inputs.len());
-    for input in &inputs {
-        if is_markdown(input) {
-            let out = crate::migrate::markdown::migrate_markdown(&input.source, &options(input));
-            for (line, skipped) in &out.skipped {
-                eprintln!("error: {}:{line}: {}: {}", input.name, skipped.migration, skipped.reason);
-                summary.gated.push(format!("{}:{line}: {}: {}", input.name, skipped.migration, skipped.reason));
-                errors += 1;
-            }
-            summary.fragments += out.fragments;
-            summary.fences_left += out.unreadable.len();
-            texts.push(Some(out.output));
-            findings.push(out.findings);
-            ends.push((out.ends_removed, out.ends_kept));
-            unparsed.push(false);
-            continue;
-        }
-        match crate::migrate::migrate_source_checked(&input.source, &options(input)) {
-            Ok(out) => {
-                for skipped in &out.skipped {
-                    eprintln!("error: {}: {}: {}", input.name, skipped.migration, skipped.reason);
-                    summary.gated.push(format!("{}: {}: {}", input.name, skipped.migration, skipped.reason));
-                    errors += 1;
-                }
-                texts.push(Some(out.output));
-                findings.push(out.findings);
-                ends.push((out.ends_removed, out.ends_kept));
-                unparsed.push(false);
-            }
-            Err(e) => {
-                eprintln!("error: {}: {}", input.name, e);
-                // A file that lexes but does not parse still gets the
-                // migrations that read tokens alone, as a Markdown fence
-                // does: a `#f80` left in it is a hard error, where the
-                // parse error may be years old (a stale generated file).
-                // It is still reported and still fails the run.
-                if let MigrateError::Unreadable(reason) = &e {
-                    let tokens = MigrateOptions { fragment: true, ..options(input) };
-                    if let Ok(out) = crate::migrate::migrate_source_checked(&input.source, &tokens)
-                        && out.fragment
-                        && out.changed(&input.source)
-                    {
-                        let first = reason.lines().next().unwrap_or("");
-                        summary.token_only.push(format!("{}: {first}", input.name));
-                        errors += 1;
-                        texts.push(Some(out.output));
-                        findings.push(out.findings);
-                        ends.push((0, 0));
-                        unparsed.push(true);
-                        continue;
-                    }
-                }
-                unparsed.push(false);
-                match &e {
-                    MigrateError::Unreadable(reason) => {
-                        let first = reason.lines().next().unwrap_or("");
-                        summary.unreadable.push(format!("{}: {first}", input.name));
-                    }
-                    MigrateError::Gate { migration, reason } => {
-                        summary.gated.push(format!("{}: {migration}: {reason}", input.name));
-                    }
-                }
-                errors += 1;
-                texts.push(None);
-                findings.push(Vec::new());
-                ends.push((0, 0));
-            }
-        }
-    }
+    let passes: Vec<TextPass> = inputs
+        .iter()
+        .map(|input| migrate_text(input, &options(input), is_markdown(input), &mut summary, &mut errors))
+        .collect();
 
     // `old-imports`, over the whole batch as the text migrations left it.
     let imports_on = opts.only.as_ref().is_none_or(|o| o.iter().any(|r| r == OLD_IMPORTS))
@@ -627,12 +638,13 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
         // A file with an `@` rebind left for a hand edit does not parse yet;
         // its sites are listed below, and its imports wait for the next run.
         // A Markdown file has no imports to resolve.
-        let parseable: Vec<Option<String>> = texts
+        let parseable: Vec<Option<String>> = passes
             .iter()
-            .zip(&findings)
-            .zip(inputs.iter().zip(&unparsed))
-            .map(|((text, found), (input, unparsed))| {
-                let stuck = found
+            .zip(&inputs)
+            .map(|(pass, input)| {
+                let text = &pass.text;
+                let stuck = pass
+                    .findings
                     .iter()
                     .any(|f| f.rule == crate::migrate::AT_REBIND && !f.fixable);
                 // `# petal-lint-ignore-file old-imports` keeps a file's
@@ -646,7 +658,7 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
                 // file with each key group read as nothing (the same
                 // exports, so its importers compile against it), and the
                 // keys go back below.
-                if stuck || ignored || *unparsed || is_markdown(input) {
+                if stuck || ignored || pass.unparsed || is_markdown(input) {
                     None
                 } else {
                     text.as_deref().map(crate::migrate::blank_state_keys)
@@ -655,10 +667,10 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
             .collect();
         fix_imports_batch(&inputs, &parseable, &opts.paths, include_dirs, &mut errors)
             .into_iter()
-            .zip(&texts)
+            .zip(&passes)
             .zip(&inputs)
-            .map(|((fixed, text), input)| {
-                let (mut fixed, text) = (fixed?, text.as_deref()?);
+            .map(|((fixed, pass), input)| {
+                let (mut fixed, text) = (fixed?, pass.text.as_deref()?);
                 match crate::migrate::restore_state_keys(text, &fixed.source) {
                     Some(source) => {
                         fixed.source = source;
@@ -682,12 +694,11 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
     let mut changed = 0usize;
     let mut written = 0usize;
     let mut left = 0usize;
-    for (((input, text), (found, fixed)), (mut ends_removed, mut ends_kept)) in
-        inputs.iter().zip(&texts).zip(findings.iter().zip(imports)).zip(ends)
-    {
-        let Some(text) = text else {
+    for ((input, pass), fixed) in inputs.iter().zip(&passes).zip(imports) {
+        let Some(text) = &pass.text else {
             continue;
         };
+        let (mut ends_removed, mut ends_kept) = pass.ends;
         let (mut output, import_changes) = match fixed {
             Some(f) => (f.source, f.changes),
             None => (text.clone(), Vec::new()),
@@ -697,7 +708,7 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
         // now an error, was still in the file. With the imports fixed, give
         // the text migrations a second pass, so one run does the whole job
         // and the next is a no-op.
-        let mut found = found.clone();
+        let mut found = pass.findings.clone();
         if output != *text && found.iter().any(|f| !f.fixable) {
             if let Ok(again) = crate::migrate::migrate_source(&output, &options(input))
                 && again.output != output

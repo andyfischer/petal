@@ -158,7 +158,7 @@ fn collect_module_exports(
 fn parse_bundled(source: &str) -> Option<Vec<Stmt>> {
     let mut lexer = crate::lexer::Lexer::new(source);
     lexer.tokenize().ok()?;
-    crate::parse::Parser::new(lexer.tokens, lexer.token_spans)
+    crate::parse::Parser::from_lexer(&lexer)
         .parse_program()
         .ok()
 }

@@ -13,8 +13,8 @@ use common::*;
 use petal::static_value::StaticValue;
 use programs_as_documents::{
     Choice, Document, DocumentRun, DocumentSession, Intent, OutputKey, OverrideEdit, OverrideHook, OverrideRequest,
-    Resolution, ResolveOptions, ResolvedEdit, Runner, Scope, ScopePolicy, Step, concretize, concretize_and_apply,
-    resolve,
+    Resolution, ResolveOptions, ResolvedEdit, Runner, Scope, ScopePolicy, Step, Verified, concretize,
+    concretize_and_apply, resolve,
 };
 
 fn set(target: OutputKey, field: &str, value: StaticValue) -> Intent {
@@ -310,4 +310,40 @@ fn writing_out_keeps_field_order_numbers_colors_and_children() {
     let src = "fn pair()\n  [<a />, <b />]\nend\npair()\n";
     let rn = run(&r, src);
     assert!(concretize(&r, &rn, tagged(&rn, "a")[0]).is_err());
+}
+
+/// Writes an override the program never reads (a `# note` comment), which
+/// only the host applies: the hook says whether it holds.
+struct HostApplied {
+    holds: bool,
+}
+
+impl OverrideHook for HostApplied {
+    fn write_override(&self, req: &OverrideRequest<'_>) -> Option<Result<OverrideEdit, String>> {
+        let Intent::SetField { field, value, .. } = req.intent else { return None };
+        let site = req.use_site.as_ref()?;
+        let source = format!("{}# override {field} = {}\n", req.run.source, value.to_source());
+        Some(Ok(OverrideEdit { source, span: site.span, description: format!("host override `{field}`") }))
+    }
+
+    fn verify(&self, _runner: &Runner, _req: &OverrideRequest<'_>, _edit: &OverrideEdit) -> Option<Verified> {
+        Some(if self.holds { Verified::Holds { others: Vec::new() } } else { Verified::Fails("not applied".into()) })
+    }
+}
+
+#[test]
+fn a_hook_that_applies_its_overrides_itself_verifies_them() {
+    let r = value_runner();
+    let src = "fn card(x)\n  <card x={x} h={40} />\nend\n[card(1), card(2)]\n";
+    let scopes = |holds: bool| {
+        let opts = ResolveOptions { overrides: Some(Rc::new(HostApplied { holds })), ..ResolveOptions::default() };
+        choices(resolve_with(&r, src, &opts, |r| set(key_of(r, "card", 1), "h", StaticValue::Int(50))))
+            .iter()
+            .map(|c| c.scope)
+            .collect::<Vec<_>>()
+    };
+    // The rerun's field never changes (the program doesn't read the
+    // override), so without the hook's own check it would not be offered.
+    assert_eq!(scopes(true), vec![Scope::EditShared, Scope::Override]);
+    assert_eq!(scopes(false), vec![Scope::EditShared]);
 }

@@ -866,7 +866,8 @@ fn other_scopes(runner: &Runner, run: &DocumentRun, node: &OutputNode, intent: &
     if let Some(hook) = &opts.overrides {
         let req = OverrideRequest { run, node, intent, use_site: use_site(run, node) };
         if let Some(Ok(o)) = hook.write_override(&req)
-            && let Verified::Holds { others } = verify(runner, run, node, intent, &o.source)
+            && let Verified::Holds { others } =
+                hook.verify(runner, &req, &o).unwrap_or_else(|| verify(runner, run, node, intent, &o.source))
         {
             let edit = ResolvedEdit {
                 source: o.source,

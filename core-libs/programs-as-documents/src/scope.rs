@@ -21,9 +21,9 @@ use petal::program::{Program, TermId, TermOp};
 use petal::provenance::{self, TraceEnd};
 use petal::source_map::{FileId, SourceSpan};
 
-use crate::intent::Intent;
+use crate::intent::{Intent, Verified};
 use crate::output_map::OutputNode;
-use crate::run::DocumentRun;
+use crate::run::{DocumentRun, Runner};
 
 /// The scope of an edit to an output whose site built others too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -101,6 +101,16 @@ pub trait OverrideHook {
     /// `req.node` alone; `None` when this host has no override for it, an
     /// error to say why it cannot write one.
     fn write_override(&self, req: &OverrideRequest<'_>) -> Option<Result<OverrideEdit, String>>;
+
+    /// Whether `edit` (an override this hook wrote for `req`) holds, for a
+    /// host whose overrides take effect outside the program: petal-design
+    /// applies instance overrides in Rust, so the output's own field does
+    /// not change in the rerun. `None` (the default): the resolver re-runs
+    /// and compares the output's field, as for any other edit.
+    fn verify(&self, runner: &Runner, req: &OverrideRequest<'_>, edit: &OverrideEdit) -> Option<Verified> {
+        let _ = (runner, req, edit);
+        None
+    }
 }
 
 /// The innermost call on `node`'s call path that is written in the

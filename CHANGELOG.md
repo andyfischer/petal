@@ -554,6 +554,14 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   them), and a record key that is not an identifier renders as
   `["key"]: …` where it used to be written bare (and fail to parse).
 
+- **Programs as documents: an override hook can verify its own override.**
+  `OverrideHook::verify(runner, req, edit)` (default `None`: the resolver
+  re-runs and compares the output's field, as before) lets a host whose
+  overrides take effect outside the program say whether one holds.
+  petal-design applies instance overrides in Rust, so the rerun's output
+  never shows them; its hook reads the instance's `overrides` back instead,
+  and the resolver now offers its override beside editing the component.
+
 - **Programs as documents: derived result values, and new lines at the
   document's indent step.** `Runner::with_derived(indexes)` names result
   values the host's vocabulary derives from the others (petal-design's

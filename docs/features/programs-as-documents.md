@@ -140,7 +140,9 @@ same rerun check.
      `for` loops (`data_entry`).
    - `Scope::Override`: written by the host's `OverrideHook` at the use site
      (the innermost call in the document's own file), for example a named
-     argument.
+     argument. It is verified by rerun like any edit, unless the hook's
+     `verify` says whether it holds: a host that applies overrides outside
+     the program (petal-design's instance `overrides`) checks them itself.
 
    `ScopePolicy::Prefer(vec![…])` picks the first scope that verifies and
    changes nothing else, without asking.

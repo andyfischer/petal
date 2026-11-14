@@ -536,6 +536,29 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **Programs as documents: edit a script through its output.** The new
+  optional crate `core-libs/programs-as-documents` is the write path for an
+  application whose saved document is a Petal script. The application states
+  an edit against the output (`Intent::SetField`/`RemoveField` on an
+  `OutputKey`, or a `StructureIntent`: reorder, move between parents,
+  insert, remove, duplicate; or `copy`/`paste`), and `resolve` finds where
+  to write it: the literal the value flows from, the element literal that
+  built it, a shared literal / data entry / host override (as a
+  `NeedsChoice`), a direct-manipulation solve limited to the entry file, or
+  with consent the output written out as source. Each edit is verified by
+  re-running the script, and `DocumentSession` commits it as one undo step.
+  petal-images makes every layer edit this way. See
+  [programs-as-documents.md](docs/features/programs-as-documents.md).
+
+  In core, for it and other hosts: element-origin tracing
+  (`Env::enable_element_trace`, `Env::element_origin`, `ElementOrigin { term,
+  chain, occurrence }`; one bool check in `AllocElement` when off, and the
+  static cache and memo are off while it is on), `provenance::trace_value`
+  (a prop back to its literal through bindings, arguments and field reads),
+  `StaticValue::from_value`, direct-manipulation goals on an element's props
+  (`Observable::Element`, `ObsValue::Element`; elements inside emitted
+  values are now observed too) and the `entry-file` parameter selector.
+
 - **Edit paths reach element children, XPath-style.**
   `layers[2]/group[0]/image[1].x` names an attribute of the second `<image>`
   in a `<group>`. `/tag[n]` (0-based), `/*[n]` and `/tag` are child steps,

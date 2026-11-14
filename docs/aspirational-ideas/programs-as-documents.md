@@ -1,7 +1,28 @@
 # Programs as documents
 
-Status: aspirational, 2026-11-14. Nothing here is a commitment; it is a map
-of the problem and a direction.
+Status (2026-11-14): **part 1 and the write path are implemented**; part 2
+(a schema for documents) and the saved-state file are not. The user-facing
+page is [features/programs-as-documents.md](../features/programs-as-documents.md).
+
+- **The crate.** [`core-libs/programs-as-documents`](../../core-libs/programs-as-documents/)
+  (optional; it uses only petal's public API, and the wasm builds leave it
+  out) has the editing session, runs with an output source map, field
+  intents resolved by the whole ladder below (steps 1 to 6), structural
+  intents by outcome, and copy and paste with free-variable analysis. Every
+  edit is verified by rerun.
+- **In core.** Element-origin tracing (`Env::enable_element_trace`,
+  `ElementOrigin`, `provenance::trace_value`), `StaticValue::from_value`,
+  direct-manipulation goals on elements (`Observable::Element`,
+  `ObsValue::Element`) and the `entry-file` selector.
+- **petal-images is ported.** Every layer edit in its editor goes through
+  the crate (see "Other projects this touches").
+- **What remains.** Porting petal-design, petal-movies and
+  petal-social-media; reference intents (goals that write expressions),
+  wrap/unwrap and intents as an undo log; part 2; saved state (which
+  petal-creative will not use).
+
+The rest of this note is the design as written before it was built, with
+notes where the implementation settled a question differently.
 
 ## The idea
 
@@ -39,7 +60,7 @@ Their shared pattern:
 
 **A document is a script that ends in one call.**
 
-```petal
+```petal ignore
 import movie
 
 let project = {width: 1080, height: 1920, fps: 30, background: :0b0b12}
@@ -130,7 +151,10 @@ gesture ─► intent ─► resolve ─► source edit ─► verify ─► com
    is refused, and nothing is written.
 6. **Commit.** One undo step. A continuous gesture writes the running program
    without writing the file (`Env::set_config_value`) and commits once at the
-   end.
+   end. (As built, each frame of a drag is resolved, verified and committed as
+   source; commits under one undo key coalesce, and
+   `DocumentSession::begin_gesture` / `end_gesture` also make a gesture one
+   step. The file is written on save.)
 7. **Save.** Write the text, and the saved state if there is any.
 
 ### Kinds of edit
@@ -157,6 +181,8 @@ can't do:
   target is gone is reported, not silently dropped.
 - **Replaying intents on a copy.** "Apply the same edits to the other
   three variants" is the same intents resolved against different programs.
+
+Not built yet: the crate keeps text snapshots only.
 
 ## Part 1: Resolving edits against programs of many shapes
 
@@ -192,6 +218,15 @@ for *element-valued* output and handing the result to the host with the
 result value. This would also replace the index-path addressing in
 petal-design and the probe native in `solve_computed`.
 
+Built: core records an `ElementOrigin` for each element when a host turns
+element tracing on (the `AllocElement` term, the call site of each enclosing
+frame, and an occurrence count per site); the crate's `OutputMap` builds the
+rest from it. Two things differ from the sketch above. The construction site
+is always an element literal: records and lists in the result are walked
+through, not given sites of their own. And the call path has no loop `key`:
+iterations are told apart by their occurrence order, so an `id=` prop is
+the stable identity for loop-made outputs.
+
 ### A resolution ladder
 
 With an output source map, an intent is resolved by trying strategies in
@@ -223,6 +258,21 @@ order, from the most direct to the least:
 
 Steps 1 and 2 are cheap and certain. Steps 3 to 5 are where the user steers.
 Every step ends in the same verify-by-rerun check.
+
+Built: `programs_as_documents::resolve`, all six steps. As built:
+
+- Step 2 is "add or remove the attribute on the element literal that built
+  the output". Sharing is found two ways, from the trace (fan-out, or a
+  literal read by several outputs) and from the rerun (an edit that changes
+  other outputs too), and either way it goes to step 3.
+- In step 3 the override is written by the host (`OverrideHook`); the crate
+  has no override vocabulary of its own. `ScopePolicy::Prefer` is the policy.
+  A computed field read per item from a data list is edited in its data
+  entry without asking, since that changes only this output.
+- Step 4 uses DM v2 best effort with an element goal
+  (`Observable::Element`) and the `entry-file` selector; the other axis of a
+  drag is held (`ResolveOptions::hold`).
+- Step 5 runs only with the caller's consent (`ResolveOptions::concretize`).
 
 ### Structural edits by outcome
 
@@ -257,7 +307,8 @@ the drag starts on one run's output and commits against the next. The order
 of preference:
 
 1. an explicit `id=` written in the source,
-2. the construction site plus call path plus loop `key`,
+2. the construction site plus call path plus loop `key` (as built: plus
+   the occurrence order, since the trace records no loop key),
 3. the index path, as a last resort. It is fragile, because a hole that
    makes a different number of elements shifts every index after it.
 
@@ -314,7 +365,7 @@ The schema belongs with the vocabulary package, written in Petal, so the
 tool, the CLI and an agent all read the same one. A sketch, with every name
 open:
 
-```petal
+```petal ignore
 @document(
   emit: movie,
   bindings: {

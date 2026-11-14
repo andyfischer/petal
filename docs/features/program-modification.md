@@ -104,6 +104,21 @@ that emitted the value. See
 [v2 plan](../dev/direct-manipulation-v2-plan.md). See the
 [README](../../README.md#goals) for the project goals.
 
+### Editing a script through its output (`core-libs/programs-as-documents`)
+
+For an application whose saved document is a Petal script. The application
+states each edit against the script's *output* ("layer `logo` has `x = 300`",
+"move this card before that one", "paste this element here"), and the
+optional `programs-as-documents` crate resolves it to a source edit wherever
+the value really comes from: a literal reached through bindings, arguments
+and field reads; the element literal that built the output; a shared literal,
+a data entry or a host-written override (asking the user which); a
+direct-manipulation solve limited to the document's own file; or, with
+consent, the output written out as source. Every edit is verified by
+re-running the script before it is committed as one undo step. It rests on
+one core hook, element-origin tracing (`Env::enable_element_trace`). See
+[programs-as-documents.md](programs-as-documents.md).
+
 ### CLI commands that rewrite source
 
 Each of these writes `.ptl` files in place, and each is described in
@@ -217,6 +232,8 @@ See [time-travel.md](time-travel.md).
 | Apply lint fixes (optionally verified) | — | yes | `petal lint --fix [--verify]` |
 | Apply refactors | proposals | yes | `petal suggest [--apply]`, `petal apply-change` |
 | Propose edits that change an emitted value | yes | proposals | `direct_manipulation::propose_edits` / `propose_edits_batch`, `petal propose-edit`, MCP `ProposeEdit` |
+| Where an element in a run's result was built (site, call path, occurrence) | yes | — | `Env::enable_element_trace`, `Env::element_origin`, `provenance::trace_value` ([provenance.md](provenance.md#where-an-element-came-from-element-tracing)) |
+| Edit a script through its output: set or remove a field, reorder, move, insert, remove, duplicate, copy and paste elements, verified by rerun | yes | yes | `programs_as_documents::resolve` / `resolve_structure` / `copy` / `paste`, `Document` ([programs-as-documents.md](programs-as-documents.md)) |
 | Classify an edit without applying it | yes | — | `source_diff::diff_source`, `Env::diff_program` |
 | Hot reload (state-preserving) | — | yes | `Env::reload_program` (`transfer_state` for the recompile); the SDL watcher, `pb_vm_reload`, Garden |
 | Set one setting's value in a running program | — | yes | `Env::set_config_value`; `pb_vm_set_tunable` |

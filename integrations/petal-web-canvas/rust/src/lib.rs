@@ -873,12 +873,12 @@ impl PetalRuntime {
     /// `edit_preference` gives them); `[]` clears it. Unparseable labels
     /// are skipped.
     pub fn edit_set_preference(&mut self, labels_json: &str) -> String {
-        match serde_json::from_str::<Vec<String>>(labels_json) {
-            Ok(labels) => {
-                self.prefer = labels.iter().filter_map(|l| DragSelector::parse(l)).collect();
+        match DragSelector::parse_labels(labels_json) {
+            Ok(prefer) => {
+                self.prefer = prefer;
                 self.edit_preference()
             }
-            Err(e) => err_json(&format!("expected a JSON array of selectors: {e}")),
+            Err(e) => err_json(&e),
         }
     }
 

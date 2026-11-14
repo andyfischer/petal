@@ -407,12 +407,17 @@ impl GardenWeb {
     }
 
     /// Set the sticky choice from a JSON array of selector labels (as
-    /// `preference()` gives them; `[]` clears). Returns the choice now held.
+    /// `preference()` gives them; `[]` clears). Returns the choice now held,
+    /// or `{ok: false, error}` (the choice unchanged) when `labels` is not
+    /// such an array.
     pub fn set_preference(&mut self, labels: &str) -> String {
-        let labels: Vec<String> = serde_json::from_str(labels).unwrap_or_default();
-        self.host
-            .set_drag_preference(labels.iter().filter_map(|l| DragSelector::parse(l)).collect());
-        self.preference()
+        match DragSelector::parse_labels(labels) {
+            Ok(prefer) => {
+                self.host.set_drag_preference(prefer);
+                self.preference()
+            }
+            Err(e) => json!({ "ok": false, "error": e }).to_string(),
+        }
     }
 
     /// Forget the sticky choice.
@@ -745,6 +750,11 @@ mod tests {
         web.clear_preference();
         assert_eq!(web.preference(), "[]");
         assert_eq!(web.set_preference("[\"a\"]"), "[\"a\"]");
+        // Not an array: an error, and the choice is kept.
+        let bad = parse(&web.set_preference("a"));
+        assert_eq!(bad["ok"], false);
+        assert!(bad["error"].as_str().unwrap().contains("JSON array"), "{bad}");
+        assert_eq!(web.preference(), "[\"a\"]");
     }
 
     /// garden-web builds `petal` with no bundled libraries (see README.md), so

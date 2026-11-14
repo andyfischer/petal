@@ -229,6 +229,15 @@ impl DragSelector {
             .then(|| DragSelector::Variable(s.to_string()))
     }
 
+    /// A sticky choice from a JSON array of selector labels (as
+    /// [`label`](Self::label) writes them). A label that does not parse is
+    /// skipped; text that is not such an array is an error.
+    pub fn parse_labels(json: &str) -> Result<Vec<DragSelector>, String> {
+        let labels: Vec<String> =
+            serde_json::from_str(json).map_err(|e| format!("expected a JSON array of selectors: {e}"))?;
+        Ok(labels.iter().filter_map(|l| DragSelector::parse(l)).collect())
+    }
+
     /// The selector in the syntax [`parse`](Self::parse) reads.
     pub fn label(&self) -> String {
         match self {

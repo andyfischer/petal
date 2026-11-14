@@ -33,6 +33,9 @@ pub struct DocumentSession {
     last_edit: Option<(String, Instant)>,
     /// The source when the open gesture began.
     gesture: Option<String>,
+    /// The redo steps when the open gesture began: a cancelled gesture
+    /// changed nothing, so they come back.
+    gesture_redo: Vec<String>,
     /// A message for the user about the last thing that happened to the file
     /// (saved, reloaded, changed on disk under unsaved edits).
     pub notice: Option<String>,
@@ -63,6 +66,7 @@ impl DocumentSession {
             redo: Vec::new(),
             last_edit: None,
             gesture: None,
+            gesture_redo: Vec::new(),
             notice: None,
         }
     }
@@ -119,6 +123,7 @@ impl DocumentSession {
     pub fn begin_gesture(&mut self) {
         if self.gesture.is_none() {
             self.gesture = Some(self.source.clone());
+            self.gesture_redo = self.redo.clone();
         }
     }
 
@@ -131,6 +136,7 @@ impl DocumentSession {
     /// undo step).
     pub fn end_gesture(&mut self) -> bool {
         let Some(base) = self.gesture.take() else { return false };
+        self.gesture_redo.clear();
         self.last_edit = None;
         if base == self.source {
             return false;
@@ -145,6 +151,7 @@ impl DocumentSession {
         let Some(base) = self.gesture.take() else { return false };
         let changed = base != self.source;
         self.source = base;
+        self.redo = std::mem::take(&mut self.gesture_redo);
         changed
     }
 

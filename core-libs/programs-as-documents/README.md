@@ -5,7 +5,9 @@ script; running it produces what the user sees, and every edit the
 application makes is written back into the script, keeping the author's
 comments and formatting. The design is in
 [`docs/aspirational-ideas/programs-as-documents.md`](../../docs/aspirational-ideas/programs-as-documents.md)
-("The write path" and part 1). This crate implements the write path and
+("The write path" and part 1); the user-facing page is
+[`docs/features/programs-as-documents.md`](../../docs/features/programs-as-documents.md).
+This crate implements the write path and
 the whole resolution ladder (steps 1 to 6):
 
 ```text
@@ -73,10 +75,9 @@ imported module or package is refused with a reason naming the file.
   structural intents, intents as an undo log.
 - Structural edits move entry texts with Petal's `move_path`: a comment on
   the line after an entry moves with it, a comment on its own line above an
-  entry stays where it is. A `{…}` hole among an element's children is not
-  an entry: elements it makes are edited through their data list, or are
-  locked.
-- A `{…}` hole among an element's children is not an entry, so a helper
+  entry stays where it is.
+- A `{…}` hole among an element's children is not an entry: elements it
+  makes are edited through their data list, or are locked, and a helper
   call can't be moved or inserted between an element's tags ("only an
   element can be a child element").
 - A data list is recognized only when the `map`/`each`/`for` reads a list

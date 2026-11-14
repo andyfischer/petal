@@ -1,0 +1,14 @@
+[package]
+name = "programs-as-documents"
+version = "0.1.0"
+edition = "2024"
+description = "Petal scripts as application documents: an editing session over the source text, runs with an output source map, and edits stated against the output (intents) resolved back into the source and verified by rerun"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
+
+[lib]
+name = "programs_as_documents"
+
+[dependencies]
+petal = { path = "../../core", default-features = false }
+

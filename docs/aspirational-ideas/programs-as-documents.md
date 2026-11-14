@@ -430,11 +430,11 @@ petal-creative it is the rule.
 
 | Need | For | Today |
 |---|---|---|
-| Output source map (site, call path, field provenance, fan-out) for element values | part 1, steps 1 to 3; stable ids | pieces: emit tracing, `explain`, state call paths |
-| `editable_literal(source, name)` with reasons | schema levels | each host repeats the check |
+| Output source map (site, call path, field provenance, fan-out) for element values | part 1, steps 1 to 3; stable ids | done: element tracing in core, `OutputMap` in `core-libs/programs-as-documents` (steps 1 and 2 resolve there) |
+| `editable_literal(source, name)` with reasons | schema levels | done: `programs_as_documents::editable_literal` |
 | Goals that write expressions and named arguments | reference edits; tokens | text splices in petal-design |
 | Goals into element children | structure edits | done in Petal: [edit paths](../features/edit-paths.md) and path goals; petal-creative still uses `edit_in_place` lift-and-splice |
-| `StaticValue::from_value` | concretize ("write out as source") | JSON round trip in petal-social-media |
+| `StaticValue::from_value` | concretize ("write out as source") | done in core |
 | An `entry` scope selector for direct manipulation | step 4 | edits outside file 0 refused after the fact |
 | The script's single result, read by the host | the schema's entry call | output buffers |
 | Document schema annotation and `petal check --document` | part 2 | conventions in Rust |

@@ -1,20 +1,29 @@
-# Proposal: `@doc(…)`, a documentation annotation
+# Proposal: `@doc(…)` and `@module_doc(…)`, documentation annotations
 
-Status: proposed, 2026-11-13
+Status: **accepted**, 2026-11-14, with the owner's decisions recorded under
+[Decisions](#decisions). Proposed 2026-11-13. Not yet implemented.
 
 ## Summary
 
-Add `@doc(…)`, the first **compile-time annotation**. It fills the slot that
-[annotation-syntax.md](annotation-syntax.md) reserved as F1, "annotations from a
-fixed vocabulary that do not call anything". It is written before a
-declaration and holds its documentation as literal data: a Markdown body, plus
-optional structured fields (`params`, `returns`, `options`, `example`, `see`,
-`deprecated`, `hidden`).
+Petal gets a documentation syntax, and it is the only one: comments stop being
+documentation.
+
+- **`@doc(…)`** is written before a declaration. It holds that declaration's
+  documentation as literal data: a Markdown body, plus structured fields
+  (`params`, `returns`, `options`, `example`, `see`, `deprecated`, `hidden`)
+  and an open `extra:` record for anything else.
+- **`@module_doc(…)`** is written once at the top of a file and documents the
+  module. A package's root module doc is the package's doc.
 
 ```petal ignore
+@module_doc("""
+Arithmetic, rounding, trigonometry and the numeric casts.
+""")
+
 @doc("""
 Constrain a value to the range `[lo, hi]`. Three `int` arguments give an
-`int`; one `float` argument makes the result a `float`.
+`int` (so the result can still be a list index); one `float` argument makes
+the result a `float`.
 """,
   params: {value: "The number to constrain.", lo: "The lower bound.", hi: "The upper bound."},
   example: """
@@ -24,31 +33,34 @@ Constrain a value to the range `[lo, hi]`. Three `int` arguments give an
 pub native fn clamp(value: num, lo: num, hi: num)
 ```
 
-The arguments must be literals, so the parser alone can read every doc:
-nothing is evaluated and nothing reaches the IR. A new `petal doc --json`
-command emits each package's public surface (signatures from the
-declarations, prose from `@doc`) for the website and other tools.
+These are the first **compile-time annotations**, the slot that
+[annotation-syntax.md](annotation-syntax.md) reserved as F1: annotations from a
+fixed vocabulary that **do not call anything**. They are written like `@const`
+and `@tunable`, but they don't lower to a call, `doc` stays an ordinary name,
+and nothing reaches the IR.
 
-**Recommendation: adopt, with three choices that differ from the
-first-glance design:**
+Every argument is a literal, so the parser alone can read every doc. A new
+`petal doc --json` command emits each module's and package's public surface:
+signatures from the declarations, prose from the annotations. The API
+reference (the website, `Builtins.md`, `ui`'s `reference.md`) is generated
+from that output. **All reference prose moves into the source**, and the
+hand-written reference pages are retired.
 
-1. `@doc` is **not** a function. `@const` and `@tunable` lower to a call around
-   the value; `@doc` is attached to the declaration and lowers to nothing. That
-   is also why `doc` stays an ordinary name: the corpus binds `doc` about 250
-   times (petal-creative alone 95), and none of those break.
-2. **Tools fall back to the comment block directly above a declaration when it
-   has no `@doc`.** Settings panels already read that comment today
-   (`static_value::leading_comment`). With the fallback, the ~350 documented
-   `pub fn`s in `ui` and `bloom` show up on day one, and `@doc` is used where
-   structure pays: the builtins, widget style keys and parameter text.
-3. **`params` is checked against the signature** by a lint, so a renamed
-   parameter can't leave a stale doc behind. This is the main thing `@doc` has
-   over a comment convention.
+## Decisions
 
-Implementing it is moderate: about 1–1.5k lines with tests, all in the parser,
-AST, lint, LSP, formatter, tree-sitter and one new CLI command. The compiler,
-IR, bytecode and VM don't change. Moving the existing prose into `@doc` is
-separate work and the bigger job.
+Made by the owner on 2026-11-14, after the 2026-11-13 draft:
+
+1. **`@doc` it is**, not a doc-comment marker (`##` / `///`).
+2. **All prose moves into `@doc`**, including the whole of `docs/Builtins.md`.
+   The hand-written reference files become generated output. Guides that are
+   not reference material (`ui/docs/drawing.md`, `drag.md`,
+   `host-contract.md`, the feature pages) stay Markdown.
+3. **No comment fallback.** A comment is never documentation. A `pub` item
+   with no `@doc` is undocumented, and a lint says so.
+4. **Module-level docs get their own form**, `@module_doc(…)`.
+5. **The field vocabulary is open**, through `extra: {…}`.
+6. **Examples are not run** for now. `example:` is display-only, and doctests
+   can come later.
 
 ## Motivation
 
@@ -80,8 +92,7 @@ Inventory (2026-11-13) of what generated API docs would draw on:
   The 50% for `ui` understates it, since an overload set usually documents its
   first form only (`widgets.ptl:199`, `bloom/src/controls.ptl:24-27`).
 - Comments mix docs and layout: `# ── Switch ──` section rulers sit above
-  documented functions (`bloom/src/controls.ptl:20`), separated by a blank
-  line.
+  documented functions (`bloom/src/controls.ptl:20`).
 - Structured information is written as prose and nothing checks it:
   `widgets.ptl:196-198` lists the eleven keys `style` accepts in a sentence.
 - Setting labels: hosts label a setting with the comment block above it
@@ -91,43 +102,99 @@ Inventory (2026-11-13) of what generated API docs would draw on:
 
 ## Design
 
-### Syntax
+### Two kinds of annotation
+
+| | Value annotations | Compile-time annotations |
+|---|---|---|
+| Names | `const`, `tunable`, `rigid` | `doc`, `module_doc` |
+| Lowered to | a call around the declared value | nothing; stored on the AST |
+| Name reserved | yes (a program can't bind `const`) | **no**: `let doc = …` and `doc(x)` stay ordinary |
+| Written on | `let`, `var`, `state`, `memo` | `@doc`: any declaration; `@module_doc`: the file |
+| Can change what runs | no (by the annotation rule) | no, and it emits no terms at all |
+
+The parser separates the two before
+[`apply_annotations`](../../core/src/ast.rs) lowers the value annotations, so
+`@doc("…") @tunable(0, 10) let SPEED = 4.0` is `let SPEED = tunable(4.0, 0,
+10)` with a doc attached, whatever the order of the two annotations.
+
+The corpus binds `doc` about 250 times (`examples/` 113, petal-creative 95,
+Cheesecake 38, worlds-fair 2, garden 2). Keeping the name free avoids breaking
+any of them.
+
+### `@doc`
 
 ```text
 @doc(<body>?, <field>: <literal>, …)
 ```
 
 - Written before a declaration, on its own line(s) or the same line, before
-  `pub`, as every annotation is. It stacks with others in any order:
-  `@doc("…") @tunable(0, 10) let SPEED = 4.0`.
+  `pub`, as every annotation is.
 - It goes on: `fn`, `pub fn`, `fn T.m`, `native fn`, `class`, `enum`, `let`,
-  `var`, `state`, `memo`. That makes `fn`/`native fn`/`class`/`enum` the first
-  declarations that take an `@` at all. For them the reserved-slot error now
-  says `@doc` is the only annotation they take.
+  `var`, `state`, `memo`. For `fn`, `native fn`, `class` and `enum` it is the
+  only annotation allowed. Any other `@name` there keeps the reserved-slot
+  error, reworded: "`@tunable` annotates a `let`; a function takes only
+  `@doc`."
 - The **body** (first positional argument) is Markdown. Its first sentence is
-  the summary that index pages and completion show.
+  the summary that index pages, completion and hover headers show.
+- At most one `@doc` per declaration.
 
-### Fields (fixed vocabulary)
+### `@module_doc`
 
-| Field | Literal | Meaning |
-|---|---|---|
-| *(positional)* | string | The Markdown body. |
-| `params` | record of strings | One line per parameter, keyed by name. |
-| `returns` | string | What the function gives back. |
-| `options` | record of strings | The keys a trailing `style`/`opts` record accepts. |
-| `example` | string, or list of strings | Petal source, shown as code. |
-| `see` | list of strings | Related names, rendered as links. |
-| `deprecated` | string | What to use instead; tools mark the name. |
-| `hidden` | bool | Leave this out of generated reference pages. |
+```text
+@module_doc(<body>?, <field>: <literal>, …)
+```
 
-An unknown field is an error with a did-you-mean (`param:` → `params:`). New
-fields cost a line in the parser's table. An escape hatch such as
-`extra: {…}` is an [open question](#open-questions).
+- A statement of its own. It annotates the file, not the next declaration, and
+  is followed by a blank line or the file's first statement.
+- It must come before the file's other statements, imports included. Comments
+  and blank lines may precede it (a licence header, for example). It may
+  appear at most once per file.
+- It takes the body, `see`, `deprecated`, `hidden` and `extra`. `params`,
+  `returns`, `options` and `example` are errors here. (`example` is an [open
+  question](#open-questions).)
+- A **package's** doc is the `@module_doc` of its root module (`ui.ptl` for
+  `ui`, `core.ptl` for `core`). A submodule's own `@module_doc` documents that
+  submodule (`ui/input`, `ui/drag`). `petal.toml`'s `description` stays the
+  one-line registry summary, and the `package-description` lint warns when it
+  disagrees with the root `@module_doc`'s first sentence.
+- Without `@module_doc`, a module has no doc. The comment header many files
+  open with (`core/prelude/std.ptl:1-16`) is not read.
+
+`@module_doc` is a separate name, not `@doc` on its own at the top, so that
+nothing about a file's first declaration depends on whether a blank line
+follows the annotation. Elixir separates `@moduledoc` from `@doc` for the
+same reason.
+
+### Fields
+
+| Field | `@doc` | `@module_doc` | Literal | Meaning |
+|---|---|---|---|---|
+| *(positional)* | ✓ | ✓ | string | The Markdown body. |
+| `params` | ✓ | | record of strings | One line per parameter, keyed by name. |
+| `returns` | ✓ | | string | What the function gives back. |
+| `options` | ✓ | | record of strings | The keys a trailing `style`/`opts` record accepts. |
+| `example` | ✓ | | string, or list of strings | Petal source, shown as code, not run. |
+| `see` | ✓ | ✓ | list of strings | Related names (`"lerp"`, `"ui.button"`, `"ui/drag"`), rendered as links. |
+| `deprecated` | ✓ | ✓ | string | What to use instead. Tools strike the name through, and use sites get a lint warning. |
+| `hidden` | ✓ | ✓ | bool | Leave this out of generated reference pages. |
+| `extra` | ✓ | ✓ | record of any literals | Open: fields for hosts and tools, carried through untouched. |
+
+A field that is neither in the table nor inside `extra` is an error with a
+did-you-mean (`param:` → `params:`; `category:` → "put tool-specific fields
+in `extra: {category: …}`"). Keeping `extra` separate means a misspelt
+standard field can't be mistaken for a custom one, and a later standard field
+can't collide with a host's.
+
+`extra` values may be any literal: string, number, bool, nil, or a list or
+record of those. For example, Cheesecake could write `extra: {editor_category:
+"Physics", since: "0.4"}`. `petal doc --json` passes `extra` through as JSON.
+A tool that wants a field promoted to standard can propose it.
 
 ### Literal-only arguments
 
-Each argument must be a string (plain or raw `"""…"""`), a bool, or a list or
-record of those. A string with `{…}` interpolation is an error:
+Each argument must be a literal: a string (plain or raw `"""…"""`), a number,
+a bool, `nil`, or a list or record of those. Numbers and `nil` are only
+meaningful inside `extra`. A string with `{…}` interpolation is an error:
 
 ```text
 error: `@doc` takes text written out; `{bg, fg}` in a "…" string is an interpolation
@@ -135,51 +202,44 @@ error: `@doc` takes text written out; `{bg, fg}` in a "…" string is an interpo
 ```
 
 This matters in practice: doc text names records (`{x, y, w, h}`) all the
-time. Today a `{` in a double-quoted string opens an interpolation hole, and
-`print("{x: 1}")` is a parse error, as verified. The recommended style is raw
+time, and today a `{` in a double-quoted string opens an interpolation hole
+(`print("{x: 1}")` is a parse error, as verified). The guide recommends raw
 strings for anything longer than a line.
 
-Since nothing is evaluated, any tool that can parse can read docs: `petal
-doc`, the LSP, tree-sitter consumers, and the website's build with no Petal
-runtime.
+**Raw-string indentation.** A raw string's lines keep their leading
+whitespace. When a doc is read, `petal doc` strips the common leading
+indentation and a leading or trailing blank line (Python's
+`inspect.cleandoc`). The source text stays as written, so `example: """`
+blocks can be indented with the code around them.
 
 ### Semantics
 
-`@doc` changes nothing a program computes. The parser removes it before
-[`apply_annotations`](../../core/src/ast.rs) lowers the value annotations, and
-stores it on the statement (`Stmt::doc: Option<Box<Doc>>`, beside
-`Stmt::test`). A program with `@doc` compiles to the same IR as without it:
-`petal ir-equal` reports "IR is equivalent", as it already does for a comment
-and does not for a string `let` (checked).
+`@doc` and `@module_doc` change nothing a program computes. The parser stores
+them on the AST: `Stmt::doc: Option<Box<Doc>>` beside `Stmt::test`, and
+`Program`/module-level `module_doc: Option<Doc>`. A program with docs compiles
+to the same IR as without them. `petal ir-equal` must report "IR is
+equivalent", as it already does for a comment and does not for a string `let`
+(checked).
 
-Overloads: each declaration carries its own doc. `petal doc` merges an
-overload set's docs. With one doc, it describes the set. With several, each
-describes its own form. A `params` entry may name a parameter of any form in
-the set.
+Overloads: each declaration carries its own `@doc`. `petal doc` merges an
+overload set. If exactly one form has a `@doc`, it describes the set. If
+several do, each describes its own form, and the first is the set's summary. A
+`params` entry may name a parameter of any form in the set.
 
 ### Diagnostics
 
 | Misuse | Result |
 |---|---|
-| `@doc` twice on one declaration | error: "one `@doc` per declaration" |
-| `@doc` before a non-declaration | the existing `ANNOTATION_NEEDS_DECL` error |
+| `@doc` twice on one declaration; `@module_doc` twice in a file | error |
+| `@module_doc` after another statement | error: "`@module_doc` goes at the top of the file, before imports" |
+| `@module_doc` followed directly by a declaration on the next line | allowed (it annotates the file either way). `fmt` inserts a blank line. |
+| `@doc` before a non-declaration, or at the end of a file | the existing `ANNOTATION_NEEDS_DECL` error |
 | a non-literal argument | error, pointing at the argument |
+| an unknown field | error with did-you-mean, or the hint to use `extra:` |
 | `params: {lo: …}` naming no parameter | lint `doc-params` (warning): "`@doc` describes `lo`, which `clamp` does not take" |
-| `see: ["foo"]` naming nothing in scope | lint `doc-params` (warning) |
-| a `pub` item with no `@doc` and no comment | lint `undocumented-pub`, off by default and on for `core/`, `core-libs/`, `core-runtime/` |
-
-### Comment fallback
-
-If a declaration has no `@doc`, tools use the comment block directly above it
-as its body. This is exactly the rule `static_value::leading_comment` already
-applies to settings: whole-line comments, stopped by a blank line, so a section
-ruler separated by a blank line is not taken. `petal doc --json` reports which
-source each doc came from (`"source": "annotation" | "comment"`).
-
-### Module-level docs
-
-Out of scope for v1. A package's description comes from `petal.toml` and its
-README. See [Open questions](#open-questions).
+| `see: ["foo"]` naming nothing reachable | lint `doc-params` (warning) |
+| a `pub` item (or a package root module) with no doc | lint `undocumented-pub`: off by default; on, and failing CI, for `core/`, `core-libs/`, `core-runtime/` |
+| a call to a `deprecated` item | lint `deprecated` (warning), with the doc's replacement text |
 
 ## Before and after
 
@@ -189,11 +249,15 @@ parse and lint today (`./tools/run-petal.ts lint`), and the `sum` pair was run.
 "`@` on a function is reserved for compile-time annotations; there are none
 yet."
 
-### 1. A builtin whose prose lives 2,000 lines away (the case this fixes)
+### 1. A builtin whose prose lives 2,000 lines away
 
-Before: `core/packages/core/src/math.ptl:40`
+Before: `core/packages/core/src/math.ptl:1-6, 40`
 
 ```petal ignore
+# Package `core` — Arithmetic, rounding, trigonometry and the numeric casts (core/src/builtins/math.rs).
+#
+# Native interface declarations: each `native fn` binds a name to the host
+# …
 pub native fn clamp(value: num, lo: num, hi: num)
 ```
 
@@ -210,15 +274,17 @@ clamp(15.0, 0.0, 10.0)   # 10.0
 …
 ````
 
-After: the `@doc` in the [Summary](#summary).
+After: the example in the [Summary](#summary). The file header becomes
+`@module_doc`, and the part about native interface declarations stays an
+ordinary comment, because it is for maintainers.
 
 **Change:** the description sits on the declaration and the parameter names
 are checked. Renaming `lo` warns instead of leaving the Markdown wrong. Cost:
-`math.ptl` goes from a 60-line declaration list to several hundred lines, and
-skimming the native surface gets harder. That is the strongest objection, and
-it is discussed under [Alternatives](#alternatives-considered).
+`math.ptl` goes from a 60-line declaration list to several hundred lines.
+Skimming the native surface moves to the generated reference, or to `petal
+doc --brief core`.
 
-### 2. A widget's style keys (structure wins)
+### 2. A widget's style keys
 
 Before: `core-libs/petal-ui/prelude/widgets.ptl:196-199`
 
@@ -232,12 +298,16 @@ pub fn draw_text_field(r, text, has, style)
 After (proposed):
 
 ```petal ignore
-@doc("Draws a text field; `has` is whether it holds focus.",
+@doc("""
+Draws a text field. `has` is whether it holds focus (the accent border and
+the caret). Omitted `style` keys come from `ui_theme()`.
+""",
   options: {
     bg: "Fill.", fg: "Text colour.", outline: "Border when unfocused.",
     focus: "Border when focused.", caret: "Caret colour.",
+    selection: "Selection highlight.", size: "Text size.", font: "Font name.",
+    inset: "Padding inside the border.", text_style: "A full text style record.",
     placeholder: "Drawn dim while the field is empty.",
-    # … size, font, inset, text_style, selection
   })
 pub fn draw_text_field(r, text, has, style)
 ```
@@ -246,7 +316,7 @@ pub fn draw_text_field(r, text, has, style)
 its own tooltip in an editor. A later lint could check `options` against the
 keys the body reads. The cost is more lines than the comment.
 
-### 3. An overload set
+### 3. An overload set, with a section ruler
 
 Before: `core-runtime/bloom/src/controls.ptl:20-27`
 
@@ -261,11 +331,25 @@ pub fn switch(r: record, on: bool) -> bool
 pub fn switch(r: record, on: bool, opts: record) -> bool
 ```
 
-After: **unchanged**. The comment fallback picks up the block above the first
-form, the blank line leaves the ruler out, and `petal doc` gives the set one
-doc. Adding `@doc` would only matter for documenting `opts`.
+After (proposed):
 
-### 4. A one-line helper (the old form is better)
+```petal ignore
+# ── Switch ────────────────────────────────────────────────────────────────
+
+@doc("""
+The on/off switch. The knob is a spring, so it lands with a small overshoot
+that makes the control feel mechanical rather than interpolated.
+""", returns: "The new state.")
+pub fn switch(r: record, on: bool) -> bool
+  switch(r, on, {})
+
+pub fn switch(r: record, on: bool, opts: record) -> bool
+```
+
+**Change:** one `@doc` covers both forms. The ruler stays a comment, and the
+split between "this is layout" and "this is documentation" is now explicit.
+
+### 4. A one-line helper
 
 Before: `core/prelude/std.ptl:28-30`
 
@@ -275,7 +359,7 @@ pub fn sum(xs)
   reduce(xs, 0, fn(acc, x) acc + x end)
 ```
 
-After, if converted:
+After (proposed):
 
 ```petal ignore
 @doc("Sum of a list of numbers; 0 for the empty list.")
@@ -283,9 +367,9 @@ pub fn sum(xs)
   reduce(xs, 0, fn(acc, x) acc + x end)
 ```
 
-**Change:** none for the reader, and slightly noisier. With the fallback this
-should stay a comment. The guide should say to use `@doc` when you need a
-field, a checked parameter, or to hide something, and a comment otherwise.
+**Change:** for the reader, none. It's slightly noisier, and now visible to
+hover and the reference. This is the case where the old form read better.
+With no fallback, it is the price of one documentation syntax.
 
 ### 5. Settings, stacked with `@tunable`
 
@@ -296,9 +380,6 @@ let gravity_px  = tunable(980.0)   # px/s^2 at 1.0 g
 let launch_gain = tunable(5.0)     # slingshot: px of pull to px/s of launch
 ```
 
-A settings panel built from `static_bindings` shows these unlabelled, because
-the trailing comment isn't read.
-
 After (proposed):
 
 ```petal ignore
@@ -306,10 +387,10 @@ After (proposed):
 @doc("Slingshot: px of pull to px/s of launch") @tunable let launch_gain = 5.0
 ```
 
-**Change:** the panel gets a label. `@doc` is taken out before `@tunable`
-lowers, so the value is still `tunable(980.0)`. Edits to the doc text don't
-touch the knob. The cost is two ways to label a setting (comment above, or
-`@doc`). `static_bindings` should prefer `@doc` and fall back to the comment.
+**Change:** a settings panel gets a label. `static_bindings` gains a `doc`
+field. Its existing `comment` field stays for now, because C hosts read it
+through `pb_source_bindings_json`. Whether it is retired, in line with
+decision 3, is an [open question](#open-questions).
 
 ### 6. Hot reload
 
@@ -321,17 +402,42 @@ starts at its first annotation (`ast.rs`, `skip_annotations`), so a `fn` with
 source tools that look for the `fn` keyword at the span start must use
 `skip_annotations`, as `let` tools already do.
 
-### Migration of existing code
+## Migration
 
-The language change is purely additive. `@doc` before a declaration is a
-parse error today, so no existing program contains it, and `doc` is not
-reserved. Moving documentation over is mechanical with review:
+The language change is purely additive. `@doc` before a declaration and
+`@module_doc` anywhere are parse errors today, so no existing program contains
+them, and `doc` is not reserved. The content migration is the larger job, and
+with no fallback it has to be done before the reference can be generated
+without losing pages:
 
-- comment block → `@doc` is unnecessary given the fallback;
-- `Builtins.md` sections → `@doc` on `core/packages/core/src/*.ptl` can be
-  scripted by matching each `` ### `name(…)` `` heading to its declaration,
-  then reviewed by hand;
-- `ui/docs/reference.md` lines → `@doc` summaries: scriptable the same way.
+1. **A converter, `petal migrate-old-code --only comment-to-doc`.** For each
+   declaration, it turns a whole-line comment block directly above it (no
+   blank line between) into `@doc("""…""")`. It turns a file's opening comment
+   block, when separated from the first statement by a blank line, into
+   `@module_doc`. It leaves rulers (`# ──`), `TODO`/`NOTE`/`FIXME` blocks and
+   blocks inside function bodies alone. It is opt-in per file or directory and
+   prints a diff. On non-`pub` items it does nothing unless `--private` is
+   given.
+2. **Petal's own libraries** (`core/prelude`, `core/packages/*`, `core-libs/petal-ui/prelude`,
+   `core-runtime/*`): run the converter, then review by hand. Each module
+   header needs splitting into user-facing text (`@module_doc`) and
+   maintainer notes (stay comments).
+3. **`docs/Builtins.md` → `core/packages/core/src/*.ptl`**: a one-off script
+   matches each `` ### `name(…)` `` section to its declaration, writes body and
+   examples into `@doc`, and leaves the page's preamble (named arguments,
+   which builtins need an import) as the reference's intro, now the
+   `@module_doc` of `core.ptl`. Each section is reviewed by hand.
+4. **`ui/docs/reference.md` and `bloom/docs/components.md`** get the same
+   treatment. Their conventions sections become the `@module_doc`s.
+   `ui/tests/reference.rs` (every export listed) is replaced by
+   `undocumented-pub`.
+5. **The hand-written reference files are deleted**, or replaced by a
+   generated file with a "do not edit" header if something links to them by
+   path.
+6. **Downstream** (petal-creative, Cheesecake, worlds-fair, garden): there is
+   no forced change, since nothing breaks. Each can run the converter when
+   it wants its docs in the generated reference, its hover or its settings
+   panels.
 
 ## Assessment
 
@@ -345,18 +451,17 @@ since the change has no run-time semantics.
 use**, through hover docs (the LSP hover today shows only `(function) name
 signature`, `core/src/lsp/server.rs:315-327`) and a complete reference. It
 keeps the rule from annotation-syntax.md that whatever follows an `@` never
-changes what the program computes. *Opinion:* generic surface, but cheap, and
-it fits Petal's habit of making source facts machine-readable (settings,
-static values).
+changes what the program computes.
 
 ### Ease of writing
 
 *Findings.* It is new to learn, but there is direct precedent: Elixir
-`@doc """…"""`, and Julia and Python docstrings as string literals. The
-interpolation rule is the main trap, and the literal-only error catches it
-with a fix. There are now two ways to document a function. *Opinion:* the
-fallback keeps the easy case easy. The guide's rule ("comment unless you need
-a field") has to be stated clearly, or people will split arbitrarily.
+`@doc`/`@moduledoc`, and Julia and Python docstrings. The interpolation rule
+is the main trap, and the literal-only error catches it with a fix. With no
+fallback there is exactly one way to document an item: a comment is a note
+to maintainers and `@doc` is documentation. That rule is easier to teach than
+"either, depending". *Cost:* a one-line description is a little noisier than
+a comment (pair 4).
 
 ### Bug-freedom
 
@@ -374,9 +479,9 @@ chunks) next to 196 functions takes under 10 ms, below `time`'s resolution and
 the same as without them. The bundled `core` package is parsed once per
 process (`native_decl::core_decls`, a `OnceLock`). Run time costs nothing,
 since there are no terms. The binary grows by the embedded text, about 120 KB
-if all of `Builtins.md` and the `ui` reference move in, which matters a little
-for the WASM build. Mitigation: strip `@doc` from the embedded sources at
-build time, if it matters.
+for `Builtins.md` plus the `ui` reference, which matters a little for the WASM
+build. Mitigation: `core/build.rs` can strip `@doc`/`@module_doc` from the
+embedded sources for builds without the LSP, if it matters.
 
 ### Live coding and hot reload
 
@@ -385,55 +490,58 @@ No effect beyond line shifts, which comments already cause (see pair 6).
 ### Introspection, debugging, program manipulation
 
 *Findings.* Provenance, `explain`, slicing, time travel, DM and autodiff work
-on terms, and `@doc` emits none. `propose-edit` and source preservation
-need the annotation kept with its declaration. The CST already hoists
-annotation nodes into the declaration's node for `let`, and the same must be
-done for `fn`/`class`/`enum`. Bonus: `fn_info(f).doc` can be added for free,
-because `fn_introspect` already re-parses the function's file.
+on terms, and docs emit none. `propose-edit` and source preservation need the
+annotation kept with its declaration. The CST already hoists annotation nodes
+into the declaration's node for `let`, and the same must be done for
+`fn`/`class`/`enum`. `fn_info(f).doc` comes for free, because `fn_introspect`
+already re-parses the function's file.
 
 ### Maintainability of the implementation
 
 | Stage | Change | Size |
 |---|---|---|
 | Lexer | none (`Token::At` exists) | — |
-| Parser (`parse.rs`, CST + `cst_project.rs`) | accept `fn`/`native fn`/`class`/`enum` after `@doc`; split compile-time from value annotations; literal check; field table | ~250 |
-| AST | `Stmt::doc` + `Doc` struct; ~24 `Stmt {…}` literals | ~80 |
+| Parser (`parse.rs`, CST + `cst_project.rs`) | accept `fn`/`native fn`/`class`/`enum` after `@doc`; split compile-time from value annotations; `@module_doc` statement; literal check; field table | ~300 |
+| AST | `Stmt::doc`, module doc, `Doc` struct; ~24 `Stmt {…}` literals | ~100 |
 | Compiler / IR / bytecode / VM | none | — |
-| Lint | `doc-params`, `undocumented-pub` | ~150 |
+| Lint | `doc-params`, `undocumented-pub`, `deprecated`, `package-description` | ~250 |
 | LSP | hover and completion show the doc | ~60 |
-| `fmt` | lay out `@doc` args; keep raw strings verbatim | ~50 |
-| tree-sitter | let `annotation` precede `function_declaration`, `class`, `enum` | ~15 + regen |
-| CLI | `petal doc [--json] <package\|file>` | ~350 |
-| `fn_introspect` | `fn_info(f).doc` (optional) | ~30 |
-| Docs | language guide (Annotations), CLI.md, settings.md | — |
+| `fmt` | lay out doc args; keep raw strings verbatim | ~50 |
+| tree-sitter | let `annotation` precede `function_declaration`, `class`, `enum`; `module_doc` statement | ~20 + regen |
+| CLI | `petal doc [--json \| --brief] <package\|file>` | ~400 |
+| CLI | `migrate-old-code` `comment-to-doc` | ~250 |
+| `fn_introspect` | `fn_info(f).doc` | ~30 |
+| Docs | language guide (Annotations, Documentation), CLI.md, settings.md | — |
 
 It adds one concept, "compile-time annotation", that F1 already anticipated.
 The new invariant: **a compile-time annotation never reaches the IR**,
-enforced by an `ir-equal` test over every fixture with `@doc` stripped.
+enforced by an `ir-equal` test over every fixture with its docs stripped.
 
 ### Domains
 
 - Graphics/creative coding, UI apps, games: the main beneficiaries are the
   libraries they import (`ui`, `bloom`, Cheesecake's
-  `engine/script/packages/cheesecake/*.ptl`, which already comments its
-  `pub fn`s, e.g. `box3d.ptl:213`).
+  `engine/script/packages/cheesecake/*.ptl`).
 - Editor scripting (Garden): hover docs in the editor; settings labels.
-- Config files and embedding hosts: `static_bindings` / `pb_source_bindings_json`
-  gain a `doc` field. That's additive for C and Rust hosts.
+- Config files and embedding hosts: `static_bindings` /
+  `pb_source_bindings_json` gain a `doc` field. That's additive for C and Rust
+  hosts.
 - Dashboards, web: neutral.
 
-### Compatibility and migration
+### Compatibility
 
 Nothing breaks. Downstream projects (`CLAUDE.local.md`):
 
-- **cheesecake** vendors copies of `bloom` and `petal-ui`. A re-vendor that
-  brings `@doc` needs a Petal from the same revision, which is already how
-  vendoring works.
+- **cheesecake** vendors copies of `bloom` and `petal-ui`. Once those carry
+  `@doc`, a re-vendor needs a Petal from the same revision, which is already
+  how vendoring works. Cheesecake's own `engine/script/packages/cheesecake`
+  comments its `pub fn`s (`box3d.ptl:213`). Those comments will stop showing in
+  hover once hover uses docs, until it runs the converter.
 - **petal-lang.org** has its own syntax highlighter (commit `45913494`), which
-  needs `@doc` highlighted.
+  needs `@doc`/`@module_doc` highlighted. Its docs import gains the generated
+  reference.
 - **garden** uses the tree-sitter grammar, which needs the update in the table.
-- **petal-creative** and **worlds-fair**: no change required; they can adopt
-  it whenever they like.
+- **petal-creative** and **worlds-fair**: no change required.
 
 A package that uses `@doc` can't be loaded by an older Petal. That is the
 normal rule for new syntax, and the package's `petal` version requirement
@@ -441,81 +549,74 @@ covers it.
 
 ### Prior art
 
-- **Elixir `@doc` / `@moduledoc`** is the closest: an attribute holding a
-  heredoc, stored in the compiled module, read by `h/1` in the REPL and by
-  ExDoc. It supports `@doc false` (our `hidden`) and metadata (`@doc since:`).
-  Lesson: keep the module-level form distinct.
+- **Elixir `@doc` / `@moduledoc`** is the model followed here: attributes
+  holding heredocs, read by the REPL and ExDoc, with `@doc false` (our
+  `hidden`) and metadata keywords (our `extra`).
 - **Python and Julia** docstrings are string literals that tools and the
   runtime read. In Python, parameter structure was left to conventions
   (Google/NumPy/Sphinx styles) that tools parse inconsistently. That is the
   argument for structured fields from day one.
-- **Rust `///`, JSDoc, KDoc, C# XML comments** are comment-based, with tags
-  inside the comment. Rust lowers `///` to `#[doc = "…"]`, so it is an
-  annotation underneath. `rustdoc` warns on broken intra-doc links, which is
-  our `see:` lint. JSDoc `@param` names go stale because nothing checks them.
-- **Doctests** (Rust, Elixir, Python) run examples. That's a natural follow-up
-  for `example:` (`petal test --doc`), not part of v1.
+- **Rust `///`, JSDoc, KDoc** are comment-based, with tags inside the comment.
+  Rust lowers `///` to `#[doc = "…"]`, so it is an annotation underneath.
+  `rustdoc` warns on broken intra-doc links, which is our `see:` lint. JSDoc
+  `@param` names go stale because nothing checks them.
 
 ## Alternatives considered
 
-1. **Do nothing; the extractor reads comments.** This is the cheapest option,
-   and we're adopting it anyway as the fallback. But with only comments there
-   are no checked params, no structured options, no hiding, and every
-   structured need becomes an unchecked tag mini-language inside comments.
-   Native-effect-annotations.md rejected that already (its alternative 3).
-2. **A dedicated doc-comment marker** (`##` or `#|`, like Rust's `///`). Text
-   would be lighter to write, with no quotes or interpolation trap. Structure
-   would still need tags inside text. `##` is also ambiguous with existing
-   decorative comments. This is the serious rival. If the owner values easy
-   writing over structure, choose it and drop `@doc`.
-3. **Keep prose in Markdown, keyed by name** (today's `Builtins.md`), with a
-   test that every exported name has a section. This keeps declaration files
-   short, which matters most for `core/packages/core`, whose 200 natives would
-   otherwise carry about 2,400 lines of prose. It can be combined: `@doc` for
-   summary and params on the declaration, with long-form guides staying in
-   Markdown and linked by `see:`. **Recommended for `core`.**
-4. **`doc(…)` as a value annotation like `tunable`** (a call that returns its
-   argument). Rejected: it would reserve `doc` (about 250 bindings break), and
-   it can't go on a `fn`.
-5. **Smallest useful version.** `@doc` on `fn`/`native fn` only, with the
-   body, `params` and `hidden`. That covers the reference-docs need. `options`,
-   `example`, `see`, `deprecated` and `let`/`class`/`enum` targets can follow.
+1. **Comments as docs, read by the extractor.** This is the cheapest option:
+   about half the libraries are documented already. Rejected (decision 3):
+   there are no checked params, no structure, and no clear line between notes
+   and documentation.
+2. **A dedicated doc-comment marker** (`##` / `///`). Lighter to write, but
+   structure would need a tag language inside text. Rejected (decision 1).
+3. **Keep long-form prose in Markdown, keyed by name.** This keeps declaration
+   files short. Rejected (decision 2): one source per item.
+4. **`doc(…)` as a value annotation like `tunable`.** It would reserve `doc`
+   (about 250 bindings break), and it can't go on a `fn`.
+5. **`@doc` alone at the top of a file as the module doc.** Rejected for
+   `@module_doc`: whether the annotation belongs to the file or to the first
+   declaration would depend on a blank line.
 
-## Implementation sketch
+## Implementation plan
 
-Order:
+Each step lands green on its own:
 
-1. **`petal doc --json` with comments only.** This is no language change. It
-   extends the reference beyond `stdlib.json` to all `pub` items of `std`,
-   `ui`, `bloom` and the bundled packages, and gets the website pipeline built
-   against real data.
-2. **Parser and AST for `@doc`** on `fn`/`native fn`, with the literal check
-   and the field table. Tests: parse cases, every error message, an `ir-equal`
-   test, and CST round-tripping through `fmt`.
-3. **Lints** `doc-params` and `undocumented-pub`.
-4. **LSP hover** and `fn_info(f).doc`. Tree-sitter and the website
-   highlighter.
-5. **Extend the targets** to `class`/`enum`/`let`, plus `static_bindings` doc
-   for settings.
-6. **Content:** script `Builtins.md` summaries and params into `core`'s
-   declarations, and `ui/docs/reference.md` into the `ui` prelude.
-   `extract-stdlib.ts` then merges `petal doc --json` with its Rust-only facts
-   (registration group, aliases, source line).
+1. **Parser and AST: `@doc`** on every declaration, `@module_doc`, the literal
+   check and the field table including `extra`. Tests: parse cases, every
+   error message, the `ir-equal` invariant, and CST round-trips through `fmt`.
+   Update tree-sitter.
+2. **`petal doc [--json | --brief]`** for a file, module or package: `pub`
+   items, merged overloads, signatures (types, optional parameters, call
+   forms), docs with cleaned indentation, source locations, and package and
+   module docs. Add a JSON schema and a snapshot test on a fixture package.
+3. **Lints** `doc-params`, `undocumented-pub` (CI-on for Petal's own libs,
+   initially in report-only mode), `deprecated`, `package-description`.
+4. **LSP hover and completion; `fn_info(f).doc`; `static_bindings.doc`.** Also
+   the website highlighter.
+5. **`comment-to-doc` converter**, then migrate `core/prelude`,
+   `core/packages`, `ui`, `bloom`, `text-layout`, `glsl`: converter first,
+   hand review after. Then move `Builtins.md` and the `ui`/`bloom` reference
+   prose into `@doc`. Switch `undocumented-pub` to failing CI.
+6. **Generated reference.** `extract-stdlib.ts` folds into, or reads from,
+   `petal doc --json` (keeping only Rust-only facts: registration group,
+   aliases, source line). Generate `Builtins.md`'s replacement. On
+   petal-lang.org, `scripts/import-api.ts` builds one page per package and
+   module from the JSON, with a reference section in the sidebar.
 
-Steps 1–4 are the 1–1.5k lines estimated above.
+Steps 1–4 are roughly 1.5k lines with tests. Step 5 is mostly content review.
 
 ## Open questions
 
-For the owner to decide:
-
-1. **`@doc` or a doc-comment marker** (alternative 2)? This turns on how much
-   structured, checked docs are worth compared with easier writing.
-2. **How much prose goes in `core`'s declarations?** All of it, or summary and
-   params only, with `Builtins.md` kept as the long-form guide (alternative 3)?
-3. **Comment fallback: permanent, or a migration aid** that
-   `undocumented-pub` eventually retires?
-4. **Module docs:** `petal.toml` and README only, or a later `@moduledoc`-style
-   form?
-5. **Fixed field vocabulary or open `extra:`?** Hosts like Cheesecake might
-   want their own fields (e.g. `editor_category`).
-6. **Should `example:` be run** (doctests) from the start, or later?
+1. **Settings' `comment` field.** `static_bindings` (and the C bridge's JSON)
+   labels settings with the comment above them. Should it follow decision 3,
+   with `doc` replacing `comment` after a deprecation period, or stay as a
+   separate "author's note" field? Owner.
+2. **`example:` on `@module_doc`?** A package-level example (a whole small
+   program) is useful on the reference's landing page. It would be allowed if
+   wanted. Owner.
+3. **Should private items' docs be extracted** (`petal doc --private`) for
+   internal maintainer pages? Low stakes, and can be decided at step 2.
+4. **Doctests** (decision 6, later): `petal test --doc` running `example:`
+   blocks. This needs a way to mark an example as not runnable (a host-only
+   example), perhaps `extra: {example_ignore: true}` until it becomes a
+   standard field.

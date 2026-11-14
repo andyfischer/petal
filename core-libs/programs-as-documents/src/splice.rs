@@ -7,8 +7,9 @@
 //! applies the path edit there, and splices the result back, so only the
 //! literal's text changes and the rest of the file stays byte for byte.
 
-use petal::literal_edit::{remove_path, set_path};
+use petal::literal_edit::{remove_path, set_children, set_path, set_path_expr};
 use petal::source_map::SourceSpan;
+use petal::static_expr::StaticExpr;
 use petal::static_value::StaticValue;
 
 /// The binding a literal is lifted into.
@@ -19,7 +20,11 @@ const SCRATCH: &str = "__programs_as_documents_literal";
 #[derive(Debug, Clone, Copy)]
 pub enum LiteralEdit<'a> {
     Set { path: &'a str, value: &'a StaticValue },
+    /// Write an expression at `path` ([`petal::static_expr`]).
+    SetExpr { path: &'a str, expr: &'a StaticExpr },
     Remove { path: &'a str },
+    /// The children of the element at `path` read as `children` (its text).
+    SetChildren { path: &'a str, children: &'a [StaticValue] },
 }
 
 /// The byte offset of character offset `c` (petal's spans count characters).
@@ -43,7 +48,9 @@ pub fn edit_span(source: &str, span: &SourceSpan, edit: LiteralEdit<'_>) -> Resu
     lifted(source, span, |scratch, root| {
         match edit {
             LiteralEdit::Set { path, value } => set_path(scratch, &format!("{root}{path}"), value),
+            LiteralEdit::SetExpr { path, expr } => set_path_expr(scratch, &format!("{root}{path}"), expr),
             LiteralEdit::Remove { path } => remove_path(scratch, &format!("{root}{path}")),
+            LiteralEdit::SetChildren { path, children } => set_children(scratch, &format!("{root}{path}"), children),
         }
         .map_err(|e| e.message)
     })

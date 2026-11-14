@@ -420,6 +420,7 @@ pub fn resolve_structure(runner: &Runner, run: &DocumentRun, intent: &StructureI
         Ok(p) => finish(runner, run, p, &[]),
         Err(reason) => Resolution::Refused { reason },
     }
+    .stamped(&run.source)
 }
 
 /// [`resolve_structure`] with top-level statements to add before the
@@ -435,6 +436,7 @@ pub(crate) fn resolve_structure_with(
         Ok(p) => finish(runner, run, p, preamble),
         Err(reason) => Resolution::Refused { reason },
     }
+    .stamped(&run.source)
 }
 
 struct Plan<'a> {
@@ -840,7 +842,7 @@ fn finish(runner: &Runner, run: &DocumentRun, mut plan: Plan<'_>, preamble: &[St
                     };
                 }
             }
-            Resolution::Edit(ResolvedEdit { source, step, span, description: plan.what.clone(), also_changes: Vec::new() })
+            Resolution::Edit(ResolvedEdit { source, step, span, description: plan.what.clone(), also_changes: Vec::new(), base: None })
         }
         Err(reason) => Resolution::Refused { reason },
     }

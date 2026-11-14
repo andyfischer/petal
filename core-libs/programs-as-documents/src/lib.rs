@@ -51,13 +51,16 @@ pub mod session;
 pub mod solve;
 pub mod splice;
 pub mod structure;
+pub mod text;
 
 pub use editable::{NotEditable, editable_literal};
 pub use concretize::{Concretized, concretize};
 pub use intent::{
-    Choice, Intent, Resolution, ResolveOptions, ResolvedEdit, Step, Verified, concretize_and_apply, resolve, verify,
+    Choice, Intent, Resolution, ResolveOptions, ResolvedEdit, Step, Verified, concretize_and_apply, resolve, source_hash,
+    text_of, verify,
 };
-pub use scope::{DataEntry, OverrideEdit, OverrideHook, OverrideRequest, Scope, ScopePolicy, UseSite, data_entry};
+pub use petal::static_expr::StaticExpr;
+pub use scope::{DataEntry, OverrideEdit, OverrideHook, OverrideRequest, Scope, ScopePolicy, UseSite, data_entry, data_entry_from};
 pub use solve::{Solved, solve_field};
 pub use output_map::{
     Field, FieldProvenance, LiteralSource, OutputKey, OutputMap, OutputNode, PathSeg, Site, WithinLiteral,
@@ -158,7 +161,22 @@ impl Document {
     }
 
     /// Commit an edit the host chose (a [`Choice`]'s), as one undo step.
-    pub fn commit(&mut self, edit: &ResolvedEdit, key: Option<&str>) -> bool {
-        self.session.commit(edit.source.clone(), key)
+    /// `Ok(false)` when it changes nothing.
+    ///
+    /// An edit resolved against another source than the current one (the
+    /// document changed while a choice was open: another edit, an undo, a
+    /// reload) is refused, since committing it would undo that change; its
+    /// [`ResolvedEdit::base`] says which source it was resolved against.
+    /// Resolve the intent again instead.
+    pub fn commit(&mut self, edit: &ResolvedEdit, key: Option<&str>) -> Result<bool, String> {
+        if let Some(base) = edit.base
+            && base != source_hash(self.session.source())
+        {
+            return Err(format!(
+                "the document changed since this edit was worked out ({}); make the change again",
+                edit.description
+            ));
+        }
+        Ok(self.session.commit(edit.source.clone(), key))
     }
 }

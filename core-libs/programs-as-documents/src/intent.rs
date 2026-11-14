@@ -36,12 +36,13 @@
 //! others too is reported as a choice, not made).
 
 use petal::source_map::{FileId, SourceSpan};
+use petal::static_expr::StaticExpr;
 use petal::static_value::StaticValue;
 
 use std::rc::Rc;
 
 use crate::output_map::{FieldProvenance, LiteralSource, OutputKey, OutputNode, PathSeg, path_string};
-use crate::run::{DocumentRun, Runner};
+use crate::run::{DocumentRun, PROBE, Runner};
 use crate::scope::{OverrideHook, OverrideRequest, Scope, ScopePolicy, data_entry, use_site};
 use crate::splice::{LiteralEdit, edit_span};
 
@@ -53,20 +54,90 @@ pub enum Intent {
     SetField { target: OutputKey, field: String, value: StaticValue },
     /// Output `target` has no `field`.
     RemoveField { target: OutputKey, field: String },
+    /// Output `target`'s `field` is written as the expression `expr`
+    /// ("`fill` reads `tok.color.ink`"): a reference intent. The expression
+    /// is written where the field's value comes from (the literal, the
+    /// attribute on the element literal, or a shared site's scope), its
+    /// names must be in scope there, and the rerun must show the field
+    /// holding the value the expression has at that place.
+    SetFieldExpr { target: OutputKey, field: String, expr: StaticExpr },
+    /// Output `target`'s text (its text children) is `text`, written as
+    /// literal text between its tags, or in the string literal or data
+    /// entry a `{…}` hole among its children reads it from.
+    SetText { target: OutputKey, text: String },
 }
 
 impl Intent {
     pub fn target(&self) -> &OutputKey {
         match self {
-            Intent::SetField { target, .. } | Intent::RemoveField { target, .. } => target,
+            Intent::SetField { target, .. }
+            | Intent::RemoveField { target, .. }
+            | Intent::SetFieldExpr { target, .. }
+            | Intent::SetText { target, .. } => target,
         }
     }
 
+    /// The field the intent is about (`""` for [`Intent::SetText`]).
     pub fn field(&self) -> &str {
         match self {
-            Intent::SetField { field, .. } | Intent::RemoveField { field, .. } => field,
+            Intent::SetField { field, .. } | Intent::RemoveField { field, .. } | Intent::SetFieldExpr { field, .. } => {
+                field
+            }
+            Intent::SetText { .. } => "",
         }
     }
+
+    /// The same intent about output `target`.
+    pub fn retarget(&self, target: OutputKey) -> Intent {
+        match self.clone() {
+            Intent::SetField { field, value, .. } => Intent::SetField { target, field, value },
+            Intent::RemoveField { field, .. } => Intent::RemoveField { target, field },
+            Intent::SetFieldExpr { field, expr, .. } => Intent::SetFieldExpr { target, field, expr },
+            Intent::SetText { text, .. } => Intent::SetText { target, text },
+        }
+    }
+}
+
+/// What an edit writes for an intent that sets something: a value or an
+/// expression.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Content<'a> {
+    Value(&'a StaticValue),
+    Expr(&'a StaticExpr),
+}
+
+impl<'a> Content<'a> {
+    pub(crate) fn of(intent: &'a Intent) -> Option<Content<'a>> {
+        match intent {
+            Intent::SetField { value, .. } => Some(Content::Value(value)),
+            Intent::SetFieldExpr { expr, .. } => Some(Content::Expr(expr)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn edit(self, path: &'a str) -> LiteralEdit<'a> {
+        match self {
+            Content::Value(value) => LiteralEdit::Set { path, value },
+            Content::Expr(expr) => LiteralEdit::SetExpr { path, expr },
+        }
+    }
+
+    pub(crate) fn show(self) -> String {
+        match self {
+            Content::Value(v) => v.to_source(),
+            Content::Expr(e) => e.to_string(),
+        }
+    }
+}
+
+/// A hash of a document's source text, which a [`ResolvedEdit`] carries so
+/// that it is only committed onto the source it was resolved against
+/// ([`crate::Document::commit`]).
+pub fn source_hash(source: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    source.hash(&mut h);
+    h.finish()
 }
 
 /// Which rung of the ladder an edit came from.
@@ -105,6 +176,30 @@ pub struct ResolvedEdit {
     /// the rerun saw them: empty for an edit that changes only what was
     /// asked. A solve or an edit of a shared literal may change others.
     pub also_changes: Vec<String>,
+    /// The [`source_hash`] of the source the edit was resolved against: set
+    /// on every edit the resolver returns, so a choice made after the
+    /// document changed is refused instead of undoing the change
+    /// ([`crate::Document::commit`]). `None` for an edit a host built itself.
+    pub base: Option<u64>,
+}
+
+impl Resolution {
+    /// The resolution with every edit in it stamped with the hash of
+    /// `source` (see [`ResolvedEdit::base`]).
+    pub fn stamped(self, source: &str) -> Resolution {
+        let base = Some(source_hash(source));
+        match self {
+            Resolution::Edit(e) => Resolution::Edit(ResolvedEdit { base, ..e }),
+            Resolution::NeedsChoice { reason, options } => Resolution::NeedsChoice {
+                reason,
+                options: options
+                    .into_iter()
+                    .map(|c| Choice { edit: c.edit.map(|e| ResolvedEdit { base, ..e }), ..c })
+                    .collect(),
+            },
+            other => other,
+        }
+    }
 }
 
 /// One way to go on when an intent needs the user's say.
@@ -190,7 +285,7 @@ impl std::fmt::Debug for ResolveOptions {
 
 /// Resolve `intent` against `run`, the latest run of `source` with `runner`.
 pub fn resolve(runner: &Runner, run: &DocumentRun, intent: &Intent, opts: &ResolveOptions) -> Resolution {
-    let res = resolve_in_place(runner, run, intent, opts);
+    let res = resolve_in_place(runner, run, intent, opts).stamped(&run.source);
     if !opts.concretize || !matches!(res, Resolution::Unresolved { .. }) {
         return res;
     }
@@ -218,12 +313,7 @@ pub fn concretize_and_apply(
     let Some(new_node) = after.map.at_path(&node.path) else {
         return Err("the written-out document lost the output".into());
     };
-    let retarget = match intent {
-        Intent::SetField { field, value, .. } => {
-            Intent::SetField { target: new_node.key.clone(), field: field.clone(), value: value.clone() }
-        }
-        Intent::RemoveField { field, .. } => Intent::RemoveField { target: new_node.key.clone(), field: field.clone() },
-    };
+    let retarget = intent.retarget(new_node.key.clone());
     let inner = ResolveOptions { concretize: false, ..opts.clone() };
     let wrap = |e: ResolvedEdit| ResolvedEdit {
         source: e.source,
@@ -231,6 +321,7 @@ pub fn concretize_and_apply(
         span: written.span,
         description: format!("{}, then {}", written.description, e.description),
         also_changes: e.also_changes,
+        base: None,
     };
     Ok(match resolve_in_place(runner, &after, &retarget, &inner) {
         Resolution::Edit(e) => Resolution::Edit(wrap(e)),
@@ -240,13 +331,15 @@ pub fn concretize_and_apply(
             span: written.span,
             description: written.description,
             also_changes: Vec::new(),
+            base: None,
         }),
         Resolution::NeedsChoice { reason, options } => Resolution::NeedsChoice {
             reason,
             options: options.into_iter().map(|c| Choice { edit: c.edit.map(wrap), ..c }).collect(),
         },
         other => other,
-    })
+    }
+    .stamped(&run.source))
 }
 
 /// Steps 1 to 4 and 6.
@@ -257,6 +350,9 @@ fn resolve_in_place(runner: &Runner, run: &DocumentRun, intent: &Intent, opts: &
             at: None,
         };
     };
+    if let Intent::SetText { text, .. } = intent {
+        return crate::text::set_text(runner, run, node, intent, text, opts);
+    }
     let (head, rest) = split_field(intent.field());
     if let Some(r) = already_holds(run, node, intent) {
         return r;
@@ -311,7 +407,75 @@ fn resolve_in_place(runner: &Runner, run: &DocumentRun, intent: &Intent, opts: &
             let _ = site;
             single_site(runner, run, node, intent, LiteralEdit::Remove { path: &path }, opts)
         }
+        // A reference: at the literal the value flows from, when it is in
+        // the document and the value is that literal's whole (not a part
+        // read out of a record or list, which is what a token is: binding
+        // the field to another token must not rewrite the first one).
+        (Intent::SetFieldExpr { expr, .. }, Some(FieldProvenance::Literal(lit)))
+            if lit.file() == FileId(0) && lit.within.is_none() =>
+        {
+            if lit.constant.is_some() && !rest.is_empty() {
+                return Resolution::Refused {
+                    reason: format!(
+                        "`{head}` is {} (line {}), which has no field `{}`",
+                        lit.constant.as_ref().map(StaticValue::to_source).unwrap_or_default(),
+                        lit.span.start.line,
+                        rest.trim_start_matches('.')
+                    ),
+                };
+            }
+            match direct_literal(runner, run, node, intent, lit, LiteralEdit::SetExpr { path: rest, expr }, opts) {
+                // Not in scope there (a parameter of the element's helper,
+                // say): on the element literal instead.
+                refused @ Resolution::Refused { .. } if rest.is_empty() => {
+                    let path = format!(".{head}");
+                    match single_site(runner, run, node, intent, LiteralEdit::SetExpr { path: &path, expr }, opts) {
+                        Resolution::Refused { .. } => refused,
+                        other => other,
+                    }
+                }
+                other => other,
+            }
+        }
+        // Not written, computed, or read out of a token: the attribute on
+        // the element literal is what reads it, so that is where the
+        // expression goes, unless the value is read per item from a data
+        // list, whose entry then takes it (only this output changes).
+        (Intent::SetFieldExpr { expr, .. }, prov) => {
+            if let Some(FieldProvenance::Computed { .. }) = prov
+                && let Ok(entry) = data_entry(run, node, head)
+                && let Ok(DataEdit::Edit(e)) = data_edit(runner, run, node, intent, &entry, rest, Content::Expr(expr), opts)
+                && e.also_changes.is_empty()
+            {
+                return Resolution::Edit(e);
+            }
+            if prov.is_some() && !rest.is_empty() {
+                let why = match prov {
+                    Some(FieldProvenance::Computed { reason, .. }) => reason.clone(),
+                    _ => format!("`{head}` is read from another file"),
+                };
+                return Resolution::Unresolved {
+                    reason: format!(
+                        "{why}, so `{}` inside it cannot be written on its own; set the whole `{head}` instead",
+                        rest.trim_start_matches('.')
+                    ),
+                    at: None,
+                };
+            }
+            let expr = nest_expr(rest, expr.clone());
+            let path = format!(".{head}");
+            single_site(runner, run, node, intent, LiteralEdit::SetExpr { path: &path, expr: &expr }, opts)
+        }
+        (Intent::SetText { .. }, _) => unreachable!("handled above"),
     }
+}
+
+/// `expr` under the record path `rest` (`.a.b`): `{a: {b: expr}}`.
+fn nest_expr(rest: &str, expr: StaticExpr) -> StaticExpr {
+    rest.split('.')
+        .filter(|s| !s.is_empty())
+        .rev()
+        .fold(expr, |e, k| StaticExpr::Record(vec![(k.to_string(), e)]))
 }
 
 /// A computed field: the data entry it was read from (step 3's data scope,
@@ -347,6 +511,7 @@ fn computed(
                             span: s.span,
                             description: s.description,
                             also_changes: Vec::new(),
+                            base: None,
                         };
                         let others = match verify(runner, run, node, intent, &edit.source) {
                             Verified::Holds { others } => others,
@@ -397,7 +562,7 @@ fn edit_data(
     opts: &ResolveOptions,
 ) -> Option<Result<Resolution, String>> {
     let entry = data_entry(run, node, head).ok()?;
-    let edit = match data_edit(runner, run, node, intent, &entry, rest, value, opts) {
+    let edit = match data_edit(runner, run, node, intent, &entry, rest, Content::Value(value), opts) {
         Ok(e) => e,
         Err(e) => return Some(Err(e)),
     };
@@ -411,20 +576,20 @@ fn edit_data(
     }))
 }
 
-enum DataEdit {
+pub(crate) enum DataEdit {
     Edit(ResolvedEdit),
     Refused(Resolution),
 }
 
 #[allow(clippy::too_many_arguments)]
-fn data_edit(
+pub(crate) fn data_edit(
     runner: &Runner,
     run: &DocumentRun,
     node: &OutputNode,
     intent: &Intent,
     entry: &crate::scope::DataEntry,
     rest: &str,
-    value: &StaticValue,
+    content: Content<'_>,
     opts: &ResolveOptions,
 ) -> Result<DataEdit, String> {
     let line = entry.span.start.line;
@@ -432,19 +597,105 @@ fn data_edit(
         return Ok(DataEdit::Refused(r));
     }
     let path = format!("{}{rest}", entry.path);
-    let source = edit_span(&run.source, &entry.span, LiteralEdit::Set { path: &path, value })
-        .map_err(|e| format!("could not edit the data entry `{path}` on line {line}: {e}"))?;
-    let description = format!("set the data entry `{path}` on line {line} to `{}`", value.to_source());
-    match verify(runner, run, node, intent, &source) {
-        Verified::Fails(f) => Err(format!("editing the data entry `{path}` on line {line} does not work: {f}")),
+    let what = format!("the data entry `{path}` on line {line}");
+    let apply = |e: LiteralEdit<'_>| edit_span(&run.source, &entry.span, e);
+    let (source, verified) = edit_and_verify(runner, run, node, intent, content.edit(&path), &apply, &what)
+        .map_err(|e| format!("could not edit {what}: {e}"))?;
+    let description = format!("set {what} to `{}`", content.show());
+    match verified {
+        Verified::Fails(f) => Err(format!("editing {what} does not work: {f}")),
         Verified::Holds { others } => Ok(DataEdit::Edit(ResolvedEdit {
             source,
             step: Step::Scope(Scope::EditData),
             span: entry.span,
             description,
             also_changes: others,
+            base: None,
         })),
     }
+}
+
+/// Apply `edit` with `apply` and verify it. An expression is verified with
+/// a probe: the same edit with the expression wrapped in [`PROBE`], so the
+/// value it has where it is written is read, and the rerun's field must be
+/// that value. `what` names the place for a refusal.
+pub(crate) fn edit_and_verify(
+    runner: &Runner,
+    run: &DocumentRun,
+    node: &OutputNode,
+    intent: &Intent,
+    edit: LiteralEdit<'_>,
+    apply: &dyn Fn(LiteralEdit<'_>) -> Result<String, String>,
+    what: &str,
+) -> Result<(String, Verified), String> {
+    let source = apply(edit)?;
+    let verified = match edit {
+        LiteralEdit::SetExpr { path, expr } => {
+            let probe = probed(expr);
+            let probe_source = apply(LiteralEdit::SetExpr { path, expr: &probe });
+            match verify_expr(runner, run, node, intent, &source, probe_source) {
+                Verified::Fails(f) => Verified::Fails(format!("{f} (written at {what})")),
+                ok => ok,
+            }
+        }
+        _ => verify(runner, run, node, intent, &source),
+    };
+    Ok((source, verified))
+}
+
+/// `expr` wrapped in a call of the probe native.
+fn probed(expr: &StaticExpr) -> StaticExpr {
+    StaticExpr::Call { callee: Box::new(StaticExpr::Name(PROBE.into())), args: vec![expr.clone()], named: Vec::new() }
+}
+
+/// Verify a [`Intent::SetFieldExpr`] edit: run `probe_source` (the edit with
+/// the expression probed) for the values the expression has where it is
+/// written, then check the rerun of `new_source` has the field equal to one
+/// of them (the one this output read, for a site that runs more than once).
+fn verify_expr(
+    runner: &Runner,
+    before: &DocumentRun,
+    node: &OutputNode,
+    intent: &Intent,
+    new_source: &str,
+    probe_source: Result<String, String>,
+) -> Verified {
+    let Intent::SetFieldExpr { target, field, expr } = intent else {
+        return verify(runner, before, node, intent, new_source);
+    };
+    let values = match probe_source.and_then(|p| runner.probe(&p)) {
+        Ok(v) => v,
+        Err(e) => return Verified::Fails(not_in_scope(&e).unwrap_or_else(|| format!("the edited document does not run: {e}"))),
+    };
+    let mut distinct: Vec<StaticValue> = Vec::new();
+    for v in values {
+        if !distinct.iter().any(|d| same(d, &v)) {
+            distinct.push(v);
+        }
+    }
+    if distinct.is_empty() {
+        return Verified::Fails(format!("`{expr}` is never evaluated where it is written"));
+    }
+    let mut last = None;
+    for v in distinct.into_iter().take(4) {
+        let as_value = Intent::SetField { target: target.clone(), field: field.clone(), value: v };
+        match verify(runner, before, node, &as_value, new_source) {
+            Verified::Holds { others } => return Verified::Holds { others },
+            Verified::Fails(f) => last = Some(f),
+        }
+    }
+    Verified::Fails(last.unwrap_or_default())
+}
+
+/// A load error that says a name is not bound, as a reason.
+fn not_in_scope(error: &str) -> Option<String> {
+    let name = if let Some(rest) = error.split("undefined variable `").nth(1) {
+        rest.split('`').next()?
+    } else {
+        let rest = error.split("Undefined variable: ").nth(1)?;
+        rest.split(|c: char| !(c.is_alphanumeric() || c == '_')).next()?
+    };
+    Some(format!("`{name}` is not in scope where the expression is written; nothing was changed"))
 }
 
 /// `style.fill` → (`style`, `.fill`).
@@ -469,11 +720,13 @@ fn already_holds(run: &DocumentRun, node: &OutputNode, intent: &Intent) -> Optio
     let holds = match intent {
         Intent::SetField { value, .. } => current.is_some_and(|c| same(c, value)),
         Intent::RemoveField { .. } => current.is_none(),
+        Intent::SetFieldExpr { field, expr, .. } => crate::text::written_as(run, node, field, expr),
+        Intent::SetText { text, .. } => text_of(&el).as_deref() == Some(text.as_str()),
     };
     holds.then_some(Resolution::AlreadyHolds)
 }
 
-fn file_check(run: &DocumentRun, file: FileId, what: &str, opts: &ResolveOptions) -> Option<Resolution> {
+pub(crate) fn file_check(run: &DocumentRun, file: FileId, what: &str, opts: &ResolveOptions) -> Option<Resolution> {
     if file == FileId(0) {
         return None;
     }
@@ -505,18 +758,35 @@ fn direct_literal(
     if let Some(r) = file_check(run, lit.file(), &format!("`{field}`'s value `{text}`"), opts) {
         return r;
     }
-    let source = match edit_span(&run.source, &lit.span, edit) {
+    let what = format!("`{text}` on line {}", lit.span.start.line);
+    let apply = |e: LiteralEdit<'_>| edit_span(&run.source, &lit.span, e);
+    let (source, verified) = match edit_and_verify(runner, run, node, intent, edit, &apply, &what) {
         Ok(s) => s,
         Err(e) => return Resolution::Refused { reason: format!("could not edit `{text}` on line {}: {e}", lit.span.start.line) },
     };
-    let description = match edit {
+    let description = describe_edit(edit, &format!("`{text}`"), &format!("on line {}", lit.span.start.line));
+    let edit = ResolvedEdit { source, step: Step::DirectLiteral, span: lit.span, description, also_changes: Vec::new(), base: None };
+    finish_verified(runner, run, node, intent, edit, verified, lit.shared, &what, opts)
+}
+
+/// "set `x` on <rect> (line 3) to `40`", for the user.
+pub(crate) fn describe_edit(edit: LiteralEdit<'_>, on: &str, at: &str) -> String {
+    match edit {
+        LiteralEdit::Set { path, value } if path.is_empty() => format!("set {on} {at} to `{}`", value.to_source()),
         LiteralEdit::Set { path, value } => {
-            format!("set `{text}`{path} on line {} to `{}`", lit.span.start.line, value.to_source())
+            format!("set `{}` of {on} {at} to `{}`", path.trim_start_matches('.'), value.to_source())
         }
-        LiteralEdit::Remove { path } => format!("remove `{}` from `{text}` on line {}", path.trim_start_matches('.'), lit.span.start.line),
-    };
-    let edit = ResolvedEdit { source, step: Step::DirectLiteral, span: lit.span, description, also_changes: Vec::new() };
-    finish(runner, run, node, intent, edit, lit.shared, &format!("`{text}` on line {}", lit.span.start.line), opts)
+        LiteralEdit::SetExpr { path, expr } if path.is_empty() => format!("write `{expr}` for {on} {at}"),
+        LiteralEdit::SetExpr { path, expr } => format!("write `{}` = `{expr}` on {on} {at}", path.trim_start_matches('.')),
+        LiteralEdit::Remove { path } => format!("remove `{}` from {on} {at}", path.trim_start_matches('.')),
+        LiteralEdit::SetChildren { children, .. } => {
+            let text: String = children.iter().filter_map(|c| match c {
+                StaticValue::Str(s) => Some(s.as_str()),
+                _ => None,
+            }).collect();
+            format!("set the text of {on} {at} to \"{text}\"")
+        }
+    }
 }
 
 fn single_site(
@@ -535,36 +805,32 @@ fn single_site(
     if let Some(r) = file_check(run, span.file, &format!("<{tag}>"), opts) {
         return r;
     }
-    let source = match edit_span(&run.source, &span, edit) {
+    let what = format!("<{tag}> on line {}", span.start.line);
+    let apply = |e: LiteralEdit<'_>| edit_span(&run.source, &span, e);
+    let (source, verified) = match edit_and_verify(runner, run, node, intent, edit, &apply, &what) {
         Ok(s) => s,
         Err(e) => return Resolution::Refused { reason: format!("could not edit <{tag}> on line {}: {e}", span.start.line) },
     };
-    let description = match edit {
-        LiteralEdit::Set { path, value } => {
-            format!("set `{}` on <{tag}> (line {}) to `{}`", path.trim_start_matches('.'), span.start.line, value.to_source())
-        }
-        LiteralEdit::Remove { path } => {
-            format!("remove `{}` from <{tag}> (line {})", path.trim_start_matches('.'), span.start.line)
-        }
-    };
-    let edit = ResolvedEdit { source, step: Step::SingleSite, span, description, also_changes: Vec::new() };
-    finish(runner, run, node, intent, edit, site.fan_out, &format!("<{tag}> on line {}", span.start.line), opts)
+    let description = describe_edit(edit, &format!("<{tag}>"), &format!("(line {})", span.start.line));
+    let edit = ResolvedEdit { source, step: Step::SingleSite, span, description, also_changes: Vec::new(), base: None };
+    finish_verified(runner, run, node, intent, edit, verified, site.fan_out, &what, opts)
 }
 
 /// Verify `edit`, and turn it into a resolution: the edit, a choice when it
 /// (statically or by rerun) changes other outputs, or a refusal.
 #[allow(clippy::too_many_arguments)]
-fn finish(
+pub(crate) fn finish_verified(
     runner: &Runner,
     run: &DocumentRun,
     node: &OutputNode,
     intent: &Intent,
     edit: ResolvedEdit,
+    verified: Verified,
     shared: usize,
     what: &str,
     opts: &ResolveOptions,
 ) -> Resolution {
-    match verify(runner, run, node, intent, &edit.source) {
+    match verified {
         Verified::Fails(reason) => Resolution::Refused { reason },
         Verified::Holds { others } if shared > 1 || !others.is_empty() => {
             let reason = if shared > 1 {
@@ -587,10 +853,14 @@ fn finish(
 fn other_scopes(runner: &Runner, run: &DocumentRun, node: &OutputNode, intent: &Intent, opts: &ResolveOptions) -> Vec<Choice> {
     let mut out = Vec::new();
     let (head, rest) = split_field(intent.field());
-    if let Intent::SetField { value, .. } = intent
-        && let Ok(entry) = data_entry(run, node, head)
-        && let Ok(DataEdit::Edit(e)) = data_edit(runner, run, node, intent, &entry, rest, value, opts)
-    {
+    let data = match intent {
+        Intent::SetText { .. } => crate::text::text_data_edit(runner, run, node, intent, opts),
+        _ => match (Content::of(intent), data_entry(run, node, head)) {
+            (Some(content), Ok(entry)) => data_edit(runner, run, node, intent, &entry, rest, content, opts).ok(),
+            _ => None,
+        },
+    };
+    if let Some(DataEdit::Edit(e)) = data {
         out.push(Choice { label: "Change only this one's data".into(), scope: Scope::EditData, edit: Some(e) });
     }
     if let Some(hook) = &opts.overrides {
@@ -604,6 +874,7 @@ fn other_scopes(runner: &Runner, run: &DocumentRun, node: &OutputNode, intent: &
                 span: o.span,
                 description: o.description,
                 also_changes: others,
+                base: None,
             };
             out.push(Choice { label: "Override this one".into(), scope: Scope::Override, edit: Some(edit) });
         }
@@ -639,7 +910,16 @@ pub enum Verified {
 
 /// Run `new_source` and check that `intent` holds of the output `node` of
 /// `before` names, and which other outputs changed.
+///
+/// An [`Intent::SetFieldExpr`] is checked against the value its expression
+/// has at the end of the edited document (so only an expression of
+/// top-level names can be verified this way; the resolver probes it where
+/// it is written instead).
 pub fn verify(runner: &Runner, before: &DocumentRun, node: &OutputNode, intent: &Intent, new_source: &str) -> Verified {
+    if let Intent::SetFieldExpr { expr, .. } = intent {
+        let probe = format!("{new_source}\n{}\n", probed(expr));
+        return verify_expr(runner, before, node, intent, new_source, Ok(probe));
+    }
     let after = match runner.run(new_source) {
         Ok(a) => a,
         Err(e) => return Verified::Fails(format!("the edited document does not run: {e}")),
@@ -658,16 +938,25 @@ pub fn verify(runner: &Runner, before: &DocumentRun, node: &OutputNode, intent: 
         return Verified::Fails(format!("the edited document no longer has the output {key}"));
     };
     let el = after.observed_node(new_node);
+    if let Intent::SetText { text, .. } = intent {
+        let got = text_of(&el);
+        if got.as_deref() != Some(text.as_str()) {
+            let got = got.map_or_else(|| "not text".to_string(), |t| format!("\"{t}\""));
+            return Verified::Fails(format!("after the edit <{}>'s text is {got}, not \"{text}\"; nothing was changed", node.tag));
+        }
+        return Verified::Holds { others: changed_others(before, &after, node, &key, intent) };
+    }
     let got = field_of(&el, intent.field());
     let ok = match intent {
         Intent::SetField { value, .. } => got.is_some_and(|g| same(g, value)),
         Intent::RemoveField { .. } => got.is_none(),
+        Intent::SetFieldExpr { .. } | Intent::SetText { .. } => unreachable!("handled above"),
     };
     if !ok {
         let got = got.map(StaticValue::to_source).unwrap_or_else(|| "no value".into());
         let want = match intent {
             Intent::SetField { value, .. } => value.to_source(),
-            Intent::RemoveField { .. } => "no value".into(),
+            _ => "no value".into(),
         };
         return Verified::Fails(format!(
             "after the edit <{}>'s `{}` is {got}, not {want}; nothing was changed",
@@ -770,14 +1059,37 @@ fn node_at_mut<'a>(outputs: &'a mut [StaticValue], path: &[PathSeg]) -> Option<&
     Some(cur)
 }
 
-/// Make `intent` hold of the element value `el`.
+/// Make `intent` hold of the element value `el`. (A
+/// [`Intent::SetFieldExpr`] is verified as the [`Intent::SetField`] of its
+/// value, so it never reaches here.)
 fn apply_intent(el: &mut StaticValue, intent: &Intent) {
-    let StaticValue::Element { props, .. } = el else { return };
+    let StaticValue::Element { props, children, .. } = el else { return };
     let parts: Vec<&str> = intent.field().split('.').collect();
     match intent {
         Intent::SetField { value, .. } => set_in(props, &parts, value.clone()),
         Intent::RemoveField { .. } => remove_in(props, &parts),
+        Intent::SetFieldExpr { .. } => {}
+        Intent::SetText { text, .. } => {
+            children.retain(holds_element);
+            if !text.is_empty() {
+                children.insert(0, StaticValue::Str(text.clone()));
+            }
+        }
     }
+}
+
+/// The text of element value `el`: its text children run together, or
+/// `None` when it has child elements or other values among its children.
+pub fn text_of(el: &StaticValue) -> Option<String> {
+    let StaticValue::Element { children, .. } = el else { return None };
+    children
+        .iter()
+        .map(|c| match c {
+            StaticValue::Str(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .collect::<Option<Vec<&str>>>()
+        .map(|parts| parts.concat())
 }
 
 fn set_in(fields: &mut Vec<(String, StaticValue)>, parts: &[&str], value: StaticValue) {

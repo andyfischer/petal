@@ -122,6 +122,41 @@ impl Runner {
     }
 }
 
+/// The native a probe source calls around an expression, to read the value
+/// the expression has where it is written (see [`Runner::probe`]).
+pub const PROBE: &str = "__programs_as_documents_probe";
+
+impl Runner {
+    /// Run `source`, which calls [`PROBE`]`(expr)` around one or more
+    /// expressions, and return each value the probe was called with, in
+    /// call order. The probe returns its argument, so the run is the
+    /// document's own; its declaration is appended to the source. Errors
+    /// are those of [`run`](Self::run).
+    pub fn probe(&self, source: &str) -> Result<Vec<StaticValue>, String> {
+        let mut env = Env::new();
+        (self.setup)(&mut env)?;
+        env.set_echo(false);
+        env.register_native_boxed(
+            PROBE,
+            |cx| {
+                let v = cx.get_value(1)?;
+                let sym = cx.intern_symbol(PROBE);
+                cx.push_output(sym, v);
+                cx.push_value(v);
+                Ok(1)
+            },
+            petal::native_fn::NativeEffects::EMITS,
+        );
+        let source = format!("{source}\nnative fn {PROBE}(v)\n");
+        let program = env.load_program_at(&source, &self.path)?;
+        let stack = env.create_stack(program)?;
+        env.run(stack)?;
+        let sym = env.intern_symbol(PROBE);
+        let values = env.take_output_buffer(sym);
+        Ok(values.iter().map(|v| observe(v, env.heap())).collect())
+    }
+}
+
 /// One run of a document: its env (which owns the heap the result values
 /// live in), the result values, what it printed, and its output map.
 pub struct DocumentRun {

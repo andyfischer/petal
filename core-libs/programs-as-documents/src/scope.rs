@@ -163,9 +163,21 @@ pub fn data_entry(run: &DocumentRun, node: &OutputNode, prop: &str) -> Result<Da
     let program = run.program();
     let tag = &node.tag;
     let origin = run.env.element_origin(node.element).ok_or_else(|| format!("<{tag}> has no recorded origin"))?;
-    let chain: Vec<TermId> = origin.chain.to_vec();
-    let mut cur = provenance::element_prop_term(program, origin.term, prop)
+    let start = provenance::element_prop_term(program, origin.term, prop)
         .ok_or_else(|| format!("`{prop}` is not written on <{tag}>'s literal"))?;
+    data_entry_from(run, node, start, &format!("`{prop}`"))
+}
+
+/// [`data_entry`] for the value of term `start` of the element literal that
+/// built `node` (an attribute's or a child's input term); `what` names it in
+/// the reasons ("`title`", "the text").
+pub fn data_entry_from(run: &DocumentRun, node: &OutputNode, start: TermId, what: &str) -> Result<DataEntry, String> {
+    let program = run.program();
+    let tag = &node.tag;
+    let prop = what;
+    let origin = run.env.element_origin(node.element).ok_or_else(|| format!("<{tag}> has no recorded origin"))?;
+    let chain: Vec<TermId> = origin.chain.to_vec();
+    let mut cur = start;
     let iteration = iteration(run, node).ok_or("its iteration is unknown")?;
     let mut pos = 0usize;
     let mut path = String::new();
@@ -176,7 +188,7 @@ pub fn data_entry(run: &DocumentRun, node: &OutputNode, prop: &str) -> Result<Da
         pos = chain.len() - end_chain.len();
         if matches!(tr.end_kind, TraceEnd::Literal | TraceEnd::Constant(_)) {
             let Some(reader) = reader else {
-                return Err(format!("`{prop}` is not read from a data list"));
+                return Err(format!("{prop} is not read from a data list"));
             };
             if !matches!(tr.end_kind, TraceEnd::Literal) {
                 return Err("the data is not a list or record literal".into());
@@ -194,14 +206,14 @@ pub fn data_entry(run: &DocumentRun, node: &OutputNode, prop: &str) -> Result<Da
             TermOp::GetIndex => {
                 let ix = *t.inputs.get(1).ok_or("bad index read")?;
                 let Some(petal::static_value::StaticValue::Int(i)) = provenance::constant_at(program, ix) else {
-                    return Err(format!("`{prop}` is read at an index that is computed"));
+                    return Err(format!("{prop} is read at an index that is computed"));
                 };
                 path = format!("[{i}]{path}");
                 cur = *t.inputs.first().ok_or("bad index read")?;
             }
             TermOp::Copy if t.inputs.is_empty() => {
                 let (list, next, at) = per_item_source(program, tr.end, &chain, pos)
-                    .ok_or_else(|| format!("`{prop}` is computed and not read from a data list"))?;
+                    .ok_or_else(|| format!("{prop} is computed and not read from a data list"))?;
                 if reader.is_some() {
                     return Err("the value is read through more than one loop".into());
                 }
@@ -211,7 +223,7 @@ pub fn data_entry(run: &DocumentRun, node: &OutputNode, prop: &str) -> Result<Da
                 pos = next;
             }
             _ => {
-                return Err(format!("`{prop}` is computed and not read from a data list"));
+                return Err(format!("{prop} is computed and not read from a data list"));
             }
         }
     }

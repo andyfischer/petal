@@ -377,3 +377,30 @@ fn a_lambda_called_through_a_user_helper_traces_to_the_outer_argument() {
     let e = edit(resolve_src(&value_runner(), src, |r| set(key_of(r, "a", 1), "x", StaticValue::Int(60))));
     assert_eq!(e.source, src.replace(", 6)", ", 60)"));
 }
+
+#[test]
+fn a_repeated_attribute_is_edited_where_its_value_comes_from() {
+    let src = "[<rect x={1} x={2} />]\n";
+    let Ok(r) = value_runner().run(src) else { return };
+    let res = resolve(&value_runner(), &r, &set(key_of(&r, "rect", 0), "x", StaticValue::Int(5)), &ResolveOptions::default());
+    if let Resolution::Edit(e) = res {
+        let after = run(&value_runner(), &e.source);
+        let v = after.node_value(&after.map.nodes[0]).unwrap();
+        assert_eq!(programs_as_documents::intent::field_of(&v, "x"), Some(&StaticValue::Int(5)), "{}", e.source);
+    }
+}
+
+#[test]
+fn a_spread_record_attribute_is_edited_in_the_record_or_not_at_all() {
+    let src = "let base = {x: 1, y: 2}\n[<rect {...base} y={3} />]\n";
+    let Ok(r) = value_runner().run(src) else { return };
+    for (f, v) in [("x", 7), ("y", 8)] {
+        let res = resolve(&value_runner(), &r, &set(key_of(&r, "rect", 0), f, StaticValue::Int(v)), &ResolveOptions::default());
+        if let Resolution::Edit(e) = res {
+            let after = run(&value_runner(), &e.source);
+            let val = after.node_value(&after.map.nodes[0]).unwrap();
+            assert_eq!(programs_as_documents::intent::field_of(&val, f), Some(&StaticValue::Int(v)), "{}", e.source);
+            assert!(e.also_changes.is_empty(), "{:?}", e.also_changes);
+        }
+    }
+}

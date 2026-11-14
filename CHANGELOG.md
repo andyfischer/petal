@@ -536,6 +536,34 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **Goals that write expressions.** `petal::static_expr::StaticExpr` is an
+  expression an edit writes (a name, a member path, an index, a call with
+  positional and named arguments, and literals of those), built
+  structurally or parsed from exactly one expression; names are checked and
+  strings quoted by the renderer, so there is still no raw-source escape
+  hatch. `Goal::should_set_path_expr`, `should_insert_expr`,
+  `should_append_expr`, `should_set_value_expr` and `should_call_expr`
+  write one (`fill={tok.color.ink}`, `shadow(c, radius: 4, y: 3)`), and
+  `get_static_expr` reads a binding back as one, named arguments included.
+  A record key that is not an identifier is written and read as a quoted
+  computed key (`{["label.color"]: v}`) and named in a path as
+  `o["label.color"]`; `literal_edit::set_children` sets an element's text in
+  place. See [goal-based-editing.md](docs/features/goal-based-editing.md#expression-goals).
+
+  **Breaking:** `Goal` has five new variants (garden's `goal_label` covers
+  them), and a record key that is not an identifier renders as
+  `["key"]: …` where it used to be written bare (and fail to parse).
+
+- **Programs as documents: references, text, holes, fresh commits.**
+  `Intent::SetFieldExpr` writes a field as an expression through the
+  ladder, with its names checked by compiling the edited document and its
+  value verified by a probe where it is written; `Intent::SetText` sets an
+  element's text (literal text, a `{param}` hole's string, a data entry).
+  `{…}` holes among an element's children are structural entries, so a
+  helper-made element moves into a group; a moved entry keeps its trailing
+  comment. `ResolvedEdit::base` and `Document::commit` (now
+  `Result<bool, String>`) refuse a choice made against an older source.
+
 - **Programs as documents: edit a script through its output.** The new
   optional crate `core-libs/programs-as-documents` is the write path for an
   application whose saved document is a Petal script. The application states

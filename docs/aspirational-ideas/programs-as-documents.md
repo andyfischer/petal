@@ -7,19 +7,23 @@ page is [features/programs-as-documents.md](../features/programs-as-documents.md
 - **The crate.** [`core-libs/programs-as-documents`](../../core-libs/programs-as-documents/)
   (optional; it uses only petal's public API, and the wasm builds leave it
   out) has the editing session, runs with an output source map, field
-  intents resolved by the whole ladder below (steps 1 to 6), structural
-  intents by outcome, and copy and paste with free-variable analysis. Every
-  edit is verified by rerun.
+  intents resolved by the whole ladder below (steps 1 to 6), reference
+  intents (a field written as an expression, verified by a probe of its
+  value where it is written) and text intents, structural intents by
+  outcome (`{…}` holes among children included), and copy and paste with
+  free-variable analysis. Every edit is verified by rerun, and an edit is
+  committed only onto the source it was resolved against.
 - **In core.** Element-origin tracing (`Env::enable_element_trace`,
   `ElementOrigin`, `provenance::trace_value`), `StaticValue::from_value`,
   direct-manipulation goals on elements (`Observable::Element`,
-  `ObsValue::Element`) and the `entry-file` selector.
+  `ObsValue::Element`), the `entry-file` selector, and expression goals
+  (`StaticExpr`, `Goal::should_set_path_expr` and friends, named-argument
+  calls, quoted record keys).
 - **petal-images is ported.** Every layer edit in its editor goes through
   the crate (see "Other projects this touches").
 - **What remains.** Porting petal-design, petal-movies and
-  petal-social-media; reference intents (goals that write expressions),
-  wrap/unwrap and intents as an undo log; part 2; saved state (which
-  petal-creative will not use).
+  petal-social-media; wrap/unwrap and intents as an undo log; part 2; saved
+  state (which petal-creative will not use).
 
 The rest of this note is the design as written before it was built, with
 notes where the implementation settled a question differently.

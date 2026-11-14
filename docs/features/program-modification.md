@@ -63,7 +63,9 @@ caller states **goals**, properties the edited source should satisfy
 (`Goal::should_call`, `should_set_value`, the path goals `should_set_path` /
 `should_insert` / `should_append` / `should_remove`), and
 `modify_source_with_goals(source, goals)` decides whether to insert or update
-in place. A goal that already holds writes nothing. The API is in
+in place. A goal that already holds writes nothing. Each value goal has an
+`_expr` twin that writes an expression (`StaticExpr`: a reference, a member
+path, a call with named arguments) instead of a value. The API is in
 [goal-based-editing.md](goal-based-editing.md).
 
 The value and path goals edit literals through
@@ -227,13 +229,14 @@ See [time-travel.md](time-travel.md).
 | Insert or remove a list element or record field in place | — | yes | `Goal::should_insert` / `should_append` / `should_remove`; `pb_source_insert` / `_append` / `_remove` |
 | Edit, insert, remove or move an element's child (`layers[2]/image[1].x`) | — | yes | the same goals plus `Goal::should_move`; `pb_source_move` ([edit-paths.md](edit-paths.md)) |
 | Ensure a top-level call, formatting-preserved | — | yes | `Goal::should_call` |
+| Write an expression (a reference, a named-argument call) at a path or binding | — | yes | `Goal::should_set_path_expr` / `should_insert_expr` / `should_append_expr` / `should_set_value_expr` / `should_call_expr`; `pb_source_set` (expression text) in the C bridge |
 | Rewrite a span of source, formatting-preserved | — | yes | `rewrite::splice_node` / `splice` |
 | Reformat source | — | yes | `petal fmt` |
 | Apply lint fixes (optionally verified) | — | yes | `petal lint --fix [--verify]` |
 | Apply refactors | proposals | yes | `petal suggest [--apply]`, `petal apply-change` |
 | Propose edits that change an emitted value | yes | proposals | `direct_manipulation::propose_edits` / `propose_edits_batch`, `petal propose-edit`, MCP `ProposeEdit` |
 | Where an element in a run's result was built (site, call path, occurrence) | yes | — | `Env::enable_element_trace`, `Env::element_origin`, `provenance::trace_value` ([provenance.md](provenance.md#where-an-element-came-from-element-tracing)) |
-| Edit a script through its output: set or remove a field, reorder, move, insert, remove, duplicate, copy and paste elements, verified by rerun | yes | yes | `programs_as_documents::resolve` / `resolve_structure` / `copy` / `paste`, `Document` ([programs-as-documents.md](programs-as-documents.md)) |
+| Edit a script through its output: set or remove a field, bind it to an expression, set an element's text, reorder, move, insert, remove, duplicate, copy and paste elements, verified by rerun | yes | yes | `programs_as_documents::resolve` / `resolve_structure` / `copy` / `paste`, `Document` ([programs-as-documents.md](programs-as-documents.md)) |
 | Classify an edit without applying it | yes | — | `source_diff::diff_source`, `Env::diff_program` |
 | Hot reload (state-preserving) | — | yes | `Env::reload_program` (`transfer_state` for the recompile); the SDL watcher, `pb_vm_reload`, Garden |
 | Set one setting's value in a running program | — | yes | `Env::set_config_value`; `pb_vm_set_tunable` |

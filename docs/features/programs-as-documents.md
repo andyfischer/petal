@@ -79,8 +79,9 @@ gesture ─► intent ─► resolve ─► source edit ─► verify ─► com
    `fn/callee()#n`, which do not change when values or attributes do) plus
    an occurrence number for loop iterations, else its index path.
 3. **State an intent.** `Intent::SetField { target, field, value }` (`field`
-   may be dotted, `style.fill`), `Intent::RemoveField`, or a
-   `StructureIntent` (below).
+   may be dotted, `style.fill`), `Intent::RemoveField`,
+   `Intent::SetFieldExpr` (a [reference](#references-a-field-written-as-an-expression)),
+   `Intent::SetText` ([text](#text)), or a `StructureIntent` (below).
 4. **Resolve** with `resolve(runner, run, intent, opts)`, which tries the
    ladder below.
 5. **Verify.** Every edit the resolver returns has already been run: the
@@ -159,6 +160,73 @@ same rerun check.
 An edit whose site is in another file (an imported module, a package) is
 `Refused`, and the reason names the file. Only the document is written.
 
+## References: a field written as an expression
+
+`Intent::SetFieldExpr { target, field, expr }` says "this field reads
+`tok.color.ink`": binding a node to a token, using the `gutter` spacing,
+writing a shadow as `shadow(c, radius: 4, y: 3)`. `expr` is a
+[`StaticExpr`](goal-based-editing.md#staticexpr--expressions), built
+structurally or parsed from text that must be exactly one expression, so a
+host's string can never become code.
+
+```rust
+let ink = StaticExpr::path("tok.color.ink")?;
+doc.apply(&Intent::SetFieldExpr { target: key, field: "fill".into(), expr: ink }, None);
+// <rect fill={:0A0A0E} />  →  <rect fill={tok.color.ink} />
+```
+
+It goes through the ladder like a value, with these differences:
+
+- **Where it is written.** At the literal the value flows from, when that
+  literal is the document's and the value is the whole of it (`fill={:f00}`,
+  a call's argument, `let accent = :f00`). A value read out of a record (a
+  token, `C.ink` with `let C = tok.color`) or out of another file is not
+  rewritten (that would change the token): the expression goes on the
+  element literal that reads the field, replacing what is written there. A
+  field not written yet is added there. A value read per item from a data
+  list goes in its data entry. A literal shared by other outputs gives the
+  usual choices, and the host's `OverrideHook` is asked too.
+- **Names in scope.** Its names must be bound where it is written: the
+  file's top-level bindings and imports, and the parameters and locals of
+  the function it lands in. The compiler checks that on the edited document;
+  a name it does not know is a refusal naming it. When the literal the value
+  flows from is outside the scope of a name (a top-level `let` and a
+  function parameter), the element literal inside the function is tried
+  instead.
+- **Verification by probe.** The value an expression has depends on where
+  it is written, so the rerun's field is compared with that: the same edit,
+  with the expression wrapped in a probe native (`Runner::probe`), reports
+  the value it had there, and the field after the edit must be that value,
+  with nothing else changed. (`verify` on its own, as for a host's override,
+  compares with the expression's value at the end of the document, which
+  needs its names to be top-level ones.)
+- **Already holds** when the site is already written as the expression
+  (compared as expressions: `m["k"]` is `m.k`).
+
+## Text
+
+`Intent::SetText { target, text }` sets an element's text (its text
+children):
+
+| The element | What is written |
+|---|---|
+| `<text>Hello</text>` | the text between its tags |
+| `<text />` | `<text>Hi</text>` |
+| `<text>{s}</text>` in `fn hint(s)`, called `hint("Swipe")` | the string `"Swipe"` the hole traces to |
+| `<text>{r.title}</text>` in a `map` over `rows` | `rows[1].title` |
+
+A literal built for several outputs asks, as a field does. An element with
+child elements, or with text and holes mixed (`<text>{n} items</text>`), has
+no one place its text is written, and is refused with the line to edit.
+
+## Committing a choice later
+
+Every edit carries the hash of the source it was resolved against
+(`ResolvedEdit::base`). `Document::commit(edit, key)` refuses one whose
+source is no longer current (the user picked a choice after another edit,
+an undo or a reload), so a stale choice never undoes newer work; resolve
+the intent again instead.
+
 ## Structural edits
 
 `resolve_structure(runner, run, intent, opts)` takes a `StructureIntent`
@@ -177,8 +245,14 @@ nested lists flattened the way a host draws them) or an element's children
 Each sibling is traced to the source entry that builds it
 (`sibling_entries`): an entry of a list or element literal in the document,
 whose text is kept as written (a helper call stays a call, its comments
-stay); an item of the data list a `map` / `each` / `for` reads, so the data
-list is edited instead; or `Locked`, with a reason. For
+stay; among an element's children, a `{…}` hole such as `{badge("x")}` is
+an entry too, so a helper-made element moves into a group and out again);
+an item of the data list a `map` / `each` / `for` reads, so the data list
+is edited instead; or `Locked`, with a reason (a `{…}` that builds several
+elements and reads no data list is one). A call moved or inserted among an
+element's children is written as a `{…}`, and must build one element when
+run. An entry moved out of a list takes the comment that trailed it on its
+line along, as a comment line above it (`{/* … */}` among children). For
 `shapes.LIBRARY ++ mine` only `mine` is edited, and nothing moves past a
 library element. The rerun must read as asked, with nothing else changed.
 `StructureOptions::write_ids` gives inserted, duplicated and pasted elements
@@ -229,17 +303,19 @@ chain. See [provenance.md](provenance.md#where-an-element-came-from-element-trac
   constant-index reads of the item. A computation over the item
   (`r.x * 10`) is solved instead, and the solver may move the factor. A
   filtered or sorted list is locked for structural edits.
-- **Holes among an element's children are not entries.** A helper call
-  between an element's tags can't be moved or inserted there; elements a
-  `{…}` hole builds are edited through their data list, or are locked.
-- **Text children** (`<text>{t}</text>`) have no intent of their own.
+- **A `{…}` that builds several elements** is locked unless it reads a
+  data list.
+- **Text** is set only as one run of text: text split by `<br />` or mixed
+  with holes is refused.
+- **Names in a reference** are checked by the compiler, so a name bound at
+  the site to something else than the host meant (a parameter shadowing a
+  token) is taken; the probe checks the value it has there.
 - **One literal that builds several outputs** (a helper's `<box>` children)
   is refused for structural edits, not offered as a choice.
 - **Comments travel with literal_edit's moves.** A comment after an entry on
   its line moves with it; one on its own line above stays.
-- **Not built:** reference intents (bind a field to an expression), wrap and
-  unwrap, intents kept as an undo log, a multi-element clip, document
-  schemas.
+- **Not built:** wrap and unwrap, intents kept as an undo log, a
+  multi-element clip, document schemas.
 - **Cost.** Every edit reruns the document at least once, and a solve reruns
   it many times. Tracing turns the static cache off. In petal-images a drag
   frame on its largest example takes about 55 ms.

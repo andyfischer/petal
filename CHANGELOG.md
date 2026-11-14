@@ -554,6 +554,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   them), and a record key that is not an identifier renders as
   `["key"]: …` where it used to be written bare (and fail to parse).
 
+- **Programs as documents: derived result values, and new lines at the
+  document's indent step.** `Runner::with_derived(indexes)` names result
+  values the host's vocabulary derives from the others (petal-design's
+  instance expansions, keyed by each instance's path): their elements are
+  in the output map, but an edit's rerun does not compare them
+  (`DocumentRun::compared_outputs`, `is_derived`), so moving a node that
+  shifts an instance's path is not "another output changed". A literal
+  lifted for an edit (`splice::lifted`) now lays new lines out by the
+  document's indent step (`splice::indent_step`), so the first child of an
+  empty element deep in a file goes one step in, not one column-width.
+  petal-design now edits pages and nodes through the crate.
+
 - **Programs as documents: references, text, holes, fresh commits.**
   `Intent::SetFieldExpr` writes a field as an expression through the
   ladder, with its names checked by compiling the edited document and its

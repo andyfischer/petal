@@ -73,7 +73,10 @@ pub fn lifted(
     let range = byte_range(source, span).ok_or("the literal's position is outside the source")?;
     let text = &source[range.clone()];
     let indent = column_indent(source, range.start);
-    let head = format!("let {SCRATCH} = [\n{indent}");
+    // A list of the document's indent step first, so that edits that lay
+    // out new lines (a first child of an empty element) indent by the
+    // document's step rather than by the literal's own column.
+    let head = format!("let {SCRATCH}_style = [\n{}0,\n]\nlet {SCRATCH} = [\n{indent}", indent_step(source));
     let tail = ",\n]\n";
     let scratch = format!("{head}{text}{tail}");
     let edited = edit(&scratch, &format!("{SCRATCH}[0]"))?;
@@ -86,6 +89,21 @@ pub fn lifted(
     out.push_str(new_text);
     out.push_str(&source[range.end..]);
     Ok(out)
+}
+
+/// The indentation a document nests by: the most common increase in
+/// indentation from one line to the next (two spaces when none does).
+pub fn indent_step(source: &str) -> String {
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut prev = String::new();
+    for line in source.lines().filter(|l| !l.trim().is_empty()) {
+        let ind: String = line.chars().take_while(|c| *c == ' ' || *c == '\t').collect();
+        if let Some(step) = ind.strip_prefix(prev.as_str()).filter(|s| !s.is_empty()) {
+            *counts.entry(step.to_string()).or_default() += 1;
+        }
+        prev = ind;
+    }
+    counts.into_iter().max_by_key(|(s, n)| (*n, std::cmp::Reverse(s.len()))).map_or_else(|| "  ".to_string(), |(s, _)| s)
 }
 
 /// The text that puts a literal starting at byte `at` at its column: the

@@ -71,7 +71,10 @@ gesture ─► intent ─► resolve ─► source edit ─► verify ─► com
    host's packages and natives registered (a setup closure) and element
    tracing on, and reads the result from the return value or from an output
    buffer (`OutputSource`). The `DocumentRun` holds the result values and an
-   `OutputMap`.
+   `OutputMap`. A host whose vocabulary also emits an index made from the
+   document's elements (petal-design's instance expansions, keyed by each
+   instance's path) names it with `Runner::with_derived`: its elements are
+   mapped, but verifying an edit does not compare it.
 2. **Identify.** The `OutputMap` lists every element of the result (through
    lists, record fields, element props and children). Each `OutputNode` has
    an `OutputKey` that survives edits: its `id=` prop when no other output

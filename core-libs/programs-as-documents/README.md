@@ -28,7 +28,7 @@ files. Everything a document saves is written into the `.ptl`.
 | Item | What it is |
 |---|---|
 | `DocumentSession` | The source text as the single source of truth: `commit(text, key)` (edits with one key within 1.2 s are one undo step), `begin_gesture` / `end_gesture` / `cancel_gesture` (a drag is one step), `undo`, `redo`, `dirty`, `save`, `poll_disk` (reload a file changed elsewhere; unsaved edits are kept and `notice` says so). |
-| `Runner` | How a host runs its documents: the path they load as, a setup closure that registers the host's packages and natives, and an `OutputSource` (`ReturnValue`, or `Buffer { symbol, last }` for a vocabulary whose emit native pushes to an output buffer). `Runner::run(source)` runs with element tracing on. |
+| `Runner` | How a host runs its documents: the path they load as, a setup closure that registers the host's packages and natives, and an `OutputSource` (`ReturnValue`, or `Buffer { symbol, last }` for a vocabulary whose emit native pushes to an output buffer). `Runner::run(source)` runs with element tracing on. `with_derived(indexes)` names result values the vocabulary derives from the others (an index of elements keyed by where they are, like petal-design's instance expansions): mapped, but not compared when an edit is verified (`DocumentRun::compared_outputs`). |
 | `DocumentRun` | One run: the `Env`, the result `outputs`, the printed `log`, the `OutputMap`, `static_outputs()`. |
 | `OutputMap` / `OutputNode` | Every element of the result (through lists, record fields, element props and children), with its index `path`, its `Site` (element literal span, call chain innermost first, `fan_out` = how many result elements that literal built) and per-field `FieldProvenance`: `Literal` (span, file, constant, `within` = the record/list literal it was read out of and the path inside it, `shared` = how many outputs read that literal) or `Computed { reason }`. |
 | `OutputKey` | Stable identity across runs: `Id` (an `id=` prop no other output has), else `Site` (edit-stable keys for the element literal and each call, `fn/<tag>#n` and `fn/callee()#n`, plus an occurrence index, counted over every output of that site with an id or not, that tells loop iterations apart), else `Path`. Outputs that share an `id=` fall back to `Site`, so no two outputs share a key. |
@@ -51,7 +51,7 @@ files. Everything a document saves is written into the `.ptl`.
 | `copy(run, key)` / `copy_text(source, text)` → `Clip` | An output element as source: its literal, or the call that builds it alone (`card(5)` rather than `<card x={x} />`, which reads a parameter), or the literal of its value when no code builds it alone (a loop). Free-variable analysis lists the document's top-level names the text reads (`FreeRef`: constant, function or computed, each use with its path and static value) and the bindings they reach (`ClipBinding`). |
 | `paste(runner, run, clip, at, opts)` / `prepare_paste` | Insert a clip at a `Place`, in the same document or another, with one `PasteRef` per reference: `CopyAsSource` (bring the binding and what it reads, before the statement the paste lands in, unless the target binds the name differently), `CopyAsValue` (inline the value read at each use: `tok.ink` → `:112233`), `Rebind(name)` (use the target's binding). Default: a name the target binds the same way is kept, a constant is copied as its value, anything else is refused with a reason naming the reference. |
 | `editable_literal(source, name)` | The binding's value when its literal is what the program uses, else `NotEditable::{NotFound, Computed { reason }, RebuiltLater { line }, Parse}`. |
-| `splice::edit_span` / `splice::lifted` | Edit one literal at a span with path edits (`LiteralEdit::Set`, `SetExpr`, `Remove`, `SetChildren`), changing only its text (the literal is lifted into a scratch binding and spliced back). |
+| `splice::edit_span` / `splice::lifted` | Edit one literal at a span with path edits (`LiteralEdit::Set`, `SetExpr`, `Remove`, `SetChildren`), changing only its text (the literal is lifted into a scratch binding and spliced back; new lines are laid out by the document's indent step, `splice::indent_step`). |
 | `Runner::probe(source)` | Run a source that calls `PROBE(expr)` around expressions and return the values they had, in call order (how a reference edit is verified). |
 | `entries::containers` / `rewrite_entries` | The list and element literals of a source with their entries, and giving one a new sequence of entries (kept, removed, moved, new text) through Petal's style-preserving path edits: the fewest entries move, a removed one takes its line, a new one is laid out like its siblings. |
 
@@ -62,6 +62,10 @@ imported module or package is refused with a reason naming the file.
 
 - petal-images (`~/petal-creative/petal-images/src/doc.rs`): every layer
   edit of its editor.
+- petal-design (`~/petal-creative/petal-design/src/doc.rs`, `src/edits/`):
+  node attributes, structure and pages, by output identity through
+  `design(...)`'s emitted pages; the instance expansions are a derived
+  result value.
 
 ## Not yet
 

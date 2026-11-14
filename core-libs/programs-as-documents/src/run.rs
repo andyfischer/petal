@@ -42,11 +42,16 @@ pub struct Runner {
     path: PathBuf,
     setup: Rc<Setup>,
     output: OutputSource,
+    derived: Vec<usize>,
 }
 
 impl std::fmt::Debug for Runner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Runner").field("path", &self.path).field("output", &self.output).finish()
+        f.debug_struct("Runner")
+            .field("path", &self.path)
+            .field("output", &self.output)
+            .field("derived", &self.derived)
+            .finish()
     }
 }
 
@@ -58,6 +63,7 @@ impl Runner {
             path: path.into(),
             setup: Rc::new(setup),
             output: OutputSource::ReturnValue,
+            derived: Vec::new(),
         }
     }
 
@@ -65,6 +71,23 @@ impl Runner {
     pub fn with_output(mut self, output: OutputSource) -> Runner {
         self.output = output;
         self
+    }
+
+    /// Result values `derived` (indexes into the result) are made from the
+    /// others by the host's vocabulary, not written by the document: an
+    /// index of the elements the others hold, keyed by where they are
+    /// (petal-design's instance expansions, keyed by each instance's path).
+    /// Their elements are in the output map like any others, but an edit's
+    /// rerun does not compare them: a change there is what the edit means
+    /// for the vocabulary, not another output the edit changes.
+    pub fn with_derived(mut self, derived: Vec<usize>) -> Runner {
+        self.derived = derived;
+        self
+    }
+
+    /// The result values that are derived (see [`with_derived`](Self::with_derived)).
+    pub fn derived(&self) -> &[usize] {
+        &self.derived
     }
 
     /// The path documents are loaded as.
@@ -115,6 +138,7 @@ impl Runner {
             env,
             program,
             outputs,
+            derived: self.derived.clone(),
             log,
             map,
             source: source.to_string(),
@@ -164,6 +188,8 @@ pub struct DocumentRun {
     pub program: ProgramId,
     /// The result values, as [`OutputSource`] says to read them.
     pub outputs: Vec<Value>,
+    /// Which of them are derived from the others ([`Runner::with_derived`]).
+    pub derived: Vec<usize>,
     /// What the script printed.
     pub log: Vec<String>,
     pub map: OutputMap,
@@ -189,6 +215,25 @@ impl DocumentRun {
     /// making the whole output `None`, so the rest of it is still compared.
     pub fn observed_outputs(&self) -> Vec<StaticValue> {
         self.outputs.iter().map(|v| observe(v, self.env.heap())).collect()
+    }
+
+    /// The result values as two runs are compared to verify an edit:
+    /// [`observed_outputs`](Self::observed_outputs) with each derived value
+    /// ([`Runner::with_derived`]) left out (as `nil`).
+    pub fn compared_outputs(&self) -> Vec<StaticValue> {
+        let mut out = self.observed_outputs();
+        for &i in &self.derived {
+            if let Some(v) = out.get_mut(i) {
+                *v = StaticValue::Nil;
+            }
+        }
+        out
+    }
+
+    /// Whether the output at index path `path` is inside a derived result
+    /// value.
+    pub fn is_derived(&self, path: &[crate::output_map::PathSeg]) -> bool {
+        matches!(path.first(), Some(crate::output_map::PathSeg::Index(i)) if self.derived.contains(i))
     }
 
     /// The element node `node` is, as [`observed_outputs`](Self::observed_outputs)

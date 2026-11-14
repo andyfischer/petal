@@ -994,7 +994,7 @@ fn changed_others(
         }
     }
     for n in &before.map.nodes {
-        if n.key == node.key || n.path == node.path {
+        if n.key == node.key || n.path == node.path || before.is_derived(&n.path) {
             continue;
         }
         let Some(m) = after.map.find(&n.key) else {
@@ -1009,7 +1009,7 @@ fn changed_others(
     }
     if out.is_empty() {
         // Anything outside the elements (a project record, text).
-        let (mut want, got) = (before.observed_outputs(), after.observed_outputs());
+        let (mut want, got) = (before.compared_outputs(), after.compared_outputs());
         if let Some(el) = node_at_mut(&mut want, &node.path) {
             apply_intent(el, intent);
         }

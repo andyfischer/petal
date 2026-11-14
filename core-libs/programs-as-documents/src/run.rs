@@ -148,6 +148,20 @@ impl DocumentRun {
         self.outputs.iter().map(|v| StaticValue::from_value(v, self.env.heap())).collect()
     }
 
+    /// Each result value as it is observed when two runs are compared: like
+    /// [`static_outputs`](Self::static_outputs), but a value with no literal
+    /// form (a function, a handle) inside it becomes [`opaque`] instead of
+    /// making the whole output `None`, so the rest of it is still compared.
+    pub fn observed_outputs(&self) -> Vec<StaticValue> {
+        self.outputs.iter().map(|v| observe(v, self.env.heap())).collect()
+    }
+
+    /// The element node `node` is, as [`observed_outputs`](Self::observed_outputs)
+    /// sees it.
+    pub fn observed_node(&self, node: &OutputNode) -> StaticValue {
+        observe(&Value::Element(node.element), self.env.heap())
+    }
+
     /// The output node `key` names (see [`OutputMap::find`]).
     pub fn node(&self, key: &OutputKey) -> Option<&OutputNode> {
         self.map.find(key)
@@ -156,5 +170,35 @@ impl DocumentRun {
     /// The element node `node` is, as a literal.
     pub fn node_value(&self, node: &OutputNode) -> Option<StaticValue> {
         StaticValue::from_value(&Value::Element(node.element), self.env.heap())
+    }
+}
+
+/// What [`DocumentRun::observed_outputs`] puts in place of a value with no
+/// literal form. No literal reads back as it ([`StaticValue::from_value`]
+/// never makes a call), so it never equals a real value; all of them equal
+/// each other, so a function prop compares as unchanged.
+pub fn opaque() -> StaticValue {
+    StaticValue::Call { function: "<opaque>".into(), args: Vec::new() }
+}
+
+/// `v` as a literal, with [`opaque`] for each part that has none.
+fn observe(v: &Value, heap: &petal::heap::Heap) -> StaticValue {
+    if let Some(s) = StaticValue::from_value(v, heap) {
+        return s;
+    }
+    match v {
+        Value::List(id) => StaticValue::List(heap.get_list(*id).iter().map(|x| observe(x, heap)).collect()),
+        Value::Map(id) => StaticValue::Record(heap.get_map(*id).iter().map(|(k, x)| (k.to_string(), observe(x, heap))).collect()),
+        Value::Element(id) => StaticValue::Element {
+            tag: heap.get_string(heap.get_element_tag(*id)).to_string(),
+            props: heap
+                .get_map(heap.get_element_props(*id))
+                .iter()
+                .map(|(k, x)| (k.to_string(), observe(x, heap)))
+                .collect(),
+            children: heap.get_list(heap.get_element_children(*id)).iter().map(|x| observe(x, heap)).collect(),
+        },
+        Value::Cell(id) => observe(&heap.cell_read(*id), heap),
+        _ => opaque(),
     }
 }

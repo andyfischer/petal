@@ -365,6 +365,19 @@ fn finish(nodes: &mut [OutputNode]) {
             }
         }
     }
+    // An `id=` names one output only when no other output has it: two
+    // outputs with one id would share a key, and an edit aimed at the second
+    // would find (and verify against) the first. They fall back to their
+    // site keys.
+    let mut ids: HashMap<String, usize> = HashMap::new();
+    for n in nodes.iter() {
+        if let OutputKey::Id(id) = &n.key {
+            *ids.entry(id.clone()).or_default() += 1;
+        }
+    }
+    // Occurrences count every output a site and call path built, with an id
+    // or not, so giving one of them an id (or taking it away) does not
+    // renumber the others.
     let mut occurrences: HashMap<(String, Vec<String>), usize> = HashMap::new();
     for n in nodes.iter_mut() {
         if let Some(s) = &mut n.site {
@@ -375,10 +388,19 @@ fn finish(nodes: &mut [OutputNode]) {
                 l.shared = shared[&l.term];
             }
         }
-        if let OutputKey::Site { site, chain, occurrence } = &mut n.key {
-            let k = occurrences.entry((site.clone(), chain.clone())).or_default();
-            *occurrence = *k;
+        let occurrence = n.site.as_ref().map(|s| {
+            let k = occurrences.entry((s.key.clone(), s.chain_keys.clone())).or_default();
             *k += 1;
+            *k - 1
+        });
+        let duplicate_id = matches!(&n.key, OutputKey::Id(id) if ids[id] > 1);
+        match (&mut n.key, &n.site, occurrence) {
+            (OutputKey::Site { occurrence: o, .. }, _, Some(k)) => *o = k,
+            (OutputKey::Id(_), Some(s), Some(k)) if duplicate_id => {
+                n.key = OutputKey::Site { site: s.key.clone(), chain: s.chain_keys.clone(), occurrence: k };
+            }
+            (OutputKey::Id(_), None, _) if duplicate_id => n.key = OutputKey::Path(n.path.clone()),
+            _ => {}
         }
     }
 }

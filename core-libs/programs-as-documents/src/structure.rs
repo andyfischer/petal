@@ -212,7 +212,7 @@ impl<'a> ParentInfo<'a> {
             .filter(|n| slot_of(&path, kind, &n.path).is_some())
             .collect();
         if nodes.is_empty() && matches!(parent, Parent::List(_)) {
-            let outputs = run.static_outputs();
+            let outputs: Vec<Option<StaticValue>> = run.observed_outputs().into_iter().map(Some).collect();
             if !matches!(value_at(&outputs, &path), Some(StaticValue::List(_))) {
                 return Err(format!("the result has no list at {}", path_string(&path)));
             }
@@ -805,7 +805,7 @@ fn finish(runner: &Runner, run: &DocumentRun, mut plan: Plan<'_>, preamble: &[St
                 Err(reason) => return Resolution::Refused { reason },
             };
             if source == run.source {
-                if expected == run.static_outputs() {
+                if expected == run.observed_outputs().into_iter().map(Some).collect::<Vec<_>>() {
                     return Resolution::AlreadyHolds;
                 }
                 return Resolution::Refused {
@@ -828,7 +828,7 @@ fn finish(runner: &Runner, run: &DocumentRun, mut plan: Plan<'_>, preamble: &[St
                 Ok(a) => a,
                 Err(e) => return Resolution::Refused { reason: format!("the edited document does not run: {e}") },
             };
-            let got: Vec<Option<StaticValue>> = after.static_outputs();
+            let got: Vec<Option<StaticValue>> = after.observed_outputs().into_iter().map(Some).collect();
             if expected.len() != got.len() {
                 return Resolution::Refused { reason: "the edited document has a different number of results".into() };
             }
@@ -851,7 +851,7 @@ fn finish(runner: &Runner, run: &DocumentRun, mut plan: Plan<'_>, preamble: &[St
 #[allow(clippy::type_complexity)]
 fn build(run: &DocumentRun, plan: &mut Plan<'_>) -> Result<(String, Step, SourceSpan, Vec<Option<StaticValue>>), String> {
     let mut edits: Vec<ContainerEdit> = Vec::new();
-    let mut expected = run.static_outputs();
+    let mut expected: Vec<Option<StaticValue>> = run.observed_outputs().into_iter().map(Some).collect();
     // Deeper parents first, so a shallower parent's path is still valid.
     plan.parents.sort_by_key(|d| std::cmp::Reverse(d.info.path.len()));
     let mut ids = plan.ids.clone();

@@ -73,7 +73,7 @@ pub fn solve_field(
         .element_origin(node.element)
         .ok_or_else(|| format!("<{tag}> was not built by an element literal, so the solver cannot name it"))?
         .clone();
-    let el = run.node_value(node).ok_or("the output has no literal form")?;
+    let el = run.observed_node(node);
     let held: Vec<(String, f64)> = hold
         .iter()
         .filter(|h| h.as_str() != field)
@@ -85,7 +85,7 @@ pub fn solve_field(
     }
     // Did the first answer move a held field?
     let moved = match runner.run(&first.source) {
-        Ok(after) => match after.map.find(&node.key).and_then(|n| after.node_value(n)) {
+        Ok(after) => match after.map.find(&node.key).map(|n| after.observed_node(n)) {
             Some(v) => held.iter().any(|(h, was)| field_of(&v, h).and_then(number).is_none_or(|x| (x - was).abs() > 1e-9)),
             None => true,
         },

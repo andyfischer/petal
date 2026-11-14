@@ -464,7 +464,7 @@ fn nest(rest: &str, value: StaticValue) -> StaticValue {
 }
 
 fn already_holds(run: &DocumentRun, node: &OutputNode, intent: &Intent) -> Option<Resolution> {
-    let el = run.node_value(node)?;
+    let el = run.observed_node(node);
     let current = field_of(&el, intent.field());
     let holds = match intent {
         Intent::SetField { value, .. } => current.is_some_and(|c| same(c, value)),
@@ -657,9 +657,7 @@ pub fn verify(runner: &Runner, before: &DocumentRun, node: &OutputNode, intent: 
     let Some(new_node) = after.map.find(&key) else {
         return Verified::Fails(format!("the edited document no longer has the output {key}"));
     };
-    let Some(el) = after.node_value(new_node) else {
-        return Verified::Fails("the edited output has no literal form".into());
-    };
+    let el = after.observed_node(new_node);
     let got = field_of(&el, intent.field());
     let ok = match intent {
         Intent::SetField { value, .. } => got.is_some_and(|g| same(g, value)),
@@ -677,16 +675,23 @@ pub fn verify(runner: &Runner, before: &DocumentRun, node: &OutputNode, intent: 
             intent.field()
         ));
     }
-    Verified::Holds { others: changed_others(before, &after, node, intent) }
+    Verified::Holds { others: changed_others(before, &after, node, &key, intent) }
 }
 
 /// The outputs other than `node` whose value differs between the runs,
 /// described for the user, or a general note when the result changed in a
 /// way no element accounts for.
-fn changed_others(before: &DocumentRun, after: &DocumentRun, node: &OutputNode, intent: &Intent) -> Vec<String> {
+fn changed_others(
+    before: &DocumentRun,
+    after: &DocumentRun,
+    node: &OutputNode,
+    new_key: &OutputKey,
+    intent: &Intent,
+) -> Vec<String> {
     let mut out = Vec::new();
-    // The target's other fields.
-    if let (Some(mut want), Some(m)) = (shallow(before, node), after.map.find(&node.key)) {
+    // The target's other fields (found by its key after the edit, which an
+    // `id` edit changes).
+    if let (Some(mut want), Some(m)) = (shallow(before, node), after.map.find(new_key)) {
         apply_intent(&mut want, intent);
         if let (StaticValue::Element { props: p1, .. }, Some(StaticValue::Element { props: p2, .. })) =
             (&want, shallow(after, m))
@@ -715,12 +720,7 @@ fn changed_others(before: &DocumentRun, after: &DocumentRun, node: &OutputNode, 
     }
     if out.is_empty() {
         // Anything outside the elements (a project record, text).
-        let (Some(mut want), Some(got)) = (
-            before.static_outputs().into_iter().collect::<Option<Vec<_>>>(),
-            after.static_outputs().into_iter().collect::<Option<Vec<_>>>(),
-        ) else {
-            return out;
-        };
+        let (mut want, got) = (before.observed_outputs(), after.observed_outputs());
         if let Some(el) = node_at_mut(&mut want, &node.path) {
             apply_intent(el, intent);
         }
@@ -734,7 +734,7 @@ fn changed_others(before: &DocumentRun, after: &DocumentRun, node: &OutputNode, 
 /// An element node's own value: its tag, props and text, without its child
 /// elements (they are nodes of their own).
 fn shallow(run: &DocumentRun, n: &OutputNode) -> Option<StaticValue> {
-    match run.node_value(n)? {
+    match run.observed_node(n) {
         StaticValue::Element { tag, props, children } => Some(StaticValue::Element {
             tag,
             props: props.into_iter().filter(|(_, v)| !holds_element(v)).collect(),

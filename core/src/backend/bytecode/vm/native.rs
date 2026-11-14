@@ -35,6 +35,47 @@ impl<'a> Vm<'a> {
         self.call_chain(origin)
     }
 
+    /// Record where element `v` was built (see
+    /// [`crate::execution_context::ElementOrigin`]): the `AllocElement` term and
+    /// the call site of every enclosing frame. Only called while element
+    /// tracing is on, so it is kept out of line from the dispatch loop.
+    #[cold]
+    #[inline(never)]
+    pub(super) fn note_element_origin(&mut self, v: Value, origin: Option<TermId>) {
+        let (Value::Element(id), Some(term)) = (v, origin) else {
+            return;
+        };
+        let chain = self.element_call_chain();
+        self.element_origins
+            .insert(id, crate::execution_context::ElementOrigin { term, chain });
+    }
+
+    /// The call site of every frame, innermost first, for an element origin.
+    ///
+    /// Unlike [`call_chain`](Self::call_chain), a frame pushed with no call
+    /// site (a callback a higher-order builtin such as `map` runs, a host
+    /// call) is not skipped: its call site is the instruction its caller is
+    /// executing, which is the builtin call that ran it. That keeps entry `i`
+    /// the call that created frame `i` from the top, which
+    /// [`crate::provenance::trace_value`] relies on to match parameters with
+    /// arguments. The bottom frame has no caller and contributes nothing.
+    fn element_call_chain(&self) -> SmallVec<[TermId; 4]> {
+        let frames = &self.stack.vm_frames;
+        let mut chain: SmallVec<[TermId; 4]> = SmallVec::new();
+        for k in (1..frames.len()).rev() {
+            let site = frames[k].call_site.or_else(|| {
+                let caller = &frames[k - 1];
+                let ip = caller.ip.checked_sub(1)?;
+                self.bc.function_or_root(caller.func).origins.get(ip).copied().flatten()
+            });
+            match site {
+                Some(t) => chain.push(t),
+                None => break,
+            }
+        }
+        chain
+    }
+
     /// The call chain reaching a native, whether or not emit tracing is on:
     /// a speculative run keys its random draws and its emits by it.
     fn call_chain(&self, origin: Option<TermId>) -> SmallVec<[TermId; 4]> {

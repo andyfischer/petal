@@ -9,6 +9,7 @@ that graph to answer three questions about a value:
 | Why does `x` have this value? | `petal explain --term x` | yes, with tracing on |
 | What does `x` depend on? What would a change to `x` reach? | `petal graph --term x [--direction forward]` | no |
 | Which call drew this, and which literal moves it? | emit tracing, `petal run --trace-emits` | yes |
+| Which element literal built this element, and where did its props come from? | element tracing (from code) | yes |
 
 The first two are this page. The third is
 [direct manipulation](direct-manipulation.md). Every flag and output field is
@@ -116,6 +117,55 @@ The same queries are methods on `Program` (`core/src/program_analysis.rs`):
 The run-time half is the trace buffer: `Env::trace_mut().enabled = true`
 before a run, `Env::trace()` after it. The MCP server exposes `explain` as the
 `ExplainTerm` tool ([mcp-server.md](../dev/mcp-server.md)).
+
+## Where an element came from: element tracing
+
+A host that receives elements (`<rect x={…} />`) from a run, in an output
+buffer, a return value or a binding, can ask where each was built. Turn it on
+before the run with `Env::enable_element_trace(true)`, then call
+`Env::element_origin(element_id)`. The answer is an `ElementOrigin`
+(`core/src/execution_context.rs`):
+
+- `term`: the `AllocElement` term, the element literal in the source. Its span
+  is `program.source_map.get(term)`, and `provenance::term_text` gives its
+  text.
+- `chain`: the call that created each enclosing frame, innermost first. A
+  helper called twice gives two chains. A callback that `map` or another
+  higher-order builtin runs has that builtin's call as its call site. A `for`
+  loop pushes no frame, so every iteration has the same origin.
+
+`provenance.rs` reads origins without running anything again:
+
+| Function | Answers |
+|---|---|
+| `element_prop_term(program, term, "x")` | the term the `x` prop was written as |
+| `element_prop_terms`, `element_child_terms` | every prop / child input term |
+| `trace_value(program, term, &chain)` | where that value flows from: a constant (`TraceEnd::Constant`), a record, list or element literal, or something computed, with every hop |
+| `pick_frame(program, &origin.full_chain(), file)` | the innermost frame in a given file |
+| `Env::element_site_count(term)` | how many recorded elements one site built (its fan-out) |
+
+`trace_value` follows name references, `tunable(x)`, the parameters of the
+calls in the chain (positional or named), captured variables of a closure made
+in one place, and field or constant-index reads of record and list literals.
+It stops at a `Phi`, a loop variable, `state`, a callback's parameter, and
+any computation. So `x={m}` with `let m = 96`, `card(x: 300)` and
+`props.title` with `Card({title: "one"})` all trace to their literal, and
+`x={i * 10}` does not.
+
+The costs and rules:
+
+- Off, building an element pays one bool check. On, it pays one map insert
+  and a walk of the frame stack.
+- While it is on, the static-value cache and memoization are off. A kept or
+  replayed element was built by an earlier run, maybe from another call site
+  or another version of the program, so its origin would be wrong. Segmented
+  output comes from memo scopes, so it is off too.
+- Origins are weak: a collection drops the entries of elements it swept.
+  Element ids are generational, so a stale entry can never be read for a
+  different element. `Env::reset_stack` clears them, and turning tracing off
+  drops them.
+- An element made some other way (by a native, or by a builtin that copies
+  one with changes) has no origin.
 
 ## See also
 

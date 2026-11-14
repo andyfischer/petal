@@ -3781,4 +3781,22 @@ mod restore_generation_tests {
         let err = env.run_source("let a = [1]\nlet b = [2]\na + b\n").unwrap_err();
         assert!(err.to_string().contains("use ++ to concatenate lists"), "{err}");
     }
+
+    #[test]
+    fn element_origins_are_weak_and_pruned_by_a_collection() {
+        let mut env = Env::new();
+        env.enable_element_trace(true);
+        let program = env.load_program("state keep = <kept />\n[<a />, <b />]\n").unwrap();
+        let stack = env.create_stack(program).unwrap();
+        env.run(stack).unwrap();
+        assert_eq!(env.element_origins().count(), 3);
+        // The returned list is held by nothing once the run is over; the
+        // state slot's element is.
+        let ck = env.stacks.get(&stack).unwrap().context;
+        env.stacks.get_mut(&stack).unwrap().reset_execution();
+        env.collect_garbage(ck);
+        let left: Vec<_> = env.element_origins().map(|(id, _)| id).collect();
+        assert_eq!(left.len(), 1, "only the element in state survives");
+        assert!(env.heap().is_live(Value::Element(left[0])));
+    }
 }

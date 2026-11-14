@@ -680,6 +680,11 @@ pub(super) fn make_vm<'a>(
     let frame = ctx.frame();
     let trace_pending = ctx.trace_pending;
     let trace_emit = ctx.trace_emit;
+    let trace_elements = ctx.trace_elements;
+    // An element a memo replay hands back was built by another call, maybe
+    // from another call site: its recorded origin would be wrong for this
+    // one. Element tracing re-runs every call instead.
+    let memo = memo && !trace_elements;
     // One flag standing for "some per-instruction hook is armed" (see `Vm::hooks`).
     let hooks = trace.enabled || observations.enabled || profile.enabled || spec.is_some();
     // The profiler charges allocations to the line that made them, from the
@@ -714,6 +719,8 @@ pub(super) fn make_vm<'a>(
         segments: &mut ctx.segments,
         trace_emit,
         emit_origins: &mut ctx.emit_origins,
+        trace_elements,
+        element_origins: &mut ctx.element_origins,
         bindings: &mut ctx.bindings,
         binding_revisions: &ctx.binding_revisions,
         counters: &mut ctx.counters,

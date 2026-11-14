@@ -132,6 +132,8 @@ impl Env {
         // Sweep phase — both stores, now that the joint mark has settled.
         closures.sweep();
         heap.sweep();
+        // Element origins are weak: drop the swept elements' entries.
+        ctx.prune_element_origins();
         if let Some(t) = started {
             let elapsed = t.elapsed();
             self.profile.record_gc(elapsed);

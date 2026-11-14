@@ -140,6 +140,14 @@ pub struct Vm<'a> {
     /// while `trace_emit` is on. See
     /// [`crate::execution_context::ExecutionContext::emit_origins`].
     pub emit_origins: &'a mut HashMap<SymbolId, Vec<crate::execution_context::EmitSite>>,
+    /// Whether each `AllocElement` records where it was built (copied from the
+    /// owning `ExecutionContext`). See
+    /// [`crate::execution_context::ExecutionContext::element_origins`].
+    pub trace_elements: bool,
+    /// The owning context's element origins, written while `trace_elements`
+    /// is on.
+    pub element_origins:
+        &'a mut HashMap<crate::heap::ElementId, crate::execution_context::ElementOrigin>,
     pub bindings: &'a mut HashMap<SymbolId, Value>,
     pub binding_revisions: &'a HashMap<SymbolId, u64>,
     pub counters: &'a mut HashMap<SymbolId, u64>,

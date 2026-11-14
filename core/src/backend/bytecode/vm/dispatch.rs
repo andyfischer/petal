@@ -284,6 +284,9 @@ impl<'a> Vm<'a> {
                 let v = ops::alloc_element(self.program, self.heap, *tag, prop_keys, &inputs);
                 self.give_args(inputs);
                 let v = v?;
+                if self.trace_elements {
+                    self.note_element_origin(v, origin);
+                }
                 self.set(fi, *dst, v);
             }
             Inst::MakeEnumVariant { dst, name, fields } => {

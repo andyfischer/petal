@@ -282,7 +282,7 @@ const TUNABLE: &str = "tunable";
 /// number — or `None` when `id` is not a constant. The generic counterpart of
 /// [`literal_at`], for arguments a drag doesn't cover but a goal-based edit
 /// does: strings, bools, `nil`.
-pub(crate) fn constant_at(program: &Program, id: TermId) -> Option<StaticValue> {
+pub fn constant_at(program: &Program, id: TermId) -> Option<StaticValue> {
     if let Some(lit) = literal_at(program, id) {
         return Some(if lit.is_int {
             StaticValue::Int(lit.value as i64)
@@ -304,7 +304,7 @@ pub(crate) fn constant_at(program: &Program, id: TermId) -> Option<StaticValue> 
 }
 
 /// The numeric literal `id` denotes, or `None`.
-pub(crate) fn literal_at(program: &Program, id: TermId) -> Option<Literal> {
+pub fn literal_at(program: &Program, id: TermId) -> Option<Literal> {
     let t = program.terms.get(id.0 as usize)?;
     match t.op {
         TermOp::Constant(c) => {
@@ -529,4 +529,376 @@ mod tests {
         let program = env.get_program(pid).unwrap();
         assert!(CallSite::resolve(program, TermId(u32::MAX)).is_none());
     }
+}
+
+// ── Elements and value traces ──────────────────────────────────────────
+//
+// The readers of an [`ElementOrigin`](crate::execution_context::ElementOrigin):
+// from the `AllocElement` term that built an element to the term each prop
+// came from, and from there back through plain data flow to the literal (if
+// any) the value was copied from unchanged.
+
+/// The input term of prop `prop` on the element literal `element_term` (an
+/// `AllocElement`), or `None` when the term is not an element literal or the
+/// literal does not write that prop.
+pub fn element_prop_term(program: &Program, element_term: TermId, prop: &str) -> Option<TermId> {
+    let t = program.terms.get(element_term.0 as usize)?;
+    let TermOp::AllocElement { prop_keys, .. } = &t.op else {
+        return None;
+    };
+    // A prop written twice keeps its last value, as `alloc_element` does.
+    let i = prop_keys
+        .iter()
+        .rposition(|k| string_constant(program, *k).as_deref() == Some(prop))?;
+    t.inputs.get(i).copied()
+}
+
+/// The props an element literal writes, in source order, each with its input
+/// term. Empty when `element_term` is not an `AllocElement`.
+pub fn element_prop_terms(program: &Program, element_term: TermId) -> Vec<(String, TermId)> {
+    let Some(t) = program.terms.get(element_term.0 as usize) else {
+        return Vec::new();
+    };
+    let TermOp::AllocElement { prop_keys, .. } = &t.op else {
+        return Vec::new();
+    };
+    prop_keys
+        .iter()
+        .zip(t.inputs.iter())
+        .filter_map(|(k, i)| Some((string_constant(program, *k)?, *i)))
+        .collect()
+}
+
+/// The input terms of an element literal's children, in source order (a
+/// `{…}` hole is one child term whatever it evaluates to). Empty when
+/// `element_term` is not an `AllocElement`.
+pub fn element_child_terms(program: &Program, element_term: TermId) -> &[TermId] {
+    let Some(t) = program.terms.get(element_term.0 as usize) else {
+        return &[];
+    };
+    match &t.op {
+        TermOp::AllocElement { prop_keys, .. } => t.inputs.get(prop_keys.len()..).unwrap_or(&[]),
+        _ => &[],
+    }
+}
+
+/// The function whose body `term` is in (through nested blocks), or `None`
+/// for top-level code.
+pub fn enclosing_function(program: &Program, term: TermId) -> Option<crate::program::FunctionId> {
+    let mut block = program.terms.get(term.0 as usize)?.block_id;
+    for _ in 0..256 {
+        if let Some(f) = program.functions.iter().find(|f| f.body_block == block) {
+            return Some(f.id);
+        }
+        let parent = program.blocks.iter().find(|b| b.id == block)?.parent_term_id?;
+        block = program.terms.get(parent.0 as usize)?.block_id;
+    }
+    None
+}
+
+/// One step a [`trace_value`] walk took.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TraceHop {
+    /// An identity: a name reference (`Copy`) or `tunable(x)`.
+    Alias { from: TermId, to: TermId },
+    /// A function parameter, resolved to the argument the call in the chain
+    /// passed for it.
+    Param { param: TermId, call: TermId, arg: TermId },
+    /// A captured variable, resolved to the value its closure captured.
+    Capture { capture: TermId, closure: TermId, value: TermId },
+    /// A field read of a record literal (`r.x` where `r = {x: …}`).
+    Field { read: TermId, record: TermId, field: String, value: TermId },
+    /// An index read of a list literal with a constant index.
+    Index { read: TermId, list: TermId, index: usize, value: TermId },
+}
+
+/// Where a [`trace_value`] walk stopped.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TraceEnd {
+    /// A constant written in the source: a number, string, bool or `nil`.
+    /// The value flows unchanged from it, so editing it edits the value.
+    Constant(StaticValue),
+    /// A record, list or element literal (`AllocMap`, `AllocMapSpread`,
+    /// `AllocList`, `AllocElement`). The value is that literal's.
+    Literal,
+    /// Anything else: arithmetic, a call result, a loop variable, a `Phi`, a
+    /// parameter whose call is not in the chain.
+    Computed,
+}
+
+/// The result of [`trace_value`]: how a value reached the term it was read
+/// at, back through plain data flow.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValueTrace {
+    /// The term the walk started at.
+    pub start: TermId,
+    /// The term it stopped at: the literal, or the first term it could not
+    /// see through.
+    pub end: TermId,
+    /// The call chain in effect at [`end`](Self::end), innermost first (a
+    /// suffix of the chain the walk was given), or `None` when a captured
+    /// variable led out of every frame on the chain.
+    pub end_chain: Option<Vec<TermId>>,
+    /// Every step taken, in walk order.
+    pub hops: Vec<TraceHop>,
+    pub end_kind: TraceEnd,
+}
+
+impl ValueTrace {
+    /// The value is a constant written right at the start term.
+    pub fn is_direct(&self) -> bool {
+        self.hops.is_empty() && matches!(self.end_kind, TraceEnd::Constant(_))
+    }
+
+    /// The constant the value flows from unchanged, if it does.
+    pub fn constant(&self) -> Option<&StaticValue> {
+        match &self.end_kind {
+            TraceEnd::Constant(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Whether the walk passed a function parameter: the literal is at a call
+    /// site, so editing it changes only what that call built.
+    pub fn crosses_call(&self) -> bool {
+        self.hops.iter().any(|h| matches!(h, TraceHop::Param { .. }))
+    }
+}
+
+/// How many steps [`trace_value`] takes before giving up.
+const MAX_TRACE_HOPS: usize = 64;
+
+/// Follow `term`'s value back through plain data flow to where it was
+/// written: through name references, `tunable(x)`, the parameters of the
+/// calls in `chain` (the call site of each enclosing frame, innermost first,
+/// as an [`ElementOrigin`](crate::execution_context::ElementOrigin) or an
+/// [`EmitSite`](crate::execution_context::EmitSite) past its leaf records),
+/// captured variables, and field and constant-index reads of record and list
+/// literals.
+///
+/// It stops at a constant ([`TraceEnd::Constant`]: the value flows unchanged
+/// from that literal), at a record, list or element literal
+/// ([`TraceEnd::Literal`]), or at the first term it cannot see through
+/// ([`TraceEnd::Computed`]). It does not follow a `Phi` (the value depends on
+/// control flow), a loop variable, a `state` slot, or a parameter of a call
+/// made by a higher-order builtin (`map`'s callback): none of those is one
+/// literal's value.
+///
+/// Static and sound for the run the chain was recorded in: the chain says
+/// which call supplied each parameter, so a helper called twice traces to two
+/// different literals.
+pub fn trace_value(program: &Program, term: TermId, chain: &[TermId]) -> ValueTrace {
+    let mut hops = Vec::new();
+    let (end, ctx) = walk_value(program, term, Some(0), chain, &mut hops, 0);
+    let end_kind = match program.terms.get(end.0 as usize).map(|t| &t.op) {
+        Some(TermOp::AllocMap { .. } | TermOp::AllocMapSpread { .. } | TermOp::AllocList | TermOp::AllocElement { .. }) => {
+            TraceEnd::Literal
+        }
+        _ => match constant_at(program, end) {
+            Some(v) => TraceEnd::Constant(v),
+            None => TraceEnd::Computed,
+        },
+    };
+    ValueTrace {
+        start: term,
+        end,
+        end_chain: ctx.map(|i| chain.get(i..).unwrap_or(&[]).to_vec()),
+        hops,
+        end_kind,
+    }
+}
+
+/// One walk of [`trace_value`]: returns the term it stopped at and the chain
+/// position in effect there. `ctx = Some(i)` means `chain[i]` called the
+/// function the current term is in (past the end: top-level code).
+fn walk_value(
+    program: &Program,
+    mut cur: TermId,
+    mut ctx: Option<usize>,
+    chain: &[TermId],
+    hops: &mut Vec<TraceHop>,
+    depth: usize,
+) -> (TermId, Option<usize>) {
+    for _ in 0..MAX_TRACE_HOPS {
+        if depth > 8 {
+            break;
+        }
+        let Some(t) = program.terms.get(cur.0 as usize) else { break };
+        match &t.op {
+            TermOp::Copy if !t.inputs.is_empty() => {
+                hops.push(TraceHop::Alias { from: cur, to: t.inputs[0] });
+                cur = t.inputs[0];
+            }
+            TermOp::BuiltinCall(name)
+                if string_constant(program, *name).as_deref() == Some(TUNABLE) && !t.inputs.is_empty() =>
+            {
+                hops.push(TraceHop::Alias { from: cur, to: t.inputs[0] });
+                cur = t.inputs[0];
+            }
+            TermOp::Copy => {
+                // A binding phantom: a parameter or a capture of the function
+                // whose body it is in.
+                let Some(f) = program.functions.iter().find(|f| f.body_block == t.block_id) else {
+                    break;
+                };
+                let name = t.name.as_deref();
+                if let Some(k) = name.and_then(|n| f.params.iter().position(|p| p == n)) {
+                    let Some(i) = ctx else { break };
+                    let Some(&call) = chain.get(i) else { break };
+                    let Some(arg) = call_arg_for_param(program, call, &f.params, k) else {
+                        break;
+                    };
+                    hops.push(TraceHop::Param { param: cur, call, arg });
+                    cur = arg;
+                    ctx = Some(i + 1);
+                } else if let Some(s) = f
+                    .capture_registers
+                    .iter()
+                    .position(|r| *r == t.register)
+                    .or_else(|| name.and_then(|n| f.capture_names.iter().position(|c| c == n)))
+                {
+                    // Only a closure made at one place has one captured value.
+                    let mut makers = program
+                        .terms
+                        .iter()
+                        .filter(|m| matches!(m.op, TermOp::MakeClosure(id) if id == f.id));
+                    let (Some(maker), None) = (makers.next(), makers.next()) else { break };
+                    let Some(&value) = maker.inputs.get(s) else { break };
+                    hops.push(TraceHop::Capture { capture: cur, closure: maker.id, value });
+                    ctx = ctx.and_then(|i| context_of(program, maker.id, chain, i));
+                    cur = value;
+                } else {
+                    break;
+                }
+            }
+            TermOp::GetField(field) => {
+                let Some(field) = string_constant(program, *field) else { break };
+                let Some(&obj) = t.inputs.first() else { break };
+                let mut sub = Vec::new();
+                let (rec, rctx) = walk_value(program, obj, ctx, chain, &mut sub, depth + 1);
+                let Some(value) = record_field(program, rec, &field) else { break };
+                hops.extend(sub);
+                hops.push(TraceHop::Field { read: cur, record: rec, field, value });
+                cur = value;
+                ctx = rctx;
+            }
+            TermOp::GetIndex => {
+                let (Some(&obj), Some(&ix)) = (t.inputs.first(), t.inputs.get(1)) else { break };
+                let Some(StaticValue::Int(index)) = constant_at(program, ix) else { break };
+                let Ok(index) = usize::try_from(index) else { break };
+                let mut sub = Vec::new();
+                let (list, lctx) = walk_value(program, obj, ctx, chain, &mut sub, depth + 1);
+                let Some(lt) = program.terms.get(list.0 as usize) else { break };
+                if !matches!(lt.op, TermOp::AllocList) {
+                    break;
+                }
+                let Some(&value) = lt.inputs.get(index) else { break };
+                hops.extend(sub);
+                hops.push(TraceHop::Index { read: cur, list, index, value });
+                cur = value;
+                ctx = lctx;
+            }
+            _ => break,
+        }
+    }
+    (cur, ctx)
+}
+
+/// The input of record literal `rec` for field `field`, when it is plainly
+/// there: a named field of an `AllocMap`, or of an `AllocMapSpread` with no
+/// spread after it.
+fn record_field(program: &Program, rec: TermId, field: &str) -> Option<TermId> {
+    let t = program.terms.get(rec.0 as usize)?;
+    match &t.op {
+        TermOp::AllocMap { fields, .. } => {
+            let i = fields
+                .iter()
+                .rposition(|k| string_constant(program, *k).as_deref() == Some(field))?;
+            t.inputs.get(i).copied()
+        }
+        TermOp::AllocMapSpread { entries } => {
+            let mut found = None;
+            for e in entries {
+                match e {
+                    crate::program::MapSpreadEntry::Spread(_) => found = None,
+                    crate::program::MapSpreadEntry::Named(k, i) => {
+                        if string_constant(program, *k).as_deref() == Some(field) {
+                            found = t.inputs.get(*i).copied();
+                        }
+                    }
+                }
+            }
+            found
+        }
+        _ => None,
+    }
+}
+
+/// The argument `call` passes for parameter `k` (of `params`), when `call` is
+/// a direct `Call` that passes it: positionally, or by name.
+fn call_arg_for_param(program: &Program, call: TermId, params: &[String], k: usize) -> Option<TermId> {
+    let t = program.terms.get(call.0 as usize)?;
+    if !matches!(t.op, TermOp::Call) {
+        return None;
+    }
+    let args = t.inputs.get(1..)?;
+    if t.arg_names.is_empty() {
+        return args.get(k).copied();
+    }
+    let want = params.get(k)?;
+    let mut positional = 0;
+    for (arg, name) in args.iter().zip(t.arg_names.iter()) {
+        match name {
+            Some(c) => {
+                if string_constant(program, *c).as_deref() == Some(want.as_str()) {
+                    return Some(*arg);
+                }
+            }
+            None => {
+                if positional == k {
+                    return Some(*arg);
+                }
+                positional += 1;
+            }
+        }
+    }
+    None
+}
+
+/// The chain position in effect for code at `term` (in function `G`, or
+/// top level), searching outward from position `from`: the frame of `G` is
+/// the one whose call site follows a call made from inside `G`.
+fn context_of(program: &Program, term: TermId, chain: &[TermId], from: usize) -> Option<usize> {
+    let Some(g) = enclosing_function(program, term) else {
+        return Some(chain.len());
+    };
+    (from..chain.len())
+        .find(|&j| enclosing_function(program, chain[j]) == Some(g))
+        .map(|j| j + 1)
+}
+
+/// The text of source file `file` of `program`, and its display name: the
+/// file table's entry, or, for a single-file program (whose table is empty),
+/// the program's own source as file 0, the entry file.
+pub fn file_source(program: &Program, file: FileId) -> Option<(&str, &str)> {
+    if let Some(f) = program.source_map.files.get(file.0 as usize) {
+        return Some((&f.source, &f.name));
+    }
+    (file.0 == 0 && !program.source.is_empty()).then_some((program.source.as_str(), ""))
+}
+
+/// The source text `span` covers. Span offsets count characters, so this is
+/// right for a file that is not ASCII too.
+pub fn span_text(program: &Program, span: &SourceSpan) -> Option<String> {
+    let (source, _) = file_source(program, span.file)?;
+    let (start, end) = (span.start.offset as usize, span.end.offset as usize);
+    if source.is_ascii() {
+        return source.get(start..end).map(str::to_string);
+    }
+    Some(source.chars().skip(start).take(end.saturating_sub(start)).collect())
+}
+
+/// The source text of term `term`, when it has a span.
+pub fn term_text(program: &Program, term: TermId) -> Option<String> {
+    span_text(program, program.source_map.get(term)?)
 }

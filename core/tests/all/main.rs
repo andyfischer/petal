@@ -31,6 +31,7 @@ mod dm_solve;
 mod dm_spec;
 mod drop_edit;
 mod element_edits;
+mod element_origins;
 mod element_paths;
 mod endless_edits;
 mod enum_methods;

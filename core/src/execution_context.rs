@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use crate::closure_table::ClosureTable;
-use crate::heap::Heap;
+use crate::heap::{ElementId, Heap};
 use crate::output_segments::{SegChannel, SegChannels, SegmentedFrame, flatten_buffer};
 use crate::program::TermId;
 use crate::resource_table::ResourceTable;
@@ -96,6 +96,19 @@ pub struct ExecutionContext {
     /// resolution lazy — done off the recorded ids, not at emit time — is why
     /// the on-cost here is one short id list per emit.
     pub emit_origins: HashMap<SymbolId, Vec<EmitSite>>,
+    /// Whether [`element_origins`](Self::element_origins) records. Off by
+    /// default; a host turns it on with
+    /// [`enable_element_trace`](Self::enable_element_trace). When off, building
+    /// an element pays one bool check.
+    pub trace_elements: bool,
+    /// Where each element built while [`trace_elements`](Self::trace_elements)
+    /// was on came from: the `AllocElement` term that built it and the call
+    /// chain that reached it. See [`ElementOrigin`].
+    ///
+    /// Weak: the map is not a GC root, and a collection drops the entries of
+    /// elements it swept. Element ids are generational, so an entry can never
+    /// be read back for a different element that reused the slot.
+    pub element_origins: HashMap<ElementId, ElementOrigin>,
     /// The expectations (`expect`, `expect_eq`, `expect_near`) evaluated in
     /// this context: the failures recorded since the host last took them.
     /// See [`crate::expect`].
@@ -126,6 +139,39 @@ impl EmitSite {
     }
 }
 
+/// ElementOrigin - Where one element value was built: its construction site
+/// and the call path that reached it.
+///
+/// `term` is the `AllocElement` term (an element literal `<tag …>` in the
+/// source); `chain` is the call site of each enclosing frame, innermost first,
+/// ending at the outermost call the run made (the root code has no call site).
+/// It is shaped like the chain an [`EmitSite`] records past its leaf, so the
+/// same readers apply: [`crate::provenance::pick_frame`] picks the frame in a given
+/// file, and [`crate::provenance::trace_value`] resolves a prop's input term
+/// through the parameters of exactly these calls.
+///
+/// Entry `i` is the call that created the `i`-th frame from the top, always:
+/// a callback run by a higher-order builtin (`items.map(fn(x) -> <a/>)`) has
+/// the builtin's call (`map`) as its call site. (An [`EmitSite`] chain skips
+/// such frames instead.) A `for` loop pushes no frame,
+/// so every iteration of a loop body records the same origin; telling them
+/// apart is the caller's business (position in the output, an `id=` prop).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ElementOrigin {
+    /// The `AllocElement` term that built the element.
+    pub term: TermId,
+    /// The call sites of the enclosing frames, innermost first.
+    pub chain: smallvec::SmallVec<[TermId; 4]>,
+}
+
+impl ElementOrigin {
+    /// The construction site followed by the call chain, innermost first: the
+    /// shape [`EmitSite::chain`] and [`crate::provenance::pick_frame`] use.
+    pub fn full_chain(&self) -> smallvec::SmallVec<[TermId; 5]> {
+        std::iter::once(self.term).chain(self.chain.iter().copied()).collect()
+    }
+}
+
 impl ExecutionContext {
     pub fn new() -> Self {
         Self {
@@ -146,6 +192,8 @@ impl ExecutionContext {
             absorption_log: Vec::new(),
             trace_emit: false,
             emit_origins: HashMap::new(),
+            trace_elements: false,
+            element_origins: HashMap::new(),
             expects: Default::default(),
         }
     }
@@ -206,6 +254,10 @@ impl ExecutionContext {
             // or the two would be misaligned from the first push.
             trace_emit: self.trace_emit,
             emit_origins: HashMap::new(),
+            // The heap is cloned, so every pre-fork element id resolves in the
+            // fork too: its origin goes with it.
+            trace_elements: self.trace_elements,
+            element_origins: self.element_origins.clone(),
             expects: Default::default(),
         }
     }
@@ -244,6 +296,33 @@ impl ExecutionContext {
         if !on {
             self.emit_origins.clear();
         }
+    }
+
+    /// Turn element-origin tracing on or off (see
+    /// [`element_origins`](Self::element_origins)). Turning it off drops what
+    /// was recorded.
+    pub fn enable_element_trace(&mut self, on: bool) {
+        self.trace_elements = on;
+        if !on {
+            self.element_origins.clear();
+        }
+    }
+
+    /// Where `id` was built, if it was built while element tracing was on and
+    /// is still live (or was not collected yet).
+    pub fn element_origin(&self, id: ElementId) -> Option<&ElementOrigin> {
+        self.element_origins.get(&id)
+    }
+
+    /// Drop the origins of elements a collection swept. Called after every
+    /// sweep; free when nothing is recorded.
+    pub(crate) fn prune_element_origins(&mut self) {
+        if self.element_origins.is_empty() {
+            return;
+        }
+        let heap = &self.heap;
+        self.element_origins
+            .retain(|id, _| heap.is_live(Value::Element(*id)));
     }
 
     /// Clear the per-frame absorption state at the start of a frame: empty the

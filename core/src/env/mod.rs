@@ -567,7 +567,14 @@ impl Env {
         // Observations it reports itself, from what each segment observed
         // when it last executed (`crate::static_cache`, "Observations").
         let audited = self.static_audit.enabled && !self.static_audit.keeps_static_values();
-        if flags.preserve_trace || audited {
+        // A value the cache keeps was built by an earlier run (or an earlier
+        // lowering, across a reload): element tracing wants every element of
+        // this run built by this run, so its origin names this program's terms.
+        let elements_traced = self
+            .contexts
+            .get(&self.default_context)
+            .is_some_and(|c| c.trace_elements);
+        if flags.preserve_trace || audited || elements_traced {
             flags.static_cache = false;
         }
         flags
@@ -1881,6 +1888,9 @@ impl Env {
         // The cross-frame resource table itself is kept.
         if let Some(ctx) = self.contexts.get_mut(&ck) {
             ctx.reset_frame_absorption();
+            // Element origins describe one run's elements, like the emit
+            // origins a host drains per frame.
+            ctx.element_origins.clear();
         }
 
         Ok(())
@@ -1930,6 +1940,66 @@ impl Env {
             }
         }
         self.ctx_mut(ck).enable_emit_trace(on);
+    }
+
+    /// Turn element-origin tracing on or off for the default context (see
+    /// [`ExecutionContext::element_origins`](crate::execution_context::ExecutionContext::element_origins)).
+    ///
+    /// While it is on, every element a run builds records the term that built
+    /// it and the call chain that reached it, read back with
+    /// [`element_origin`](Self::element_origin). It is how a host maps an
+    /// element it received (in an output buffer, a return value, a binding)
+    /// back to the source that made it. Off by default; when off, building an
+    /// element pays one bool check.
+    ///
+    /// While it is on, the static-value cache and memoization are off, so
+    /// every element the run hands out was built by that run: a kept or
+    /// replayed value would carry the origin of the run (and call site, and
+    /// program) that first built it. Turning it off drops what was recorded.
+    pub fn enable_element_trace(&mut self, on: bool) {
+        let ck = self.default_context;
+        self.ctx_mut(ck).enable_element_trace(on);
+    }
+
+    /// Whether element tracing is on for the default context.
+    pub fn element_trace_enabled(&self) -> bool {
+        self.ctx(self.default_context).trace_elements
+    }
+
+    /// Where element `id` was built, if element tracing was on when it was
+    /// (see [`enable_element_trace`](Self::enable_element_trace)). Resolve
+    /// [`ElementOrigin::term`](crate::execution_context::ElementOrigin::term)
+    /// through the program's source map for its span, and a prop's input
+    /// through [`crate::provenance::element_prop_term`] and
+    /// [`crate::provenance::trace_value`].
+    pub fn element_origin(
+        &self,
+        id: crate::heap::ElementId,
+    ) -> Option<&crate::execution_context::ElementOrigin> {
+        self.ctx(self.default_context).element_origin(id)
+    }
+
+    /// Every recorded element origin of the default context, in no particular
+    /// order. Includes elements of earlier runs that no collection has swept
+    /// yet, until [`reset_stack`](Self::reset_stack) clears them.
+    pub fn element_origins(
+        &self,
+    ) -> impl Iterator<Item = (crate::heap::ElementId, &crate::execution_context::ElementOrigin)> {
+        self.ctx(self.default_context)
+            .element_origins
+            .iter()
+            .map(|(id, o)| (*id, o))
+    }
+
+    /// How many recorded elements were built at construction site `term`, by
+    /// any call chain: the site's fan-out. One means editing the site changes
+    /// only that element.
+    pub fn element_site_count(&self, term: crate::program::TermId) -> usize {
+        self.ctx(self.default_context)
+            .element_origins
+            .values()
+            .filter(|o| o.term == term)
+            .count()
     }
 
     /// Whether emit tracing is on for the default context.

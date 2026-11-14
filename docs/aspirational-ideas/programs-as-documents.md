@@ -244,6 +244,12 @@ Insertion needs a template: the new entry's source text. It comes from the
 vocabulary (a default element), from a copied sibling, or from the
 clipboard.
 
+Built: `programs_as_documents::resolve_structure` takes `Reorder`, `Move`
+(also between parents, such as into or out of a `<group>`), `Insert`,
+`Remove` and `Duplicate`, traces each element of the parent to a literal's
+entry, a data list's item or a locked segment (`sibling_entries`), edits the
+entries with Petal's path edits, and verifies by rerun.
+
 ### Identity across runs
 
 Outcome edits need outputs to keep their identity from one run to the next:
@@ -257,6 +263,9 @@ of preference:
 
 Applications should write ids when they create elements, so a document made
 in the GUI stays easy to address after hand edits.
+`StructureOptions::write_ids` does this for inserted, duplicated and
+pasted elements; a duplicate or paste of an element with an id gets a fresh
+one.
 
 ### Copy and paste
 
@@ -272,6 +281,11 @@ Free-variable analysis of the copied span gives three options per reference:
 
 petal-design copies node source today (`copy_nodes`). Pasting into a
 different document is where this matters.
+
+Built: `programs_as_documents::copy` and `paste`, with `PasteRef::{CopyAsSource,
+CopyAsValue, Rebind}` per reference. By default a name the target binds the
+same way is kept, a constant is copied as its value, and anything else is
+refused with a reason naming the reference.
 
 ## Part 2: A schema for documents
 
@@ -434,6 +448,8 @@ petal-creative it is the rule.
 | `editable_literal(source, name)` with reasons | schema levels | done: `programs_as_documents::editable_literal` |
 | Goals that write expressions and named arguments | reference edits; tokens | text splices in petal-design |
 | Goals into element children | structure edits | done in Petal: [edit paths](../features/edit-paths.md) and path goals; petal-creative still uses `edit_in_place` lift-and-splice |
+| Structural intents by outcome (reorder, move, insert, remove, duplicate) | structure edits | done: `resolve_structure` in `core-libs/programs-as-documents` (list literals, element children, data lists read by `map`/`for`, concatenation segments) |
+| Copy and paste with free-variable analysis | copy and paste | done: `copy` / `paste` in `core-libs/programs-as-documents` |
 | `StaticValue::from_value` | concretize ("write out as source") | done in core |
 | An `entry` scope selector for direct manipulation | step 4 | done: `ParamSelector::EntryFile` (`entry-file`) |
 | Direct-manipulation goals on an element's props | step 4 | done: `Observable::Element { term, occurrence, path }` (no probe native), `ObsValue::Element` |

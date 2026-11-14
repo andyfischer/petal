@@ -23,6 +23,13 @@
 //!   ([`scope`]: the shared literal, the data entry, a host override), a
 //!   direct-manipulation solve ([`solve`]), and with consent writing the
 //!   output out as source ([`concretize`]).
+//! - [`StructureIntent`] / [`resolve_structure`]: structural edits by
+//!   outcome (reorder, move between parents, insert, remove, duplicate),
+//!   resolved to the entries of the document's list and element literals or
+//!   to the data list a `map`/`for` reads ([`structure`], [`entries`]).
+//! - [`copy`] / [`paste`]: an output element as source text with its free
+//!   references, pasted into the same or another document with each
+//!   reference copied as source, as a value, or rebound ([`clipboard`]).
 //! - [`editable_literal`]: whether a top-level binding is a literal the
 //!   application can write into ([`editable`]).
 //!
@@ -32,8 +39,10 @@
 //! dependency of a host: an embedder that does not edit documents leaves
 //! this crate out.
 
+pub mod clipboard;
 pub mod concretize;
 pub mod editable;
+pub mod entries;
 pub mod intent;
 pub mod output_map;
 pub mod run;
@@ -41,6 +50,7 @@ pub mod scope;
 pub mod session;
 pub mod solve;
 pub mod splice;
+pub mod structure;
 
 pub use editable::{NotEditable, editable_literal};
 pub use concretize::{Concretized, concretize};
@@ -54,6 +64,12 @@ pub use output_map::{
 };
 pub use run::{DocumentRun, OutputSource, Runner};
 pub use session::DocumentSession;
+pub use structure::{
+    EntrySource, Parent, Place, SiblingEntry, StructureIntent, StructureOptions, Template, parent_of,
+    resolve_structure, sibling_entries, siblings,
+};
+pub use clipboard::{Clip, ClipBinding, ClipSource, FreeRef, PasteOptions, PasteRef, PreparedPaste, RefKind, RefUse, copy, copy_text, paste, prepare_paste};
+pub use entries::{Container, ContainerKind};
 
 /// An open document: its session, how to run it, and its latest run.
 pub struct Document {
@@ -104,6 +120,41 @@ impl Document {
             self.session.commit(edit.source.clone(), key);
         }
         res
+    }
+
+    /// Resolve a structural intent ([`StructureIntent`]) against the
+    /// current source and commit it as one undo step when it resolves to an
+    /// edit.
+    pub fn apply_structure(&mut self, intent: &StructureIntent, opts: &StructureOptions, key: Option<&str>) -> Resolution {
+        let runner = self.runner.clone();
+        let res = match self.run() {
+            Ok(run) => resolve_structure(&runner, run, intent, opts),
+            Err(e) => return Resolution::Refused { reason: format!("the document does not run: {e}") },
+        };
+        if let Resolution::Edit(edit) = &res {
+            self.session.commit(edit.source.clone(), key);
+        }
+        res
+    }
+
+    /// Paste `clip` at `at` and commit it as one undo step when it
+    /// resolves.
+    pub fn paste(&mut self, clip: &Clip, at: Place, opts: &PasteOptions) -> Resolution {
+        let runner = self.runner.clone();
+        let res = match self.run() {
+            Ok(run) => paste(&runner, run, clip, at, opts),
+            Err(e) => return Resolution::Refused { reason: format!("the document does not run: {e}") },
+        };
+        if let Resolution::Edit(edit) = &res {
+            self.session.commit(edit.source.clone(), None);
+        }
+        res
+    }
+
+    /// Copy output `key` of the current run as source.
+    pub fn copy(&mut self, key: &OutputKey) -> Result<Clip, String> {
+        let run = self.run().map_err(|e| format!("the document does not run: {e}"))?;
+        copy(run, key)
     }
 
     /// Commit an edit the host chose (a [`Choice`]'s), as one undo step.

@@ -83,6 +83,12 @@ pub enum Step {
     Solve,
     /// Step 5: the output written out as source, then edited.
     Concretize,
+    /// A structural edit of the entries of list or element literals the
+    /// outputs are written as ([`crate::structure`]).
+    Entries,
+    /// A structural edit of the data list a `map` or `for` turns into the
+    /// outputs ([`crate::structure`]).
+    DataList,
 }
 
 /// A verified source edit.

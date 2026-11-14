@@ -40,9 +40,14 @@ files. Everything a document saves is written into the `.ptl`.
 | `solve_field(runner, run, node, field, target, hold, allow_other_files)` | Step 4 alone: a DM v2 best-effort request whose goal names the element itself (`Observable::Element`, from the run's element trace), so no probe native is needed. Holds are added only when the first answer moved a held field (best effort's equal split counts literals that reach only a held goal). |
 | `concretize(runner, run, node)` / `concretize_and_apply` | Step 5 alone: replace the innermost call in the document's file whose replacement leaves the result unchanged with the output's literal (`StaticValue::from_value`, keeping field order, int vs float, children; `{r, g, b}` records written back as color literals). |
 | `verify(runner, before, node, intent, new_source)` | Re-run and check the intent holds of the same output, and list any other outputs that changed. |
-| `Document` | A session, a runner and the latest run: `run()`, `apply(intent, key)` (resolve and commit as one undo step), `commit(edit, key)` for an edit the user chose. |
+| `Document` | A session, a runner and the latest run: `run()`, `apply(intent, key)` (resolve and commit as one undo step), `apply_structure(intent, opts, key)`, `copy(key)`, `paste(clip, at, opts)`, `commit(edit, key)` for an edit the user chose. |
+| `StructureIntent` / `resolve_structure(runner, run, intent, opts)` | Structural edits stated against the output: `Reorder { parent, order }`, `Move { target, to: Place }` (within its parent or into another, such as out of a `<group>` or into one), `Insert { at, template }` (`Template::Value` or `Template::Source` text), `Remove`, `Duplicate`. A `Parent` is a list in the result (`Parent::List(path)`, nested lists flattened as a host draws them) or an element's children (`Parent::Children(key)`). Each element of the parent is traced to the source entry that builds it (`sibling_entries`): an entry of a list or element literal in the document (kept text as written: a helper call stays a call, comments stay), an item of a data list a `map`/`each` callback or a `for` loop reads (the data list is edited instead: `Step::DataList`), or `Locked` with a reason (a library's list in another file, so for `concat(LIBRARY, mine)` only the document's segment is edited). Verified by rerun: the parent must read as asked and nothing else may change. |
+| `StructureOptions { write_ids }` | Give new elements (insert, duplicate, paste) an `id=` of their own, so they stay addressable as `OutputKey::Id`. A duplicate of an element with an id always gets a fresh one (`logo-1`); so does a pasted element whose id the target already has. |
+| `copy(run, key)` / `copy_text(source, text)` → `Clip` | An output element as source: its literal, or the call that builds it alone (`card(5)` rather than `<card x={x} />`, which reads a parameter), or the literal of its value when no code builds it alone (a loop). Free-variable analysis lists the document's top-level names the text reads (`FreeRef`: constant, function or computed, each use with its path and static value) and the bindings they reach (`ClipBinding`). |
+| `paste(runner, run, clip, at, opts)` / `prepare_paste` | Insert a clip at a `Place`, in the same document or another, with one `PasteRef` per reference: `CopyAsSource` (bring the binding and what it reads, before the statement the paste lands in, unless the target binds the name differently), `CopyAsValue` (inline the value read at each use: `tok.ink` → `:112233`), `Rebind(name)` (use the target's binding). Default: a name the target binds the same way is kept, a constant is copied as its value, anything else is refused with a reason naming the reference. |
 | `editable_literal(source, name)` | The binding's value when its literal is what the program uses, else `NotEditable::{NotFound, Computed { reason }, RebuiltLater { line }, Parse}`. |
-| `splice::edit_span` | Edit one literal at a span with a path edit, changing only its text (the literal is lifted into a scratch binding and spliced back). |
+| `splice::edit_span` / `splice::lifted` | Edit one literal at a span with path edits, changing only its text (the literal is lifted into a scratch binding and spliced back). |
+| `entries::containers` / `rewrite_entries` | The list and element literals of a source with their entries, and giving one a new sequence of entries (kept, removed, moved, new text) through Petal's style-preserving path edits: the fewest entries move, a removed one takes its line, a new one is laid out like its siblings. |
 
 Only the entry file (the document) is written. An edit whose site is in an
 imported module or package is refused with a reason naming the file.
@@ -59,8 +64,25 @@ imported module or package is refused with a reason naming the file.
   `ResolveOptions::solve` off for a cheap resolve). A solve that changes
   other outputs too is returned as an edit with `also_changes`, or as a
   choice beside an override when the host has one.
-- Structural intents (insert, remove, reorder), reference intents (bind a
-  field to an expression), intents as an undo log.
+- Reference intents (bind a field to an expression), wrap/unwrap as
+  structural intents, intents as an undo log.
+- Structural edits move entry texts with Petal's `move_path`: a comment on
+  the line after an entry moves with it, a comment on its own line above an
+  entry stays where it is. A `{…}` hole among an element's children is not
+  an entry: elements it makes are edited through their data list, or are
+  locked.
+- A data list is recognized only when the `map`/`each`/`for` reads a list
+  literal directly (through names); a filtered or sorted list is locked with
+  the reason. Several elements built per data item, or a filtered loop, make
+  the iteration count disagree with the entry, and the rerun refuses.
+- A reorder across two of the document's lists (`xs ++ ys`) is refused with
+  a reason; a `Move` carries the entry's text into the other list.
+- An edit of an element literal that builds several outputs (a helper's
+  `<box>` children) changes them all; the rerun sees that and refuses,
+  rather than offering it as a choice.
+- Free-variable analysis is syntactic: a name bound anywhere inside the
+  copied text counts as bound throughout it, and names the document does not
+  bind at top level (builtins, imports) are left as written.
 - Loop iterations share one origin in petal's trace, so they are told apart
   by occurrence order; an inserted iteration renumbers the ones after it.
   Write `id=` props.

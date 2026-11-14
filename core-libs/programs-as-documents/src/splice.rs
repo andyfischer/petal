@@ -40,22 +40,36 @@ pub fn byte_range(source: &str, span: &SourceSpan) -> Option<std::ops::Range<usi
 /// Apply `edit` to the literal written at `span` of `source` (the span's file
 /// must be `source`), changing only that literal's text.
 pub fn edit_span(source: &str, span: &SourceSpan, edit: LiteralEdit<'_>) -> Result<String, String> {
+    lifted(source, span, |scratch, root| {
+        match edit {
+            LiteralEdit::Set { path, value } => set_path(scratch, &format!("{root}{path}"), value),
+            LiteralEdit::Remove { path } => remove_path(scratch, &format!("{root}{path}")),
+        }
+        .map_err(|e| e.message)
+    })
+}
+
+/// Edit the literal written at `span` of `source` as the value of a scratch
+/// binding, and splice the edited text back, so only that literal's text
+/// changes.
+///
+/// `edit` gets the scratch source and the path text of the literal in it
+/// (`__programs_as_documents_literal[0]`): it applies any path edits of
+/// [`petal::literal_edit`] under that root and returns the edited scratch.
+/// The literal is lifted at its own column, so the lines of a multi-line
+/// literal keep their indentation.
+pub fn lifted(
+    source: &str,
+    span: &SourceSpan,
+    edit: impl FnOnce(&str, &str) -> Result<String, String>,
+) -> Result<String, String> {
     let range = byte_range(source, span).ok_or("the literal's position is outside the source")?;
     let text = &source[range.clone()];
-    let line_start = source[..range.start].rfind('\n').map_or(0, |i| i + 1);
-    let before = &source[line_start..range.start];
-    // Lift at the same column, so a multi-line literal's inner lines keep
-    // their indentation relative to its first line.
-    let indent: String =
-        if before.chars().all(char::is_whitespace) { before.to_string() } else { " ".repeat(before.chars().count()) };
+    let indent = column_indent(source, range.start);
     let head = format!("let {SCRATCH} = [\n{indent}");
     let tail = ",\n]\n";
     let scratch = format!("{head}{text}{tail}");
-    let edited = match edit {
-        LiteralEdit::Set { path, value } => set_path(&scratch, &format!("{SCRATCH}[0]{path}"), value),
-        LiteralEdit::Remove { path } => remove_path(&scratch, &format!("{SCRATCH}[0]{path}")),
-    }
-    .map_err(|e| e.message)?;
+    let edited = edit(&scratch, &format!("{SCRATCH}[0]"))?;
     let new_text = edited
         .strip_prefix(&head)
         .and_then(|t| t.strip_suffix(tail))
@@ -65,4 +79,47 @@ pub fn edit_span(source: &str, span: &SourceSpan, edit: LiteralEdit<'_>) -> Resu
     out.push_str(new_text);
     out.push_str(&source[range.end..]);
     Ok(out)
+}
+
+/// The text that puts a literal starting at byte `at` at its column: the
+/// line's own indentation when only whitespace comes before it on its line,
+/// else as many spaces as there are characters before it.
+pub fn column_indent(source: &str, at: usize) -> String {
+    let line_start = source[..at].rfind('\n').map_or(0, |i| i + 1);
+    let before = &source[line_start..at];
+    if before.chars().all(char::is_whitespace) { before.to_string() } else { " ".repeat(before.chars().count()) }
+}
+
+/// The leading whitespace of the line byte `at` is on.
+pub fn line_indent(source: &str, at: usize) -> String {
+    let line_start = source[..at].rfind('\n').map_or(0, |i| i + 1);
+    source[line_start..].chars().take_while(|c| *c == ' ' || *c == '\t').collect()
+}
+
+/// `text` (a value's source, whose first line started at a line indented by
+/// `indent`) with its later lines made relative to its first: `indent`
+/// stripped from each.
+pub fn dedent(text: &str, indent: &str) -> String {
+    let mut lines = text.split('\n');
+    let mut out = lines.next().unwrap_or("").to_string();
+    for line in lines {
+        out.push('\n');
+        out.push_str(line.strip_prefix(indent).unwrap_or(line.trim_start()));
+    }
+    out
+}
+
+/// [`dedent`]ed `text` placed at a line indented by `indent`: each later line
+/// gets `indent` in front (blank lines stay blank).
+pub fn reindent(text: &str, indent: &str) -> String {
+    let mut lines = text.split('\n');
+    let mut out = lines.next().unwrap_or("").to_string();
+    for line in lines {
+        out.push('\n');
+        if !line.trim().is_empty() {
+            out.push_str(indent);
+        }
+        out.push_str(line);
+    }
+    out
 }

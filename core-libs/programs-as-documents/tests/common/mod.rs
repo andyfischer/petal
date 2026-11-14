@@ -17,6 +17,11 @@ end
 pub fn badge(label, x)
   <badge label={label} x={x} size={12} />
 end
+
+pub let LIBRARY = [
+  <libitem id=\"lib-a\" />,
+  <libitem id=\"lib-b\" />,
+]
 ";
 
 pub const MANIFEST: &str = "[package]\nname = \"shapes\"\nversion = \"0.1.0\"\n";

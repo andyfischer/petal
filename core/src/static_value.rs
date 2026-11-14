@@ -76,8 +76,10 @@ pub enum StaticValue {
     /// renders one element per line, indented — the shape of a declarative
     /// layout tree.
     List(Vec<StaticValue>),
-    /// A record literal `{key: value, ...}`, rendered inline. Keys are
-    /// rendered bare, so they must be valid Petal identifiers.
+    /// A record literal `{key: value, ...}`, rendered inline. A key that is
+    /// an identifier is rendered bare; any other (`label.color`, a keyword)
+    /// as a quoted computed key, `["label.color"]: value`, and such a key is
+    /// read back the same way.
     Record(Vec<(String, StaticValue)>),
     /// A color literal `:rrggbb` (or `:rgb`, `:rgba`, `:rrggbbaa`): channels
     /// `0..=255`, with `a` present only when the literal spells an alpha.
@@ -194,8 +196,8 @@ impl StaticValue {
     {
         StaticValue::List(items.into_iter().map(Into::into).collect())
     }
-    /// A record value. Keys must be valid Petal identifiers (they render
-    /// bare); values coerce like scalars do.
+    /// A record value. A key that is not an identifier renders as a quoted
+    /// computed key (`["label.color"]: 1`); values coerce like scalars do.
     pub fn record<P, K, A>(fields: P) -> StaticValue
     where
         P: IntoIterator<Item = (K, A)>,
@@ -404,7 +406,7 @@ fn render_record(fields: &[(String, StaticValue)], depth: usize) -> String {
     }
     let rendered: Vec<String> = fields
         .iter()
-        .map(|(k, v)| format!("{k}: {}", v.render(depth)))
+        .map(|(k, v)| format!("{}: {}", render_key(k), v.render(depth)))
         .collect();
     format!("{{{}}}", rendered.join(", "))
 }
@@ -414,6 +416,52 @@ fn render_record(fields: &[(String, StaticValue)], depth: usize) -> String {
 pub(crate) fn render_call_at(function: &str, args: &[StaticValue], depth: usize) -> String {
     let rendered: Vec<String> = args.iter().map(|a| a.render(depth)).collect();
     format!("{function}({})", rendered.join(", "))
+}
+
+/// Whether `name` can be written bare as a record key, a field name after
+/// `.`, a named argument or a binding: an identifier that is not a keyword.
+pub fn is_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_alphabetic())
+        && chars.all(|c| c == '_' || c.is_alphanumeric())
+        && crate::lexer::keyword_token(name).is_none()
+}
+
+/// A record key as written in a record literal: bare when it is an
+/// identifier, else the computed form `["label.color"]` with the key quoted
+/// and escaped, so no key can change how the record parses.
+pub fn render_key(key: &str) -> String {
+    if is_identifier(key) {
+        key.to_string()
+    } else {
+        format!("[{}]", render_string_literal(key))
+    }
+}
+
+/// The key and value of a record field written `key: value`, or with a
+/// string literal as a computed key (`["label.color"]: value`, which the
+/// parser reads as a spread of `__record_of(key, value)`). `None` for a
+/// spread or a computed key that is not a string literal.
+pub fn record_field(field: &RecordField) -> Option<(&str, &Expr)> {
+    match field {
+        RecordField::Named(key, value) => Some((key, value)),
+        RecordField::Spread(e) => match &e.kind {
+            ExprKind::Call { function, args, arg_names }
+                if arg_names.is_empty()
+                    && args.len() == 2
+                    && matches!(&function.kind, ExprKind::Ident(f) if f == crate::ast::RECORD_OF_BUILTIN) =>
+            {
+                match &args[0].kind {
+                    ExprKind::Literal(Literal::String(key)) => Some((key, &args[1])),
+                    _ => None,
+                }
+            }
+            _ => None,
+        },
+    }
 }
 
 /// Two spaces per `depth` level.
@@ -537,7 +585,7 @@ impl From<bool> for StaticValue {
 /// Render `s` as a Petal string literal: double-quoted, with `\`, `"`, and the
 /// interpolation opener `{` escaped (plus newlines/tabs), so no character of the
 /// content can change how the literal parses.
-fn render_string_literal(s: &str) -> String {
+pub(crate) fn render_string_literal(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
     for ch in s.chars() {
@@ -1191,6 +1239,11 @@ fn eval_in(expr: &Expr, scope: &Scope) -> Result<StaticValue, String> {
                 match field {
                     RecordField::Named(key, value) => {
                         out.push((key.clone(), eval_in(value, scope)?))
+                    }
+                    // `["label.color"]: v`, a key that is not an identifier.
+                    field @ RecordField::Spread(_) if record_field(field).is_some() => {
+                        let (key, value) = record_field(field).expect("checked");
+                        out.push((key.to_string(), eval_in(value, scope)?))
                     }
                     RecordField::Spread(_) => {
                         return Err("a record with a `...` spread, which needs evaluating".into());

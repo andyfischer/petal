@@ -877,14 +877,18 @@ fn edits_that_cannot_be_made_are_errors_and_change_nothing() {
     assert!(fails(Goal::should_remove("POST.effects[2]")).contains("has no element 2"));
     assert!(fails(Goal::should_remove("POST")).contains("whole binding"));
     assert!(fails(Goal::should_append("POST.exposure", 1)).contains("not a list"));
-    // A key that is not an identifier would break the file: refused.
-    assert!(
-        fails(Goal::should_insert(
-            "POST.effects[0]",
-            rec(&[("bad key", 1.into())])
-        ))
-        .contains("does not parse")
-    );
+}
+
+#[test]
+fn a_key_that_is_not_an_identifier_is_written_quoted() {
+    // `bad key` is written as a computed key, so the file still parses and
+    // reads the key back.
+    let out = apply(POST, &[Goal::should_insert("POST.effects[0]", rec(&[("bad key", 1.into())]))]);
+    assert!(out.contains("{[\"bad key\"]: 1}"), "{out}");
+    let effects = get_static_value(&out, "POST").unwrap();
+    let StaticValue::Record(fields) = effects else { panic!() };
+    let (_, StaticValue::List(items)) = fields.iter().find(|(k, _)| k == "effects").unwrap() else { panic!() };
+    assert_eq!(items[0], rec(&[("bad key", 1.into())]));
 }
 
 #[test]

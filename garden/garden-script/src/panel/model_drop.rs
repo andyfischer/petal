@@ -163,6 +163,11 @@ fn goal_label(g: &petal::goal_based_editing::Goal) -> String {
         Goal::ShouldAppend { path, .. } => format!("append to {path}"),
         Goal::ShouldCall { function, .. } => format!("call {function}"),
         Goal::ShouldMove { from, to } => format!("move {from} to {to}"),
+        Goal::ShouldSetPathExpr { path, .. } => format!("set {path}"),
+        Goal::ShouldInsertExpr { path, .. } => format!("insert {path}"),
+        Goal::ShouldAppendExpr { path, .. } => format!("append to {path}"),
+        Goal::ShouldSetValueExpr { name, .. } => format!("set {name}"),
+        Goal::ShouldCallExpr { function, .. } => format!("call {function}"),
     }
 }
 

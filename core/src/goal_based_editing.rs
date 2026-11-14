@@ -50,6 +50,7 @@ use crate::literal_edit;
 use crate::rewrite::{find_binding, find_call, parse_ast, splice, splice_node};
 use crate::static_value::{get_static_value, render_call_at};
 
+pub use crate::static_expr::StaticExpr;
 pub use crate::static_value::StaticValue;
 
 /// Why a goal batch could not be applied — the source didn't parse, or the
@@ -157,6 +158,33 @@ pub enum Goal {
     /// read after `from` is taken out, and may be in another list or element:
     /// `layers[3]` → `layers[1]/*[0]` moves a layer into a group.
     ShouldMove { from: String, to: String },
+    /// [`Goal::ShouldSetPath`] whose new value is an expression: the value at
+    /// `path` should be written as `expr` (`fill={tok.color.ink}`).
+    ShouldSetPathExpr { path: String, expr: StaticExpr },
+    /// [`Goal::ShouldInsert`] with an expression.
+    ShouldInsertExpr {
+        path: String,
+        expr: StaticExpr,
+        placement: Placement,
+    },
+    /// [`Goal::ShouldAppend`] with an expression.
+    ShouldAppendExpr { path: String, expr: StaticExpr },
+    /// [`Goal::ShouldSetValue`] with an expression: the last top-level
+    /// binding of `name` should be written as `expr`, or `let name = expr`
+    /// inserted.
+    ShouldSetValueExpr {
+        name: String,
+        expr: StaticExpr,
+        placement: Placement,
+    },
+    /// [`Goal::ShouldCall`] with expression arguments, positional and named:
+    /// `shadow(c, radius: 4, y: 3)`.
+    ShouldCallExpr {
+        function: String,
+        args: Vec<StaticExpr>,
+        named: Vec<(String, StaticExpr)>,
+        placement: Placement,
+    },
 }
 
 /// Where a goal's new statement goes when one has to be inserted.
@@ -300,6 +328,66 @@ impl Goal {
         }
     }
 
+    /// Construct a [`Goal::ShouldSetPathExpr`]: after the edit, the value at
+    /// `path` is written as `expr`.
+    ///
+    /// ```ignore
+    /// Goal::should_set_path_expr("card.fill", StaticExpr::path("tok.color.ink")?);
+    /// Goal::should_set_path_expr("card.shadow", StaticExpr::parse("shadow(c, radius: 4)")?);
+    /// ```
+    pub fn should_set_path_expr(path: impl Into<String>, expr: impl Into<StaticExpr>) -> Goal {
+        Goal::ShouldSetPathExpr {
+            path: path.into(),
+            expr: expr.into(),
+        }
+    }
+
+    /// Construct a [`Goal::ShouldInsertExpr`].
+    pub fn should_insert_expr(path: impl Into<String>, expr: impl Into<StaticExpr>) -> Goal {
+        Goal::ShouldInsertExpr {
+            path: path.into(),
+            expr: expr.into(),
+            placement: Placement::End,
+        }
+    }
+
+    /// Construct a [`Goal::ShouldAppendExpr`].
+    pub fn should_append_expr(path: impl Into<String>, expr: impl Into<StaticExpr>) -> Goal {
+        Goal::ShouldAppendExpr {
+            path: path.into(),
+            expr: expr.into(),
+        }
+    }
+
+    /// Construct a [`Goal::ShouldSetValueExpr`].
+    pub fn should_set_value_expr(name: impl Into<String>, expr: impl Into<StaticExpr>) -> Goal {
+        Goal::ShouldSetValueExpr {
+            name: name.into(),
+            expr: expr.into(),
+            placement: Placement::End,
+        }
+    }
+
+    /// Construct a [`Goal::ShouldCallExpr`]: a top-level call of `function`
+    /// with these positional and named arguments.
+    ///
+    /// ```ignore
+    /// Goal::should_call_expr("theme", [StaticExpr::path("tok.dark")?], [("scale", 2.into())]);
+    /// ```
+    pub fn should_call_expr<P, N, K>(function: impl Into<String>, args: P, named: N) -> Goal
+    where
+        P: IntoIterator<Item = StaticExpr>,
+        N: IntoIterator<Item = (K, StaticExpr)>,
+        K: Into<String>,
+    {
+        Goal::ShouldCallExpr {
+            function: function.into(),
+            args: args.into_iter().collect(),
+            named: named.into_iter().map(|(k, v)| (k.into(), v)).collect(),
+            placement: Placement::End,
+        }
+    }
+
     /// Place this goal's statement directly below `anchor` if it has to be
     /// inserted (see [`Placement::After`]).
     ///
@@ -335,6 +423,27 @@ impl Goal {
             Goal::ShouldInsert { path, value, .. } => Goal::ShouldInsert {
                 path,
                 value,
+                placement: new,
+            },
+            Goal::ShouldInsertExpr { path, expr, .. } => Goal::ShouldInsertExpr {
+                path,
+                expr,
+                placement: new,
+            },
+            Goal::ShouldSetValueExpr { name, expr, .. } => Goal::ShouldSetValueExpr {
+                name,
+                expr,
+                placement: new,
+            },
+            Goal::ShouldCallExpr {
+                function,
+                args,
+                named,
+                ..
+            } => Goal::ShouldCallExpr {
+                function,
+                args,
+                named,
                 placement: new,
             },
             // Nothing to place: these edit what is already there.
@@ -378,6 +487,32 @@ fn apply_goal(source: &str, goal: &Goal) -> Result<String, GoalError> {
         Goal::ShouldAppend { path, value } => Ok(literal_edit::append_path(source, path, value)?),
         Goal::ShouldRemove { path } => Ok(literal_edit::remove_path(source, path)?),
         Goal::ShouldMove { from, to } => Ok(literal_edit::move_path(source, from, to)?),
+        Goal::ShouldSetPathExpr { path, expr } => Ok(literal_edit::set_path_expr(source, path, expr)?),
+        Goal::ShouldInsertExpr {
+            path,
+            expr,
+            placement,
+        } => Ok(literal_edit::insert_path_expr(source, path, expr, placement)?),
+        Goal::ShouldAppendExpr { path, expr } => Ok(literal_edit::append_path_expr(source, path, expr)?),
+        Goal::ShouldSetValueExpr {
+            name,
+            expr,
+            placement,
+        } => ensure_binding_expr(source, name, expr, placement),
+        Goal::ShouldCallExpr {
+            function,
+            args,
+            named,
+            placement,
+        } => {
+            let call = StaticExpr::Call {
+                callee: Box::new(StaticExpr::name(function.as_str()).map_err(|e| e.message)?),
+                args: args.clone(),
+                named: named.clone(),
+            };
+            let text = call.render(1).map_err(|e| e.message)?;
+            ensure_call_text(source, function, &text, placement)
+        }
     }
 }
 
@@ -584,7 +719,17 @@ fn ensure_call(
     params: &[StaticValue],
     placement: &Placement,
 ) -> Result<String, GoalError> {
-    let replacement = render_call(function, params);
+    ensure_call_text(source, function, &render_call(function, params), placement)
+}
+
+/// [`ensure_call`] with the call's text already rendered.
+fn ensure_call_text(
+    source: &str,
+    function: &str,
+    replacement: &str,
+    placement: &Placement,
+) -> Result<String, GoalError> {
+    let replacement = replacement.to_string();
     let (tree, stmts) = parse_ast(source)?;
     match find_call(&stmts, function) {
         Some(span) => Ok(replace_span(&tree, source, span, &replacement)),
@@ -631,6 +776,26 @@ fn ensure_binding(
     }
 }
 
+/// [`ensure_binding`] with an expression.
+fn ensure_binding_expr(
+    source: &str,
+    name: &str,
+    expr: &StaticExpr,
+    placement: &Placement,
+) -> Result<String, GoalError> {
+    if let Some(value) = expr.as_value() {
+        return ensure_binding(source, name, &value, placement);
+    }
+    let (_, stmts) = parse_ast(source)?;
+    match find_binding(&stmts, name) {
+        Some(_) => Ok(literal_edit::set_binding_expr(source, name, expr)?),
+        None => {
+            let text = expr.render(1).map_err(|e| e.message)?;
+            Ok(insert_statement(source, &format!("let {name} = {text}"), placement, &stmts))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -654,13 +819,9 @@ mod tests {
     }
 
     #[test]
-    fn invalid_record_key_string_splices_as_is() {
-        // Record keys render bare and are not validated against Petal's grammar,
-        // so a key with a space produces a call that can't reparse as a single
-        // expression. The tree splice fails and the string-splice fallback runs,
-        // returning the (syntactically invalid) rendered source as Ok — this
-        // pins that documented fallback behavior for a valid-but-contract-
-        // violating structured value.
+    fn a_record_key_that_is_not_an_identifier_is_quoted() {
+        // A key with a space (or a dot, or a keyword) is written as a quoted
+        // computed key, so it reads back as the same key.
         let out = apply(
             "foo({})\n",
             &[Goal::should_call(
@@ -668,7 +829,7 @@ mod tests {
                 [StaticValue::record(vec![("bad key", StaticValue::int(1))])],
             )],
         );
-        assert_eq!(out, "foo({bad key: 1})\n");
+        assert_eq!(out, "foo({[\"bad key\"]: 1})\n");
     }
 
     #[test]

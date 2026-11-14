@@ -29,6 +29,7 @@ A path is a binding name followed by steps:
 |---|---|---|
 | `.name` | a record's field, or an element's attribute | `POST.exposure`, `layers[0].x` |
 | `[n]` | a list's element, or a call's argument | `POST.effects[2]`, `DIR[1]` in `vec3(…)` |
+| `["key"]` | a record field whose key is not an identifier, written `{["key"]: v}` (`\"` and `\\` escaped) | `o["label.color"]` |
 | `/tag[n]` | the `n`-th child element with that tag | `layers[2]/image[1]` |
 | `/*[n]` | the `n`-th child element of any tag (except `<br />`) | `layers[2]/*[0]` |
 | `/tag` | the only child element with that tag | `card/title` |

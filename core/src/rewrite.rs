@@ -22,7 +22,7 @@
 
 use std::rc::Rc;
 
-use crate::ast::{AssignTarget, Expr, ExprKind, RecordField, Stmt, StmtKind};
+use crate::ast::{AssignTarget, Expr, ExprKind, Stmt, StmtKind};
 use crate::cst::{
     GreenChild, GreenNode, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken, parse_cst,
     parse_source,
@@ -150,9 +150,8 @@ pub fn find_binding_path(stmts: &[Stmt], name: &str, path: &[PathSeg]) -> Option
         }
         expr = match (seg, &expr.kind) {
             (PathSeg::Field(key), ExprKind::Record(fields)) => {
-                fields.iter().rev().find_map(|field| match field {
-                    RecordField::Named(k, value) if k == key => Some(value),
-                    _ => None,
+                fields.iter().rev().find_map(|field| {
+                    crate::static_value::record_field(field).filter(|(k, _)| k == key).map(|(_, v)| v)
                 })?
             }
             (PathSeg::Field(key), ExprKind::Element { props, .. }) => {

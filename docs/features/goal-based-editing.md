@@ -195,6 +195,51 @@ step through a computed value) is an error, as is an edit that would leave
 source that does not parse (a record key that is not an identifier). The
 source is returned only when every goal succeeded.
 
+### Expression goals
+
+Some edits mean an expression, not a value. Binding a design node to a token
+is writing `fill={tok.color.ink}`, not the color the token has today; a helper
+call reads best with its named arguments (`shadow(c, radius: 4, y: 3)`, not
+`shadow(c, 4, nil, 0, 3)`). Every goal that takes a value has an `_expr`
+twin that takes a [`StaticExpr`](#staticexpr--expressions):
+
+```rust
+use petal::goal_based_editing::{Goal, StaticExpr};
+
+Goal::should_set_path_expr("card.fill", StaticExpr::path("tok.color.ink")?);
+Goal::should_set_value_expr("s", StaticExpr::parse("shadow(c, radius: 4, y: 3)")?);
+Goal::should_insert_expr("xs[0]", StaticExpr::path("gutter")?);
+Goal::should_append_expr("page", element_of_exprs);
+Goal::should_call_expr("theme", [StaticExpr::path("tok.dark")?], [("scale", 2.into())]);
+```
+
+| Goal | Outcome |
+|---|---|
+| `should_set_path_expr(path, expr)` | The value at `path` is written as `expr`. |
+| `should_insert_expr(path, expr)` | `expr` becomes the element or field `path` names (placement like `should_insert`). |
+| `should_append_expr(path, expr)` | `expr` becomes the last element of the list or element at `path`. |
+| `should_set_value_expr(name, expr)` | The last top-level binding of `name` is written as `expr`, or `let name = expr` is inserted. |
+| `should_call_expr(function, args, named)` | A top-level call with positional, then named, arguments. |
+
+An expression that is a value (no names, no named arguments) is written by
+the value goal, with all its care. Otherwise the parts that are values are
+laid out and spelled the same way, and each part that is not (a name, a field
+read, a named-argument call) is written as the renderer spells it. A place
+already written as `expr` (compared as expressions, so `m["k"]` equals
+`m.k`) is left byte-identical. Whether the names are in scope where the
+expression lands is not checked here: the goal edits text and does not run
+it (the programs-as-documents crate checks it, by running the edited
+document).
+
+### Record keys that are not identifiers
+
+A record key that is not an identifier (`label.color`, `bad key`, a keyword)
+is written as a quoted computed key, `{["label.color"]: :ff0000}`, by every
+goal and by `StaticValue::to_source`, and read back as that key
+(`get_static_value`). A path step names it the same way:
+`o["label.color"]`, with `\"` and `\\` escaped inside the quotes, and a
+`PathSeg::Field` whose key is not an identifier prints back in that form.
+
 ### Goals from a diff: `petal::drop_edit`
 
 A caller that has the *new value* of a literal rather than the edit — a
@@ -270,8 +315,44 @@ rules are in [../usage/config-files.md](../usage/config-files.md#staticvalue).
 
 There is deliberately **no verbatim/raw-source variant**. An escape hatch that
 rendered caller-supplied text unquoted would defeat the point of structured
-values. Model identifiers or field access structurally, or add a typed variant
-if a case is genuinely missing.
+values. Model identifiers or field access structurally with
+[`StaticExpr`](#staticexpr--expressions), or add a typed variant if a case is
+genuinely missing.
+
+### `StaticExpr` — expressions
+
+[`core/src/static_expr.rs`](../../core/src/static_expr.rs) (re-exported from
+`goal_based_editing`). An expression an edit writes, as a typed tree:
+
+| Variant | Renders |
+|---|---|
+| `Value(StaticValue)` | the literal |
+| `Name(n)` | `n` |
+| `Field { of, name }` | `of.name`, or `of["name"]` when `name` is not an identifier |
+| `Index { of, index }` | `of[index]` |
+| `Call { callee, args, named }` | `callee(a, b, name: c)` |
+| `List`, `Record`, `Element` | literals whose parts are expressions |
+
+Build one structurally (`StaticExpr::name`, `path("tok.color.ink")`,
+`call("shadow").arg(c).named("radius", 4)`, `.field`, `.index`, the `From`
+impls for scalars and `StaticValue`) or parse one with
+`StaticExpr::parse(text)`. Parsing accepts exactly one expression of those
+kinds: a statement, two expressions, unbalanced text, arithmetic, an
+interpolated string, a lambda, `if`, `match` or a spread argument is an
+`ExprError` saying what was found. Every name, field, argument name, tag and
+attribute is checked when it renders, and every string is quoted by the
+renderer, so text a caller passes becomes a string literal or (after the
+identifier check) a name, never code.
+
+`free_names()` lists the names it reads from the scope it lands in (the root
+of each path, each callee). `as_value()` is the `StaticValue` when it is one.
+`get_static_expr(source, name)` reads a top-level binding back as an
+expression, which is how a call with named arguments is read (a
+`StaticValue::Call` holds positional arguments only).
+
+From C, `pb_source_set(path, text)` already writes the text of one expression
+at a path (checked to parse as exactly one expression); the typed
+`StaticExpr` is not exposed through the bridge.
 
 ## See also
 

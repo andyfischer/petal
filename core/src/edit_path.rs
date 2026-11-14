@@ -33,7 +33,8 @@ use crate::ast::{Expr, ExprKind, JsxChild};
 /// One step from a value into one of its parts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PathSeg {
-    /// `.name`: a record field, or an element attribute (also `/@name`).
+    /// `.name`: a record field, or an element attribute (also `/@name`). A
+    /// key that is not an identifier is written `["label.color"]`.
     Field(String),
     /// `[n]`: an element of a list, or an argument of a call, which a config
     /// file uses as a constructor: `vec3(0.3, -1.0, 0.5)`.
@@ -67,7 +68,10 @@ impl fmt::Display for ChildStep {
 impl fmt::Display for PathSeg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PathSeg::Field(name) => write!(f, ".{name}"),
+            PathSeg::Field(name) if crate::static_value::is_identifier(name) => write!(f, ".{name}"),
+            PathSeg::Field(name) => {
+                write!(f, "[\"{}\"]", name.replace('\\', "\\\\").replace('"', "\\\""))
+            }
             PathSeg::Index(i) => write!(f, "[{i}]"),
             PathSeg::Child(step) => write!(f, "/{step}"),
             PathSeg::ChildAt(i) => write!(f, "/node()[{i}]"),
@@ -140,6 +144,15 @@ pub fn parse_edit_path(path: &str) -> Result<(String, Vec<PathSeg>), String> {
             }
             segs.push(PathSeg::Field(after[..n].to_string()));
             rest = &after[n..];
+        } else if let Some(after) = rest.strip_prefix("[\"") {
+            // `["label.color"]`: a record field whose key is not an
+            // identifier, quoted like a string literal (`\"` and `\\`
+            // escaped).
+            let Some((key, after)) = quoted_key(after) else {
+                return bad(rest, "expected `[\"key\"]` with a closing quote and bracket");
+            };
+            segs.push(PathSeg::Field(key));
+            rest = after;
         } else if let Some(after) = rest.strip_prefix('[') {
             let Some((i, after)) = index(after) else {
                 return bad(rest, "expected `[n]` with a whole number n");
@@ -189,6 +202,21 @@ pub fn parse_edit_path(path: &str) -> Result<(String, Vec<PathSeg>), String> {
         }
     }
     Ok((name.to_string(), segs))
+}
+
+/// The key of a `["key"]` step, with `after` just past its opening quote:
+/// the unescaped key and what follows the `]`.
+fn quoted_key(after: &str) -> Option<(String, &str)> {
+    let mut key = String::new();
+    let mut chars = after.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '\\' => key.push(chars.next()?.1),
+            '"' => return Some((key, after[i + 1..].strip_prefix(']')?)),
+            c => key.push(c),
+        }
+    }
+    None
 }
 
 /// [`parse_edit_path`] without the explanation.

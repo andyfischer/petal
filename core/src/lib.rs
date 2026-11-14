@@ -97,6 +97,7 @@ pub mod static_cache;
 pub mod static_survey;
 pub mod static_classify;
 pub mod static_json;
+pub mod static_expr;
 pub mod static_value;
 pub mod stats;
 pub mod symbol;

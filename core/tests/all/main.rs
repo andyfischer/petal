@@ -34,6 +34,7 @@ mod drop_edit;
 mod element_edits;
 mod element_origins;
 mod element_paths;
+mod expr_goals;
 mod endless_edits;
 mod enum_methods;
 mod enums;

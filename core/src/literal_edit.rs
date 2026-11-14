@@ -56,13 +56,14 @@ use crate::edit_path::{
 use crate::cst::{SyntaxElement, SyntaxKind, SyntaxNode};
 use crate::goal_based_editing::Placement;
 use crate::lexer::Token;
+use crate::static_expr::{Holes, StaticExpr, same_expr};
 use crate::rewrite::{
     PathSeg, Splice, apply_splices, edge_significant_token, find_node, parse_ast,
     significant_range,
 };
 use crate::static_value::{
-    StaticBinding, StaticValue, bindings_of, color_literal, setting_value_expr,
-    element_child_lines, eval,
+    StaticBinding, StaticValue, bindings_of, color_literal, element_child_lines, eval,
+    record_field, render_key, setting_value_expr,
 };
 
 /// What went wrong with a path edit, coarsely — enough for a host to pick a
@@ -515,6 +516,95 @@ pub fn move_path(source: &str, from: &str, to: &str) -> Result<String, EditError
     }
 }
 
+// ── Expressions ──────────────────────────────────────────────────────────
+
+/// [`set_path`] with an expression ([`StaticExpr`]): the value at `path`
+/// reads as `expr` (`fill={tok.color.ink}`, `shadow(c, radius: 4)`).
+///
+/// An expression that is a value is set as one, with all of [`set_path`]'s
+/// care. Otherwise the parts of it that are values are laid out the same
+/// way and each part that is not (a name, a field read, a named-argument
+/// call) is written as the module renders it. A place that already reads as
+/// `expr` is left byte-identical.
+pub fn set_path_expr(source: &str, path: &str, expr: &StaticExpr) -> Result<String, EditError> {
+    expr.check().map_err(|e| EditError::invalid(e.message))?;
+    if let Some(value) = expr.as_value() {
+        return set_path(source, path, &value);
+    }
+    if reads_as(source, path, expr) {
+        return Ok(source.to_string());
+    }
+    with_holes(source, expr, |value| set_path(source, path, value))
+}
+
+/// [`set_binding`] with an expression: the right-hand side of the last
+/// top-level binding of `name` reads as `expr`.
+pub fn set_binding_expr(source: &str, name: &str, expr: &StaticExpr) -> Result<String, EditError> {
+    expr.check().map_err(|e| EditError::invalid(e.message))?;
+    if let Some(value) = expr.as_value() {
+        return set_binding(source, name, &value);
+    }
+    if reads_as(source, name, expr) {
+        return Ok(source.to_string());
+    }
+    with_holes(source, expr, |value| set_binding(source, name, value))
+}
+
+/// [`insert_path`] with an expression.
+pub fn insert_path_expr(
+    source: &str,
+    path: &str,
+    expr: &StaticExpr,
+    placement: &Placement,
+) -> Result<String, EditError> {
+    expr.check().map_err(|e| EditError::invalid(e.message))?;
+    if let Some(value) = expr.as_value() {
+        return insert_path(source, path, &value, placement);
+    }
+    with_holes(source, expr, |value| insert_path(source, path, value, placement))
+}
+
+/// [`append_path`] with an expression.
+pub fn append_path_expr(source: &str, path: &str, expr: &StaticExpr) -> Result<String, EditError> {
+    expr.check().map_err(|e| EditError::invalid(e.message))?;
+    if let Some(value) = expr.as_value() {
+        return append_path(source, path, &value);
+    }
+    with_holes(source, expr, |value| append_path(source, path, value))
+}
+
+/// Whether the value at `path` is written as `expr` already.
+fn reads_as(source: &str, path: &str, expr: &StaticExpr) -> bool {
+    let Ok((name, segs)) = parse_path(path) else {
+        return false;
+    };
+    let Ok(doc) = Doc::parse(source) else {
+        return false;
+    };
+    let Ok((_, root)) = doc.binding(&name) else {
+        return false;
+    };
+    locate(root, path, &name, &segs).is_ok_and(|(_, target)| same_expr(target, expr))
+}
+
+/// Run a value edit with `expr` lowered to a value whose non-value parts are
+/// placeholders, then write each part's text in its placeholder's place.
+fn with_holes(
+    source: &str,
+    expr: &StaticExpr,
+    edit: impl FnOnce(&StaticValue) -> Result<String, EditError>,
+) -> Result<String, EditError> {
+    let mut holes = Holes::new(source, expr);
+    let value = holes.lower(expr).map_err(|e| EditError::invalid(e.message))?;
+    let out = holes.fill(&edit(&value)?);
+    match parse_ast(&out) {
+        Ok(_) => Ok(out),
+        Err(e) => Err(EditError::invalid(format!(
+            "the edit would leave source that does not parse: {e}"
+        ))),
+    }
+}
+
 fn parse_path(path: &str) -> Result<(String, Vec<PathSeg>), EditError> {
     parse_edit_path(path).map_err(EditError::invalid)
 }
@@ -683,16 +773,13 @@ fn attr_index(props: &[(String, Expr)], key: &str) -> Option<usize> {
 fn field_index(fields: &[RecordField], key: &str) -> Option<usize> {
     fields
         .iter()
-        .rposition(|f| matches!(f, RecordField::Named(k, _) if k == key))
+        .rposition(|f| record_field(f).is_some_and(|(k, _)| k == key))
 }
 
 /// The value expression of element `index` of a container.
 fn element(expr: &Expr, index: usize) -> Option<&Expr> {
     match shape(expr) {
-        Shape::Record(fields) => match fields.get(index)? {
-            RecordField::Named(_, value) => Some(value),
-            RecordField::Spread(_) => None,
-        },
+        Shape::Record(fields) => record_field(fields.get(index)?).map(|(_, value)| value),
         Shape::List(items) | Shape::Call(items) => items.get(index),
         Shape::Element(props) => props.get(index).map(|(_, value)| value),
         Shape::Leaf => None,
@@ -1230,7 +1317,7 @@ impl Doc {
         let lined_up = rows.len() >= 2
             && rows.iter().all(|item| column(item) == target)
             && rows.iter().any(|item| item.colon != rows[0].colon);
-        let used = near.start - self.line_start(near.start) + key.chars().count() + 1;
+        let used = near.start - self.line_start(near.start) + render_key(key).chars().count() + 1;
         (lined_up && target > used).then(|| format!(":{}", " ".repeat(target - used)))
     }
 
@@ -2218,7 +2305,7 @@ impl Doc {
                             };
                             element(m, field_index(model_fields, key)?)
                         });
-                        (format!("{key}{}", style.colon), field, model)
+                        (format!("{}{}", render_key(key), style.colon), field, model)
                     })
                     .collect();
                 self.render_seq('{', '}', &parts, &style, indent)
@@ -2390,10 +2477,7 @@ impl Doc {
             {
                 let old_keys: Vec<&str> = old_fields
                     .iter()
-                    .map(|f| match f {
-                        RecordField::Named(key, _) => key.as_str(),
-                        RecordField::Spread(_) => "",
-                    })
+                    .map(|f| record_field(f).map_or("", |(key, _)| key))
                     .collect();
                 align(
                     0..old_fields.len(),
@@ -2443,7 +2527,7 @@ impl Doc {
             old_values[i].as_ref() == Some(new_values[j])
                 && keys.as_ref().is_none_or(|keys| {
                     matches!(shape(old), Shape::Record(fields)
-                        if matches!(&fields[i], RecordField::Named(k, _) if k == keys[j]))
+                        if record_field(&fields[i]).is_some_and(|(k, _)| k == keys[j]))
                 })
         });
         let mut pos = 0;
@@ -2524,7 +2608,7 @@ impl Doc {
             What::Value(value) => {
                 let body = self.render(value, model, indent);
                 match key {
-                    Some(key) => format!("{key}{colon}{body}"),
+                    Some(key) => format!("{}{colon}{body}", render_key(key)),
                     None => body,
                 }
             }
@@ -2688,11 +2772,11 @@ fn unique_keys(fields: &[(String, StaticValue)]) -> bool {
 /// Every field is `key: value` and no key repeats — the records a field path
 /// names unambiguously.
 fn unique_named(fields: &[RecordField]) -> bool {
-    fields.iter().enumerate().all(|(i, field)| match field {
-        RecordField::Named(key, _) => fields[..i]
+    fields.iter().enumerate().all(|(i, field)| match record_field(field) {
+        Some((key, _)) => fields[..i]
             .iter()
-            .all(|other| !matches!(other, RecordField::Named(k, _) if k == key)),
-        RecordField::Spread(_) => false,
+            .all(|other| record_field(other).is_none_or(|(k, _)| k != key)),
+        None => false,
     })
 }
 

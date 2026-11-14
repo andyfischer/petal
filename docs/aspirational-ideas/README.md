@@ -15,6 +15,15 @@ the [README](../../README.md#goals) for the goals behind them.
 When a sketched API lands, rewrite its sketch against the real API and move it
 into [`examples/`](../../examples/) so it runs under the test suite.
 
+## Design notes
+
+Longer write-ups of a direction, in prose rather than a `.ptl` sketch:
+
+- [programs-as-documents.md](programs-as-documents.md): a script as an
+  application's saved document. Covers the write path from GUI edits,
+  resolving edits by outcome against programs of many shapes, a schema for
+  editable documents, and saved state in a JSON file beside the script.
+
 ## Current sketches
 
 | File | What it sketches | What exists today |

@@ -46,8 +46,16 @@ impl<'a> Vm<'a> {
             return;
         };
         let chain = self.element_call_chain();
+        let count = self.element_counts.entry(term).or_insert(0);
+        let occurrence = *count;
+        *count += 1;
+        if let Some(spec) = self.spec.as_deref_mut()
+            && spec.elements.contains(&term)
+        {
+            spec.note_element(term, occurrence, &chain, v, self.heap);
+        }
         self.element_origins
-            .insert(id, crate::execution_context::ElementOrigin { term, chain });
+            .insert(id, crate::execution_context::ElementOrigin { term, chain, occurrence });
     }
 
     /// The call site of every frame, innermost first, for an element origin.

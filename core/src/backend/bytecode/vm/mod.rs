@@ -148,6 +148,9 @@ pub struct Vm<'a> {
     /// is on.
     pub element_origins:
         &'a mut HashMap<crate::heap::ElementId, crate::execution_context::ElementOrigin>,
+    /// The owning context's per-term element counts (the next
+    /// [`crate::execution_context::ElementOrigin::occurrence`]).
+    pub element_counts: &'a mut HashMap<TermId, u32>,
     pub bindings: &'a mut HashMap<SymbolId, Value>,
     pub binding_revisions: &'a HashMap<SymbolId, u64>,
     pub counters: &'a mut HashMap<SymbolId, u64>,

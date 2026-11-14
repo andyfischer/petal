@@ -1891,6 +1891,7 @@ impl Env {
             // Element origins describe one run's elements, like the emit
             // origins a host drains per frame.
             ctx.element_origins.clear();
+            ctx.element_counts.clear();
         }
 
         Ok(())

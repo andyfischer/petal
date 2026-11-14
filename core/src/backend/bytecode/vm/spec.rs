@@ -74,6 +74,21 @@ pub struct EmitRecord {
     pub value: ObsValue,
 }
 
+/// One element a speculative run built at a recorded element site
+/// ([`crate::dm::spec::CaptureSpec::elements`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ElementRecord {
+    /// The `AllocElement` term.
+    pub term: TermId,
+    /// How many elements `term` built before this one in the run (as
+    /// [`crate::execution_context::ElementOrigin::occurrence`] counts them).
+    pub occurrence: u32,
+    /// The call site of each enclosing frame, innermost first.
+    pub chain: SmallVec<[TermId; 4]>,
+    /// The element: [`ObsValue::Element`].
+    pub value: ObsValue,
+}
+
 /// One recorded value of a watched term.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WatchRecord {
@@ -320,6 +335,9 @@ pub struct SpecHooks {
     pub(crate) suppressed: Vec<SuppressedCall>,
     pub(crate) watch: HashSet<TermId>,
     pub(crate) watched: Vec<WatchRecord>,
+    /// Element sites whose elements to record, and what they built.
+    pub(crate) elements: HashSet<TermId>,
+    pub(crate) element_records: Vec<ElementRecord>,
     pub(crate) fingerprint: u64,
     pub(crate) record_call_edges: bool,
     pub(crate) call_edges: Vec<(TermId, FunctionId)>,
@@ -363,6 +381,16 @@ impl SpecHooks {
         if self.record_call_edges && self.call_edge_set.insert((site, func)) {
             self.call_edges.push((site, func));
         }
+    }
+
+    /// Record element `value`, built by the recorded element site `term`.
+    pub(crate) fn note_element(&mut self, term: TermId, occurrence: u32, chain: &[TermId], value: Value, heap: &Heap) {
+        self.element_records.push(ElementRecord {
+            term,
+            occurrence,
+            chain: chain.iter().copied().collect(),
+            value: ObsValue::from_value(value, heap, ObsBounds::VALUE),
+        });
     }
 
     /// Record `value` for a watched `term` (R5).

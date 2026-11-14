@@ -107,7 +107,7 @@ items";
 }
 
 #[test]
-fn for_loop_elements_share_one_origin() {
+fn for_loop_elements_share_one_site_and_chain() {
     let src = "let items = for i in range(3) do
   <rect x={i * 10} y={7} />
 end
@@ -115,7 +115,9 @@ items";
     let (env, pid, items) = run_traced(src);
     assert_eq!(items.len(), 3);
     let o: Vec<ElementOrigin> = items.iter().map(|v| origin(&env, *v)).collect();
-    assert!(o.iter().all(|x| *x == o[0]), "a loop pushes no frame");
+    assert!(o.iter().all(|x| x.term == o[0].term && x.chain == o[0].chain), "a loop pushes no frame");
+    // Iterations are told apart by their occurrence.
+    assert_eq!(o.iter().map(|x| x.occurrence).collect::<Vec<_>>(), vec![0, 1, 2]);
     assert_eq!(env.element_site_count(o[0].term), 3);
     assert_eq!(prop_trace(&env, pid, items[1], "x").end_kind, TraceEnd::Computed);
     assert_eq!(prop_trace(&env, pid, items[1], "y").constant(), Some(&StaticValue::Int(7)));

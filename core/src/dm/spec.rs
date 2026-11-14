@@ -49,7 +49,7 @@ use crate::stack::StackKey;
 use crate::symbol::SymbolId;
 use crate::value::Value;
 
-pub use crate::backend::bytecode::vm::spec::{EmitRecord, RngMode, SuppressedCall, WatchRecord};
+pub use crate::backend::bytecode::vm::spec::{ElementRecord, EmitRecord, RngMode, SuppressedCall, WatchRecord};
 pub use crate::dm::observe::{EmitKey, LiveObservation, ObsValue, Observable, PathStep};
 
 /// Where a run's `state` starts from (§2.1.2).
@@ -82,6 +82,11 @@ pub struct CaptureSpec {
     pub native_args: bool,
     /// Terms whose values to record each time one is computed.
     pub watch: Vec<TermId>,
+    /// Element literals (`AllocElement` terms) whose every element to
+    /// record, with its occurrence and call chain ([`SpecRun::elements`]),
+    /// for [`Observable::Element`]. A [`DmSession`](crate::dm::DmSession)
+    /// adds the sites its goals name.
+    pub elements: Vec<TermId>,
 }
 
 impl Default for CaptureSpec {
@@ -90,6 +95,7 @@ impl Default for CaptureSpec {
             channels: None,
             native_args: true,
             watch: Vec::new(),
+            elements: Vec::new(),
         }
     }
 }
@@ -220,6 +226,9 @@ pub struct SpecRun {
     pub emits: Vec<EmitRecord>,
     /// Every recorded value of a watched term, in order.
     pub watched: Vec<WatchRecord>,
+    /// Every element built at a recorded element site
+    /// ([`CaptureSpec::elements`]), in order.
+    pub elements: Vec<ElementRecord>,
     /// A hash of every conditional's outcome (branches, loop steps, match
     /// arms, `state` hits and misses). Equal fingerprints: the same path.
     pub fingerprint: u64,
@@ -242,6 +251,7 @@ impl SpecRun {
             error: Some(error),
             emits: Vec::new(),
             watched: Vec::new(),
+            elements: Vec::new(),
             fingerprint: 0,
             loaded: ParamSet::default(),
             suppressed: Vec::new(),
@@ -286,7 +296,7 @@ impl SpecRun {
                     self.emits[*index.get(key)?].native_args.get(*arg)?.at(path)?.as_f64()
                 }
                 Observable::EmitValue { key, path } => self.emits[*index.get(key)?].value.at(path)?.as_f64(),
-                Observable::Watch { .. } => self.read(o),
+                Observable::Watch { .. } | Observable::Element { .. } => self.read(o),
             })
             .collect()
     }
@@ -308,7 +318,16 @@ impl SpecRun {
                     .at(path)?
                     .as_f64()
             }
+            Observable::Element { term, occurrence, path } => {
+                self.element(*term, *occurrence)?.value.at(path)?.as_f64()
+            }
         }
+    }
+
+    /// The element site `term` built as its `occurrence`-th, if it was
+    /// recorded.
+    pub fn element(&self, term: TermId, occurrence: u32) -> Option<&ElementRecord> {
+        self.elements.iter().find(|e| e.term == term && e.occurrence == occurrence)
     }
 
     /// The first way this run's observables differ from `other`'s (emits,
@@ -334,6 +353,9 @@ impl SpecRun {
         }
         if self.watched != other.watched {
             return Some("watched values differ".to_string());
+        }
+        if self.elements != other.elements {
+            return Some("recorded elements differ".to_string());
         }
         if self.fingerprint != other.fingerprint {
             return Some("a branch went the other way".to_string());
@@ -675,6 +697,7 @@ impl SpecSession {
             host_phase: Some(mode.phase),
             safe_handles: env.spec_safe_handle_classes(),
             watch: self.cfg.capture.watch.iter().copied().collect(),
+            elements: self.cfg.capture.elements.iter().copied().collect(),
             record_call_edges: mode.record_edges,
             ..Default::default()
         };
@@ -771,6 +794,7 @@ impl SpecSession {
             error,
             emits: hooks.tap.emits,
             watched: hooks.watched,
+            elements: hooks.element_records,
             fingerprint: hooks.fingerprint,
             loaded: ParamSet(hooks.loaded),
             suppressed: hooks.suppressed,

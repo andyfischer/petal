@@ -235,7 +235,16 @@ impl DmSession {
             }
         }
         let started = crate::env::spec_run::wall_now();
-        let mut spec = SpecSession::begin(env, host, checkpoint, &[], req.spec.clone(), req.live.as_ref())?;
+        // Record the elements the goals aim at.
+        let mut cfg = req.spec.clone();
+        for g in &req.goals {
+            if let Observable::Element { term, .. } = g.observable
+                && !cfg.capture.elements.contains(&term)
+            {
+                cfg.capture.elements.push(term);
+            }
+        }
+        let mut spec = SpecSession::begin(env, host, checkpoint, &[], cfg, req.live.as_ref())?;
         let mut session = DmSession {
             spec: None,
             req: req.clone(),
@@ -825,6 +834,7 @@ impl DmSession {
                 !matches!(
                     s,
                     ParamSelector::AllUserCode
+                        | ParamSelector::EntryFile
                         | ParamSelector::ReportLibrary
                         | ParamSelector::AllowPathDeps
                         | ParamSelector::IncludeStateInit
@@ -1651,6 +1661,7 @@ fn emit_key_of(o: &Observable) -> Option<EmitKey> {
     match o {
         Observable::EmitArg { key, .. } | Observable::EmitValue { key, .. } => Some(*key),
         Observable::Watch { at, .. } => Some(*at),
+        Observable::Element { .. } => None,
     }
 }
 

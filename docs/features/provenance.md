@@ -132,7 +132,13 @@ before the run with `Env::enable_element_trace(true)`, then call
 - `chain`: the call that created each enclosing frame, innermost first. A
   helper called twice gives two chains. A callback that `map` or another
   higher-order builtin runs has that builtin's call as its call site. A `for`
-  loop pushes no frame, so every iteration has the same origin.
+  loop pushes no frame, so every iteration has the same term and chain.
+- `occurrence`: how many elements `term` built before this one in the run
+  (counted since tracing was turned on or the stack was reset). It tells a
+  loop's iterations apart, and it is how direct manipulation names the
+  element in a re-run: `Observable::Element { term, occurrence, path }` reads
+  a prop of the element that literal built as its n-th, with no emit or probe
+  native needed (see [direct-manipulation.md](direct-manipulation.md)).
 
 `provenance.rs` reads origins without running anything again:
 

@@ -169,6 +169,7 @@ pub fn effective_seed(flag: Option<u64>) -> u64 {
 /// | `fn:NAME` | literals in the body of function `NAME` |
 /// | `config` | `config let` and `tunable` literals |
 /// | `user` | every literal in user code |
+/// | `entry-file` | every literal in the entry file (not in an imported module) |
 /// | `lib` | screen library literals for the report (never edited) |
 /// | `path-deps` | let local path dependencies be edited |
 /// | `state-init` | let `state` initializers move |
@@ -209,6 +210,7 @@ pub fn parse_selector(s: &str) -> Result<ParamSelector, String> {
         // Every knob: `config let` and `tunable` literals, one tier.
         "knob" | "config" => ParamSelector::ConfigOnly,
         "user" => ParamSelector::AllUserCode,
+        "entry-file" => ParamSelector::EntryFile,
         "lib" => ParamSelector::ReportLibrary,
         "path-deps" => ParamSelector::AllowPathDeps,
         "state-init" => ParamSelector::IncludeStateInit,
@@ -1029,6 +1031,11 @@ pub fn obs_json(v: &ObsValue) -> Json {
         ObsValue::Variant { tag, data } => {
             json!({ "tag": format!("{tag:016x}"), "data": data.iter().map(obs_json).collect::<Vec<_>>() })
         }
+        ObsValue::Element { tag, props, children } => json!({
+            "element": format!("{tag:016x}"),
+            "props": Json::Object(props.iter().map(|(k, v)| (k.clone(), obs_json(v))).collect()),
+            "children": children.iter().map(obs_json).collect::<Vec<_>>(),
+        }),
         ObsValue::Opaque => json!({ "opaque": true }),
     }
 }

@@ -109,6 +109,10 @@ pub struct ExecutionContext {
     /// elements it swept. Element ids are generational, so an entry can never
     /// be read back for a different element that reused the slot.
     pub element_origins: HashMap<ElementId, ElementOrigin>,
+    /// How many elements each `AllocElement` term has built since element
+    /// tracing was turned on or the stack was last reset: the next
+    /// [`ElementOrigin::occurrence`] of that term.
+    pub element_counts: HashMap<TermId, u32>,
     /// The expectations (`expect`, `expect_eq`, `expect_near`) evaluated in
     /// this context: the failures recorded since the host last took them.
     /// See [`crate::expect`].
@@ -162,6 +166,14 @@ pub struct ElementOrigin {
     pub term: TermId,
     /// The call sites of the enclosing frames, innermost first.
     pub chain: smallvec::SmallVec<[TermId; 4]>,
+    /// How many elements `term` built before this one in the run (since
+    /// tracing was turned on or the stack was last reset), whatever the
+    /// chain. The iterations of a loop body, which share `term` and `chain`,
+    /// are told apart by it, and a speculative run that records `term`'s
+    /// elements (`CaptureSpec::elements`) numbers them the same way, so
+    /// `Observable::Element { term, occurrence, .. }` names this element in
+    /// a re-run.
+    pub occurrence: u32,
 }
 
 impl ElementOrigin {
@@ -194,6 +206,7 @@ impl ExecutionContext {
             emit_origins: HashMap::new(),
             trace_elements: false,
             element_origins: HashMap::new(),
+            element_counts: HashMap::new(),
             expects: Default::default(),
         }
     }
@@ -258,6 +271,7 @@ impl ExecutionContext {
             // fork too: its origin goes with it.
             trace_elements: self.trace_elements,
             element_origins: self.element_origins.clone(),
+            element_counts: self.element_counts.clone(),
             expects: Default::default(),
         }
     }
@@ -305,6 +319,7 @@ impl ExecutionContext {
         self.trace_elements = on;
         if !on {
             self.element_origins.clear();
+            self.element_counts.clear();
         }
     }
 

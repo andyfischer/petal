@@ -24,6 +24,7 @@ mod core_semantics;
 mod default_params;
 mod dep_classes;
 mod dm_canopy;
+mod dm_elements;
 mod dm_embed;
 mod dm_jacobian;
 mod dm_ranges;

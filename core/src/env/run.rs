@@ -680,7 +680,9 @@ pub(super) fn make_vm<'a>(
     let frame = ctx.frame();
     let trace_pending = ctx.trace_pending;
     let trace_emit = ctx.trace_emit;
-    let trace_elements = ctx.trace_elements;
+    // A speculative run that records some element sites' elements needs
+    // them numbered as a traced run numbers them.
+    let trace_elements = ctx.trace_elements || spec.as_deref().is_some_and(|s| !s.elements.is_empty());
     // An element a memo replay hands back was built by another call, maybe
     // from another call site: its recorded origin would be wrong for this
     // one. Element tracing re-runs every call instead.
@@ -721,6 +723,7 @@ pub(super) fn make_vm<'a>(
         emit_origins: &mut ctx.emit_origins,
         trace_elements,
         element_origins: &mut ctx.element_origins,
+        element_counts: &mut ctx.element_counts,
         bindings: &mut ctx.bindings,
         binding_revisions: &ctx.binding_revisions,
         counters: &mut ctx.counters,

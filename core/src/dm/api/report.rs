@@ -125,6 +125,9 @@ pub(super) fn goal_label(o: &Observable, info: &HashMap<EmitKey, EmitInfo>) -> S
             if value_arg { format!("{head}{}", steps(path)) } else { format!("{head} arg {arg}{}", steps(path)) }
         }
         Observable::Watch { path, .. } => format!("{head} (watched){}", steps(path)),
+        Observable::Element { occurrence, path, .. } => {
+            format!("element {}{}", if *occurrence > 0 { format!("#{occurrence}") } else { String::new() }, steps(path))
+        }
     }
 }
 

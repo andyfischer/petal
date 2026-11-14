@@ -180,6 +180,7 @@ impl Jacobian {
             Observable::EmitArg { .. } => None,
             Observable::EmitValue { key, .. } => Some(*key),
             Observable::Watch { at, .. } => Some(*at),
+            Observable::Element { .. } => None,
         };
         let keep: Vec<bool> = (0..self.rows.len())
             .map(|r| {
@@ -243,6 +244,18 @@ fn numeric_leaves(v: &ObsValue, path: &mut Vec<PathStep>, left: &mut usize, out:
                 path.pop();
             }
         }
+        ObsValue::Element { props, children, .. } => {
+            for (name, item) in props {
+                path.push(PathStep::Field(name.clone()));
+                numeric_leaves(item, path, left, out);
+                path.pop();
+            }
+            for (i, item) in children.iter().enumerate() {
+                path.push(PathStep::Index(i));
+                numeric_leaves(item, path, left, out);
+                path.pop();
+            }
+        }
         ObsValue::Bool(_) | ObsValue::Str(_) | ObsValue::Nil | ObsValue::Opaque => {}
     }
 }
@@ -293,6 +306,7 @@ pub fn collateral_rows_keeping(
                 baseline.emit(key).map(|e| e.channel)
             }
             Observable::Watch { at, .. } => baseline.emit(at).map(|e| e.channel),
+            Observable::Element { .. } => None,
         })
         .collect();
     let mut kept = if keep.is_empty() { Vec::new() } else { rows_of(Some(keep)) };

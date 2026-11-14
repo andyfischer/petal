@@ -38,6 +38,9 @@ pub enum ObsValue {
     /// An enum variant (a draw command is one): the tag's hash and the
     /// payload list.
     Variant { tag: u64, data: Vec<ObsValue> },
+    /// An element: its tag's hash, its props in order and its children. A
+    /// path's field step reads a prop, an index step a child.
+    Element { tag: u64, props: Vec<(String, ObsValue)>, children: Vec<ObsValue> },
     /// Something with no stable value outside its heap (a closure, a handle,
     /// a pending resource), or a container cut off by the depth bound.
     Opaque,
@@ -55,6 +58,9 @@ impl PartialEq for ObsValue {
             (List(a), List(b)) => a == b,
             (Record(a), Record(b)) => a == b,
             (Variant { tag: t1, data: d1 }, Variant { tag: t2, data: d2 }) => t1 == t2 && d1 == d2,
+            (Element { tag: t1, props: p1, children: c1 }, Element { tag: t2, props: p2, children: c2 }) => {
+                t1 == t2 && p1 == p2 && c1 == c2
+            }
             _ => false,
         }
     }
@@ -161,10 +167,28 @@ impl ObsValue {
                 ObsValue::Variant { tag, data }
             }
             Value::Symbol(s) => ObsValue::Int(s.0 as i64),
+            Value::Element(id) => {
+                let tag = hash_str(heap.get_string(heap.get_element_tag(id)));
+                if depth == 0 {
+                    return ObsValue::Element { tag, props: Vec::new(), children: Vec::new() };
+                }
+                let props = heap
+                    .get_map(heap.get_element_props(id))
+                    .iter()
+                    .take(max_len)
+                    .map(|(k, &x)| (k.as_str().to_string(), Self::convert(x, heap, depth - 1, max_len)))
+                    .collect();
+                let children = heap
+                    .get_list(heap.get_element_children(id))
+                    .iter()
+                    .take(max_len)
+                    .map(|&x| Self::convert(x, heap, depth - 1, max_len))
+                    .collect();
+                ObsValue::Element { tag, props, children }
+            }
             Value::Closure(_)
             | Value::OverloadSet(_)
             | Value::NativeFunction(_)
-            | Value::Element(_)
             | Value::Cell(_)
             | Value::Handle(_)
             | Value::Pending(_) => ObsValue::Opaque,
@@ -190,6 +214,10 @@ impl ObsValue {
                 (ObsValue::Record(fields), PathStep::Field(name)) => {
                     &fields.iter().find(|(k, _)| k == name)?.1
                 }
+                (ObsValue::Element { props, .. }, PathStep::Field(name)) => {
+                    &props.iter().rev().find(|(k, _)| k == name)?.1
+                }
+                (ObsValue::Element { children, .. }, PathStep::Index(i)) => children.get(*i)?,
                 // A vec2 written as `{x, y}` in a path reads as the list.
                 (ObsValue::List(items), PathStep::Field(name)) if items.len() <= 3 => {
                     let i = match name.as_str() {
@@ -252,6 +280,14 @@ pub enum Observable {
     EmitValue { key: EmitKey, path: Vec<PathStep> },
     /// The last value of watched term `term` recorded before emit `at`.
     Watch { term: TermId, at: EmitKey, path: Vec<PathStep> },
+    /// The element that element literal `term` (an `AllocElement`) built as
+    /// its `occurrence`-th in the run, then `path` into it (a field step is
+    /// a prop: `x`, `style.w`). The occurrence is the one an
+    /// [`ElementOrigin`](crate::execution_context::ElementOrigin) records
+    /// under element tracing, so a host that traced a run can aim at any
+    /// element it was handed, however the program hands it over (a return
+    /// value, an output buffer, a binding).
+    Element { term: TermId, occurrence: u32, path: Vec<PathStep> },
 }
 
 /// What the live frame showed for some observables, for the baseline

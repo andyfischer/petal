@@ -220,7 +220,9 @@ can say which numbers a drag may change, and let Petal work out the values:
   (`at:core/level.ptl:41:12`, line and column) or by the `term` id the
   `--json` report gives it (`term:123`). Only those move. With two or more of
   them and one goal, Petal picks the smallest change that spreads across
-  them.
+  them. `entry-file` (`ParamSelector::EntryFile`) allows every number in the
+  program's own file and none in the modules it imports, for an editor that
+  writes back only the document it opened.
 - **deny** a set: everything else may move.
 
 ### Best effort
@@ -563,6 +565,22 @@ petal-web-canvas's `rust/src/lib.rs` are its users. Turning emit tracing
 on after frames have run drops the stacks' memo records (a record made
 untraced has no origins to replay), so the first traced frame attributes
 every emit.
+
+**Goals on elements.** A host whose script hands it elements (a document,
+a UI tree) rather than drawing can aim a goal at an element's prop directly.
+Run with element tracing on (`Env::enable_element_trace`, see
+[provenance.md](provenance.md#where-an-element-came-from-element-tracing)),
+read the element's `ElementOrigin`, and name it as `Observable::Element {
+term, occurrence, path }`: the element that literal built as its n-th in
+the run, then `path` into its props (`x`, `style.w`). The session records
+those elements in every speculative run (`CaptureSpec::elements`), so no
+emit and no probe native are needed, and it works the same for a return
+value, an output buffer or a binding. Keep element tracing on in the env the
+session runs in, so the static cache is off there too and the occurrences
+are counted the same way. An element inside an emitted value can be read
+the same way: a path's field step reads an element's prop and an index step
+one of its children (`ObsValue::Element`). Elements built by a native have
+no origin and cannot be named this way.
 
 ## For AI agents
 

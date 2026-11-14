@@ -172,6 +172,10 @@ pub enum ParamSelector {
     Function(String),
     /// Every literal in user code.
     AllUserCode,
+    /// Every literal written in the entry file (the program's own source,
+    /// not a module it imports): for a host that writes back only that file,
+    /// such as an editor whose document is the script.
+    EntryFile,
     /// Let literals in local path dependencies be edited.
     AllowPathDeps,
     /// Screen library literals for the report; they are still never edited.
@@ -195,6 +199,7 @@ impl ParamSelector {
                 | ParamSelector::ConfigOnly
                 | ParamSelector::Function(_)
                 | ParamSelector::AllUserCode
+                | ParamSelector::EntryFile
         )
     }
 
@@ -248,6 +253,7 @@ impl ParamSelector {
                     })
             }),
             ParamSelector::AllUserCode => p.origin != CodeOrigin::Library,
+            ParamSelector::EntryFile => p.file == ENTRY_FILE && p.origin != CodeOrigin::Library,
             _ => false,
         }
     }
@@ -410,6 +416,10 @@ pub fn anchors_for(program: &Program, run: &SpecRun, goals: &[Observable]) -> Ve
             }
             Observable::Watch { term, path, .. } => {
                 push(Anchor { term: *term, chain: Vec::new(), path: path.clone() })
+            }
+            Observable::Element { term, occurrence, path } => {
+                let chain = run.element(*term, *occurrence).map(|e| e.chain.to_vec()).unwrap_or_default();
+                push(Anchor { term: *term, chain, path: path.clone() })
             }
         }
     }
@@ -1161,6 +1171,25 @@ fn walk<'p>(ix: &Index<'p>, starts: &'p [Anchor], focused: bool) -> (HashMap<Ter
                             {
                                 go(i, ctx, 0, 0, rest.clone());
                             }
+                        }
+                    }
+                }
+            }
+            // An element read at a prop is that prop's value (the last one
+            // written, as `alloc_element` keeps); at an index, a child.
+            TermOp::AllocElement { prop_keys, .. } if focused && !want.is_empty() => {
+                let rest: Want<'p> = want[1..].iter().copied().collect();
+                match want.first() {
+                    Some(WantStep::Field(w)) => {
+                        if let Some(k) = prop_keys.iter().rposition(|c| str_of(*c) == Some(*w))
+                            && let Some(&i) = t.inputs.get(k)
+                        {
+                            go(i, ctx, 0, 0, rest);
+                        }
+                    }
+                    _ => {
+                        for &i in t.inputs.iter().skip(prop_keys.len()) {
+                            go(i, ctx, 0, 0, whole());
                         }
                     }
                 }

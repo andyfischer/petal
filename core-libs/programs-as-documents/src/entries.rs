@@ -25,8 +25,9 @@ use crate::splice::{byte_range, dedent, lifted, line_indent, reindent};
 pub enum ContainerKind {
     /// The items of a list literal.
     List,
-    /// The child elements of an element literal (not text, `{…}` holes or
-    /// `<br />`).
+    /// The child elements of an element literal, and its `{…}` holes that
+    /// are not text (`{badge("x", 1)}`, `{rows.map(card)}`); not text,
+    /// `{"strings"}` or `<br />`.
     Children,
 }
 
@@ -40,6 +41,10 @@ pub struct Container {
     pub entries: Vec<SourceSpan>,
     /// The element's tag, for [`ContainerKind::Children`].
     pub tag: Option<String>,
+    /// Per entry: whether it is a `{…}` hole among an element's children
+    /// (its span is then the expression inside the braces). Always false in
+    /// a list.
+    pub holes: Vec<bool>,
 }
 
 impl Container {
@@ -69,22 +74,30 @@ pub(crate) fn containers_of(stmts: &[Stmt]) -> Vec<Container> {
                     span: e.span,
                     entries: items.iter().map(|i| i.span).collect(),
                     tag: None,
+                    holes: vec![false; items.len()],
                 }),
-                ExprKind::Element { tag, children, .. } => self.0.push(Container {
-                    kind: ContainerKind::Children,
-                    span: e.span,
-                    entries: children
+                ExprKind::Element { tag, children, .. } => {
+                    let (entries, holes) = children
                         .iter()
                         .filter_map(|c| match c {
                             JsxChild::Expr(c) => match &c.kind {
-                                ExprKind::Element { tag, .. } if tag != "br" => Some(c.span),
-                                _ => None,
+                                ExprKind::Element { tag, .. } if tag == "br" => None,
+                                ExprKind::Element { .. } => Some((c.span, false)),
+                                // Text written as a hole.
+                                ExprKind::Literal(_) | ExprKind::StringInterp { .. } => None,
+                                _ => Some((c.span, true)),
                             },
                             JsxChild::Text(_) => None,
                         })
-                        .collect(),
-                    tag: Some(tag.clone()),
-                }),
+                        .unzip();
+                    self.0.push(Container {
+                        kind: ContainerKind::Children,
+                        span: e.span,
+                        entries,
+                        tag: Some(tag.clone()),
+                        holes,
+                    })
+                }
                 _ => {}
             }
             walk_expr(self, e);
@@ -189,6 +202,13 @@ pub fn rewrite_entries(source: &str, start: u32, kind: ContainerKind, target: &[
     if unchanged {
         return Ok(source.to_string());
     }
+    if c.holes.iter().any(|h| *h) {
+        // The path edits address child elements: each hole stands in as a
+        // placeholder element while they run, and is put back as written.
+        let (masked, holes) = mask_holes(source, c)?;
+        let out = rewrite_entries(&masked, start, kind, target)?;
+        return Ok(holes.iter().fold(out, |out, (ph, text)| out.replacen(ph.as_str(), text, 1)));
+    }
     let span = c.span;
     lifted(source, &span, |scratch, root| {
         let at = |i: usize| match kind {
@@ -226,6 +246,35 @@ pub fn rewrite_entries(source: &str, start: u32, kind: ContainerKind, target: &[
     })
 }
 
+const HOLE_TAG: &str = "programs-as-documents-hole";
+
+/// `source` with each `{…}` hole entry of `c` written as a placeholder
+/// element, and each placeholder's text paired with the hole's own text
+/// (braces included).
+fn mask_holes(source: &str, c: &Container) -> Result<(String, Vec<(String, String)>), String> {
+    let mut out = source.to_string();
+    let mut holes = Vec::new();
+    for (i, span) in c.entries.iter().enumerate().rev() {
+        if !c.holes[i] {
+            continue;
+        }
+        let r = byte_range(source, span).ok_or("a hole's position is outside the source")?;
+        let open = source[..r.start].trim_end();
+        let close = source[r.end..].trim_start();
+        if !open.ends_with('{') || !close.starts_with('}') {
+            return Err(format!("the `{{…}}` on line {} could not be located", span.start.line));
+        }
+        let (a, b) = (open.len() - 1, source.len() - close.len() + 1);
+        let ph = format!("<{HOLE_TAG}-{i} />");
+        if source.contains(&ph) {
+            return Err("the document already uses the placeholder tag".into());
+        }
+        holes.push((ph.clone(), source[a..b].to_string()));
+        out.replace_range(a..b, &ph);
+    }
+    Ok((out, holes))
+}
+
 /// The values of a longest strictly increasing subsequence of `xs`.
 fn longest_increasing(xs: &[usize]) -> Vec<usize> {
     let n = xs.len();
@@ -253,15 +302,29 @@ fn longest_increasing(xs: &[usize]) -> Vec<usize> {
 /// inserted (so it is laid out like its siblings), then its text replaced
 /// by `text` at the placeholder's indentation.
 fn insert_text(source: &str, kind: ContainerKind, path: &str, text: &str) -> Result<String, String> {
-    let (ph, ph_text) = match kind {
-        ContainerKind::List => (StaticValue::Str(PLACEHOLDER.into()), format!("\"{PLACEHOLDER}\"")),
+    let hole;
+    let (ph, ph_text, text) = match kind {
+        ContainerKind::List => (StaticValue::Str(PLACEHOLDER.into()), format!("\"{PLACEHOLDER}\""), text),
         ContainerKind::Children => {
-            if !text.trim_start().starts_with('<') {
-                return Err(format!("only an element can be a child element, not `{}`", first_line(text)));
-            }
+            // An expression (a helper call that builds an element) goes
+            // among the children as a hole, after the comment lines that
+            // lead it.
+            let body_at = text
+                .split_inclusive('\n')
+                .take_while(|l| l.trim().starts_with("{/*") && l.trim().ends_with("*/}"))
+                .map(str::len)
+                .sum::<usize>();
+            let (lead, body) = text.split_at(body_at);
+            let text = if body.trim_start().starts_with('<') {
+                text
+            } else {
+                hole = format!("{lead}{{{}}}", body.trim());
+                hole.as_str()
+            };
             (
                 StaticValue::Element { tag: PLACEHOLDER_TAG.into(), props: vec![], children: vec![] },
                 format!("<{PLACEHOLDER_TAG} />"),
+                text,
             )
         }
     };
@@ -269,6 +332,20 @@ fn insert_text(source: &str, kind: ContainerKind, path: &str, text: &str) -> Res
     let at = with.find(&ph_text).ok_or("the new entry's place was lost")?;
     let indent = line_indent(&with, at);
     Ok(format!("{}{}{}", &with[..at], reindent(text, &indent), &with[at + ph_text.len()..]))
+}
+
+/// The comment after the entry at `span` on the same line (past its comma):
+/// its text without the `#` (or `//`). `None` when the line goes on with
+/// anything else.
+pub fn trailing_comment(source: &str, span: &SourceSpan) -> Option<String> {
+    let r = byte_range(source, span)?;
+    let rest = &source[r.end..];
+    let line = rest.split('\n').next()?;
+    let line = line.trim_start();
+    let line = line.strip_prefix(',').unwrap_or(line).trim();
+    let body = line.strip_prefix('#').or_else(|| line.strip_prefix("//"))?;
+    let body = body.trim();
+    (!body.is_empty()).then(|| body.to_string())
 }
 
 pub(crate) fn first_line(text: &str) -> String {

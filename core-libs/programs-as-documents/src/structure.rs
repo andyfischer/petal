@@ -262,6 +262,20 @@ fn entry_sources(run: &DocumentRun, all: &[Container], info: &ParentInfo<'_>) ->
             match data_of(run, all, n) {
                 Ok((ci, entry, reader)) => EntrySource::Data { list: all[ci].clone(), entry, reader },
                 Err(data_why) => match e {
+                    // A `{…}` among an element's children that builds
+                    // several of them is not one element's entry.
+                    Ok((ci, ei)) if all[*ci].holes[*ei] => {
+                        let span = all[*ci].entries[*ei];
+                        let text = byte_range(&run.source, &span).map(|r| first_line(&run.source[r])).unwrap_or_default();
+                        EntrySource::Locked {
+                            reason: format!(
+                                "<{}> comes from `{{{text}}}` (line {}), which builds {group} of {}'s elements; only a `{{…}}` that builds one element can be edited as an entry",
+                                n.tag,
+                                span.start.line,
+                                all[*ci].describe()
+                            ),
+                        }
+                    }
                     Ok((ci, ei)) => EntrySource::Entry { container: all[*ci].clone(), entry: *ei, group },
                     Err(why) => EntrySource::Locked {
                         reason: if data_why.is_empty() { why.clone() } else { format!("{why}, and {data_why}") },
@@ -394,8 +408,10 @@ enum Expect {
 enum NewItem {
     Template(Template),
     /// An entry's text carried from elsewhere (a move between parents, a
-    /// duplicate), and what it builds.
-    Carry { text: String, expect: Expect },
+    /// duplicate), and what it builds. `comment` is the comment that
+    /// trailed it on its line in a list (`<x />, # note`), which goes with
+    /// it as a comment line above it.
+    Carry { text: String, expect: Expect, comment: Option<String> },
 }
 
 /// One element of a parent's desired sequence.
@@ -519,7 +535,8 @@ fn plan<'a>(run: &'a DocumentRun, intent: &StructureIntent, opts: &StructureOpti
                         let text = entry_text(&run.source, &container.entries[*entry]).ok_or("the entry's position is outside the source")?;
                         let node = src.info.nodes[i];
                         let expect = run.node_value(node).map_or(Expect::Tag(node.tag.clone()), Expect::Exact);
-                        Some(Want::New(NewItem::Carry { text, expect }))
+                        let comment = carried_comment(&run.source, container, *entry);
+                        Some(Want::New(NewItem::Carry { text, expect, comment }))
                     }
                     _ => None,
                 };
@@ -533,9 +550,11 @@ fn plan<'a>(run: &'a DocumentRun, intent: &StructureIntent, opts: &StructureOpti
                 {
                     return Err(format!("<{}> cannot be moved inside itself", node.tag));
                 }
-                let text = match &src.sources[i] {
-                    EntrySource::Entry { container, entry, group: 1 } => entry_text(&run.source, &container.entries[*entry])
-                        .ok_or("the entry's position is outside the source")?,
+                let (text, comment) = match &src.sources[i] {
+                    EntrySource::Entry { container, entry, group: 1 } => (
+                        entry_text(&run.source, &container.entries[*entry]).ok_or("the entry's position is outside the source")?,
+                        carried_comment(&run.source, container, *entry),
+                    ),
                     EntrySource::Entry { container, entry, .. } => {
                         return Err(group_reason(run, node, container, *entry));
                     }
@@ -553,7 +572,7 @@ fn plan<'a>(run: &'a DocumentRun, intent: &StructureIntent, opts: &StructureOpti
                 if to.index > dest.want.len() {
                     return Err(format!("{} has no position {}", dest.info.describe, to.index));
                 }
-                dest.want.insert(to.index, Want::New(NewItem::Carry { text, expect }));
+                dest.want.insert(to.index, Want::New(NewItem::Carry { text, expect, comment }));
                 what = format!("move <{}> from {} to {}", node.tag, src.info.describe, dest.info.describe);
                 parents.push(src);
                 parents.push(dest);
@@ -625,12 +644,21 @@ fn plan<'a>(run: &'a DocumentRun, intent: &StructureIntent, opts: &StructureOpti
             if data && !matches!(expect, Expect::Exact(_)) {
                 expect = Expect::Tag(node.tag.clone());
             }
-            d.want.insert(i + 1, Want::New(NewItem::Carry { text, expect }));
+            d.want.insert(i + 1, Want::New(NewItem::Carry { text, expect, comment: None }));
             what = format!("duplicate <{}>", node.tag);
             parents.push(d);
         }
     }
     Ok(Plan { parents, opts: opts.clone(), ids, what })
+}
+
+/// The comment trailing entry `entry` of a list on its line, which a
+/// remove takes with the line, so a move into another container carries it.
+fn carried_comment(source: &str, container: &Container, entry: usize) -> Option<String> {
+    if container.kind != ContainerKind::List {
+        return None;
+    }
+    crate::entries::trailing_comment(source, &container.entries[entry])
 }
 
 fn group_reason(run: &DocumentRun, node: &OutputNode, container: &Container, entry: usize) -> String {
@@ -703,7 +731,15 @@ pub(crate) fn set_id_in_text(text: &str, id: &str) -> Result<String, String> {
 /// The text and expected value of a new item placed in `container`.
 fn new_text(item: &NewItem, container: &Container, data: bool, opts: &StructureOptions, ids: &mut HashSet<String>) -> Result<(String, Expect), String> {
     match item {
-        NewItem::Carry { text, expect } => Ok((text.clone(), expect.clone())),
+        NewItem::Carry { text, expect, comment } => {
+            let text = match comment {
+                // Among children a `#` line would be text: a comment hole.
+                Some(c) if container.kind == ContainerKind::Children => format!("{{/* {} */}}\n{text}", c.replace("*/", "* /")),
+                Some(c) => format!("# {c}\n{text}"),
+                None => text.clone(),
+            };
+            Ok((text, expect.clone()))
+        }
         NewItem::Template(Template::Value(v)) => {
             let is_el = matches!(v, StaticValue::Element { .. });
             if data && is_el {
@@ -712,8 +748,9 @@ fn new_text(item: &NewItem, container: &Container, data: bool, opts: &StructureO
                     container.span.start.line
                 ));
             }
-            if container.kind == ContainerKind::Children && !is_el {
-                return Err(format!("only an element can be a child of {}", container.describe()));
+            // A helper call goes among an element's children as a `{…}`.
+            if container.kind == ContainerKind::Children && !is_el && !matches!(v, StaticValue::Call { .. }) {
+                return Err(format!("only an element, or a call that builds one, can be a child of {}", container.describe()));
             }
             let mut v = v.clone();
             if is_el && opts.write_ids && !has_id(&v) {
@@ -879,7 +916,12 @@ fn build(run: &DocumentRun, plan: &mut Plan<'_>) -> Result<(String, Step, Source
                 }
                 Want::New(item) => {
                     let (c, data) = anchor_container(run, d, k)?;
-                    let (text, expect) = new_text(item, &c, data, &plan.opts, &mut ids)?;
+                    let (text, mut expect) = new_text(item, &c, data, &plan.opts, &mut ids)?;
+                    // Among an element's children, what is new must be an
+                    // element (a `{…}` that builds one).
+                    if c.kind == ContainerKind::Children && matches!(expect, Expect::Any) {
+                        expect = Expect::Tag("*".into());
+                    }
                     edit_for(&mut edits, &c, data).seq.push(Slot::New(text));
                     new_values.push(Err(match expect {
                         Expect::Exact(v) => v,
@@ -1232,8 +1274,9 @@ fn first_diff(want: &StaticValue, got: &StaticValue, path: &mut Vec<PathSeg>) ->
         && let Some(tag) = w.strip_prefix(WILD)
     {
         return match got {
-            S::Element { tag: t, .. } if tag.is_empty() || t == tag => None,
+            S::Element { tag: t, .. } if tag.is_empty() || tag == "*" || t == tag => None,
             _ if tag.is_empty() => None,
+            _ if tag == "*" => Some(format!("at {} a new element was expected, got {}", path_string(path), short(got))),
             _ => Some(format!("at {} a new <{tag}> was expected, got {}", path_string(path), short(got))),
         };
     }

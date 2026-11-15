@@ -229,6 +229,21 @@ stacked annotations apply bottom-up. It is not an expression: inside one,
 write the call (`rigid(2.0)`). See
 [Writing an annotation with `@`](../language-guide.md#writing-an-annotation-with-).
 
+Documentation is the compile-time annotation `@doc(…)`, written before any
+declaration (`fn`, `native fn`, `class`, `enum`, `let`, `var`, `state`,
+`memo`), and `@module_doc(…)` once at the top of a file. They hold literal
+text and fields and change nothing the program does; `doc` stays an ordinary
+name. A comment is never documentation. See
+[Documentation](../language-guide.md#documentation).
+
+```petal
+@doc("Twice `x`.", params: {x: "A number."})
+fn twice(x) x * 2
+
+@doc("""Frames per second; a {min, max} range is fine in raw text.""") @tunable let FPS = 60
+print(twice(FPS))
+```
+
 ### `var`, `set` and `get`
 
 ```petal

@@ -267,10 +267,88 @@ the same program. The rules:
   diagnostics (`@const var X` is an error, `@tunable var X` a lint finding).
 - Stacked annotations apply bottom-up, as the nested calls would:
   `@a @b(1) let X = v` is `let X = a(b(v, 1))`.
-- `@` is not an expression and does not go on a `fn`, `class` or `enum`.
-  Inside an expression, write the call: `apex * rigid(2.0)`. `@` on a
-  function is reserved for compile-time annotations, of which there are none
-  yet.
+- `@` is not an expression, and `@const`, `@tunable` and `@rigid` do not go
+  on a `fn`, `class` or `enum`, which take only the compile-time annotation
+  `@doc`. Inside an expression, write the call: `apex * rigid(2.0)`.
+
+#### Compile-time annotations
+
+`@doc(…)` and `@module_doc(…)` are **compile-time annotations**: written
+like the others, but they do not call anything. The parser reads their
+arguments and stores them with the declaration, nothing reaches the compiled
+program, and a program with them runs exactly as it does without them (it
+compiles to the same IR). Unlike `const`, `tunable` and `rigid`, the names
+are not reserved: `let doc = 1` and `doc(x)` stay ordinary code. See
+[Documentation](#documentation).
+
+#### Documentation
+
+A comment is a note to whoever maintains the code. **Documentation** is
+written with `@doc(…)` before a declaration, and is what tools show: hover
+and completion in an editor, generated reference pages, a settings panel's
+labels.
+
+```petal
+@module_doc("""
+Small numeric helpers.
+""")
+
+@doc("""
+Constrain a value to the range `[lo, hi]`. Three `int` arguments give an
+`int`; a `float` argument makes the result a `float`.
+""",
+  params: {value: "The number to constrain.", lo: "The lower bound.", hi: "The upper bound."},
+  returns: "The value, moved into the range.",
+  example: """
+    limit(15.0, 0.0, 10.0)   # 10.0
+    limit(9, 0, 5)           # 5
+  """,
+  see: ["min", "max"])
+pub fn limit(value, lo, hi)
+  min(max(value, lo), hi)
+
+@doc("Gravity, in px/s² at 1.0 g.") @tunable(0, 2000) let GRAVITY = 980.0
+
+print(limit(9, 0, 5), GRAVITY)
+```
+
+- `@doc` goes before a `fn` (also `pub fn`, a method `fn T.m` and a
+  `native fn`), a `class`, an `enum`, or a `let`, `var`, `state` or `memo`,
+  on the declaration's line or on lines of its own, and before `pub`. A
+  declaration takes at most one. On a binding it stacks with `@tunable`,
+  `@const` and `@rigid` in any order; a `fn`, `class` or `enum` takes no
+  other annotation.
+- `@module_doc` documents the file. It is a statement of its own, before
+  every other statement, imports included (comments and blank lines may come
+  first), and a file has at most one. `petal fmt` puts a blank line after
+  it. A package's documentation is its root module's `@module_doc`.
+- The first, positional argument is the **body**, in Markdown; its first
+  sentence is the summary. The other arguments are named fields:
+
+  | Field | Takes | Meaning |
+  |---|---|---|
+  | `params` | a record of strings | One line per parameter, by name. |
+  | `returns` | a string | What the function gives back. |
+  | `options` | a record of strings | The keys a trailing `style`/`opts` record accepts. |
+  | `example` | a string, or a list of strings | Petal source, shown as code (not run). |
+  | `see` | a list of strings | Related names (`"lerp"`, `"ui/drag"`). |
+  | `deprecated` | a string | What to use instead. |
+  | `hidden` | `true` or `false` | Leave the item out of generated reference pages. |
+  | `extra` | a record of any literals | Fields for hosts and tools, carried through untouched. |
+
+  `@module_doc` takes the body, `see`, `deprecated`, `hidden` and `extra`.
+  Any other field is an error with a suggestion (`param:` → `params:`), or
+  the hint to put a tool's own field in `extra: {…}`.
+- Every argument is a **literal**: a string, a number, `true`/`false`,
+  `nil`, or a list or record of them, so a tool can read the docs without
+  running anything. A `"…"` string with a `{…}` interpolation is an error,
+  since doc text often names a record (`{x, y}`): write `\{`, or use a raw
+  string `"""…"""`, which is the better choice for anything longer than a
+  line. A raw string keeps its lines as written; when a doc is displayed,
+  the indentation its lines share and a leading or trailing blank line are
+  removed, so an `example:` can be indented with the code around it.
+- A comment above a declaration is not its documentation, however it is
+  written.
 
 ## Types
 

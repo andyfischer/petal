@@ -2375,6 +2375,13 @@ petal show-ast --json -e '<code>'
 
 Outputs the parsed abstract syntax tree — an array of `Stmt` nodes. Useful for verifying parser behavior and understanding the tree structure before compilation.
 
+A declaration's `@doc(…)` ([Documentation](language-guide.md#documentation))
+shows as a `Doc` line above it in the text dump, one line per field under it
+(strings with their shared indentation removed), and as the statement's `doc`
+object in JSON (absent when there is none). A file's `@module_doc(…)` is not
+a statement: the text dump opens with a `ModuleDoc` line, and the JSON
+becomes `{"module_doc": {…}, "stmts": [ … ]}` for such a file only.
+
 **Text output** (default) — a compact tree, one node per line: the node kind
 plus its key facts inline (names, operators, literal values), children
 indented two spaces, spans as `@line:col-line:col` (end-exclusive, collapsed

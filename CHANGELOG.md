@@ -536,6 +536,25 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **Documentation annotations: `@doc(…)` and `@module_doc(…)`.** `@doc`
+  goes before a `fn` (`pub fn`, `fn T.m`, `native fn`), `class`, `enum`,
+  `let`, `var`, `state` or `memo` and holds its documentation as literal
+  data: a Markdown body and the fields `params`, `returns`, `options`,
+  `example`, `see`, `deprecated`, `hidden` and an open `extra: {…}`.
+  `@module_doc` is written once at the top of a file. They are the first
+  compile-time annotations: they lower to nothing, a program compiles to the
+  same IR with or without them, and `doc` stays an ordinary name. A comment
+  is not documentation. The parser checks the arguments (literals only, no
+  `{…}` interpolation, known fields, one per declaration); `show-ast` shows
+  the docs; `petal fmt` and the tree-sitter grammar know both forms. The
+  docs are stored on the AST (`Stmt::doc`,
+  `petal::cst::parse_source_with_module_doc`) for the tools to come
+  (`petal doc`, hover, lints). See
+  [Documentation](docs/language-guide.md#documentation) and
+  [docs/proposals/doc-annotation.md](docs/proposals/doc-annotation.md).
+  `@tunable` and the other value annotations on a `fn`, `class` or `enum`
+  now say "a function takes only `@doc`".
+
 - **bloom: `tab_enters_ring(on)`.** With it off, Tab and Shift+Tab with no
   control of the focus ring focused leave focus alone, for an app that
   gives Tab its own meaning then (petal-design steps the canvas selection);

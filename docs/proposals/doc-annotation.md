@@ -1,7 +1,15 @@
 # Proposal: `@doc(…)` and `@module_doc(…)`, documentation annotations
 
 Status: **accepted**, 2026-11-14, with the owner's decisions recorded under
-[Decisions](#decisions). Proposed 2026-11-13. Not yet implemented.
+[Decisions](#decisions). Proposed 2026-11-13. Step 1 of the
+[implementation plan](#implementation-plan) (parser and AST, diagnostics,
+`fmt`, `show-ast`, tree-sitter) is implemented (2026-11-15); steps 2–6
+(`petal doc`, lints, LSP and `fn_info(f).doc`, migration, generated
+reference) are not yet. Differences from this text in step 1: an edit that
+only adds or changes a doc hot-reloads by recompiling (with every `state`
+slot kept by the state transfer), not as a layout-only relocation, and
+`show-ast --json` of a file with a `@module_doc` prints
+`{"module_doc", "stmts"}` instead of the bare statement array.
 
 ## Summary
 

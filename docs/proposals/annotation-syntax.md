@@ -858,7 +858,10 @@ All decided by the owner on 2026-11-09.
    own for long argument lists.
 5. **Deferred** (F1): no `fn` annotations yet; `@` before `fn` stays the
    reserved-slot error. A joint decision with `native-effect-annotations.md`
-   comes with the first one.
+   comes with the first one. *Update 2026-11-15:* the first F1 annotation,
+   `@doc` (with the file's `@module_doc`), shipped from
+   [doc-annotation.md](doc-annotation.md); any other `@name` on a `fn`,
+   `class` or `enum` now says it takes only `@doc`.
 6. **Deferred** (F2): no run-time decorators; `@` in an expression stays a
    clear error. A real need gets its own proposal.
 7. **Decided: keep the annotations where they live now** (no

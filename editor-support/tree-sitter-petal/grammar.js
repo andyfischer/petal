@@ -147,7 +147,21 @@ module.exports = grammar({
 
   rules: {
     // A test block is a statement of the file's top level only.
-    source_file: $ => seq($._start, repeat(choice($._statement, $.test_declaration))),
+    // `@module_doc(…)` documents the file and comes before every statement
+    // (docs/proposals/doc-annotation.md); comments may precede it.
+    source_file: $ => seq(
+      $._start,
+      optional($.module_doc),
+      repeat(choice($._statement, $.test_declaration)),
+    ),
+
+    // One token, `@module_doc`: longer than the `@` an annotation starts
+    // with, so at the top of a file the lexer takes it, and the file's doc is
+    // never read as an annotation of the first declaration.
+    module_doc: $ => prec.right(seq(
+      field('name', alias(token(prec(1, '@module_doc')), '@module_doc')),
+      optional(field('arguments', $.argument_list)),
+    )),
 
     // ---- Statements ----
 
@@ -226,7 +240,9 @@ module.exports = grammar({
     // or `memo` (and before its `pub`), on the declaration's line or on lines
     // of its own; the real parser lowers `@f(a) let X = v` to
     // `let X = f(v, a)` and accepts only `const`, `tunable` and `rigid`. The
-    // name follows the `@` with no space.
+    // name follows the `@` with no space. `@doc(…)` (docs/proposals/
+    // doc-annotation.md) also goes before a `fn`, `native fn`, `class` or
+    // `enum`, which take no other annotation.
     annotation: $ => seq(
       '@',
       field('name', alias(token.immediate(/[a-zA-Z_][a-zA-Z0-9_]*/), $.identifier)),
@@ -283,6 +299,7 @@ module.exports = grammar({
     // Higher precedence than `lambda`: at statement start `fn name(…)` is
     // always a declaration, never an argless lambda calling `name`.
     function_declaration: $ => prec.right(1, seq(
+      repeat(field('annotation', $.annotation)),
       optional(PUB),
       'fn',
       optional(seq(field('class', $.identifier), '.')),
@@ -298,6 +315,7 @@ module.exports = grammar({
     // in the real lexer (a keyword only directly before `fn`); as with `as`
     // and `class`, a highlighting grammar can treat it as a literal.
     native_function_declaration: $ => prec.right(2, seq(
+      repeat(field('annotation', $.annotation)),
       optional(PUB),
       'native',
       'fn',
@@ -362,6 +380,7 @@ module.exports = grammar({
     // and as the JSX `class=` attribute); as with `as`, a highlighting grammar
     // can treat it as a literal.
     class_declaration: $ => prec.right(seq(
+      repeat(field('annotation', $.annotation)),
       optional(PUB),
       'class',
       field('name', $.identifier),
@@ -374,6 +393,7 @@ module.exports = grammar({
     ),
 
     enum_declaration: $ => prec.right(seq(
+      repeat(field('annotation', $.annotation)),
       optional(PUB),
       'enum',
       field('name', $.identifier),

@@ -1,0 +1,110 @@
+==================
+Module and declaration docs
+==================
+
+# header
+@module_doc("""
+The file.
+""", see: ["x"])
+
+@doc("Adds one.", params: {x: "A number."})
+pub fn inc(x)
+  x + 1
+end
+@doc("Host.") native fn host(a: int) -> int = "host"
+@doc("""A point.""")
+class P
+  x: int
+end
+@doc("Colours.") enum E
+  red,
+  green
+end
+@doc("Speed.") @tunable(0, 10) let speed = 4.0
+
+---
+
+(source_file
+  (comment)
+  (module_doc
+    arguments: (argument_list
+      (raw_string)
+      (named_argument
+        name: (identifier)
+        value: (list
+          (string
+            (string_content))))))
+  (function_declaration
+    annotation: (annotation
+      name: (identifier)
+      arguments: (argument_list
+        (string
+          (string_content))
+        (named_argument
+          name: (identifier)
+          value: (record
+            (record_field
+              key: (identifier)
+              value: (string
+                (string_content)))))))
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        name: (identifier)))
+    body: (block
+      (binary_expression
+        left: (identifier)
+        right: (integer))))
+  (native_function_declaration
+    annotation: (annotation
+      name: (identifier)
+      arguments: (argument_list
+        (string
+          (string_content))))
+    name: (identifier)
+    parameters: (native_parameter_list
+      (native_parameter
+        name: (identifier)
+        type: (type_annotation
+          type: (type_name
+            (identifier)))))
+    return_type: (return_type
+      type: (type_name
+            (identifier)))
+    host: (string
+      (string_content)))
+  (class_declaration
+    annotation: (annotation
+      name: (identifier)
+      arguments: (argument_list
+        (raw_string)))
+    name: (identifier)
+    (class_field
+      name: (identifier)
+      type: (type_annotation
+        type: (type_name
+            (identifier)))))
+  (enum_declaration
+    annotation: (annotation
+      name: (identifier)
+      arguments: (argument_list
+        (string
+          (string_content))))
+    name: (identifier)
+    (enum_variant
+      name: (identifier))
+    (enum_variant
+      name: (identifier)))
+  (let_declaration
+    annotation: (annotation
+      name: (identifier)
+      arguments: (argument_list
+        (string
+          (string_content))))
+    annotation: (annotation
+      name: (identifier)
+      arguments: (argument_list
+        (integer)
+        (integer)))
+    name: (identifier)
+    value: (float)))

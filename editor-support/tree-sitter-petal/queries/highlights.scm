@@ -85,6 +85,8 @@
 
 (annotation "@" @attribute)
 (annotation name: (identifier) @attribute)
+; A file's `@module_doc(…)` (docs/proposals/doc-annotation.md).
+(module_doc "@module_doc" @attribute)
 
 ; ---- Functions ----
 

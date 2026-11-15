@@ -171,10 +171,122 @@ pub enum ExprKind {
 /// name. See docs/language-guide.md (Calling with a list or record).
 pub const SPREAD_ARG: &str = "...";
 
-/// The names an `@` declaration annotation may take
+/// The names a *value* annotation may take
 /// (docs/proposals/annotation-syntax.md): the three reserved annotation
-/// builtins, which Petal code cannot bind (`compiler::hint_names`).
+/// builtins, which Petal code cannot bind (`compiler::hint_names`). `@f(a)
+/// let X = v` lowers to `let X = f(v, a)`.
 pub const ANNOTATION_NAMES: [&str; 3] = ["const", "tunable", "rigid"];
+
+/// The `@doc(…)` compile-time annotation (docs/proposals/doc-annotation.md).
+pub const DOC_ANNOTATION: &str = "doc";
+
+/// The `@module_doc(…)` compile-time annotation, written once at the top of
+/// a file.
+pub const MODULE_DOC_ANNOTATION: &str = "module_doc";
+
+/// The names a *compile-time* annotation may take: read by the parser and
+/// the tools, never lowered to a call, never reaching the IR. Unlike
+/// [`ANNOTATION_NAMES`] they are not reserved: `let doc = 1` and `doc(x)`
+/// stay ordinary code.
+pub const COMPILE_TIME_ANNOTATIONS: [&str; 2] = [DOC_ANNOTATION, MODULE_DOC_ANNOTATION];
+
+/// A declaration's (or a file's) documentation: the literal arguments of a
+/// `@doc(…)` or `@module_doc(…)` (docs/proposals/doc-annotation.md). Every
+/// string is kept exactly as written; [`Doc::cleaned_body`] and
+/// [`crate::doc_annotation::cleandoc`] strip a raw string's indentation for
+/// display. Maps keep their source order.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Doc {
+    /// The positional argument: Markdown, whose first sentence is the
+    /// summary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    /// `params: {name: "…"}`: one line per parameter.
+    #[serde(skip_serializing_if = "Vec::is_empty", serialize_with = "ser_pairs")]
+    pub params: Vec<(String, String)>,
+    /// `returns: "…"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub returns: Option<String>,
+    /// `options: {key: "…"}`: the keys a trailing `style`/`opts` record takes.
+    #[serde(skip_serializing_if = "Vec::is_empty", serialize_with = "ser_pairs")]
+    pub options: Vec<(String, String)>,
+    /// `example:`, a string or a list of strings (one entry per string).
+    /// Petal source, shown as code and not run.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub example: Vec<String>,
+    /// `see: [...]`: related names.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub see: Vec<String>,
+    /// `deprecated: "…"`: what to use instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deprecated: Option<String>,
+    /// `hidden: true`: left out of generated reference pages.
+    #[serde(skip_serializing_if = "is_false")]
+    pub hidden: bool,
+    /// `extra: {…}`: open fields for hosts and tools, carried through
+    /// untouched.
+    #[serde(skip_serializing_if = "Vec::is_empty", serialize_with = "ser_pairs")]
+    pub extra: Vec<(String, DocValue)>,
+    /// Where the annotation is written, from its `@` to its `)`.
+    #[serde(skip)]
+    pub span: SourceSpan,
+}
+
+impl Doc {
+    /// A doc with no body and no fields, written at `span`.
+    pub fn empty(span: SourceSpan) -> Doc {
+        Doc {
+            body: None,
+            params: Vec::new(),
+            returns: None,
+            options: Vec::new(),
+            example: Vec::new(),
+            see: Vec::new(),
+            deprecated: None,
+            hidden: false,
+            extra: Vec::new(),
+            span,
+        }
+    }
+
+    /// The body with a raw string's common indentation and its leading and
+    /// trailing blank lines stripped ([`crate::doc_annotation::cleandoc`]).
+    pub fn cleaned_body(&self) -> Option<String> {
+        self.body.as_deref().map(crate::doc_annotation::cleandoc)
+    }
+
+    /// Each `example:` entry, cleaned like the body.
+    pub fn cleaned_examples(&self) -> Vec<String> {
+        self.example.iter().map(|e| crate::doc_annotation::cleandoc(e)).collect()
+    }
+}
+
+/// A literal inside a doc's `extra:` record.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum DocValue {
+    Nil,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    String(String),
+    List(Vec<DocValue>),
+    #[serde(serialize_with = "ser_pairs")]
+    Record(Vec<(String, DocValue)>),
+}
+
+/// Ordered `(key, value)` pairs serialized as a map in their source order.
+fn ser_pairs<S: serde::Serializer, V: Serialize>(
+    pairs: &[(String, V)],
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = s.serialize_map(Some(pairs.len()))?;
+    for (k, v) in pairs {
+        map.serialize_entry(k, v)?;
+    }
+    map.end()
+}
 
 /// One `@name` / `@name(args)` annotation, as both parse pipelines read it
 /// before lowering it with [`apply_annotations`].
@@ -293,6 +405,16 @@ pub fn skip_annotations(chars: &[char], at: usize) -> usize {
                         if depth == 0 {
                             break;
                         }
+                    }
+                    // A `"""…"""` raw string: verbatim to its closing
+                    // triple quote (a `@doc` body holds quotes and
+                    // backslashes).
+                    '"' if chars.get(i) == Some(&'"') && chars.get(i + 1) == Some(&'"') => {
+                        i += 2;
+                        while i < chars.len() && chars.get(i..i + 3) != Some(&['"', '"', '"'][..]) {
+                            i += 1;
+                        }
+                        i = (i + 3).min(chars.len());
                     }
                     '"' => {
                         while let Some(&d) = chars.get(i) {
@@ -721,6 +843,12 @@ pub struct Stmt {
     /// [`Program::tests`](crate::program::Program::tests). Top level only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub test: Option<String>,
+    /// The declaration's `@doc(…)`, when it has one
+    /// (docs/proposals/doc-annotation.md). Compile-time only: nothing after
+    /// the parser reads it to decide what runs, and a program with docs
+    /// compiles to the IR it compiles to without them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub doc: Option<Box<Doc>>,
 }
 
 /// The contextual keyword that opens a test block (`test "title" do`): a
@@ -1582,6 +1710,7 @@ pub fn desugar_multi_for(
             span: SourceSpan { start: g.start, end, file },
             exported: false,
             test: None,
+            doc: None,
         }];
     }
     Ok((first.var, first.iter, first.key, inner, true))

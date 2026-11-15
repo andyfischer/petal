@@ -1611,7 +1611,9 @@ SYNOPSIS
 
 DESCRIPTION
        Parses the program and prints its abstract syntax tree, before any
-       compilation or lowering.
+       compilation or lowering. A declaration's @doc(…) shows above it (as
+       `doc` in JSON); a file's @module_doc(…) opens the dump (in JSON the
+       output is then an object with `module_doc` and `stmts`).
 
 OPTIONS
        --json

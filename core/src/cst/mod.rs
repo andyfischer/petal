@@ -42,7 +42,9 @@ mod events;
 mod green;
 mod red;
 
-pub use driver::{parse_cst, parse_source, parse_source_by_end, parse_source_phased};
+pub use driver::{
+    parse_cst, parse_source, parse_source_by_end, parse_source_phased, parse_source_with_module_doc,
+};
 pub(crate) use driver::parse_source_tabs_as_columns;
 pub(crate) use driver::parse_source_unmerged_else_if;
 pub use events::{Checkpoint, Event, EventBuilder, build_lossless, build_tree};
@@ -172,10 +174,19 @@ pub enum SyntaxKind {
     /// (an identifier, or the `const` keyword) and an optional
     /// [`SyntaxKind::ArgList`]. Annotations are the first children of the
     /// declaration node they annotate ([`SyntaxKind::LetStmt`],
-    /// [`SyntaxKind::StateStmt`], [`SyntaxKind::MemoStmt`]); the AST has no
-    /// node for them, since the parser lowers `@f(a) let X = v` to
-    /// `let X = f(v, a)`.
+    /// [`SyntaxKind::StateStmt`], [`SyntaxKind::MemoStmt`], and for `@doc`
+    /// also [`SyntaxKind::FnDecl`], [`SyntaxKind::NativeFnDecl`],
+    /// [`SyntaxKind::ClassDecl`] and [`SyntaxKind::EnumDecl`]). The AST has no
+    /// node for them: the parser lowers a value annotation `@f(a) let X = v`
+    /// to `let X = f(v, a)`, and stores a `@doc` on the statement
+    /// ([`crate::ast::Stmt::doc`]).
     Annotation,
+    /// The file's `@module_doc(…)` (docs/proposals/doc-annotation.md): a
+    /// direct child of the [`SyntaxKind::Root`], before every statement,
+    /// holding one [`SyntaxKind::Annotation`]. It is not a statement: the
+    /// projection reads it as the file's doc
+    /// ([`crate::cst_project::module_doc`]).
+    ModuleDoc,
 }
 
 #[cfg(test)]
@@ -611,6 +622,32 @@ mod tests {
         let ann = find_node(&root, SyntaxKind::Annotation).expect("Annotation");
         assert_eq!(ann.text(), "@tunable(0, 10)");
         assert!(find_node(&ann, SyntaxKind::ArgList).is_some());
+    }
+
+    #[test]
+    fn parse_cst_docs_open_every_declaration_and_the_file() {
+        // `@doc` is the first child of a `fn`, `native fn`, `class` or
+        // `enum` too; `@module_doc` is a child of the root of its own.
+        for (src, kind) in [
+            ("@doc(\"F.\")\npub fn f()\n  1\nend\n", SyntaxKind::FnDecl),
+            ("@doc(\"N.\") native fn n() = \"n\"\n", SyntaxKind::NativeFnDecl),
+            ("@doc(\"\"\"C.\"\"\")\nclass C\n  x: int\nend\n", SyntaxKind::ClassDecl),
+            ("@doc(\"E.\") enum E\n  a,\n  b\nend\n", SyntaxKind::EnumDecl),
+            ("@doc(\"S.\") @tunable let S = 1\n", SyntaxKind::LetStmt),
+        ] {
+            let root = parse_root(src);
+            assert_eq!(root.text(), src);
+            let decl = find_node(&root, kind).expect("a declaration");
+            assert_eq!(child_nodes(&decl)[0].kind(), SyntaxKind::Annotation, "{src:?}");
+            assert!(decl.text().starts_with("@doc("), "{src:?}: {:?}", decl.text());
+        }
+        let src = "# header\n@module_doc(\"M.\")\n\nlet x = 1\n";
+        let root = parse_root(src);
+        assert_eq!(root.text(), src);
+        let kids = child_nodes(&root);
+        assert_eq!(kids[0].kind(), SyntaxKind::ModuleDoc);
+        assert_eq!(child_nodes(&kids[0])[0].kind(), SyntaxKind::Annotation);
+        assert_eq!(kids[1].kind(), SyntaxKind::LetStmt);
     }
 
     #[test]

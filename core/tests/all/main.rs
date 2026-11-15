@@ -30,6 +30,7 @@ mod dm_jacobian;
 mod dm_ranges;
 mod dm_solve;
 mod dm_spec;
+mod doc_annotation;
 mod drop_edit;
 mod element_edits;
 mod element_origins;

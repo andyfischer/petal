@@ -70,6 +70,64 @@ pub const IGNORE_FILE: &str = "petal-fmt-ignore-file";
 pub const OFF: &str = "petal-fmt-off";
 pub const ON: &str = "petal-fmt-on";
 
+/// `text` with a blank line between a file's `@module_doc(…)` and the
+/// statement written directly under it: the doc annotates the file, and the
+/// blank line shows it does not annotate that statement
+/// (docs/proposals/doc-annotation.md).
+fn blank_line_after_module_doc(text: &str) -> Result<String, String> {
+    let mut lexer = Lexer::new(text);
+    lexer.tokenize()?;
+    let (tokens, spans) = (&lexer.tokens, &lexer.token_spans);
+    let first = tokens.iter().position(|t| !matches!(t, Token::Newline));
+    let Some(i) = first else { return Ok(text.to_string()) };
+    let is_module_doc = matches!(tokens[i], Token::At)
+        && matches!(tokens.get(i + 1), Some(Token::Ident(w)) if w == crate::ast::MODULE_DOC_ANNOTATION);
+    if !is_module_doc {
+        return Ok(text.to_string());
+    }
+    // The annotation's last token: its `)`, or its name.
+    let mut last = i + 1;
+    if matches!(tokens.get(i + 2), Some(Token::LParen)) {
+        let mut depth = 0usize;
+        for (j, t) in tokens.iter().enumerate().skip(i + 2) {
+            match t {
+                Token::LParen => depth += 1,
+                Token::RParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        last = j;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    // The next code token must be on the very next line for a blank line to
+    // be missing.
+    let Some(next) = tokens[last + 1..].iter().position(|t| !matches!(t, Token::Newline)) else {
+        return Ok(text.to_string());
+    };
+    let (end, next_line) = (spans[last].end, spans[last + 1 + next].start.line);
+    let chars: Vec<char> = text.chars().collect();
+    // Comments directly under the doc count as the next line too.
+    let mut line_end = end.offset as usize;
+    while line_end < chars.len() && chars[line_end] != '\n' {
+        line_end += 1;
+    }
+    let following_blank = chars[(line_end + 1).min(chars.len())..]
+        .iter()
+        .take_while(|c| **c != '\n')
+        .all(|c| c.is_whitespace());
+    if next_line <= end.line || following_blank {
+        return Ok(text.to_string());
+    }
+    let mut out: String = chars[..=line_end.min(chars.len() - 1)].iter().collect();
+    out.push('\n');
+    out.extend(&chars[(line_end + 1).min(chars.len())..]);
+    Ok(out)
+}
+
 /// Format `source`. Errors when it does not parse (nothing is ever written for
 /// such a file) and — a formatter bug, not a user error — when the result
 /// would not be the same program.
@@ -100,6 +158,7 @@ pub fn format_source(source: &str) -> Result<String, String> {
         text = aligned;
     }
     let output = comments::collapse_blank_lines(&text, protected)?;
+    let output = blank_line_after_module_doc(&output)?;
 
     let before = token_signature(source)?;
     let after = token_signature(&output)

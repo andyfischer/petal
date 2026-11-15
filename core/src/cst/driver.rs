@@ -51,6 +51,19 @@ pub fn parse_source_phased(
     parse_with(Lexer::new_in_file(source, file), source, file, true)
 }
 
+/// What [`parse_source_with_module_doc`] gives: the tree, the statements and
+/// the file's doc.
+pub type DocumentedParse = (Rc<GreenNode>, Vec<Stmt>, Option<crate::ast::Doc>);
+
+/// [`parse_source`], plus the file's `@module_doc(…)`
+/// (docs/proposals/doc-annotation.md), which documents the file and is not
+/// one of its statements: `None` when it has none.
+pub fn parse_source_with_module_doc(source: &str, file: FileId) -> Result<DocumentedParse, String> {
+    let (green, stmts) = parse_source(source, file)?;
+    let doc = crate::cst_project::module_doc(&SyntaxNode::new_root(green.clone()), file)?;
+    Ok((green, stmts, doc))
+}
+
 /// [`parse_source`] the way source read before `else if` was one token: each
 /// `else if` is an `else` block holding an `if` that takes its own `end`
 /// ([`Lexer::unmerged_else_if`]). For the `else-if-nesting` migration of
@@ -144,6 +157,14 @@ fn parse_reading(
     // inputs the corpus lacks.
     #[cfg(debug_assertions)]
     check_projection(source, file, &direct, &projected);
+    #[cfg(debug_assertions)]
+    assert_eq!(
+        parser.module_doc(),
+        crate::cst_project::module_doc(&SyntaxNode::new_root(green.clone()), file)
+            .map_err(phased(Phase::Parse))?
+            .as_ref(),
+        "CST projection of the @module_doc diverged from the parser's"
+    );
     #[cfg(not(debug_assertions))]
     let _ = direct;
     Ok((green, projected))

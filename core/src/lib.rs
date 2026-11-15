@@ -29,6 +29,7 @@ pub mod dict;
 pub mod effect_audit;
 pub mod enum_table;
 pub mod direct_manipulation;
+pub mod doc_annotation;
 pub mod dm;
 pub mod dot_graph;
 pub mod drop_edit;

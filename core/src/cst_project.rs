@@ -47,7 +47,35 @@ pub fn project_in_file(root: &SyntaxNode, file: FileId) -> Result<Vec<Stmt>, Str
         file,
         tests: 0,
     };
-    child_nodes(root).iter().map(|n| p.stmt(n)).collect()
+    child_nodes(root)
+        .iter()
+        .filter(|n| n.kind() != SyntaxKind::ModuleDoc)
+        .map(|n| p.stmt(n))
+        .collect()
+}
+
+/// The file's `@module_doc(…)`, read from the [`SyntaxKind::ModuleDoc`]
+/// child of a whole-file `Root` node (docs/proposals/doc-annotation.md).
+/// `None` when the file has none. Spans are tagged with `file`.
+pub fn module_doc(root: &SyntaxNode, file: FileId) -> Result<Option<Doc>, String> {
+    let Some(node) = child_nodes(root).into_iter().find(|n| n.kind() == SyntaxKind::ModuleDoc)
+    else {
+        return Ok(None);
+    };
+    let text = root.text();
+    let mut p = Projector {
+        lines: LineIndex::new(&text),
+        file,
+        tests: 0,
+    };
+    let ann = child_nodes(&node)
+        .into_iter()
+        .find(|n| n.kind() == SyntaxKind::Annotation)
+        .ok_or("@module_doc missing its annotation")?;
+    let (ann, span) = p.annotation(&ann)?;
+    crate::doc_annotation::doc_from_annotation(&ann, span)
+        .map(Some)
+        .map_err(|(_, msg)| msg)
 }
 
 struct Projector {
@@ -555,7 +583,7 @@ impl Projector {
         };
         // `@f(a) let X = v` is `let X = f(v, a)`: the parser lowers the
         // annotations onto the value, and so does the projection.
-        let kind = self.lower_annotations(node, kind)?;
+        let (kind, doc) = self.lower_annotations(node, kind)?;
         // A leading `pub` modifier (or its deprecated spelling `export`) is
         // kept as a direct token child of the decl node (fn/let/state/enum),
         // so its presence gates module exports.
@@ -567,43 +595,40 @@ impl Projector {
             span,
             exported,
             test,
+            doc,
         })
     }
 
-    /// The declaration `kind` projected from `node`, with the
-    /// [`SyntaxKind::Annotation`] children of `node` applied to its value
-    /// ([`crate::ast::apply_annotations`]). Unchanged when there are none.
-    fn lower_annotations(&mut self, node: &SyntaxNode, mut kind: StmtKind) -> Result<StmtKind, String> {
+    /// The declaration `kind` projected from `node`, with the value
+    /// annotations among the [`SyntaxKind::Annotation`] children of `node`
+    /// applied to its value ([`crate::ast::apply_annotations`]), and its
+    /// `@doc` read beside it. Unchanged, with no doc, when there are none.
+    fn lower_annotations(
+        &mut self,
+        node: &SyntaxNode,
+        mut kind: StmtKind,
+    ) -> Result<(StmtKind, Option<Box<Doc>>), String> {
         let nodes: Vec<SyntaxNode> = child_nodes(node)
             .into_iter()
             .filter(|n| n.kind() == SyntaxKind::Annotation)
             .collect();
         if nodes.is_empty() {
-            return Ok(kind);
+            return Ok((kind, None));
         }
         let mut annotations = Vec::with_capacity(nodes.len());
-        for ann in &nodes {
-            let name_tok = direct_tokens(ann)
-                .into_iter()
-                .find(|t| matches!(t.token(), Some(Token::Ident(_) | Token::Const)))
-                .ok_or("annotation missing its name")?;
-            let name = match name_tok.token() {
-                Some(Token::Ident(n)) => n.clone(),
-                _ => crate::parse::CONST_ANNOTATION.to_string(),
-            };
-            let (args, arg_names) = match child_nodes(ann)
-                .into_iter()
-                .find(|n| n.kind() == SyntaxKind::ArgList)
-            {
-                Some(list) => self.arg_list(&list)?,
-                None => (Vec::new(), Vec::new()),
-            };
-            annotations.push(crate::ast::Annotation {
-                name,
-                name_span: self.token_span(&name_tok),
-                args,
-                arg_names,
-            });
+        let mut doc = None;
+        for ann_node in &nodes {
+            let (ann, span) = self.annotation(ann_node)?;
+            if ann.name == crate::ast::DOC_ANNOTATION {
+                let read = crate::doc_annotation::doc_from_annotation(&ann, span)
+                    .map_err(|(_, msg)| msg)?;
+                doc = Some(Box::new(read));
+            } else {
+                annotations.push(ann);
+            }
+        }
+        if annotations.is_empty() {
+            return Ok((kind, doc));
         }
         match &mut kind {
             StmtKind::Let { value: v, .. }
@@ -618,9 +643,42 @@ impl Projector {
                 );
                 *v = crate::ast::apply_annotations(value, annotations);
             }
-            _ => return Err(format!("annotations on a {:?} node", node.kind())),
+            _ => return Err(format!("value annotations on a {:?} node", node.kind())),
         }
-        Ok(kind)
+        Ok((kind, doc))
+    }
+
+    /// One [`SyntaxKind::Annotation`] node, and its span from the `@` to its
+    /// last token.
+    fn annotation(
+        &mut self,
+        ann: &SyntaxNode,
+    ) -> Result<(crate::ast::Annotation, SourceSpan), String> {
+        let name_tok = direct_tokens(ann)
+            .into_iter()
+            .find(|t| matches!(t.token(), Some(Token::Ident(_) | Token::Const)))
+            .ok_or("annotation missing its name")?;
+        let name = match name_tok.token() {
+            Some(Token::Ident(n)) => n.clone(),
+            _ => crate::parse::CONST_ANNOTATION.to_string(),
+        };
+        let (args, arg_names) = match child_nodes(ann)
+            .into_iter()
+            .find(|n| n.kind() == SyntaxKind::ArgList)
+        {
+            Some(list) => self.arg_list(&list)?,
+            None => (Vec::new(), Vec::new()),
+        };
+        let span = self.node_span(ann)?;
+        Ok((
+            crate::ast::Annotation {
+                name,
+                name_span: self.token_span(&name_tok),
+                args,
+                arg_names,
+            },
+            span,
+        ))
     }
 
     /// Project an `AssignStmt` or a `SetStmt` — structurally identical, and
@@ -682,6 +740,7 @@ impl Projector {
             span,
             exported: false,
             test: None,
+            doc: None,
         })
     }
 
@@ -690,7 +749,7 @@ impl Projector {
         // own node.
         let name = self.only_ident(node)?;
         let mut variants: Vec<EnumVariant> = Vec::new();
-        for n in child_nodes(node) {
+        for n in decl_child_nodes(node) {
             if n.kind() != SyntaxKind::EnumVariant {
                 return Err(format!(
                     "unexpected {:?} node in enum declaration",
@@ -1477,6 +1536,7 @@ impl Projector {
                 span,
                 exported: false,
                 test: None,
+                doc: None,
             }]
         } else {
             self.block(node)?

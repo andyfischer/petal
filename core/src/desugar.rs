@@ -66,6 +66,7 @@ fn lower_param_defaults(params: &mut [Param], body: &mut Vec<Stmt>) {
             span,
             exported: false,
             test: None,
+            doc: None,
         });
     }
     prologue.append(body);
@@ -86,6 +87,7 @@ fn param_default_stmt(name: &str, default: Expr) -> Stmt {
         span,
         exported: false,
         test: None,
+        doc: None,
     };
     let value = Expr {
         kind: ExprKind::If {
@@ -103,6 +105,7 @@ fn param_default_stmt(name: &str, default: Expr) -> Stmt {
         span,
         exported: false,
         test: None,
+        doc: None,
     }
 }
 

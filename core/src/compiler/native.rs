@@ -127,6 +127,7 @@ pub(crate) fn lower_native_overloads(stmts: &mut Vec<Stmt>) -> Vec<Diagnostic> {
             // The hidden name is private; the `fn`s above carry the `pub`.
             exported: false,
             test: None,
+            doc: None,
         });
     }
     *stmts = out;
@@ -176,11 +177,13 @@ fn forwarding_fn(decl: &NativeFnDecl, alias: &str, arity: usize, stmt: &Stmt) ->
                 span,
                 exported: false,
                 test: None,
+                doc: None,
             }],
         },
         span,
         exported: stmt.exported,
         test: None,
+        doc: None,
     }
 }
 

@@ -152,6 +152,8 @@ pub struct Parser {
     tokens: Vec<Token>,
     token_spans: Vec<SourceSpan>,
     pos: usize,
+    /// The file's `@module_doc(…)`, once parsed ([`Parser::module_doc`]).
+    module_doc: Option<crate::ast::Doc>,
     /// CST event stream, recorded alongside AST construction. The tree built
     /// from it is the authoritative parse artifact (see
     /// [`crate::cst::parse_source`]); read it back with [`Parser::cst_events`]
@@ -276,6 +278,7 @@ impl Parser {
             tokens,
             token_spans,
             pos: 0,
+            module_doc: None,
             events: EventBuilder::new(),
             pending_optional: false,
             arrow_lambda_end: None,
@@ -376,6 +379,12 @@ impl Parser {
         self.events.events()
     }
 
+    /// The file's `@module_doc(…)`, after [`Parser::parse_program`]
+    /// succeeds: it documents the file and is not one of its statements.
+    pub fn module_doc(&self) -> Option<&crate::ast::Doc> {
+        self.module_doc.as_ref()
+    }
+
     // ---- CST event recording ----
 
     fn ev_open(&mut self, kind: SyntaxKind) {
@@ -453,6 +462,7 @@ impl Parser {
     /// Back to the first token, for a second reading of the same tokens.
     fn restart(&mut self) {
         self.pos = 0;
+        self.module_doc = None;
         self.events = EventBuilder::new();
         self.pending_optional = false;
         self.arrow_lambda_end = None;
@@ -488,6 +498,11 @@ impl Parser {
                         ),
                     ));
                 }
+            }
+            if self.starts_module_doc() {
+                self.parse_module_doc(stmts.is_empty())?;
+                self.skip_newlines();
+                continue;
             }
             self.at_top_level = true;
             let stmt = self.parse_stmt()?;
@@ -1330,6 +1345,7 @@ impl Parser {
             span: self.span_from(start_pos),
             exported: false,
             test: None,
+            doc: None,
         }
     }
 
@@ -1507,28 +1523,79 @@ impl Parser {
     /// The declarations that take one are the bindings whose initializer the
     /// call form can wrap: `let` (and `pub let`), and also `var`, `state`,
     /// `memo` and the deprecated `const NAME =` / `config let`, where the
-    /// lowered call meets the diagnostics the call form meets there. `@`
-    /// before a `fn` is reserved for compile-time annotations (F1), and a
-    /// class or enum takes none.
+    /// lowered call meets the diagnostics the call form meets there.
+    ///
+    /// The compile-time annotation `@doc(…)` (docs/proposals/doc-annotation.md)
+    /// is split off first: it lowers to nothing and is stored on the statement
+    /// ([`Stmt::doc`]), stacked in any order with value annotations. It also
+    /// goes on a `fn`, `native fn`, `class` or `enum`, which take no other
+    /// annotation (F1). `@module_doc` is the file's, read by
+    /// [`Parser::parse_module_doc`].
     fn parse_annotated(&mut self, start: usize) -> Result<Stmt, String> {
         let outer = self.ev_checkpoint();
-        let mut annotations = Vec::new();
-        let mut positions = Vec::new();
+        let mut written = Vec::new();
         while matches!(self.peek(), Token::At) {
-            positions.push(self.pos);
-            annotations.push(self.parse_annotation()?);
+            let at = self.pos;
+            let ann = self.parse_annotation()?;
+            let span = self.span_from(at);
+            written.push((ann, at, span));
             self.skip_newlines();
         }
-        let first = &annotations[0].name;
+        // Split the compile-time annotations, which are stored on the
+        // statement, from the value annotations, which are lowered onto its
+        // value. Their order does not matter.
+        let mut doc: Option<Box<crate::ast::Doc>> = None;
+        let mut annotations = Vec::new();
+        let mut positions = Vec::new();
+        for (i, (ann, at, span)) in written.into_iter().enumerate() {
+            match ann.name.as_str() {
+                crate::ast::MODULE_DOC_ANNOTATION => {
+                    let msg = if i == 0 {
+                        MODULE_DOC_PLACEMENT.to_string()
+                    } else {
+                        "`@module_doc` annotates the file, not a declaration: write it on a \
+                         line of its own at the top of the file"
+                            .to_string()
+                    };
+                    return Err(self.error_at(at, msg));
+                }
+                crate::ast::DOC_ANNOTATION => {
+                    if doc.is_some() {
+                        return Err(self.error_at(
+                            at,
+                            "a declaration takes one `@doc`, and this one already has one: \
+                             merge the two"
+                                .to_string(),
+                        ));
+                    }
+                    doc = Some(Box::new(self.read_doc(&ann, span)?));
+                }
+                _ => {
+                    annotations.push(ann);
+                    positions.push(at);
+                }
+            }
+        }
+        // The first value annotation, for the errors where none is allowed.
+        let first_value = annotations.first().map(|a| (a.name.clone(), positions[0]));
         // What the annotations are written on.
         enum Target {
             Let(bool, LetKeyword, bool),
             State(bool),
             Memo,
+            Fn(bool),
+            Native(bool),
+            Enum(bool),
+            Class(bool),
         }
         let config_at = |p: &Self, n: usize| {
             matches!(p.peek_at(n), Token::Ident(w) if w == CONFIG_KEYWORD)
                 && matches!(p.peek_at(n + 1), Token::Let)
+        };
+        let needs_decl = if first_value.is_none() {
+            DOC_NEEDS_DECL
+        } else {
+            ANNOTATION_NEEDS_DECL
         };
         let target = match self.peek() {
             Token::Let => Target::Let(false, LetKeyword::Let, false),
@@ -1551,32 +1618,36 @@ impl Parser {
                         "annotations go before `pub`: write `@… pub let NAME = …`".to_string(),
                     ));
                 }
-                Token::Fn => return Err(self.error_at(start, annotation_on_fn_message(first))),
-                Token::Ident(w) if w == NATIVE_KEYWORD => {
-                    return Err(self.error_at(start, annotation_on_fn_message(first)));
+                Token::Fn => Target::Fn(true),
+                Token::Ident(w) if w == NATIVE_KEYWORD && self.starts_native_decl(1) => {
+                    Target::Native(true)
                 }
-                Token::Enum => {
-                    return Err(self.error_at(start, annotation_on_type_message(first, "an enum")));
-                }
-                Token::Ident(w) if w == CLASS_KEYWORD => {
-                    return Err(self.error_at(start, annotation_on_type_message(first, "a class")));
-                }
-                _ => return Err(self.error_at_current(ANNOTATION_NEEDS_DECL.to_string())),
+                Token::Enum => Target::Enum(true),
+                Token::Ident(w) if w == CLASS_KEYWORD => Target::Class(true),
+                _ => return Err(self.error_at_current(needs_decl.to_string())),
             },
-            Token::Fn if !matches!(self.peek_at(1), Token::LParen) => {
-                return Err(self.error_at(start, annotation_on_fn_message(first)));
-            }
+            Token::Fn if !matches!(self.peek_at(1), Token::LParen) => Target::Fn(false),
             Token::Ident(w) if w == NATIVE_KEYWORD && self.starts_native_decl(0) => {
-                return Err(self.error_at(start, annotation_on_fn_message(first)));
+                Target::Native(false)
             }
-            Token::Enum => {
-                return Err(self.error_at(start, annotation_on_type_message(first, "an enum")));
-            }
+            Token::Enum => Target::Enum(false),
             Token::Ident(w) if w == CLASS_KEYWORD && self.starts_class_decl() => {
-                return Err(self.error_at(start, annotation_on_type_message(first, "a class")));
+                Target::Class(false)
             }
-            _ => return Err(self.error_at_current(ANNOTATION_NEEDS_DECL.to_string())),
+            _ => return Err(self.error_at_current(needs_decl.to_string())),
         };
+        // A function, class or enum takes only `@doc`.
+        if let Some((name, at)) = &first_value {
+            let what = match target {
+                Target::Fn(_) | Target::Native(_) => Some("a function"),
+                Target::Enum(_) => Some("an enum declaration"),
+                Target::Class(_) => Some("a class declaration"),
+                _ => None,
+            };
+            if let Some(what) = what {
+                return Err(self.error_at(*at, annotation_on_decl_message(name, what)));
+            }
+        }
         // Only the reserved annotations: `@` never calls an arbitrary
         // function. The suggestion spells the call the author can write.
         for (ann, &pos) in annotations.iter().zip(&positions) {
@@ -1585,8 +1656,8 @@ impl Parser {
                 return Err(self.error_at(
                     pos,
                     format!(
-                        "`@{}` is not an annotation. `@` takes `const`, `tunable` or `rigid`. \
-                         To pass the value through a function, write `{decl}`",
+                        "`@{}` is not an annotation. `@` takes `const`, `tunable`, `rigid` or \
+                         `doc`. To pass the value through a function, write `{decl}`",
                         ann.name
                     ),
                 ));
@@ -1599,10 +1670,18 @@ impl Parser {
             }
             Target::State(exported) => self.parse_state(start, exported)?,
             Target::Memo => self.parse_memo(start)?,
+            Target::Fn(exported) => self.parse_fn_decl(start, exported)?,
+            Target::Native(exported) => self.parse_native_fn_decl(start, exported)?,
+            Target::Enum(exported) => self.parse_enum_decl(start, exported)?,
+            Target::Class(exported) => self.parse_class_decl(start, exported)?,
         };
         // The declaration's node takes the annotations in as its first
         // children.
         self.events.hoist_open(inner, outer);
+        stmt.doc = doc;
+        if annotations.is_empty() {
+            return Ok(stmt);
+        }
         match &mut stmt.kind {
             StmtKind::Let { value: v, .. }
             | StmtKind::State { init: v, .. }
@@ -1616,9 +1695,58 @@ impl Parser {
                 );
                 *v = crate::ast::apply_annotations(value, annotations);
             }
-            _ => unreachable!("the target is a binding"),
+            _ => unreachable!("value annotations are only taken by a binding"),
         }
         Ok(stmt)
+    }
+
+    /// Read a `@doc`/`@module_doc` written at `span` into a [`crate::ast::Doc`],
+    /// reporting what is wrong with its arguments
+    /// ([`crate::doc_annotation::doc_from_annotation`]).
+    fn read_doc(
+        &self,
+        ann: &crate::ast::Annotation,
+        span: SourceSpan,
+    ) -> Result<crate::ast::Doc, String> {
+        crate::doc_annotation::doc_from_annotation(ann, span)
+            .map_err(|(at, msg)| error_at_span(at, msg))
+    }
+
+    /// Whether the statement at the cursor is `@module_doc`.
+    fn starts_module_doc(&self) -> bool {
+        matches!(self.peek(), Token::At)
+            && matches!(self.peek_at(1), Token::Ident(w) if w == crate::ast::MODULE_DOC_ANNOTATION)
+    }
+
+    /// The file's `@module_doc(…)`: a statement of its own, before every
+    /// other (`first`), at most once. It is recorded as a
+    /// [`SyntaxKind::ModuleDoc`] node holding the annotation, and kept on the
+    /// parser ([`Parser::module_doc`]) rather than among the statements.
+    fn parse_module_doc(&mut self, first: bool) -> Result<(), String> {
+        let at = self.pos;
+        if self.module_doc.is_some() {
+            return Err(self.error_at(
+                at,
+                "a file takes one `@module_doc`, and this one already has one: merge the two"
+                    .to_string(),
+            ));
+        }
+        if !first {
+            return Err(self.error_at(at, MODULE_DOC_PLACEMENT.to_string()));
+        }
+        self.ev_open(SyntaxKind::ModuleDoc);
+        let ann = self.parse_annotation()?;
+        self.ev_close();
+        let span = self.span_from(at);
+        if !matches!(self.peek(), Token::Newline | Token::Eof) {
+            return Err(self.error_at_current(
+                "`@module_doc` annotates the file and is a statement of its own: start the \
+                 next statement on a new line"
+                    .to_string(),
+            ));
+        }
+        self.module_doc = Some(self.read_doc(&ann, span)?);
+        Ok(())
     }
 
     /// One `@name` or `@name(args)`, as an [`SyntaxKind::Annotation`] node.
@@ -1634,8 +1762,8 @@ impl Parser {
             _ => {
                 return Err(self.error_at(
                     at,
-                    "`@` must be followed by an annotation name: `@const`, `@tunable` or \
-                     `@rigid`"
+                    "`@` must be followed by an annotation name: `@const`, `@tunable`, \
+                     `@rigid` or `@doc`"
                         .to_string(),
                 ));
             }
@@ -1652,14 +1780,18 @@ impl Parser {
         }
         self.advance(); // consume the name
         let name_span = self.prev_span();
+        let compile_time = crate::ast::COMPILE_TIME_ANNOTATIONS.contains(&name.as_str());
         let (args, arg_names) = if matches!(self.peek(), Token::LParen) {
+            if compile_time {
+                self.no_interpolated_doc_text(&name)?;
+            }
             self.ev_open(SyntaxKind::ArgList);
             self.advance();
             let open = self.pos;
             let (args, arg_names) = self.parse_arg_list()?;
             self.expect(&Token::RParen)?;
             self.ev_close(); // ArgList
-            if arg_names.iter().any(|n| n.as_deref() == Some("value")) {
+            if !compile_time && arg_names.iter().any(|n| n.as_deref() == Some("value")) {
                 return Err(self.error_at(
                     open,
                     format!(
@@ -1679,6 +1811,52 @@ impl Parser {
             args,
             arg_names,
         })
+    }
+
+    /// A doc annotation's arguments, from the `(` at the cursor, hold no
+    /// `"…{x}…"` interpolation: the hole would otherwise be parsed as code and
+    /// fail there (`{bg, fg}` is not an expression), far from the mistake.
+    fn no_interpolated_doc_text(&self, name: &str) -> Result<(), String> {
+        let mut depth = 0usize;
+        let mut i = self.pos;
+        while let Some(tok) = self.tokens.get(i) {
+            match tok {
+                Token::LParen => depth += 1,
+                Token::RParen => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return Ok(());
+                    }
+                }
+                Token::InterpStart => {
+                    // InterpStart, the literal part up to the `{`, then the
+                    // hole's tokens up to the next literal part.
+                    let mut text = String::from("{");
+                    let mut prev_end: Option<u32> = None;
+                    for j in i + 2..self.tokens.len() {
+                        if matches!(self.tokens[j], Token::String(_) | Token::InterpEnd) {
+                            break;
+                        }
+                        let span = self.token_spans[j];
+                        if prev_end.is_some_and(|e| span.start.offset > e) {
+                            text.push(' ');
+                        }
+                        text.push_str(&token_source_text(&self.tokens[j]));
+                        prev_end = Some(span.end.offset);
+                    }
+                    text.push('}');
+                    let at = format!("`@{name}`");
+                    return Err(self.error_at(
+                        i,
+                        crate::doc_annotation::interpolation_message(&at, Some(&text)),
+                    ));
+                }
+                Token::Eof => return Ok(()),
+                _ => {}
+            }
+            i += 1;
+        }
+        Ok(())
     }
 
     /// `let X = name(v)` for the declaration at the cursor, for the
@@ -4370,6 +4548,10 @@ pub(crate) fn at_rebind_removed_message(name: Option<&str>) -> String {
             "`@` annotates a declaration and goes before `let` (`@{x} let NAME = …`). Inside \
              an expression, write the call: `{x}(…)`"
         ),
+        Some(x) if crate::ast::COMPILE_TIME_ANNOTATIONS.contains(&x) => format!(
+            "`@{x}` is not an expression: it documents a declaration and goes before it \
+             (`@doc(\"…\") fn f()`, `@doc(\"…\") let NAME = …`)"
+        ),
         Some(x) => format!(
             "`@{x}` is not an expression: `@` only annotates a declaration (`@tunable let \
              NAME = …`), and the `@` rebind operator was removed. Write `{x} = f({x})` \
@@ -4389,19 +4571,49 @@ pub(crate) fn at_rebind_removed_message(name: Option<&str>) -> String {
 const ANNOTATION_NEEDS_DECL: &str =
     "an annotation must be followed by a declaration (`let`, `pub let`)";
 
-/// The error for `@name` on a `fn` (F1 in docs/proposals/annotation-syntax.md).
-fn annotation_on_fn_message(name: &str) -> String {
-    let what = match name {
-        "tunable" | "rigid" => format!(" `@{name}` annotates a `let`; a function is not a setting."),
-        "const" => " `@const` annotates a `let`.".to_string(),
-        _ => String::new(),
-    };
-    format!("`@` on a function is reserved for compile-time annotations; there are none yet.{what}")
+/// The error for `@` with only compile-time annotations (`@doc`) and no
+/// declaration after it.
+const DOC_NEEDS_DECL: &str = "an annotation must be followed by a declaration (`fn`, `let`, \
+     `var`, `state`, `memo`, `native fn`, `class` or `enum`)";
+
+/// The error for a `@module_doc` anywhere but the top of a file.
+const MODULE_DOC_PLACEMENT: &str = "`@module_doc` goes at the top of the file, before imports";
+
+/// The error for a value annotation `@name` on a function, class or enum
+/// declaration (`what`), which takes only `@doc` (F1 in
+/// docs/proposals/annotation-syntax.md).
+fn annotation_on_decl_message(name: &str, what: &str) -> String {
+    if crate::ast::ANNOTATION_NAMES.contains(&name) {
+        format!("`@{name}` annotates a `let`; {what} takes only `@doc`.")
+    } else {
+        format!("`@{name}` is not an annotation; {what} takes only `@doc`.")
+    }
 }
 
-/// The error for `@name` on a class or enum declaration.
-fn annotation_on_type_message(name: &str, what: &str) -> String {
-    format!("`@{name}` annotates a `let`; {what} declaration takes no annotations")
+/// A parse error at `span`, in the parser's `[line N, column M]` form.
+fn error_at_span(span: SourceSpan, msg: String) -> String {
+    if span.start.line > 0 {
+        format!("{msg} [line {}, column {}]", span.start.line, span.start.column)
+    } else {
+        msg
+    }
+}
+
+/// A token as it is written, for quoting code back in an error message.
+fn token_source_text(tok: &Token) -> String {
+    match tok {
+        Token::Ident(n) => n.clone(),
+        Token::Int(n) => n.to_string(),
+        Token::Float(x) => x.to_string(),
+        Token::String(s) => format!("\"{s}\""),
+        other => {
+            if let Some(kw) = crate::lexer::keyword_text(other) {
+                return kw.to_string();
+            }
+            let d = token_desc(other);
+            d.trim_matches(|c| c == '\'' || c == '`').to_string()
+        }
+    }
 }
 
 /// The source text of a literal token, for an error message.

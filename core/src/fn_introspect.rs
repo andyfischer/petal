@@ -185,6 +185,28 @@ impl ExprVisitor for Finder<'_> {
     }
 }
 
+/// `span` with its start moved past the `@` annotations it opens with
+/// ([`crate::ast::skip_annotations`]): where the declaration's keyword is.
+fn past_annotations(source: &str, span: SourceSpan) -> SourceSpan {
+    let start = span.start.offset as usize;
+    if source.chars().nth(start) != Some('@') {
+        return span;
+    }
+    let chars: Vec<char> = source.chars().collect();
+    let to = crate::ast::skip_annotations(&chars, start).min(span.end.offset as usize);
+    let mut out = span;
+    for &c in &chars[start..to] {
+        if c == '\n' {
+            out.start.line += 1;
+            out.start.column = 1;
+        } else {
+            out.start.column += 1;
+        }
+    }
+    out.start.offset = to as u32;
+    out
+}
+
 fn meta_of(
     name: Option<&String>,
     class: Option<&str>,
@@ -194,6 +216,9 @@ fn meta_of(
     span: SourceSpan,
     at: &Finder,
 ) -> FnMeta {
+    // A declaration's span starts at its first `@doc`; the function is
+    // reported where its `fn` (or `pub`) is written.
+    let span = past_annotations(at.source, span);
     let mut ast = Map::new();
     ast.insert("tag".into(), json!(if name.is_some() { "FnDecl" } else { "Lambda" }));
     ast.insert("name".into(), json!(name));

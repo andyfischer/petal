@@ -14,7 +14,7 @@
 use std::fmt::Write;
 
 use crate::ast::{
-    AssignTarget, ElseBranch, Expr, ExprKind, ImportDecl, JsxChild, Literal, MatchArm, Param,
+    AssignTarget, Doc, DocValue, ElseBranch, Expr, ExprKind, ImportDecl, JsxChild, Literal, MatchArm, Param,
     Pattern, RecordField, Stmt, StmtKind, TypeAnn,
 };
 use crate::source_map::SourceSpan;
@@ -22,6 +22,18 @@ use crate::source_map::SourceSpan;
 /// Render a parsed program (a list of top-level statements) as a compact tree.
 pub fn display_stmts(stmts: &[Stmt]) -> String {
     let mut p = Printer::new();
+    for stmt in stmts {
+        p.stmt(stmt, 0);
+    }
+    p.out
+}
+
+/// [`display_stmts`], headed by the file's `@module_doc` when it has one.
+pub fn display_program(stmts: &[Stmt], module_doc: Option<&Doc>) -> String {
+    let mut p = Printer::new();
+    if let Some(doc) = module_doc {
+        p.doc("ModuleDoc", doc, 0);
+    }
     for stmt in stmts {
         p.stmt(stmt, 0);
     }
@@ -66,7 +78,51 @@ impl Printer {
         }
     }
 
+    /// A `@doc`/`@module_doc`: a `Doc` line, then one line per field, its
+    /// strings cleaned the way they are displayed
+    /// ([`crate::doc_annotation::cleandoc`]).
+    fn doc(&mut self, head: &str, doc: &Doc, depth: usize) {
+        let text = |s: &str| format!("{:?}", crate::doc_annotation::cleandoc(s));
+        let pairs = |pairs: &[(String, String)]| {
+            pairs.iter().map(|(k, v)| format!("{k}: {}", text(v))).collect::<Vec<_>>().join(", ")
+        };
+        self.line(depth, head, Some(&doc.span));
+        let d = depth + 1;
+        if let Some(body) = &doc.body {
+            self.line(d, &format!("Body {}", text(body)), None);
+        }
+        if !doc.params.is_empty() {
+            self.line(d, &format!("Params {}", pairs(&doc.params)), None);
+        }
+        if let Some(r) = &doc.returns {
+            self.line(d, &format!("Returns {}", text(r)), None);
+        }
+        if !doc.options.is_empty() {
+            self.line(d, &format!("Options {}", pairs(&doc.options)), None);
+        }
+        for e in &doc.example {
+            self.line(d, &format!("Example {}", text(e)), None);
+        }
+        if !doc.see.is_empty() {
+            self.line(d, &format!("See {:?}", doc.see), None);
+        }
+        if let Some(r) = &doc.deprecated {
+            self.line(d, &format!("Deprecated {}", text(r)), None);
+        }
+        if doc.hidden {
+            self.line(d, "Hidden", None);
+        }
+        if !doc.extra.is_empty() {
+            let fields: Vec<String> =
+                doc.extra.iter().map(|(k, v)| format!("{k}: {}", fmt_doc_value(v))).collect();
+            self.line(d, &format!("Extra {}", fields.join(", ")), None);
+        }
+    }
+
     fn stmt(&mut self, stmt: &Stmt, depth: usize) {
+        if let Some(doc) = &stmt.doc {
+            self.doc("Doc", doc, depth);
+        }
         let export = if stmt.exported { "pub " } else { "" };
         match &stmt.kind {
             StmtKind::Let {
@@ -473,10 +529,53 @@ fn fmt_import(decl: &ImportDecl) -> String {
     head
 }
 
+/// A doc's `extra:` literal, source-like.
+fn fmt_doc_value(v: &DocValue) -> String {
+    match v {
+        DocValue::Nil => "nil".to_string(),
+        DocValue::Bool(b) => b.to_string(),
+        DocValue::Int(n) => n.to_string(),
+        DocValue::Float(x) => format!("{x:?}"),
+        DocValue::String(s) => format!("{s:?}"),
+        DocValue::List(items) => {
+            format!("[{}]", items.iter().map(fmt_doc_value).collect::<Vec<_>>().join(", "))
+        }
+        DocValue::Record(fields) => format!(
+            "{{{}}}",
+            fields
+                .iter()
+                .map(|(k, v)| format!("{k}: {}", fmt_doc_value(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::source_map::ENTRY_FILE;
+
+    #[test]
+    fn docs_show_before_their_declaration() {
+        let src = "@module_doc(\"The file.\", see: [\"x\"])\n\n@doc(\"\"\"\n  Adds.\n\"\"\", params: {a: \"A.\"}, extra: {n: 1})\nfn f(a)\n  a\nend\n";
+        let (tree, stmts) = crate::cst::parse_source(src, ENTRY_FILE).expect("parses");
+        let module = crate::cst_project::module_doc(&crate::cst::SyntaxNode::new_root(tree), ENTRY_FILE)
+            .expect("reads");
+        let expected = "\
+ModuleDoc @1:1-1:37
+  Body \"The file.\"
+  See [\"x\"]
+Doc @3:1-5:39
+  Body \"Adds.\"
+  Params a: \"A.\"
+  Extra n: 1
+FnDecl f (a) @3:1-8:4
+  Expr @7:3
+    Ident a @7:3
+";
+        assert_eq!(display_program(&stmts, module.as_ref()), expected);
+    }
 
     fn render(source: &str) -> String {
         let (_tree, stmts) =

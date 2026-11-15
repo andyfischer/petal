@@ -445,8 +445,9 @@ struct ParamList {
 fn param_list(decl: &Stmt, chars: &[char]) -> Option<ParamList> {
     use crate::lexer::Token;
 
-    let start = decl.span.start.offset as usize;
     let end = (decl.span.end.offset as usize).min(chars.len());
+    // Past a `@doc(…)`, whose `(` is not the parameter list's.
+    let start = crate::ast::skip_annotations(chars, decl.span.start.offset as usize).min(end);
     if start >= end {
         return None;
     }

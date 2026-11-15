@@ -1307,12 +1307,22 @@ pub(super) fn handle_show_tokens(json: bool, source: &str) {
 }
 
 pub(super) fn handle_show_ast(json: bool, source: &str) {
-    match crate::cst::parse_source(source, ENTRY_FILE) {
-        Ok((_tree, stmts)) => {
+    match crate::cst::parse_source_with_module_doc(source, ENTRY_FILE) {
+        Ok((_tree, stmts, module_doc)) => {
             if json {
-                print_json(&stmts);
+                // The statements' array, as ever; a file's `@module_doc`
+                // (not a statement) wraps it in `{module_doc, stmts}`.
+                match module_doc {
+                    Some(doc) => {
+                        print_json(&serde_json::json!({"module_doc": doc, "stmts": stmts}))
+                    }
+                    None => print_json(&stmts),
+                }
             } else {
-                print!("{}", crate::ast_display::display_stmts(&stmts));
+                print!(
+                    "{}",
+                    crate::ast_display::display_program(&stmts, module_doc.as_ref())
+                );
             }
         }
         Err(e) => die_plain(&e),

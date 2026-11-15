@@ -726,12 +726,12 @@ fn misplaced_annotations_are_parse_errors() {
         let got = parse_error(src);
         assert!(got.contains(want), "{src:?}: wanted {want:?} in {got:?}");
     };
-    err("@foo let X = 1\n", "`@foo` is not an annotation. `@` takes `const`, `tunable` or `rigid`. To pass the value through a function, write `let X = foo(1)`");
+    err("@foo let X = 1\n", "`@foo` is not an annotation. `@` takes `const`, `tunable`, `rigid` or `doc`. To pass the value through a function, write `let X = foo(1)`");
     err("@foo pub let X = \"a\"\n", "write `pub let X = foo(\"a\")`");
-    err("@tunable(0, 10) fn speed()\n  1\nend\n", "`@` on a function is reserved for compile-time annotations; there are none yet. `@tunable` annotates a `let`; a function is not a setting.");
-    err("@logged\nfn fact(n)\n  n\nend\n", "`@` on a function is reserved for compile-time annotations; there are none yet.");
-    err("@const pub fn f()\n  1\nend\n", "reserved for compile-time annotations");
-    err("@rigid native fn f() = \"g\"\n", "reserved for compile-time annotations");
+    err("@tunable(0, 10) fn speed()\n  1\nend\n", "`@tunable` annotates a `let`; a function takes only `@doc`.");
+    err("@logged\nfn fact(n)\n  n\nend\n", "`@logged` is not an annotation; a function takes only `@doc`.");
+    err("@const pub fn f()\n  1\nend\n", "a function takes only `@doc`");
+    err("@rigid native fn f() = \"g\"\n", "a function takes only `@doc`");
     err("@const\n", "an annotation must be followed by a declaration (`let`, `pub let`)");
     err("@tunable 4\n", "an annotation must be followed by a declaration");
     err("@tunable x = 4\n", "an annotation must be followed by a declaration");
@@ -741,8 +741,8 @@ fn misplaced_annotations_are_parse_errors() {
     err("print(@const 1)\n", "`@` annotates a declaration");
     err("pub @tunable let X = 1\n", "annotations go before `pub`");
     err("@tunable pub @rigid let X = 1\n", "annotations go before `pub`");
-    err("@tunable class P\n  x: int\nend\n", "a class declaration takes no annotations");
-    err("@tunable enum E\n  a\nend\n", "an enum declaration takes no annotations");
+    err("@tunable class P\n  x: int\nend\n", "`@tunable` annotates a `let`; a class declaration takes only `@doc`.");
+    err("@tunable enum E\n  a\nend\n", "`@tunable` annotates a `let`; an enum declaration takes only `@doc`.");
     err("@ tunable let X = 1\n", "no space after the `@`");
     err("@(1) let X = 1\n", "`@` must be followed by an annotation name");
     err("@tunable(value: 2) let X = 1\n", "cannot also be named `value:`");

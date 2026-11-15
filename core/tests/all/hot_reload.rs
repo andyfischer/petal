@@ -512,6 +512,24 @@ fn comment_only() {
     .check();
 }
 
+/// A `@doc`/`@module_doc` is a compile-time annotation that never reaches
+/// the IR (docs/proposals/doc-annotation.md): adding one keeps every slot.
+/// The reload recompiles (its tokens are new), and the state transfer keeps
+/// everything.
+#[test]
+fn doc_only() {
+    let (old, new) = (
+        "let K = tunable(2)\nstate n = 0\nn += K\nfn show(v)\n  print(v)\nend\nshow(n)\n",
+        "@module_doc(\"The file.\")\n\n@doc(\"The step.\") let K = tunable(2)\n@doc(\"\"\"The {total}.\"\"\") state n = 0\nn += K\n@doc(\"Prints.\", params: {v: \"What.\"})\nfn show(v)\n  print(v)\nend\nshow(n)\n",
+    );
+    Case::new("docs", old, new, Recompiled).check();
+    let mut w = world(old, &[], RunPolicy::FAST);
+    frame(&mut w);
+    let report = w.env.reload_program(w.sid, new, None).expect("reloads");
+    assert_eq!(report.state_dropped, 0, "{report:?}");
+    assert!(report.state_preserved > 0, "{report:?}");
+}
+
 /// docs/tasks/pythonic-syntax.md §6.5: a file whose redundant `end`s are
 /// deleted (the `end-lines` migration) reloads as a layout edit. Nothing is
 /// recompiled, `state` keeps its slots and its values, and every span is

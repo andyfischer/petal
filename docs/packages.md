@@ -54,10 +54,15 @@ ui = ">=0.1"
 | `name` | The package name: the first segment of every import of it. Required. |
 | `version` | Dotted numbers (`0.1.0`). It is what `petal packages` and `petal.lock` show, and what a host announces when the package is its interface. |
 | `modules` | The directory holding the modules, relative to the manifest. |
+| `description` | The one-line summary of the package. The `package-description` lint warns when it disagrees with the first sentence of the root module's `@module_doc` ([CLI.md](CLI.md#rules)). |
 
-Any other key under `[package]`, and any table other than these three and
-[`[host]`](#host), is ignored, so a manifest can carry metadata this version
-does not read.
+Any other key under `[package]`, and any table other than these three,
+[`[host]`](#host) and `[lint]`, is ignored, so a manifest can carry metadata
+this version does not read.
+
+`[lint] enable = ["undocumented-pub"]` turns on opt-in `petal lint` rules for
+every file under the manifest, beside the default ones
+([CLI.md](CLI.md#lint--check-programs-without-running-them)).
 
 Every `.ptl` file under the module directory is importable as
 `<name>/<path>`, nested directories included: `src/widgets/button.ptl` of

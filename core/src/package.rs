@@ -648,6 +648,13 @@ pub struct Manifest {
     /// The manifest's `[host]`: what the host this package's scripts run in
     /// puts in scope without an import.
     pub host: HostScope,
+    /// `[package] description`: the one-line registry summary. The
+    /// `package-description` lint holds it to the root module's
+    /// `@module_doc` (docs/proposals/doc-annotation.md).
+    pub description: Option<String>,
+    /// `[lint] enable = ["undocumented-pub", …]`: opt-in `petal lint` rules
+    /// that run for this project's files on top of the default ones.
+    pub lint_enable: Vec<String>,
 }
 
 /// A manifest's `[host]` section: what the host a project's scripts are
@@ -721,6 +728,8 @@ impl Manifest {
         let mut deps: Vec<(String, usize, Result<Vec<(String, String)>, String>)> = Vec::new();
         let mut requires: Vec<Requirement> = Vec::new();
         let mut host = HostScope::default();
+        let mut description: Option<String> = None;
+        let mut lint_enable: Vec<String> = Vec::new();
 
         let mut lines = text.lines().enumerate();
         while let Some((index, raw)) = lines.next() {
@@ -801,6 +810,7 @@ impl Manifest {
                     "name" => name = Some(string_only(value)?),
                     "version" => version = Some(string_only(value)?),
                     "modules" => modules = Some(string_only(value)?),
+                    "description" => description = Some(string_only(value)?),
                     // Somebody else's metadata; keep it legal so a manifest
                     // can carry more than this version understands.
                     _ => {}
@@ -876,6 +886,21 @@ impl Manifest {
                         }
                     }
                 }
+                "lint" => match (key, value) {
+                    ("enable", TomlValue::Array(items)) => lint_enable = items,
+                    ("enable", TomlValue::Str(item)) => lint_enable = vec![item],
+                    ("enable", TomlValue::Table(_)) => {
+                        return Err(manifest_error(
+                            path,
+                            format!(
+                                "line {line_no}: [lint] enable is a list of rule names \
+                                 ([\"undocumented-pub\"])"
+                            ),
+                        ));
+                    }
+                    // Other keys are left for later versions.
+                    _ => {}
+                },
                 other if other.starts_with("dependencies.") => {
                     let text = string_only(value)?;
                     if let Some((_, _, Ok(pairs))) = deps.last_mut() {
@@ -909,6 +934,8 @@ impl Manifest {
             dependencies,
             requires,
             host,
+            description,
+            lint_enable,
         })
     }
 }

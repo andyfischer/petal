@@ -1,12 +1,16 @@
+@module_doc("""
+Clipping, layers and hit testing, named targets, measuring, flow layout and
+retained drawing. Internal: `ui/draw` re-exports the clip functions and
+`ui/hit` the rest.
+""", see: ["ui/hit", "ui/draw"])
+
 # petal-ui frame state — module `ui/_frame` (internal)
 #
 # The per-run cells of the hit-testing model (the clip in force, the layer,
 # the floor, the measuring and flow state) and every function that writes
-# them: clipping, layers and hit testing, measuring, flow layout and retained
-# drawing. A cell is written only by the module that declares it, so these
-# share one module. `ui/draw` re-exports the clip functions and `ui/hit` the
-# rest; the `_`-prefixed helpers (`_hot`, `_reg`, `_over`, `_clip`, …) are
-# `pub` only for the package's other modules.
+# them. A cell is written only by the module that declares it, so these
+# share one module. The `_`-prefixed helpers (`_hot`, `_reg`, `_over`,
+# `_clip`, …) are `pub` only for the package's other modules.
 
 import ./_native
 import ./_base
@@ -37,28 +41,55 @@ import ./_style
 state var _clip = nil
 set _clip = nil
 
+@doc("""
+Replace the clip in force with `rect`: drawing after it shows only inside,
+until `clip_none` or another `clip`. Inside anything reusable use
+`clip_push`/`clip_pop`, which nest inside the caller's clip instead of
+destroying it.
+
+The clip also counts for hit testing: `interact` and every widget ignore
+the pointer over the part of a rect that is clipped away.
+""",
+  params: {radius: "Rounds the clip's corners, so a card can clip its content to its own shape. A host that can only scissor a rectangle clips square."},
+  see: ["clip_push", "clip_none", "clip_rect"])
 pub fn clip(x, y, w, h, radius = 0)
   _native_clip(x, y, w, h, radius)
   set _clip = {x: x, y: y, w: w, h: h, prev: nil, ox: x, oy: y, ow: w, oh: h, radius: radius, base: true}
 pub fn clip(rect, radius = 0)
   clip(rect.x, rect.y, rect.w, rect.h, radius)
 
+@doc("Clear the clip: drawing after it is not clipped.", see: ["clip"])
 pub fn clip_none()
   _native_clip_none()
   set _clip = nil
 
+@doc("""
+Clip to `rect` inside the clip already in force, until the matching
+`clip_pop`. The composable form: a widget can clip its own contents without
+knowing, or destroying, the clip its caller set.
+""",
+  params: {radius: "Rounds the clip's corners; a host that can only scissor a rectangle clips square."},
+  example: """
+    clip_push(list_r)
+    draw_rows(list_r)
+    clip_pop()
+  """,
+  see: ["clip_pop", "clip"])
 pub fn clip_push(x, y, w, h, radius = 0)
   set _clip = _native_clip_push(x, y, w, h, radius, get _clip)
 pub fn clip_push(rect, radius = 0)
   set _clip = _native_clip_push(rect.x, rect.y, rect.w, rect.h, radius, get _clip)
 
+@doc("Put back the clip that was in force before the matching `clip_push`.", see: ["clip_push"])
 pub fn clip_pop()
   _native_clip_pop()
   let c = get _clip
   set _clip = if c == nil then nil else c.prev end
 
-# The visible area the clip in force leaves, as a rect, or nil when nothing
-# is clipped.
+@doc("""
+The visible area the clip in force leaves, as a rect, or `nil` when nothing
+is clipped.
+""", see: ["clip_push"])
 pub fn clip_rect()
   let c = get _clip
   if c == nil then nil else rect(c.x, c.y, c.w, c.h) end
@@ -137,9 +168,13 @@ fn _clip_resume(c)
 # nothing else. Every widget in this file uses the layered ones.
 
 # The layers the prelude's own widgets use. An app's panels go in between.
+@doc("The layer a frame starts on (0).", see: ["ui_layer", "UI_LAYER_POPUP"])
 pub let UI_LAYER_BASE = 0
+@doc("The layer the built-in menus, popovers and dropdowns open on (1000). An app's panels go between it and `UI_LAYER_BASE`.", see: ["ui_overlay"])
 pub let UI_LAYER_POPUP = 1000
+@doc("The layer the built-in modal dialogs draw on (2000).", see: ["ui_modal"])
 pub let UI_LAYER_MODAL = 2000
+@doc("The layer tooltips draw on (3000), above everything else the built-in widgets draw.")
 pub let UI_LAYER_TOOLTIP = 3000
 
 # This run's layer, and this run's floor: the highest layer that has turned
@@ -187,6 +222,19 @@ state var _wrote = 0
 # cells it created itself.
 _ui_mark()
 
+@doc("""
+The current layer; with `n`, put everything from here on on layer `n`. A
+frame starts on layer 0.
+
+A layer orders two things. **Drawing**: the host draws lower layers first,
+and within a layer in the order drawn, so a tooltip drawn in the middle of a
+frame on a high layer still comes out on top. **The pointer**: it has one
+owner, the rect in front under it, on the highest layer with a registered
+rect there (unless a higher layer is modal). See `interact`.
+""",
+  params: {n: "The layer to switch to; higher is in front."},
+  returns: "The current layer, or with `n` the layer it replaced.",
+  see: ["with_layer", "ui_overlay", "ui_modal", "UI_LAYER_POPUP"])
 pub fn ui_layer()
   get _layer
 pub fn ui_layer(n: int)
@@ -197,12 +245,31 @@ pub fn ui_layer(n: int)
     _draw_layer(n)
   prev
 
+@doc("""
+Run `body()` on layer `n`, then go back to the layer before.
+""",
+  returns: "What `body()` returned.",
+  example: """
+    # A panel over the world. Its background takes the pointer; the world
+    # only gets a click the UI did not want.
+    with_layer(10, fn()
+      ui_block(panel)
+      if button(close_r, "Close") then open = false end
+    )
+    if mouse_pressed(0) && !pointer_captured() then
+      select_unit_at(mouse_x(), mouse_y())
+  """,
+  see: ["ui_layer", "ui_overlay"])
 pub fn with_layer(n: int, body)
   let prev = ui_layer(n)
   let out = body()
   ui_layer(prev)
   out
 
+@doc("""
+`with_layer` with every clip lifted while `body()` runs: a popup opened from
+inside a scrolled list, which must not be clipped to the list.
+""", returns: "What `body()` returned.", see: ["with_layer"])
 pub fn ui_overlay(n: int, body)
   let saved = get _clip
   _clip_suspend(saved)
@@ -224,12 +291,14 @@ fn _raise()
 fn _run_floor(l)
   if l < (get _top) then get _floor else nil end
 
-# Register `r` (with its optional id) on the current layer.
+@doc("Register `r` (with its optional id) on the current layer.", hidden: true)
 pub fn _reg(r, id)
   _ui_register(r, get _layer, get _clip, id)
 
-# Whether `r` is hot, without registering it — for a second question about a
-# rect a widget has already registered.
+@doc("""
+Whether `r` is hot, without registering it — for a second question about a
+rect a widget has already registered.
+""", hidden: true)
 pub fn _over(r)
   set _wrote = 0
   let l = get _layer
@@ -241,8 +310,10 @@ pub fn _over(r)
 fn _wants_flags(wants)
   1 + (if _get(wants, "text", false) then 4 else 0 end) + (if _get(wants, "focus", false) then 8 else 0 end)
 
-# `_hot` for a rect that takes text. With `pointer` false (the field is
-# under a modal) it still says what it claims, without taking the pointer.
+@doc("""
+`_hot` for a rect that takes text. With `pointer` false (the field is
+under a modal) it still says what it claims, without taking the pointer.
+""", hidden: true)
 pub fn _hot_text(r, id, pointer)
   if pointer then
     set _wrote = 0
@@ -255,7 +326,7 @@ pub fn _hot_text(r, id, pointer)
     _ui_register(r, get _layer, get _clip, id, 4)
     false
 
-# Register and ask: what every widget's first pointer question is.
+@doc("Register and ask: what every widget's first pointer question is.", hidden: true)
 pub fn _hot(r, id)
   set _wrote = 0
   let l = get _layer
@@ -264,25 +335,50 @@ pub fn _hot(r, id)
   if h then _raise() end
   h
 
-# The pointer and one rect:
-#
-#   hover     the pointer is over it, and nothing above has the pointer
-#   down      the left button is held, and it went down inside the rect —
-#             still true when the pointer has slid off
-#   pressed   the left button went down this frame, over it
-#   released  the left button came up this frame, over it
-#   click     released over it, having been pressed inside it while it was
-#             there (a rect that appeared under the press gets no click)
-#
-# `id` (a string or an int) names the rect for `ui_target_rect`, tests and
-# agents. It does not have to be unique, but only the last rect registered
-# under a name is found by it.
-#
-# `wants` declares what the rect does with the keyboard, for a rect with an
-# id: `{text: true}` (a press gives it the keyboard, and while it has it,
-# it claims typing and the editing chords), `{focus: true}` (a press gives
-# it the keyboard, claiming nothing), `{keys: ["up", "down"]}` (the chords
-# it claims while it has the keyboard). See "Focus" below.
+@doc("""
+The pointer and one rect, layered: registers `r` on the current layer and
+says what the pointer did to it. Every widget is built on it.
+
+| Field | True when |
+|---|---|
+| `hover` | The pointer is over the rect and nothing above has the pointer. |
+| `down` | The left button is held and went down inside the rect. Stays true if the pointer slides off. |
+| `pressed` | The left button went down this frame, over the rect. |
+| `released` | The left button came up this frame, over the rect. |
+| `click` | Released over the rect, having been pressed inside it while it was there. |
+
+Of overlapping rects only the one in front has the pointer: the highest
+layer, then the rect registered last on it (drawn on top). So a button drawn
+over a list row takes its click alone. The clip in force counts too: a row
+scrolled half out of its list is not hot over the clipped part.
+
+What is above a rect is answered from the rects registered *last frame* and
+the rects already found hot *this frame*. A covered widget is inert from the
+frame after its cover appears (and from the same frame if the cover's code
+runs first). The one gap: a widget on a lower layer that runs *before* a
+higher one that first appears this frame sees one frame of `hover`, and a
+`pressed` if the press lands on exactly that frame. `click` has no gap,
+because by the release the cover is a frame old, so use `click` for
+anything that must not fire through a panel.
+
+A click belongs to what was pressed: on the release, only rects that were
+registered under the press point when the button went down get `click`
+(matched by layer and rect, or by `id`, so a button whose rect moves while
+held keeps its click if it has an id). A row of a panel the click itself
+opened gets `released` but not `click`.
+""",
+  params: {
+    r: "The rect.",
+    id: "A string or an int naming the rect, for `ui_target_rect`, tests and agents. Only the last rect registered under a name is found by it.",
+    wants: """What the rect does with the keyboard, for a rect with an id: `{text: true}` (a press gives it the keyboard, and it claims typing and the editing chords), `{focus: true}` (a press gives it the keyboard, claiming nothing), `{keys: ["up", "down"]}` (the chords it claims while it has the keyboard).""",
+  },
+  returns: """`{hover, down, pressed, released, click}`.""",
+  example: """
+    let it = interact(r, "save")
+    draw_rect(r, if it.hover then :3a404c else :262b34 end)
+    if it.click then save() end
+  """,
+  see: ["ui_hot", "ui_block", "pointer_captured", "ui_target_rect", "ui.has_focus"])
 pub fn interact(r, id = nil, wants = nil)
   set _wrote = 0
   let l = get _layer
@@ -294,45 +390,79 @@ pub fn interact(r, id = nil, wants = nil)
   if s.hover then _raise() end
   s
 
+@doc("""
+Layered hover: registers `r` like `interact` and answers only whether the
+pointer is over it with nothing in front.
+""", params: {id: "Names the rect for `ui_target_rect`."}, see: ["interact"])
 pub fn ui_hot(r, id = nil)
   _hot(r, id)
 
-# A panel's background: it takes the pointer (nothing below is hot through
-# it, and `pointer_captured()` is true over it) and asks nothing.
+@doc("""
+Register `r` and ask nothing: a panel's background. It takes the pointer, so
+nothing below is hot through it and `pointer_captured()` is true over it.
+""", params: {id: "Names the rect for `ui_target_rect`."}, see: ["pointer_captured", "interact"])
 pub fn ui_block(r, id = nil)
   _hot(r, id)
   nil
 
-# Everything below the current layer is inert — wherever the pointer is —
-# from here to the end of the frame, and for the whole of the next one. Call
-# it every frame the dialog is open, on the dialog's layer.
+@doc("""
+Everything below the current layer is inert, wherever the pointer is, from
+here to the end of the frame and for the whole of the next one. Call it
+every frame the dialog is open, on the dialog's layer.
+""", see: ["UI_LAYER_MODAL", "with_layer"])
 pub fn ui_modal()
   _ui_register(nil, get _layer, nil, nil, 2)
   _raise()
   # Whatever runs after this on a lower layer has to see the floor.
   if (get _layer) >= (get _top) then set _top = (get _layer) + 1 end
 
-# Whether the UI has the pointer: some registered rect is under it, or a
-# layer is modal. Ask it after the UI has drawn and it is exact for this
-# frame; ask it before and it is last frame's answer.
+@doc("""
+Whether the UI has the pointer: some registered rect is under it, or a
+layer is modal. Gate clicks on the world with it. Asked after the UI has
+drawn it is exact for this frame, even on the frame a panel opens under the
+pointer; asked before, it is last frame's answer. With `layer`: whether
+something on a layer above `layer` has it, which is what a panel asks about
+the panels over it.
+""",
+  params: {layer: "Only count rects on layers above this one."},
+  example: """
+    if mouse_pressed(0) && !pointer_captured() then
+      select_unit_at(mouse_x(), mouse_y())
+  """,
+  see: ["ui_block", "ui_layer"])
 pub fn pointer_captured()
   (get _floor) != nil || _ui_floor() != nil
-# ...by something on a layer above `layer`: what a panel asks about the
-# panels over it.
 pub fn pointer_captured(layer: int)
   let run = get _floor
   let frame = _ui_floor()
   (run != nil && run > layer) || (frame != nil && frame > layer)
 
-# Name a rect without making it part of hit testing: a region a tutorial
-# points at, a drop zone a test wants the centre of.
+@doc("""
+Name a rect without making it block the pointer: a region a tutorial points
+at, a drop zone a test wants the centre of.
+""", params: {id: "A string or an int.", r: "The rect."}, see: ["ui_target_rect"])
 pub fn ui_target(id, r)
   _ui_register(r, get _layer, get _clip, id, 0)
 
-# The rect registered under `id` on the last frame — by `interact`, by a
-# widget, or by `ui_target` — or nil if nothing was. One frame old, which is
-# what a highlight drawn over another module's button wants: the button's
-# position, without the two modules agreeing on layout arithmetic.
+@doc("""
+The rect registered under `id` on the last frame (by `interact`, `ui_hot`,
+`ui_block`, a widget, or `ui_target`), or `nil` if nothing was. One frame
+old, which is what a highlight drawn over another module's button wants: the
+button's position, without the two modules agreeing on layout arithmetic.
+
+The built-in widgets register themselves: `button`, `checkbox` and each tab
+of a `tab_bar` under their label, each row of a `radio_group` under its
+label, a `text_field` under its focus id, a `table` header under its column
+label, a `modal` under its title. `style.id` replaces the default where a
+widget takes a style (`button(r, "OK", {id: "confirm-ok"})`). A host reads
+the same registry (the host contract's "The target registry").
+""",
+  example: """
+    # A tutorial highlights another module's button without knowing its layout.
+    let r = ui_target_rect("End turn")
+    if r != nil then draw_focus_ring(r, 4) end
+  """,
+  see: ["ui_target", "interact"])
 pub fn ui_target_rect(id)
   let r = _ui_target_rect(id)
   if r == nil then nil else rect(r.x, r.y, r.w, r.h) end
@@ -367,9 +497,30 @@ set _measuring = false
 state var _flow = nil
 set _flow = nil
 
+@doc("True inside `ui_measure`, for a widget with something expensive to skip.", see: ["ui_measure"])
 pub fn ui_measuring()
   get _measuring
 
+@doc("""
+Run `body()` without drawing it, to learn how big it is. It runs as a
+hypothetical call (`speculate`): nothing is drawn, registered or hovered,
+and nothing it changes outlives it (`state` it writes, `set`s, random draws,
+and the layer, clip and flow it changes are all put back). One function is
+both the measuring pass and the drawing pass, so the two cannot disagree.
+
+A widget with `state` inside the body starts from its initializer there
+every frame: its slots under `ui_measure` are not the ones it has when drawn.
+""",
+  returns: "What `body()` returned.",
+  example: """
+    fn rows(r)
+      flow_begin(r, {gap: 4})
+      for it in items do row(flow_next(22), it) end
+      flow_end()
+    let content = ui_measure(fn() rows(rect(0, 0, list.w, 0)) end)
+    # scroll by content.h, then call rows(...) again to draw
+  """,
+  see: ["ui_measuring", "flow_end"])
 pub fn ui_measure(body)
   if get _measuring then
     return body()
@@ -437,8 +588,30 @@ fn _flow_top()
   assert(f != nil, "flow_next / flow_space / flow_end called with no flow open; call flow_begin(rect) first")
   f
 
-# `opts`: {pad, gap, axis} — `pad` insets the region on every side, `gap` is
-# left between consecutive rects, `axis` is "y" (the default) or "x".
+@doc("""
+Start a flow in `r`: a cursor that hands out rects one after another, so a
+panel is written without `y = y + 17` at every line. Flows nest: a row of
+buttons is a horizontal flow begun on a rect a vertical one handed out.
+Nothing here draws or clips, and a flow is not stopped at the end of its
+region: the rects go on past it, and `flow_end()` says how far they went,
+which for a region inside a scroll view is the content height.
+""",
+  options: {
+    pad: "Insets the region on every side.",
+    gap: "Left between consecutive rects.",
+    axis: """`"y"` (the default) runs downward; `"x"` runs across.""",
+  },
+  example: """
+    flow_begin(panel, {pad: 8, gap: 4})
+    draw_text("Settings", flow_next(20), title)
+    vol = slider(flow_next(18), vol, 0, 1)
+    flow_begin(flow_next(24), {axis: "x", gap: 6})   # a row of buttons
+    if button(flow_next(80), "Apply") then apply() end
+    if button(flow_next(80), "Cancel") then close() end
+    flow_end()
+    let used = flow_end()
+  """,
+  see: ["flow_next", "flow_end", "flow_rest"])
 pub fn flow_begin(r, opts = {})
   let pad = opts["pad"] ?? 0
   set _flow = {
@@ -457,6 +630,12 @@ fn _flow_take(f, main, cross)
   else
     rect(f.x, f.y + at, cross, main)
 
+@doc("""
+The next rect of the innermost flow: `size` long along the flow and as wide
+as the region across it, or exactly `w` by `h`.
+""",
+  params: {size: """The length along the flow: a height in a `"y"` flow, a width in an `"x"` one."""},
+  see: ["flow_begin", "flow_space"])
 pub fn flow_next(size)
   let f = _flow_top()
   _flow_take(f, size, if f.across then f.h else f.w end)
@@ -464,14 +643,17 @@ pub fn flow_next(w, h)
   let f = _flow_top()
   if f.across then _flow_take(f, w, h) else _flow_take(f, h, w) end
 
-# Leave `n` px before the next rect, on top of the gap.
+@doc("Leave `n` px before the next rect of the innermost flow, on top of the gap.", see: ["flow_next"])
 pub fn flow_space(n)
   let f = _flow_top()
   set _flow = {...f, cur: f.cur + n}
   nil
 
-# What is left of the region after what has been handed out — for the one
-# part of a panel that takes whatever remains (a list under a toolbar).
+@doc("""
+What is left of the flow's region after what has been handed out, as a
+rect: the one part of a panel that takes whatever remains (a list under a
+toolbar).
+""", see: ["flow_next"])
 pub fn flow_rest()
   let f = _flow_top()
   let at = if f.count > 0 then f.cur + f.gap else f.cur end
@@ -480,7 +662,7 @@ pub fn flow_rest()
   else
     rect(f.x, f.y + at, f.w, max(0, f.h - at))
 
-# How much the flow has taken so far, as {w, h}, padding included.
+@doc("How much the innermost flow has taken so far, padding included.", returns: """`{w, h}`.""", see: ["flow_end"])
 pub fn flow_used()
   let f = _flow_top()
   if f.across then
@@ -488,7 +670,7 @@ pub fn flow_used()
   else
     {w: f.extent + f.pad * 2, h: f.cur + f.pad * 2}
 
-# Close the innermost flow; returns `flow_used()` for it.
+@doc("Close the innermost flow.", returns: """`flow_used()` for it: `{w, h}`, padding included.""", see: ["flow_begin", "flow_used"])
 pub fn flow_end()
   let used = flow_used()
   set _flow = (get _flow).prev
@@ -521,6 +703,35 @@ fn _cache_new_id()
   set _cache_seq = (get _cache_seq) + 1
   get _cache_seq
 
+@doc("""
+Retained drawing: run `body()` only when `key` or the rect's size changes
+(or the host has lost what it kept); on every other frame the host redraws
+what the body drew last time, at the rect's current position. For something
+that changes rarely and costs a lot to say: a minimap of several hundred
+rects, a title poster.
+
+- The body draws in the layer's own coordinates, and the result is clipped
+  to the rect's size. Moving the rect does not run the body.
+- The body only draws. It does not run on most frames, so an `interact` or a
+  `state` inside it would come and go.
+- Layers nest. The body must not open an offscreen `layer` or use `clip`
+  (the replace form); `clip_push` is fine.
+- Each call site is one layer, and in a loop one per iteration, like `state`.
+- A layer that is not drawn for a frame is let go, and recorded again when it
+  comes back.
+""",
+  params: {
+    key: "Any value, compared by content: a version counter, a record of the inputs.",
+    r: "Where to draw it; only its size reruns the body.",
+    body: "A function of no arguments that draws.",
+  },
+  example: """
+    # A minimap of a few hundred cells, emitted once per map version.
+    cached_layer(map_version, minimap_rect, fn()
+      draw_rects(cells, PALETTE)          # (0, 0) is the layer's top-left
+    )
+  """,
+  see: ["draw_rects"])
 pub fn cached_layer(key, r, body)
   state id = _cache_new_id()
   state seen = nil

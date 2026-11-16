@@ -1,45 +1,119 @@
+@module_doc("""
+The input half of the petal-ui interface: the pointer, the keyboard, timing
+and the frame.
+
+Input is polled, never called back. An *edge* (`mouse_pressed`,
+`key_released`, …) is true on one frame. The `ui` module re-exports every
+name here, so a script that writes `import ui` has them all. A host that
+registers only this half (a console with its own video, say) has its
+scripts write `import ui/input`, and loading them needs none of the draw
+natives.
+""", see: ["ui"])
+
 # petal-ui input — module `ui/input`
 #
-# The input half of the petal-ui interface: the declarations of the input,
-# timing and frame natives (`petal_ui::input::register_input`). The `ui`
-# module re-exports every name here, so a script that writes `import ui` has
-# them all. A host that registers only this half — a console with its own
-# video, say — has its scripts write `import ui/input`, and loading them
-# needs none of the draw natives.
+# The declarations of the input, timing and frame natives
+# (`petal_ui::input::register_input`, core-stdlib/ui/native/src/input.rs).
 
-# Input (core-stdlib/ui/native/src/input.rs). Button 0 is the left mouse button.
+@doc("The pointer's x, in logical pixels.", see: ["mouse_y", "mouse_dx"])
 pub native fn mouse_x() -> int
+@doc("The pointer's y, in logical pixels.", see: ["mouse_x", "mouse_dy"])
 pub native fn mouse_y() -> int
+@doc("""
+Raw: whether the pointer is inside `rect`. It looks at the pointer and the
+rect and nothing else; `interact` and `ui_hot` are the layered tests, which
+know what is drawn on top, modal dialogs and clipping.
+""", params: {rect: """A rect, `{x, y, w, h}`."""}, see: ["ui.interact", "ui.ui_hot", "ui.clicked"])
 pub native fn hovered(rect)
+@doc("Relative pointer motion this frame, in x; also while the pointer is grabbed.", see: ["grab_mouse"])
 pub native fn mouse_dx() -> int
+@doc("Relative pointer motion this frame, in y; also while the pointer is grabbed.", see: ["grab_mouse"])
 pub native fn mouse_dy() -> int
+@doc("Whether mouse `button` is held. Button 0 is the left button.", see: ["mouse_pressed", "mouse_released"])
 pub native fn mouse_down(button: num) -> bool
+@doc("""
+Whether mouse `button` went down this frame. Button 0 is the left button.
+""", example: "if mouse_pressed(0) && click_count() == 2 then open_item() end", see: ["click_count"])
 pub native fn mouse_pressed(button: num) -> bool
+@doc("Whether mouse `button` came up this frame. Button 0 is the left button.")
 pub native fn mouse_released(button: num) -> bool
+@doc("Horizontal wheel motion this frame.")
 pub native fn scroll_x() -> int
+@doc("Vertical wheel motion this frame.")
 pub native fn scroll_y() -> int
+@doc("""
+Whether `key` is held.
+
+A key is named for the key, not for what it types: `"a"`–`"z"`,
+`"0"`–`"9"`, `"space"`, `"return"`, `"escape"`, `"tab"`, `"backspace"`,
+`"up"`/`"down"`/`"left"`/`"right"`, `"pageup"`, `"pagedown"`, `"home"`,
+`"end"`, `"delete"`, `"insert"`, `"shift"`, `"ctrl"`, `"alt"`, `"cmd"`,
+`"f1"`–`"f12"`, `"minus"`, `"equals"`, `"comma"`, `"period"`, `"slash"`,
+`"backslash"`, `"semicolon"`, `"quote"`, `"backquote"`, `"leftbracket"`,
+`"rightbracket"` (the list is `petal::keys::KEY_NAMES`). Enter is
+`"return"`; `+` is `"equals"` with `mod_shift()`. Any other name is never
+down, so `petal lint` warns about one written as a literal and names the
+likely key (`key_pressed("enter")`: did you mean `"return"`?). The keypad
+has no names of its own: keypad Enter is `"return"`, and its digits and
+`-` `.` `/` `=` are the main-row keys.
+""", params: {key: "A key name, lower case (above)."}, see: ["key_pressed", "key_released", "ui.shortcut"])
 pub native fn key_down(key: string) -> bool
+@doc("""
+Whether `key` went down this frame (see `key_down` for the key names). For
+an app's commands, `shortcut` is usually better: it stays quiet while a text
+field has the keyboard.
+""", see: ["key_down", "ui.shortcut", "text_input"])
 pub native fn key_pressed(key: string) -> bool
+@doc("Whether `key` came up this frame (see `key_down` for the key names).", see: ["key_down"])
 pub native fn key_released(key: string) -> bool
+@doc("Whether a Shift key is held.")
 pub native fn mod_shift() -> bool
+@doc("Whether a Ctrl key is held.")
 pub native fn mod_ctrl() -> bool
+@doc("Whether an Alt (Option) key is held.")
 pub native fn mod_alt() -> bool
+@doc("Whether a Cmd key is held.")
 pub native fn mod_cmd() -> bool
+@doc("""
+Whether the left button is held and the pointer has moved 3 px or more
+since the press.
+""", see: ["drag_start_x", "drag_start_y"])
 pub native fn drag_active() -> bool
+@doc("Where the press of the drag in progress landed, in x.", see: ["drag_active"])
 pub native fn drag_start_x() -> int
+@doc("Where the press of the drag in progress landed, in y.", see: ["drag_active"])
 pub native fn drag_start_y() -> int
+@doc("""
+1, 2, 3… on the frame of a press: how many presses in a row this one is.
+""", example: "let double = mouse_pressed(0) && click_count() == 2")
 pub native fn click_count() -> int
+@doc("""
+The text typed this frame, as the OS composed it. Use it for typing, and
+`key_pressed` for commands.
+""", see: ["key_pressed"])
 pub native fn text_input() -> string
-# Whether the host switched on its debug overlay `name` (petal-sdl: F8 for
-# "drag"; Garden: Cmd/Ctrl+Shift+G). False on a host with no such key.
+@doc("""
+Whether the host switched on its debug overlay `name`. `"drag"` is
+`ui/drag`'s debugger (F8 in petal-sdl, Cmd/Ctrl+Shift+G in Garden,
+`--ui-debug drag` in `petal-ui-run`). False on a host without one.
+""", see: ["ui/drag"])
 pub native fn ui_debug(name: string) -> bool
+@doc("Lock and hide the pointer (a first-person camera). `mouse_dx`/`mouse_dy` still report motion.", see: ["release_mouse"])
 pub native fn grab_mouse()
+@doc("Give back a pointer that `grab_mouse` took.", see: ["grab_mouse"])
 pub native fn release_mouse()
 
 # Timing and the frame (input.rs).
+
+@doc("Seconds since the last frame.")
 pub native fn dt() -> float
+@doc("Seconds on a monotonic clock.", see: ["ui.elapsed"])
 pub native fn time() -> float
+@doc("Frames so far. Reading it makes a script run every frame.")
 pub native fn frame_count() -> int
+@doc("The drawable's width, in logical pixels.")
 pub native fn screen_width() -> int
+@doc("The drawable's height, in logical pixels.")
 pub native fn screen_height() -> int
+@doc("The version of the petal-ui interface the host provides (1).")
 pub native fn ui_version() -> int

@@ -1,15 +1,59 @@
+@module_doc("""
+The petal-ui interface: drawing, input and the widget prelude.
+
+Everything a script gets from `import ui`: the input natives, the draw
+calls, layers and hit testing, text, layout, colour, the theme, the
+interaction state (focus, lists, text editing, popovers, drag and drop) and
+the drawn widgets. A script calls these bare, as `ui.button`, or after
+`import ui: button`. A host registers the natives (`petal_ui::register_all`);
+`petal lint` resolves `import ui` with no host present.
+
+Conventions:
+
+- **Immediate mode.** The whole script runs every frame. A widget is a
+  function call that draws and returns what happened: `if button(r, "Save")
+  then save() end`.
+- **A rect** is `rect(x, y, w, h)`, or any `{x, y, w, h}` record. `rect`
+  gives the methods (`r.right()`, `r.center_x()`, `r.inset(4)`).
+- **A colour** is a `{r, g, b}` record, which is what a hex literal is
+  (`:3c8cff`). `draw_rect`, `draw_polyline`, `draw_rects` and
+  `draw_image`'s `tint` also take a packed int, `r * 65536 + g * 256 + b`.
+- **Alpha** is a trailing `a`, 0–255, on every draw call. Strokes also take
+  a trailing `width`.
+- **`style`** is an optional last argument on every widget: a record that
+  overrides what the theme says. `{}` is the themed widget, and leaving it
+  off is the same.
+- **Widget state** that outlives a frame (`list_state()`, `modal_state()`…)
+  is a record you keep in `state` and pass in; the widget returns the next
+  one.
+- Button 0 is the left mouse button. Key names are lower case: `"space"`,
+  `"escape"`, `"a"` (see `key_down`).
+
+Modules: `ui` re-exports `ui/input` (the input, timing and frame natives),
+`ui/draw` (drawing, clipping, gradients, shadows, canvases, fonts, colour
+and the theme), `ui/hit` (layers, `interact`, named targets, measuring, flow
+layout and retained drawing), `ui/text`, `ui/layout`, `ui/interaction` and
+`ui/widgets`. The drawn widgets in `ui/widgets` are deprecated: bloom owns
+them now. `ui/drag`, declarative dragging, is not re-exported: a script that
+drags writes `import ui/drag`.
+
+Guides beside this reference: drawing.md (the draw primitives in depth),
+drag.md (declarative dragging) and host-contract.md (what a host has to do),
+in core-libs/petal-ui/docs. Two apps to read:
+`garden/examples/panels/gallery.ptl` uses every widget, and
+`examples/ui/layers` is a HUD over a "world" (layers, `pointer_captured`, a
+modal, `cached_layer` with `draw_rects`, flow layout and `ui_measure`). To
+test a UI with no window, `petal_ui_headless::harness::Headless` runs a
+script headless, and `petal-ui-run` does the same from the command line.
+""", see: ["ui/input", "ui/draw", "ui/hit", "ui/text", "ui/layout", "ui/interaction", "ui/widgets", "ui/drag"])
+
 # petal-ui prelude — module `ui`
 #
-# The petal-ui interface: the declarations of the natives a petal-ui host
-# provides, and the standard interaction primitives written in Petal over the
-# Layer-0 input natives and the Layer-2 draw natives. Embedders register it
-# as the package `ui`; a script writes `import ui` and calls these bare or
-# as `ui.button`, or `import ui: button`.
+# The declarations of the natives a petal-ui host provides, and the standard
+# interaction primitives written in Petal over the Layer-0 input natives and
+# the Layer-2 draw natives. Embedders register it as the package `ui`.
 # Only declarations marked `pub` are visible to importers; everything else
 # (and any name starting with `_`) is module-private.
-#
-# Rects are records: {x, y, w, h}. Colors are records: {r, g, b} (hex
-# literals like #3c8cff work). Button 0 is the left mouse button.
 
 # The package's modules, all re-exported here: `import ui` binds every name
 # of each, as if this file declared them.

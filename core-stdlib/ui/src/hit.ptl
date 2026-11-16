@@ -1,9 +1,22 @@
+@module_doc("""
+Layers and hit testing, named targets, measuring, flow layout and retained
+drawing. `ui` re-exports every name here.
+
+Immediate mode has no z order: a button drawn early cannot know a panel
+drawn later covers it. A layer is how a script says so (`ui_layer`,
+`with_layer`). The raw tests, `hovered` and `clicked`, look at the pointer
+and the rect and nothing else; the layered ones (`interact`, `ui_hot`,
+`ui_block`) are what widgets use, and they know about what is drawn on top,
+about modal dialogs and about clipping. Every registered rect can carry an
+id, which a script, a test or an agent can look up (`ui_target_rect`)
+instead of re-deriving a layout.
+""", see: ["ui", "interact", "ui_layer"])
+
 # petal-ui hit testing — module `ui/hit`
 #
-# Layers, `interact`, targets, measuring, flow layout and retained drawing.
 # The code is in `./_frame`, beside the clip: they read and write the same
 # per-run cells, and a cell is written only by the module that declares it.
-# This module names what of it is public; `ui` re-exports every name here.
+# This module names what of it is public.
 
 pub import ./_frame: UI_LAYER_BASE, UI_LAYER_POPUP, UI_LAYER_MODAL, UI_LAYER_TOOLTIP
 pub import ./_frame: ui_layer, with_layer, ui_overlay, interact, ui_hot

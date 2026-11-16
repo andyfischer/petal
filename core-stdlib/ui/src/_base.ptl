@@ -1,9 +1,14 @@
+@module_doc("""
+The public natives a petal-ui host provides, and the geometry and timing
+every other module of the package builds on. Internal: every name here
+reaches scripts through `ui/draw`.
+""", see: ["ui"])
+
 # petal-ui base — module `ui/_base` (internal; `ui/draw` re-exports all of it)
 #
-# The public natives a petal-ui host provides, and the geometry and timing
-# every other module of the package builds on. Everything here is `pub` and
-# reaches scripts through `ui/draw`; it is a module of its own only because
-# `./_style` and `./_frame` need it and `ui/draw` needs them.
+# Everything here is `pub` and reaches scripts through `ui/draw`; it is a
+# module of its own only because `./_style` and `./_frame` need it and
+# `ui/draw` needs them.
 
 # ── The native interface ──────────────────────────────────────────────────
 # What a petal-ui host implements in Rust (core-stdlib/ui/native/src), declared
@@ -23,75 +28,173 @@
 import ./input
 
 # Drawing that needs no overloads (core-stdlib/ui/native/src/draw.rs).
+
+@doc("Fill the whole drawable with one colour.", params: {r: "Red, 0–255.", g: "Green, 0–255.", b: "Blue, 0–255."})
 pub native fn clear(r: num, g: num, b: num)
 
 # `draw_rect` is a native in every shape — flat, mixed and record — so the
-# commonest draw call costs no Petal instructions beyond the call. A colour
-# `c` is a `{r, g, b}` record (a hex literal) or a packed RGB int (`r * 65536 + g * 256 + b`). `a` is
-# the alpha, 0–255.
+# commonest draw call costs no Petal instructions beyond the call.
+@doc("""
+A filled rect. It comes flat (`x, y, w, h, r, g, b`), mixed (`x, y, w, h,
+c`) and with a rect record (`rect, c`).
+""",
+  params: {
+    rect: """The rect to fill, `{x, y, w, h}`.""",
+    c: """A colour: a `{r, g, b}` record (a hex literal such as `:3c8cff`) or a packed int, `r * 65536 + g * 256 + b`.""",
+    a: "Alpha, 0–255. Opaque when left off.",
+  },
+  example: """
+    draw_rect(rect(10, 10, 80, 24), :3c8cff)
+    draw_rect(10, 40, 80, 24, :ffffff, 128)
+  """,
+  see: ["ui.draw_rect_rounded", "ui.draw_rect_outline", "draw_rects"])
 pub native fn draw_rect(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num)
 pub native fn draw_rect(x: num, y: num, w: num, h: num, c, a?: num)
 pub native fn draw_rect(rect, c, a?: num)
 
-# Many filled rects in one call: `rects` is five numbers per rect — x, y, w,
-# h, c — as a flat list, a packed array, or a list of `[x, y, w, h, c]`
-# lists. With a `palette` (a list of colours) `c` indexes it; without one `c`
-# is the colour itself (a packed RGB int (`r * 65536 + g * 256 + b`), or a record in the list
-# forms). `dx`, `dy` move the whole batch. See "Retained drawing" in `./_frame`.
+@doc("""
+Many filled rects in one command. For something that changes rarely and has
+many parts, it is the drawing a `cached_layer` records once.
+
+`rects` is five numbers per rect, `x, y, w, h, c`, as a flat list, an
+`f64_array`, or a list of `[x, y, w, h, c]` lists. With a `palette` `c` is
+an index into it. Without one `c` is the colour: a packed int, or in the
+list forms a colour record.
+""",
+  params: {
+    rects: "Five numbers per rect: `x, y, w, h, c`.",
+    palette: "A list of colours (which may carry an `a`); `c` indexes it.",
+    dx: "Moves the whole batch right, so a list built once in its own coordinates can be drawn anywhere.",
+    dy: "Moves the whole batch down.",
+  },
+  example: """
+    # A minimap of a few hundred cells, emitted once per map version.
+    cached_layer(map_version, minimap_rect, fn()
+      draw_rects(cells, PALETTE)          # (0, 0) is the layer's top-left
+    )
+  """,
+  see: ["ui.cached_layer"])
 pub native fn draw_rects(rects, palette?, dx?: num, dy?: num)
 
-# Images (draw.rs). `image_load(source)` asks the host to have `source` ready
-# and answers whether it is; `image_size(source)` is its `{w, h}` in pixels,
-# or nil while the host does not know it. `draw_image` is in `ui/draw`.
+# Images (draw.rs). `draw_image` is in `ui/draw`.
+
+@doc("""
+Asks the host to have the image `source` ready. True once it is; draw it
+with `draw_image`.
+""", params: {source: "An image the host resolves: a path or a name."}, see: ["ui.draw_image", "image_size"])
 pub native fn image_load(source: string)
+@doc("""
+The image's size in its own pixels, `{w, h}`, or `nil` while the host does
+not have it.
+""", returns: """`{w, h}`, or `nil`.""", see: ["image_load"])
 pub native fn image_size(source: string)
 
 # Text measurement (draw.rs, text.rs). The style is a record, or a bare size
 # with an optional face name after it — each shape is its own form.
+
+@doc("""
+The width in pixels `text` takes in `style`. Measure with the record you
+draw with.
+""",
+  params: {
+    style: "A text style record (see `draw_text`).",
+    size: "A pixel size, in place of a style record.",
+    font: "A face name, after a bare size.",
+  },
+  returns: "Whole pixels.",
+  see: ["text_advance", "ui.draw_text"])
 pub native fn text_width(text: string, style) -> int
 pub native fn text_width(text: string, size, font?) -> int
+@doc("The width `text` takes in `style`, like `text_width` but unrounded.", see: ["text_width"])
 pub native fn text_advance(text: string, style) -> float
 pub native fn text_advance(text: string, size, font?) -> float
+@doc("""
+The vertical metrics of a face at a size.
+""",
+  params: {style: "A text style record, or a bare size (with a face name after it)."},
+  returns: """`{baseline, descent, line_height, cap_height, x_height}`, in pixels.""")
 pub native fn text_metrics(style)
 pub native fn text_metrics(size, font?)
+@doc("""
+Word wrap by pixels: `text` broken into the lines that fit `max_width` in
+`style`.
+""",
+  params: {max_width: "The width each line must fit, in pixels."},
+  returns: "A list of strings, one per line.",
+  see: ["ui.text_wrap_rows", "ui.wrap_px"])
 pub native fn text_wrap(text: string, style, max_width)
 pub native fn text_wrap(text: string, size, max_width)
 pub native fn text_wrap(text: string, size, font, max_width)
+@doc("""
+`text` trimmed to fit `max_width` with an ellipsis.
+""",
+  params: {where: """Which part is cut: `"tail"` (the default), `"head"` or `"middle"`."""},
+  example: """text_ellipsize("/home/me/projects/garden/src/main.ptl", {size: 13}, 160, "middle")""",
+  see: ["ui.ellipsize", "ui.ellipsize_tail"])
 pub native fn text_ellipsize(text: string, style, max_width, where?)
 pub native fn text_ellipsize(text: string, size, max_width, where?)
 pub native fn text_ellipsize(text: string, size, font, max_width, where?)
+@doc("""
+The character index at pixel offset `dx` into `text`: where a click puts
+the caret.
+""", params: {dx: "Pixels from the start of the run."})
 pub native fn text_index_at(text: string, style, dx)
 pub native fn text_index_at(text: string, size, dx)
 pub native fn text_index_at(text: string, size, font, dx)
+@doc("The font families the host can draw, as a list of names.", see: ["ui.font"])
 pub native fn fonts()
 
 # Offscreen canvases (draw.rs).
+
+@doc("""
+A transparent offscreen canvas `w` by `h`, good for this frame. Draw into
+it with `draw_to`, and composite it with `draw_canvas`.
+""", returns: "The canvas id.", see: ["ui.canvas", "draw_to", "ui.draw_canvas", "ui.layer"])
 pub native fn create_canvas(w: num, h: num)
+@doc("""
+Send the draw calls after this one to canvas `id`.
+""", returns: "The target it replaced, to hand back to `draw_to` later.", see: ["draw_to_screen"])
 pub native fn draw_to(id)
+@doc("Send the draw calls after this one to the screen again.", returns: "The target it replaced.", see: ["draw_to"])
 pub native fn draw_to_screen()
+@doc("""
+Copy what is already painted, starting at `x`, `y`, into canvas `id`.
+""", see: ["ui.snapshot"])
 pub native fn snapshot_to(id, x, y)
+@doc("Gaussian-blur canvas `id` in place.", params: {radius: "The blur radius, in pixels."})
 pub native fn blur_canvas(id, radius)
 
 # The host-data pull channel (core-stdlib/ui/native/src/host_data.rs).
+
+@doc("""
+Ask the host for data it publishes. What `kind` names and what `arg` means
+are host specific; see the host contract (core-stdlib/ui/docs/host-contract.md).
+""", returns: "The host's answer, or `nil`.")
 pub native fn host_data(kind, arg)
 
 # ── Geometry + hit testing ────────────────────────────────────────────────
 
-# A rect is a `Rect` — the built-in class (fields x, y, w, h). It is still an
-# ordinary record, so every `{x, y, w, h}` written by hand keeps working
-# everywhere a rect is taken; going through the class is what earns the
-# geometry methods (`r.center_x()`, `r.inset(4)`, `r.right()` …) and makes
-# `type(r)` say "Rect". See docs/language-guide.md (Classes & Methods).
-#
-# Coordinates are kept exactly as passed — `rect(10.5, …)` is a sub-pixel rect,
-# not a truncated one — so animated and fractional layout stays smooth. The
-# draw natives are where a coordinate becomes a whole pixel.
-#
 # `rect` *is* the constructor rather than a function wrapping it, so a bad
 # argument is reported at the caller's own `rect(...)` — a wrapper would put
 # the caret on this file's line and leave the app author reading the prelude.
+@doc("""
+Make a rect: `rect(x, y, w, h)` is the built-in class `Rect` (fields `x`,
+`y`, `w`, `h`). It is still an ordinary record, so every `{x, y, w, h}`
+written by hand works everywhere a rect is taken; going through the class
+is what gives the geometry methods (`r.right()`, `r.center_x()`,
+`r.inset(4)`, …) and makes `type(r)` say "Rect".
+
+Coordinates are kept exactly as passed: `rect(10.5, …)` is a sub-pixel rect,
+not a truncated one, so animated and fractional layout stays smooth. The
+draw natives are where a coordinate becomes a whole pixel.
+""",
+  example: """
+    let r = rect(20, 20, 200, 120)
+    draw_rect(r.inset(4), :2a2f3a)
+  """)
 pub let rect = Rect
 
+@doc("Whether the point `px`, `py` is inside rect `r`.", see: ["hovered"])
 pub fn point_in(px, py, r)
   px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h
 
@@ -100,20 +203,31 @@ pub fn point_in(px, py, r)
 # probe with its answer rather than as two pointer reads; see
 # docs/dev/memo-scopes.md.
 
+@doc("""
+Raw: whether the left button went down this frame with the pointer inside
+`r`, `hovered(r) && mouse_pressed(0)`. Widgets use the layered `interact`,
+whose `click` knows what is drawn on top.
+""", see: ["hovered", "ui.interact"])
 pub fn clicked(r)
   hovered(r) && mouse_pressed(0)
 
 # ── Timing ────────────────────────────────────────────────────────────────
-# `time()` is an absolute clock in seconds, published by the host each frame
-# (monotonic, read fresh — never a running sum of `dt()`, so it does not
-# drift). `elapsed()` reports the seconds since it was first called: it
-# captures the clock once into `state` and subtracts. That `state` is keyed by
-# the call path, so the capture is per *callsite*: every `elapsed()` in a
-# program is its own timer, started on the first frame that callsite runs —
-# which is what makes "one timer per thing being timed" the default. A call
-# inside a loop gets one timer per iteration by the same rule. For a single
-# app-global clock instead, capture it once into a top-level cell
-# (`state var t0 = time()`) and subtract.
+# `time()` is published by the host each frame (monotonic, read fresh, never
+# a running sum of `dt()`, so it does not drift). `elapsed()` captures the
+# clock once into `state` and subtracts.
+@doc("""
+Seconds since this *call site* first ran: a timer per place it is written.
+The start is kept in `state` keyed by the call path, so every `elapsed()` in
+a program is its own timer, started on the first frame that call site runs,
+and a call inside a loop gets one timer per iteration by the same rule. For
+one app-wide clock, capture it once in a top-level cell (`state var t0 =
+time()`) and subtract.
+""",
+  example: """
+    let t = elapsed()
+    draw_text("{floor(t)} s", 10, 10, {size: 14})
+  """,
+  see: ["time"])
 pub fn elapsed()
   state start = time()
   time() - start

@@ -104,7 +104,7 @@ See [performance.md](performance.md) for how to read these numbers.
 | `tools/run-example.ts <slug>` | Launch an example panel app (`examples/<category>/<slug>/`) in Garden; extra arguments go to Garden, `--list` shows the examples. Refuses a Garden binary that is behind the checkout. See [examples/AUTHORING.md](../../examples/AUTHORING.md). |
 | `tools/panel-test.sh` | Shell helpers for the headless panel test loop: `panel_start <slug>`, `click`/`move`/`drag`/`scroll` (pane-local coordinates), `key`, `tick`, `obs`, `shot`, `panel_reset`, `panel_stop`. `source` it, or run `tools/panel-test.sh <command> …` one command at a time. Needs `curl` and `jq`. See [examples/AUTHORING.md](../../examples/AUTHORING.md#running-it). |
 | `./install-local.sh` | Install the `petal` binary from this checkout (`cargo install --path cli`). |
-| `npm run stdlib:json` | Extract the standard library into JSON (`tools/extract-stdlib.ts`). |
+| `npm run stdlib:json` | Write `docs/stdlib.json`, the manifest of every builtin (`tools/extract-stdlib.ts`): the registrations, aliases and implementation lines read from Rust, joined with each builtin's declared call forms and `@doc` from `petal doc --json`. CI fails when the committed file is stale. |
 | `npm run tsc` | Type-check the vitest suite and the `tools/` scripts (`tsc --noEmit`). `cd tools && npm run tsc` also covers the MCP servers (run `npm install` there once; they need it to run too). |
 
 ## MCP introspection

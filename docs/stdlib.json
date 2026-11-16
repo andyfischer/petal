@@ -2,13 +2,18 @@
   "generatedFrom": [
     "core/src/builtins/mod.rs",
     "core/src/builtins/*.rs",
-    "core/packages/core/src/*.ptl",
-    "core/packages/*/*.ptl",
-    "core-stdlib/ui/src/*.ptl",
-    "core/prelude/std.ptl",
-    "core-stdlib/ui/native/src/draw.rs",
-    "core-stdlib/ui/native/src/text.rs",
-    "core-stdlib/ui/native/src/input.rs"
+    "core-libs/petal-ui/src/draw.rs",
+    "core-libs/petal-ui/src/text.rs",
+    "core-libs/petal-ui/src/input.rs",
+    "petal doc --json --private core/packages/core",
+    "petal doc --json --private core/packages/noise",
+    "petal doc --json --private core/packages/color",
+    "petal doc --json --private core/packages/vec2",
+    "petal doc --json --private core/packages/autodiff",
+    "petal doc --json --private core/packages/json",
+    "petal doc --json --private core/packages/io",
+    "petal doc --json --private core-libs/petal-ui/prelude",
+    "petal doc --json core/prelude/std.ptl"
   ],
   "categories": [
     {
@@ -141,6 +146,12 @@
       "variadic": true,
       "params": [],
       "signatures": [],
+      "declaration": {
+        "module": "core/basics",
+        "file": "core/packages/core/src/basics.ptl",
+        "line": 8
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/io.rs",
         "line": 8
@@ -155,15 +166,15 @@
       "params": [
         {
           "name": "start",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "end",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "step",
-          "type": "int",
+          "type": "num",
           "optional": true
         }
       ],
@@ -171,25 +182,31 @@
         [
           {
             "name": "end",
-            "type": "int"
+            "type": "num"
           }
         ],
         [
           {
             "name": "start",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "end",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "step",
-            "type": "int",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 9
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 30
@@ -215,6 +232,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 11
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 67
@@ -224,7 +247,7 @@
       "name": "push",
       "category": "collections",
       "group": "core",
-      "arity": null,
+      "arity": 2,
       "variadic": false,
       "params": [
         {
@@ -248,6 +271,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 12
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 295
@@ -273,6 +302,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/basics",
+        "file": "core/packages/core/src/basics.ptl",
+        "line": 9
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/io.rs",
         "line": 21
@@ -282,22 +317,28 @@
       "name": "abs",
       "category": "math",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "x",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 8
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 38
@@ -307,22 +348,28 @@
       "name": "sqrt",
       "category": "math",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "x",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 9
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 42
@@ -332,22 +379,28 @@
       "name": "floor",
       "category": "math",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "x",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 10
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 46
@@ -357,22 +410,28 @@
       "name": "ceil",
       "category": "math",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "x",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 11
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 50
@@ -382,8 +441,8 @@
       "name": "float",
       "category": "math",
       "group": "core",
-      "arity": null,
-      "variadic": true,
+      "arity": 1,
+      "variadic": false,
       "params": [
         {
           "name": "value",
@@ -398,6 +457,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 12
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 65
@@ -423,6 +488,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 13
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 124
@@ -437,11 +508,11 @@
       "params": [
         {
           "name": "min",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "max",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
@@ -449,20 +520,26 @@
         [
           {
             "name": "max",
-            "type": "any"
+            "type": "num"
           }
         ],
         [
           {
             "name": "min",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "max",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 14
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 151
@@ -488,6 +565,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/basics",
+        "file": "core/packages/core/src/basics.ptl",
+        "line": 10
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/io.rs",
         "line": 29
@@ -521,6 +604,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 13
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 173
@@ -530,7 +619,7 @@
       "name": "pop",
       "category": "collections",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
@@ -546,6 +635,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 14
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 304
@@ -571,6 +666,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 15
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 385
@@ -596,6 +697,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 16
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 409
@@ -629,6 +736,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 18
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 502
@@ -662,6 +775,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 17
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 167
@@ -695,6 +814,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 18
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 183
@@ -709,11 +834,11 @@
       "params": [
         {
           "name": "x",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "places",
-          "type": "int",
+          "type": "num",
           "optional": true
         }
       ],
@@ -721,15 +846,21 @@
         [
           {
             "name": "x",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "places",
-            "type": "int",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 19
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 211
@@ -739,8 +870,8 @@
       "name": "sort",
       "category": "collections",
       "group": "core",
-      "arity": 1,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "list",
@@ -765,6 +896,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 19
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 596
@@ -790,6 +927,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 20
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 625
@@ -804,25 +947,31 @@
       "params": [
         {
           "name": "list",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "separator",
-          "type": "any"
+          "type": "string"
         }
       ],
       "signatures": [
         [
           {
             "name": "list",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "separator",
-            "type": "any"
+            "type": "string"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 21
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 643
@@ -837,25 +986,31 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         },
         {
           "name": "separator",
-          "type": "any"
+          "type": "string"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           },
           {
             "name": "separator",
-            "type": "any"
+            "type": "string"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 22
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 672
@@ -870,17 +1025,23 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 23
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 699
@@ -895,17 +1056,23 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 24
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 711
@@ -931,6 +1098,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 25
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 723
@@ -964,6 +1137,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 26
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 744
@@ -982,11 +1161,11 @@
         },
         {
           "name": "start",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "end",
-          "type": "int",
+          "type": "any",
           "optional": true
         }
       ],
@@ -998,15 +1177,21 @@
           },
           {
             "name": "start",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "end",
-            "type": "int",
+            "type": "any",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 27
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 802
@@ -1032,6 +1217,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 28
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 841
@@ -1065,6 +1256,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 29
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 502
@@ -1075,22 +1272,28 @@
       "name": "sin",
       "category": "math",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "x",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 20
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 236
@@ -1100,22 +1303,28 @@
       "name": "cos",
       "category": "math",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "x",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 21
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 240
@@ -1125,22 +1334,28 @@
       "name": "tan",
       "category": "math",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "x",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 22
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 244
@@ -1155,25 +1370,31 @@
       "params": [
         {
           "name": "y",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "x",
-          "type": "float"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "y",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "x",
-            "type": "float"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 23
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 248
@@ -1189,6 +1410,12 @@
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 24
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 277
@@ -1203,33 +1430,39 @@
       "params": [
         {
           "name": "value",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "lo",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "hi",
-          "type": "float"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "value",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "lo",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "hi",
-            "type": "float"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 40
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 11
@@ -1244,33 +1477,39 @@
       "params": [
         {
           "name": "a",
-          "type": "float"
+          "type": "any"
         },
         {
           "name": "b",
-          "type": "float"
+          "type": "any"
         },
         {
           "name": "t",
-          "type": "float"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "a",
-            "type": "float"
+            "type": "any"
           },
           {
             "name": "b",
-            "type": "float"
+            "type": "any"
           },
           {
             "name": "t",
-            "type": "float"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 49
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 38
@@ -1285,49 +1524,55 @@
       "params": [
         {
           "name": "value",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "in_lo",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "in_hi",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "out_lo",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "out_hi",
-          "type": "float"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "value",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "in_lo",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "in_hi",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "out_lo",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "out_hi",
-            "type": "float"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 50
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 223
@@ -1350,11 +1595,11 @@
         },
         {
           "name": "x2",
-          "type": "float"
+          "type": "any"
         },
         {
           "name": "y2",
-          "type": "float"
+          "type": "any"
         }
       ],
       "signatures": [
@@ -1369,11 +1614,11 @@
           },
           {
             "name": "x2",
-            "type": "float"
+            "type": "any"
           },
           {
             "name": "y2",
-            "type": "float"
+            "type": "any"
           }
         ],
         [
@@ -1387,6 +1632,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 51
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 235
@@ -1401,15 +1652,15 @@
       "params": [
         {
           "name": "x",
-          "type": "float"
+          "type": "any"
         },
         {
           "name": "y",
-          "type": "float"
+          "type": "any"
         },
         {
           "name": "z",
-          "type": "float",
+          "type": "any",
           "optional": true
         }
       ],
@@ -1417,15 +1668,15 @@
         [
           {
             "name": "x",
-            "type": "float"
+            "type": "any"
           },
           {
             "name": "y",
-            "type": "float"
+            "type": "any"
           },
           {
             "name": "z",
-            "type": "float",
+            "type": "any",
             "optional": true
           }
         ],
@@ -1436,6 +1687,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 53
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 271
@@ -1450,25 +1707,31 @@
       "params": [
         {
           "name": "base",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "exp",
-          "type": "float"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "base",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "exp",
-            "type": "float"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 41
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 308
@@ -1476,6 +1739,208 @@
     },
     {
       "name": "sign",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "num"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "num"
+          }
+        ]
+      ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 42
+      },
+      "doc": null,
+      "source": {
+        "file": "core/src/builtins/creative_coding.rs",
+        "line": 315
+      }
+    },
+    {
+      "name": "fract",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "num"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "num"
+          }
+        ]
+      ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 45
+      },
+      "doc": null,
+      "source": {
+        "file": "core/src/builtins/creative_coding.rs",
+        "line": 342
+      }
+    },
+    {
+      "name": "smoothstep",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 3,
+      "variadic": false,
+      "params": [
+        {
+          "name": "edge0",
+          "type": "num"
+        },
+        {
+          "name": "edge1",
+          "type": "num"
+        },
+        {
+          "name": "x",
+          "type": "num"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "edge0",
+            "type": "num"
+          },
+          {
+            "name": "edge1",
+            "type": "num"
+          },
+          {
+            "name": "x",
+            "type": "num"
+          }
+        ]
+      ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 55
+      },
+      "doc": null,
+      "source": {
+        "file": "core/src/builtins/creative_coding.rs",
+        "line": 349
+      }
+    },
+    {
+      "name": "radians",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "degrees",
+          "type": "num"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "degrees",
+            "type": "num"
+          }
+        ]
+      ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 46
+      },
+      "doc": null,
+      "source": {
+        "file": "core/src/builtins/creative_coding.rs",
+        "line": 368
+      }
+    },
+    {
+      "name": "degrees",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "radians",
+          "type": "num"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "radians",
+            "type": "num"
+          }
+        ]
+      ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 47
+      },
+      "doc": null,
+      "source": {
+        "file": "core/src/builtins/creative_coding.rs",
+        "line": 375
+      }
+    },
+    {
+      "name": "exp",
+      "category": "creative_coding",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "num"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "num"
+          }
+        ]
+      ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 43
+      },
+      "doc": null,
+      "source": {
+        "file": "core/src/builtins/creative_coding.rs",
+        "line": 382
+      }
+    },
+    {
+      "name": "log",
       "category": "creative_coding",
       "group": "core",
       "arity": 1,
@@ -1494,172 +1959,12 @@
           }
         ]
       ],
-      "source": {
-        "file": "core/src/builtins/creative_coding.rs",
-        "line": 315
-      }
-    },
-    {
-      "name": "fract",
-      "category": "creative_coding",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "x",
-          "type": "float"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "x",
-            "type": "float"
-          }
-        ]
-      ],
-      "source": {
-        "file": "core/src/builtins/creative_coding.rs",
-        "line": 342
-      }
-    },
-    {
-      "name": "smoothstep",
-      "category": "creative_coding",
-      "group": "core",
-      "arity": 3,
-      "variadic": false,
-      "params": [
-        {
-          "name": "edge0",
-          "type": "float"
-        },
-        {
-          "name": "edge1",
-          "type": "float"
-        },
-        {
-          "name": "x",
-          "type": "float"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "edge0",
-            "type": "float"
-          },
-          {
-            "name": "edge1",
-            "type": "float"
-          },
-          {
-            "name": "x",
-            "type": "float"
-          }
-        ]
-      ],
-      "source": {
-        "file": "core/src/builtins/creative_coding.rs",
-        "line": 349
-      }
-    },
-    {
-      "name": "radians",
-      "category": "creative_coding",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "degrees",
-          "type": "float"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "degrees",
-            "type": "float"
-          }
-        ]
-      ],
-      "source": {
-        "file": "core/src/builtins/creative_coding.rs",
-        "line": 368
-      }
-    },
-    {
-      "name": "degrees",
-      "category": "creative_coding",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "radians",
-          "type": "float"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "radians",
-            "type": "float"
-          }
-        ]
-      ],
-      "source": {
-        "file": "core/src/builtins/creative_coding.rs",
-        "line": 375
-      }
-    },
-    {
-      "name": "exp",
-      "category": "creative_coding",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "x",
-          "type": "float"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "x",
-            "type": "float"
-          }
-        ]
-      ],
-      "source": {
-        "file": "core/src/builtins/creative_coding.rs",
-        "line": 382
-      }
-    },
-    {
-      "name": "log",
-      "category": "creative_coding",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "x",
-          "type": "float"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "x",
-            "type": "float"
-          }
-        ]
-      ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 44
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 389
@@ -1674,16 +1979,16 @@
       "params": [
         {
           "name": "x",
-          "type": "float"
+          "type": "any"
         },
         {
           "name": "y",
-          "type": "float",
+          "type": "any",
           "optional": true
         },
         {
           "name": "z",
-          "type": "float",
+          "type": "any",
           "optional": true
         }
       ],
@@ -1691,20 +1996,26 @@
         [
           {
             "name": "x",
-            "type": "float"
+            "type": "any"
           },
           {
             "name": "y",
-            "type": "float",
+            "type": "any",
             "optional": true
           },
           {
             "name": "z",
-            "type": "float",
+            "type": "any",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "noise",
+        "file": "core/packages/noise/noise.ptl",
+        "line": 12
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/noise.rs",
         "line": 130
@@ -1720,17 +2031,23 @@
       "params": [
         {
           "name": "seed",
-          "type": "int"
+          "type": "any"
         }
       ],
       "signatures": [
         [
           {
             "name": "seed",
-            "type": "int"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "noise",
+        "file": "core/packages/noise/noise.ptl",
+        "line": 13
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/noise.rs",
         "line": 157
@@ -1746,25 +2063,31 @@
       "params": [
         {
           "name": "lo",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "hi",
-          "type": "int"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "lo",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "hi",
-            "type": "int"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 48
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 396
@@ -1790,6 +2113,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 56
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 411
@@ -1804,33 +2133,39 @@
       "params": [
         {
           "name": "h",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "s",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "v",
-          "type": "float"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "h",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "s",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "v",
-            "type": "float"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "color",
+        "file": "core/packages/color/color.ptl",
+        "line": 12
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/color.rs",
         "line": 57
@@ -1846,33 +2181,39 @@
       "params": [
         {
           "name": "h",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "s",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "l",
-          "type": "float"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "h",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "s",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "l",
-            "type": "float"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "color",
+        "file": "core/packages/color/color.ptl",
+        "line": 13
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/color.rs",
         "line": 70
@@ -1896,7 +2237,7 @@
         },
         {
           "name": "t",
-          "type": "float"
+          "type": "any"
         }
       ],
       "signatures": [
@@ -1911,10 +2252,16 @@
           },
           {
             "name": "t",
-            "type": "float"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "color",
+        "file": "core/packages/color/color.ptl",
+        "line": 14
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/color.rs",
         "line": 103
@@ -1930,25 +2277,31 @@
       "params": [
         {
           "name": "x",
-          "type": "float"
+          "type": "any"
         },
         {
           "name": "y",
-          "type": "float"
+          "type": "any"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "float"
+            "type": "any"
           },
           {
             "name": "y",
-            "type": "float"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "vec2",
+        "file": "core/packages/vec2/vec2.ptl",
+        "line": 12
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 13
@@ -1975,6 +2328,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "vec2",
+        "file": "core/packages/vec2/vec2.ptl",
+        "line": 13
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 53
@@ -2009,6 +2368,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "vec2",
+        "file": "core/packages/vec2/vec2.ptl",
+        "line": 14
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 83
@@ -2028,7 +2393,7 @@
         },
         {
           "name": "max_mag",
-          "type": "float"
+          "type": "any"
         }
       ],
       "signatures": [
@@ -2039,10 +2404,16 @@
           },
           {
             "name": "max_mag",
-            "type": "float"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "vec2",
+        "file": "core/packages/vec2/vec2.ptl",
+        "line": 15
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 119
@@ -2053,8 +2424,8 @@
       "name": "map",
       "category": "higher-order",
       "group": "core",
-      "arity": null,
-      "variadic": true,
+      "arity": 2,
+      "variadic": false,
       "params": [
         {
           "name": "list",
@@ -2077,6 +2448,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 70
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -2086,8 +2463,8 @@
       "name": "filter",
       "category": "higher-order",
       "group": "core",
-      "arity": null,
-      "variadic": true,
+      "arity": 2,
+      "variadic": false,
       "params": [
         {
           "name": "list",
@@ -2110,6 +2487,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 71
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -2120,8 +2503,8 @@
       "name": "reduce",
       "category": "higher-order",
       "group": "core",
-      "arity": null,
-      "variadic": true,
+      "arity": 3,
+      "variadic": false,
       "params": [
         {
           "name": "list",
@@ -2152,6 +2535,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 72
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -2162,8 +2551,8 @@
       "name": "forEach",
       "category": "higher-order",
       "group": "core",
-      "arity": null,
-      "variadic": true,
+      "arity": 2,
+      "variadic": false,
       "params": [
         {
           "name": "list",
@@ -2186,6 +2575,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 73
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -2222,6 +2617,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/basics",
+        "file": "core/packages/core/src/basics.ptl",
+        "line": 11
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/io.rs",
         "line": 75
@@ -2255,6 +2656,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/basics",
+        "file": "core/packages/core/src/basics.ptl",
+        "line": 12
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/io.rs",
         "line": 252
@@ -2269,17 +2676,23 @@
       "params": [
         {
           "name": "length",
-          "type": "int"
+          "type": "any"
         }
       ],
       "signatures": [
         [
           {
             "name": "length",
-            "type": "int"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 30
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 92
@@ -2298,7 +2711,7 @@
         },
         {
           "name": "index",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "value",
@@ -2313,7 +2726,7 @@
           },
           {
             "name": "index",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "value",
@@ -2321,6 +2734,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 31
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 116
@@ -2339,11 +2758,11 @@
         },
         {
           "name": "i",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "j",
-          "type": "int"
+          "type": "any"
         }
       ],
       "signatures": [
@@ -2354,14 +2773,20 @@
           },
           {
             "name": "i",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "j",
-            "type": "int"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 32
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 148
@@ -2376,33 +2801,39 @@
       "params": [
         {
           "name": "h",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "s",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "v",
-          "type": "float"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "h",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "s",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "v",
-            "type": "float"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "color",
+        "file": "core/packages/color/color.ptl",
+        "line": 15
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/color.rs",
         "line": 82
@@ -2418,33 +2849,39 @@
       "params": [
         {
           "name": "h",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "s",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "l",
-          "type": "float"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "h",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "s",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "l",
-            "type": "float"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "color",
+        "file": "core/packages/color/color.ptl",
+        "line": 16
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/color.rs",
         "line": 93
@@ -2460,17 +2897,23 @@
       "params": [
         {
           "name": "name",
-          "type": "string"
+          "type": "any"
         }
       ],
       "signatures": [
         [
           {
             "name": "name",
-            "type": "string"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "io",
+        "file": "core/packages/io/io.ptl",
+        "line": 12
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/output.rs",
         "line": 12
@@ -2505,6 +2948,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "io",
+        "file": "core/packages/io/io.ptl",
+        "line": 13
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/output.rs",
         "line": 20
@@ -2531,6 +2980,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "io",
+        "file": "core/packages/io/io.ptl",
+        "line": 14
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/output.rs",
         "line": 31
@@ -2557,6 +3012,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 33
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 310
@@ -2582,6 +3043,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 34
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 330
@@ -2615,6 +3082,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 35
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 349
@@ -2624,7 +3097,7 @@
       "name": "is_valid",
       "category": "handle",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
@@ -2640,6 +3113,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/handle",
+        "file": "core/packages/core/src/handle.ptl",
+        "line": 8
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/handle.rs",
         "line": 15
@@ -2649,10 +3128,16 @@
       "name": "__pending",
       "category": "pending",
       "group": "core",
-      "arity": 1,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [],
       "signatures": [],
+      "declaration": {
+        "module": "core/pending",
+        "file": "core/packages/core/src/pending.ptl",
+        "line": 9
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/pending.rs",
         "line": 25
@@ -2663,15 +3148,16 @@
       "name": "__resolve",
       "category": "pending",
       "group": "core",
-      "arity": 2,
-      "variadic": false,
-      "params": [
-        {
-          "name": "value",
-          "type": "any"
-        }
-      ],
+      "arity": null,
+      "variadic": true,
+      "params": [],
       "signatures": [],
+      "declaration": {
+        "module": "core/pending",
+        "file": "core/packages/core/src/pending.ptl",
+        "line": 10
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/pending.rs",
         "line": 52
@@ -2682,15 +3168,16 @@
       "name": "__reject",
       "category": "pending",
       "group": "core",
-      "arity": 2,
-      "variadic": false,
-      "params": [
-        {
-          "name": "error",
-          "type": "any"
-        }
-      ],
+      "arity": null,
+      "variadic": true,
+      "params": [],
       "signatures": [],
+      "declaration": {
+        "module": "core/pending",
+        "file": "core/packages/core/src/pending.ptl",
+        "line": 11
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/pending.rs",
         "line": 64
@@ -2717,6 +3204,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/pending",
+        "file": "core/packages/core/src/pending.ptl",
+        "line": 12
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/pending.rs",
         "line": 83
@@ -2742,6 +3235,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/pending",
+        "file": "core/packages/core/src/pending.ptl",
+        "line": 13
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/pending.rs",
         "line": 95
@@ -2767,6 +3266,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/pending",
+        "file": "core/packages/core/src/pending.ptl",
+        "line": 14
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/pending.rs",
         "line": 110
@@ -2792,6 +3297,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/pending",
+        "file": "core/packages/core/src/pending.ptl",
+        "line": 15
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/pending.rs",
         "line": 119
@@ -2817,6 +3328,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/pending",
+        "file": "core/packages/core/src/pending.ptl",
+        "line": 16
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/pending.rs",
         "line": 128
@@ -2850,6 +3367,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/pending",
+        "file": "core/packages/core/src/pending.ptl",
+        "line": 17
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/pending.rs",
         "line": 145
@@ -2875,6 +3398,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/pending",
+        "file": "core/packages/core/src/pending.ptl",
+        "line": 18
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/pending.rs",
         "line": 160
@@ -2900,6 +3429,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 25
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 86
@@ -2925,6 +3460,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 26
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 107
@@ -2939,17 +3480,23 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 39
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 921
@@ -2964,17 +3511,23 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 40
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 942
@@ -2989,25 +3542,31 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         },
         {
           "name": "index",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           },
           {
             "name": "index",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 41
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 959
@@ -3026,7 +3585,7 @@
         },
         {
           "name": "start",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "end",
@@ -3042,7 +3601,7 @@
           },
           {
             "name": "start",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "end",
@@ -3051,6 +3610,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 42
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 979
@@ -3084,6 +3649,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 43
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1003
@@ -3098,11 +3669,11 @@
       "params": [
         {
           "name": "list",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "key",
-          "type": "any"
+          "type": "function"
         },
         {
           "name": "descending",
@@ -3114,11 +3685,11 @@
         [
           {
             "name": "list",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "key",
-            "type": "any"
+            "type": "function"
           },
           {
             "name": "descending",
@@ -3127,6 +3698,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 74
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -3161,6 +3738,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 44
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 224
@@ -3194,6 +3777,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 45
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 268
@@ -3212,7 +3801,7 @@
         },
         {
           "name": "places",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -3224,11 +3813,17 @@
           },
           {
             "name": "places",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "core/format",
+        "file": "core/packages/core/src/format.ptl",
+        "line": 8
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/format.rs",
         "line": 92
@@ -3247,7 +3842,7 @@
         },
         {
           "name": "places",
-          "type": "int",
+          "type": "num",
           "optional": true
         }
       ],
@@ -3259,11 +3854,17 @@
           },
           {
             "name": "places",
-            "type": "int",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "core/format",
+        "file": "core/packages/core/src/format.ptl",
+        "line": 9
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/format.rs",
         "line": 112
@@ -3274,7 +3875,7 @@
       "category": "format",
       "group": "core",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "value",
@@ -3282,11 +3883,11 @@
         },
         {
           "name": "width",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "fill",
-          "type": "any",
+          "type": "string",
           "optional": true
         }
       ],
@@ -3298,15 +3899,21 @@
           },
           {
             "name": "width",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "fill",
-            "type": "any",
+            "type": "string",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "core/format",
+        "file": "core/packages/core/src/format.ptl",
+        "line": 10
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/format.rs",
         "line": 190
@@ -3317,7 +3924,7 @@
       "category": "format",
       "group": "core",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "value",
@@ -3325,11 +3932,11 @@
         },
         {
           "name": "width",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "fill",
-          "type": "any",
+          "type": "string",
           "optional": true
         }
       ],
@@ -3341,15 +3948,21 @@
           },
           {
             "name": "width",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "fill",
-            "type": "any",
+            "type": "string",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "core/format",
+        "file": "core/packages/core/src/format.ptl",
+        "line": 11
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/format.rs",
         "line": 194
@@ -3361,13 +3974,14 @@
       "group": "core",
       "arity": null,
       "variadic": true,
-      "params": [
-        {
-          "name": "template",
-          "type": "string"
-        }
-      ],
+      "params": [],
       "signatures": [],
+      "declaration": {
+        "module": "core/format",
+        "file": "core/packages/core/src/format.ptl",
+        "line": 12
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/format.rs",
         "line": 278
@@ -3401,6 +4015,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 27
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 293
@@ -3436,6 +4056,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "json",
+        "file": "core/packages/json/json.ptl",
+        "line": 12
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/json.rs",
         "line": 28
@@ -3451,17 +4077,23 @@
       "params": [
         {
           "name": "text",
-          "type": "string"
+          "type": "any"
         }
       ],
       "signatures": [
         [
           {
             "name": "text",
-            "type": "string"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "json",
+        "file": "core/packages/json/json.ptl",
+        "line": 13
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/json.rs",
         "line": 60
@@ -3496,6 +4128,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "vec2",
+        "file": "core/packages/vec2/vec2.ptl",
+        "line": 16
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 154
@@ -3511,33 +4149,39 @@
       "params": [
         {
           "name": "x",
-          "type": "float"
+          "type": "any"
         },
         {
           "name": "y",
-          "type": "float"
+          "type": "any"
         },
         {
           "name": "z",
-          "type": "float"
+          "type": "any"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "float"
+            "type": "any"
           },
           {
             "name": "y",
-            "type": "float"
+            "type": "any"
           },
           {
             "name": "z",
-            "type": "float"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "vec2",
+        "file": "core/packages/vec2/vec2.ptl",
+        "line": 17
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 21
@@ -3572,6 +4216,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "vec2",
+        "file": "core/packages/vec2/vec2.ptl",
+        "line": 18
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 104
@@ -3582,22 +4232,28 @@
       "name": "asin",
       "category": "math",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "x",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 28
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 256
@@ -3607,22 +4263,28 @@
       "name": "acos",
       "category": "math",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "x",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 29
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 260
@@ -3632,22 +4294,28 @@
       "name": "atan",
       "category": "math",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "x",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 30
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 264
@@ -3662,25 +4330,31 @@
       "params": [
         {
           "name": "x",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "y",
-          "type": "float"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "y",
-            "type": "float"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 31
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 269
@@ -3695,25 +4369,31 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         },
         {
           "name": "count",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           },
           {
             "name": "count",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 46
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1038
@@ -3728,25 +4408,31 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         },
         {
           "name": "prefix",
-          "type": "any"
+          "type": "string"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           },
           {
             "name": "prefix",
-            "type": "any"
+            "type": "string"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 47
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1074
@@ -3761,25 +4447,31 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         },
         {
           "name": "suffix",
-          "type": "any"
+          "type": "string"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           },
           {
             "name": "suffix",
-            "type": "any"
+            "type": "string"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 48
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1083
@@ -3794,17 +4486,23 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 49
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1093
@@ -3819,17 +4517,23 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 51
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 876
@@ -3844,15 +4548,15 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         },
         {
           "name": "start",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "end",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -3860,19 +4564,25 @@
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           },
           {
             "name": "start",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "end",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 52
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 892
@@ -3882,22 +4592,28 @@
       "name": "fn_info",
       "category": "higher-order",
       "group": "core",
-      "arity": null,
-      "variadic": true,
+      "arity": 1,
+      "variadic": false,
       "params": [
         {
           "name": "f",
-          "type": "any"
+          "type": "function"
         }
       ],
       "signatures": [
         [
           {
             "name": "f",
-            "type": "any"
+            "type": "function"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/introspect",
+        "file": "core/packages/core/src/introspect.ptl",
+        "line": 8
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -3908,22 +4624,28 @@
       "name": "fn_ast",
       "category": "higher-order",
       "group": "core",
-      "arity": null,
-      "variadic": true,
+      "arity": 1,
+      "variadic": false,
       "params": [
         {
           "name": "f",
-          "type": "any"
+          "type": "function"
         }
       ],
       "signatures": [
         [
           {
             "name": "f",
-            "type": "any"
+            "type": "function"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/introspect",
+        "file": "core/packages/core/src/introspect.ptl",
+        "line": 9
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -3950,6 +4672,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 88
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 198
@@ -3975,6 +4703,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 89
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 209
@@ -4010,6 +4744,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/basics",
+        "file": "core/packages/core/src/basics.ptl",
+        "line": 13
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/io.rs",
         "line": 141
@@ -4053,6 +4793,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/basics",
+        "file": "core/packages/core/src/basics.ptl",
+        "line": 14
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/io.rs",
         "line": 164
@@ -4067,15 +4813,15 @@
       "params": [
         {
           "name": "actual",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "expected",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "tolerance",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "message",
@@ -4087,15 +4833,15 @@
         [
           {
             "name": "actual",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "expected",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "tolerance",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "message",
@@ -4104,6 +4850,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/basics",
+        "file": "core/packages/core/src/basics.ptl",
+        "line": 15
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/io.rs",
         "line": 195
@@ -4118,7 +4870,7 @@
       "params": [
         {
           "name": "count",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "value",
@@ -4129,7 +4881,7 @@
         [
           {
             "name": "count",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "value",
@@ -4137,6 +4889,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 53
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1138
@@ -4146,7 +4904,7 @@
       "name": "argmin",
       "category": "collections",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
@@ -4162,6 +4920,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 54
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1228
@@ -4171,7 +4935,7 @@
       "name": "argmax",
       "category": "collections",
       "group": "core",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
@@ -4187,6 +4951,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 55
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1234
@@ -4205,7 +4975,7 @@
         },
         {
           "name": "k",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
@@ -4216,10 +4986,16 @@
           },
           {
             "name": "k",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 56
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1241
@@ -4234,25 +5010,31 @@
       "params": [
         {
           "name": "list",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "keys",
-          "type": "any"
+          "type": "list"
         }
       ],
       "signatures": [
         [
           {
             "name": "list",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "keys",
-            "type": "any"
+            "type": "list"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 57
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1290
@@ -4267,17 +5049,23 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 58
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1327
@@ -4292,17 +5080,23 @@
       "params": [
         {
           "name": "code",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "code",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 59
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1342
@@ -4317,25 +5111,31 @@
       "params": [
         {
           "name": "table",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "x",
-          "type": "float"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "table",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "x",
-            "type": "float"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 32
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 335
@@ -4346,25 +5146,25 @@
       "category": "math",
       "group": "core",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "a",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "any",
+          "type": "num",
           "optional": true
         },
         {
           "name": "c",
-          "type": "any",
+          "type": "num",
           "optional": true
         },
         {
           "name": "d",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -4372,25 +5172,31 @@
         [
           {
             "name": "a",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "any",
+            "type": "num",
             "optional": true
           },
           {
             "name": "c",
-            "type": "any",
+            "type": "num",
             "optional": true
           },
           {
             "name": "d",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 33
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 406
@@ -4401,25 +5207,25 @@
       "category": "math",
       "group": "core",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "a",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "any",
+          "type": "num",
           "optional": true
         },
         {
           "name": "c",
-          "type": "any",
+          "type": "num",
           "optional": true
         },
         {
           "name": "d",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -4427,25 +5233,31 @@
         [
           {
             "name": "a",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "any",
+            "type": "num",
             "optional": true
           },
           {
             "name": "c",
-            "type": "any",
+            "type": "num",
             "optional": true
           },
           {
             "name": "d",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 34
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 414
@@ -4460,11 +5272,11 @@
       "params": [
         {
           "name": "text",
-          "type": "any"
+          "type": "string"
         },
         {
           "name": "salt",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -4472,15 +5284,21 @@
         [
           {
             "name": "text",
-            "type": "any"
+            "type": "string"
           },
           {
             "name": "salt",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "core/math",
+        "file": "core/packages/core/src/math.ptl",
+        "line": 35
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 440
@@ -4495,7 +5313,7 @@
       "params": [
         {
           "name": "pairs",
-          "type": "any"
+          "type": "list"
         }
       ],
       "signatures": [
@@ -4503,10 +5321,16 @@
         [
           {
             "name": "pairs",
-            "type": "any"
+            "type": "list"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 66
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 463
@@ -4532,6 +5356,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 17
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 428
@@ -4541,8 +5371,8 @@
       "name": "any",
       "category": "higher-order",
       "group": "core",
-      "arity": null,
-      "variadic": true,
+      "arity": 2,
+      "variadic": false,
       "params": [
         {
           "name": "xs",
@@ -4565,6 +5395,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 78
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -4575,8 +5411,8 @@
       "name": "all",
       "category": "higher-order",
       "group": "core",
-      "arity": null,
-      "variadic": true,
+      "arity": 2,
+      "variadic": false,
       "params": [
         {
           "name": "xs",
@@ -4599,6 +5435,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 81
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -4609,8 +5451,8 @@
       "name": "find",
       "category": "higher-order",
       "group": "core",
-      "arity": null,
-      "variadic": true,
+      "arity": 2,
+      "variadic": false,
       "params": [
         {
           "name": "xs",
@@ -4633,6 +5475,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 83
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -4652,22 +5500,22 @@
         },
         {
           "name": "min",
-          "type": "any",
+          "type": "num",
           "optional": true
         },
         {
           "name": "max",
-          "type": "any",
+          "type": "num",
           "optional": true
         },
         {
           "name": "step",
-          "type": "any",
+          "type": "num",
           "optional": true
         },
         {
           "name": "options",
-          "type": "any",
+          "type": "list",
           "optional": true
         }
       ],
@@ -4679,22 +5527,22 @@
           },
           {
             "name": "min",
-            "type": "any",
+            "type": "num",
             "optional": true
           },
           {
             "name": "max",
-            "type": "any",
+            "type": "num",
             "optional": true
           },
           {
             "name": "step",
-            "type": "any",
+            "type": "num",
             "optional": true
           },
           {
             "name": "options",
-            "type": "any",
+            "type": "list",
             "optional": true
           }
         ],
@@ -4705,10 +5553,16 @@
           },
           {
             "name": "options",
-            "type": "any"
+            "type": "list"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/dm",
+        "file": "core/packages/core/src/dm.ptl",
+        "line": 13
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/hints.rs",
         "line": 16
@@ -4734,6 +5588,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/dm",
+        "file": "core/packages/core/src/dm.ptl",
+        "line": 16
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/hints.rs",
         "line": 27
@@ -4752,7 +5612,7 @@
         },
         {
           "name": "index",
-          "type": "int"
+          "type": "num"
         }
       ],
       "signatures": [
@@ -4763,10 +5623,16 @@
           },
           {
             "name": "index",
-            "type": "int"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 36
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 244
@@ -4781,33 +5647,39 @@
       "params": [
         {
           "name": "string",
-          "type": "any"
+          "type": "string"
         },
         {
           "name": "old",
-          "type": "any"
+          "type": "string"
         },
         {
           "name": "new",
-          "type": "any"
+          "type": "string"
         }
       ],
       "signatures": [
         [
           {
             "name": "string",
-            "type": "any"
+            "type": "string"
           },
           {
             "name": "old",
-            "type": "any"
+            "type": "string"
           },
           {
             "name": "new",
-            "type": "any"
+            "type": "string"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 50
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1112
@@ -4833,6 +5705,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/dm",
+        "file": "core/packages/core/src/dm.ptl",
+        "line": 22
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/hints.rs",
         "line": 37
@@ -4846,6 +5724,12 @@
       "variadic": true,
       "params": [],
       "signatures": [],
+      "declaration": {
+        "module": "core/speculate",
+        "file": "core/packages/core/src/speculate.ptl",
+        "line": 18
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -4856,12 +5740,18 @@
       "name": "speculating",
       "category": "higher-order",
       "group": "core",
-      "arity": null,
-      "variadic": true,
+      "arity": 0,
+      "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "core/speculate",
+        "file": "core/packages/core/src/speculate.ptl",
+        "line": 19
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -4872,8 +5762,8 @@
       "name": "speculate_place",
       "category": "higher-order",
       "group": "core",
-      "arity": null,
-      "variadic": true,
+      "arity": 2,
+      "variadic": false,
       "params": [
         {
           "name": "key",
@@ -4896,6 +5786,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/speculate",
+        "file": "core/packages/core/src/speculate.ptl",
+        "line": 20
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -4915,7 +5811,7 @@
         },
         {
           "name": "path",
-          "type": "any"
+          "type": "list"
         }
       ],
       "signatures": [
@@ -4926,10 +5822,16 @@
           },
           {
             "name": "path",
-            "type": "any"
+            "type": "list"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 37
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/paths.rs",
         "line": 97
@@ -4948,7 +5850,7 @@
         },
         {
           "name": "path",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "v",
@@ -4963,7 +5865,7 @@
           },
           {
             "name": "path",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "v",
@@ -4971,6 +5873,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 38
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/paths.rs",
         "line": 115
@@ -4985,17 +5893,23 @@
       "params": [
         {
           "name": "points",
-          "type": "any"
+          "type": "list"
         }
       ],
       "signatures": [
         [
           {
             "name": "points",
-            "type": "any"
+            "type": "list"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/drag_math",
+        "file": "core/packages/core/src/drag_math.ptl",
+        "line": 20
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/drag_math.rs",
         "line": 223
@@ -5010,41 +5924,47 @@
       "params": [
         {
           "name": "points",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "tris",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "x",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "y",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "points",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "tris",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "x",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "y",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/drag_math",
+        "file": "core/packages/core/src/drag_math.ptl",
+        "line": 21
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/drag_math.rs",
         "line": 235
@@ -5059,19 +5979,19 @@
       "params": [
         {
           "name": "values",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "rows",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "targets",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "jac",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "bounds",
@@ -5079,26 +5999,26 @@
         },
         {
           "name": "scale",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "values",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "rows",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "targets",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "jac",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "bounds",
@@ -5106,10 +6026,16 @@
           },
           {
             "name": "scale",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/drag_math",
+        "file": "core/packages/core/src/drag_math.ptl",
+        "line": 22
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/drag_math.rs",
         "line": 271
@@ -5124,19 +6050,19 @@
       "params": [
         {
           "name": "values",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "rows",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "targets",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "jac",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "bounds",
@@ -5144,26 +6070,26 @@
         },
         {
           "name": "scale",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "values",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "rows",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "targets",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "jac",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "bounds",
@@ -5171,10 +6097,16 @@
           },
           {
             "name": "scale",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "core/drag_math",
+        "file": "core/packages/core/src/drag_math.ptl",
+        "line": 23
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/drag_math.rs",
         "line": 271
@@ -5190,7 +6122,7 @@
       "params": [
         {
           "name": "x",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "base",
@@ -5198,7 +6130,7 @@
         },
         {
           "name": "samples",
-          "type": "any"
+          "type": "list"
         },
         {
           "name": "opts",
@@ -5209,7 +6141,7 @@
         [
           {
             "name": "x",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "base",
@@ -5217,7 +6149,7 @@
           },
           {
             "name": "samples",
-            "type": "any"
+            "type": "list"
           },
           {
             "name": "opts",
@@ -5225,6 +6157,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/drag_math",
+        "file": "core/packages/core/src/drag_math.ptl",
+        "line": 24
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/drag_math.rs",
         "line": 386
@@ -5238,6 +6176,12 @@
       "variadic": true,
       "params": [],
       "signatures": [],
+      "declaration": {
+        "module": "core/speculate",
+        "file": "core/packages/core/src/speculate.ptl",
+        "line": 21
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/mod.rs",
         "line": 715
@@ -5288,6 +6232,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "core/classes",
+        "file": "core/packages/core/src/classes.ptl",
+        "line": 9
+      },
+      "doc": null,
       "source": {
         "file": "core/src/builtins/classes.rs",
         "line": 131
@@ -5313,6 +6263,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 21
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 45
@@ -5338,6 +6294,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 25
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 49
@@ -5363,6 +6325,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 29
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 59
@@ -5388,6 +6356,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 33
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 69
@@ -5413,6 +6387,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 37
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 80
@@ -5438,6 +6418,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 41
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 91
@@ -5463,6 +6449,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 48
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 105
@@ -5496,6 +6488,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 57
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 121
@@ -5529,6 +6527,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 71
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 154
@@ -5562,6 +6566,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 77
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 168
@@ -5571,8 +6581,8 @@
       "name": "top_k",
       "category": "std",
       "group": "prelude",
-      "arity": 3,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "xs",
@@ -5583,8 +6593,9 @@
           "type": "any"
         },
         {
-          "name": "key = nil",
-          "type": "any"
+          "name": "key",
+          "type": "any",
+          "optional": true
         }
       ],
       "signatures": [
@@ -5598,11 +6609,18 @@
             "type": "any"
           },
           {
-            "name": "key = nil",
-            "type": "any"
+            "name": "key",
+            "type": "any",
+            "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 84
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 183
@@ -5636,6 +6654,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 91
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 201
@@ -5669,6 +6693,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 96
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 213
@@ -5702,6 +6732,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 102
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 226
@@ -5735,6 +6771,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 106
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 237
@@ -5768,6 +6810,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 118
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 251
@@ -5809,6 +6857,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 124
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 265
@@ -5834,6 +6888,12 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 130
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 271
@@ -5843,8 +6903,8 @@
       "name": "plural",
       "category": "std",
       "group": "prelude",
-      "arity": 3,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "n",
@@ -5855,8 +6915,9 @@
           "type": "any"
         },
         {
-          "name": "many = nil",
-          "type": "any"
+          "name": "many",
+          "type": "any",
+          "optional": true
         }
       ],
       "signatures": [
@@ -5870,11 +6931,18 @@
             "type": "any"
           },
           {
-            "name": "many = nil",
-            "type": "any"
+            "name": "many",
+            "type": "any",
+            "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 138
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 289
@@ -5884,16 +6952,17 @@
       "name": "list_and",
       "category": "std",
       "group": "prelude",
-      "arity": 2,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "xs",
           "type": "any"
         },
         {
-          "name": "word = \"and\"",
-          "type": "any"
+          "name": "word",
+          "type": "any",
+          "optional": true
         }
       ],
       "signatures": [
@@ -5903,11 +6972,18 @@
             "type": "any"
           },
           {
-            "name": "word = \"and\"",
-            "type": "any"
+            "name": "word",
+            "type": "any",
+            "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 146
+      },
+      "doc": null,
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 305
@@ -5922,7 +6998,7 @@
       "params": [
         {
           "name": "source",
-          "type": "string"
+          "type": "any"
         },
         {
           "name": "x",
@@ -6000,7 +7076,7 @@
         [
           {
             "name": "source",
-            "type": "string"
+            "type": "any"
           },
           {
             "name": "x",
@@ -6075,8 +7151,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 12
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1603
       }
     },
@@ -6084,7 +7166,7 @@
       "name": "image_size",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
@@ -6100,8 +7182,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 47
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1545
       }
     },
@@ -6109,7 +7197,7 @@
       "name": "image_load",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
@@ -6125,8 +7213,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 46
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1555
       }
     },
@@ -6139,35 +7233,41 @@
       "params": [
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 26
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1590
       }
     },
@@ -6175,40 +7275,40 @@
       "name": "draw_rect",
       "category": "drawing",
       "group": "canvas",
-      "arity": 7,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "x",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "y",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "w",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "h",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "a",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -6216,54 +7316,54 @@
         [
           {
             "name": "x",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "y",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "w",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "h",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ],
         [
           {
             "name": "x",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "y",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "w",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "h",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "c",
@@ -6271,7 +7371,7 @@
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ],
@@ -6286,13 +7386,19 @@
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 32
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1658
       }
     },
@@ -6301,43 +7407,43 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "x",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "w",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "h",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "radius",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "a",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -6345,45 +7451,51 @@
         [
           {
             "name": "x",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "w",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "h",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "radius",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 13
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1687
       }
     },
@@ -6391,45 +7503,45 @@
       "name": "draw_rect_outline",
       "category": "drawing",
       "group": "canvas",
-      "arity": 7,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "x",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "y",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "w",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "h",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "a",
-          "type": "any",
+          "type": "num",
           "optional": true
         },
         {
           "name": "width",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -6437,46 +7549,52 @@
         [
           {
             "name": "x",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "y",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "w",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "h",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           },
           {
             "name": "width",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 14
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1717
       }
     },
@@ -6485,48 +7603,48 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "x",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "w",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "h",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "radius",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "a",
-          "type": "any",
+          "type": "num",
           "optional": true
         },
         {
           "name": "width",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -6534,50 +7652,56 @@
         [
           {
             "name": "x",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "w",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "h",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "radius",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           },
           {
             "name": "width",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 17
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1731
       }
     },
@@ -6585,24 +7709,24 @@
       "name": "draw_rect_gradient",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 13,
       "variadic": false,
       "params": [
         {
           "name": "x",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "w",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "h",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "r0",
@@ -6638,26 +7762,26 @@
         },
         {
           "name": "angle",
-          "type": "float"
+          "type": "any"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "w",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "h",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "r0",
@@ -6693,12 +7817,18 @@
           },
           {
             "name": "angle",
-            "type": "float"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 57
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1811
       }
     },
@@ -6706,28 +7836,28 @@
       "name": "draw_rect_gradient_rounded",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 14,
       "variadic": false,
       "params": [
         {
           "name": "x",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "w",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "h",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "radius",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "r0",
@@ -6763,30 +7893,30 @@
         },
         {
           "name": "angle",
-          "type": "float"
+          "type": "any"
         }
       ],
       "signatures": [
         [
           {
             "name": "x",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "w",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "h",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "radius",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "r0",
@@ -6822,12 +7952,18 @@
           },
           {
             "name": "angle",
-            "type": "float"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 58
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1827
       }
     },
@@ -6835,104 +7971,110 @@
       "name": "draw_circle_gradient",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 11,
       "variadic": false,
       "params": [
         {
           "name": "cx",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "cy",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "radius",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "r0",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "g0",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "b0",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "a0",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "r1",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "g1",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "b1",
-          "type": "any"
+          "type": "num"
         },
         {
           "name": "a1",
-          "type": "any"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "cx",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "cy",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "radius",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "r0",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "g0",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "b0",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "a0",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "r1",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "g1",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "b1",
-            "type": "any"
+            "type": "num"
           },
           {
             "name": "a1",
-            "type": "any"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 59
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1844
       }
     },
@@ -6941,59 +8083,59 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "x",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "w",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "h",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "radius",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "blur",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "spread",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "dx",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "dy",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "a",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -7001,61 +8143,67 @@
         [
           {
             "name": "x",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "w",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "h",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "radius",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "blur",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "spread",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "dx",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "dy",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 62
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1873
       }
     },
@@ -7063,45 +8211,45 @@
       "name": "draw_line",
       "category": "drawing",
       "group": "canvas",
-      "arity": 7,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "x1",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "y1",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "x2",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "y2",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "a",
-          "type": "any",
+          "type": "num",
           "optional": true
         },
         {
           "name": "width",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -7109,46 +8257,52 @@
         [
           {
             "name": "x1",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "y1",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "x2",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "y2",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           },
           {
             "name": "width",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 15
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1911
       }
     },
@@ -7220,8 +8374,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 29
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2185
       }
     },
@@ -7229,36 +8389,36 @@
       "name": "draw_circle",
       "category": "drawing",
       "group": "canvas",
-      "arity": 6,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "cx",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "cy",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "radius",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "a",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -7266,37 +8426,43 @@
         [
           {
             "name": "cx",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "cy",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "radius",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 16
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1921
       }
     },
@@ -7305,40 +8471,40 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "cx",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "cy",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "radius",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "a",
-          "type": "any",
+          "type": "num",
           "optional": true
         },
         {
           "name": "width",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -7346,42 +8512,48 @@
         [
           {
             "name": "cx",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "cy",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "radius",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           },
           {
             "name": "width",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 18
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1932
       }
     },
@@ -7389,40 +8561,40 @@
       "name": "draw_ellipse",
       "category": "drawing",
       "group": "canvas",
-      "arity": 7,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "cx",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "cy",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "rx",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "ry",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "a",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -7430,41 +8602,47 @@
         [
           {
             "name": "cx",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "cy",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "rx",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "ry",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 19
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1959
       }
     },
@@ -7472,45 +8650,45 @@
       "name": "draw_ellipse_outline",
       "category": "drawing",
       "group": "canvas",
-      "arity": 7,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "cx",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "cy",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "rx",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "ry",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "a",
-          "type": "any",
+          "type": "num",
           "optional": true
         },
         {
           "name": "width",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -7518,46 +8696,52 @@
         [
           {
             "name": "cx",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "cy",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "rx",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "ry",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           },
           {
             "name": "width",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 20
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1968
       }
     },
@@ -7566,47 +8750,47 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "cx",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "cy",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "r_in",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "r_out",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "a0",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "a1",
-          "type": "float"
+          "type": "num"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "a",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -7614,49 +8798,55 @@
         [
           {
             "name": "cx",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "cy",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "r_in",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "r_out",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "a0",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "a1",
-            "type": "float"
+            "type": "num"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 21
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1994
       }
     },
@@ -7664,48 +8854,48 @@
       "name": "fill_triangle",
       "category": "drawing",
       "group": "canvas",
-      "arity": 9,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "x1",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "y1",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "x2",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "y2",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "x3",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "y3",
-          "type": "number"
+          "type": "num"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "a",
-          "type": "any",
+          "type": "num",
           "optional": true
         }
       ],
@@ -7713,49 +8903,55 @@
         [
           {
             "name": "x1",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "y1",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "x2",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "y2",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "x3",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "y3",
-            "type": "number"
+            "type": "num"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "a",
-            "type": "any",
+            "type": "num",
             "optional": true
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 22
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2026
       }
     },
@@ -7764,23 +8960,23 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "points",
-          "type": "list"
+          "type": "any"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "a",
@@ -7792,19 +8988,19 @@
         [
           {
             "name": "points",
-            "type": "list"
+            "type": "any"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "a",
@@ -7813,8 +9009,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 23
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2101
       }
     },
@@ -7823,23 +9025,23 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "points",
-          "type": "list"
+          "type": "any"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "a",
@@ -7851,19 +9053,19 @@
         [
           {
             "name": "points",
-            "type": "list"
+            "type": "any"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "a",
@@ -7872,8 +9074,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 24
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2127
       }
     },
@@ -7882,31 +9090,31 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "cx",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "cy",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "points",
-          "type": "list"
+          "type": "any"
         },
         {
           "name": "r",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "g",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "b",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "a",
@@ -7918,27 +9126,27 @@
         [
           {
             "name": "cx",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "cy",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "points",
-            "type": "list"
+            "type": "any"
           },
           {
             "name": "r",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "g",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "b",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "a",
@@ -7947,8 +9155,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 25
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2151
       }
     },
@@ -7961,15 +9175,15 @@
       "params": [
         {
           "name": "text",
-          "type": "string"
+          "type": "any"
         },
         {
           "name": "x",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "y",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "size",
@@ -7997,15 +9211,15 @@
         [
           {
             "name": "text",
-            "type": "string"
+            "type": "any"
           },
           {
             "name": "x",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "style",
@@ -8015,15 +9229,15 @@
         [
           {
             "name": "text",
-            "type": "string"
+            "type": "any"
           },
           {
             "name": "x",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "y",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "size",
@@ -8048,8 +9262,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 26
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2217
       }
     },
@@ -8057,24 +9277,24 @@
       "name": "clip",
       "category": "drawing",
       "group": "canvas",
-      "arity": 4,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "x",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "y",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "w",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "h",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "radius",
@@ -8086,19 +9306,19 @@
         [
           {
             "name": "x",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "y",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "w",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "h",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "radius",
@@ -8107,8 +9327,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 33
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2338
       }
     },
@@ -8116,14 +9342,20 @@
       "name": "clip_none",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 36
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2346
       }
     },
@@ -8131,24 +9363,24 @@
       "name": "clip_push",
       "category": "drawing",
       "group": "canvas",
-      "arity": 4,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "x",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "y",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "w",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "h",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "radius",
@@ -8165,19 +9397,19 @@
         [
           {
             "name": "x",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "y",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "w",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "h",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "radius",
@@ -8191,8 +9423,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 34
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2363
       }
     },
@@ -8200,14 +9438,20 @@
       "name": "clip_pop",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 35
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2406
       }
     },
@@ -8216,7 +9460,7 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "text",
@@ -8259,8 +9503,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 51
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/text.rs",
+        "file": "core-libs/petal-ui/src/text.rs",
         "line": 880
       }
     },
@@ -8269,7 +9519,7 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "text",
@@ -8312,8 +9562,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 53
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/text.rs",
+        "file": "core-libs/petal-ui/src/text.rs",
         "line": 892
       }
     },
@@ -8322,7 +9578,7 @@
       "category": "drawing",
       "group": "canvas",
       "arity": null,
-      "variadic": false,
+      "variadic": true,
       "params": [
         {
           "name": "size",
@@ -8353,8 +9609,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 55
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/text.rs",
+        "file": "core-libs/petal-ui/src/text.rs",
         "line": 1040
       }
     },
@@ -8430,8 +9692,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 57
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/text.rs",
+        "file": "core-libs/petal-ui/src/text.rs",
         "line": 1228
       }
     },
@@ -8527,8 +9795,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 60
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/text.rs",
+        "file": "core-libs/petal-ui/src/text.rs",
         "line": 1451
       }
     },
@@ -8604,8 +9878,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 63
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/text.rs",
+        "file": "core-libs/petal-ui/src/text.rs",
         "line": 1491
       }
     },
@@ -8613,24 +9893,30 @@
       "name": "font",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "name",
-          "type": "string"
+          "type": "any"
         }
       ],
       "signatures": [
         [
           {
             "name": "name",
-            "type": "string"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 28
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/text.rs",
+        "file": "core-libs/petal-ui/src/text.rs",
         "line": 696
       }
     },
@@ -8638,14 +9924,20 @@
       "name": "fonts",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 66
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/text.rs",
+        "file": "core-libs/petal-ui/src/text.rs",
         "line": 711
       }
     },
@@ -8653,7 +9945,7 @@
       "name": "pixel_snap",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
@@ -8669,8 +9961,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 30
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 1451
       }
     },
@@ -8678,32 +9976,38 @@
       "name": "create_canvas",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 2,
       "variadic": false,
       "params": [
         {
           "name": "w",
-          "type": "int"
+          "type": "num"
         },
         {
           "name": "h",
-          "type": "int"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "w",
-            "type": "int"
+            "type": "num"
           },
           {
             "name": "h",
-            "type": "int"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 69
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2412
       }
     },
@@ -8711,24 +10015,30 @@
       "name": "draw_to",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "id",
-          "type": "int"
+          "type": "any"
         }
       ],
       "signatures": [
         [
           {
             "name": "id",
-            "type": "int"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 70
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2440
       }
     },
@@ -8736,14 +10046,20 @@
       "name": "draw_to_screen",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 71
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2446
       }
     },
@@ -8751,20 +10067,20 @@
       "name": "draw_canvas",
       "category": "drawing",
       "group": "canvas",
-      "arity": 3,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "id",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "x",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "y",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "a",
@@ -8786,15 +10102,15 @@
         [
           {
             "name": "id",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "x",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "y",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "a",
@@ -8813,8 +10129,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_native",
+        "file": "core-libs/petal-ui/prelude/_native.ptl",
+        "line": 65
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2453
       }
     },
@@ -8827,35 +10149,41 @@
       "params": [
         {
           "name": "id",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "x",
-          "type": "number"
+          "type": "any"
         },
         {
           "name": "y",
-          "type": "number"
+          "type": "any"
         }
       ],
       "signatures": [
         [
           {
             "name": "id",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "x",
-            "type": "number"
+            "type": "any"
           },
           {
             "name": "y",
-            "type": "number"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 72
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2465
       }
     },
@@ -8863,32 +10191,38 @@
       "name": "blur_canvas",
       "category": "drawing",
       "group": "canvas",
-      "arity": null,
+      "arity": 2,
       "variadic": false,
       "params": [
         {
           "name": "id",
-          "type": "int"
+          "type": "any"
         },
         {
           "name": "radius",
-          "type": "float"
+          "type": "any"
         }
       ],
       "signatures": [
         [
           {
             "name": "id",
-            "type": "int"
+            "type": "any"
           },
           {
             "name": "radius",
-            "type": "float"
+            "type": "any"
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/_base",
+        "file": "core-libs/petal-ui/prelude/_base.ptl",
+        "line": 73
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/draw.rs",
+        "file": "core-libs/petal-ui/src/draw.rs",
         "line": 2473
       }
     },
@@ -8896,14 +10230,20 @@
       "name": "mouse_x",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 11
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 749
       }
     },
@@ -8911,14 +10251,20 @@
       "name": "mouse_y",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 12
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 796
       }
     },
@@ -8926,7 +10272,7 @@
       "name": "hovered",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
@@ -8942,8 +10288,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 13
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 764
       }
     },
@@ -8951,14 +10303,20 @@
       "name": "mouse_dx",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 14
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 800
       }
     },
@@ -8966,14 +10324,20 @@
       "name": "mouse_dy",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 15
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 804
       }
     },
@@ -8981,24 +10345,30 @@
       "name": "mouse_down",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "button",
-          "type": "int"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "button",
-            "type": "int"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 16
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 808
       }
     },
@@ -9006,24 +10376,30 @@
       "name": "mouse_pressed",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "button",
-          "type": "int"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "button",
-            "type": "int"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 17
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 815
       }
     },
@@ -9031,24 +10407,30 @@
       "name": "mouse_released",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
           "name": "button",
-          "type": "int"
+          "type": "num"
         }
       ],
       "signatures": [
         [
           {
             "name": "button",
-            "type": "int"
+            "type": "num"
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 18
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 822
       }
     },
@@ -9056,14 +10438,20 @@
       "name": "scroll_x",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 19
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 829
       }
     },
@@ -9071,14 +10459,20 @@
       "name": "scroll_y",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 20
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 833
       }
     },
@@ -9086,7 +10480,7 @@
       "name": "key_down",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
@@ -9102,8 +10496,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 21
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 844
       }
     },
@@ -9111,7 +10511,7 @@
       "name": "key_pressed",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
@@ -9127,8 +10527,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 22
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 851
       }
     },
@@ -9136,7 +10542,7 @@
       "name": "key_released",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
@@ -9152,8 +10558,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 23
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 858
       }
     },
@@ -9161,14 +10573,20 @@
       "name": "mod_shift",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 24
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 865
       }
     },
@@ -9176,14 +10594,20 @@
       "name": "mod_ctrl",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 25
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 869
       }
     },
@@ -9191,14 +10615,20 @@
       "name": "mod_alt",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 26
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 873
       }
     },
@@ -9206,14 +10636,20 @@
       "name": "mod_cmd",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 27
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 877
       }
     },
@@ -9221,14 +10657,20 @@
       "name": "drag_active",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 28
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 881
       }
     },
@@ -9236,14 +10678,20 @@
       "name": "drag_start_x",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 29
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 885
       }
     },
@@ -9251,14 +10699,20 @@
       "name": "drag_start_y",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 30
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 889
       }
     },
@@ -9266,14 +10720,20 @@
       "name": "click_count",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 31
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 893
       }
     },
@@ -9281,14 +10741,20 @@
       "name": "text_input",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 32
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 897
       }
     },
@@ -9296,14 +10762,20 @@
       "name": "grab_mouse",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 36
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 906
       }
     },
@@ -9311,14 +10783,20 @@
       "name": "release_mouse",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 37
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 913
       }
     },
@@ -9326,14 +10804,20 @@
       "name": "dt",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 40
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 920
       }
     },
@@ -9341,14 +10825,20 @@
       "name": "time",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 41
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 929
       }
     },
@@ -9356,14 +10846,20 @@
       "name": "frame_count",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 42
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 935
       }
     },
@@ -9371,14 +10867,20 @@
       "name": "screen_width",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 43
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 939
       }
     },
@@ -9386,14 +10888,20 @@
       "name": "screen_height",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 44
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 943
       }
     },
@@ -9401,14 +10909,20 @@
       "name": "ui_version",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 0,
       "variadic": false,
       "params": [],
       "signatures": [
         []
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 45
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 947
       }
     },
@@ -9416,7 +10930,7 @@
       "name": "ui_debug",
       "category": "input",
       "group": "canvas",
-      "arity": null,
+      "arity": 1,
       "variadic": false,
       "params": [
         {
@@ -9432,8 +10946,14 @@
           }
         ]
       ],
+      "declaration": {
+        "module": "ui/input",
+        "file": "core-libs/petal-ui/prelude/input.ptl",
+        "line": 35
+      },
+      "doc": null,
       "source": {
-        "file": "core-stdlib/ui/native/src/input.rs",
+        "file": "core-libs/petal-ui/src/input.rs",
         "line": 837
       }
     }

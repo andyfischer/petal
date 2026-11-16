@@ -612,6 +612,19 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   the same IR as before. `tests/reference.rs` now checks that every export
   has a doc with a summary, rather than that `reference.md` names it.
 
+- **`docs/stdlib.json` reads its signatures and docs from `petal doc
+  --json`.** `tools/extract-stdlib.ts` keeps only what the declarations
+  cannot say from the Rust source (which functions are registered and by
+  which runtime, aliases, the implementation's file and line, a category's
+  blurb). Each function's call forms, parameter names and types, arity and
+  `@doc` now come from its `native fn` (or, for `std`, `fn`) declaration, so
+  every function gains `doc` (null while undocumented) and `declaration`
+  (module, file, line). Parameter types are the declared ones (`num`,
+  `string`, `any` where none is written) instead of what the Rust body reads
+  (`int`, `float`, `number`); `arity` is set only for a function with one
+  call form and no optional parameter; a `std` parameter with a default is
+  `optional`.
+
 - **Lint rules for `@doc`.** `doc-params`: a `params:` key that no form of
   the overload set takes (with a did-you-mean), and a `see:` entry that names
   nothing the file can reach. `deprecated`: a use of an item whose `@doc` has

@@ -1,87 +1,79 @@
 #!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
 //
 // extract-stdlib.ts — Generate a structured manifest of Petal's standard
-// library directly from the Rust source of truth.
+// library: what the runtime registers (read from the Rust source) joined with
+// what the declarations say about it (read from `petal doc --json`).
 //
 // The point of this tool is that documentation can never silently drift from
-// the implementation: the *list* of functions, their arity, and their argument
-// names are all read out of the Rust source rather than maintained by hand.
-// Prose and examples live elsewhere (markdown), but the spine — what exists —
-// comes from here.
+// the implementation: the *list* of functions comes from the Rust registration
+// tables, and everything a script sees of a function (its call forms,
+// parameter names and types, and its `@doc`) comes from its Petal declaration
+// through `petal doc`, the same reader the generated reference
+// (`tools/gen-reference.ts`) and the website's API pages use.
 //
-// Three registration sources are parsed:
+// Only what the Petal declarations cannot say is read from Rust:
 //
-//   1. Core builtins — `core/src/builtins/mod.rs`'s `register_builtins()`,
-//      which is the canonical, append-only list of `table.register("name", …)`
-//      calls. Each entry points at a `native_*` fn in a topic submodule
-//      (math.rs, collections.rs, …); the submodule it lives in becomes the
-//      function's category.
+//   • which functions exist, and which runtime registers each (`group`):
+//       1. core builtins: `core/src/builtins/mod.rs`'s `register_builtins()`
+//          (the canonical, append-only list of `table.register("name", …)`
+//          calls) and the class constructors of `builtins/classes.rs`. The
+//          topic submodule a `native_*` fn lives in (math.rs, …) is the
+//          function's category.
+//       2. canvas builtins: the shared `petal-ui` crate's `register_draw` +
+//          `register_canvas` (drawing) and `register_input_module` (input and
+//          timing), the API hosts like petal-web-canvas and petal-sdl expose.
+//   • aliases: two registrations sharing one implementation (`aliasOf`);
+//   • the implementation's file and line (`source`);
+//   • a category's blurb: the first line of the Rust module's `//!` doc.
 //
-//   2. Core prelude — `core/prelude/std.ptl` (module `std`), the slice of the
-//      standard library written in Petal source rather than as Rust natives.
-//      `Env::new` loads it as an implicit import; its `pub fn` declarations
-//      become the `prelude` group / `std` category.
+// The core prelude (`core/prelude/std.ptl`, module `std`, group `prelude`) is
+// Petal source, so everything about it comes from `petal doc`.
 //
-//   3. Canvas builtins — the shared `petal-ui` crate's `register_draw` +
-//      `register_canvas` (drawing) and `register_input` (input/timing), the
-//      interactivity API that hosts like petal-web-canvas and petal-sdl expose
-//      to sketches.
+// From `petal doc --json` (docs/schemas/petal-doc.schema.json), for the
+// declaring `native fn`: in the bundled `core` package
+// (core/packages/core/src/*.ptl), a domain package behind an import
+// (core/packages/<name>/, which sets `import`), or the `ui` package
+// (core-stdlib/ui/src/) for the canvas natives:
+//   • signatures: every call form that binds named arguments. A form with a
+//                 `...rest` parameter binds none and is left out, which is
+//                 what makes the native refuse named arguments.
+//   • params:     the longest form, optional parameters flagged.
+//   • types:      as declared (`num`, `string`, …); `any` where none is written.
+//   • arity:      the parameter count when there is exactly one form and
+//                 every parameter is required; else null, and `variadic`.
+//   • doc:        the item's `@doc`, every field, cleaned as `petal doc`
+//                 prints it (null when undocumented).
+//   • declaration: the declaring module, file and line.
 //
-// For each registered function we read:
-//   • parameters — the names the native *declares* for named arguments, in
-//                  its `native fn` declaration: the bundled `core` package
-//                  (core/packages/core/src/*.ptl, and core/packages/<name>/<name>.ptl for
-//                  the domain builtins behind an import) for the core builtins, the
-//                  `ui` package (core-stdlib/ui/src/*.ptl) for the
-//                  canvas ones. These are call syntax, not just documentation
-//                  — the registry binds `clamp(value: v, lo: 0, hi: 1)`
-//                  against them — so they are the source of truth for every
-//                  name in the manifest. A builtin that declares several call forms
-//                  (`random`, `distance`) lists them all in `signatures`.
-//   • arity      — from `require_args(state, N, "name")` in the implementation
-//   • types      — from `let <name> = state.get_<type>(<index>)` bindings in
-//                  the implementation, matched onto the declared parameters
-//   • source     — file + line, so docs can point back at the implementation
-//
-// A native declared with a rest parameter (the variadic `print` / `format`, the
-// `__` internals) refuses named arguments at runtime; for those the names fall back
-// to what the body's bindings suggest, and `signatures` is empty.
-//
-// Functions that dispatch on `arg_count()` (overloaded arities like `noise`,
-// `distance`, `mag`, `range`, `slice`) have no single arity; they're flagged
-// `variadic`, and their call forms are the entries of `signatures`.
+// `petal doc` runs through `tools/run-petal.ts` (or `$PETAL_BIN`); see
+// tools/petal-doc.ts.
 //
 // Usage:
-//   tsx tools/extract-stdlib.ts            # write stdlib.json next to docs/
-//   tsx tools/extract-stdlib.ts --stdout   # print JSON to stdout
-//   tsx tools/extract-stdlib.ts -o path    # write to an explicit path
+//   node tools/extract-stdlib.ts            # write docs/stdlib.json
+//   node tools/extract-stdlib.ts --stdout   # print JSON to stdout
+//   node tools/extract-stdlib.ts -o path    # write to an explicit path
 
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { resolve, join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve, join } from "node:path";
+import { petalDoc, moduleFile, repoRoot, type Doc, type DocForm, type DocItem } from "./petal-doc.ts";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const coreModRs = join(repoRoot, "core/src/builtins/mod.rs");
-const corePackageSrc = join(repoRoot, "core/packages/core/src");
-// The `ui` package: `ui.ptl` and the modules behind it, `ui/input` among them.
-// Its natives are declared in `_base.ptl`, `input.ptl` and (the private,
-// renamed ones) `_native.ptl`; every file is read, so a declaration that moves
-// between them needs no edit here.
-const uiPreludeDir = join(repoRoot, "core-stdlib/ui/src");
 const petalUiDrawRs = join(repoRoot, "core-stdlib/ui/native/src/draw.rs");
 const petalUiTextRs = join(repoRoot, "core-stdlib/ui/native/src/text.rs");
 const petalUiInputRs = join(repoRoot, "core-stdlib/ui/native/src/input.rs");
-const preludeStdPtl = join(repoRoot, "core/prelude/std.ptl");
+
+/** `petal doc` targets, repo-relative. */
+const CORE_PACKAGE_DIR = "core/packages/core";
+const UI_PACKAGE_DIR = "core-stdlib/ui/src";
+const PRELUDE_STD = "core/prelude/std.ptl";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 /**
- * `number` is an int or a float: a draw native's geometry (positions, sizes,
- * radii), which a sub-pixel host keeps fractional and every other host
- * truncates. `int` is a whole number only (a colour channel, an alpha, a text
- * size).
+ * A parameter's declared type (`num`, `int`, `string`, `list`, `record`, a
+ * class name, …), or `any` where the declaration writes none.
  */
-export type ParamType = "int" | "float" | "number" | "string" | "list" | "any";
+export type ParamType = string;
 
 export interface Param {
   name: string;
@@ -97,26 +89,33 @@ export interface StdlibFunction {
   category: string;
   /** Which runtime registers it. `prelude` = Petal-source std, not a native. */
   group: "core" | "canvas" | "prelude";
-  /** Fixed argument count, or null when the function dispatches on arg count. */
+  /**
+   * Fixed argument count: set when the function has one call form and every
+   * parameter is required. Null otherwise (several forms, optional or rest
+   * parameters, or no declaration).
+   */
   arity: number | null;
-  /** True when the function accepts a variable number of arguments. */
+  /** True when the declaration accepts more than one argument count. */
   variadic: boolean;
   /**
-   * The parameters, by the names a call can pass them under. For a native
-   * that declares its parameters this is its longest declared form (optional
-   * ones flagged); otherwise it is what the implementation's bindings suggest
-   * (best effort), and the function takes positional arguments only.
+   * The parameters, by the names a call can pass them under: the longest
+   * declared call form, optional ones flagged. Empty when nothing declares
+   * names (a variadic native, an undeclared internal).
    */
   params: Param[];
   /**
-   * Every call form the function declares for named arguments — one entry
-   * for most, several for a builtin that reads its arguments differently by
-   * count (`random()` / `random(max)` / `random(min, max)`). Empty when the
-   * function refuses named arguments (variadic builtins, internals).
+   * Every call form the function declares for named arguments: one entry for
+   * most, several for a builtin that reads its arguments differently by count
+   * (`random()` / `random(max)` / `random(min, max)`). Empty when the function
+   * refuses named arguments (variadic builtins, internals).
    */
   signatures: Param[][];
   /** Source location of the implementation, repo-relative. */
   source: { file: string; line: number };
+  /** The Petal declaration (`native fn`, or `fn` in the prelude), repo-relative. */
+  declaration?: { module: string; file: string; line: number };
+  /** The declaration's `@doc` as `petal doc --json` prints it; null when undocumented. */
+  doc: Doc | null;
   /** When set, this name is an alias for another builtin. */
   aliasOf?: string;
   /**
@@ -125,7 +124,7 @@ export interface StdlibFunction {
    */
   import?: string;
   /**
-   * Internal builtins the public reference hides — `__`-prefixed names the
+   * Internal builtins the public reference hides: `__`-prefixed names the
    * runtime uses for tests/plumbing (e.g. `__pending`), not part of the
    * user-facing standard library.
    */
@@ -136,7 +135,7 @@ export interface StdlibCategory {
   id: string;
   title: string;
   group: "core" | "canvas" | "prelude";
-  /** First line of the module's `//!` doc comment, when available. */
+  /** First line of the Rust module's `//!` doc comment; for `std`, its `@module_doc` summary. */
   doc: string;
 }
 
@@ -210,213 +209,104 @@ function moduleDoc(source: string): string {
   return doc.join(" ").trim();
 }
 
-const GET_TYPE: Record<string, ParamType> = {
-  get_int: "int",
-  get_float: "float",
-  get_string: "string",
-  get_list: "list",
-  get_value: "any",
-};
-
-// Argument readers that wrap `state.get_*` behind a helper taking the stack
-// index as their second argument: `let <name> = <helper>(state, <index>, …)`.
-// Without these, a native that validates an argument through a helper looks to
-// the extractor like it has no parameter at that index at all — and the docs
-// then renumber every later argument (`fill_arc`'s colours slid into slots
-// 3-5). Optional-argument helpers (`opt_int`) stay out on purpose: no optional
-// argument is documented anywhere else either.
-const HELPER_TYPE: Record<string, ParamType> = {
-  point_list_arg: "list",
-  get_num: "float",
-};
-
-/**
- * Pull arity + parameters out of a single `fn native_*` body.
- *
- * Arity comes from `require_args(state, N, …)` when present. Parameters come
- * from `let <name> = state.get_<type>(<index>)?` bindings (or the `HELPER_TYPE`
- * accessors), keyed by the stack index so we recover them in declared order
- * even across `match` arms; the first binding seen for a given index wins.
- */
-function parseFnBody(body: string): {
-  arity: number | null;
-  variadic: boolean;
-  params: Param[];
-} {
-  const requireArgs = /require_args\(\s*state\s*,\s*(\d+)\s*,/.exec(body);
-  const dispatches = /\bstate\.arg_count\(\)/.test(body) && !requireArgs;
-  const arity = requireArgs ? Number(requireArgs[1]) : null;
-
-  const byIndex = new Map<number, Param>();
-  const helpers = Object.keys(HELPER_TYPE).join("|");
-  const re = new RegExp(
-    String.raw`let\s+(\w+)\s*=\s*(?:match\s+)?(?:state\.(get_int|get_float|get_string|get_list|get_value)\(\s*(\d+)\s*\)|(${helpers})\(\s*state\s*,\s*(\d+)\s*[,)])`,
-    "g",
-  );
-  for (let m; (m = re.exec(body)); ) {
-    const [, name, getter, getterIdx, helper, helperIdx] = m;
-    const idx = Number(getter ? getterIdx : helperIdx);
-    if (idx === 0) continue; // index 0 is the callee slot, not an argument
-    if (!byIndex.has(idx) && name !== "_") {
-      byIndex.set(idx, {
-        name,
-        type: getter ? GET_TYPE[getter] : HELPER_TYPE[helper],
-      });
-    }
-  }
-  // The several-floats reader (`creative_coding.rs`): a number at each
-  // position.
-  //   let [a, b, c] = floats::<3>(state)?;   — arguments 1..=3
-  const floats = /let\s+\[([^\]]*)\]\s*=\s*floats::<\s*\d+\s*>\(\s*state\s*\)/g;
-  for (let m; (m = floats.exec(body)); ) {
-    m[1].split(",").map((n) => n.trim()).forEach((name, i) => {
-      if (name && name !== "_" && !byIndex.has(i + 1)) byIndex.set(i + 1, { name, type: "float" });
-    });
-  }
-
-  const params = [...byIndex.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([, p]) => p);
-
-  // When arity is fixed but a `match` arm shadowed some bindings, trust the
-  // recovered list only if it's consistent with the declared arity.
-  const variadic = dispatches || (arity !== null && params.length > arity);
-  return { arity, variadic, params };
+/** The 1-based line of a `fn <name>(` definition, or null. */
+function findFnLine(source: string, fnName: string): number | null {
+  const m = new RegExp(`fn\\s+${fnName}\\s*\\(`).exec(source);
+  return m ? source.slice(0, m.index).split("\n").length : null;
 }
 
-// ── Declared parameters ──────────────────────────────────────────────────────
-
-/** One declared call form: names in argument order, optional ones flagged. */
-type DeclaredForm = Array<{ name: string; optional: boolean }>;
-
-/**
- * Parse the `native fn` declarations of a Petal source file: each is one call
- * form of the host native it binds — the native of the same name, or the one
- * a `= "host_name"` suffix names. A parameter written `name?` is optional; a
- * `: type` annotation is dropped (the manifest reads types off the Rust
- * bodies). A form with a `...rest` parameter declares no names to bind, so it
- * is left out, which is what makes the native refuse named arguments.
- */
-function parseNativeDecls(source: string): Map<string, DeclaredForm[]> {
-  const out = new Map<string, DeclaredForm[]>();
-  const declRe =
-    /^(?:pub\s+)?native\s+fn\s+([A-Za-z_][\w.?]*)\s*\(([^)]*)\)(?:\s*->\s*[\w.]+\??)?(?:\s*=\s*"([^"]+)")?\s*$/gm;
-  for (let m; (m = declRe.exec(source)); ) {
-    const host = m[3] ?? m[1];
-    const parts = m[2]
-      .split(",")
-      .map((p) => p.trim())
-      .filter((p) => p.length > 0);
-    if (parts.some((p) => p.startsWith("..."))) {
-      if (!out.has(host)) out.set(host, []);
-      continue;
-    }
-    const form: DeclaredForm = parts.map((p) => {
-      const name = p.split(":")[0].trim();
-      return { name: name.replace(/\?$/, ""), optional: name.endsWith("?") };
-    });
-    out.set(host, [...(out.get(host) ?? []), form]);
-  }
-  // A native every form of which is variadic declares nothing to bind.
-  for (const [host, forms] of out) if (forms.length === 0) out.delete(host);
-  return out;
-}
+// ── Declarations (`petal doc --json`) ───────────────────────────────────────
 
 /**
  * The bundled packages that declare the domain builtins: natives the runtime
  * registers everywhere but that are in scope only where the package is
  * imported (`import noise`). Mirrors `petal::bundled::BUILTIN_PACKAGES`.
  */
-const BUILTIN_PACKAGES = ["noise", "color", "vec2", "autodiff", "json", "io"];
-const builtinPackagePtl = (name: string) =>
-  join(repoRoot, "core/packages", name, `${name}.ptl`);
+export const BUILTIN_PACKAGES = ["noise", "color", "vec2", "autodiff", "json", "io"];
 
-let builtinPackageOfCache: Map<string, string> | null = null;
-/** Host native name → the package a script imports to reach it. */
-function builtinPackageOf(name: string): string | undefined {
-  if (!builtinPackageOfCache) {
-    builtinPackageOfCache = new Map();
-    for (const pkg of BUILTIN_PACKAGES) {
-      for (const host of parseNativeDecls(readFileSync(builtinPackagePtl(pkg), "utf8")).keys()) {
-        builtinPackageOfCache.set(host, pkg);
+interface Declaration {
+  item: DocItem;
+  module: string;
+  file: string;
+  /** The domain package that declares it, when it needs an import. */
+  import?: string;
+}
+
+let declarationsCache: Map<string, Declaration[]> | null = null;
+/**
+ * Every `native fn` of `core`, the domain packages and `ui`, by the host
+ * native it binds: its own name, or the one a `= "host_name"` suffix names.
+ * Non-`pub` declarations count (`--private`): they bind the native too.
+ */
+function declarations(): Map<string, Declaration[]> {
+  if (declarationsCache) return declarationsCache;
+  const out = new Map<string, Declaration[]>();
+  const targets: Array<{ dir: string; import?: string }> = [
+    { dir: CORE_PACKAGE_DIR },
+    ...BUILTIN_PACKAGES.map((name) => ({ dir: `core/packages/${name}`, import: name })),
+    { dir: UI_PACKAGE_DIR },
+  ];
+  for (const { dir, import: imp } of targets) {
+    const report = petalDoc(dir, { private: true });
+    for (const mod of report.modules) {
+      for (const item of mod.items) {
+        const natives = (item.forms ?? []).filter((f) => f.native);
+        for (const host of new Set(natives.map((f) => f.host ?? item.name))) {
+          const decl: Declaration = { item, module: mod.name, file: moduleFile(report, mod) };
+          if (imp) decl.import = imp;
+          out.set(host, [...(out.get(host) ?? []), decl]);
+        }
       }
     }
   }
-  return builtinPackageOfCache.get(name);
-}
-
-let declaredParamsCache: Map<string, DeclaredForm[]> | null = null;
-/** The declared call forms of every native, core and canvas, by host name. */
-function declaredParams(): Map<string, DeclaredForm[]> {
-  if (!declaredParamsCache) {
-    const sources = readdirSync(corePackageSrc)
-      .filter((f) => f.endsWith(".ptl"))
-      .sort()
-      .map((f) => join(corePackageSrc, f));
-    sources.push(...BUILTIN_PACKAGES.map(builtinPackagePtl));
-    sources.push(
-      ...readdirSync(uiPreludeDir)
-        .filter((f) => f.endsWith(".ptl"))
-        .sort()
-        .map((f) => join(uiPreludeDir, f)),
-    );
-    declaredParamsCache = new Map(
-      sources.flatMap((path) => [...parseNativeDecls(readFileSync(path, "utf8"))]),
-    );
-  }
-  return declaredParamsCache;
+  declarationsCache = out;
+  return out;
 }
 
 /**
- * The manifest's `params` + `signatures` for native `name`, given what its
- * body's bindings recovered. Declared names win; the recovered list only
- * supplies types — by name where a binding happens to share the declared
- * name, else by position when the body bound exactly the form's required
- * arguments (so positions line up). With no declaration the recovered list is
- * all there is.
+ * The declaration of host native `name`: the item named like it (`draw_rect`)
+ * over one that renames it (`_native_rect = "draw_rect"`).
  */
-function withDeclaredParams(
-  name: string,
-  recovered: Param[],
-): { params: Param[]; signatures: Param[][] } {
-  const forms = declaredParams().get(name);
-  if (!forms) return { params: recovered, signatures: [] };
-  const byName = new Map(recovered.map((p) => [p.name, p.type]));
-  const signatures = forms.map((form) => {
-    const required = form.filter((p) => !p.optional).length;
-    const dense = recovered.length === required;
-    return form.map((p, i): Param => ({
-      name: p.name,
-      type: byName.get(p.name) ?? (dense && i < required ? recovered[i].type : "any"),
-      ...(p.optional ? { optional: true } : {}),
-    }));
-  });
-  // The longest form is the one that shows every parameter the function has.
-  const params = signatures.reduce((a, b) => (b.length > a.length ? b : a), signatures[0] ?? []);
-  return { params, signatures };
+function declarationOf(name: string): Declaration | undefined {
+  const decls = declarations().get(name) ?? [];
+  return decls.find((d) => d.item.name === name) ?? decls[0];
 }
 
-/** Find a `fn <name>(` definition and return its body + 1-based line number. */
-function findFn(
-  source: string,
-  fnName: string,
-): { body: string; line: number } | null {
-  const re = new RegExp(`fn\\s+${fnName}\\s*\\(`);
-  const m = re.exec(source);
-  if (!m) return null;
-  const line = source.slice(0, m.index).split("\n").length;
-  // Body: from the `{` after the signature to its matching `}`.
-  let i = source.indexOf("{", m.index);
-  let depth = 0;
-  const start = i + 1;
-  for (; i < source.length; i++) {
-    if (source[i] === "{") depth++;
-    else if (source[i] === "}") {
-      depth--;
-      if (depth === 0) return { body: source.slice(start, i), line };
-    }
-  }
-  return { body: source.slice(start), line };
+/** One declared call form as manifest params; null for a form with a rest parameter. */
+function formParams(form: DocForm): Param[] | null {
+  if (form.params.some((p) => p.rest)) return null;
+  return form.params.map((p) => ({
+    name: p.name,
+    type: p.type ?? "any",
+    ...(p.optional ? { optional: true } : {}),
+  }));
+}
+
+type Declared = Pick<
+  StdlibFunction,
+  "arity" | "variadic" | "params" | "signatures" | "declaration" | "doc"
+>;
+
+/**
+ * What the manifest says about a declared function: its call forms, the
+ * longest of them as `params`, the arity they imply, where it is declared and
+ * its doc. With no declaration there is nothing to say.
+ */
+function declared(decl: Declaration | undefined): Declared {
+  if (!decl) return { arity: null, variadic: false, params: [], signatures: [], doc: null };
+  const forms = decl.item.forms ?? [];
+  const signatures = forms.map(formParams).filter((s): s is Param[] => s !== null);
+  const params = signatures.reduce((a, b) => (b.length > a.length ? b : a), signatures[0] ?? []);
+  const fixed =
+    forms.length === 1 && signatures.length === 1 && signatures[0].every((p) => !p.optional);
+  return {
+    arity: fixed ? signatures[0].length : null,
+    variadic: !fixed && forms.length > 0,
+    params,
+    signatures,
+    declaration: { module: decl.module, file: decl.file, line: decl.item.line },
+    doc: decl.item.doc,
+  };
 }
 
 // ── Core builtins ────────────────────────────────────────────────────────────
@@ -425,7 +315,6 @@ interface Registration {
   name: string;
   module: string | null; // null for locally-defined fns (intrinsics)
   fnName: string;
-  aliasComment: string | null;
 }
 
 /**
@@ -438,15 +327,10 @@ function parseCoreRegistrations(modSource: string): Registration[] {
   const block = extractBlock(modSource, /pub fn register_builtins\s*\(/);
   const out: Registration[] = [];
   const re =
-    /(?:let\s+\w+\s*=\s*)?table\.register(?:_with)?\(\s*"([^"]+)"\s*,\s*(?:(\w+)::)?(\w+)\s*(?:,[^;]*)?\)\s*;?\s*(?:\/\/\s*(.*))?/g;
+    /(?:let\s+\w+\s*=\s*)?table\.register(?:_with)?\(\s*"([^"]+)"\s*,\s*(?:(\w+)::)?(\w+)\s*(?:,[^;]*)?\)/g;
   for (let m; (m = re.exec(block)); ) {
-    const [, name, module, fnName, comment] = m;
-    out.push({
-      name,
-      module: module ?? null,
-      fnName,
-      aliasComment: comment?.trim() ?? null,
-    });
+    const [, name, module, fnName] = m;
+    out.push({ name, module: module ?? null, fnName });
   }
   return out;
 }
@@ -473,7 +357,7 @@ function parseClassRegistrations(): Registration[] {
   const out: Registration[] = [];
   const re = /table\.register(?:_with)?\(\s*"([^"]+)"\s*,\s*(\w+)\s*(?:,[^;]*)?\)/g;
   for (let m; (m = re.exec(block)); ) {
-    out.push({ name: m[1], module: "classes", fnName: m[2], aliasComment: null });
+    out.push({ name: m[1], module: "classes", fnName: m[2] });
   }
   return out;
 }
@@ -485,36 +369,21 @@ function extractCore(): {
   const modSource = readFileSync(coreModRs, "utf8");
   const regs = [...parseCoreRegistrations(modSource), ...parseClassRegistrations()];
 
-  // Map each impl fn name to the registered Petal name(s), so an alias whose
-  // comment says "alias for contains" can be linked even without parsing prose:
-  // two registrations sharing the same impl fn means the later one is an alias.
+  // Two registrations sharing the same impl fn means the later one is an
+  // alias of the first.
   const implFirstSeen = new Map<string, string>();
 
   const functions: StdlibFunction[] = [];
   const usedModules = new Set<string>();
 
   for (const reg of regs) {
+    // Intrinsics (map/filter/reduce/forEach) are defined in mod.rs itself:
+    // the VM drives them.
     const isIntrinsic = reg.module === null;
     const category = isIntrinsic ? "higher-order" : reg.module!;
-    let parsed = { arity: null as number | null, variadic: false, params: [] as Param[] };
-    let source = { file: "core/src/builtins/mod.rs", line: 0 };
-
-    if (!isIntrinsic) {
-      usedModules.add(reg.module!);
-      const src = moduleSource(reg.module!);
-      const fn = findFn(src, reg.fnName);
-      if (fn) {
-        parsed = parseFnBody(fn.body);
-        source = { file: `core/src/builtins/${reg.module}.rs`, line: fn.line };
-      }
-    } else {
-      const fn = findFn(modSource, reg.fnName);
-      if (fn) source = { file: "core/src/builtins/mod.rs", line: fn.line };
-      // Intrinsics (map/filter/reduce/forEach) take a list + a function. The
-      // VM drives them, so there is no body to read an arity from; their
-      // parameters come from the declaration alone.
-      parsed.variadic = true;
-    }
+    const file = isIntrinsic ? "core/src/builtins/mod.rs" : `core/src/builtins/${reg.module}.rs`;
+    if (!isIntrinsic) usedModules.add(reg.module!);
+    const line = findFnLine(isIntrinsic ? modSource : moduleSource(reg.module!), reg.fnName) ?? 0;
 
     const aliasOf =
       implFirstSeen.get(reg.fnName) && implFirstSeen.get(reg.fnName) !== reg.name
@@ -522,16 +391,15 @@ function extractCore(): {
         : undefined;
     if (!implFirstSeen.has(reg.fnName)) implFirstSeen.set(reg.fnName, reg.name);
 
+    const decl = declarationOf(reg.name);
     functions.push({
       name: reg.name,
       category,
       group: "core",
-      arity: parsed.arity,
-      variadic: parsed.variadic,
-      ...withDeclaredParams(reg.name, parsed.params),
-      source,
+      ...declared(decl),
+      source: { file, line },
       ...(aliasOf ? { aliasOf } : {}),
-      ...(builtinPackageOf(reg.name) ? { import: builtinPackageOf(reg.name) } : {}),
+      ...(decl?.import ? { import: decl.import } : {}),
       ...(reg.name.startsWith("__") ? { internal: true } : {}),
     });
   }
@@ -560,41 +428,27 @@ function extractCore(): {
 
 /**
  * The core prelude (`core/prelude/std.ptl`, module `std`) is standard library
- * written in Petal source rather than as Rust natives — `Env::new` loads it as
- * a permanent implicit import, so every program calls its helpers bare. We parse
- * its `pub fn` declarations so these functions appear in the reference next
- * to the native builtins instead of silently drifting out of the docs.
- *
- * Petal source carries no static types, so every parameter is reported as
- * `any`; arity is simply the declared parameter count (none are variadic).
- * Only `pub` declarations (or the deprecated `export`) are visible to importers, so private helpers
- * (were any added) are correctly skipped.
+ * written in Petal source rather than as Rust natives: `Env::new` loads it as
+ * a permanent implicit import, so every program calls its helpers bare. Its
+ * `pub fn`s (as `petal doc` lists them) appear in the manifest next to the
+ * native builtins; its implementation *is* its declaration.
  */
 function extractPrelude(): {
   functions: StdlibFunction[];
   categories: StdlibCategory[];
 } {
-  const source = readFileSync(preludeStdPtl, "utf8");
+  const report = petalDoc(PRELUDE_STD);
+  const mod = report.modules[0];
   const functions: StdlibFunction[] = [];
-  const re = /^[ \t]*(?:pub|export)\s+fn\s+(\w+)\s*\(([^)]*)\)/gm;
-  for (let m; (m = re.exec(source)); ) {
-    const [, name, rawParams] = m;
-    const line = source.slice(0, m.index).split("\n").length;
-    const params: Param[] = rawParams
-      .split(",")
-      .map((p) => p.trim())
-      .filter((p) => p.length > 0)
-      .map((p) => ({ name: p, type: "any" as ParamType }));
+  for (const item of mod.items) {
+    if (item.kind !== "fn" || !item.exported) continue;
+    const decl: Declaration = { item, module: "std", file: PRELUDE_STD };
     functions.push({
-      name,
+      name: item.name,
       category: "std",
       group: "prelude",
-      arity: params.length,
-      variadic: false,
-      params,
-      // A Petal `fn` takes named arguments under its own parameter names.
-      signatures: [params],
-      source: { file: "core/prelude/std.ptl", line },
+      ...declared(decl),
+      source: { file: PRELUDE_STD, line: item.line },
     });
   }
 
@@ -604,7 +458,9 @@ function extractPrelude(): {
           id: "std",
           title: CATEGORY_TITLES.std,
           group: "prelude",
-          doc: "Standard-library helpers written in Petal source (module `std`), auto-imported into every program: list reductions, predicate queries, sublists, and number helpers.",
+          doc:
+            mod.doc?.summary ??
+            "Standard-library helpers written in Petal source (module `std`), auto-imported into every program: list reductions, predicate queries, sublists, and number helpers.",
         },
       ]
     : [];
@@ -614,86 +470,8 @@ function extractPrelude(): {
 // ── Canvas builtins ──────────────────────────────────────────────────────────
 
 /**
- * The buffered draw builtins (`draw_rect`, `draw_line`, …) don't name their
- * arguments in the native fn: they forward a positional `int_args(state, N)`
- * list to `emit_draw(state, "<tag>", …)`, so the generic
- * `let <name> = state.get_int(…)` extraction finds nothing. The canonical
- * positional→name mapping lives on the decode side — `draw.rs`'s
- * `DrawCommand::from_value`, whose match arms turn each `{tag, data}` command
- * back into a named-field struct (`"rect" => DrawCommand::Rect { x: i32_at(0)?,
- * … }`). We read that mapping so the extracted signatures stay derived from
- * source rather than hand-maintained here.
- *
- * Only the *required* positional args (bound with `i32_at`/`u32_at`/`u8_at` or
- * `as_i64(arg(i))`) are collected; trailing optional args (`opt_u8`, `opt_u32`
- * for alpha/radius/width) are excluded, so the recovered arity matches the
- * native's `int_args(state, N)` count.
- *
- * Returns a map from draw-command tag (e.g. "rect") to its arguments ordered by
- * their data index (e.g. x, y, w, h, r, g, b), each with its type: geometry
- * (`i32_at` / `u32_at`) is a `number` — a sub-pixel host keeps it fractional,
- * see core-stdlib/ui/native/src/subpixel.rs — and a colour channel (`u8_at`) or a
- * text size (`as_i64`) an `int`.
- */
-function loadDrawArgNames(drawSource: string): Map<string, Param[]> {
-  const body = extractBlock(drawSource, /fn from_value\s*\(/);
-  // Split the `match tag.as_str()` into arms: each starts with `"<tag>" =>`.
-  // The catch-all `_ => DrawCommand::Host` isn't quoted, so it isn't a start.
-  const armStarts: Array<{ tag: string; at: number }> = [];
-  const armRe = /"(\w+)"\s*=>/g;
-  for (let m; (m = armRe.exec(body)); ) {
-    armStarts.push({ tag: m[1], at: m.index });
-  }
-  const out = new Map<string, Param[]>();
-  // Required positional accessors: `<name>: i32_at(<i>)`, `u32_at`, `u8_at`, or
-  // `<name>: as_i64(arg(<i>)…` (text's `size`). `opt_u8`/`opt_u32` are excluded.
-  const fieldRe =
-    /(\w+)\s*:\s*(?:(i32_at|u32_at|u8_at)\(\s*(\d+)\s*\)|as_i64\(\s*arg\(\s*(\d+)\s*\))/g;
-  for (let i = 0; i < armStarts.length; i++) {
-    const { tag, at } = armStarts[i];
-    const end = i + 1 < armStarts.length ? armStarts[i + 1].at : body.length;
-    const chunk = body.slice(at, end);
-    const byIndex: Array<[number, Param]> = [];
-    for (let f; (f = fieldRe.exec(chunk)); ) {
-      const type: ParamType = f[2] === "i32_at" || f[2] === "u32_at" ? "number" : "int";
-      byIndex.push([Number(f[3] ?? f[4]), { name: f[1], type }]);
-    }
-    if (byIndex.length) {
-      out.set(
-        tag,
-        byIndex.sort((a, b) => a[0] - b[0]).map(([, param]) => param),
-      );
-    }
-  }
-  return out;
-}
-
-/**
- * If a canvas fn forwards a positional `int_args(state, N)` list straight to
- * `emit_draw(state, "<tag>", …)`, recover its signature from the tag's
- * arguments (geometry a `number`, colours an `int`). Returns null when the fn isn't of that shape, leaving the
- * generic `let <name> = state.get_<type>(…)` extraction in charge.
- */
-function bufferedDrawSignature(
-  body: string,
-  drawArgNames: Map<string, Param[]>,
-): { arity: number | null; variadic: boolean; params: Param[] } | null {
-  const intArgs = /int_args\(\s*state\s*,\s*(\d+)\s*\)/.exec(body);
-  const emit = /emit_draw\(\s*state\s*,\s*"([^"]+)"/.exec(body);
-  if (!intArgs || !emit) return null;
-  const params = drawArgNames.get(emit[1]);
-  if (!params) return null;
-  return {
-    arity: Number(intArgs[1]),
-    variadic: false,
-    params: params.map((p) => ({ ...p })),
-  };
-}
-
-/**
  * Parse the registrations in a register block: `register(env, "name",
- * native_fn, <effects>)` — petal-ui's wrapper, which also declares the
- * native's parameters (`core-stdlib/ui/native/src/params.rs`) — or a bare
+ * native_fn, <effects>)`, petal-ui's wrapper, or a bare
  * `env.register_native("name", native_fn, <effects>)`.
  */
 function parseNativeRegistrations(block: string): Array<{ name: string; fnName: string }> {
@@ -708,9 +486,9 @@ function parseNativeRegistrations(block: string): Array<{ name: string; fnName: 
  * Extract the canvas builtins from the shared `petal-ui` crate. Drawing lives in
  * `draw.rs` (`register_draw` + the offscreen-canvas `register_canvas`), with the
  * text-measurement natives implemented next door in `text.rs`; input + timing
- * lives in `input.rs` (`register_input`). Each register fn is a flat list of
- * `env.register_native(…)` calls, so the block a function is registered in —
- * not source order — decides its category.
+ * lives in `input.rs` (`register_input_module`). Each register fn is a flat
+ * list of registrations, so the block a function is registered in (not source
+ * order) decides its category.
  */
 function extractCanvas(): {
   functions: StdlibFunction[];
@@ -719,14 +497,13 @@ function extractCanvas(): {
   const drawSource = readFileSync(petalUiDrawRs, "utf8");
   const textSource = readFileSync(petalUiTextRs, "utf8");
   const inputSource = readFileSync(petalUiInputRs, "utf8");
-  const drawArgNames = loadDrawArgNames(drawSource);
 
   const functions: StdlibFunction[] = [];
 
   // A native is *registered* in one file's `register_*` block but its body may
-  // live in a sibling module — text measurement is registered by `register_draw`
-  // and implemented in `text.rs`. So resolve the body across every candidate
-  // file and record the one it was actually found in.
+  // live in a sibling module (text measurement is registered by `register_draw`
+  // and implemented in `text.rs`), so look for the body in every candidate
+  // file and record the one it was found in.
   const addCanvasFn = (
     name: string,
     fnName: string,
@@ -734,20 +511,14 @@ function extractCanvas(): {
     candidates: Array<{ file: string; source: string }>,
   ) => {
     const found = candidates
-      .map(({ file, source }) => ({ file, fn: findFn(source, fnName) }))
-      .find(({ fn }) => fn !== null);
-    const fn = found?.fn ?? null;
-    const parsed = fn
-      ? (bufferedDrawSignature(fn.body, drawArgNames) ?? parseFnBody(fn.body))
-      : { arity: null, variadic: false, params: [] };
+      .map(({ file, source }) => ({ file, line: findFnLine(source, fnName) }))
+      .find(({ line }) => line !== null);
     functions.push({
       name,
       category,
       group: "canvas",
-      arity: parsed.arity,
-      variadic: parsed.variadic,
-      ...withDeclaredParams(name, parsed.params),
-      source: { file: found?.file ?? candidates[0].file, line: fn?.line ?? 0 },
+      ...declared(declarationOf(name)),
+      source: { file: found?.file ?? candidates[0].file, line: found?.line ?? 0 },
     });
   };
 
@@ -808,13 +579,13 @@ export function buildManifest(): StdlibManifest {
     generatedFrom: [
       "core/src/builtins/mod.rs",
       "core/src/builtins/*.rs",
-      "core/packages/core/src/*.ptl",
-      "core/packages/*/*.ptl",
-      "core-stdlib/ui/src/*.ptl",
-      "core/prelude/std.ptl",
       "core-stdlib/ui/native/src/draw.rs",
       "core-stdlib/ui/native/src/text.rs",
       "core-stdlib/ui/native/src/input.rs",
+      "petal doc --json --private core/packages/core",
+      ...BUILTIN_PACKAGES.map((name) => `petal doc --json --private core/packages/${name}`),
+      "petal doc --json --private core-stdlib/ui/src",
+      "petal doc --json core/prelude/std.ptl",
     ],
     categories,
     functions,

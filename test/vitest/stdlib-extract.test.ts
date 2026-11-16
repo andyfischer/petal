@@ -1,8 +1,9 @@
 // Guards the stdlib doc extractor (tools/extract-stdlib.ts) against drift.
 //
-// The extractor reads the Rust registration tables: each builtin's declared
-// parameter names (the ones named arguments bind against), and the arity and
-// argument types its implementation shows. These tests don't pin the exact function count
+// The extractor reads the Rust registration tables (what exists, aliases, the
+// implementation's line) and joins them with `petal doc --json`: each
+// builtin's declared call forms, parameter names and types (the ones named
+// arguments bind against) and its @doc. These tests don't pin the exact function count
 // (which grows as the language does) — they assert the *invariants* that the
 // docs site relies on, so a refactor that breaks extraction fails loudly here
 // rather than silently producing an empty or wrong reference.
@@ -50,10 +51,9 @@ describe("stdlib extractor", () => {
     }
   });
 
-  it("reads argument names + types straight from the source", () => {
-    // The names are draw_rect's declared parameters; the types come from how
-    // `DrawCommand::from_value` decodes its `int_args(state, 7)`: geometry is a
-    // `number` (a sub-pixel host keeps it fractional), a colour channel an `int`.
+  it("reads argument names + types from the declarations", () => {
+    // draw_rect's declared parameters (`native fn draw_rect(x: num, …)` in
+    // ui/_base.ptl), types as written.
     const drawRect = required("draw_rect");
     expect(drawRect.map((p) => p.name)).toEqual([
       "x",
@@ -64,15 +64,11 @@ describe("stdlib extractor", () => {
       "g",
       "b",
     ]);
-    expect(drawRect.map((p) => p.type)).toEqual([
-      "number",
-      "number",
-      "number",
-      "number",
-      "int",
-      "int",
-      "int",
-    ]);
+    expect(drawRect.every((p) => p.type === "num")).toBe(true);
+    expect(byName.get("draw_rect")!.declaration).toMatchObject({
+      module: "ui/_base",
+      file: "core-libs/petal-ui/prelude/_base.ptl",
+    });
     // …and the optional alpha it also takes is there, flagged.
     expect(byName.get("draw_rect")!.params.at(-1)).toMatchObject({
       name: "a",
@@ -89,7 +85,7 @@ describe("stdlib extractor", () => {
       "out_lo",
       "out_hi",
     ]);
-    expect(mapRange.params.every((p) => p.type === "float")).toBe(true);
+    expect(mapRange.params.every((p) => p.type === "num")).toBe(true);
   });
 
   it("lists every call form a builtin declares for named arguments", () => {
@@ -118,12 +114,11 @@ describe("stdlib extractor", () => {
     expect(undeclared).toEqual(["__pending", "__reject", "__resolve", "format", "print", "speculate", "speculate_value"]);
   });
 
-  it("recovers arguments read through a helper, not just state.get_*", () => {
-    // Regression: when draw.rs moved its point-list and float arguments behind
-    // `point_list_arg(state, i, …)` / `get_num(state, i, …)`, the extractor saw
-    // no binding at those indices and silently dropped them — so `fill_arc`
-    // documented its colours as arguments 3-5 when they are really 7-9, and
-    // `fill_poly` lost its point list entirely.
+  it("keeps every argument in order for the point-list and arc natives", () => {
+    // Regression (from when parameters were read off the Rust bodies): a
+    // point-list or float argument read through a helper went missing, so
+    // `fill_arc` documented its colours as arguments 3-5 when they are really
+    // 7-9, and `fill_poly` lost its point list entirely.
     expect(required("fill_arc").map((p) => p.name)).toEqual([
       "cx",
       "cy",
@@ -135,12 +130,12 @@ describe("stdlib extractor", () => {
       "g",
       "b",
     ]);
-    expect(byName.get("fill_arc")!.params[2].type).toBe("float");
+    expect(byName.get("fill_arc")!.params[2].type).toBe("num");
 
     for (const name of ["fill_poly", "fill_polygon"]) {
       const params = required(name);
       expect(params.length, `${name} lost its point list`).toBe(4);
-      expect(params[0].type).toBe("list");
+      expect(params[0].name).toBe("points");
       expect(params.slice(1).map((p) => p.name)).toEqual(["r", "g", "b"]);
     }
     // `draw_polyline` takes its colour as one value or as three, so only the
@@ -222,7 +217,7 @@ describe("stdlib extractor", () => {
     expect(take.arity).toBe(2);
     expect(take.variadic).toBe(false);
     expect(take.params.map((p) => p.name)).toEqual(["xs", "n"]);
-    // Petal source carries no static types, so params are untyped.
+    // std.ptl declares no parameter types.
     expect(take.params.every((p) => p.type === "any")).toBe(true);
 
     expect(byName.get("clamp01")!.params.map((p) => p.name)).toEqual(["x"]);
@@ -238,6 +233,29 @@ describe("stdlib extractor", () => {
       // Native + canvas builtins live in Rust; the core prelude lives in Petal.
       expect(fn.source.file, fn.name).toMatch(/\.(rs|ptl)$/);
       expect(fn.source.line, fn.name).toBeGreaterThan(0);
+    }
+  });
+
+  it("finds a Petal declaration for every registered function", () => {
+    // A native registered in Rust with no `native fn` declaring it could not
+    // be called by name from a script, and would have no doc.
+    for (const fn of manifest.functions) {
+      expect(fn.declaration, fn.name).toBeDefined();
+      expect(fn.declaration!.file, fn.name).toMatch(/\.ptl$/);
+      expect(fn.declaration!.line, fn.name).toBeGreaterThan(0);
+    }
+    expect(byName.get("clamp")!.declaration!.module).toBe("core/math");
+    expect(byName.get("noise")!.declaration!.module).toBe("noise");
+    expect(byName.get("noise")!.import).toBe("noise");
+    expect(byName.get("clamp")!.import).toBeUndefined();
+  });
+
+  it("carries each declaration's @doc as petal doc prints it", () => {
+    // `doc` is always present: the @doc object, or null when undocumented.
+    const keys = ["body", "summary", "params", "returns", "options", "example", "see", "deprecated", "hidden", "extra"];
+    for (const fn of manifest.functions) {
+      expect(fn, fn.name).toHaveProperty("doc");
+      if (fn.doc !== null) expect(Object.keys(fn.doc).sort(), fn.name).toEqual([...keys].sort());
     }
   });
 

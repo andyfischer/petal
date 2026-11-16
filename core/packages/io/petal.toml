@@ -4,3 +4,4 @@
 [package]
 name = "io"
 version = "0.1.0"
+description = "Host I/O: symbols, output buffers and host bindings."

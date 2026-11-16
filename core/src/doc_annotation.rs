@@ -259,16 +259,22 @@ pub fn cleandoc(text: &str) -> String {
 /// The summary of a doc body: its first sentence, which index pages,
 /// completion and hover headers show. The first paragraph of the cleaned
 /// text, its lines joined by spaces, up to and including the first `.`, `!`
-/// or `?` that ends the text or is followed by whitespace. A paragraph with
-/// no such stop is the summary whole.
+/// or `?` that ends the text or is followed by whitespace, outside a
+/// `` `code` `` span (so `ui.button` and `` `a. b` `` do not end it). A
+/// paragraph with no such stop is the summary whole.
 pub fn summary(body: &str) -> String {
     let cleaned = cleandoc(body);
     let paragraph = cleaned.split("\n\n").next().unwrap_or("");
     let joined = paragraph.split_whitespace().collect::<Vec<_>>().join(" ");
     let chars: Vec<char> = joined.chars().collect();
-    for (i, c) in chars.iter().enumerate() {
-        if matches!(c, '.' | '!' | '?') && chars.get(i + 1).is_none_or(|n| n.is_whitespace()) {
-            return chars[..=i].iter().collect();
+    let mut in_code = false;
+    for (i, &c) in chars.iter().enumerate() {
+        match c {
+            '`' => in_code = !in_code,
+            '.' | '!' | '?' if !in_code && chars.get(i + 1).is_none_or(|n| n.is_whitespace()) => {
+                return chars[..=i].iter().collect();
+            }
+            _ => {}
         }
     }
     joined
@@ -284,6 +290,10 @@ mod tests {
         assert_eq!(summary("\n  A UI library\n  written in Petal.\n\n  Second.\n"), "A UI library written in Petal.");
         assert_eq!(summary("Version 0.4 is out"), "Version 0.4 is out");
         assert_eq!(summary("No stop\n\nNext para."), "No stop");
+        assert_eq!(summary("Lerp by 0.5 or\nby `t`. More."), "Lerp by 0.5 or by `t`.");
+        assert_eq!(summary("Calls `ui.button`! Then"), "Calls `ui.button`!");
+        assert_eq!(summary("See `a. b` here. Next"), "See `a. b` here.");
+        assert_eq!(summary(""), "");
     }
 
     /// Source tools find a declaration's keyword past its docs, whose raw

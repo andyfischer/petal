@@ -8,6 +8,7 @@
 [package]
 name = "text_layout"
 version = "0.1.0"
+description = "Placing text, written entirely in Petal."
 modules = "src"
 
 # Measuring and drawing text goes through the petal-ui interface (`import ui`).

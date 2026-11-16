@@ -59,9 +59,14 @@ pub type DocumentedParse = (Rc<GreenNode>, Vec<Stmt>, Option<crate::ast::Doc>);
 /// (docs/proposals/doc-annotation.md), which documents the file and is not
 /// one of its statements: `None` when it has none.
 pub fn parse_source_with_module_doc(source: &str, file: FileId) -> Result<DocumentedParse, String> {
-    let (green, stmts) = parse_source(source, file)?;
-    let doc = crate::cst_project::module_doc(&SyntaxNode::new_root(green.clone()), file)?;
-    Ok((green, stmts, doc))
+    parse_source_documented(source, file).map_err(|e| e.to_string())
+}
+
+/// [`parse_source_with_module_doc`] with the typed error of
+/// [`parse_source_phased`]: what the module loader parses each file with, so
+/// that a [`crate::module::LoadedModule`] carries its file's doc.
+pub fn parse_source_documented(source: &str, file: FileId) -> Result<DocumentedParse, LoadError> {
+    parse_documented(Lexer::new_in_file(source, file), source, file, Reading::Layout)
 }
 
 /// [`parse_source`] the way source read before `else if` was one token: each
@@ -121,11 +126,22 @@ fn parse_with(
 }
 
 fn parse_reading(
-    mut lexer: Lexer,
+    lexer: Lexer,
     source: &str,
     file: FileId,
     reading: Reading,
 ) -> Result<(Rc<GreenNode>, Vec<Stmt>), LoadError> {
+    parse_documented(lexer, source, file, reading).map(|(green, stmts, _)| (green, stmts))
+}
+
+/// [`parse_reading`], plus the file's `@module_doc(…)` as the parser read it
+/// (a debug build checks that the CST projection reads the same).
+fn parse_documented(
+    mut lexer: Lexer,
+    source: &str,
+    file: FileId,
+    reading: Reading,
+) -> Result<DocumentedParse, LoadError> {
     let phased = |phase: Phase| {
         move |e: String| {
             let mut err = LoadError::legacy(phase, e);
@@ -167,7 +183,8 @@ fn parse_reading(
     );
     #[cfg(not(debug_assertions))]
     let _ = direct;
-    Ok((green, projected))
+    let module_doc = parser.module_doc().cloned();
+    Ok((green, projected, module_doc))
 }
 
 /// The debug-build check that the projected AST is the parser's direct AST.

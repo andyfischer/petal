@@ -80,6 +80,9 @@ pub struct PackageInfo {
     pub name: String,
     /// The `[package] version`, verbatim. Metadata — nothing resolves on it.
     pub version: Option<String>,
+    /// The `[package] description`, verbatim: the one-line summary a
+    /// registry shows. Metadata, like the version.
+    pub description: Option<String>,
     /// The directory holding `petal.toml`, or the synthetic
     /// `<package:NAME>` marker for an in-memory package.
     pub root: PathBuf,
@@ -330,7 +333,7 @@ pub fn find_manifest(start: &Path) -> Option<PathBuf> {
 
 /// A registered package: its manifest facts plus, for an in-memory package,
 /// the sources themselves.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Package {
     pub info: PackageInfo,
     /// `Some` for an in-memory package, keyed by module name relative to the
@@ -401,6 +404,7 @@ impl Package {
             info: PackageInfo {
                 name: manifest.name,
                 version: manifest.version,
+                description: manifest.description,
                 root: root.to_path_buf(),
                 module_dir,
                 modules,
@@ -453,14 +457,15 @@ impl Package {
             sources.insert(module.to_string(), source.as_ref().to_string());
         }
         let names: Vec<String> = sources.keys().cloned().collect();
-        let (version, dependencies, requires) = match manifest {
-            Some(m) => (m.version, m.dependencies, m.requires),
-            None => (None, Vec::new(), Vec::new()),
+        let (version, description, dependencies, requires) = match manifest {
+            Some(m) => (m.version, m.description, m.dependencies, m.requires),
+            None => (None, None, Vec::new(), Vec::new()),
         };
         Ok(Package {
             info: PackageInfo {
                 name: name.to_string(),
                 version,
+                description,
                 module_dir: root.clone(),
                 root,
                 modules: names,
@@ -593,6 +598,7 @@ impl Package {
                 .filter_map(|(path, source)| Some((path.strip_prefix(prefix.as_str())?, source))),
         )?;
         package.info.version = manifest.version;
+        package.info.description = manifest.description;
         package.info.dependencies = manifest.dependencies;
         package.info.requires = manifest.requires;
         package.info.root = marker.clone();
@@ -1309,6 +1315,16 @@ mod tests {
         assert_eq!(m.name, "bloom");
         assert_eq!(m.version.as_deref(), Some("0.1.0"));
         assert_eq!(m.modules, None);
+        assert_eq!(m.description, None);
+    }
+
+    #[test]
+    fn the_description_is_read_and_reaches_the_package_info() {
+        let m = manifest("[package]\nname = \"bloom\"\ndescription = \"Widgets.\"\n").unwrap();
+        assert_eq!(m.description.as_deref(), Some("Widgets."));
+        let ui = crate::bundled::package("ui").unwrap();
+        let p = Package::bundled(ui).unwrap();
+        assert!(p.info.description.is_some());
     }
 
     #[test]

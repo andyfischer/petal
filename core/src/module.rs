@@ -123,20 +123,23 @@ pub trait ModuleResolver {
 #[derive(Default)]
 pub struct ParseCache {
     #[allow(clippy::type_complexity)]
-    entries: std::cell::RefCell<std::collections::HashMap<(String, u16), (String, Vec<Stmt>)>>,
+    entries: std::cell::RefCell<std::collections::HashMap<(String, u16), (String, ParsedModule)>>,
 }
 
+/// One file's parse: its statements and its `@module_doc(…)`.
+type ParsedModule = (Vec<Stmt>, Option<crate::ast::Doc>);
+
 impl ParseCache {
-    fn get(&self, key: &str, file: FileId, source: &str) -> Option<Vec<Stmt>> {
+    fn get(&self, key: &str, file: FileId, source: &str) -> Option<ParsedModule> {
         let entries = self.entries.borrow();
-        let (cached, stmts) = entries.get(&(key.to_string(), file.0))?;
-        (cached == source).then(|| stmts.clone())
+        let (cached, parsed) = entries.get(&(key.to_string(), file.0))?;
+        (cached == source).then(|| parsed.clone())
     }
 
-    fn put(&self, key: &str, file: FileId, source: &str, stmts: &[Stmt]) {
+    fn put(&self, key: &str, file: FileId, source: &str, parsed: &ParsedModule) {
         self.entries
             .borrow_mut()
-            .insert((key.to_string(), file.0), (source.to_string(), stmts.to_vec()));
+            .insert((key.to_string(), file.0), (source.to_string(), parsed.clone()));
     }
 }
 
@@ -322,6 +325,34 @@ impl ModuleRegistry {
     /// The source registered in memory under `name`.
     pub fn memory_module(&self, name: &str) -> Option<&str> {
         self.memory.get(name).map(String::as_str)
+    }
+
+    /// The package called `name`, looked for the way an import written in
+    /// the file at `from` looks: the host's registrations, then that file's
+    /// own package and its `[dependencies]` (by import name), then the search
+    /// path, then the bundled packages. What `petal doc <package>` documents.
+    pub fn find_package(&self, name: &str, from: Option<&Path>) -> Option<crate::package::Package> {
+        if let Some(p) = self.packages.iter().find(|p| p.info.name == name) {
+            return Some(p.clone());
+        }
+        if let Some(file) = from {
+            if let Ok(Some(own)) = self.package_of_file(file)
+                && own.info.name == name
+            {
+                return Some((*own).clone());
+            }
+            for (dep, package) in self.project_dependencies(file) {
+                if dep == name
+                    && let Ok(package) = package
+                {
+                    return Some((*package).clone());
+                }
+            }
+        }
+        self.all_packages()
+            .chain(bundled_packages().iter())
+            .find(|p| p.info.name == name)
+            .cloned()
     }
 }
 
@@ -1084,6 +1115,11 @@ pub struct LoadedModule {
     /// The host interfaces the package this file belongs to requires (its
     /// manifest's `[requires]`); empty for a file of no package.
     pub requires: Vec<crate::package::RequiredInterface>,
+    /// The file's `@module_doc(…)` (docs/proposals/doc-annotation.md): what
+    /// documents the module, and, for a package's root module, the package.
+    /// Compile-time only, like [`Stmt::doc`]: nothing reads it to decide
+    /// what runs.
+    pub module_doc: Option<crate::ast::Doc>,
 }
 
 /// The display name of an entry "file" that has no path (`-e` code, a host
@@ -1115,7 +1151,8 @@ pub fn load_modules(
         .and_then(|p| p.file_name())
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| INLINE_ENTRY_NAME.to_string());
-    let stmts = parse_module(entry_source, ENTRY_FILE, None, resolver.parse_cache(), "")?;
+    let (stmts, entry_doc) =
+        parse_module(entry_source, ENTRY_FILE, None, resolver.parse_cache(), "")?;
     let (explicit_imports, stmts) = split_imports(stmts);
     let (mut explicit_imports, stmts) = (explicit_imports, stmts);
     for import in &explicit_imports {
@@ -1286,6 +1323,7 @@ pub fn load_modules(
         imports: entry_imports,
         file_id: ENTRY_FILE,
         requires: resolver.requires_of(entry_origin),
+        module_doc: entry_doc,
     });
     Ok(modules)
 }
@@ -1429,7 +1467,7 @@ fn scan_gated_into(
     }
     // Keyed apart from the load of the same module (`visit`), which stamps
     // its spans with the module's own file id.
-    let stmts = parse_module(
+    let (stmts, _) = parse_module(
         &resolved.source,
         ENTRY_FILE,
         Some(&display),
@@ -1593,7 +1631,7 @@ impl Walker<'_> {
             )
         })?;
 
-        let stmts = parse_module(
+        let (stmts, module_doc) = parse_module(
             &resolved.source,
             file_id,
             Some(&display_name),
@@ -1634,6 +1672,7 @@ impl Walker<'_> {
             imports,
             file_id,
             requires,
+            module_doc,
         });
         Ok(name)
     }
@@ -1667,23 +1706,23 @@ fn parse_module(
     display_name: Option<&str>,
     cache: Option<&ParseCache>,
     cache_key: &str,
-) -> Result<Vec<Stmt>, LoadError> {
-    if let Some(stmts) = cache.and_then(|c| c.get(cache_key, file_id, source)) {
-        return Ok(stmts);
+) -> Result<ParsedModule, LoadError> {
+    if let Some(parsed) = cache.and_then(|c| c.get(cache_key, file_id, source)) {
+        return Ok(parsed);
     }
-    let stmts = parse_module_uncached(source, file_id, display_name)?;
+    let parsed = parse_module_uncached(source, file_id, display_name)?;
     if let Some(cache) = cache {
-        cache.put(cache_key, file_id, source, &stmts);
+        cache.put(cache_key, file_id, source, &parsed);
     }
-    Ok(stmts)
+    Ok(parsed)
 }
 
 fn parse_module_uncached(
     source: &str,
     file_id: FileId,
     display_name: Option<&str>,
-) -> Result<Vec<Stmt>, LoadError> {
-    let (_tree, stmts) = crate::cst::parse_source_phased(source, file_id).map_err(|mut e| {
+) -> Result<ParsedModule, LoadError> {
+    let (_tree, stmts, doc) = crate::cst::parse_source_documented(source, file_id).map_err(|mut e| {
         // Tagging each item with the module's display name reproduces the
         // old `format!("{name}: {e}")` annotation byte for byte; entry-file
         // errors carry no file and so are unchanged.
@@ -1694,7 +1733,7 @@ fn parse_module_uncached(
         }
         e
     })?;
-    Ok(stmts)
+    Ok((stmts, doc))
 }
 
 /// Split a parsed statement list into its leading imports and the rest.
@@ -2360,6 +2399,7 @@ print(score(1, 2))")
             imports: Vec::new(),
             file_id: crate::source_map::FileId(1),
             requires: Vec::new(),
+            module_doc: None,
         };
         assert!(crate::compiler::is_bundled_copy(&module));
         let edited = super::LoadedModule {
@@ -2367,6 +2407,26 @@ print(score(1, 2))")
             ..module
         };
         assert!(!crate::compiler::is_bundled_copy(&edited));
+    }
+
+    /// Each loaded module carries its file's `@module_doc`, the entry's too,
+    /// through the parse cache as well as without it.
+    #[test]
+    fn a_loaded_module_carries_its_module_doc() {
+        let mut registry = super::ModuleRegistry::default();
+        registry.register("lib", "@module_doc(\"Helpers.\", see: [\"x\"])\n\npub fn f()\n  1\n");
+        registry.register("bare", "pub fn g()\n  2\n");
+        let entry = "@module_doc(\"\"\"\n  The app.\n\"\"\")\nimport lib\nimport bare\nprint(f(), g())\n";
+        for _ in 0..2 {
+            let modules = super::load_modules(entry, None, &registry, &[]).unwrap();
+            let doc = |name: Option<&str>| {
+                let m = modules.iter().find(|m| m.name.as_deref() == name).unwrap();
+                m.module_doc.as_ref().and_then(|d| d.cleaned_body())
+            };
+            assert_eq!(doc(Some("lib")).as_deref(), Some("Helpers."));
+            assert_eq!(doc(Some("bare")), None);
+            assert_eq!(doc(None).as_deref(), Some("The app."));
+        }
     }
 
     #[test]

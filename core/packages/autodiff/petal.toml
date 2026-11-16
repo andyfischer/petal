@@ -5,3 +5,4 @@
 [package]
 name = "autodiff"
 version = "0.1.0"
+description = "Derivatives and solving by finite differences: deriv, jacobian, solve_step and solve."

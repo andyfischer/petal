@@ -6,6 +6,7 @@
 [package]
 name = "bloom"
 version = "0.1.0"
+description = "A UI component library written entirely in Petal."
 modules = "src"
 
 # The key is the import name: bloom's modules write `import text_layout`.

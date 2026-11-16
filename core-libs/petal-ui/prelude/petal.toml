@@ -9,3 +9,4 @@
 [package]
 name = "ui"
 version = "0.2.0"
+description = "The petal-ui interface: drawing, input and the widget prelude."

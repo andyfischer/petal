@@ -6,4 +6,5 @@
 [package]
 name = "core"
 version = "0.1.0"
+description = "The builtins every Petal program can call without an import."
 modules = "src"

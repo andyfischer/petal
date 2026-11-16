@@ -684,6 +684,7 @@ impl Compiler {
             imports: Vec::new(),
             file_id: ENTRY_FILE,
             requires: Vec::new(),
+            module_doc: None,
         };
         self.compile_modules(&[entry], program_id, native_fns)
             .expect("import-free compilation cannot fail")

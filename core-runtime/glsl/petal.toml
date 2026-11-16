@@ -3,4 +3,5 @@
 [package]
 name = "glsl"
 version = "0.1.0"
+description = "Translate a Petal function to GLSL (experimental)."
 modules = "src"

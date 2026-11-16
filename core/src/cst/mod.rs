@@ -43,7 +43,8 @@ mod green;
 mod red;
 
 pub use driver::{
-    parse_cst, parse_source, parse_source_by_end, parse_source_phased, parse_source_with_module_doc,
+    DocumentedParse, parse_cst, parse_source, parse_source_by_end, parse_source_documented,
+    parse_source_phased, parse_source_with_module_doc,
 };
 pub(crate) use driver::parse_source_tabs_as_columns;
 pub(crate) use driver::parse_source_unmerged_else_if;

@@ -4,3 +4,4 @@
 [package]
 name = "json"
 version = "0.1.0"
+description = "The JSON string codec."

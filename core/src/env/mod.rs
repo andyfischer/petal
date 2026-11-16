@@ -832,6 +832,36 @@ impl Env {
         Ok(self.modules.package_of_file(file)?.map(|p| p.info.clone()))
     }
 
+    /// [`project_of`](Self::project_of), with the package's sources: the
+    /// package the file at `file` belongs to.
+    pub fn package_of_file(
+        &self,
+        file: &std::path::Path,
+    ) -> Result<Option<crate::package::Package>, String> {
+        use crate::module::ModuleResolver;
+        self.modules.begin_load(Some(file));
+        Ok(self.modules.package_of_file(file)?.map(|p| (*p).clone()))
+    }
+
+    /// The package called `name`, found the way an import in the file at
+    /// `from` would find it (see [`crate::module::ModuleRegistry::find_package`]).
+    pub fn find_package(
+        &self,
+        name: &str,
+        from: Option<&std::path::Path>,
+    ) -> Option<crate::package::Package> {
+        use crate::module::ModuleResolver;
+        self.modules.begin_load(from);
+        self.modules.find_package(name, from)
+    }
+
+    /// The source of the module registered in memory as `name`
+    /// ([`register_module`](Self::register_module)); the core prelude is
+    /// `std`.
+    pub fn memory_module(&self, name: &str) -> Option<&str> {
+        self.modules.memory_module(name)
+    }
+
     /// The `[dependencies]` of the project the file at `file` belongs to, as
     /// they resolve: `(import name, the package or why it does not load)`.
     pub fn project_dependencies(

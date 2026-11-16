@@ -4,3 +4,4 @@
 [package]
 name = "noise"
 version = "0.1.0"
+description = "Perlin noise."

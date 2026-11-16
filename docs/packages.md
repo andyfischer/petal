@@ -33,6 +33,7 @@ the file they are given. Inside a project nothing needs a flag.
 [package]
 name = "marble"
 version = "0.1.0"
+description = "Marbles that roll."   # optional: a one-line summary
 modules = "src"      # optional: where the modules are.
                      # Defaults to src/ when it exists, else the manifest's
                      # own directory.

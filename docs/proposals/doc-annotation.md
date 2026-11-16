@@ -451,6 +451,22 @@ without losing pages:
    examples into `@doc`, and leaves the page's preamble (named arguments,
    which builtins need an import) as the reference's intro, now the
    `@module_doc` of `core.ptl`. Each section is reviewed by hand.
+   *Done 2026-11-15 for `core/prelude` and `core/packages/*`, with step 2
+   for them* (`core/tests/all/core_docs.rs` holds them at zero
+   `undocumented-pub`/`doc-params`/`package-description` findings). As done:
+   a section naming several functions (`sin` / `cos` / `tan`) became one
+   `@doc` per declaration; an overload set (`random`, `range`, `sort`,
+   `distance`, `mag`, `Map`) has one, on its first form, except `tunable`,
+   whose `options:` form has its own. A section's code went into `example:`,
+   except blocks the page marked `ignore`, which stay fenced
+   ` ```petal ignore ` in the body so a later doctest can tell them apart.
+   Each `##` group's introduction became its module's `@module_doc` (String
+   offsets, Higher-order functions and Typed numeric arrays in
+   `core/collections`; Settings in `core/dm`; Vectors in `vec2`), and the
+   two Formatting sections were merged into `core/format`. Links to anchors
+   of the page became names in backticks or `see:`; links to other pages
+   stay relative to `docs/`, where the generated reference will live.
+   `docs/Builtins.md` stays until step 6 generates its replacement.
 4. **`ui/docs/reference.md` and `bloom/docs/components.md`** get the same
    treatment. Their conventions sections become the `@module_doc`s.
    `ui/tests/reference.rs` (every export listed) is replaced by

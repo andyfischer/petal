@@ -581,6 +581,23 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   [docs/features/function-introspection.md](docs/features/function-introspection.md)
   and [docs/usage/config-files.md](docs/usage/config-files.md).
 
+- **The core libraries are documented with `@doc`.** Every `pub` item of
+  the `std` prelude and of the bundled packages `core`, `color`, `vec2`,
+  `io`, `json`, `noise` and `autodiff` has a `@doc` (summary, parameters,
+  options, returns, examples, related names), and each package root a
+  `@module_doc`, so `petal doc core` (or `std`, `vec2`, …) shows the whole
+  builtin reference. All the prose and examples of
+  [docs/Builtins.md](docs/Builtins.md) now live on the declarations; its
+  preamble (named arguments, which builtins need an import) is the
+  `@module_doc` of `core`, and each section's introduction the doc of its
+  module. Maintainer notes in the file headers stay comments.
+  `undocumented-pub`, `doc-params` and `package-description` report nothing
+  for these libraries, and a test (`core_docs`) keeps it that way. `push`,
+  `pop` and `drag_solve_step` carry `deprecated:`, so `petal lint` now
+  warns at their uses (`` `push` is deprecated: use `append`, … ``). The
+  four `__enum_*`/`__declare_method` internals, `__record_of` and the
+  test-only `__pending`/`__resolve`/`__reject` are `hidden: true`.
+
 - **Lint rules for `@doc`.** `doc-params`: a `params:` key that no form of
   the overload set takes (with a did-you-mean), and a `see:` entry that names
   nothing the file can reach. `deprecated`: a use of an item whose `@doc` has

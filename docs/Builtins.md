@@ -1,5 +1,12 @@
 # Builtins Reference
 
+> **The source of this page is moving into the declarations.** Every
+> builtin's prose and examples are now in the `@doc(…)` of its declaration
+> (`core/packages/*`, `core/prelude/std.ptl`; `petal doc core` prints them),
+> and this page will be generated from them
+> ([proposal](proposals/doc-annotation.md#migration)). Until then, a change
+> to a builtin's documentation goes in both places.
+
 The built-in functions of the Petal runtime: the ones in scope in every
 program, and the domain sets a file imports ([which is which](#which-builtins-need-an-import)). For language syntax
 (variables, control flow, functions, state, pattern matching), see the

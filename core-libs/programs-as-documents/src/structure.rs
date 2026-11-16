@@ -301,6 +301,9 @@ fn entry_of(run: &DocumentRun, all: &[Container], node: &OutputNode, exclude: Op
             return Ok(hit);
         }
     }
+    if let Some(hit) = list_entry_by_flow(run, all, node) {
+        return Ok(hit);
+    }
     match spans.iter().find(|s| s.file == FileId(0)) {
         Some(s) => Err(format!(
             "<{tag}> is built by code on line {} that is not an entry of a list or of an element's children",
@@ -315,6 +318,41 @@ fn entry_of(run: &DocumentRun, all: &[Container], node: &OutputNode, exclude: Op
                 .unwrap_or_else(|| "another file".into());
             Err(format!("<{tag}> comes from `{file}`; only the document's own lists can be edited"))
         }
+    }
+}
+
+/// The entry of a list literal in the document whose value is `node`'s
+/// element, written elsewhere and reached through plain data flow: `clip`
+/// in `[clip] ++ lines` where `let clip = <video … />`. Only when exactly
+/// one entry of one list literal reads it (a name used in two lists is no
+/// one entry's).
+fn list_entry_by_flow(run: &DocumentRun, all: &[Container], node: &OutputNode) -> Option<(usize, usize)> {
+    let program = run.program();
+    let origin = run.env.element_origin(node.element)?;
+    let mut hits = Vec::new();
+    for (ti, t) in program.terms.iter().enumerate() {
+        if !matches!(t.op, TermOp::AllocList) {
+            continue;
+        }
+        let Some(span) = program.source_map.get(TermId(ti as u32)) else { continue };
+        if span.file != FileId(0) {
+            continue;
+        }
+        let Some(ci) = all.iter().position(|c| c.kind == ContainerKind::List && c.span.start.offset == span.start.offset) else {
+            continue;
+        };
+        if all[ci].entries.len() != t.inputs.len() {
+            continue;
+        }
+        for (k, input) in t.inputs.iter().enumerate() {
+            if provenance::trace_value(program, *input, &[]).end == origin.term {
+                hits.push((ci, k));
+            }
+        }
+    }
+    match hits.as_slice() {
+        [hit] => Some(*hit),
+        _ => None,
     }
 }
 
@@ -345,7 +383,11 @@ fn data_of(run: &DocumentRun, all: &[Container], node: &OutputNode) -> Result<(u
             None
         };
         let Some((reader, list, ctx)) = found else { continue };
-        let list = list.ok_or("the loop reads no list")?;
+        let list = match program.terms[reader.0 as usize].op {
+            // `for i in range(0, len(xs))`: the items of `xs`, in order.
+            TermOp::NumericForLoop => counted_list(program, reader, &chain[ctx.min(chain.len())..])?,
+            _ => list.ok_or("the loop reads no list")?,
+        };
         let tr = provenance::trace_value(program, list, &chain[ctx.min(chain.len())..]);
         let what = provenance::term_text(program, list).map(|t| format!("`{}`", first_line(&t))).unwrap_or("its list".into());
         if !matches!(tr.end_kind, TraceEnd::Literal) {
@@ -363,6 +405,30 @@ fn data_of(run: &DocumentRun, all: &[Container], node: &OutputNode) -> Result<(u
         return Ok((ci, iteration, reader));
     }
     Err(String::new())
+}
+
+/// The list a `for i in range(0, len(xs))` (or `range(len(xs))`) loop
+/// counts the items of: `xs`. Its iterations are `xs`'s items in order, so
+/// removing, reordering or duplicating an iteration is that edit on `xs`.
+fn counted_list(program: &Program, lp: TermId, chain: &[TermId]) -> Result<TermId, String> {
+    let t = &program.terms[lp.0 as usize];
+    let (Some(&start), Some(&end)) = (t.inputs.first(), t.inputs.get(1)) else {
+        return Err("the loop's range is unknown".into());
+    };
+    let text = |id: TermId| provenance::term_text(program, id).map(|t| format!("`{}`", first_line(&t))).unwrap_or("its end".into());
+    if provenance::trace_value(program, start, chain).end_kind != TraceEnd::Constant(StaticValue::Int(0)) {
+        return Err(format!("the loop's range starts at {}, not 0", text(start)));
+    }
+    let tr = provenance::trace_value(program, end, chain);
+    let call = &program.terms[tr.end.0 as usize];
+    let name = match &call.op {
+        TermOp::BuiltinCall(n) | TermOp::MethodCall { name: n, .. } => program.get_string_constant(*n),
+        _ => None,
+    };
+    match (name, call.inputs.first()) {
+        (Some("len"), Some(&list)) => Ok(list),
+        _ => Err(format!("the loop counts to {}, not to the length of a list written in the document", text(end))),
+    }
 }
 
 fn per_item(program: &Program, call: TermId) -> bool {
@@ -385,7 +451,7 @@ fn enclosing_for(program: &Program, term: TermId) -> Option<TermId> {
         let b = program.blocks.iter().find(|b| b.id == block)?;
         let parent = b.parent_term_id?;
         let pt = program.terms.get(parent.0 as usize)?;
-        if matches!(pt.op, TermOp::ForLoop) {
+        if matches!(pt.op, TermOp::ForLoop | TermOp::NumericForLoop) {
             return Some(parent);
         }
         block = pt.block_id;
@@ -411,7 +477,20 @@ enum NewItem {
     /// duplicate), and what it builds. `comment` is the comment that
     /// trailed it on its line in a list (`<x />, # note`), which goes with
     /// it as a comment line above it.
-    Carry { text: String, expect: Expect, comment: Option<String> },
+    Carry { text: String, expect: Expect, comment: Option<String>, data: bool },
+}
+
+impl NewItem {
+    /// Whether this is an element (or other literal entry) rather than a
+    /// data entry: next to a loop's elements it goes in the list the loop
+    /// is an entry of, not in the loop's data.
+    fn is_entry(&self) -> bool {
+        match self {
+            NewItem::Template(Template::Value(v)) => matches!(v, StaticValue::Element { .. }),
+            NewItem::Template(Template::Source(t)) => element_tag_of(t).is_some(),
+            NewItem::Carry { data, .. } => !data,
+        }
+    }
 }
 
 /// One element of a parent's desired sequence.
@@ -425,7 +504,46 @@ enum Want {
 struct Desired<'a> {
     info: ParentInfo<'a>,
     sources: Vec<EntrySource>,
+    /// Per element built from a data list: the entry of a list or element
+    /// literal its loop (or `map`) is written as, when it is one
+    /// (`[<a />, for t in tips do … end, <z />]`). That entry is one entry
+    /// among the literal's others: a move across it moves past all the
+    /// loop's elements.
+    carriers: Vec<Option<(Container, usize)>>,
     want: Vec<Want>,
+}
+
+impl Desired<'_> {
+    /// The container element `i` is an entry of in the source, for the
+    /// order of entries: a loop's element counts as its carrier entry.
+    /// `None` for one that is not an entry of a literal (locked, or a data
+    /// item whose loop is not written as an entry).
+    fn unit_container(&self, i: usize) -> Option<&Container> {
+        match (&self.carriers[i], &self.sources[i]) {
+            (Some((c, _)), _) => Some(c),
+            (None, EntrySource::Entry { container, .. }) => Some(container),
+            _ => None,
+        }
+    }
+}
+
+/// The entry of a literal in the document that the loop (or `map`) reading
+/// a data list is written as, for each element built from a data list.
+fn carriers_of(run: &DocumentRun, all: &[Container], sources: &[EntrySource]) -> Vec<Option<(Container, usize)>> {
+    let program = run.program();
+    sources
+        .iter()
+        .map(|s| {
+            let EntrySource::Data { list, reader, .. } = s else { return None };
+            let span = program.source_map.get(*reader).copied().filter(|s| s.file == FileId(0))?;
+            let (ci, ei) = entry_containing(all, &span, None)?;
+            // The data list's own entry (a loop inside a data item) is not
+            // one.
+            let e = all[ci].entries[ei];
+            let inside_list = list.span.start.offset <= e.start.offset && e.end.offset <= list.span.end.offset;
+            (!inside_list && all[ci].span != list.span).then(|| (all[ci].clone(), ei))
+        })
+        .collect()
 }
 
 /// Resolve a structural intent against `run`, the latest run of its source.
@@ -469,7 +587,8 @@ fn plan<'a>(run: &'a DocumentRun, intent: &StructureIntent, opts: &StructureOpti
         let info = ParentInfo::new(run, parent)?;
         let sources = entry_sources(run, &all, &info);
         let want = (0..info.nodes.len()).map(Want::Old).collect();
-        Ok(Desired { info, sources, want })
+        let carriers = carriers_of(run, &all, &sources);
+        Ok(Desired { info, sources, carriers, want })
     };
     let locate = |key: &OutputKey| -> Result<(Parent, usize), String> {
         parent_of(run, key).ok_or_else(|| match run.node(key) {
@@ -527,7 +646,7 @@ fn plan<'a>(run: &'a DocumentRun, intent: &StructureIntent, opts: &StructureOpti
                     .rev()
                     .chain(src.want[to.index..].iter())
                     .find_map(|w| match w {
-                        Want::Old(j) => src.sources[*j].container().map(|c| c.span),
+                        Want::Old(j) => src.unit_container(*j).map(|c| c.span),
                         Want::New(_) => None,
                     });
                 let carry = match &src.sources[i] {
@@ -536,7 +655,7 @@ fn plan<'a>(run: &'a DocumentRun, intent: &StructureIntent, opts: &StructureOpti
                         let node = src.info.nodes[i];
                         let expect = run.node_value(node).map_or(Expect::Tag(node.tag.clone()), Expect::Exact);
                         let comment = carried_comment(&run.source, container, *entry);
-                        Some(Want::New(NewItem::Carry { text, expect, comment }))
+                        Some(Want::New(NewItem::Carry { text, expect, comment, data: false }))
                     }
                     _ => None,
                 };
@@ -572,7 +691,7 @@ fn plan<'a>(run: &'a DocumentRun, intent: &StructureIntent, opts: &StructureOpti
                 if to.index > dest.want.len() {
                     return Err(format!("{} has no position {}", dest.info.describe, to.index));
                 }
-                dest.want.insert(to.index, Want::New(NewItem::Carry { text, expect, comment }));
+                dest.want.insert(to.index, Want::New(NewItem::Carry { text, expect, comment, data: false }));
                 what = format!("move <{}> from {} to {}", node.tag, src.info.describe, dest.info.describe);
                 parents.push(src);
                 parents.push(dest);
@@ -644,7 +763,7 @@ fn plan<'a>(run: &'a DocumentRun, intent: &StructureIntent, opts: &StructureOpti
             if data && !matches!(expect, Expect::Exact(_)) {
                 expect = Expect::Tag(node.tag.clone());
             }
-            d.want.insert(i + 1, Want::New(NewItem::Carry { text, expect, comment: None }));
+            d.want.insert(i + 1, Want::New(NewItem::Carry { text, expect, comment: None, data }));
             what = format!("duplicate <{}>", node.tag);
             parents.push(d);
         }
@@ -729,16 +848,16 @@ pub(crate) fn set_id_in_text(text: &str, id: &str) -> Result<String, String> {
 }
 
 /// The text and expected value of a new item placed in `container`.
-fn new_text(item: &NewItem, container: &Container, data: bool, opts: &StructureOptions, ids: &mut HashSet<String>) -> Result<(String, Expect), String> {
+fn new_text(item: &NewItem, container: &Container, data: bool, opts: &StructureOptions, ids: &mut HashSet<String>) -> Result<(Slot, Expect), String> {
     match item {
-        NewItem::Carry { text, expect, comment } => {
+        NewItem::Carry { text, expect, comment, .. } => {
             let text = match comment {
                 // Among children a `#` line would be text: a comment hole.
                 Some(c) if container.kind == ContainerKind::Children => format!("{{/* {} */}}\n{text}", c.replace("*/", "* /")),
                 Some(c) => format!("# {c}\n{text}"),
                 None => text.clone(),
             };
-            Ok((text, expect.clone()))
+            Ok((Slot::New(text), expect.clone()))
         }
         NewItem::Template(Template::Value(v)) => {
             let is_el = matches!(v, StaticValue::Element { .. });
@@ -763,7 +882,7 @@ fn new_text(item: &NewItem, container: &Container, data: bool, opts: &StructureO
                 v = with_id(v, &id);
             }
             let expect = if is_el { Expect::Exact(v.clone()) } else { Expect::Any };
-            Ok((v.to_source(), expect))
+            Ok((Slot::Value(v), expect))
         }
         NewItem::Template(Template::Source(text)) => {
             let tag = element_tag_of(text);
@@ -782,7 +901,7 @@ fn new_text(item: &NewItem, container: &Container, data: bool, opts: &StructureO
                 ids.insert(id.clone());
                 text = set_id_in_text(&text, &id)?;
             }
-            Ok((text, tag.map_or(Expect::Any, Expect::Tag)))
+            Ok((Slot::New(text), tag.map_or(Expect::Any, Expect::Tag)))
         }
     }
 }
@@ -897,13 +1016,18 @@ fn build(run: &DocumentRun, plan: &mut Plan<'_>) -> Result<(String, Step, Source
     for d in &plan.parents {
         check_locked(d)?;
         check_groups(run, d)?;
+        check_carriers(run, d)?;
         // Each parent's wanted sequence, per container.
         let mut new_values: Vec<Result<usize, StaticValue>> = Vec::new();
+        // Per wanted element: a new one written beside a loop's entry, in
+        // the list the loop is an entry of.
+        let mut beside: Vec<bool> = Vec::new();
         for (k, w) in d.want.iter().enumerate() {
             match w {
                 Want::Old(i) => {
                     let s = &d.sources[*i];
                     new_values.push(Ok(*i));
+                    beside.push(false);
                     let (Some(c), Some(e)) = (s.container(), s.entry()) else { continue };
                     let data = matches!(s, EntrySource::Data { .. });
                     let ce = edit_for(&mut edits, c, data);
@@ -913,16 +1037,28 @@ fn build(run: &DocumentRun, plan: &mut Plan<'_>) -> Result<(String, Step, Source
                     if !ce.seq.iter().any(|x| matches!(x, Slot::Keep(j) if *j == e)) {
                         ce.seq.push(Slot::Keep(e));
                     }
+                    // The loop's own entry takes its place among its
+                    // literal's entries where its first element is.
+                    if let Some((cc, ce_i)) = &d.carriers[*i] {
+                        let ce = edit_for(&mut edits, cc, false);
+                        if !ce.units.contains(ce_i) {
+                            ce.units.push(*ce_i);
+                        }
+                        if !ce.seq.iter().any(|x| matches!(x, Slot::Keep(j) if j == ce_i)) {
+                            ce.seq.push(Slot::Keep(*ce_i));
+                        }
+                    }
                 }
                 Want::New(item) => {
-                    let (c, data) = anchor_container(run, d, k)?;
-                    let (text, mut expect) = new_text(item, &c, data, &plan.opts, &mut ids)?;
+                    let (c, data) = anchor_container(run, d, k, item.is_entry())?;
+                    let (slot, mut expect) = new_text(item, &c, data, &plan.opts, &mut ids)?;
                     // Among an element's children, what is new must be an
                     // element (a `{…}` that builds one).
                     if c.kind == ContainerKind::Children && matches!(expect, Expect::Any) {
                         expect = Expect::Tag("*".into());
                     }
-                    edit_for(&mut edits, &c, data).seq.push(Slot::New(text));
+                    edit_for(&mut edits, &c, data).seq.push(slot);
+                    beside.push(!data && d.carriers.iter().flatten().any(|(cc, _)| cc.span == c.span));
                     new_values.push(Err(match expect {
                         Expect::Exact(v) => v,
                         Expect::Tag(t) => wildcard(Some(&t)),
@@ -932,7 +1068,13 @@ fn build(run: &DocumentRun, plan: &mut Plan<'_>) -> Result<(String, Step, Source
             }
         }
         // Units of this parent that are no longer wanted are removed.
-        for s in &d.sources {
+        for (s, carrier) in d.sources.iter().zip(&d.carriers) {
+            if let Some((cc, ce_i)) = carrier {
+                let ce = edit_for(&mut edits, cc, false);
+                if !ce.units.contains(ce_i) {
+                    ce.units.push(*ce_i);
+                }
+            }
             let (Some(c), Some(e)) = (s.container(), s.entry()) else { continue };
             let data = matches!(s, EntrySource::Data { .. });
             let ce = edit_for(&mut edits, c, data);
@@ -940,7 +1082,7 @@ fn build(run: &DocumentRun, plan: &mut Plan<'_>) -> Result<(String, Step, Source
                 ce.units.push(e);
             }
         }
-        replace_siblings(&mut expected, d, new_values)?;
+        replace_siblings(&mut expected, d, new_values, &beside)?;
     }
     // Apply, the latest container in the source first.
     edits.sort_by_key(|e| std::cmp::Reverse(e.container.span.start.offset));
@@ -980,11 +1122,23 @@ fn edit_for<'e>(edits: &'e mut Vec<ContainerEdit>, c: &Container, data: bool) ->
 /// goes in: the nearest earlier element's, else the nearest later one's,
 /// else (an element's children with none that can be edited) the parent
 /// element's own literal.
-fn anchor_container(run: &DocumentRun, d: &Desired<'_>, k: usize) -> Result<(Container, bool), String> {
+fn anchor_container(run: &DocumentRun, d: &Desired<'_>, k: usize, entry: bool) -> Result<(Container, bool), String> {
     let pick = |w: &Want| match w {
         Want::Old(i) => d.sources[*i].container().map(|c| (c.clone(), matches!(d.sources[*i], EntrySource::Data { .. }))),
         Want::New(_) => None,
     };
+    // An element next to a loop's elements goes in the list the loop is an
+    // entry of, beside it, not in the loop's data.
+    let pick_entry = |w: &Want| match w {
+        Want::Old(i) => d.unit_container(*i).map(|c| (c.clone(), false)),
+        Want::New(_) => None,
+    };
+    if entry
+        && d.carriers.iter().any(Option::is_some)
+        && let Some(hit) = d.want[..k].iter().rev().find_map(pick_entry).or_else(|| d.want[k + 1..].iter().find_map(pick_entry))
+    {
+        return Ok(hit);
+    }
     if let Some(hit) = d.want[..k].iter().rev().find_map(pick).or_else(|| d.want[k + 1..].iter().find_map(pick)) {
         return Ok(hit);
     }
@@ -1027,6 +1181,38 @@ fn check_locked(d: &Desired<'_>) -> Result<(), String> {
     Ok(())
 }
 
+/// The elements a loop written as an entry of a literal builds stay
+/// together: an element can go before or after them all (the loop entry
+/// moves as one entry among the literal's others), not between them, and
+/// one of them cannot leave them.
+fn check_carriers(run: &DocumentRun, d: &Desired<'_>) -> Result<(), String> {
+    let olds: Vec<usize> = d
+        .want
+        .iter()
+        .filter_map(|w| match w {
+            Want::Old(i) => Some(*i),
+            Want::New(_) => None,
+        })
+        .collect();
+    for carrier in &d.carriers {
+        let Some((cc, ce)) = carrier else { continue };
+        let member = |j: usize| matches!(&d.carriers[j], Some((c, e)) if c.span == cc.span && e == ce);
+        let pos: Vec<usize> = olds.iter().enumerate().filter(|(_, j)| member(**j)).map(|(p, _)| p).collect();
+        let (Some(first), Some(last)) = (pos.first(), pos.last()) else { continue };
+        if last - first + 1 == pos.len() {
+            continue;
+        }
+        let span = cc.entries[*ce];
+        let text = byte_range(&run.source, &span).map(|r| first_line(&run.source[r])).unwrap_or_default();
+        return Err(format!(
+            "the elements `{text}` (line {}) builds stay together, as it is one entry of {}: an element can go before or after them all, not between them, and one of them cannot leave them",
+            span.start.line,
+            cc.describe()
+        ));
+    }
+    Ok(())
+}
+
 /// The elements one entry builds stay together and in order.
 fn check_groups(run: &DocumentRun, d: &Desired<'_>) -> Result<(), String> {
     for (i, s) in d.sources.iter().enumerate() {
@@ -1058,7 +1244,7 @@ fn fill(ce: &ContainerEdit) -> Vec<Slot> {
         .iter()
         .filter_map(|s| match s {
             Slot::Keep(e) => Some(*e),
-            Slot::New(_) => None,
+            _ => None,
         })
         .collect();
     let mut units: Vec<usize> = ce.units.clone();
@@ -1075,17 +1261,19 @@ fn fill(ce: &ContainerEdit) -> Vec<Slot> {
     // New entries: after the kept entry before them in the wanted sequence,
     // or before the one after, or at the end.
     for (k, s) in ce.seq.iter().enumerate() {
-        let Slot::New(_) = s else { continue };
+        if !s.is_new() {
+            continue;
+        }
         let prev = ce.seq[..k].iter().rev().find_map(|s| match s {
             Slot::Keep(e) => Some(*e),
-            Slot::New(_) => None,
+            _ => None,
         });
         let pos = match prev {
             Some(p) => out.iter().position(|x| *x == Slot::Keep(p)).map(|i| i + 1),
             None => {
                 let next = ce.seq[k + 1..].iter().find_map(|s| match s {
                     Slot::Keep(e) => Some(*e),
-                    Slot::New(_) => None,
+                    _ => None,
                 });
                 match next {
                     Some(nx) => out.iter().position(|x| *x == Slot::Keep(nx)),
@@ -1096,7 +1284,7 @@ fn fill(ce: &ContainerEdit) -> Vec<Slot> {
         // Several new entries in a row keep their order.
         let pos = pos.map(|p| {
             let mut p = p;
-            while matches!(out.get(p), Some(Slot::New(_))) {
+            while out.get(p).is_some_and(Slot::is_new) {
                 p += 1;
             }
             p
@@ -1157,6 +1345,7 @@ fn replace_siblings(
     expected: &mut [Option<StaticValue>],
     d: &Desired<'_>,
     values: Vec<Result<usize, StaticValue>>,
+    beside: &[bool],
 ) -> Result<(), String> {
     let slots: Vec<Vec<usize>> = d.info.nodes.iter().filter_map(|n| slot_of(&d.info.path, d.info.kind, &n.path)).collect();
     let current: Vec<StaticValue> = {
@@ -1171,6 +1360,7 @@ fn replace_siblings(
     // for a new one, its neighbour's.
     let seg_of = |i: usize| slots.get(i).map(|p| p[..p.len() - 1].to_vec()).unwrap_or_default();
     let mut segs: Vec<(Vec<usize>, std::collections::VecDeque<StaticValue>)> = Vec::new();
+    let mut value_segs: Vec<Vec<usize>> = Vec::new();
     for (k, v) in values.iter().enumerate() {
         let seg = match v {
             Ok(i) => seg_of(*i),
@@ -1178,9 +1368,20 @@ fn replace_siblings(
                 .iter()
                 .rev()
                 .chain(values[k + 1..].iter())
-                .find_map(|w| w.as_ref().ok().map(|i| seg_of(*i)))
+                .find_map(|w| {
+                    let i = *w.as_ref().ok()?;
+                    let seg = seg_of(i);
+                    // Beside a loop's elements, in the list the loop is an
+                    // entry of: the segment around the loop's.
+                    Some(if beside.get(k) == Some(&true) && d.carriers[i].is_some() && !seg.is_empty() {
+                        seg[..seg.len() - 1].to_vec()
+                    } else {
+                        seg
+                    })
+                })
                 .unwrap_or_default(),
         };
+        value_segs.push(seg.clone());
         let value = match v {
             Ok(i) => current[*i].clone(),
             Err(v) => v.clone(),
@@ -1228,11 +1429,105 @@ fn replace_siblings(
         *items = out;
         return Ok(());
     }
+    if d.info.kind == ContainerKind::List && reorder_blocks(items, d, &slots, &values, &value_segs, &mut segs) {
+        return Ok(());
+    }
     refill(items, &[], &slots, &mut segs);
     if let Some((_, q)) = segs.iter_mut().find(|(s, _)| s.is_empty()) {
         items.extend(q.drain(..));
     }
     Ok(())
+}
+
+/// A list whose items are elements and the nested lists loops written as
+/// its entries give (`[<a />, for t in tips do … end, <z />]`): each loop's
+/// list moves as one item, where its first element is wanted. `false`
+/// (nothing done) for any other shape.
+fn reorder_blocks(
+    items: &mut Vec<StaticValue>,
+    d: &Desired<'_>,
+    slots: &[Vec<usize>],
+    values: &[Result<usize, StaticValue>],
+    value_segs: &[Vec<usize>],
+    segs: &mut [(Vec<usize>, std::collections::VecDeque<StaticValue>)],
+) -> bool {
+    use std::collections::{HashMap, VecDeque};
+    let blocks: HashSet<usize> = d
+        .carriers
+        .iter()
+        .zip(slots)
+        .filter(|(c, s)| c.is_some() && s.len() == 2)
+        .map(|(_, s)| s[0])
+        .collect();
+    if blocks.is_empty()
+        || slots.iter().any(|s| s.len() > 2 || (s.len() == 2 && !blocks.contains(&s[0])))
+        || value_segs.iter().any(|s| s.len() > 1 || (s.len() == 1 && !blocks.contains(&s[0])))
+        || !(0..items.len()).all(|p| blocks.contains(&p) || slots.contains(&vec![p]))
+    {
+        return false;
+    }
+    let old = std::mem::take(items);
+    let mut nested: HashMap<usize, StaticValue> = HashMap::new();
+    for p in &blocks {
+        let mut it = old[*p].clone();
+        if let StaticValue::List(xs) = &mut it {
+            refill(xs, &[*p], slots, segs);
+            if xs.is_empty()
+                && let Some((_, q)) = segs.iter_mut().find(|(s, _)| *s == [*p])
+            {
+                xs.extend(q.drain(..));
+            }
+        }
+        nested.insert(*p, it);
+    }
+    let mut top: VecDeque<StaticValue> = segs.iter_mut().find(|(s, _)| s.is_empty()).map(|(_, q)| std::mem::take(q)).unwrap_or_default();
+    // A loop none of whose elements is wanted (all removed) keeps its place
+    // after the element that was before it.
+    let referenced: HashSet<usize> = value_segs.iter().filter_map(|s| s.first().copied()).collect();
+    let after = |out: &mut Vec<StaticValue>, nested: &mut HashMap<usize, StaticValue>, p: usize| {
+        let mut q = p + 1;
+        while blocks.contains(&q) && !referenced.contains(&q) {
+            if let Some(v) = nested.remove(&q) {
+                out.push(v);
+            }
+            q += 1;
+        }
+    };
+    let slot_index = |i: usize| slots.get(i).map(|s| s[0]);
+    let mut out = Vec::new();
+    let mut lead = 0;
+    while blocks.contains(&lead) && !referenced.contains(&lead) {
+        if let Some(v) = nested.remove(&lead) {
+            out.push(v);
+        }
+        lead += 1;
+    }
+    for (v, seg) in values.iter().zip(value_segs) {
+        match seg.first() {
+            None => {
+                if let Some(x) = top.pop_front() {
+                    out.push(x);
+                }
+                if let Ok(i) = v
+                    && let Some(p) = slot_index(*i)
+                {
+                    after(&mut out, &mut nested, p);
+                }
+            }
+            Some(p) => {
+                if let Some(x) = nested.remove(p) {
+                    out.push(x);
+                    after(&mut out, &mut nested, *p);
+                }
+            }
+        }
+    }
+    out.extend(top);
+    let mut rest: Vec<usize> = nested.keys().copied().collect();
+    rest.sort();
+    out.extend(rest.into_iter().filter_map(|p| nested.remove(&p)));
+    *items = out;
+    true
 }
 
 fn refill(

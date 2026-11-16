@@ -107,7 +107,7 @@ what [the reactive-rendering plan](../../../docs/dev/reactive-rendering-plan.md)
 measures this app with:
 
 ```bash
-cd core-libs/petal-ui && cargo run --release --example bench_panel -- \
+cd core-stdlib/ui/native && cargo run --release --example bench_panel -- \
   ../../examples/productivity/spreadsheet/app.ptl 600 \
   --scenario ../../examples/productivity/spreadsheet/bench/session.json
 ```

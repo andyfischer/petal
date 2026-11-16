@@ -58,4 +58,4 @@ lives in `garden-script`.
 ## Upstream
 
 Garden and Petal live in one repo, so embedding friction in Petal itself is
-fixed in `../../core` / `../../core-libs/petal-ui` rather than filed and deferred.
+fixed in `../../core` / `../../core-stdlib/ui` rather than filed and deferred.

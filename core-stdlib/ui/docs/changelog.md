@@ -1,6 +1,6 @@
 # `ui` prelude levels
 
-The changelog of [`PRELUDE_LEVEL`](../src/lib.rs), moved here verbatim from
+The changelog of [`PRELUDE_LEVEL`](../native/src/lib.rs), moved here verbatim from
 its doc comment. `PRELUDE_LEVEL` is the monotonic counter of *additive*
 prelude growth; see [Versioning](../README.md#versioning). When you bump it,
 add the new level to the end of this list.

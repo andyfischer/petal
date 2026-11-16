@@ -39,7 +39,7 @@ Fix the hosting, then test the one-liner on a clean machine
   `import bloom`. Rename bloom's, or warn when a second plain import changes
   what a bare name resolves to.
 - **Colour channels wrap instead of clamping.** `color_of` and the
-  positional draw natives (`core-libs/petal-ui/src/draw.rs`) convert with
+  positional draw natives (`core-stdlib/ui/native/src/draw.rs`) convert with
   `as u8`, so 260 draws as 4 and −20 as 236
   ([website-improvement-ideas.md](website-improvement-ideas.md) item 5).
   A one-line fix plus a test.

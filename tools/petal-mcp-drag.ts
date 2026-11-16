@@ -6,7 +6,7 @@
 // and the branch of the spec down to it.
 //
 // Kept apart from the server (no MCP dependency) so test/vitest can drive it
-// against the built binary. See core-libs/petal-ui/docs/drag.md
+// against the built binary. See core-stdlib/ui/docs/drag.md
 // ("Debugging") and docs/dev/headless-ui-run.md (`--drag-trace`).
 
 import { execFile } from "node:child_process";

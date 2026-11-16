@@ -934,7 +934,7 @@ fn tooltip_waits_for_the_hover_delay_then_fades_in() {
 #[test]
 fn gallery_runs_headlessly_across_all_tabs() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../garden/examples/panels/gallery.ptl");
+        .join("../../../garden/examples/panels/gallery.ptl");
     let mut ui = Headless::from_file_with_paths(&path, 900, 700, &[])
         .unwrap_or_else(|e| panic!("gallery failed to load: {e}"));
     ui.frame()

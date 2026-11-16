@@ -15,4 +15,4 @@ cargo run --bin petal-ui-run -- ../../examples/ui/d2-list/app.ptl \
 The scenario drags A down three rows: the last record's `items` is
 `["B", "C", "D", "A", "E"]`. `tests/drag.rs` in petal-ui checks it.
 
-Guide: [core-libs/petal-ui/docs/drag.md](../../../core-libs/petal-ui/docs/drag.md).
+Guide: [core-stdlib/ui/docs/drag.md](../../../core-stdlib/ui/docs/drag.md).

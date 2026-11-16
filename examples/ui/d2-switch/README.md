@@ -17,4 +17,4 @@ The scenario drags the knob from `off` through the middle of the triangle,
 out past its right edge (where it stops on the edge) and up to `high`: the
 last record's `pos` is `"high"`. `tests/drag_p2.rs` in petal-ui checks it.
 
-Guide: [core-libs/petal-ui/docs/drag.md](../../../core-libs/petal-ui/docs/drag.md#continuous-drags-between-and-vary).
+Guide: [core-stdlib/ui/docs/drag.md](../../../core-stdlib/ui/docs/drag.md#continuous-drags-between-and-vary).

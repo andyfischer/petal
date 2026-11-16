@@ -4,11 +4,11 @@
     "core/src/builtins/*.rs",
     "core/packages/core/src/*.ptl",
     "core/packages/*/*.ptl",
-    "core-libs/petal-ui/prelude/*.ptl",
+    "core-stdlib/ui/src/*.ptl",
     "core/prelude/std.ptl",
-    "core-libs/petal-ui/src/draw.rs",
-    "core-libs/petal-ui/src/text.rs",
-    "core-libs/petal-ui/src/input.rs"
+    "core-stdlib/ui/native/src/draw.rs",
+    "core-stdlib/ui/native/src/text.rs",
+    "core-stdlib/ui/native/src/input.rs"
   ],
   "categories": [
     {
@@ -6076,7 +6076,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1603
       }
     },
@@ -6101,7 +6101,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1545
       }
     },
@@ -6126,7 +6126,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1555
       }
     },
@@ -6167,7 +6167,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1590
       }
     },
@@ -6292,7 +6292,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1658
       }
     },
@@ -6383,7 +6383,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1687
       }
     },
@@ -6476,7 +6476,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1717
       }
     },
@@ -6577,7 +6577,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1731
       }
     },
@@ -6698,7 +6698,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1811
       }
     },
@@ -6827,7 +6827,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1827
       }
     },
@@ -6932,7 +6932,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1844
       }
     },
@@ -7055,7 +7055,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1873
       }
     },
@@ -7148,7 +7148,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1911
       }
     },
@@ -7221,7 +7221,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2185
       }
     },
@@ -7296,7 +7296,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1921
       }
     },
@@ -7381,7 +7381,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1932
       }
     },
@@ -7464,7 +7464,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1959
       }
     },
@@ -7557,7 +7557,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1968
       }
     },
@@ -7656,7 +7656,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1994
       }
     },
@@ -7755,7 +7755,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2026
       }
     },
@@ -7814,7 +7814,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2101
       }
     },
@@ -7873,7 +7873,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2127
       }
     },
@@ -7948,7 +7948,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2151
       }
     },
@@ -8049,7 +8049,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2217
       }
     },
@@ -8108,7 +8108,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2338
       }
     },
@@ -8123,7 +8123,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2346
       }
     },
@@ -8192,7 +8192,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2363
       }
     },
@@ -8207,7 +8207,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2406
       }
     },
@@ -8260,7 +8260,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/text.rs",
+        "file": "core-stdlib/ui/native/src/text.rs",
         "line": 880
       }
     },
@@ -8313,7 +8313,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/text.rs",
+        "file": "core-stdlib/ui/native/src/text.rs",
         "line": 892
       }
     },
@@ -8354,7 +8354,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/text.rs",
+        "file": "core-stdlib/ui/native/src/text.rs",
         "line": 1040
       }
     },
@@ -8431,7 +8431,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/text.rs",
+        "file": "core-stdlib/ui/native/src/text.rs",
         "line": 1228
       }
     },
@@ -8528,7 +8528,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/text.rs",
+        "file": "core-stdlib/ui/native/src/text.rs",
         "line": 1451
       }
     },
@@ -8605,7 +8605,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/text.rs",
+        "file": "core-stdlib/ui/native/src/text.rs",
         "line": 1491
       }
     },
@@ -8630,7 +8630,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/text.rs",
+        "file": "core-stdlib/ui/native/src/text.rs",
         "line": 696
       }
     },
@@ -8645,7 +8645,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/text.rs",
+        "file": "core-stdlib/ui/native/src/text.rs",
         "line": 711
       }
     },
@@ -8670,7 +8670,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 1451
       }
     },
@@ -8703,7 +8703,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2412
       }
     },
@@ -8728,7 +8728,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2440
       }
     },
@@ -8743,7 +8743,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2446
       }
     },
@@ -8814,7 +8814,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2453
       }
     },
@@ -8855,7 +8855,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2465
       }
     },
@@ -8888,7 +8888,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/draw.rs",
+        "file": "core-stdlib/ui/native/src/draw.rs",
         "line": 2473
       }
     },
@@ -8903,7 +8903,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 749
       }
     },
@@ -8918,7 +8918,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 796
       }
     },
@@ -8943,7 +8943,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 764
       }
     },
@@ -8958,7 +8958,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 800
       }
     },
@@ -8973,7 +8973,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 804
       }
     },
@@ -8998,7 +8998,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 808
       }
     },
@@ -9023,7 +9023,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 815
       }
     },
@@ -9048,7 +9048,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 822
       }
     },
@@ -9063,7 +9063,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 829
       }
     },
@@ -9078,7 +9078,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 833
       }
     },
@@ -9103,7 +9103,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 844
       }
     },
@@ -9128,7 +9128,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 851
       }
     },
@@ -9153,7 +9153,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 858
       }
     },
@@ -9168,7 +9168,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 865
       }
     },
@@ -9183,7 +9183,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 869
       }
     },
@@ -9198,7 +9198,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 873
       }
     },
@@ -9213,7 +9213,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 877
       }
     },
@@ -9228,7 +9228,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 881
       }
     },
@@ -9243,7 +9243,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 885
       }
     },
@@ -9258,7 +9258,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 889
       }
     },
@@ -9273,7 +9273,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 893
       }
     },
@@ -9288,7 +9288,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 897
       }
     },
@@ -9303,7 +9303,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 906
       }
     },
@@ -9318,7 +9318,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 913
       }
     },
@@ -9333,7 +9333,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 920
       }
     },
@@ -9348,7 +9348,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 929
       }
     },
@@ -9363,7 +9363,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 935
       }
     },
@@ -9378,7 +9378,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 939
       }
     },
@@ -9393,7 +9393,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 943
       }
     },
@@ -9408,7 +9408,7 @@
         []
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 947
       }
     },
@@ -9433,7 +9433,7 @@
         ]
       ],
       "source": {
-        "file": "core-libs/petal-ui/src/input.rs",
+        "file": "core-stdlib/ui/native/src/input.rs",
         "line": 837
       }
     }

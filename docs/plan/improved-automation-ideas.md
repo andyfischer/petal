@@ -128,7 +128,7 @@ The first host is the in-process `petal_ui_headless::harness::Headless`.
 
 - **Tests.**
   - Rust: `petal_ui::drive::run(app, driver)` returns the check results, for
-    `cargo test` beside `core-libs/petal-ui/tests/*.rs`.
+    `cargo test` beside `core-stdlib/ui/native/tests/*.rs`.
   - vitest and scripts: `petal-ui-run --drive x.drive.ptl`.
   - Goldens: `test/ui-golden/index.json` gains `drive-<name>-s1` traces next
     to `monkey-1-s1`.
@@ -159,7 +159,7 @@ The first host is the in-process `petal_ui_headless::harness::Headless`.
 |---|---|---|---|---|---|
 | `Headless` harness | In-process frame loop for a petal-ui script | Rust calls: `event(InputEvent)`, `mouse_move`, `mouse_down`/`up`, `scroll`, `key`, `text`, `click`, `frame`, `frames` | `commands`, `state()`, `state_int`/`float`/`string`, `memo_stats`, `frames_run`/`frames_skipped`, `last_run_reason`; the `Env` directly (observations, profile, emit origins) | `core-libs/petal-ui-headless/src/harness.rs` | petal-ui tests (`gating.rs`, `memo.rs`, `widgets.rs`, …), `petal-ui-run`, `bench_panel` |
 | `petal-ui-run` | CLI: run an app headless, one JSONL record per frame | `--scenario s.json` (edge events keyed by frame: `mouse_move`, `mouse_down`, `click`, `key`, `text`, `scroll`, `modifiers`) or `monkey:<seed>`; `--seed`, `--host-data` fixtures | per frame: `commands`, `state`, `prints`, `result`, `error`; `--gate-stats`, `--memo-stats` on stderr | `core-libs/petal-ui-headless/src/run_cli.rs`, `core-libs/petal-ui-headless/src/scenario.rs`, `garden/garden-script/src/headless.rs` | `verify.ts`, UI goldens, ad hoc |
-| `bench_panel` | Per-frame timing of a panel script | frame count, `--wiggle`, `--no-gate`, `--no-memo`, `--observe`, `--profile`; `--scenario` (added 2026-09-15, uncommitted as of writing) | frame-time percentiles, run-frame percentiles, total script time, memo counters, instruction profile | `core-libs/petal-ui/examples/bench_panel.rs` | performance work |
+| `bench_panel` | Per-frame timing of a panel script | frame count, `--wiggle`, `--no-gate`, `--no-memo`, `--observe`, `--profile`; `--scenario` (added 2026-09-15, uncommitted as of writing) | frame-time percentiles, run-frame percentiles, total script time, memo counters, instruction profile | `core-stdlib/ui/native/examples/bench_panel.rs` | performance work |
 | UI goldens | sha256 of each UI app's `petal-ui-run` trace | fixed: `monkey:1`, seed 1, 60 frames, 1280×850 | trace hash only | `test/ui-golden/index.json` | refactor verification |
 | `verify.ts` | Before/after proof for mechanical changes, cheapest check first | plans in `test/verify-plans/` (`compiler.json`, `lint-fix.json`) | IR equality, console output, `petal-ui-run` traces | `tools/verify.ts`, [refactor-verification.md](../dev/refactor-verification.md) | large refactors, `lint --fix` sweeps |
 | Example golden corpus | Console examples: opts vs `--no-opt`, plus frozen output | none (non-UI programs) | stdout | `tools/test-examples.ts`, `test/example-golden/` | CI |

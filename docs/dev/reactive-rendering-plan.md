@@ -239,7 +239,7 @@ The proposal's hazard list, with where each stands.
 
 ## Measurements
 
-Release build, Apple Silicon, `core-libs/petal-ui/examples/bench_panel`, 1200×800.
+Release build, Apple Silicon, `core-stdlib/ui/native/examples/bench_panel`, 1200×800.
 
 **Baseline before P0 (2026-09-14, min / p50, every frame runs):**
 

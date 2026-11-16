@@ -14,7 +14,7 @@ Nothing in `~/petal` was changed while writing the demo.
 
 Shipped 2026-11-08 as an opt-in (petal-ui `DrawOptions { subpixel: true }`,
 `new PetalCanvas({ subpixel: true })`, petal-sdl `--subpixel`; see
-`core-libs/petal-ui/docs/host-contract.md` § "Sub-pixel coordinates").
+`core-stdlib/ui/docs/host-contract.md` § "Sub-pixel coordinates").
 Still open:
 
 - petal-lang.org has not switched its loader to the sub-pixel drain, so
@@ -47,7 +47,7 @@ thing that will drop frames on a phone.
 
 ## 3. Retained layers (`cached_layer`) on the web host
 
-**Today.** In `core-libs/petal-ui/docs/host-contract.md`, a host that does not
+**Today.** In `core-stdlib/ui/docs/host-contract.md`, a host that does not
 ask for cache commands gets each `cached_layer`'s content inline, every frame.
 `draw-wire.ts` already decodes `cache_begin` / `cache_end` / `cache_draw`, but
 `canvas-renderer.ts` has no case for them, so the web runtime does not opt in.
@@ -87,7 +87,7 @@ can never be brighter than what it covers.
 
 ## 5. Clamp colour channels instead of wrapping
 
-**Today.** `color_of` in `core-libs/petal-ui/src/draw.rs` (and the
+**Today.** `color_of` in `core-stdlib/ui/native/src/draw.rs` (and the
 `r, g, b` arguments of the draw natives) convert with `as u8`. A Petal int
 of 260 becomes 4. A negative value wraps to near 255.
 

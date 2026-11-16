@@ -11,7 +11,7 @@
 
 How the widgets in `import ui` behave and why they are shaped the way they
 are: the conventions they share, the theme, RectCut layout, motion, and each
-widget in depth. The widgets are written in Petal, in `prelude/widgets.ptl`
+widget in depth. The widgets are written in Petal, in `src/widgets.ptl`
 (module `ui/widgets`, which `ui` re-exports).
 
 - For one line on every export, see [reference.md](reference.md).

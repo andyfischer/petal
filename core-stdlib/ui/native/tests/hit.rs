@@ -830,7 +830,7 @@ fn a_restored_state_map_leaves_the_module_working() {
 #[test]
 fn the_layers_example_keeps_ui_clicks_from_the_world() {
     use petal_ui_headless::scenario::Scenario;
-    let app = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/ui/layers/app.ptl");
+    let app = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/ui/layers/app.ptl");
     let mut ui = Headless::from_file_with_size(&app, 800, 600)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
     let scenario = Scenario::from_json_str(

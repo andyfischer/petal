@@ -49,7 +49,7 @@ In order:
    vocabulary, text and fonts, alpha, the `ui` prelude, the quality bar.
 2. `docs/language-guide.md` - a more detailed guide to the language.
 3. `docs/Builtins.md` — list of builtin stdlib functions.
-4. `core-libs/petal-ui/README.md` and its `docs/` (the `ui` prelude: `reference.md`, `widgets.md`, `drawing.md`) and, if the app wants
+4. `core-stdlib/ui/README.md` and its `docs/` (the `ui` prelude: `reference.md`, `widgets.md`, `drawing.md`) and, if the app wants
    animated controls, `core-stdlib/bloom/docs/components.md`.
 5. `garden/docs/petal-graphical-panels.md` and `garden/docs/debug-server.md`.
 6. Two or three finished apps closest to yours, for example
@@ -145,7 +145,7 @@ Rules that cost the most time when broken:
 - `petal lint` does not catch a misspelled global. `status_error` in
   `/state` does.
 - Work around language and host limits in Petal and note them in the README.
-  Do not patch `core/`, `garden/*/src/`, `core-libs/petal-ui/src/` or any `Cargo.toml`
+  Do not patch `core/`, `garden/*/src/`, `core-stdlib/ui/native/src/` or any `Cargo.toml`
   as a side effect of the app. Language fixes are a separate change.
 
 Design the app to be testable. Mirror every piece of logical state into plain

@@ -190,7 +190,7 @@ before their cover. `speculate` is not needed.
     `<section>` and `<phone_row>` to the phone or note in front, where it
     used to pick the whole section behind them.
 - **Phase 2 (done 2026-11-07): keys and focus.** What shipped
-  (`core-libs/petal-ui/src/focus.rs`):
+  (`core-stdlib/ui/native/src/focus.rs`):
   - `hit::roll` decides the focus before the script runs and binds it as
     `ui_focus`. The last `focus_request(id)` of the frame before applies
     first. Then a press whose owner declared `{text: true}` or
@@ -214,7 +214,7 @@ before their cover. `speculate` is not needed.
     record. Focus and claims are two bindings next to `ui_under` and the
     press snapshot, which answers the first open question for now.
 - **Phase 3 (done 2026-11-07): `popover`.** What shipped
-  (`core-libs/petal-ui/src/popover.rs`):
+  (`core-stdlib/ui/native/src/popover.rs`):
   - `hit::roll` keeps the one open popover as `ui_popover`. It applies the
     last frame's `popover_open` / `popover_close` requests in order, then
     closes the open one on Escape or a left or right press outside the rect

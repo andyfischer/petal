@@ -8,7 +8,7 @@ repository = "https://github.com/andyfischer/petal"
 
 [dependencies]
 petal = { path = "../../../core", default-features = false }
-petal-ui = { path = "../../../core-libs/petal-ui" }
+petal-ui = { path = "../../../core-stdlib/ui/native" }
 petal-sdl = { path = "../../../integrations/petal-desktop-sdl" }
 sdl2 = { version = "0.37", features = ["image", "ttf"] }
 serde = { version = "1", features = ["derive"] }

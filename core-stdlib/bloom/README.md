@@ -31,7 +31,7 @@ reference is [docs/components.md](docs/components.md).
 
 ## How it sits on `ui`
 
-[`petal-ui`](../../core-libs/petal-ui/) is the **host layer**: a Rust crate that gives an
+[`petal-ui`](../../core-stdlib/ui/) is the **host layer**: a Rust crate that gives an
 embedder the input and draw natives, plus the `ui` package of primitives and
 interaction logic over them — layout, list and scroll state, the editing
 logic behind a text field, the keyboard focus, drag and drop. bloom is the

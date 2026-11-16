@@ -79,7 +79,7 @@ pit of success here.
 **Drawing takes integer coordinates only — open.** `draw_rect` and
 friends accept floats now, but the draw-command format is still `i32`
 (each coordinate is truncated toward zero, not rounded, in
-`core-libs/petal-ui/src/draw.rs`), so
+`core-stdlib/ui/native/src/draw.rs`), so
 sub-pixel motion still jitters at render time, most visibly on slow
 parallax layers. Tracked in [docs/tasks/todo.md](../../../docs/tasks/todo.md).
 

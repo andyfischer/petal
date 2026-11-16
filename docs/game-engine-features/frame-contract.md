@@ -3,7 +3,7 @@
 What an engine does each frame to run a Petal script, and what it may assume
 about the script in return. It is the same for every host, whatever the
 language of the engine: petal-desktop-sdl's game loop, Garden's panels and
-the `petal-ui` test harness all follow it (`core-libs/petal-ui/src/frame_core.rs`
+the `petal-ui` test harness all follow it (`core-stdlib/ui/native/src/frame_core.rs`
 is the shared Rust version), and the C bridge wraps it for C++ engines. The
 code for each API is in [usage/ffi.md](../usage/ffi.md) (Rust) and
 [usage/embedding-c.md](../usage/embedding-c.md#the-model) (C and C++).

@@ -1,7 +1,7 @@
 //! `petal lint` cannot see this crate's registrations (the core CLI does not
 //! depend on petal-ui). What it reads instead is the `ui` package's
-//! `native fn` declarations (`prelude/_base.ptl`, `prelude/_native.ptl`,
-//! `prelude/input.ptl`), which
+//! `native fn` declarations (`src/_base.ptl`, `src/_native.ptl`,
+//! `src/input.ptl`), which
 //! the `petal` binary bundles. These tests hold the declarations to the real
 //! registrations (`Env::verify_interface`): a native added here without
 //! being declared there cannot be reached from a script at all, and one
@@ -50,7 +50,7 @@ fn the_bundled_ui_package_is_this_crates() {
         let file = bundled
             .files
             .iter()
-            .find(|(path, _)| *path == format!("{name}.ptl"))
+            .find(|(path, _)| *path == format!("src/{name}.ptl"))
             .unwrap_or_else(|| panic!("{name}.ptl is not bundled"));
         assert_eq!(file.1, source, "{name}.ptl");
     }
@@ -334,7 +334,7 @@ fn petal_ui_natives_take_named_arguments() {
 fn register_all_provides_the_ui_interface_at_the_package_version() {
     let manifest = petal::package::Manifest::parse(
         petal_ui::MANIFEST,
-        std::path::Path::new("prelude/petal.toml"),
+        std::path::Path::new("petal.toml"),
     )
     .unwrap();
     let mut env = petal::env::Env::new();

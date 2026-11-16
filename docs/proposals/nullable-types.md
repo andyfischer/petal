@@ -392,7 +392,7 @@ does today.
 - **Games**: helps. Entity lookups and "not built yet" `state` sentinels
   (petal_quest).
 - **Productivity and UI**: helps. ui prelude functions take `id = nil` and
-  `wants = nil` (`core-libs/petal-ui/prelude/_frame.ptl:312-331`), and `find`
+  `wants = nil` (`core-stdlib/ui/src/_frame.ptl:312-331`), and `find`
   and selection results are nil-able.
 - **Dashboards and data**: helps a little. Optional query results.
 - **Web, editor scripting, config**: neutral.

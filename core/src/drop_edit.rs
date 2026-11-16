@@ -1,7 +1,7 @@
 //! Structural direct manipulation: a drop on a literal model, written back
 //! to the source as goal edits.
 //!
-//! `ui/drag` (core-libs/petal-ui/prelude/drag.ptl) works on a *model value*:
+//! `ui/drag` (core-stdlib/ui/src/drag.ptl) works on a *model value*:
 //! a drag ends in a new model, `drop`. When that model is a top-level literal
 //! binding —
 //!

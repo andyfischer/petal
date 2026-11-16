@@ -81,10 +81,10 @@ static-value cache (`petal::static_cache` and its classifier, audit and
 reload), the native effect audit (`petal::effect_audit`) and direct
 manipulation (`petal::dm`). They drive apps through `petal_ui_headless::harness::Headless`,
 so they depend on `petal-ui`, but they test `core/`, not `petal-ui`; the tests
-of `petal-ui` itself stay in `core-libs/petal-ui/tests/`.
+of `petal-ui` itself stay in `core-stdlib/ui/native/tests/`.
 
 It is its own cargo package (not in a workspace), depending on `core/` and
-`core-libs/petal-ui/` by path, with the dependencies optimized in dev builds
+`core-stdlib/ui/` by path, with the dependencies optimized in dev builds
 as in petal-ui so the suite stays under a minute or so.
 
 ```sh

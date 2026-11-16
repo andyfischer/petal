@@ -508,7 +508,7 @@ speculation for `closest`, `floating`, `snap_radius`, `when_far` and
 
 Measured on the kanban example with its board replaced by n cards
 (`cargo run --release --example bench_drag -- examples/productivity/kanban/app.ptl <n>`
-in `core-libs/petal-ui`; minimum of 15 runs, frame gate off, Apple silicon):
+in `core-stdlib/ui/native`; minimum of 15 runs, frame gate off, Apple silicon):
 
 | Cards | Idle frame | Drag start | Frame while dragging | Old hand-rolled app, while dragging |
 |---|---|---|---|---|
@@ -524,7 +524,7 @@ and moving the wrapping out of the view (rule 10) are what brought it down.
 Spreading the drag start over several frames is not built.
 
 `between` and `vary` (`cargo run --release --example bench_vary` in
-`core-libs/petal-ui`, on the P2 examples; minimum of 15 runs, frame gate
+`core-stdlib/ui/native`, on the P2 examples; minimum of 15 runs, frame gate
 off, Apple silicon; "worst" is the slowest frame while held):
 
 | Drag | Idle frame | Frame while dragging (median) | Worst frame while dragging |

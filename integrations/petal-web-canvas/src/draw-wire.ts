@@ -4,7 +4,7 @@
  * `draw_strings`): a flat `Float64Array` of numbers, where each command is its
  * opcode followed by every one of its fields in a fixed order, and the frame's
  * strings, referenced from the numbers by index. The encoder and the full
- * format description are `core-libs/petal-ui/src/draw_wire.rs`; keep the
+ * format description are `core-stdlib/ui/native/src/draw_wire.rs`; keep the
  * opcodes and field orders here in step with it.
  *
  * The result is exactly the `{ op, ...fields }` objects the JSON form had —

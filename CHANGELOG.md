@@ -12,6 +12,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **`petal-ui` moved into `core-stdlib/ui`**, the first native package
+  there: the `ui` package's modules are in `core-stdlib/ui/src` (was
+  `core-libs/petal-ui/prelude`), its manifest is `core-stdlib/ui/petal.toml`,
+  and the Rust crate `petal-ui` is `core-stdlib/ui/native`. A Cargo `path`
+  dependency on `core-libs/petal-ui` becomes `core-stdlib/ui/native`. The
+  crate name, its API and `import ui` are unchanged. See
+  [docs/proposals/native-packages.md](docs/proposals/native-packages.md).
 - **`core-runtime/` is now `core-stdlib/`.** The pure-Petal libraries
   (`bloom`, `text_layout`, `glsl`) moved directory; their package names and
   `import`s are unchanged. A host that registers one of them from a checkout

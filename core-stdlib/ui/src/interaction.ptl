@@ -128,7 +128,7 @@ pub fn scroll_update(offset, total_lines, visible_lines, r, active)
 
 # ── Focus ──────────────────────────────────────────────────────────────────
 # At most one widget id has the keyboard. The runtime keeps track of it,
-# once per frame before the script runs (core-libs/petal-ui/src/focus.rs):
+# once per frame before the script runs (core-stdlib/ui/native/src/focus.rs):
 #
 #   has_focus(id)       whether `id` has the keyboard this frame
 #   focus_owner()       the id that has it, "" for nobody
@@ -742,7 +742,7 @@ pub fn text_area_height(text, w, min_lines = 3, max_lines = 12, style = {})
 
 # ── Popover runtime ───────────────────────────────────────────────────────
 # Which popover is open, held by the runtime by id
-# (core-libs/petal-ui/src/popover.rs). At most one is open: opening one
+# (core-stdlib/ui/native/src/popover.rs). At most one is open: opening one
 # closes the rest. Escape and a press outside close it before the frame
 # runs, and that press reaches nothing underneath. It opens on the frame
 # after `popover_open`, and it has the keys while it is open:

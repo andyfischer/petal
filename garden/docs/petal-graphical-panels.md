@@ -12,7 +12,7 @@ panels whose data comes from a subprocess instead of local Rust. Everything
 here applies to both. For the subprocess side see
 [writing-gpp-apps.md](writing-gpp-apps.md) and [gpp.md](gpp.md).
 
-Panels are built on the shared [petal-ui](../../core-libs/petal-ui/README.md) crate,
+Panels are built on the shared [petal-ui](../../core-stdlib/ui/README.md) crate,
 which every Petal embedder uses for input and draw natives and the `ui`
 widget package (`import ui`). Garden adds a handful of natives of its own
 (`emit`, `mutate`, `navigate`, `text_view`, `edit_view`, `palette`,
@@ -213,7 +213,7 @@ layout (`cut_left` / `cut_right` / `cut_top` / `cut_bottom`, `split_h` /
 `toggle`, `radio_group`, `slider`, `tab_bar`, `splitter`, `table`, `modal`,
 `tooltip`, `spinner`, `progress_bar`, `badge` / `pill`, `card`,
 `empty_state`, `hint_bar`, the `load_state` family). The reference is
-[core-libs/petal-ui/docs/widgets.md](../../core-libs/petal-ui/docs/widgets.md); the
+[core-stdlib/ui/docs/widgets.md](../../core-stdlib/ui/docs/widgets.md); the
 showcase panel is `examples/panels/gallery.ptl`.
 
 ### `import bloom`

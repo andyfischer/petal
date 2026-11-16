@@ -457,7 +457,7 @@ While it is on:
   structural edit a DM drag cannot make, since its levers are numbers. A drop
   on `state`, or on a value that is no single literal of the file, says why
   in the status line and writes nothing. See
-  [`ui/drag`'s guide](../../core-libs/petal-ui/docs/drag.md#dragging-a-literal-edits-the-source).
+  [`ui/drag`'s guide](../../core-stdlib/ui/docs/drag.md#dragging-a-literal-edits-the-source).
 - **Affordances**: a `DRAG MODE` badge on the canvas, an outline around the
   shape a press would grab with a label naming the call that drew it
   (`draw_circle · line 9`), and a grab-hand pointer (a closed hand while

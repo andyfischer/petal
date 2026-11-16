@@ -7,7 +7,7 @@
 #   petal-ui-run examples/panels/gallery.ptl --frames 60      // headless
 #
 # See core-stdlib/bloom/docs/components.md for the components, and
-# core-libs/petal-ui/docs/reference.md for the layout and list helpers.
+# core-stdlib/ui/docs/reference.md for the layout and list helpers.
 # (Sections are written inline rather than as functions: top-level `state`
 # is assigned all over, and assigning to a captured outer variable from
 # inside a function is an error by design.)

@@ -1,6 +1,6 @@
 # Proposal: native packages, one package type for Petal and Rust libraries
 
-Status: proposed, 2026-11-15
+Status: proposed, 2026-11-15. Phase 1 (the move) done 2026-11-16.
 
 ## Summary
 

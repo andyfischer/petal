@@ -24,4 +24,4 @@ past the end of the day, where the constraint stops it: the last record has
 `review` in room 0 and `retro` ending at 600. `tests/drag_p2.rs` in petal-ui
 checks it.
 
-Guide: [core-libs/petal-ui/docs/drag.md](../../../core-libs/petal-ui/docs/drag.md#continuous-drags-between-and-vary).
+Guide: [core-stdlib/ui/docs/drag.md](../../../core-stdlib/ui/docs/drag.md#continuous-drags-between-and-vary).

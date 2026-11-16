@@ -411,7 +411,7 @@ fn run_example(name: &str) -> Vec<Value> {
 /// Run `examples/<rel>/app.ptl` against its `scenarios/drag.json`, returning
 /// the state after every frame.
 fn run_example_at(rel: &str) -> Vec<Value> {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples").join(rel);
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples").join(rel);
     let scenario: Value =
         serde_json::from_str(&std::fs::read_to_string(root.join("scenarios/drag.json")).unwrap()).unwrap();
     let size = scenario["size"].as_array().unwrap();

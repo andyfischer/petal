@@ -116,7 +116,7 @@ costs, and the sweeps that are not part of it, are under
 the expected output and ceilings on copies and allocations. The format is in
 [`test/README.md`](../../test/README.md#script-regression-cases).
 
-The UI library has its own suite (`cd core-libs/petal-ui && cargo test`), which
+The UI library has its own suite (`cd core-stdlib/ui/native && cargo test`), which
 tests `petal-ui` itself: input, hit testing, layers, widgets. The headless
 tooling has its own (`cd core-libs/petal-ui-headless && cargo test`: the
 harness clock, scenarios, the `petal-ui-run` and `petal-ui-propose-edit` CLIs),
@@ -433,7 +433,7 @@ The vitest suite (75 files in `test/vitest`) is light by comparison: roughly
 ## The C/C++ bridge
 
 `integrations/petal-c-bridge` (see [embedding-c.md](../usage/embedding-c.md)) is
-built against the in-repo `core/`, `core-libs/petal-ui/` and `core-libs/petal-query/` crates, so
+built against the in-repo `core/`, `core-stdlib/ui/` and `core-libs/petal-query/` crates, so
 it is the first thing to break when an `Env` or petal-ui API it uses changes
 shape. `make test-c-bridge` configures it with CMake + Ninja under
 `integrations/petal-c-bridge/build/` and runs `ctest`: the C++ suite

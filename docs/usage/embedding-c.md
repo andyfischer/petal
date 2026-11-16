@@ -1,7 +1,7 @@
 # Embedding Petal in C and C++
 
 `integrations/petal-c-bridge/` embeds Petal in a C or C++ host: a Rust static
-library that owns the Petal VM (with [petal-ui](../../core-libs/petal-ui/) for input and
+library that owns the Petal VM (with [petal-ui](../../core-stdlib/ui/) for input and
 drawing), a hand-written C ABI over it (`petal_bridge.h`), and a header-only
 C++20 wrapper (`petal.hpp`). It was built for the Cheesecake C++ game engine,
 which scripts its game logic in Petal, and moved here so that changes to the
@@ -47,7 +47,7 @@ target_link_libraries(my_engine PRIVATE petal::bridge)
 
 Cargo runs on every build (it is incremental, so an up-to-date build costs a
 fraction of a second) with `CARGO_TARGET_DIR=<build>/cargo-target`. The crate
-depends on the in-repo `core/`, `core-libs/petal-ui/` and `core-libs/petal-query/` crates by path,
+depends on the in-repo `core/`, `core-stdlib/ui/` and `core-libs/petal-query/` crates by path,
 so a host that adds this directory always builds against the Petal checkout
 it lives in.
 
@@ -759,7 +759,7 @@ Without that, a `draw_rects` batch arrives as one `PB_DRAW_RECT` per entry
 and a `cached_layer` as its content, moved and clipped, on every frame: the
 script's saving is the same, the host's is not. With it, the host keeps a
 texture per layer id and calls `pb_vm_invalidate_layers` if it loses one. The
-rules are in [the `ui` host contract](../../core-libs/petal-ui/docs/host-contract.md#cache_begin-cache_end-cache_draw-only-with-the-retained-layer-capability).
+rules are in [the `ui` host contract](../../core-stdlib/ui/docs/host-contract.md#cache_begin-cache_end-cache_draw-only-with-the-retained-layer-capability).
 
 Draw layers (`ui_layer`) need nothing: `pb_vm_drain_draw` returns the frame
 already sorted.

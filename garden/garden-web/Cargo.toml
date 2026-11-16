@@ -7,7 +7,7 @@ description = "Garden's Petal panel host in the browser: live canvas, tracing an
 
 [dependencies]
 garden-script = { path = "../garden-script" }
-petal-ui = { path = "../../core-libs/petal-ui" }
+petal-ui = { path = "../../core-stdlib/ui/native" }
 wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"
 serde_json = "1"

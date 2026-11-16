@@ -267,7 +267,7 @@ if d.cancelled then why = d.reason end
 /// Run `examples/ui/<name>/app.ptl` against its `scenarios/drag.json`,
 /// returning (the state, the draw commands) after every frame.
 fn run_example(name: &str) -> Vec<(Value, Vec<Value>)> {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/ui").join(name);
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/ui").join(name);
     let scenario: Value =
         serde_json::from_str(&std::fs::read_to_string(root.join("scenarios/drag.json")).unwrap()).unwrap();
     let size = scenario["size"].as_array().unwrap();

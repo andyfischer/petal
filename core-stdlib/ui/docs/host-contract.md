@@ -414,5 +414,5 @@ And it performs the roll once per frame, before running the script.
 
 `clip` in those signatures is `nil` or a record with `x, y, w, h`. A rect is
 a record with `x, y, w, h`. The script side of every one of these is in
-`core-libs/petal-ui/prelude/_frame.ptl` (module `ui/_frame`, re-exported by
+`core-stdlib/ui/src/_frame.ptl` (module `ui/_frame`, re-exported by
 `ui/hit` and `ui/draw`).

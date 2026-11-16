@@ -1,4 +1,4 @@
-//! The host side of `ui/drag` (`prelude/drag.ptl`, `docs/drag.md`): a drop is
+//! The host side of `ui/drag` (`src/drag.ptl`, `docs/drag.md`): a drop is
 //! announced on the [`DRAG_DROPS_CHANNEL`] output channel as
 //! `{key, model, drop}`, and a host that commits drops (Garden writes a dropped
 //! model back to the source) drains it with [`take_drops`] after each run.

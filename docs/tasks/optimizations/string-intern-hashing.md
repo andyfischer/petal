@@ -43,7 +43,7 @@ comparison (`crate::memo`) and the frame gate's binding fingerprints.
 Before/after on the commit frame:
 
 ```bash
-cd core-libs/petal-ui && cargo run --release --example bench_panel -- \
+cd core-stdlib/ui/native && cargo run --release --example bench_panel -- \
   ../../examples/productivity/spreadsheet/app.ptl 600 \
   --scenario ../../examples/productivity/spreadsheet/bench/edit.json --no-gate
 ```

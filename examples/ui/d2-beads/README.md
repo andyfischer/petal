@@ -15,4 +15,4 @@ cargo run --bin petal-ui-run -- ../../examples/ui/d2-beads/app.ptl \
 The scenario drags A two places round, then D to the top. Final `beads`:
 `["A", "E", "F", "B", "C", "D"]`.
 
-Guide: [core-libs/petal-ui/docs/drag.md](../../../core-libs/petal-ui/docs/drag.md).
+Guide: [core-stdlib/ui/docs/drag.md](../../../core-stdlib/ui/docs/drag.md).

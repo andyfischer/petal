@@ -7,7 +7,7 @@ theme tokens, see [widgets.md](widgets.md); for the draw primitives in depth,
 [drawing.md](drawing.md); for what a host has to do to draw any of this,
 [host-contract.md](host-contract.md).
 
-A test (`tests/reference.rs`) fails if a name the package exports is missing
+A test (`native/tests/reference.rs`) fails if a name the package exports is missing
 from this page.
 
 Two apps to read beside it: `garden/examples/panels/gallery.ptl` uses every

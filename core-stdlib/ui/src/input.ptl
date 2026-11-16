@@ -7,7 +7,7 @@
 # video, say — has its scripts write `import ui/input`, and loading them
 # needs none of the draw natives.
 
-# Input (core-libs/petal-ui/src/input.rs). Button 0 is the left mouse button.
+# Input (core-stdlib/ui/native/src/input.rs). Button 0 is the left mouse button.
 pub native fn mouse_x() -> int
 pub native fn mouse_y() -> int
 pub native fn hovered(rect)

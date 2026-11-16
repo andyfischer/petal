@@ -17,4 +17,4 @@ The scenario turns the knob a quarter turn clockwise, from 0° to 90°: the
 last record's `dial.angle` is about π/2. `tests/drag_p2.rs` in petal-ui
 checks it.
 
-Guide: [core-libs/petal-ui/docs/drag.md](../../../core-libs/petal-ui/docs/drag.md#continuous-drags-between-and-vary).
+Guide: [core-stdlib/ui/docs/drag.md](../../../core-stdlib/ui/docs/drag.md#continuous-drags-between-and-vary).

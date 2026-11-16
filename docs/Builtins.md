@@ -5,7 +5,7 @@ program, and the domain sets a file imports ([which is which](#which-builtins-ne
 (variables, control flow, functions, state, pattern matching), see the
 [Language Guide](language-guide.md). The drawing and input builtins used by
 `petal-ui` apps (`draw_rect`, `mouse_x`, ...) are covered in the
-[petal-ui README](../core-libs/petal-ui/README.md); how a browser page runs
+[petal-ui README](../core-stdlib/ui/README.md); how a browser page runs
 them is in [usage/embedding-web.md](usage/embedding-web.md).
 
 **The parameter names in this reference are real.** Every builtin with a
@@ -1813,7 +1813,7 @@ function, a cell, a pending value or NaN).
 ## Drag Math
 
 The numeric half of `ui/drag`'s `between` and `vary`
-([drag guide](../core-libs/petal-ui/docs/drag.md#continuous-drags-between-and-vary)).
+([drag guide](../core-stdlib/ui/docs/drag.md#continuous-drags-between-and-vary)).
 The drag engine renders its candidate states in Petal (a native cannot call
 a Petal function) and hands these only numbers. Each reads nothing but its
 arguments.

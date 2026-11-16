@@ -151,7 +151,7 @@ corrupted file. Comments and layout inside a parameter list survive.
 ### Verified over the corpus
 
 `suggest --apply` was run over every `.ptl` in `examples/`,
-`garden/examples/` and `core-libs/petal-ui/`:
+`garden/examples/` and `core-stdlib/ui/`:
 
 - 57 files annotated, 0 refused;
 - all 57 have **IR byte-identical** to the original under `petal ir-equal`,

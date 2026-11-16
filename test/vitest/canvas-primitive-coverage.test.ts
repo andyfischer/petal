@@ -33,7 +33,7 @@ const NEVER_REACH_THE_RENDERER = new Set([
 ]);
 
 function drawCommandOps(): string[] {
-  const src = readFileSync(`${root}core-libs/petal-ui/src/draw.rs`, "utf8");
+  const src = readFileSync(`${root}core-stdlib/ui/native/src/draw.rs`, "utf8");
   const body = src.slice(src.indexOf("pub enum DrawCommand {"));
   const end = body.indexOf("\n}\n");
   return [...body.slice(0, end).matchAll(/^ {4}([A-Z][A-Za-z]*)\b/gm)].map((m) =>

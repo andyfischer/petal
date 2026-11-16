@@ -6,7 +6,7 @@
 # `./_style` and `./_frame` need it and `ui/draw` needs them.
 
 # ── The native interface ──────────────────────────────────────────────────
-# What a petal-ui host implements in Rust (core-libs/petal-ui/src), declared
+# What a petal-ui host implements in Rust (core-stdlib/ui/native/src), declared
 # here so scripts and `petal lint` know each native's parameter names, arity
 # and types: `native fn name(params) -> type`. A parameter written `name?`
 # may be left off; several declarations of one name are that native's call
@@ -22,7 +22,7 @@
 # `ui/input`), which `ui` re-exports beside this one.
 import ./input
 
-# Drawing that needs no overloads (core-libs/petal-ui/src/draw.rs).
+# Drawing that needs no overloads (core-stdlib/ui/native/src/draw.rs).
 pub native fn clear(r: num, g: num, b: num)
 
 # `draw_rect` is a native in every shape — flat, mixed and record — so the
@@ -72,7 +72,7 @@ pub native fn draw_to_screen()
 pub native fn snapshot_to(id, x, y)
 pub native fn blur_canvas(id, radius)
 
-# The host-data pull channel (core-libs/petal-ui/src/host_data.rs).
+# The host-data pull channel (core-stdlib/ui/native/src/host_data.rs).
 pub native fn host_data(kind, arg)
 
 # ── Geometry + hit testing ────────────────────────────────────────────────
@@ -96,7 +96,7 @@ pub fn point_in(px, py, r)
   px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h
 
 # `hovered(r)` — `point_in(mouse_x(), mouse_y(), r)` — is a native
-# (core-libs/petal-ui/src/input.rs), so that memoized scopes can record it as a single
+# (core-stdlib/ui/native/src/input.rs), so that memoized scopes can record it as a single
 # probe with its answer rather than as two pointer reads; see
 # docs/dev/memo-scopes.md.
 

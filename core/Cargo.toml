@@ -41,7 +41,7 @@ vec2 = { dir = "packages/vec2", kind = "builtin" }
 autodiff = { dir = "packages/autodiff", kind = "builtin" }
 json = { dir = "packages/json", kind = "builtin" }
 io = { dir = "packages/io", kind = "builtin" }
-ui = { dir = "../core-libs/petal-ui/prelude", kind = "ui" }
+ui = { dir = "../core-stdlib/ui", kind = "ui" }
 bloom = { dir = "../core-stdlib/bloom", kind = "library", feature = "bloom" }
 text_layout = { dir = "../core-stdlib/text-layout", kind = "library", feature = "text_layout" }
 glsl = { dir = "../core-stdlib/glsl", kind = "library", feature = "glsl" }

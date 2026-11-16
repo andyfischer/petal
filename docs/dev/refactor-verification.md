@@ -158,7 +158,7 @@ The checks:
    Re-baseline deliberately: name the field that moved before running
    `--update-golden`, because a hash that hides a behavior change looks
    exactly like one that does not. A worked example: inserting a block into
-   `core-libs/petal-ui/prelude/ui.ptl` shifted the ordinal in the display label a
+   `core-stdlib/ui/src/ui.ptl` shifted the ordinal in the display label a
    state dump puts on an unnamed callsite (`ui::button#1/<expr>#63/…` became
    `…/<expr>#78/…`). The argument that this was cosmetic: `state` was the
    only field that differed and the `commands` arrays were identical;

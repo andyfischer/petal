@@ -178,7 +178,7 @@ otherwise `fast`. Everything below starts from that.
 | `petal run --policy <name>`, or with `PETAL_POLICY` set | the named policy, unchanged | the same function |
 | `petal bench` | two sides that share the `Env` default and differ in the optimizer alone | `core/src/cli/bench.rs` |
 | `petal show-bytecode` | the `Env` default's optimizer flags, without the static cache unless `PETAL_POLICY` is set | `handle_show_bytecode` |
-| `petal-ui` (`FrameCore`, `Headless`), `petal-ui-run`, `bench_panel` | the `Env` default | `core-libs/petal-ui/src/frame_core.rs` |
+| `petal-ui` (`FrameCore`, `Headless`), `petal-ui-run`, `bench_panel` | the `Env` default | `core-stdlib/ui/native/src/frame_core.rs` |
 | `petal-desktop-sdl` | the `Env` default | `integrations/petal-desktop-sdl/src/game_loop.rs` |
 | The C bridge | the `Env` default | `integrations/petal-c-bridge/src/vm.rs` |
 | A Rust test that calls `Env::new()` | the `Env` default, so it follows `PETAL_POLICY` | |

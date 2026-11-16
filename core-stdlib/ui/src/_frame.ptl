@@ -130,7 +130,7 @@ fn _clip_resume(c)
 #
 # Of overlapping rects, only the one in front has the pointer: the highest
 # layer, then the one registered last on it (drawn on top). A button over a
-# list row takes its click alone (core-libs/petal-ui/src/hit.rs, "One
+# list row takes its click alone (core-stdlib/ui/native/src/hit.rs, "One
 # owner").
 #
 # `hovered(r)` and `clicked(r)` are the raw tests — the pointer and the rect,
@@ -237,7 +237,7 @@ pub fn _over(r)
   if h then _raise() end
   h
 
-# The registration flags for `interact`'s `wants` (core-libs/petal-ui/src/hit.rs).
+# The registration flags for `interact`'s `wants` (core-stdlib/ui/native/src/hit.rs).
 fn _wants_flags(wants)
   1 + (if _get(wants, "text", false) then 4 else 0 end) + (if _get(wants, "focus", false) then 8 else 0 end)
 

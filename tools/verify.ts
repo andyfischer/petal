@@ -349,8 +349,8 @@ function pairSides(files: string[], before: Side, after: Side, notes: string[]):
 // ── Classification (§4) ──────────────────────────────────────────────────
 
 /**
- * Natives only a petal-ui host registers (core-libs/petal-ui/src/{input,draw}.rs) plus the
- * distinctive helpers of the `ui` package (core-libs/petal-ui/prelude). `time` and `clear` are left
+ * Natives only a petal-ui host registers (core-stdlib/ui/native/src/{input,draw}.rs) plus the
+ * distinctive helpers of the `ui` package (core-stdlib/ui/src). `time` and `clear` are left
  * out deliberately: they collide with names a console script legitimately uses,
  * and a false `ui` is worse than a false `console` (the console driver reports
  * the missing native by name, so the probe below recovers).

@@ -11,7 +11,7 @@ repository = "https://github.com/andyfischer/petal"
 # playground's examples import it (docs/tasks/ui-refactor.md, R4). glsl stays
 # out.
 petal = { path = "../../../core", default-features = false, features = ["bloom"] }
-petal-ui = { path = "../../../core-libs/petal-ui" }
+petal-ui = { path = "../../../core-stdlib/ui/native" }
 wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"
 serde = { version = "1", features = ["derive"] }

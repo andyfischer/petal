@@ -15,7 +15,7 @@ export interface PetalCanvasOptions {
    * images, text positions, offscreen-canvas draws) stays whole pixels so
    * touching rects meet without a seam. A script changes that with
    * `pixel_snap(true)` (snap everything: pixel art) or `pixel_snap(false)`
-   * (snap nothing). See core-libs/petal-ui/docs/host-contract.md,
+   * (snap nothing). See core-stdlib/ui/docs/host-contract.md,
    * "Sub-pixel coordinates".
    */
   subpixel?: boolean;

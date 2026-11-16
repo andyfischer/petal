@@ -112,18 +112,18 @@ pub const PRELUDE_LEVEL: u32 = 14;
 pub const MODULE_NAME: &str = "ui";
 
 /// A file of the `ui` package as the petal binary bundles it
-/// (`petal::bundled`), which is this crate's `prelude/` directory. Reading the
+/// (`petal::bundled`), which is `core-stdlib/ui/src/`, beside this crate. Reading the
 /// bundled copy rather than an `include_str!` of our own keeps one copy in the
 /// binary, and gives a wasm build the comment-stripped text core embeds.
 fn bundled_ui_file(path: &str) -> &'static str {
     petal::bundled::package(MODULE_NAME)
-        .and_then(|p| p.files.iter().find(|(p, _)| *p == path))
+        .and_then(|p| p.files.iter().find(|(p, _)| p.strip_prefix("src/") == Some(path)))
         .map(|(_, text)| *text)
         .unwrap_or_else(|| panic!("the petal binary bundles ui/{path}"))
 }
 
 /// The modules the `ui` module is made of, as package-relative names
-/// (`prelude/<name>.ptl`), in load order: `ui.ptl` itself is a facade of
+/// (`src/<name>.ptl` of the package), in load order: `ui.ptl` itself is a facade of
 /// `pub import`s over the public ones (`draw`, `hit`, `text`, `layout`,
 /// `interaction`, `widgets`), and the `_`-prefixed ones are internal to the package. The
 /// input half (`ui/input`, [`input_source`]) and `ui/drag` ([`drag_source`])
@@ -213,9 +213,9 @@ pub fn register_prelude(env: &mut petal::env::Env) {
     .expect("the ui package registers");
 }
 
-/// The `ui` package's manifest (`prelude/petal.toml`): its version is the
+/// The `ui` package's manifest (`core-stdlib/ui/petal.toml`): its version is the
 /// version of the interface a petal-ui host provides.
-pub const MANIFEST: &str = include_str!("../prelude/petal.toml");
+pub const MANIFEST: &str = include_str!("../../petal.toml");
 
 /// Announce that `env` provides the `ui` interface, at the version of the
 /// `ui` package ([`MANIFEST`]): a package whose `petal.toml` says

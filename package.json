@@ -13,7 +13,7 @@
     "scan-secrets": "node tools/scan-secrets.ts",
     "petal": "node tools/run-petal.ts",
     "stdlib:json": "node tools/extract-stdlib.ts",
-    "lint:docs": "node tools/run-petal.ts lint --rules-include=undocumented-pub core/prelude core/packages core-libs/petal-ui/prelude core-stdlib/bloom core-stdlib/text-layout core-stdlib/glsl/src",
+    "lint:docs": "node tools/run-petal.ts lint --rules-include=undocumented-pub core/prelude core/packages core-stdlib/ui/src core-stdlib/bloom core-stdlib/text-layout core-stdlib/glsl/src",
     "tsc": "tsc --noEmit"
   },
   "engines": {

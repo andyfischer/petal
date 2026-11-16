@@ -2,9 +2,9 @@
 
 The standard UI layer for Petal programs. It is two things:
 
-- a small Rust crate that every graphical host embeds, providing the input and
-  draw natives, and
-- the `ui` package (`prelude/`), which declares those natives and holds the
+- a small Rust crate (`native/`) that every graphical host embeds, providing
+  the input and draw natives, and
+- the `ui` package (`src/`), which declares those natives and holds the
   widget library that Petal scripts build interfaces with. A script writes
   `import ui`.
 
@@ -43,24 +43,24 @@ input events → bind_frame_info / bind_input → clear_draw_commands
 → env.run(script) → take_draw_commands → rasterize
 ```
 
-- **Input** (`src/input.rs`). `InputEvent` and `InputState`, plus the polling
+- **Input** (`native/src/input.rs`). `InputEvent` and `InputState`, plus the polling
   natives scripts call each frame: `mouse_x`, `key_pressed`, `text_input`,
   `dt`, `time`, and so on. There are no callbacks. Relative pointer motion is
   available as `mouse_dx()` / `mouse_dy()`, and a script can lock the pointer
   with `grab_mouse()` / `release_mouse()`; a host that supports pointer lock
   drains the request with `input::take_mouse_grab` after each frame.
-- **Draw** (`src/draw.rs`). Natives such as `draw_rect`, `draw_text`,
+- **Draw** (`native/src/draw.rs`). Natives such as `draw_rect`, `draw_text`,
   `fill_arc`, `draw_rect_gradient`, `draw_shadow` and `clip_push` append
   `DrawCommand`s to a buffer. The host drains the buffer and turns it into
   pixels; it implements rasterization only. A host that cannot do something
   should degrade it (fill a gradient with one stop, scissor a rounded clip
   square) rather than drop the command.
-- **Tessellation** (`src/tess.rs`). CPU geometry hosts should not re-derive.
+- **Tessellation** (`native/src/tess.rs`). CPU geometry hosts should not re-derive.
   `shadow_mesh` turns a shadow command into one non-overlapping triangle
   list, because a translucent shadow built from overlapping pieces shows
   every seam.
-- **The native interface** (`prelude/_base.ptl`, `prelude/input.ptl`, and
-  the private, renamed declarations in `prelude/_native.ptl`). Every native
+- **The native interface** (`src/_base.ptl`, `src/input.ptl`, and
+  the private, renamed declarations in `src/_native.ptl`). Every native
   this crate registers is declared there — `pub native fn mouse_x() -> int`,
   `pub native fn _native_rect(x: num, …, a?: num) = "draw_rect"` — which is where
   its parameter names, optional parameters, argument types and result type
@@ -69,7 +69,7 @@ input events → bind_frame_info / bind_input → clear_draw_commands
   (`petal_ui::interface()`). A script that imports `ui` loads only into an
   `Env` that registers the natives it refers to; a test holds the declarations
   to `register_all`, both ways.
-- **The `ui` package** (`prelude/`). `ui.ptl` is a facade of `pub import`s
+- **The `ui` package** (`src/`). `ui.ptl` is a facade of `pub import`s
   over its modules: `ui/input`, `ui/draw`, `ui/hit`, `ui/text`, `ui/layout`,
   `ui/interaction` (focus, list and scroll state, the text-editing logic,
   the popover runtime, drag and drop, the load state) and the deprecated
@@ -120,7 +120,7 @@ let commands = petal_ui::draw::take_draw_commands(&mut env);
 This crate is only the host contract. Running a script with no renderer
 attached — the `Headless` driver, input scenarios, drag tracing and the
 `petal-ui-run` / `petal-ui-propose-edit` CLIs — is
-[`petal-ui-headless`](../petal-ui-headless) (`core-libs/petal-ui-headless`),
+[`petal-ui-headless`](../../core-libs/petal-ui-headless) (`core-libs/petal-ui-headless`),
 which depends on this crate. A host links none of it.
 
 To make the widgets paint in the host's own colors, publish a palette once at
@@ -147,11 +147,11 @@ each resolved inside this crate so a host that knows nothing about them still
 draws the right picture:
 
 - **Layers** (`ui_layer`, `with_layer`, `ui_overlay`). `take_draw_commands`
-  sorts a frame by layer before handing it over (`src/compose.rs`).
+  sorts a frame by layer before handing it over (`native/src/compose.rs`).
 - **Hit testing** (`interact`, `ui_modal`, `pointer_captured`,
   `ui_target_rect`). Widgets register their rects; `bind_input` turns one
   frame's registrations into the registry the next is tested against
-  (`src/hit.rs`). A host reads the same registry to click a widget by id:
+  (`native/src/hit.rs`). A host reads the same registry to click a widget by id:
   `hit::targets(env)`, `Headless::click_target("Save")`.
 - **Retained drawing** (`cached_layer`, `draw_rects`). Lowered to the classic
   vocabulary by default; a host with render targets calls
@@ -187,7 +187,7 @@ argument (`--channel draw_commands --emit K --native-arg I --to V`;
 ## Versioning
 
 - The **interface version** is the `ui` package's version
-  (`prelude/petal.toml`, currently 0.2.0). It is what a host provides and
+  (`petal.toml`, currently 0.2.0). It is what a host provides and
   what a package's `[requires] ui = "…"` is matched against. 0.2.0 broke
   the fields' signatures: focus became the runtime's, so `text_field`,
   `commit_field`, `number_field` and the rest lost their leading `fc`, and
@@ -222,17 +222,17 @@ assert_eq!(ui.state_int("n"), Some(1));
 `petal-ui-run` is the command-line equivalent (see
 [headless-ui-run.md](../../docs/dev/headless-ui-run.md)).
 
-This crate's own tests run with `cargo test` (they use `petal-ui-headless` as
+This crate's own tests run with `cargo test` in `native/` (they use `petal-ui-headless` as
 a dev-dependency):
 
-- `tests/widgets.rs`: the component library, one worked test per widget —
+- `native/tests/widgets.rs`: the component library, one worked test per widget —
   synthetic clicks and keys, then assertions on state and draw commands.
-- `tests/hit.rs`: layers, hit testing, the target registry, `ui_measure` and
+- `native/tests/hit.rs`: layers, hit testing, the target registry, `ui_measure` and
   flow layout.
-- `tests/retained.rs`: `cached_layer`, `draw_rects`, the image and text-style
+- `native/tests/retained.rs`: `cached_layer`, `draw_rects`, the image and text-style
   additions, both in the lowered form every host gets and the form a host
   that asked for it gets.
-- `tests/prelude.rs`: the older prelude surface and compatibility
+- `native/tests/prelude.rs`: the older prelude surface and compatibility
   (shadowing, style records).
-- `tests/reference.rs`: fails if an export is missing from
+- `native/tests/reference.rs`: fails if an export is missing from
   [docs/reference.md](docs/reference.md).

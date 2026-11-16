@@ -24,7 +24,7 @@ Petal Core  →  Integrations  →  Apps
 
 | Tier | What lives here | Crates / packages |
 |------|-----------------|-------------------|
-| **Petal Core** | The language (compiler, IR, bytecode VM) and the shared interactivity layer (normalized input, the draw-command vocabulary, the `ui` package scripts import). | [`core/`](../../core/) (`petal`), [`core-libs/petal-ui/`](../../core-libs/petal-ui/) (`petal-ui`) |
+| **Petal Core** | The language (compiler, IR, bytecode VM) and the shared interactivity layer (normalized input, the draw-command vocabulary, the `ui` package scripts import). | [`core/`](../../core/) (`petal`), [`core-stdlib/ui/`](../../core-stdlib/ui/) (`petal-ui`) |
 | **Integrations** | Reusable *hosts* that embed Petal Core for one platform. Own platform *policy* (windowing, event loop, rasterization, file IO). | [`integrations/petal-desktop-sdl`](../../integrations/petal-desktop-sdl/) (native SDL2), [`integrations/petal-web-canvas`](../../integrations/petal-web-canvas/) (WASM + canvas), [`integrations/petal-web-html`](../../integrations/petal-web-html/) (WASM + DOM), [`integrations/petal-c-bridge`](../../integrations/petal-c-bridge/) (C ABI and C++ wrapper, for a host that brings its own platform) |
 | **Apps** | Full runnable applications that load Petal source: your programs, built on top of an integration. [`examples/custom-apps/`](../../examples/custom-apps/) holds worked examples, and [Garden](../../garden/README.md) is the largest app in the repo. | [`examples/custom-apps/`](../../examples/custom-apps/), [`garden/`](../../garden/README.md) |
 
@@ -257,7 +257,7 @@ A host that draws at fractional positions answers `true` from
 `subpixel()`: it registered the draw natives with
 `DrawOptions { subpixel: true, .. }` and renders `FrameCommand`s (see
 "Sub-pixel coordinates" in
-[`core-libs/petal-ui/docs/host-contract.md`](../../core-libs/petal-ui/docs/host-contract.md)).
+[`core-stdlib/ui/docs/host-contract.md`](../../core-stdlib/ui/docs/host-contract.md)).
 The timeline then records each frame with `take_frame_commands_traced` and
 hands the host `present_frame` (a recorded frame, for the window) and
 `render_frame_image` (the same, to pixels, for a frozen `screenshot`) in
@@ -323,7 +323,7 @@ three default to inert, and gamepad support arrives for free in every
   not a Cargo workspace. A Shape B app carries a path (or git) dependency on
   the integration — e.g. `petal-fps` declares
   `petal-sdl = { path = "../../../integrations/petal-desktop-sdl" }` and
-  `petal-ui = { path = "../../../core-libs/petal-ui" }` — and building the app builds the
+  `petal-ui = { path = "../../../core-stdlib/ui/native" }` — and building the app builds the
   library transitively.
 - Building either crate needs SDL2; on Homebrew macOS, set
   `LIBRARY_PATH=/opt/homebrew/lib` for the linker (see the petal-sdl notes).
@@ -342,7 +342,7 @@ three default to inert, and gamepad support arrives for free in every
      the same through [`petal-c-bridge`](embedding-c.md).
 2. **Is a capability you need generally useful?** Add it to the integration
    (or to `petal-ui`, if it's cross-platform — e.g. a new draw command belongs
-   in `core-libs/petal-ui/src/draw.rs`, not one host). Don't special-case it in the app.
+   in `core-stdlib/ui/native/src/draw.rs`, not one host). Don't special-case it in the app.
 3. **Can the app's influence on the host be an inert hook?** If yes, add the
    hook to the integration. If no, the capability probably belongs in the
    integration for all consumers.
@@ -375,7 +375,7 @@ it from your app — and when you find a bug there, fix it in the integration
 - [Embedding in C and C++](embedding-c.md) — the `petal-c-bridge` C ABI and C++ wrapper.
 - [Text and fonts](text-and-fonts.md) — what a host publishes so scripts can measure text.
 - [Architecture](../dev/Architecture.md) — Core internals (IR, bytecode VM, state).
-- [petal-ui](../../core-libs/petal-ui/) — the shared input and draw contract every host implements, and the `ui` package scripts import.
+- [petal-ui](../../core-stdlib/ui/) — the shared input and draw contract every host implements, and the `ui` package scripts import.
 - [Module System](../module-system.md) and [Packages](../packages.md) — imports, interface packages, `petal.toml` and dependencies.
 - [petal-desktop-sdl agent protocol](../../integrations/petal-desktop-sdl/docs/agent-protocol.md) and [game-dev guide](../../integrations/petal-desktop-sdl/docs/game-dev-guide.md).
 - [Debug protocol](../dev/debug-protocol.md) — shared by petal-sdl and petal-diagram-canvas.

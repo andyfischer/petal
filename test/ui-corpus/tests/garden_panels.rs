@@ -1,6 +1,6 @@
 //! Tests of petal-ui widgets inside a real Garden panel app, which need
 //! Garden's panel stubs to load (`import garden`) and so live here rather
-//! than in `core-libs/petal-ui/tests/`.
+//! than in `core-stdlib/ui/native/tests/`.
 
 use petal_ui::clipboard::{clipboard_text, set_clipboard_provider};
 use petal_ui::input::{InputEvent, Modifiers};

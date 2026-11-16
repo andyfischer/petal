@@ -32,7 +32,7 @@
 //                  its `native fn` declaration: the bundled `core` package
 //                  (core/packages/core/src/*.ptl, and core/packages/<name>/<name>.ptl for
 //                  the domain builtins behind an import) for the core builtins, the
-//                  `ui` package (core-libs/petal-ui/prelude/*.ptl) for the
+//                  `ui` package (core-stdlib/ui/src/*.ptl) for the
 //                  canvas ones. These are call syntax, not just documentation
 //                  — the registry binds `clamp(value: v, lo: 0, hi: 1)`
 //                  against them — so they are the source of truth for every
@@ -67,10 +67,10 @@ const corePackageSrc = join(repoRoot, "core/packages/core/src");
 // Its natives are declared in `_base.ptl`, `input.ptl` and (the private,
 // renamed ones) `_native.ptl`; every file is read, so a declaration that moves
 // between them needs no edit here.
-const uiPreludeDir = join(repoRoot, "core-libs/petal-ui/prelude");
-const petalUiDrawRs = join(repoRoot, "core-libs/petal-ui/src/draw.rs");
-const petalUiTextRs = join(repoRoot, "core-libs/petal-ui/src/text.rs");
-const petalUiInputRs = join(repoRoot, "core-libs/petal-ui/src/input.rs");
+const uiPreludeDir = join(repoRoot, "core-stdlib/ui/src");
+const petalUiDrawRs = join(repoRoot, "core-stdlib/ui/native/src/draw.rs");
+const petalUiTextRs = join(repoRoot, "core-stdlib/ui/native/src/text.rs");
+const petalUiInputRs = join(repoRoot, "core-stdlib/ui/native/src/input.rs");
 const preludeStdPtl = join(repoRoot, "core/prelude/std.ptl");
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -632,7 +632,7 @@ function extractPrelude(): {
  * Returns a map from draw-command tag (e.g. "rect") to its arguments ordered by
  * their data index (e.g. x, y, w, h, r, g, b), each with its type: geometry
  * (`i32_at` / `u32_at`) is a `number` — a sub-pixel host keeps it fractional,
- * see core-libs/petal-ui/src/subpixel.rs — and a colour channel (`u8_at`) or a
+ * see core-stdlib/ui/native/src/subpixel.rs — and a colour channel (`u8_at`) or a
  * text size (`as_i64`) an `int`.
  */
 function loadDrawArgNames(drawSource: string): Map<string, Param[]> {
@@ -693,7 +693,7 @@ function bufferedDrawSignature(
 /**
  * Parse the registrations in a register block: `register(env, "name",
  * native_fn, <effects>)` — petal-ui's wrapper, which also declares the
- * native's parameters (`core-libs/petal-ui/src/params.rs`) — or a bare
+ * native's parameters (`core-stdlib/ui/native/src/params.rs`) — or a bare
  * `env.register_native("name", native_fn, <effects>)`.
  */
 function parseNativeRegistrations(block: string): Array<{ name: string; fnName: string }> {
@@ -752,8 +752,8 @@ function extractCanvas(): {
   };
 
   const drawFiles = [
-    { file: "core-libs/petal-ui/src/draw.rs", source: drawSource },
-    { file: "core-libs/petal-ui/src/text.rs", source: textSource },
+    { file: "core-stdlib/ui/native/src/draw.rs", source: drawSource },
+    { file: "core-stdlib/ui/native/src/text.rs", source: textSource },
   ];
 
   // Drawing: register_draw + the offscreen-canvas register_canvas.
@@ -767,7 +767,7 @@ function extractCanvas(): {
     extractBlock(inputSource, /pub fn register_input_module\s*\(/),
   )) {
     addCanvasFn(reg.name, reg.fnName, "input", [
-      { file: "core-libs/petal-ui/src/input.rs", source: inputSource },
+      { file: "core-stdlib/ui/native/src/input.rs", source: inputSource },
     ]);
   }
 
@@ -810,11 +810,11 @@ export function buildManifest(): StdlibManifest {
       "core/src/builtins/*.rs",
       "core/packages/core/src/*.ptl",
       "core/packages/*/*.ptl",
-      "core-libs/petal-ui/prelude/*.ptl",
+      "core-stdlib/ui/src/*.ptl",
       "core/prelude/std.ptl",
-      "core-libs/petal-ui/src/draw.rs",
-      "core-libs/petal-ui/src/text.rs",
-      "core-libs/petal-ui/src/input.rs",
+      "core-stdlib/ui/native/src/draw.rs",
+      "core-stdlib/ui/native/src/text.rs",
+      "core-stdlib/ui/native/src/input.rs",
     ],
     categories,
     functions,

@@ -57,7 +57,7 @@ vendored copies excluded):
 | Where | Declarations | Rows known to the stock CLI? |
 |---|---|---|
 | `core/packages/**` | 193 | yes, registered in Rust |
-| `core-libs/petal-ui/prelude/**` | 106 | yes (the CLI registers petal-ui) |
+| `core-stdlib/ui/src/**` | 106 | yes (the CLI registers petal-ui) |
 | `~/cheesecake/engine/script/packages/cheesecake/*.ptl` | 163 | no |
 | `~/petal-creative/**` | 227 | no |
 | `garden/garden-script/packages/**` | 33 | no (only `garden-panel-run`) |

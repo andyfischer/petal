@@ -291,7 +291,7 @@ branch flip directly; a script's probes have no such record, so `deriv`
 tells a jump from a kink, and a kink from a curve's bend, by one more probe at
 a tenth of the step.
 
-`solve_step`, `ui/drag`'s [`vary`](../../core-libs/petal-ui/docs/drag.md) and
+`solve_step`, `ui/drag`'s [`vary`](../../core-stdlib/ui/docs/drag.md) and
 DM's path levers take their steps through one kernel, the `gn_step` native.
 The difference is what moves: `solve` returns new values for your inputs,
 while direct manipulation proposes an edit to the source.
@@ -319,5 +319,5 @@ The answer is now a close approximation, not the exact derivative; check
 - [`speculate`](speculate.md): what a probe puts back.
 - [Direct manipulation](direct-manipulation.md): the same solver, editing
   source literals.
-- [`ui/drag`](../../core-libs/petal-ui/docs/drag.md): `vary`, a drag that
+- [`ui/drag`](../../core-stdlib/ui/docs/drag.md): `vary`, a drag that
   solves for state paths every frame.

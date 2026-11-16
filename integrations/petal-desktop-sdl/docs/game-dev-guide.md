@@ -127,7 +127,7 @@ draw_text(text, x, y, font_size, r, g, b)   # text string
 
 `petal-ui` has more: rounded rectangles, ellipses, arcs, gradients, shadows,
 clipping, images, and the `ui` widget prelude. See
-[`core-libs/petal-ui/README.md`](../../../core-libs/petal-ui/README.md).
+[`core-stdlib/ui/README.md`](../../../core-stdlib/ui/README.md).
 
 ### The canvas persists between frames
 

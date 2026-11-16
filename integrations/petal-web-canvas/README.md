@@ -11,7 +11,7 @@ frame the host:
 3. drains the queued draw commands and plays them back through
    `CanvasRenderingContext2D`.
 
-The runtime shares the standard interactivity layer, [petal-ui](../../core-libs/petal-ui/),
+The runtime shares the standard interactivity layer, [petal-ui](../../core-stdlib/ui/),
 with [petal-desktop-sdl](../petal-desktop-sdl/) and Garden: the same input
 contract, draw-command vocabulary, offscreen canvases, and `ui` package, so
 petal-sdl sample scripts run unchanged. A script starts with `import ui`; the
@@ -33,7 +33,7 @@ npm run build        # production build to dist/
 ```
 
 Requires Rust and `wasm-pack` (`cargo install wasm-pack`). `build-wasm.sh`
-builds the crate in `rust/` (which depends on `../../core-libs/petal-ui` and the Petal
+builds the crate in `rust/` (which depends on `../../core-stdlib/ui/native` and the Petal
 core) and copies the output into `pkg/`; `npm run build:wasm` is the same
 step.
 
@@ -42,7 +42,7 @@ hands the source to the runtime.
 
 ## The script API
 
-The full vocabulary is petal-ui's; see the [petal-ui README](../../core-libs/petal-ui/README.md)
+The full vocabulary is petal-ui's; see the [petal-ui README](../../core-stdlib/ui/README.md)
 and, for the draw calls, Garden's
 [panel reference](../../garden/docs/petal-graphical-panels.md#draw-surface).
 The essentials:
@@ -85,7 +85,7 @@ text_input()                                 # typed text this frame
 ```
 
 Drag, click count, and modifiers are also available; see
-[core-libs/petal-ui/src/input.rs](../../core-libs/petal-ui/src/input.rs).
+[core-stdlib/ui/native/src/input.rs](../../core-stdlib/ui/native/src/input.rs).
 
 Frame info: `dt()` (seconds since the last frame), `frame_count()`,
 `screen_width()`, `screen_height()`.
@@ -151,7 +151,7 @@ A host that drives `PetalRuntime` itself builds it with
 `take_draw_buffer_subpixel()`, then decodes it with
 `decodeFrameCommands(buffer, runtime.draw_strings(), runtime.draw_sub_indices())`.
 `take_draw_buffer` and `new PetalRuntime()` are unchanged. The full contract
-is in [host-contract.md](../../core-libs/petal-ui/docs/host-contract.md#sub-pixel-coordinates).
+is in [host-contract.md](../../core-stdlib/ui/docs/host-contract.md#sub-pixel-coordinates).
 
 ## Edit mode (drag to edit the code)
 

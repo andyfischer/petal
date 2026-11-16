@@ -171,6 +171,18 @@ pub enum Slot {
     /// New text (lines after the first relative to the first: see
     /// [`dedent`]).
     New(String),
+    /// A new value, laid out like its siblings: a multi-line element
+    /// after one written an attribute per line is written the same way (as
+    /// Petal's own `insert_path` lays it out). Falls back to the value's
+    /// one-line source where that cannot be done.
+    Value(StaticValue),
+}
+
+impl Slot {
+    /// Whether this is a new entry (text or value).
+    pub fn is_new(&self) -> bool {
+        !matches!(self, Slot::Keep(_))
+    }
 }
 
 const PLACEHOLDER: &str = "__programs_as_documents_new_entry";
@@ -192,7 +204,7 @@ pub fn rewrite_entries(source: &str, start: u32, kind: ContainerKind, target: &[
         .iter()
         .filter_map(|s| match s {
             Slot::Keep(i) => Some(*i),
-            Slot::New(_) => None,
+            Slot::New(_) | Slot::Value(_) => None,
         })
         .collect();
     if let Some(bad) = kept.iter().find(|i| **i >= n) {
@@ -238,8 +250,10 @@ pub fn rewrite_entries(source: &str, start: u32, kind: ContainerKind, target: &[
         }
         debug_assert_eq!(cur, kept);
         for (p, slot) in target.iter().enumerate() {
-            if let Slot::New(text) = slot {
-                s = insert_text(&s, kind, &at(p), text)?;
+            match slot {
+                Slot::New(text) => s = insert_text(&s, kind, &at(p), text)?,
+                Slot::Value(v) => s = insert_value(&s, kind, &at(p), v)?,
+                Slot::Keep(_) => {}
             }
         }
         Ok(s)
@@ -296,6 +310,18 @@ fn longest_increasing(xs: &[usize]) -> Vec<usize> {
     }
     out.reverse();
     out
+}
+
+/// Insert `value` at insert path `path` of `source`, laid out like its
+/// siblings by Petal's own path edit; or, where that cannot write it (a
+/// helper call among children, a value it does not take), its one-line
+/// source as [`insert_text`] places it.
+fn insert_value(source: &str, kind: ContainerKind, path: &str, value: &StaticValue) -> Result<String, String> {
+    let child_ok = kind == ContainerKind::List || matches!(value, StaticValue::Element { .. });
+    if child_ok && let Ok(out) = insert_path(source, path, value, &Placement::End) {
+        return Ok(out);
+    }
+    insert_text(source, kind, path, &value.to_source())
 }
 
 /// Insert `text` at insert path `path` of `source`: a placeholder value is

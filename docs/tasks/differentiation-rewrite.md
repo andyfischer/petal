@@ -72,7 +72,7 @@ value kind. Nothing in this plan should make that harder; see
 - **The finite-difference path is already the default and the better tested
   one.** `ui/drag`'s `vary` defaults to `sensitivity: "fd"`. When the opt-in
   `"dual"` mode is used, it is checked against differences on the first frame
-  and replaced by them if they disagree (`core-libs/petal-ui/prelude/drag.ptl:790-806`).
+  and replaced by them if they disagree (`core-stdlib/ui/src/drag.ptl:790-806`).
 
 **The strongest argument against:** duals give the exact derivative, and
 finite differences give an approximation whose quality depends on the step
@@ -97,7 +97,7 @@ Petal source (`.ptl`), searched in this repo, `~/petal-creative`,
 | `core/packages/autodiff/autodiff.ptl` | The package itself: three `native fn` declarations |
 | `examples/console/differentiation.ptl` | Teaching example: derivative check, then gradient descent on `(x - 3)^2` |
 | `test/lerp-trig-random/main.ptl:12` | One line: `deriv_of(atan(dual(1.0, 1.0)))` |
-| `core-libs/petal-ui/prelude/drag.ptl` | `vary`'s opt-in `sensitivity: "dual"` (31 lines: `_dual_run`, `_undual`, `_dual_center`, `_jac_agrees`) |
+| `core-stdlib/ui/src/drag.ptl` | `vary`'s opt-in `sensitivity: "dual"` (31 lines: `_dual_run`, `_undual`, `_dual_center`, `_jac_agrees`) |
 | `examples/ui/d2-dial/app.ptl:33` | The one user of `sensitivity: "dual"` |
 | `~/biz/petal-lang.org/frontend/public/petal/examples/aim.ptl` | Website demo: Newton steps through a 70-step ballistic simulation, two dual passes per frame |
 
@@ -131,7 +131,7 @@ Tests: `test/vitest/autodiff.test.ts`, the dual cases in
 - **Embedding surface:** `Value::Dual`, `heap.get_dual` / `dual_value` and
   `PetalCxt::push_dual` are in the FFI docs (`docs/usage/ffi.md:276-279, 484-494`).
   Every native that takes a number has to decide what to do with a dual
-  (`core-libs/petal-ui/src/input.rs:776` reads the primal).
+  (`core-stdlib/ui/native/src/input.rs:776` reads the primal).
 
 Each new numeric native has to choose a dual rule. Each new analysis has to
 handle one more value kind.
@@ -993,7 +993,7 @@ None at the moment.
 ### Phase 3b part 1: shared edit-mode module + petal-sdl edit mode — done 2026-11-11
 
 - The host-independent half of Garden's drag mode is
-  `petal_ui::edit_mode` (`core-libs/petal-ui/src/edit_mode.rs`, wasm-safe):
+  `petal_ui::edit_mode` (`core-stdlib/ui/native/src/edit_mode.rs`, wasm-safe):
   the plain drag vocabulary (`DragFilter`, `DragSelector`, `DragCandidate`,
   `DragAlternative`, `DragOutcomeV2`, `SourceRewrite`, `CodeSpan`, …),
   selection to allow set (`DragFilter::allow_lines` / `allow_selection`,

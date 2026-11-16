@@ -4,7 +4,7 @@ Status, 2026-11-06: **P0 through P4 have shipped** on `main`. The design is
 [the proposal](../proposals/declarative-dragging.md); its "Implementation
 notes" section records every place the build departs from the design and is
 authoritative over the Design section where they differ. The user guide is
-[core-libs/petal-ui/docs/drag.md](../../core-libs/petal-ui/docs/drag.md); the
+[core-stdlib/ui/docs/drag.md](../../core-stdlib/ui/docs/drag.md); the
 `speculate` primitive is [docs/features/speculate.md](../features/speculate.md).
 
 ## What shipped
@@ -28,9 +28,9 @@ authoritative over the Design section where they differ. The user guide is
 | Multi-generator `for` in the CST, formatter and grammar | `cst_project` / `fmt` unit tests, the repo-corpus sweeps, tree-sitter corpus | `cargo test --lib`; `make expensive_lint_tests` |
 | Structural drops | `core/tests/all/drop_edit.rs`, `garden/garden-script/tests/model_drop.rs`, garden-app tests | `cargo test --test all drop_edit::`; `cd garden && cargo test -p garden-script --test model_drop` |
 | DM unchanged by the `Lever` refactor | the core `dm_*` tests, garden-script `dm_drag`, `dm_study ladder` output | `cargo test --test all dm_solve::` etc. |
-| The engine: candidate sets, specs, reorder animation, click vs drag, Escape, release over nothing, snapping, `when_far`, stickiness, ambiguity, `switch_to`, reload mid-drag, the examples against their scenarios | `core-libs/petal-ui/tests/drag.rs` (25), `drag_p2.rs` (13), `drag_tools.rs` (6) | `cd core-libs/petal-ui && cargo test --test drag --test drag_p2 --test drag_tools` |
-| Every `ui/drag` export documented | `core-libs/petal-ui/tests/reference.rs` | `cargo test --test reference` |
-| Frame gate, memo, static values over the panel corpus (picks up `examples/ui/*`) | petal-ui `gating`, `memo`, `static_*` tests | `cargo test` in core-libs/petal-ui |
+| The engine: candidate sets, specs, reorder animation, click vs drag, Escape, release over nothing, snapping, `when_far`, stickiness, ambiguity, `switch_to`, reload mid-drag, the examples against their scenarios | `core-stdlib/ui/native/tests/drag.rs` (25), `drag_p2.rs` (13), `drag_tools.rs` (6) | `cd core-stdlib/ui/native && cargo test --test drag --test drag_p2 --test drag_tools` |
+| Every `ui/drag` export documented | `core-stdlib/ui/native/tests/reference.rs` | `cargo test --test reference` |
+| Frame gate, memo, static values over the panel corpus (picks up `examples/ui/*`) | petal-ui `gating`, `memo`, `static_*` tests | `cargo test` in core-stdlib/ui/native |
 | UI goldens (60-frame `monkey:1`, seed 1) for the drag examples and kanban | `test/ui-golden/index.json` | `./tools/verify.ts --plan compiler --only 'examples/ui/d2-*' …` |
 | `examples/console/speculate.ptl` golden, opt vs `--no-opt`, static cache on/off | `test/example-golden/speculate.json` | `./tools/test-examples.ts` |
 | `DragExplain` | `test/vitest/petal-mcp-drag.test.ts` | `npx vitest run test/vitest/petal-mcp-drag.test.ts` |
@@ -43,7 +43,7 @@ On `main` at 9bb744b1 plus this commit's changes:
 | Suite | Result |
 |---|---|
 | core `cargo test --no-fail-fast` | 82 binaries, 2967 passed, 0 failed, 16 ignored |
-| core-libs/petal-ui `cargo test --no-fail-fast` | 35 binaries, 453 passed, 0 failed, 7 ignored |
+| core-stdlib/ui/native `cargo test --no-fail-fast` | 35 binaries, 453 passed, 0 failed, 7 ignored |
 | garden-script `cargo test -p garden-script` | 217 passed, 0 failed, 1 ignored (3 bloom tests failed before fix 2 below, and already failed at 3fe1d922, before D2) |
 | garden-app `cargo test -p garden-app` | 1004 passed, 0 failed |
 | petal-desktop-sdl `cargo test` (`LIBRARY_PATH=/opt/homebrew/lib`) | 82 passed, 0 failed |

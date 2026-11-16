@@ -1,23 +1,29 @@
 # core-stdlib
 
-Shared libraries written **entirely in Petal**. No Rust, no build step, no
-assets: a library here is a directory of `.ptl` modules that any host embedding
-Petal can use, and that you can copy into a project wholesale.
+Petal's standard packages. Every directory here is a *package*: a
+`petal.toml` and a directory of `.ptl` modules (`src/`) that a script reaches
+with an ordinary `import`. Most are written **entirely in Petal**: no Rust, no
+build step, no assets, so you can copy one into a project wholesale. A
+**native package** also carries, in `native/`, the Rust crate that registers
+the natives its modules declare with `native fn`; a host links that crate.
 
-| Library | What it is |
+| Package | What it is |
 |---------|------------|
-| [`bloom/`](bloom/) | Petal's widget library: buttons, menus, controls, text and inspector fields, tabs, splitters, tables, overlays, an animation core, and a vector icon set. Built on the `petal-ui` host layer |
+| [`ui/`](ui/) | **Native.** The petal-ui interface: input, drawing, hit testing, text and the widget prelude. `src/` declares and wraps the natives; `native/` is the Rust crate `petal-ui` that hosts link to register them (`petal_ui::register_all`) |
+| [`bloom/`](bloom/) | Petal's widget library: buttons, menus, controls, text and inspector fields, tabs, splitters, tables, overlays, an animation core, and a vector icon set. Built on `ui` |
 | [`text-layout/`](text-layout/) | Placing text: cap-height centring, alignment on both axes, wrapping, elision, caret hit-testing. What bloom draws every one of its labels through |
 | [`glsl/`](glsl/) | **Experimental.** Translates a Petal function to GLSL (`to_glsl(lambda)`), for hosts that take shader hooks as Petal code. Needs no host layer; built on the core `fn_info` / `fn_ast` builtins |
 
-This is deliberately separate from [`core-libs/petal-ui/`](../core-libs/petal-ui/), which is a Rust
-crate that gives a host its input and draw natives (plus the `ui` package that
-declares and wraps them). Everything in `core-stdlib` is downstream of that: ordinary Petal
-source, importable by an ordinary `import`.
+`bloom`, `text_layout` and `glsl` are downstream of `ui`'s natives (or of
+`core` alone): ordinary Petal source. The layout of a native package, and the
+plan for a standard way to register one, is in
+[docs/proposals/native-packages.md](../docs/proposals/native-packages.md).
 
 ## Using one
 
-All three are **bundled in the runtime**: the `petal` binary and every host
+`ui`'s declarations are always embedded, so `petal lint` resolves
+`import ui` with no host; running it needs a host that links `petal-ui`.
+The other three are **bundled in the runtime**: the `petal` binary and every host
 that embeds Petal carry their source, so a script imports them with nothing
 installed, registered or passed on the command line.
 

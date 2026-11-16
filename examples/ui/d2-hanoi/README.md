@@ -15,4 +15,4 @@ cargo run --bin petal-ui-run -- ../../examples/ui/d2-hanoi/app.ptl \
 The scenario moves disk 1 to peg 3, then drags disk 2 toward peg 3 (where
 disk 1 is) and lets go: it lands on peg 2. Final `pegs`: `[[4, 3], [2], [1]]`.
 
-Guide: [core-libs/petal-ui/docs/drag.md](../../../core-libs/petal-ui/docs/drag.md).
+Guide: [core-stdlib/ui/docs/drag.md](../../../core-stdlib/ui/docs/drag.md).

@@ -18,4 +18,4 @@ cd core-libs/petal-ui-headless
 cargo run --bin petal-ui-run -- ../../examples/ui/layers/app.ptl --frames 3 --targets
 ```
 
-Reference: [core-libs/petal-ui/docs/reference.md](../../../core-libs/petal-ui/docs/reference.md).
+Reference: [core-stdlib/ui/docs/reference.md](../../../core-stdlib/ui/docs/reference.md).

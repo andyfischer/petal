@@ -38,7 +38,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 /** Where natives are registered, by the repo whose contract they are. */
 const REPOS: [string, string][] = [
   ['core', 'core/src'],
-  ['petal-ui', 'core-libs/petal-ui/src'],
+  ['petal-ui', 'core-stdlib/ui/native/src'],
   ['petal-query', 'core-libs/petal-query/src'],
   ['garden', 'garden'],
   ['integrations', 'integrations'],

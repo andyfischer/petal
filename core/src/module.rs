@@ -2387,9 +2387,9 @@ print(score(1, 2))")
         let bundled = crate::bundled::package("ui").expect("ui is bundled");
         let (path, source) = bundled
             .sources()
-            .find(|(path, _)| *path == "draw.ptl")
-            .expect("ui has draw.ptl");
-        let name = format!("ui/{}", path.trim_end_matches(".ptl"));
+            .find(|(path, _)| *path == "src/draw.ptl")
+            .expect("ui has src/draw.ptl");
+        let name = format!("ui/{}", path.trim_start_matches("src/").trim_end_matches(".ptl"));
         let module = super::LoadedModule {
             name: Some(name),
             display_name: path.to_string(),

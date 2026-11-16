@@ -75,7 +75,7 @@ first instruction).
 The "Sort by top of stack" section of the output is self time per function.
 
 **3. Time the change.** `./tools/bench-opts.ts` for whole programs;
-`cd core-libs/petal-ui && cargo run --release --example bench_panel -- <file.ptl>` for
+`cd core-stdlib/ui/native && cargo run --release --example bench_panel -- <file.ptl>` for
 per-frame cost of a panel script. Take the **minimum** of several runs, not the
 mean: on a loaded machine the minimum is much the more stable estimator. The
 bench runs under the frame gate: a quiet script is skipped after its first
@@ -938,9 +938,9 @@ record untagged.
 
 ## Text wrap: native vs Petal
 
-Whether `text_wrap` / `wrap_rows` (`core-libs/petal-ui/src/text.rs`) could be
-Petal instead of Rust. Harness: `core-libs/petal-ui/examples/bench_text_wrap.rs`
-(`cargo run --release --example bench_text_wrap` in `core-libs/petal-ui`); the
+Whether `text_wrap` / `wrap_rows` (`core-stdlib/ui/native/src/text.rs`) could be
+Petal instead of Rust. Harness: `core-stdlib/ui/native/examples/bench_text_wrap.rs`
+(`cargo run --release --example bench_text_wrap` in `core-stdlib/ui/native`); the
 Petal side is `wrap_rows_reference` (`core-stdlib/text-layout/src/wrap_reference.ptl`),
 which makes one `text_advance` call per word and per run of blanks. Measured
 2026-11-08, p50 per frame, release, gate off, pointer moving, 548 px wrap, a
@@ -960,7 +960,7 @@ numbers as upper bounds; the ratios held across runs):
   11 ms a frame at 10k chars and 100 ms at 100k, against 0.2 ms and 1.8 ms.
   Petal is fine for a label or a short field (under 0.5 ms at 1k chars). The
   Petal version is the specification instead, and
-  `core-libs/petal-ui/tests/text_wrap_reference.rs` holds the two to the same
+  `core-stdlib/ui/native/tests/text_wrap_reference.rs` holds the two to the same
   rows over ~900 cases. Two native quirks it keeps: a paragraph's leading
   blanks make an over-wide first word overflow instead of breaking, and a tab
   is measured as one glyph advance.

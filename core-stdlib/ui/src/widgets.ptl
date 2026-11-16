@@ -352,7 +352,7 @@ pub fn text_area(id, r, buf, style)
 #
 # Draw it late, so it sits over the rest. An open menu is modal, and the
 # runtime closes it (Escape, a press outside) before the frame runs
-# (core-libs/petal-ui/src/popover.rs), so the press that closes it reaches
+# (core-stdlib/ui/native/src/popover.rs), so the press that closes it reaches
 # no widget under it. Code that reads the mouse itself (`mouse_pressed`
 # and `point_in`) is not covered by that, and stands down while `menu.open`.
 #

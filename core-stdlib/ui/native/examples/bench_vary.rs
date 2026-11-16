@@ -42,7 +42,7 @@ fn main() {
             runs = args.next().and_then(|s| s.parse().ok()).expect("--runs N");
         }
     }
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/ui");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/ui");
     let cases = [
         Case { name: "switch: between, 3 targets", dir: "d2-switch", edit: None, idle: (1, 3), drag: (6, 20) },
         Case { name: "dial: vary, 1 lever", dir: "d2-dial", edit: None, idle: (1, 3), drag: (6, 20) },

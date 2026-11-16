@@ -127,7 +127,7 @@ garbage, which is what drives the collections.
   (`core/packages/vec2/vec2.ptl`, `core-stdlib/glsl/src/glsl.ptl`,
   `examples/games/solar-system/app.ptl`, `examples/console/vec2_demo.ptl`,
   tests). On the Rust side `Value::Vec2` appears 70 times in 19 files,
-  including `core-libs/petal-ui/src/draw.rs` and `integrations/petal-c-bridge`.
+  including `core-stdlib/ui/native/src/draw.rs` and `integrations/petal-c-bridge`.
 - Autodiff (`deriv`, `dual(`) appeared in two files in `examples/`
   (`console/differentiation.ptl` and the `d2-dial` sensitivity option; an
   earlier count of 31 was stale). `Value::Dual` appeared 59 times in 24

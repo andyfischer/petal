@@ -60,7 +60,7 @@ centring the cap height is what a designer means by "centred in the button".
 ## Requirements
 
 A host that provides the `ui` interface — one that embeds
-[`petal-ui`](../../core-libs/petal-ui/): Garden panels, `petal-desktop-sdl`,
+[`petal-ui`](../../core-stdlib/ui/): Garden panels, `petal-desktop-sdl`,
 `petal-web-canvas`, the `petal-ui-run` driver, or your own embedder calling
 `petal_ui::register_all`. The manifest says so (`[requires] ui = ">=0.1"`),
 so a script that imports `text_layout` is refused at load anywhere else, and
@@ -188,7 +188,7 @@ caret_rect(s, r, style, i)  # a 1px bar spanning the line's real ink
 
 ## What is native, and why
 
-Five natives in [`core-libs/petal-ui/src/text.rs`](../../core-libs/petal-ui/src/text.rs) do the work
+Five natives in [`core-stdlib/ui/native/src/text.rs`](../../core-stdlib/ui/native/src/text.rs) do the work
 this library composes:
 
 | Native | What it answers |

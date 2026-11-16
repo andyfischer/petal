@@ -7,7 +7,7 @@
 # each one, finds the dragged element in each rendering, and builds the
 # interaction from those positions: snapping, floating, reordering, drop
 # targets, and the animation of everything that moves. The guide is
-# core-libs/petal-ui/docs/drag.md; the design is
+# core-stdlib/ui/docs/drag.md; the design is
 # docs/proposals/declarative-dragging.md.
 #
 #   state items = ["A", "B", "C"]

@@ -85,7 +85,7 @@ Inventory (2026-11-13) of what generated API docs would draw on:
 - `tools/extract-stdlib.ts` → `docs/stdlib.json` already extracts 254 native
   and `std` signatures, kept current by CI (`.github/workflows/ci.yml:123`).
   It has **no descriptions**. Prose lives in hand-written Markdown:
-  `docs/Builtins.md` (2,416 lines), `core-libs/petal-ui/docs/reference.md`
+  `docs/Builtins.md` (2,416 lines), `core-stdlib/ui/docs/reference.md`
   (689), `core-stdlib/bloom/docs/components.md` (358). Nothing ties a
   paragraph to its declaration except the heading text.
 - The extractor does not see Petal-source functions outside `std.ptl`.
@@ -99,7 +99,7 @@ Inventory (2026-11-13) of what generated API docs would draw on:
   |---|---|---|---|
   | `core/prelude` (std) | 20 | 100% | 1.6 |
   | `core/packages` (mostly `native fn`) | 182 | 7% | 3.1 |
-  | `core-libs/petal-ui/prelude` | 475 | 50% | 3.6 |
+  | `core-stdlib/ui/src` | 475 | 50% | 3.6 |
   | `core-stdlib` (bloom, text-layout, glsl) | 211 | 55% | 3.9 |
   | `examples/` | 422 | 50% | 2.1 |
   | `~/petal-creative` | 417 | 72% | 2.1 |
@@ -302,7 +302,7 @@ doc --brief core`.
 
 ### 2. A widget's style keys
 
-Before: `core-libs/petal-ui/prelude/widgets.ptl:196-199`
+Before: `core-stdlib/ui/src/widgets.ptl:196-199`
 
 ```petal ignore
 # `style` overrides any of {bg, fg, outline, focus, caret, selection, size,
@@ -442,7 +442,7 @@ without losing pages:
    `# petal-lint-ignore` directly above a declaration stays below its new
    `@doc`, and a block mixing a note or ruler with text is listed for a hand
    edit rather than split.
-2. **Petal's own libraries** (`core/prelude`, `core/packages/*`, `core-libs/petal-ui/prelude`,
+2. **Petal's own libraries** (`core/prelude`, `core/packages/*`, `core-stdlib/ui/src`,
    `core-stdlib/*`): run the converter, then review by hand. Each module
    header needs splitting into user-facing text (`@module_doc`) and
    maintainer notes (stay comments).

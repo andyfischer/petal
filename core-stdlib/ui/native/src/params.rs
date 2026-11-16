@@ -3,8 +3,8 @@
 //! `mouse_pressed(button: 0)`.
 //!
 //! The names are written once, in the `native fn` declarations of the `ui`
-//! package (`prelude/_base.ptl`, `prelude/input.ptl`, and the private ones in
-//! `prelude/_native.ptl`) — the interface `petal lint` reads without ever
+//! package (`src/_base.ptl`, `src/input.ptl`, and the private ones in
+//! `src/_native.ptl`) — the interface `petal lint` reads without ever
 //! registering these natives. This module is what makes those declarations
 //! the ones this host actually binds against: [`register`] is how every
 //! native in this crate is registered, and it gives the native the parameter
@@ -26,7 +26,7 @@ pub fn interface() -> &'static NativeDecls {
         let mut decls = NativeDecls::new();
         for (name, source) in crate::package_modules() {
             decls.absorb(
-                &NativeDecls::parse(source).unwrap_or_else(|e| panic!("prelude/{name}.ptl: {e}")),
+                &NativeDecls::parse(source).unwrap_or_else(|e| panic!("ui/src/{name}.ptl: {e}")),
             );
         }
         decls

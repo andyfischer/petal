@@ -2,7 +2,7 @@
 
 A sprint board drawn entirely by a Petal script inside a Garden panel: four
 lanes, twelve cards, and drag and drop built with
-[`ui/drag`](../../../core-libs/petal-ui/docs/drag.md): the board is a function
+[`ui/drag`](../../../core-stdlib/ui/docs/drag.md): the board is a function
 of its columns, each card says where it is (`place`) and which boards a drag
 can reach (`draggable` with `closest(moves_nested(...)) |> floating()`), and
 the engine does the rest. While a card is held the other cards slide apart to

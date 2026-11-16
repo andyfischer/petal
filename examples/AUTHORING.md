@@ -12,8 +12,8 @@ reference material lives elsewhere; link to it rather than guessing:
   [docs/writing-petal-guide.md](../docs/writing-petal-guide.md).
 - Builtins: [docs/Builtins.md](../docs/Builtins.md).
 - The `ui` package (widgets, theme, layout, text and color helpers; `import ui`):
-  [core-libs/petal-ui/README.md](../core-libs/petal-ui/README.md) (start there; it indexes the reference, widgets and drawing guides), with
-  [core-libs/petal-ui/prelude/](../core-libs/petal-ui/prelude/) as the source of truth (`ui.ptl` lists its modules).
+  [core-stdlib/ui/README.md](../core-stdlib/ui/README.md) (start there; it indexes the reference, widgets and drawing guides), with
+  [core-stdlib/ui/src/](../core-stdlib/ui/src/) as the source of truth (`ui.ptl` lists its modules).
 - The `bloom` component library (buttons, menus, controls and overlays that
   animate by default, in pure Petal):
   [core-stdlib/bloom/docs/components.md](../core-stdlib/bloom/docs/components.md).
@@ -63,7 +63,7 @@ a binary that is behind the checkout: it prints a `STALE GARDEN BINARY` banner
 and exits 3 without launching, so a headless launch into a log file leaves no
 debug port to find. Rebuild, or set `GARDEN_ALLOW_STALE=1` to launch it anyway
 (the banner still prints, and `/state` → `identity.freshness.stale` is true).
-The check counts committed changes under `garden/`, `core-libs/petal-ui/` and `core/`,
+The check counts committed changes under `garden/`, `core-stdlib/ui/` and `core/`,
 not uncommitted edits.
 
 `layout(...)` is required in `layout.ptl`. A bare `panel("...")` at top level
@@ -390,12 +390,12 @@ Alpha blends in sRGB, the way CSS and design tools do: `a: 128` over white is
 fills read 75% — so for a tint that must survive being drawn twice, compute an
 opaque color with `mix`/`lerp_color`, or use the prelude's `over`/`tint`/
 `hairline` helpers. See
-[Compositing flat tints](../core-libs/petal-ui/docs/drawing.md#compositing-flat-tints).
+[Compositing flat tints](../core-stdlib/ui/docs/drawing.md#compositing-flat-tints).
 
 ### The `ui` package
 
-Start the app with `import ui` (`core-libs/petal-ui/prelude/`) and call its functions bare. The
-catalogue is in [reference.md](../core-libs/petal-ui/docs/reference.md): `rect`
+Start the app with `import ui` (`core-stdlib/ui/src/`) and call its functions bare. The
+catalogue is in [reference.md](../core-stdlib/ui/docs/reference.md): `rect`
 (the built-in `Rect` under `ui`'s name), `point_in`, `hovered`,
 `clicked`, record overloads of every `draw_*` (each callable by name:
 `draw_rect_outline(rect: r, c: red, width: 2)`), alignment and ellipsizing
@@ -437,7 +437,7 @@ helpers instead of measuring a growing prefix per character:
 a, b)` returns the rectangles covering a character range. `clipboard_get()` /
 `clipboard_set(text)` are there for an app's own copy and paste. The
 catalogue entries are in
-[widgets.md](../core-libs/petal-ui/docs/widgets.md#text-field-caret-selection-clipboard-undo).
+[widgets.md](../core-stdlib/ui/docs/widgets.md#text-field-caret-selection-clipboard-undo).
 
 #### `context_menu` is a draw call — make it your last one
 

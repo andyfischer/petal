@@ -5,7 +5,7 @@
 //! `petal::run_deps`, `petal::memo`, `petal::effect_audit`, `petal::dm`)
 //! over the panel corpus, driven through `petal_ui_headless::harness::Headless`
 //! because a panel needs a UI host to run. Tests of `petal-ui` itself stay in
-//! `core-libs/petal-ui/tests/`.
+//! `core-stdlib/ui/native/tests/`.
 //!
 //! The one thing here is [`panel`], how every test loads an app: much of the
 //! corpus is Garden panels (`import garden`, often through an example's

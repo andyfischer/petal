@@ -1,8 +1,8 @@
-# The specification of the native `text_wrap_rows` (core-libs/petal-ui/src/
+# The specification of the native `text_wrap_rows` (core-stdlib/ui/native/src/
 # text.rs `wrap_lines` + `wrap_rows`), in Petal: what the rows of a wrap are.
 # The native stays the fast path — this is 30-85x slower on a document
-# (core-libs/petal-ui/examples/bench_text_wrap.rs; docs/dev/performance.md,
-# "Text wrap: native vs Petal") — and `core-libs/petal-ui/tests/text_wrap_reference.rs`
+# (core-stdlib/ui/native/examples/bench_text_wrap.rs; docs/dev/performance.md,
+# "Text wrap: native vs Petal") — and `core-stdlib/ui/native/tests/text_wrap_reference.rs`
 # holds the two to the same rows over ~900 (document, style, width) cases.
 # Change one, change the other.
 #

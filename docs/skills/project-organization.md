@@ -93,8 +93,8 @@ Lower layers must never depend on higher ones ([Layering](#layering-rules)).
 | 0 | `core/prelude/std.ptl` | Pure-Petal helpers implicitly imported everywhere. Must cost nothing when unused. | Petal |
 | 0 | `core/src/cli/`, `lsp/`, `fmt/`, `lint/` | The `petal` command-line tool and the developer tooling every Petal user runs. `cli`, `lsp` and `fix_imports` are behind the default-on `tooling` cargo feature, which embedders turn off. | Rust |
 | 0 | `cli/`, `core-libs/petal-pkgman/` | The `petal` binary, and the package manager only it links (git dependencies, `petal.lock`, `vendor/`, bundles). Embedders do not carry either. | Rust |
-| 1 | `core-libs/<crate>/` | Shared Rust library crates that sit above `core` and below every host. Most are **host interfaces** that hosts link so they all implement it the same way: the natives plus the Petal interface package that declares them (`core-libs/petal-ui` gives `ui`), or a wire protocol and its client (`gpp`, `petal-query`). The exceptions are tooling no host links, kept here beside the interface it serves: `petal-pkgman`, a library only the `petal` binary links (layer 0 above), and `petal-ui-headless`, which runs a `ui` script with no renderer (the test driver and the `petal-ui-run` CLI). | Rust (+ `.ptl` interface) |
-| 2 | `core-stdlib/<package>/` | **Pure Petal** libraries over a host interface or over `core`. No Rust, no build step. Bundled into the binary only if they meet the bundling bar below. | Petal |
+| 1 | `core-stdlib/<package>/` | **Packages**: a `petal.toml`, Petal modules in `src/` and, for a native package, the Rust crate that registers its natives in `native/` (`ui`: the crate `petal-ui` in `core-stdlib/ui/native`). Pure-Petal packages (`bloom`, `text_layout`, `glsl`) have no Rust and no build step. A native crate depends only on `core`. Bundled into the binary only if they meet the bundling bar below. See [docs/proposals/native-packages.md](../proposals/native-packages.md). | Petal (+ Rust in `native/`) |
+| 2 | `core-libs/<crate>/` | First-party Rust crates that are **not** Petal packages: a wire protocol and its client (`gpp`, `petal-query`), the package manager only the `petal` binary links (`petal-pkgman`, layer 0 above), `petal-ui-headless`, which runs a `ui` script with no renderer (the test driver and the `petal-ui-run` CLI), and `programs-as-documents`. | Rust |
 | 3 | `integrations/<host>/` | Hosts: the programs and libraries that embed Petal on one platform (SDL desktop, browser canvas, browser DOM, C/C++). Host-specific natives and that host's interface package live here, inside the host. | Rust/TS/C |
 | 4 | `garden/` | The Petal IDE. It is an application, kept here as the reference editor and the heaviest user of the embedding API. New code goes in Garden only if it is about the editor. `garden/gpp-apps/` holds only the GPP clients Garden ships as built-in commands, its test fixture and the `screens-demo` worked example. | Rust |
 | 5 | `examples/` | Small, runnable programs that teach the language or a host. `examples/console/` is a golden-tested corpus; do not add to it casually. See `examples/AUTHORING.md`. | Petal (Rust only in `custom-apps/`) |
@@ -140,12 +140,15 @@ Work through these in order and stop at the first "yes".
 
 5. **Is it a host interface that several hosts must implement the same way**
    (input, drawing, data fetching, a protocol)?
-   → A crate in `core-libs/`. It may depend only on `core` and other
-   `core-libs` crates. If the interface is a wire protocol, the protocol
-   definition lives here too, not inside one client of it.
+   → If scripts call it, it is a native package in `core-stdlib/<name>/`:
+   the `native fn` declarations in `src/`, the Rust crate that registers
+   them in `native/`, depending only on `core` (as `core-stdlib/ui` is). If
+   only Rust code uses it (a wire protocol and its client), it is a crate in
+   `core-libs/`, and the protocol definition lives there too, not inside one
+   client of it.
 
 6. **Is it a reusable library written in Petal** over `core` or a
-   `core-libs` interface, and does it pass R1–R3?
+   `core-stdlib` package, and does it pass R1–R3?
    → A package in `core-stdlib/<name>/` with a `petal.toml`, a facade module
    and a README. See
    [docs/dev/sharing-petal-libraries.md](../dev/sharing-petal-libraries.md).
@@ -198,19 +201,22 @@ examples/, garden/ (apps)
         ↓
 integrations/ (hosts)
         ↓
-core-stdlib/ (pure Petal packages)
+core-libs/ (Rust crates that are not packages: gpp, petal-query, petal-pkgman, …)
         ↓
-core-libs/ (shared library crates: host interfaces, petal-pkgman)
+core-stdlib/ (packages: pure Petal, or Petal + a native/ crate)
         ↓
 core/ (language + CLI)
 ```
 
 - `core/` depends on no other directory in the repo, and neither its source
   nor its tests name any specific host.
-- `core-libs/` depends on `core/` and other `core-libs/` crates only. **Never
-  on `garden/` or `integrations/`.**
-- `core-stdlib/` packages depend on `core`, `core-libs` interface packages
-  (via `[requires]`), and other `core-stdlib` packages.
+- `core-stdlib/` packages depend on `core` and other `core-stdlib` packages
+  (a host interface via `[requires]`, as bloom requires `ui`). A `native/`
+  crate depends on `core` only; it may take `core-libs` crates as
+  dev-dependencies for its tests (`petal-ui` tests through
+  `petal-ui-headless`).
+- `core-libs/` depends on `core/`, `core-stdlib/` native crates and other
+  `core-libs/` crates only. **Never on `garden/` or `integrations/`.**
 - `integrations/` never depend on `garden/` or on `examples/`.
 - `examples/` and `garden/` may depend on anything below them.
 - `tools/` may depend on anything, but nothing may depend on `tools/`.

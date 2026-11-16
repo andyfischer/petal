@@ -361,7 +361,7 @@ by `core/build.rs`, which fails the build if a directory is missing, and every
 always links. A test (`core/src/builtins/decls.rs`) holds the packages to
 exactly the natives `register_builtins` registers, and every declared form to the argument counts
 the native really takes. petal-ui's natives are declared by its `ui` package
-(`core-libs/petal-ui/prelude/_base.ptl`, `_native.ptl` and `input.ptl`), which is bundled in the
+(`core-stdlib/ui/src/_base.ptl`, `_native.ptl` and `input.ptl`), which is bundled in the
 binary too, so `petal lint` reads it with no host.
 
 **Every native declares what it does.** The third argument is its
@@ -1077,7 +1077,7 @@ Each of these is the place to read one part of the API in use.
 top-level [README](../../README.md#building-a-full-app-with-petal) lists every
 integration and app.
 
-- **petal-ui** (`core-libs/petal-ui/`) — the reusable layer: the input vocabulary
+- **petal-ui** (`core-stdlib/ui/`) — the reusable layer: the input vocabulary
   (`InputEvent`, `InputState`), the `DrawCommand` enum (with a
   `Host { tag, data }` pass-through so embedder-specific natives keep their
   place in the command stream), the `ui` interface package (scripts write

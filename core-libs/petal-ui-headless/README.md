@@ -1,6 +1,6 @@
 # petal-ui-headless
 
-Run a [petal-ui](../petal-ui) script with no renderer attached. This is
+Run a [petal-ui](../../core-stdlib/ui) script with no renderer attached. This is
 tooling built on petal-ui's host contract, kept out of `petal-ui` so a host
 links none of it.
 

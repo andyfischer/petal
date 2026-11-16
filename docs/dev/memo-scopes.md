@@ -208,9 +208,9 @@ special: the validation reads the live slots.
 ## Three things a library author runs into
 
 Met while moving petal-ui's widgets onto shared per-run cells (the layer, the
-clip and the pointer's floor in `core-libs/petal-ui/prelude/_frame.ptl`). Each is
+clip and the pointer's floor in `core-stdlib/ui/src/_frame.ptl`). Each is
 the mechanism above doing what it says, with a consequence that is easy to
-miss. `core-libs/petal-ui/tests/hit.rs` has the test that pins the outcome.
+miss. `core-stdlib/ui/native/tests/hit.rs` has the test that pins the outcome.
 
 **A plain module `var` is a new cell on every run.** A scope that read it
 recorded *that* cell, which is dead by the next run, so the scope never

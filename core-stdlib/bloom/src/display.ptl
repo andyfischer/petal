@@ -2,7 +2,7 @@
 # and pills, cards, the empty state, the keyboard-hint bar, section labels,
 # the scrollbar, the load view and the text spinner.
 #
-# These were `ui`'s (core-libs/petal-ui/prelude/widgets.ptl) until bloom
+# These were `ui`'s (core-stdlib/ui/src/widgets.ptl) until bloom
 # took over the widgets. The calls and the return values are the same, so a
 # port is a change of qualifier; the look is bloom's (labels placed by
 # text-layout, theme tokens, eased hover), and each `opts` record still takes

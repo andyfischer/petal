@@ -90,7 +90,7 @@ function git(args: string[]): string | null {
 // git, a binary with no build stamp).
 //
 // "Stale" is Garden's own rule (garden-app/src/version.rs, SOURCE_PATHSPECS —
-// keep the list below in step with it): source files under garden/, core-libs/petal-ui/
+// keep the list below in step with it): source files under garden/, core-stdlib/ui/
 // or core/ differ between the commit the binary was built from and HEAD.
 // Uncommitted edits are not counted.
 function requireFreshGarden(garden: string): void {
@@ -111,7 +111,7 @@ function requireFreshGarden(garden: string): void {
 
     const changed = git([
         'diff', '--name-only', built, 'HEAD', '--',
-        ':(top)garden', ':(top)core-libs/petal-ui', ':(top)core',
+        ':(top)garden', ':(top)core-stdlib/ui', ':(top)core',
         ':(top,exclude,glob)**/*.md', ':(top,exclude)garden/tools',
     ]);
     if (changed === '') return;

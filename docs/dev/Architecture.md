@@ -12,7 +12,7 @@ All of the above lives in `core/src/` as a single crate, the `petal`
 library that embedders link. The `petal` binary is the `cli/` crate: its
 `main.rs` registers the package manager (`core-libs/petal-pkgman`, kept out
 of the library so embedded runtimes do not carry it) and delegates to the
-CLI dispatcher in `core/src/cli/`. The libraries built on the crate are outside it: `core-libs/petal-ui`
+CLI dispatcher in `core/src/cli/`. The libraries built on the crate are outside it: `core-stdlib/ui`
 (the UI host library and the headless harness), `core-libs/petal-query`,
 `core-stdlib/` (Petal-source packages such as `bloom`), and the hosts under
 `integrations/` (SDL, web, the C bridge).

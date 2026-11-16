@@ -72,7 +72,7 @@ build with `--locked`, so each has to be refreshed or the next `--locked` build
 of that workspace fails (this includes Garden's):
 
 ```bash
-for d in core core-libs/petal-ui garden integrations/petal-c-bridge \
+for d in core core-stdlib/ui/native garden integrations/petal-c-bridge \
          integrations/petal-desktop-sdl examples/custom-apps/petal-fantasy-nes \
          examples/custom-apps/petal-fps; do
   cargo metadata --format-version 1 --manifest-path "$d/Cargo.toml" >/dev/null
@@ -88,7 +88,7 @@ above it. Apply the README decision. Then:
 
 ```bash
 git add core/Cargo.toml CHANGELOG.md README.md \
-  core/Cargo.lock core-libs/petal-ui/Cargo.lock garden/Cargo.lock \
+  core/Cargo.lock core-stdlib/ui/native/Cargo.lock garden/Cargo.lock \
   integrations/petal-c-bridge/Cargo.lock integrations/petal-desktop-sdl/Cargo.lock \
   examples/custom-apps/petal-fantasy-nes/Cargo.lock examples/custom-apps/petal-fps/Cargo.lock
 git commit -m "chore(release): petal X.Y.Z"

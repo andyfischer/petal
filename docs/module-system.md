@@ -773,7 +773,7 @@ CLI and the language server with no flag and no knowledge of the host;
 
 | Host | Package | Where it lives |
 | --- | --- | --- |
-| petal-ui (`petal_ui::register_all`) | `ui`, `ui/input` | `core-libs/petal-ui/prelude/` (bundled) |
+| petal-ui (`petal_ui::register_all`) | `ui`, `ui/input` | `core-stdlib/ui/src/` (bundled) |
 | Garden panels | `garden` | `garden/garden-script/packages/garden/` |
 | Garden's config host | `garden_config` | `garden/garden-script/packages/garden_config/` |
 | petal-desktop-sdl | `sdl` | `integrations/petal-desktop-sdl/packages/sdl/` |

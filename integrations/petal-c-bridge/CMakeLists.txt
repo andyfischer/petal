@@ -53,7 +53,7 @@ set(PETAL_BRIDGE_LIBRARY "${PETAL_CARGO_TARGET_DIR}/${_petal_profile_dir}/${_pet
 # Always invoke cargo: it is incremental, so an up-to-date build is a quick
 # no-op, and it tracks the Rust sources (including the vendored Petal crates)
 # far better than a hand-maintained DEPENDS list could. Cargo.toml points at
-# the in-repo Petal crates (../../core, ../../core-libs/petal-ui, ../../core-libs/petal-query).
+# the in-repo Petal crates (../../core, ../../core-stdlib/ui/native, ../../core-libs/petal-query).
 add_custom_target(petal_bridge_cargo
   COMMAND ${CMAKE_COMMAND} -E env "CARGO_TARGET_DIR=${PETAL_CARGO_TARGET_DIR}"
           "${CARGO_EXECUTABLE}" build --profile "${PETAL_BRIDGE_PROFILE}"

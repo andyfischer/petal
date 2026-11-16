@@ -1486,7 +1486,12 @@ const char* pb_source_text(const pb_source* s);
  * `tunable`: present for a setting (see Tunables above); `value` and `text`
  * are then those of `v` in `tunable(v, ...)`. `config` and `range`: its
  * deprecated mirrors. `text`: the right-hand side as written.
- * `comment`: the comment block directly above. A binding has either `value`
+ * `comment`: the comment block directly above. `doc`: present when the
+ * binding has a `@doc(...)`, as `petal doc --json` writes a doc:
+ *   {"body": "Gravity in px/s².", "summary": "Gravity in px/s².",
+ *    "params": {}, "returns": null, "options": {}, "example": [], "see": [],
+ *    "deprecated": null, "hidden": false, "extra": {"unit": "px"}}
+ * A binding has either `value`
  * (its static value: literals, lists, records, calls, variants of the file's
  * enums and names bound above) or `reason` (why it has none: arithmetic, a
  * function, state, an enum's own declaration, ...). Values:

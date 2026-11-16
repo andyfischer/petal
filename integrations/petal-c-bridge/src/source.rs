@@ -221,6 +221,12 @@ pub fn bindings_json(source: &str) -> Result<String, String> {
         if let Some(comment) = &b.comment {
             out.push_str(&format!(",\"comment\":{}", string(comment)));
         }
+        // Its `@doc(…)`, in the shape `petal doc --json` gives a doc.
+        if let Some(doc) = &b.doc
+            && let Ok(json) = serde_json::to_string(&petal::api_doc::DocJson::of(doc))
+        {
+            out.push_str(&format!(",\"doc\":{json}"));
+        }
         match &b.value {
             Ok(value) => {
                 out.push_str(",\"value\":");
@@ -512,6 +518,19 @@ mod tests {
         // A function is a binding with a reason instead of a value.
         assert_eq!(json[3]["name"], "f");
         assert!(json[3]["reason"].is_string());
+    }
+
+    #[test]
+    fn a_documented_binding_has_a_doc_beside_its_comment() {
+        let src = "// note\n@doc(\"Gravity in px/s².\", extra: {unit: \"px\"}) @tunable let G = 980.0\nlet P = 1\n";
+        let json: serde_json::Value = serde_json::from_str(&bindings_json(src).unwrap()).unwrap();
+        let g = &json[0];
+        assert_eq!(g["comment"], "note");
+        assert_eq!(g["doc"]["body"], "Gravity in px/s².");
+        assert_eq!(g["doc"]["summary"], "Gravity in px/s².");
+        assert_eq!(g["doc"]["extra"], serde_json::json!({"unit": "px"}));
+        assert_eq!(g["doc"]["deprecated"], serde_json::Value::Null);
+        assert!(json[1].get("doc").is_none());
     }
 
     #[test]

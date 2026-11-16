@@ -988,7 +988,8 @@ the file:
 petal::Source src(read_file("games/neon/config.ptl"));
 
 // What the file sets, as JSON: name, whether it is a setting, the comment
-// above it, the right-hand side as written, and its static value.
+// above it, its @doc (when it has one), the right-hand side as written, and
+// its static value.
 std::optional<std::string> bindings = src.bindings_json();
 
 // Change values where they are written. Nothing else in the file moves.

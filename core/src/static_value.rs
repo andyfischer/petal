@@ -720,6 +720,12 @@ pub struct StaticBinding {
     /// a file header does not attach itself to the first binding. `None` when
     /// there is no such comment.
     pub comment: Option<String>,
+    /// The binding's `@doc(…)` (docs/proposals/doc-annotation.md):
+    /// `@doc("Gravity in px/s²") @tunable let gravity = 980.0`. What a
+    /// host labels a setting with; [`comment`](Self::comment) stays for the
+    /// hosts that read it. A later rebinding without a doc (`x = 2`) keeps
+    /// the doc of the declaration. `None` when the binding has none.
+    pub doc: Option<crate::ast::Doc>,
     /// The binding is a *setting* ([`is_setting`]): written
     /// `let X = tunable(…)`, or with the deprecated `config let`. A host
     /// showing a file's settings can offer exactly these for editing. Always
@@ -957,6 +963,7 @@ pub(crate) fn bindings_of(stmts: &[Stmt], chars: &[char]) -> Vec<StaticBinding> 
             value: Err("an enum declaration".into()),
             text: None,
             comment: leading_comment(chars, stmt.span.start.offset as usize),
+            doc: stmt.doc.as_deref().cloned(),
             is_config: false,
             exported: stmt.exported,
             range: None,
@@ -1056,6 +1063,7 @@ pub(crate) fn bindings_of(stmts: &[Stmt], chars: &[char]) -> Vec<StaticBinding> 
                 value,
                 text,
                 comment,
+                doc: stmt.doc.as_deref().cloned(),
                 is_config,
                 exported: stmt.exported,
                 range,
@@ -1180,7 +1188,13 @@ fn lookup<'a>(
 /// keeps its original source position but carries the latest value).
 fn set_binding(bindings: &mut Vec<StaticBinding>, binding: StaticBinding) {
     match bindings.iter_mut().find(|entry| entry.name == binding.name) {
-        Some(entry) => *entry = binding,
+        Some(entry) => {
+            let earlier_doc = entry.doc.take();
+            *entry = binding;
+            if entry.doc.is_none() {
+                entry.doc = earlier_doc;
+            }
+        }
         None => bindings.push(binding),
     }
 }
@@ -1774,6 +1788,32 @@ let drag = 0.02
             binding(src, "drag").comment.as_deref(),
             Some("How much the hull drags.\n0.0 to 1.0")
         );
+    }
+
+    #[test]
+    fn static_bindings_reads_a_bindings_doc_beside_its_comment() {
+        let src = "\
+# A maintainer's note.
+@doc(\"Gravity in px/s² at 1.0 g\", extra: {unit: \"px/s^2\"}) @tunable let gravity = 980.0
+@doc(\"\"\"
+  The palette.
+  \"\"\")
+enum Tone
+  warm, cool
+let plain = 1
+";
+        let gravity = binding(src, "gravity");
+        let doc = gravity.doc.as_ref().expect("gravity's doc");
+        assert_eq!(doc.body.as_deref(), Some("Gravity in px/s² at 1.0 g"));
+        assert_eq!(doc.extra.len(), 1);
+        // The comment above the annotation is still the comment.
+        assert_eq!(gravity.comment.as_deref(), Some("A maintainer's note."));
+        // A rebinding keeps the declaration's doc while taking its value.
+        let rebound = binding(&format!("{src}gravity = 990.0\n"), "gravity");
+        assert_eq!(rebound.value, Ok(StaticValue::float(990.0)));
+        assert_eq!(rebound.doc.as_ref(), Some(doc));
+        assert_eq!(binding(src, "Tone").doc.and_then(|d| d.cleaned_body()).as_deref(), Some("The palette."));
+        assert_eq!(binding(src, "plain").doc, None);
     }
 
     #[test]

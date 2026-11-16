@@ -126,6 +126,14 @@ jobs:
           git diff --exit-code docs/stdlib.json \
             || { echo "::error::docs/stdlib.json is stale — run 'npm run stdlib:json' and commit the result"; exit 1; }
 
+      # The generated references (docs/Builtins.md, the ui and bloom
+      # references) against the sources' @doc. A reference still written by
+      # hand is reported and skipped until it is replaced.
+      - name: Check generated API references are current
+        run: |
+          npm run -s reference:check \
+            || { echo "::error::a generated reference is stale — run 'npm run reference' and commit the result"; exit 1; }
+
       # Report-only for now (docs/proposals/doc-annotation.md, step 3): the
       # libraries are not migrated to `@doc` yet. It becomes a failing check
       # with `--strict` once they are.

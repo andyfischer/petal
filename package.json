@@ -13,6 +13,8 @@
     "scan-secrets": "node tools/scan-secrets.ts",
     "petal": "node tools/run-petal.ts",
     "stdlib:json": "node tools/extract-stdlib.ts",
+    "reference": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tools/gen-reference.ts",
+    "reference:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tools/gen-reference.ts --check",
     "lint:docs": "node tools/run-petal.ts lint --rules-include=undocumented-pub core/prelude core/packages core-stdlib/ui/src core-stdlib/bloom core-stdlib/text-layout core-stdlib/glsl/src",
     "tsc": "tsc --noEmit"
   },

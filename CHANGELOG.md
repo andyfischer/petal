@@ -625,6 +625,22 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   call form and no optional parameter; a `std` parameter with a default is
   `optional`.
 
+- **Generated API references: `npm run reference`.** `tools/gen-reference.ts`
+  renders a Markdown reference from `petal doc --json`: the package doc, a
+  contents list of modules, and per item every call form with typed
+  parameters, its doc body, parameters, options table, returns, examples,
+  linked `see:` entries, a deprecated note and its source line. Items of an
+  internal module (`ui/_base`) are listed under the public module that
+  re-exports them; hidden items are left out. Its targets are
+  `docs/Builtins.md` (`core`, `std` and the domain packages),
+  `core-libs/petal-ui/docs/reference.md` and
+  `core-runtime/bloom/docs/components.md`, at the same paths. All three are
+  still written by hand, because their prose has not moved into `@doc` yet:
+  the tool leaves a file without its do-not-edit line alone,
+  `--coverage` lists what replacing it would lose, and `--replace` replaces
+  it. `npm run reference:check` (in CI) fails on a stale generated
+  reference.
+
 - **Lint rules for `@doc`.** `doc-params`: a `params:` key that no form of
   the overload set takes (with a did-you-mean), and a `see:` entry that names
   nothing the file can reach. `deprecated`: a use of an item whose `@doc` has

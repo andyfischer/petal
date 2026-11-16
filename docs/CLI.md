@@ -2020,6 +2020,14 @@ tagged `"schema": "petal-doc/1"`:
 
 The command exits 1 when the target names nothing. It takes no `-e`.
 
+**Consumers of the JSON** in this repo: `tools/extract-stdlib.ts`
+(`docs/stdlib.json`, `npm run stdlib:json`) and `tools/gen-reference.ts`
+(the generated Markdown references, `npm run reference`; see
+[docs/dev/scripts.md](dev/scripts.md)). Both run it on package directories
+and files rather than package names, so a `.ptl` edit is seen without
+rebuilding the binary that embeds the bundled copies. The website's API
+pages (petal-lang.org, `pnpm import:api`) read the same report.
+
 ### `init`, `add`, `remove`, `install`, `update`, `vendor`, `bundle` — The package manager
 
 ```

@@ -19,6 +19,16 @@ without `pub`. The module doc is carried on `module::LoadedModule`
 (`module_doc`), not on `Program`: nothing downstream of the loader needs it
 yet. Each bundled package's `petal.toml` now has a `description`.
 
+Step 6, the generated reference, has its tools (2026-11-15):
+`tools/extract-stdlib.ts` reads signatures and docs from `petal doc --json`,
+`npm run reference` (`tools/gen-reference.ts`) renders the Markdown
+references with a CI freshness check, and petal-lang.org imports the JSON
+(`pnpm import:api`) for its `/docs/api/` pages. `Builtins.md` and the `ui`
+and `bloom` references are **not replaced yet**: step 5 has not moved their
+prose into `@doc`, so replacing them would lose all of it.
+`npm run reference -- --coverage` measures that, and `--replace <id>` does
+the replacement once it reports nothing missing.
+
 ## Summary
 
 Petal gets a documentation syntax, and it is the only one: comments stop being
@@ -660,6 +670,11 @@ Each step lands green on its own:
    aliases, source line). Generate `Builtins.md`'s replacement. On
    petal-lang.org, `scripts/import-api.ts` builds one page per package and
    module from the JSON, with a reference section in the sidebar.
+   *Tools implemented 2026-11-15* (see the status at the top). Beyond this
+   text: parameter types in `docs/stdlib.json` are the declared ones (`num`)
+   rather than what the Rust body reads (`int`, `float`); the Markdown
+   generator refuses to overwrite a hand-written reference without
+   `--replace`, and reports what it would lose (`--coverage`).
 
 Steps 1–4 are roughly 1.5k lines with tests. Step 5 is mostly content review.
 

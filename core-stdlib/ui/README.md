@@ -234,5 +234,5 @@ a dev-dependency):
   that asked for it gets.
 - `native/tests/prelude.rs`: the older prelude surface and compatibility
   (shadowing, style records).
-- `native/tests/reference.rs`: fails if an export is missing from
-  [docs/reference.md](docs/reference.md).
+- `native/tests/reference.rs`: fails if an export has no `@doc` (or a module no
+  `@module_doc`); the reference is generated from them (`petal doc ui`).

@@ -14,6 +14,9 @@ are: the conventions they share, the theme, RectCut layout, motion, and each
 widget in depth. The widgets are written in Petal, in `src/widgets.ptl`
 (module `ui/widgets`, which `ui` re-exports).
 
+- Each widget's signature, style keys, result and example are also on its
+  `@doc` in the source (`petal doc ui/widgets`, `petal doc ui/interaction`),
+  which is what the generated reference and editor hover show.
 - For one line on every export, see [reference.md](reference.md).
 - For draw primitives, text measuring and offscreen layers, see
   [drawing.md](drawing.md).

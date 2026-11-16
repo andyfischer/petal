@@ -7,8 +7,10 @@ theme tokens, see [widgets.md](widgets.md); for the draw primitives in depth,
 [drawing.md](drawing.md); for what a host has to do to draw any of this,
 [host-contract.md](host-contract.md).
 
-A test (`native/tests/reference.rs`) fails if a name the package exports is missing
-from this page.
+The per-item text of this page now lives on the declarations, as `@doc` and
+`@module_doc` (`petal doc ui` prints it), and this page is due to be replaced
+by one generated from them. A test (`native/tests/reference.rs`) fails if an export
+has no `@doc`.
 
 Two apps to read beside it: `garden/examples/panels/gallery.ptl` uses every
 widget, and [`examples/ui/layers`](../../../examples/ui/layers/) is a HUD over a

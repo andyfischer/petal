@@ -598,6 +598,20 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   four `__enum_*`/`__declare_method` internals, `__record_of` and the
   test-only `__pending`/`__resolve`/`__reject` are `hidden: true`.
 
+- **The `ui` package documents itself.** Every `pub` item of
+  `core-libs/petal-ui/prelude` (`ui` and its modules, `ui/input` and
+  `ui/drag`) has a `@doc`, and every module a `@module_doc`, so `petal doc
+  ui` prints the whole reference and `undocumented-pub` and `doc-params`
+  report nothing for it. The per-item prose of `docs/reference.md` and of
+  `docs/widgets.md` moved onto the declarations: signatures' parameters,
+  the keys of each `style`/`opts` record (`options:`), return records,
+  examples and `see:` links. The reference's conventions are `ui`'s
+  `@module_doc`. The drawn widgets of `ui/widgets` say `deprecated:` with
+  their bloom replacement (the compiler's `ui-widget-moved` warning is
+  unchanged). Maintainer notes stay comments, and every module compiles to
+  the same IR as before. `tests/reference.rs` now checks that every export
+  has a doc with a summary, rather than that `reference.md` names it.
+
 - **Lint rules for `@doc`.** `doc-params`: a `params:` key that no form of
   the overload set takes (with a did-you-mean), and a `see:` entry that names
   nothing the file can reach. `deprecated`: a use of an item whose `@doc` has

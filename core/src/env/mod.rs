@@ -974,6 +974,13 @@ impl Env {
         Ok((exports, loaded))
     }
 
+    /// The resolver this Env loads modules through: for a tool that reads an
+    /// imported module's declarations without loading a program (the doc
+    /// rules of `petal lint`, `crate::lint::docs`).
+    pub(crate) fn module_registry(&self) -> &crate::module::ModuleRegistry {
+        &self.modules
+    }
+
     /// The files on disk that the program in `source` (at `origin`) imports,
     /// directly or through other modules, the entry file left out. Empty when
     /// the imports do not resolve: the program's own check reports that.

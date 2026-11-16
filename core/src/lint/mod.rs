@@ -89,6 +89,7 @@ mod dead_alias;
 mod vary_sensitivity;
 mod const_of_literal;
 mod dm_hints;
+mod docs;
 mod field_set;
 mod never_replays;
 mod repeat;
@@ -168,6 +169,10 @@ pub const TUNABLE_NOT_WHOLE: &str = "tunable-not-whole-initializer";
 pub const NEVER_REPLAYS: &str = "never-replays";
 pub const CONST_OF_LITERAL: &str = "const-of-literal";
 pub const VARY_SENSITIVITY: &str = "vary-sensitivity";
+pub const DOC_PARAMS: &str = "doc-params";
+pub const UNDOCUMENTED_PUB: &str = "undocumented-pub";
+pub const DEPRECATED: &str = "deprecated";
+pub const PACKAGE_DESCRIPTION: &str = "package-description";
 
 
 /// Every rule, in the order it runs.
@@ -299,6 +304,33 @@ pub const RULES: &[RuleInfo] = &[
         fixes: Fixes::None,
     },
     RuleInfo {
+        name: DOC_PARAMS,
+        summary: "a `@doc` `params:` key no form of the function takes, or a `see:` entry \
+                  that names nothing reachable from the file",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: DEPRECATED,
+        summary: "a use of an item whose `@doc` says `deprecated:`, with what to use instead",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: PACKAGE_DESCRIPTION,
+        summary: "a package's petal.toml `description` that disagrees with the first sentence \
+                  of its root module's `@module_doc`",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: UNDOCUMENTED_PUB,
+        summary: "a `pub` item with no `@doc` on any of its forms, or a package's root module \
+                  with no `@module_doc`",
+        opt_in: true,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
         name: NEVER_REPLAYS,
         summary: "a function whose calls are never replayed from the memo table, and why \
                   (an effect, a ticking input or a top-level `var` on every call)",
@@ -346,6 +378,30 @@ impl RuleFilter {
             None => !RULES.iter().any(|r| r.name == rule && r.opt_in),
         };
         included && !self.exclude.iter().any(|r| r == rule)
+    }
+
+    /// This filter with `rules` turned on as well (`--rules-enable`, a
+    /// project's `[lint] enable`): with no include list, the default rules
+    /// plus these; with one, that list plus these. Names that are not rules
+    /// are dropped.
+    pub fn with_enabled(&self, rules: &[String]) -> RuleFilter {
+        let rules: Vec<&String> = rules.iter().filter(|r| is_rule(r)).collect();
+        if rules.is_empty() {
+            return self.clone();
+        }
+        let mut include: Vec<String> = match &self.include {
+            Some(inc) => inc.clone(),
+            None => RULES.iter().filter(|r| !r.opt_in).map(|r| r.name.to_string()).collect(),
+        };
+        for r in rules {
+            if !include.contains(r) {
+                include.push(r.clone());
+            }
+        }
+        RuleFilter {
+            include: Some(include),
+            exclude: self.exclude.clone(),
+        }
     }
 
     /// Does any rule run? `--rules-include=` with an empty list runs none,
@@ -722,6 +778,32 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     // Compiles the file, so it is skipped outright when filtered out.
     if opts.rules.enabled(NEVER_REPLAYS) {
         p.apply(NEVER_REPLAYS, plan_never_replays_reports(&p.text, &chars, opts));
+    }
+
+    // The documentation rules read `@doc`/`@module_doc`
+    // (docs/proposals/doc-annotation.md); they report only.
+    if [DOC_PARAMS, UNDOCUMENTED_PUB, DEPRECATED, PACKAGE_DESCRIPTION]
+        .iter()
+        .any(|r| opts.rules.enabled(r))
+    {
+        let parsed =
+            crate::cst::parse_source_with_module_doc(&p.text, crate::source_map::ENTRY_FILE);
+        let (stmts, module_doc) = match parsed {
+            Ok((_, stmts, doc)) => (stmts, doc),
+            Err(_) => (reparse(&p.text)?.1, None),
+        };
+        let reports =
+docs::plan_doc_reports(
+            &p.text.chars().collect::<Vec<_>>(),
+            &stmts,
+            module_doc.as_ref(),
+            opts,
+            |r| opts.rules.enabled(r),
+        );
+        p.apply(UNDOCUMENTED_PUB, reports.undocumented);
+        p.apply(PACKAGE_DESCRIPTION, reports.description);
+        p.apply(DOC_PARAMS, reports.params);
+        p.apply(DEPRECATED, reports.deprecated);
     }
 
     if opts.rules.enabled(CONST_OF_LITERAL) {

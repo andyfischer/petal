@@ -256,9 +256,35 @@ pub fn cleandoc(text: &str) -> String {
     out.join("\n")
 }
 
+/// The summary of a doc body: its first sentence, which index pages,
+/// completion and hover headers show. The first paragraph of the cleaned
+/// text, its lines joined by spaces, up to and including the first `.`, `!`
+/// or `?` that ends the text or is followed by whitespace. A paragraph with
+/// no such stop is the summary whole.
+pub fn summary(body: &str) -> String {
+    let cleaned = cleandoc(body);
+    let paragraph = cleaned.split("\n\n").next().unwrap_or("");
+    let joined = paragraph.split_whitespace().collect::<Vec<_>>().join(" ");
+    let chars: Vec<char> = joined.chars().collect();
+    for (i, c) in chars.iter().enumerate() {
+        if matches!(c, '.' | '!' | '?') && chars.get(i + 1).is_none_or(|n| n.is_whitespace()) {
+            return chars[..=i].iter().collect();
+        }
+    }
+    joined
+}
+
 #[cfg(test)]
 mod tests {
-    use super::cleandoc;
+    use super::{cleandoc, summary};
+
+    #[test]
+    fn summary_is_the_first_sentence_of_the_first_paragraph() {
+        assert_eq!(summary("Arithmetic and rounding. And more."), "Arithmetic and rounding.");
+        assert_eq!(summary("\n  A UI library\n  written in Petal.\n\n  Second.\n"), "A UI library written in Petal.");
+        assert_eq!(summary("Version 0.4 is out"), "Version 0.4 is out");
+        assert_eq!(summary("No stop\n\nNext para."), "No stop");
+    }
 
     /// Source tools find a declaration's keyword past its docs, whose raw
     /// strings hold quotes, backslashes, brackets and `#`.

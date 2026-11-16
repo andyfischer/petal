@@ -356,6 +356,9 @@ pub struct LintArgs {
     /// `--rules`: list the rules and exit.
     pub list_rules: bool,
     pub rules: crate::lint::RuleFilter,
+    /// `--rules-enable=<r,..>`: opt-in rules to run as well as the others
+    /// (`crate::lint::RuleFilter::with_enabled`).
+    pub rules_enable: Vec<String>,
     /// Prove the rewrite before writing it: compile the original and the
     /// fixed text and compare their IR (`crate::ir_equiv`). A rewrite that
     /// cannot be accepted is never written; see `handle_lint`.

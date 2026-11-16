@@ -787,7 +787,7 @@ fn parse_fix_imports_args(args: &[String]) -> CliArgs {
 
 fn parse_lint_args(args: &[String]) -> CliArgs {
     let usage = "Usage: petal lint [--fix] [--json] [--strict | --lenient] [--rules-include=<r,..>] \
-                 [--rules-exclude=<r,..>] [<path>...]  |  petal lint --single-file [<options>] <file>  |  \
+                 [--rules-exclude=<r,..>] [--rules-enable=<r,..>] [<path>...]  |  petal lint --single-file [<options>] <file>  |  \
                  petal lint --rules  |  petal lint -e <code>";
     let mut opts = super::LintArgs::default();
     let p = parse_path_args(args, usage, |args, i| {
@@ -830,6 +830,9 @@ fn parse_lint_args(args: &[String]) -> CliArgs {
             }
             other if other == "--rules-exclude" || other.starts_with("--rules-exclude=") => {
                 opts.rules.exclude = rule_list(&value(i, "--rules-exclude"));
+            }
+            other if other == "--rules-enable" || other.starts_with("--rules-enable=") => {
+                opts.rules_enable.extend(rule_list(&value(i, "--rules-enable")));
             }
             _ => return false,
         }

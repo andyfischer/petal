@@ -871,7 +871,7 @@ SYNOPSIS
 
        <options>: [--fix [--verify[=ir|strict]]] [--json] [--strict | --lenient]
                   [--rules-include=<rules>] [--rules-exclude=<rules>]
-                  [--error-format full|bare] [-I <dir>]...
+                  [--rules-enable=<rules>] [--error-format full|bare] [-I <dir>]...
 
 DESCRIPTION
        The one command that asks whether code is right without running it.
@@ -1012,6 +1012,18 @@ DESCRIPTION
               --rules-include names it, because the fix is a judgement: a
               host can write a state by name, and a state keeps its value
               across a hot reload where a const(...) is rebuilt
+       doc-params (report only)
+              a @doc params: key that no form of the overload set takes,
+              or a see: entry that names nothing the file can reach
+       deprecated (report only)
+              a use of an item whose @doc says deprecated:, here or in an
+              imported module, with the doc's text
+       package-description (report only)
+              a petal.toml description that disagrees with the first
+              sentence of the package root module's @module_doc
+       undocumented-pub (opt-in, report only)
+              a pub item with no @doc on any form, or a package root module
+              with no @module_doc
        old-syntax (report only)
               a deprecated form the compiler accepts without a warning (the
               'export' spelling of 'pub'). Rewriting old syntax is 'petal
@@ -1079,6 +1091,10 @@ OPTIONS
 
        --rules-exclude=<rule>,...
               Run every rule but these.
+
+       --rules-enable=<rule>,...
+              Run these opt-in rules as well as the others. A project's
+              petal.toml can do the same: [lint] enable = [\"undocumented-pub\"].
 
 {COMMON}
 SEE ALSO

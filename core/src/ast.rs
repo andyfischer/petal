@@ -255,6 +255,11 @@ impl Doc {
         self.body.as_deref().map(crate::doc_annotation::cleandoc)
     }
 
+    /// The body's first sentence ([`crate::doc_annotation::summary`]).
+    pub fn summary(&self) -> Option<String> {
+        self.body.as_deref().map(crate::doc_annotation::summary)
+    }
+
     /// Each `example:` entry, cleaned like the body.
     pub fn cleaned_examples(&self) -> Vec<String> {
         self.example.iter().map(|e| crate::doc_annotation::cleandoc(e)).collect()

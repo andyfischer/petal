@@ -56,6 +56,7 @@ mod keyword_sync;
 mod layout;
 mod layout_probes;
 mod lifecycle_migration;
+mod lint_docs;
 mod lint_rewrites;
 mod lint_state_const;
 mod lint;

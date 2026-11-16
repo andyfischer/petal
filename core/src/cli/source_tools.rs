@@ -819,11 +819,12 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
             .map(|r| r.name.len())
             .max()
             .unwrap_or(0);
+        let rules = opts.rules.with_enabled(&opts.rules_enable);
         for rule in crate::lint::RULES {
-            let on = if opts.rules.enabled(rule.name) {
+            let on = if rules.enabled(rule.name) {
                 ""
-            } else if rule.opt_in && !opts.rules.exclude.iter().any(|r| r == rule.name) {
-                " (opt-in: --rules-include)"
+            } else if rule.opt_in && !rules.exclude.iter().any(|r| r == rule.name) {
+                " (opt-in: --rules-enable)"
             } else {
                 " (disabled)"
             };
@@ -859,6 +860,7 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
     let mut programs = 0usize;
     let mut failed_programs: Vec<&str> = Vec::new();
     let mut requires: Vec<String> = Vec::new();
+    let mut project_rules = ProjectRules::default();
 
     for input in &inputs {
         let is_module = input
@@ -906,9 +908,11 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
         // Stage 2: the rules. `--ir` has no source to read them off, and
         // `--rules-include=` (no rules) asks for the compile check alone.
         let mut rows: Vec<serde_json::Value> = Vec::new();
-        if !opts.ir && opts.rules.any_enabled() {
+        let rules = project_rules.for_input(opts, input);
+        if !opts.ir && rules.any_enabled() {
             lint_rules(
                 opts,
+                &rules,
                 input,
                 include_dirs,
                 broken,
@@ -985,6 +989,42 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
     }
 }
 
+/// The rules each file's project turns on in its `petal.toml`
+/// (`[lint] enable = […]`), read once per manifest.
+#[derive(Default)]
+struct ProjectRules {
+    by_manifest: std::collections::HashMap<PathBuf, Vec<String>>,
+}
+
+impl ProjectRules {
+    /// The rules that run over `input`: the command line's, plus the
+    /// `--rules-enable` ones, plus its project's `[lint] enable` unless
+    /// `--rules-include` named the rules outright.
+    fn for_input(&mut self, opts: &LintArgs, input: &Input) -> crate::lint::RuleFilter {
+        let mut enable = opts.rules_enable.clone();
+        if opts.rules.include.is_none()
+            && let Some(manifest) = input.path.as_deref().and_then(crate::package::find_manifest)
+        {
+            let listed = self.by_manifest.entry(manifest.clone()).or_insert_with(|| {
+                let dir = manifest.parent().unwrap_or(Path::new("."));
+                let listed = crate::package::Manifest::load(dir)
+                    .map(|m| m.lint_enable)
+                    .unwrap_or_default();
+                for r in listed.iter().filter(|r| !crate::lint::is_rule(r)) {
+                    eprintln!(
+                        "warning: {}: [lint] enable names '{r}', which is not a lint rule \
+                         (see 'petal lint --rules')",
+                        manifest.display()
+                    );
+                }
+                listed
+            });
+            enable.extend(listed.iter().cloned());
+        }
+        opts.rules.with_enabled(&enable)
+    }
+}
+
 /// The counters [`lint_rules`] adds to across files.
 struct RuleTally<'a> {
     errors: &'a mut usize,
@@ -1001,6 +1041,7 @@ struct RuleTally<'a> {
 /// here is not news.
 fn lint_rules(
     opts: &LintArgs,
+    rules: &crate::lint::RuleFilter,
     input: &Input,
     include_dirs: &[PathBuf],
     broken: bool,
@@ -1010,7 +1051,7 @@ fn lint_rules(
     let lint_opts = crate::lint::LintOptions {
         include_dirs: include_dirs.to_vec(),
         origin: input.path.clone(),
-        rules: opts.rules.clone(),
+        rules: rules.clone(),
     };
     let outcome = match crate::lint::lint_source(&input.source, &lint_opts) {
         Ok(o) => o,

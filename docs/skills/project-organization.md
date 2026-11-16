@@ -94,7 +94,7 @@ Lower layers must never depend on higher ones ([Layering](#layering-rules)).
 | 0 | `core/src/cli/`, `lsp/`, `fmt/`, `lint/` | The `petal` command-line tool and the developer tooling every Petal user runs. `cli`, `lsp` and `fix_imports` are behind the default-on `tooling` cargo feature, which embedders turn off. | Rust |
 | 0 | `cli/`, `core-libs/petal-pkgman/` | The `petal` binary, and the package manager only it links (git dependencies, `petal.lock`, `vendor/`, bundles). Embedders do not carry either. | Rust |
 | 1 | `core-libs/<crate>/` | Shared Rust library crates that sit above `core` and below every host. Most are **host interfaces** that hosts link so they all implement it the same way: the natives plus the Petal interface package that declares them (`core-libs/petal-ui` gives `ui`), or a wire protocol and its client (`gpp`, `petal-query`). The exceptions are tooling no host links, kept here beside the interface it serves: `petal-pkgman`, a library only the `petal` binary links (layer 0 above), and `petal-ui-headless`, which runs a `ui` script with no renderer (the test driver and the `petal-ui-run` CLI). | Rust (+ `.ptl` interface) |
-| 2 | `core-runtime/<package>/` | **Pure Petal** libraries over a host interface or over `core`. No Rust, no build step. Bundled into the binary only if they meet the bundling bar below. | Petal |
+| 2 | `core-stdlib/<package>/` | **Pure Petal** libraries over a host interface or over `core`. No Rust, no build step. Bundled into the binary only if they meet the bundling bar below. | Petal |
 | 3 | `integrations/<host>/` | Hosts: the programs and libraries that embed Petal on one platform (SDL desktop, browser canvas, browser DOM, C/C++). Host-specific natives and that host's interface package live here, inside the host. | Rust/TS/C |
 | 4 | `garden/` | The Petal IDE. It is an application, kept here as the reference editor and the heaviest user of the embedding API. New code goes in Garden only if it is about the editor. `garden/gpp-apps/` holds only the GPP clients Garden ships as built-in commands, its test fixture and the `screens-demo` worked example. | Rust |
 | 5 | `examples/` | Small, runnable programs that teach the language or a host. `examples/console/` is a golden-tested corpus; do not add to it casually. See `examples/AUTHORING.md`. | Petal (Rust only in `custom-apps/`) |
@@ -146,7 +146,7 @@ Work through these in order and stop at the first "yes".
 
 6. **Is it a reusable library written in Petal** over `core` or a
    `core-libs` interface, and does it pass R1–R3?
-   → A package in `core-runtime/<name>/` with a `petal.toml`, a facade module
+   → A package in `core-stdlib/<name>/` with a `petal.toml`, a facade module
    and a README. See
    [docs/dev/sharing-petal-libraries.md](../dev/sharing-petal-libraries.md).
    Bundle it into the binary (`core/build.rs`) only if it meets the
@@ -185,7 +185,7 @@ bundled only if it:
 - is used by at least two hosts or downstream projects *without being
   vendored*.
 
-Packages that don't meet this bar can still live in `core-runtime/`. Users
+Packages that don't meet this bar can still live in `core-stdlib/`. Users
 then reach them with a path dependency or `petal.toml`, and they are not
 compiled into the binary.
 
@@ -198,7 +198,7 @@ examples/, garden/ (apps)
         ↓
 integrations/ (hosts)
         ↓
-core-runtime/ (pure Petal packages)
+core-stdlib/ (pure Petal packages)
         ↓
 core-libs/ (shared library crates: host interfaces, petal-pkgman)
         ↓
@@ -209,8 +209,8 @@ core/ (language + CLI)
   nor its tests name any specific host.
 - `core-libs/` depends on `core/` and other `core-libs/` crates only. **Never
   on `garden/` or `integrations/`.**
-- `core-runtime/` packages depend on `core`, `core-libs` interface packages
-  (via `[requires]`), and other `core-runtime` packages.
+- `core-stdlib/` packages depend on `core`, `core-libs` interface packages
+  (via `[requires]`), and other `core-stdlib` packages.
 - `integrations/` never depend on `garden/` or on `examples/`.
 - `examples/` and `garden/` may depend on anything below them.
 - `tools/` may depend on anything, but nothing may depend on `tools/`.
@@ -250,7 +250,7 @@ were fixed on 2026-11-05 (the package manager by moving it to
 (`garden_script::headless`), with `garden/garden-panel-run` as the Garden
 build of its CLIs.
 Decided rather than moved: `bloom` stays bundled as
-the widget set (stated in `core-runtime/README.md`), and every
+the widget set (stated in `core-stdlib/README.md`), and every
 `garden/gpp-apps/` crate stays, because each is a built-in command Garden
 ships (`directory-browser`, `git-viewers`, `garden-diff`, `sqlite-browser`,
 `main-menu`), its test fixture (`gpp-test-app`) or the protocol's worked
@@ -270,7 +270,7 @@ in bloom, never in `ui/widgets`.**
 
 ### Bundled packages that don't meet the bundling bar
 
-1. **`glsl` is bundled but marked experimental** (`core-runtime/glsl`). An
+1. **`glsl` is bundled but marked experimental** (`core-stdlib/glsl`). An
    experimental API inside every binary gets locked to runtime versions.
    *Blocked on Cheesecake:* its engine package
    (`engine/script/packages/cheesecake/petal_fx.ptl`) and the Rivet game say
@@ -279,7 +279,7 @@ in bloom, never in `ui/widgets`.**
    resolve a path dependency. Unbundling first would break the engine at its
    next re-vendor.
    *Fix:* either have Cheesecake's script host register its vendored
-   `core-runtime/glsl` itself and then drop `glsl` from `core/build.rs`'s
+   `core-stdlib/glsl` itself and then drop `glsl` from `core/build.rs`'s
    list, or decide glsl is stable and drop the experimental label.
 
 ### Applications in the repo

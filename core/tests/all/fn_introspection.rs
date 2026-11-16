@@ -1,10 +1,10 @@
 //! `fn_info(f)` / `fn_ast(f)` — function introspection (experimental; see
 //! docs/features/function-introspection.md), and the `glsl` library built on it
-//! (core-runtime/glsl, docs/game-engine-features/petal-to-glsl.md).
+//! (core-stdlib/glsl, docs/game-engine-features/petal-to-glsl.md).
 //!
 //! The library half checks the two things the feature promises: the GLSL it
 //! writes for the eleven post effects of the original experiment is the text
-//! the Python stand-in wrote (the files under core-runtime/glsl/tests), and a
+//! the Python stand-in wrote (the files under core-stdlib/glsl/tests), and a
 //! script that calls it every frame translates once, then again only after an
 //! edit that changes the function.
 
@@ -185,7 +185,7 @@ struct World {
 }
 
 fn glsl_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core-runtime/glsl")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core-stdlib/glsl")
 }
 
 fn world(entry: &str, policy: RunPolicy) -> World {

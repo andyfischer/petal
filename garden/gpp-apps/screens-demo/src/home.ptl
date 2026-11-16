@@ -2,10 +2,10 @@
 # navigates to the detail screen via the first-class `navigate` request.
 #
 # Built on the petal-ui component library plus **bloom**
-# (core-runtime/bloom), the pure-Petal component set Garden registers as
+# (core-stdlib/bloom), the pure-Petal component set Garden registers as
 # importable modules: `ui_theme()` mirrors the host palette in Garden and
 # falls back to the built-in theme under a bare `garden-panel-run`, so this screen
-# runs headlessly too — with `-I core-runtime` so that the bloom
+# runs headlessly too — with `-I core-stdlib` so that the bloom
 # modules resolve outside Garden.
 import bloom
 import garden

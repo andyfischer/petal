@@ -124,7 +124,7 @@ garbage, which is what drives the collections.
 ### How often the boxed variants occur
 
 - `vec2(` appears 41 times in `.ptl` files in the repo, in 7 files
-  (`core/packages/vec2/vec2.ptl`, `core-runtime/glsl/src/glsl.ptl`,
+  (`core/packages/vec2/vec2.ptl`, `core-stdlib/glsl/src/glsl.ptl`,
   `examples/games/solar-system/app.ptl`, `examples/console/vec2_demo.ptl`,
   tests). On the Rust side `Value::Vec2` appears 70 times in 19 files,
   including `core-libs/petal-ui/src/draw.rs` and `integrations/petal-c-bridge`.

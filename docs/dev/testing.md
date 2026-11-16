@@ -358,7 +358,7 @@ Plans live in `test/verify-plans/`. A plan's `exclude` list drops directories
 from its corpus roots (the vitest fixtures under `test/vitest`). A plan's `include` list names module search
 directories (relative to each side's root) handed as `-I` to every side of the
 run — the UI driver, `petal lint`, and `petal run` alike — so corpus apps that
-import a shared Petal library (`core-runtime`, which ships the `bloom` package)
+import a shared Petal library (`core-stdlib`, which ships the `bloom` package)
 still compile. A step that dropped the `-I` would write such an app off as
 `unsupported` and silently skip its golden hash. The design is in
 [refactor-verification.md](refactor-verification.md).

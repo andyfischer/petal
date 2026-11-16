@@ -1906,7 +1906,7 @@ here and in every command that takes `-I`, because a library the user pointed
 at should say why it failed rather than go quietly missing:
 
 ```
-Error: core-runtime/bloom/petal.toml: line 2: the value of 'name' must be a quoted string or an inline table of them ({ path = "…" }), found 'bloom'
+Error: core-stdlib/bloom/petal.toml: line 2: the value of 'name' must be a quoted string or an inline table of them ({ path = "…" }), found 'bloom'
 ```
 
 This command takes no source file.

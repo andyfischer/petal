@@ -9,7 +9,7 @@
 #     authors: [{name, count, frac} …],
 #     recent:  [{short, subject, author, when} …] }
 #
-# Built on bloom's components (core-runtime/bloom/docs/components.md): cards
+# Built on bloom's components (core-stdlib/bloom/docs/components.md): cards
 # for the three sections, pill/badge header stats, load_view and empty_state;
 # and on `ui` for the split_h/cut_* RectCut layout and the load_state record
 # behind the async fetch.

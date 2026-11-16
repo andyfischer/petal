@@ -361,7 +361,7 @@ fn an_else_on_its_own_line_finds_its_if_by_column() {
         "let z = 1\nmatch x\n  when 1 -> if c then a else b end\n  when 2 -> d\nend\n",
     ]);
     // `else` at the end of a line opens a block that holds the next `if`
-    // (core-runtime/bloom/src/menu.ptl:256).
+    // (core-stdlib/bloom/src/menu.ptl:256).
     same(&[
         "let ink = if m.disabled then t.dim else\n  if m.danger then t.red else t.fg\nprint(ink)\n",
         "let ink = if m.disabled then t.dim else\n  if m.danger then t.red else t.fg end\nend\nprint(ink)\n",
@@ -574,25 +574,25 @@ fn fmt_tabs(src: &str) -> String {
 
 // ── Real files with their `end` lines stripped ───────────────────────────
 
-/// Files with many nested blocks, from `examples/` and `core-runtime/`.
+/// Files with many nested blocks, from `examples/` and `core-stdlib/`.
 const REAL_FILES: &[&str] = &[
     "examples/games/snake/app.ptl",
     "examples/games/2048/2048.ptl",
     "examples/games/minesweeper/minesweeper.ptl",
     "examples/games/pong/app.ptl",
     "examples/productivity/settings/widgets.ptl",
-    "core-runtime/bloom/src/menu.ptl",
-    "core-runtime/bloom/src/overlay.ptl",
-    "core-runtime/bloom/src/button.ptl",
-    "core-runtime/bloom/src/panes.ptl",
-    "core-runtime/bloom/src/theme.ptl",
+    "core-stdlib/bloom/src/menu.ptl",
+    "core-stdlib/bloom/src/overlay.ptl",
+    "core-stdlib/bloom/src/button.ptl",
+    "core-stdlib/bloom/src/panes.ptl",
+    "core-stdlib/bloom/src/theme.ptl",
 ];
 
 const MORE_REAL_FILES: &[&str] = &[
     "examples/productivity/file-browser/app.ptl",
     "examples/dashboards/network-graph/app.ptl",
     "examples/custom-apps/petal-fantasy-nes/carts/petal_quest/game.ptl",
-    "core-runtime/glsl/src/glsl.ptl",
+    "core-stdlib/glsl/src/glsl.ptl",
     "examples/productivity/restaurant-pos/app.ptl",
     "examples/productivity/video-timeline/app.ptl",
     "examples/productivity/notes/app.ptl",
@@ -610,7 +610,7 @@ const MORE_REAL_FILES: &[&str] = &[
     "examples/games/breakout/app.ptl",
     "examples/games/particle-sandbox/app.ptl",
     "examples/games/asteroids/app.ptl",
-    "core-runtime/bloom/src/fields.ptl",
+    "core-stdlib/bloom/src/fields.ptl",
     "examples/productivity/settings/preview.ptl",
     "examples/productivity/stock-trading/look.ptl",
     "examples/custom-apps/petal-fps/examples/fps_game.ptl",

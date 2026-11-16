@@ -71,7 +71,7 @@ interface Plan {
     /**
      * Extra module search directories for UI apps, relative to each side's
      * root (passed to `petal-ui-run -I`). An app that imports a shared Petal
-     * library — `core-runtime/bloom/src`, say — cannot compile without them, and
+     * library — `core-stdlib/bloom/src`, say — cannot compile without them, and
      * they are per-side so a source A/B resolves each side's own copy.
      */
     include?: string[];
@@ -583,7 +583,7 @@ function writeRepro(dir: string, kind: Kind, ctx: Ctx, t: Target, seed: number,
  */
 async function checkCompiles(ctx: Ctx, t: Target): Promise<CompileCheck> {
     // The plan's `include` dirs reach the compile check too, not just the UI driver: a
-    // corpus app that imports a shared library (core-runtime) must not be
+    // corpus app that imports a shared library (core-stdlib) must not be
     // written off as `unsupported` merely because this step forgot its -I.
     const one = (s: Side, p: string) =>
         exec(s.petal, ['lint', '--single-file', '--lenient', '--rules-include=', '--error-format', 'bare', ...s.includeArgs, p]);

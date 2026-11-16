@@ -298,7 +298,7 @@ fn library_files_convert_and_keep_their_ir() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     for rel in [
         "core/prelude/std.ptl",
-        "core-runtime/bloom/src/controls.ptl",
+        "core-stdlib/bloom/src/controls.ptl",
         "examples/games/physics-playground/app.ptl",
     ] {
         let path = root.join(rel);

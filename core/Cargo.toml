@@ -42,9 +42,9 @@ autodiff = { dir = "packages/autodiff", kind = "builtin" }
 json = { dir = "packages/json", kind = "builtin" }
 io = { dir = "packages/io", kind = "builtin" }
 ui = { dir = "../core-libs/petal-ui/prelude", kind = "ui" }
-bloom = { dir = "../core-runtime/bloom", kind = "library", feature = "bloom" }
-text_layout = { dir = "../core-runtime/text-layout", kind = "library", feature = "text_layout" }
-glsl = { dir = "../core-runtime/glsl", kind = "library", feature = "glsl" }
+bloom = { dir = "../core-stdlib/bloom", kind = "library", feature = "bloom" }
+text_layout = { dir = "../core-stdlib/text-layout", kind = "library", feature = "text_layout" }
+glsl = { dir = "../core-stdlib/glsl", kind = "library", feature = "glsl" }
 
 [dependencies]
 indexmap = { version = "2", features = ["serde"] }

@@ -1115,7 +1115,7 @@ vm.register_module("engine", engine_prelude_source);  // `import engine`
 vm.register_package("kit", {{"kit", kit_src},          // a package from memory:
                             {"shapes", shapes_src}});  // `import kit`, `import kit/shapes`
 vm.add_module_path("games/marble/lib");                // a directory of packages
-vm.add_package("path/to/petal/core-runtime/bloom");     // a package directory
+vm.add_package("path/to/petal/core-stdlib/bloom");     // a package directory
 ```
 
 All of these affect later loads. Nothing is in a script's scope but the core

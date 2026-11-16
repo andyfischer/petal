@@ -818,7 +818,7 @@ fn a_bundle_carries_the_bundled_libraries_the_program_imports() {
 #[test]
 fn a_bundled_library_named_under_dependencies_is_a_package_of_the_graph() {
     let w = World::new("bundled-libs-listed");
-    let bloom = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core-runtime/bloom");
+    let bloom = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core-stdlib/bloom");
     let bloom = std::fs::canonicalize(bloom).unwrap();
     w.write(
         "app/petal.toml",

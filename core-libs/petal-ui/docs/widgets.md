@@ -1,7 +1,7 @@
 # Widgets guide
 
 > **Deprecated.** bloom owns the widgets now: see
-> [core-runtime/bloom/docs/components.md](../../../core-runtime/bloom/docs/components.md).
+> [core-stdlib/bloom/docs/components.md](../../../core-stdlib/bloom/docs/components.md).
 > The drawn widgets this guide describes stay in `ui/widgets` for a
 > deprecation period; each call warns `[ui-widget-moved]` naming its bloom
 > replacement ([table](../../../docs/tasks/ui-refactor.md)). The parts that

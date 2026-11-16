@@ -16,7 +16,7 @@ reference material lives elsewhere; link to it rather than guessing:
   [core-libs/petal-ui/prelude/](../core-libs/petal-ui/prelude/) as the source of truth (`ui.ptl` lists its modules).
 - The `bloom` component library (buttons, menus, controls and overlays that
   animate by default, in pure Petal):
-  [core-runtime/bloom/docs/components.md](../core-runtime/bloom/docs/components.md).
+  [core-stdlib/bloom/docs/components.md](../core-stdlib/bloom/docs/components.md).
   It is bundled in the runtime, so `import bloom` works in Garden, in
   `petal lint` and in every other host with no setup.
 - The panel host (draw surface, input, fonts, sleep/wake, persistence):

@@ -89,7 +89,7 @@ if(PETAL_BRIDGE_BUILD_TESTS)
   target_link_libraries(petal_bridge_tests PRIVATE petal::bridge)
   target_compile_definitions(petal_bridge_tests PRIVATE
     PETAL_TEST_SCRATCH="${CMAKE_CURRENT_BINARY_DIR}/test-scratch"
-    PETAL_LIBS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../core-runtime")
+    PETAL_LIBS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../core-stdlib")
   if(NOT MSVC)
     target_compile_options(petal_bridge_tests PRIVATE -Wall -Wextra)
   endif()

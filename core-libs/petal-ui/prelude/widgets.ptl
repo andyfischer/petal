@@ -3,7 +3,7 @@
 # The drawn widgets: buttons, scrollbars, text fields and areas, context
 # menus and popovers, checkboxes, sliders, inspector fields, tab bars,
 # tooltips, modals, badges and cards, splitters, tables and the load view.
-# bloom (core-runtime/bloom) owns the widgets now, and every name here has a
+# bloom (core-stdlib/bloom) owns the widgets now, and every name here has a
 # bloom replacement; `petal lint` rule `ui-widget-moved` names it at each
 # call. `ui` still re-exports these during the deprecation period. Add
 # nothing here: new widgets go in bloom. The parts that draw nothing (focus,

@@ -1,4 +1,4 @@
-//! bloom's fields (`core-runtime/bloom/src/fields.ptl`) as a Garden panel sees
+//! bloom's fields (`core-stdlib/bloom/src/fields.ptl`) as a Garden panel sees
 //! them: the text field and text area on `ui`'s editing logic (selection,
 //! clipboard, undo, blur, cancel), the inspector fields that apply on Return
 //! or blur, and the one keyboard owner bloom's Tab ring shares with `ui`.

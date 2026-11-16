@@ -19,7 +19,7 @@ let g = glsl.glsl_function(duotone, ENV)
 ```
 
 **Experimental.** The library, its result record and the environment record
-may change. It lives in [`core-runtime/glsl`](../../core-runtime/glsl/) and is
+may change. It lives in [`core-stdlib/glsl`](../../core-stdlib/glsl/) and is
 built on the [function introspection](../features/function-introspection.md) builtins
 `fn_info` and `fn_ast`, which are experimental too.
 
@@ -41,7 +41,7 @@ construct.
 
 The `glsl` package is bundled in the runtime, so `import glsl` works in the
 `petal` CLI and in every host with nothing registered (see
-[core-runtime](../../core-runtime/README.md)). Then:
+[core-stdlib](../../core-stdlib/README.md)). Then:
 
 | | |
 |---|---|
@@ -245,7 +245,7 @@ shallow by design, and the translator does its own.
 The mapping is a port of `petal2glsl.py`, the Python stand-in of the original
 experiment (in the Cheesecake repository, `docs/petal-to-glsl-experiment/`),
 which read `petal show-ast --json` offline. The stand-in's eleven effects and
-its output are kept under `core-runtime/glsl/tests/`, and
+its output are kept under `core-stdlib/glsl/tests/`, and
 `the_eleven_effects_translate_to_the_stand_ins_glsl` checks that the library
 writes the same text, byte for byte, for all eleven (with
 `inline_captures: true`, which is what the stand-in did).

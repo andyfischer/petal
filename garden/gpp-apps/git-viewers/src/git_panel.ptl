@@ -22,7 +22,7 @@
 # lands. The header's ⟳ Refresh button `invalidate`s the log + working-tree
 # keys and re-loads — calling git again for fresh data.
 #
-# The widgets are bloom's (core-runtime/bloom/docs/components.md): the two
+# The widgets are bloom's (core-stdlib/bloom/docs/components.md): the two
 # draggable dividers are `splitter`s, the section headings are
 # `section_label`, the scrollbars `scrollbar`, load/empty states use
 # `spinner`/`spinner_glyph`/`empty_state`, and the bottom edge is a

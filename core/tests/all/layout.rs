@@ -189,7 +189,7 @@ fn b3_a_semicolon_after_an_endless_one_liner_is_an_error() {
 
 #[test]
 fn b4_a_line_starting_with_else_continues_the_if_at_or_left_of_it() {
-    // Hung under the `if` (core-runtime/glsl/src/glsl.ptl).
+    // Hung under the `if` (core-stdlib/glsl/src/glsl.ptl).
     let hung = "\
 let ty = if t == \"float\" then 1
     else if t == \"vec2\" then 2
@@ -222,7 +222,7 @@ print(bucket)
         "if a then\n  if b then x() end\nelse y() end\n",
     ]);
     // `else` at the end of a line opens a block that holds an `if`: the two
-    // are not merged (core-runtime/bloom/src/menu.ptl).
+    // are not merged (core-stdlib/bloom/src/menu.ptl).
     same(&[
         "let ink = if d then 1 else\n  if g then 2 else 3 end\nend\n",
         "let ink = if d then 1 else\n  if g then 2 else 3\n",

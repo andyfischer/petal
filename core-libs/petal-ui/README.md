@@ -21,7 +21,7 @@ Hosts that embed it: Garden panels (`garden/garden-script`),
 |---|---|
 | Find a function: every input helper, draw call, layout helper and widget, one line each | [docs/reference.md](docs/reference.md) |
 | Understand layers, hit testing, named targets, retained drawing, flow layout | [docs/reference.md](docs/reference.md#layers-and-hit-testing) |
-| The widgets themselves (bloom owns them; `ui`'s are deprecated) | [bloom's components](../../core-runtime/bloom/docs/components.md), and the deprecated [docs/widgets.md](docs/widgets.md) |
+| The widgets themselves (bloom owns them; `ui`'s are deprecated) | [bloom's components](../../core-stdlib/bloom/docs/components.md), and the deprecated [docs/widgets.md](docs/widgets.md) |
 | Draw: every primitive's signatures, text measuring, tints, gradients, shadows, offscreen layers | [docs/drawing.md](docs/drawing.md) |
 | Make things draggable: reorder, snap, drop targets, animated drops (`import ui/drag`) | [docs/drag.md](docs/drag.md) |
 | See what each `PRELUDE_LEVEL` added | [docs/changelog.md](docs/changelog.md) |
@@ -30,7 +30,7 @@ Hosts that embed it: Garden panels (`garden/garden-script`),
 | Run or test a script without a window | [Running scripts headlessly](#running-scripts-headlessly), [Testing](#testing) |
 
 For a component layer *above* this one, written in Petal rather than Rust, see
-[`core-runtime/bloom`](../../core-runtime/bloom/README.md): buttons, menus, controls
+[`core-stdlib/bloom`](../../core-stdlib/bloom/README.md): buttons, menus, controls
 and overlays that animate by default, built on these same primitives. The two
 compose in one script.
 

@@ -241,7 +241,7 @@ serving brotli gets the transfer under 1 MB.
     `check --lenient`;
   - `editor-support/tree-sitter-petal/grammar.js` comments still say
     `rust/src/…` (10 places);
-  - `core-runtime/glsl/tests/effects.ptl:4` cites a Cheesecake path that has
+  - `core-stdlib/glsl/tests/effects.ptl:4` cites a Cheesecake path that has
     moved;
   - `docs/features/inline-state.md` has three `TODO` examples (recursion
     and two debugger views; website item 7).

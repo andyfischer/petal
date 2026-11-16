@@ -161,7 +161,7 @@ prototype was built.
 
 ### 1. A parameter that may be nil
 
-Before (`core-runtime/glsl/src/glsl.ptl`, f27a7bea):
+Before (`core-stdlib/glsl/src/glsl.ptl`, f27a7bea):
 
 ```petal ignore
 # `node` is the construct refused, or nil for the function itself.

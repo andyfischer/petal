@@ -12,6 +12,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **`core-runtime/` is now `core-stdlib/`.** The pure-Petal libraries
+  (`bloom`, `text_layout`, `glsl`) moved directory; their package names and
+  `import`s are unchanged. A host that registers one of them from a checkout
+  path (`env.add_package(".../core-runtime/bloom")`, the C bridge's
+  `PETAL_LIBS_DIR`) or a project with a `path` dependency into it updates the
+  path.
+
 - **Indentation delimits blocks, and `end` is optional.** A block starts
   after its opener (`then`, `else`, `do`, the `->` of a `match` arm, the
   header of a `fn`, `class`, `enum` or `match`) and ends where the
@@ -1797,7 +1804,7 @@ way, for code written against an earlier checkout.
   captures, and a `code_hash` that survives reloads), and `fn_ast(f)` returns
   its syntax tree as records and lists. See
   [docs/features/function-introspection.md](docs/features/function-introspection.md).
-- `glsl` (experimental), a library in `core-runtime/`: `to_glsl(lambda)`
+- `glsl` (experimental), a library in `core-stdlib/`: `to_glsl(lambda)`
   translates a Petal function in the pure numeric subset to GLSL, refuses
   anything else with a line and column, and caches by code hash so a script
   that calls it every frame translates once per change. See

@@ -689,7 +689,7 @@ A host manages modules through `Env`:
 ```rust
 env.register_module("ui", include_str!("ui.ptl")); // in-memory module: the package name `ui`
 env.add_module_path(dir);                          // a directory of packages (or a package)
-env.add_package("core-runtime/bloom")?;              // a whole petal.toml library, one call
+env.add_package("core-stdlib/bloom")?;              // a whole petal.toml library, one call
 env.register_package("bloom", modules)?;           // the same, from in-memory sources; a source named
                                                    // "petal.toml" is the package's manifest
 petal_pkgman::register();                          // resolve git dependencies (once per process;

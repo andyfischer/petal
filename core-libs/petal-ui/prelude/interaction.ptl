@@ -3,7 +3,7 @@
 # The parts of a widget that draw nothing: the keyboard focus, list and
 # scroll state, the text-editing logic behind a field, the popover runtime,
 # drag and drop, the async load state and colour text. `ui` re-exports
-# every name here. The drawn widgets are bloom's (core-runtime/bloom); the
+# every name here. The drawn widgets are bloom's (core-stdlib/bloom); the
 # ones still in `ui/widgets` are deprecated.
 
 import ./input

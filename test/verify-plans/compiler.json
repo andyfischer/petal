@@ -13,7 +13,7 @@
     "test/vitest"
   ],
   "include": [
-    "core-runtime",
+    "core-stdlib",
     "garden/garden-script/packages",
     "integrations/petal-desktop-sdl/packages",
     "integrations/petal-web-html/packages",

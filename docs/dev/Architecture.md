@@ -14,7 +14,7 @@ library that embedders link. The `petal` binary is the `cli/` crate: its
 of the library so embedded runtimes do not carry it) and delegates to the
 CLI dispatcher in `core/src/cli/`. The libraries built on the crate are outside it: `core-libs/petal-ui`
 (the UI host library and the headless harness), `core-libs/petal-query`,
-`core-runtime/` (Petal-source packages such as `bloom`), and the hosts under
+`core-stdlib/` (Petal-source packages such as `bloom`), and the hosts under
 `integrations/` (SDL, web, the C bridge).
 
 The term graph is the canonical, introspectable IR — provenance, slicing,

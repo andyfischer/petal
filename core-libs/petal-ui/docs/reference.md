@@ -476,7 +476,7 @@ frame (its slots under `ui_measure` are not the ones it has when drawn).
 ## Widgets
 
 > **Deprecated.** bloom owns the widgets now
-> ([core-runtime/bloom](../../../core-runtime/bloom/docs/components.md)).
+> ([core-stdlib/bloom](../../../core-stdlib/bloom/docs/components.md)).
 > The drawn widgets below stay in `ui/widgets` for a deprecation period, and
 > each call warns `[ui-widget-moved]` with its bloom replacement
 > ([table](../../../docs/tasks/ui-refactor.md)). What draws nothing — focus,

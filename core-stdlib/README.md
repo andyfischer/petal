@@ -1,4 +1,4 @@
-# core-runtime
+# core-stdlib
 
 Shared libraries written **entirely in Petal**. No Rust, no build step, no
 assets: a library here is a directory of `.ptl` modules that any host embedding
@@ -12,7 +12,7 @@ Petal can use, and that you can copy into a project wholesale.
 
 This is deliberately separate from [`core-libs/petal-ui/`](../core-libs/petal-ui/), which is a Rust
 crate that gives a host its input and draw natives (plus the `ui` package that
-declares and wraps them). Everything in `core-runtime` is downstream of that: ordinary Petal
+declares and wraps them). Everything in `core-stdlib` is downstream of that: ordinary Petal
 source, importable by an ordinary `import`.
 
 ## Using one

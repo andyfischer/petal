@@ -83,7 +83,7 @@ draw_text(label, {x: x, y: baseline - m.baseline}, style)
 ```
 
 In practice, don't write that either: use
-[`core-runtime/text-layout`](../../core-runtime/text-layout/), which is this
+[`core-stdlib/text-layout`](../../core-stdlib/text-layout/), which is this
 arithmetic plus alignment, wrapping and caret hit-testing.
 
 A host that binds no vertical metrics still answers, with typical UI-sans

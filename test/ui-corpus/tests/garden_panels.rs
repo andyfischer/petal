@@ -23,7 +23,7 @@ fn the_email_client_search_field_selects_copies_and_undoes() {
     set_clipboard_provider(None);
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let app = root.join("examples/productivity/email-client/app.ptl");
-    let mut ui = petal_ui_corpus::panel(&app, 1268, 778, &[root.join("core-runtime")])
+    let mut ui = petal_ui_corpus::panel(&app, 1268, 778, &[root.join("core-stdlib")])
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
     let q = |ui: &Headless| ui.state_string("q").unwrap();
     ui.frame().unwrap();

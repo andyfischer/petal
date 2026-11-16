@@ -18,7 +18,7 @@
 # into a selectable `text_view`. For the OVERVIEW (left row 0): a horizontal
 # BAR CHART of every object's row count — the "visualizer".
 #
-# The widgets are bloom's (core-runtime/bloom/docs/components.md): the
+# The widgets are bloom's (core-stdlib/bloom/docs/components.md): the
 # draggable divider is a `splitter`, the chart bars are `progress` bars,
 # headings are `section_label`, the scrollbars `scrollbar`, load/empty states
 # use `spinner`/`spinner_glyph`/`empty_state`, and the bottom edge is a

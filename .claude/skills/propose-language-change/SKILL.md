@@ -38,7 +38,7 @@ Then read what already exists:
   that touches the area. An earlier plan may have already decided or rejected
   this; say so if it did.
 - The implementation: `core/src/` (lexer, parser, compiler, `backend/bytecode/`,
-  builtins), plus `core-libs/` and `core-runtime/` when the change reaches them.
+  builtins), plus `core-libs/` and `core-stdlib/` when the change reaches them.
 
 ## 2. Find where it matters in real code
 
@@ -46,7 +46,7 @@ Search the Petal corpus for the places the change would touch:
 
 - `examples/` (console, games, productivity, dashboards, ui, custom-apps)
 - `garden/` (its `.ptl` scripts and `init.ptl`)
-- `core-libs/`, `core-runtime/`, `test/`
+- `core-libs/`, `core-stdlib/`, `test/`
 - any other Petal-using projects named in `CLAUDE.md` or `CLAUDE.local.md`
 
 Record how often the relevant pattern occurs and where, with `file:line`

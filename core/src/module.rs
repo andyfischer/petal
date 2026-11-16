@@ -2588,9 +2588,9 @@ print(score(1, 2))")
         let mut env = Env::new();
         let err = env.load_program(entry).unwrap_err().to_string();
         assert!(err.contains("not in this build of Petal"), "{err}");
-        env.register_package("text_layout", library_as_bundled("../core-runtime/text-layout"))
+        env.register_package("text_layout", library_as_bundled("../core-stdlib/text-layout"))
             .unwrap();
-        env.register_package("bloom", library_as_bundled("../core-runtime/bloom"))
+        env.register_package("bloom", library_as_bundled("../core-stdlib/bloom"))
             .unwrap();
         // Their manifests ride along, so their [requires] are checked.
         let err = env.load_program(entry).unwrap_err().to_string();

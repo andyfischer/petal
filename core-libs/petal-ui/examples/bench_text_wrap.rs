@@ -6,7 +6,7 @@
 //!   MEMO_STATS=1 cargo run ...     # also the memo's counters for each case
 //!
 //! The Petal side is `wrap_rows_reference`
-//! (`core-runtime/text-layout/src/wrap_reference.ptl`), the specification of
+//! (`core-stdlib/text-layout/src/wrap_reference.ptl`), the specification of
 //! `text.rs`'s `wrap_lines` + `wrap_rows`, which measures with `text_advance`
 //! once per word. `tests/text_wrap_reference.rs` runs the equivalence pass
 //! below as a test; the corpus is `tests/support/text_wrap_corpus.rs`.

@@ -109,7 +109,7 @@ a class whose fields are `num`.)
 ## 5. Suggestions compound
 
 An applied annotation is evidence for the next pass, through the flows-into
-source. On `core-runtime/bloom/src/motion.ptl` the first pass finds 16
+source. On `core-stdlib/bloom/src/motion.ptl` the first pass finds 16
 annotations, and those 16 make 6 more visible on the second:
 
 ```
@@ -215,7 +215,7 @@ cargo test --test all suggest::                        # the command, end to end
 cargo test --test suggest_return_types           # loop-tail return types
 
 B=core/target/debug/petal
-$B suggest -I core-runtime core-runtime/bloom/src/motion.ptl
+$B suggest -I core-stdlib core-stdlib/bloom/src/motion.ptl
 $B suggest --json -e 'fn f(a)
   len(a)
 end

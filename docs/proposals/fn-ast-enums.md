@@ -42,7 +42,7 @@ and 3 assignment-target kinds, all as strings. The strings come from Rust:
 change what Petal programs see.
 
 **Who reads it.** One Petal program reads `fn_ast` today:
-`core-runtime/glsl/src/glsl.ptl`. Cheesecake's `tests/script_host_tests.cpp:4498`
+`core-stdlib/glsl/src/glsl.ptl`. Cheesecake's `tests/script_host_tests.cpp:4498`
 only counts how many times the native is called. There are no other `.ptl`
 users in this repo, `garden/`, `~/cheesecake/games`, `~/petal-creative` or
 `~/worlds-fair/ui/ptl`.
@@ -127,7 +127,7 @@ Errors are the existing enum errors:
 
 ## Before and after
 
-All "before" snippets are quoted from `core-runtime/glsl/src/glsl.ptl` at
+All "before" snippets are quoted from `core-stdlib/glsl/src/glsl.ptl` at
 f27a7bea, which passes `core/tests/all/fn_introspection.rs`. All "after" snippets
 are **proposed**. No prototype was built.
 

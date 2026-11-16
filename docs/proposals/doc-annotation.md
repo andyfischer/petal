@@ -86,7 +86,7 @@ Inventory (2026-11-13) of what generated API docs would draw on:
   and `std` signatures, kept current by CI (`.github/workflows/ci.yml:123`).
   It has **no descriptions**. Prose lives in hand-written Markdown:
   `docs/Builtins.md` (2,416 lines), `core-libs/petal-ui/docs/reference.md`
-  (689), `core-runtime/bloom/docs/components.md` (358). Nothing ties a
+  (689), `core-stdlib/bloom/docs/components.md` (358). Nothing ties a
   paragraph to its declaration except the heading text.
 - The extractor does not see Petal-source functions outside `std.ptl`.
   `ui`'s Petal layer has ~366 `pub fn` (`draw.ptl` 120, `widgets.ptl` 94,
@@ -100,7 +100,7 @@ Inventory (2026-11-13) of what generated API docs would draw on:
   | `core/prelude` (std) | 20 | 100% | 1.6 |
   | `core/packages` (mostly `native fn`) | 182 | 7% | 3.1 |
   | `core-libs/petal-ui/prelude` | 475 | 50% | 3.6 |
-  | `core-runtime` (bloom, text-layout, glsl) | 211 | 55% | 3.9 |
+  | `core-stdlib` (bloom, text-layout, glsl) | 211 | 55% | 3.9 |
   | `examples/` | 422 | 50% | 2.1 |
   | `~/petal-creative` | 417 | 72% | 2.1 |
   | `~/cheesecake` (incl. vendored copies) | 15,495 | 29% | 2.4 |
@@ -254,7 +254,7 @@ several do, each describes its own form, and the first is the set's summary. A
 | an unknown field | error with did-you-mean, or the hint to use `extra:` |
 | `params: {lo: …}` naming no parameter | lint `doc-params` (warning): "`@doc` describes `lo`, which `clamp` does not take" |
 | `see: ["foo"]` naming nothing reachable | lint `doc-params` (warning) |
-| a `pub` item (or a package root module) with no doc | lint `undocumented-pub`: off by default; on, and failing CI, for `core/`, `core-libs/`, `core-runtime/` |
+| a `pub` item (or a package root module) with no doc | lint `undocumented-pub`: off by default; on, and failing CI, for `core/`, `core-libs/`, `core-stdlib/` |
 | a call to a `deprecated` item | lint `deprecated` (warning), with the doc's replacement text |
 
 ## Before and after
@@ -334,7 +334,7 @@ keys the body reads. The cost is more lines than the comment.
 
 ### 3. An overload set, with a section ruler
 
-Before: `core-runtime/bloom/src/controls.ptl:20-27`
+Before: `core-stdlib/bloom/src/controls.ptl:20-27`
 
 ```petal ignore
 # ── Switch ────────────────────────────────────────────────────────────────
@@ -443,7 +443,7 @@ without losing pages:
    `@doc`, and a block mixing a note or ruler with text is listed for a hand
    edit rather than split.
 2. **Petal's own libraries** (`core/prelude`, `core/packages/*`, `core-libs/petal-ui/prelude`,
-   `core-runtime/*`): run the converter, then review by hand. Each module
+   `core-stdlib/*`): run the converter, then review by hand. Each module
    header needs splitting into user-facing text (`@module_doc`) and
    maintainer notes (stay comments).
 3. **`docs/Builtins.md` → `core/packages/core/src/*.ptl`**: a one-off script

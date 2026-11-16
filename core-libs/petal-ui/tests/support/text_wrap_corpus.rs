@@ -1,5 +1,5 @@
 //! The corpus over which `text_wrap_rows` and its Petal specification
-//! (`core-runtime/text-layout/src/wrap_reference.ptl`) must answer the same
+//! (`core-stdlib/text-layout/src/wrap_reference.ptl`) must answer the same
 //! rows. Shared by `tests/text_wrap_reference.rs` (the check) and
 //! `examples/bench_text_wrap.rs` (which also times the two). Included with
 //! `#[path]`; not a test target of its own.

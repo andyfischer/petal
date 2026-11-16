@@ -211,11 +211,11 @@ Still open:
 
 - `test/vitest/doc-snippets.test.ts` covers only `docs/`, and with
   `check --lenient`. Fences in `examples/**/README.md`, `garden/docs`,
-  `core-runtime` and `integrations` are untested, which is how the two stale
+  `core-stdlib` and `integrations` are untested, which is how the two stale
   READMEs survived.
 - `editor-support/tree-sitter-petal/grammar.js` comments still say
   `rust/src/…`.
-- `core-runtime/glsl/tests/effects.ptl:4` points at Cheesecake's
+- `core-stdlib/glsl/tests/effects.ptl:4` points at Cheesecake's
   `engine/script/prelude/postfx.ptl`, now
   `engine/script/packages/cheesecake/postfx.ptl`.
 

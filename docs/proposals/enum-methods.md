@@ -44,14 +44,14 @@ classes only (write a function that takes the variant, `fn name(v: Ty, …)`)
 ```
 
 **Corpus count.** I scanned every `.ptl` file in `examples/`, `garden/`,
-`core-libs/`, `core-runtime/`, `test/`, `~/cheesecake/games`,
+`core-libs/`, `core-stdlib/`, `test/`, `~/cheesecake/games`,
 `~/petal-creative` and `~/worlds-fair/ui/ptl`. The scanning script is in the
 session scratchpad. 19 files declare 28 enums. 17 free functions take an enum
 as their first parameter, either annotated with it or matching on it:
 
 | Site | Function | Shape |
 |---|---|---|
-| `core-runtime/glsl/src/glsl.ptl:54-73` | `ty_text`, `is_value_type`, `is_vec`, `is_num` | 4 functions, 45 call sites (`ty_text(` 27, the predicates 18) |
+| `core-stdlib/glsl/src/glsl.ptl:54-73` | `ty_text`, `is_value_type`, `is_vec`, `is_num` | 4 functions, 45 call sites (`ty_text(` 27, the predicates 18) |
 | `examples/games/tetris/tetris.ptl:64`, `:112` | `piece_cells(kind, rot)`, `kick_offsets(kind, from, to)` | computed from data plus arguments |
 | `examples/console/enums.ptl:21` | `area(shape)` | match on payload |
 | `examples/console/pattern_matching.ptl:48`, `test/match-enum-eval/main.ptl:7` | `eval(expr)` | recursive match |
@@ -183,7 +183,7 @@ spell `area(s)` must change; there is no automatic forwarding.
 
 ### 2. Behavior that depends on the payload (glsl)
 
-Before (`core-runtime/glsl/src/glsl.ptl:54-73`, call sites like
+Before (`core-stdlib/glsl/src/glsl.ptl:54-73`, call sites like
 `fail(c, "expected " ++ ty_text(ty) ++ ", found " ++ ty_text(v.ty), node)`):
 
 ```petal ignore

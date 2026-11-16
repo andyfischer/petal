@@ -15,7 +15,7 @@
 # theme, its own interaction model (press-and-release clicks, one open menu,
 # input capture for overlays), and animation in every component by default.
 # It is pure Petal: no Rust, no assets. Put the library on the module path
-# (`-I core-runtime`, `PETAL_PATH`) or register it with `env.add_package` /
+# (`-I core-stdlib`, `PETAL_PATH`) or register it with `env.add_package` /
 # `env.register_package`, and it works in any host that embeds petal-ui.
 #
 # `petal.toml` at the library root is what makes the paths below work: the

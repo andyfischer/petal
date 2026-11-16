@@ -1,6 +1,6 @@
 # bloom gallery
 
-Every component in [bloom](../../../core-runtime/bloom/) — the component library
+Every component in [bloom](../../../core-stdlib/bloom/) — the component library
 written entirely in Petal — on one screen: buttons, menus, controls, overlays,
 text and inspector fields, tabs, splitters and tables, the animation core they
 are built from, and the vector icon set.
@@ -32,7 +32,7 @@ cargo run --bin petal-ui-run -- ../../examples/ui/bloom-gallery/app.ptl \
     --frames 120 --size 1100x760
 ```
 
-`-I` points at `core-runtime`, not at `core-runtime/bloom`: the app imports bloom
+`-I` points at `core-stdlib`, not at `core-stdlib/bloom`: the app imports bloom
 *and* `text_layout`, and one directory of libraries makes both reachable.
 
 ## What to look for
@@ -55,7 +55,7 @@ cargo run --bin petal-ui-run -- ../../examples/ui/bloom-gallery/app.ptl \
   label is centered when the line splits its capitals — which the arithmetic
   every UI used to do (`y = r.y + (r.h - size) / 2`, "the run is `size` px tall
   and starts at `y`") never managed. The section is
-  [text-layout](../../../core-runtime/text-layout/), the placement library bloom
+  [text-layout](../../../core-stdlib/text-layout/), the placement library bloom
   draws all of its own labels through: alignment on both axes, one baseline
   across three sizes, wrapping, a two-line clamp, and the three ends an
   ellipsis can eat.

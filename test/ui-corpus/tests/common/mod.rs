@@ -35,11 +35,11 @@ fn excluded(path: &Path) -> bool {
 
 /// Every driveable app, with the module search paths it needs.
 ///
-/// `core-runtime` is on the path for all of them: several Garden GPP apps import
+/// `core-stdlib` is on the path for all of them: several Garden GPP apps import
 /// `bloom` from there, and an app that does not import it is unaffected.
 pub fn corpus() -> Vec<(PathBuf, Vec<PathBuf>)> {
     let root = repo_root();
-    let libs = vec![root.join("core-runtime")];
+    let libs = vec![root.join("core-stdlib")];
     let mut apps = Vec::new();
 
     for group in ["productivity", "dashboards", "games", "ui"] {

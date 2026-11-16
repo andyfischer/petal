@@ -362,7 +362,7 @@ pb_status pb_vm_set_echo(pb_vm* vm, bool on);
 pb_status pb_vm_add_module_path(pb_vm* vm, const char* dir);
 /* Register an in-memory module: `import name` resolves to `source`. */
 pb_status pb_vm_register_module(pb_vm* vm, const char* name, const char* source);
-/* Register a package directory (containing petal.toml), e.g. ".../core-runtime/bloom".
+/* Register a package directory (containing petal.toml), e.g. ".../core-stdlib/bloom".
  * On success, `*out_name` (optional) receives the package name, valid until the next call. */
 pb_status pb_vm_add_package(pb_vm* vm, const char* root, const char** out_name);
 /* Register a package from memory — for a host with no filesystem, or one that

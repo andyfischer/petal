@@ -1,5 +1,5 @@
 //! The native `text_wrap_rows` (`src/text.rs`) against its specification in
-//! Petal, `wrap_rows_reference` (`core-runtime/text-layout/src/wrap_reference.ptl`):
+//! Petal, `wrap_rows_reference` (`core-stdlib/text-layout/src/wrap_reference.ptl`):
 //! every row (`text`, `start`, `end`) must match over the shared corpus —
 //! about 900 (document, style, width) cases. A change to either side that
 //! changes a break fails here; change the other to match.

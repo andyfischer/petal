@@ -179,7 +179,7 @@ includes its vendored copy of Petal.
 | worlds-fair/ui/ptl | 20 | 4,217 | 366 | 0 | 169 | 1,156 | 24 | 27 |
 
 **Indentation is already almost uniformly structural.** `petal fmt --check`
-over `examples core-libs core-runtime garden test` reports 31 of 402 files
+over `examples core-libs core-stdlib garden test` reports 31 of 402 files
 needing formatting, and some of those differences are spacing rather than
 indentation. fmt derives indentation from block structure (`fmt/reindent.rs`,
 `INDENT = 2`). So about 92% of the repo's files already have exactly the
@@ -227,15 +227,15 @@ Other patterns that matter:
   (`end |> join(" ")`, `examples/games/minesweeper/minesweeper.ptl:161`) occurs
   5 times.
 - **Multi-line lambdas closing a call (`end)`):** 49 in petal and 299 in
-  cheesecake (`core-runtime/bloom/src/overlay.ptl:71-76`,
-  `core-runtime/glsl/src/glsl.ptl:330-333`).
+  cheesecake (`core-stdlib/bloom/src/overlay.ptl:71-76`,
+  `core-stdlib/glsl/src/glsl.ptl:330-333`).
 - **One-line `if` chains continued with a leading `elsif`/`else` (`else if`
   after this change):** 85 in
   petal, 136 in cheesecake and 16 in petal-creative
-  (`core-runtime/glsl/src/glsl.ptl:492-496`).
+  (`core-stdlib/glsl/src/glsl.ptl:492-496`).
 - **`else` at the end of a line opening a nested block:**
   `let ink = if m.disabled then t.dim else`⏎`  if m.danger then … end`⏎`end`
-  (`core-runtime/bloom/src/menu.ptl:256-258`).
+  (`core-stdlib/bloom/src/menu.ptl:256-258`).
 - **JSX:** 51 petal-creative files, and 28 multi-line `{if … then` holes
   (`petal-creative/packages/design-material/inputs.ptl:84-97`).
 - **Petal embedded in host-language strings:** 81 of 95 `core/tests` files,
@@ -444,7 +444,7 @@ handles `elsif` today (`parse.rs:2875-2908`).
   reading.
 - **`else` at the end of a line, then `if` on the next line, is not merged.** It
   stays an `else` block that contains an `if`. That's the
-  `core-runtime/bloom/src/menu.ptl:256-258` shape, and its meaning is unchanged.
+  `core-stdlib/bloom/src/menu.ptl:256-258` shape, and its meaning is unchanged.
 - **Legacy `else if c then x else y end end`** (8 sites, B17) now has a stray
   `end`, and fails loudly. The `else-if-nesting` migration fixes it.
 - **`elsif`:**
@@ -566,7 +566,7 @@ left are in `core/tests/all/layout_probes.rs`.
   `{…}` hole at the arm's column, and the body of a block opened on the last
   line of a multi-line string a step in from that line (both refused by the
   gate, so the file could not be formatted).
-- **Real files:** 36 files of `examples/` and `core-runtime/` with their
+- **Real files:** 36 files of `examples/` and `core-stdlib/` with their
   `end` lines stripped by a throwaway script parse to the AST they had, and
   fmt is idempotent and AST-preserving on both spellings.
 - **Misindentation:** 4,300 random misindentations of those files that
@@ -855,7 +855,7 @@ comparison per statement start. P0 measures parse time over the corpus.
 | Domain | Effect | Example |
 |---|---|---|
 | Games | Better: the `end` pyramids in per-frame code go | `cheesecake/games/*`, `network-graph/app.ptl:1330-1351` |
-| Graphics / creative | Neutral. Colour-heavy code (1,321 colours in petal-creative) gets a one-time `#` → `:` respelling. | `core-runtime/bloom/src/overlay.ptl:71` |
+| Graphics / creative | Neutral. Colour-heavy code (1,321 colours in petal-creative) gets a one-time `#` → `:` respelling. | `core-stdlib/bloom/src/overlay.ptl:71` |
 | UI / JSX | Neutral: holes look like today minus `end` | `petal-creative/packages/design-material/inputs.ptl:84` |
 | Dashboards / data | Better: value-position `if`/`for` read like OCaml or Elm | `finance-dashboard/app.ptl:350` |
 | Editor scripting / config | Neutral | `garden/` |

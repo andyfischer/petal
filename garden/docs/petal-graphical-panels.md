@@ -218,7 +218,7 @@ showcase panel is `examples/panels/gallery.ptl`.
 
 ### `import bloom`
 
-[bloom](../../core-runtime/bloom/README.md), the component
+[bloom](../../core-stdlib/bloom/README.md), the component
 library written in Petal itself, is an importable *package* bundled in the
 runtime — buttons, menus,
 controls and overlays that animate by default and that hold their own
@@ -236,7 +236,7 @@ if bloom.button(rect(20, 20, 120, 32), "Save", {variant: "primary", icon: "check
 package paths when a drawer wants a slice rather than the whole surface
 (`import bloom/motion: spring`, `import bloom/icon as icons`).
 
-[text_layout](../../core-runtime/text-layout/README.md) is available the same
+[text_layout](../../core-stdlib/text-layout/README.md) is available the same
 way and on the same terms. bloom places every one of its labels through it, so
 it is not optional here — and a panel that draws text of its own should reach
 for it directly rather than computing a `y`.
@@ -249,7 +249,7 @@ import it too. Garden's native binaries build with every bundled library;
 garden-web, the browser build behind the direct manipulation gallery, builds
 with none, and an `import bloom` there fails with "not in this build". Both packages require the `ui` interface, which Garden provides. Garden's own start screen (`gpp-apps/main-menu`) and the `screens-demo`
 app use it; the full reference is
-[core-runtime/bloom/docs/components.md](../../core-runtime/bloom/docs/components.md)
+[core-stdlib/bloom/docs/components.md](../../core-stdlib/bloom/docs/components.md)
 and the showcase is `examples/ui/bloom-gallery`.
 
 A panel script on disk can also import a module sitting next to it with a

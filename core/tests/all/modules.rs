@@ -961,7 +961,7 @@ fn a_qualified_call_into_a_module_is_type_checked() {
     );
     assert_eq!(w.len(), 1, "{w:?}");
 
-    // Through a facade that re-exports it — the shape `core-runtime/bloom`
+    // Through a facade that re-exports it — the shape `core-stdlib/bloom`
     // uses, and the one a caller writing `bloom.button(...)` depends on.
     let w = warn_messages(
         &[("motion", motion), ("bloom", "pub import motion\n")],

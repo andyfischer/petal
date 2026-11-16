@@ -941,7 +941,7 @@ record untagged.
 Whether `text_wrap` / `wrap_rows` (`core-libs/petal-ui/src/text.rs`) could be
 Petal instead of Rust. Harness: `core-libs/petal-ui/examples/bench_text_wrap.rs`
 (`cargo run --release --example bench_text_wrap` in `core-libs/petal-ui`); the
-Petal side is `wrap_rows_reference` (`core-runtime/text-layout/src/wrap_reference.ptl`),
+Petal side is `wrap_rows_reference` (`core-stdlib/text-layout/src/wrap_reference.ptl`),
 which makes one `text_advance` call per word and per run of blanks. Measured
 2026-11-08, p50 per frame, release, gate off, pointer moving, 548 px wrap, a
 proportional advance table, on a heavily loaded machine (treat the absolute

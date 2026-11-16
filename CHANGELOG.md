@@ -1211,6 +1211,15 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- **Programs as documents: `SetText` with line breaks, and through a
+  package helper's hole.** `<br />` children are part of an element's text
+  (`text_of` reads `\n` for each), and a `\n` in the new text writes
+  `<br />` between the lines (through a `{…}` hole, a `\n` in the string).
+  A hole in an element a package builds (`<text>{title}</text>` in
+  `title_slide`) is followed to the document's string argument or data
+  entry, a `for` loop's included, instead of refusing because the element
+  literal is in the package.
+
 - **Programs as documents: named arguments, bare attributes, and the
   override hook for a helper used once.** `provenance::trace_value` follows a
   parameter with a default to the argument its call passes (by name or

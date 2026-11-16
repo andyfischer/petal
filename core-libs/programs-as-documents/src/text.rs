@@ -124,10 +124,19 @@ pub(crate) fn set_text(
         }
         return Resolution::Unresolved { reason: format!("<{tag}> on line {line} could not be found in the source"), at: Some(span) };
     };
+    // A literal written in another file is refused (unless other files may
+    // be edited) before any reason that names a line in it.
+    let other_file = || if in_document { None } else { file_check(run, span.file, &format!("<{tag}>"), opts) };
     let ExprKind::Element { children, .. } = &el.kind else {
+        if let Some(r) = other_file() {
+            return r;
+        }
         return Resolution::Unresolved { reason: format!("<{tag}> on line {line} is not an element literal"), at: Some(span) };
     };
     if children.iter().any(|c| matches!(c, JsxChild::Expr(e) if matches!(e.kind, ExprKind::Element { .. }) && !is_line_break(e))) {
+        if let Some(r) = other_file() {
+            return r;
+        }
         return Resolution::Unresolved {
             reason: format!("<{tag}> on line {line} has child elements, so its text is not one run of text; edit it by hand"),
             at: Some(span),
@@ -166,7 +175,7 @@ pub(crate) fn set_text(
         return finish_verified(runner, run, node, intent, edit, verified, site.fan_out, &what, opts);
     }
     if holes > 1 || children.len() > 1 {
-        if !in_document && let Some(r) = file_check(run, span.file, &format!("<{tag}>"), opts) {
+        if let Some(r) = other_file() {
             return r;
         }
         return Resolution::Unresolved {

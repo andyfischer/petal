@@ -168,3 +168,34 @@ fn text_written_with_string_holes_among_lines_is_text() {
     let e = edit(resolve_src(&value_runner(), src, |_| text(OutputKey::Id("t".into()), "Short")));
     assert!(e.source.contains("  >Short</text>,"), "{}", e.source);
 }
+
+/// A package whose `<text>` has a child element: its literal is in the
+/// package, so editing its text is refused as another file's, not left
+/// Unresolved with a span and line number in the package.
+#[test]
+fn a_package_literal_with_child_elements_is_refused_as_another_files() {
+    const PKG: &str = "pub fn kids(t)\n  <text>{t}<b /></text>\nend\n";
+    let runner = Runner::new("doc.ptl", |env: &mut petal::env::Env| {
+        setup(env)?;
+        let files = [("pkg", PKG), (petal::package::MANIFEST_FILE, "[package]\nname = \"pkg\"\nversion = \"0.1.0\"\n")];
+        env.register_package("pkg", files).map_err(|e| e.to_string())?;
+        env.provides_package("pkg")
+    });
+    let src = "import pkg\n[kids(\"Hi\")]\n";
+    match resolve_src(&runner, src, |r| text(key_of(r, "text", 0), "Yo")) {
+        Resolution::Refused { reason } => assert!(reason.contains("pkg"), "{reason}"),
+        other => panic!("expected Refused, got {other:?}"),
+    }
+    // With other files allowed, it is left to the host (Unresolved), still
+    // naming the package and with no span that could be read as the
+    // document's.
+    let r = run(&runner, src);
+    let opts = ResolveOptions { allow_other_files: true, ..ResolveOptions::default() };
+    match resolve(&runner, &r, &text(key_of(&r, "text", 0), "Yo"), &opts) {
+        Resolution::Unresolved { reason, at } => {
+            assert!(reason.contains("pkg"), "{reason}");
+            assert!(at.is_none_or(|s| s.file != petal::source_map::FileId(0)), "{at:?}");
+        }
+        other => panic!("expected Unresolved, got {other:?}"),
+    }
+}

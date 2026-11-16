@@ -135,7 +135,13 @@ pub(crate) fn set_text(
     }
     let holes = children.iter().filter(|c| matches!(c, JsxChild::Expr(e) if !is_line_break(e))).count();
     let value = StaticValue::Str(text.to_string());
-    if holes == 0 {
+    // Text that `{"…"}` string holes write among literal text and `<br />`s
+    // (as Petal writes text with `{` or `<` in it) is literal text too.
+    let all_text = children.iter().all(|c| match c {
+        JsxChild::Text(_) => true,
+        JsxChild::Expr(e) => is_line_break(e) || matches!(e.kind, ExprKind::Literal(petal::ast::Literal::String(_))),
+    });
+    if holes == 0 || (all_text && children.len() > 1) {
         // Literal text (and `<br />`s) between the tags, or none yet.
         if let Some(r) = file_check(run, span.file, &format!("<{tag}>"), opts) {
             return r;

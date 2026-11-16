@@ -159,3 +159,12 @@ fn a_hole_beside_lines_is_still_refused() {
     let why = reason(resolve_src(&value_runner(), src, |_| text(OutputKey::Id("t".into()), "4\nitems")));
     assert!(why.contains("mixes text"), "{why}");
 }
+
+#[test]
+fn text_written_with_string_holes_among_lines_is_text() {
+    // petal-movies: a line with `{` or `<` in it is written as a `{"…"}`
+    // string; the next edit reads all of it as the text's own.
+    let src = "[\n  <text\n    id=\"t\"\n  >\n    One<br />\n    {\"Two \\{and} <three>\"}\n  </text>,\n]\n";
+    let e = edit(resolve_src(&value_runner(), src, |_| text(OutputKey::Id("t".into()), "Short")));
+    assert!(e.source.contains("  >Short</text>,"), "{}", e.source);
+}

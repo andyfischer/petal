@@ -227,18 +227,30 @@ protocol_enum!(CompletionItemKind {
     Function = 3,
     Field = 5,
     Variable = 6,
+    Class = 7,
     Enum = 13,
     Keyword = 14,
     Snippet = 15,
     EnumMember = 20,
 });
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+protocol_enum!(CompletionItemTag {
+    Deprecated = 1,
+});
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CompletionItem {
     pub label: String,
     pub kind: Option<CompletionItemKind>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// The item's `@doc`, as Markdown: shown beside the list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<MarkupContent>,
+    /// `[Deprecated]` for an item whose `@doc` gives `deprecated:`: the
+    /// editor strikes it through.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<CompletionItemTag>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

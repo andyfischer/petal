@@ -121,6 +121,7 @@ refactorings exist as commands (`petal fmt`, `petal fix-imports`,
 | `server.rs` | `Server`: dispatch and one handler per request |
 | `document.rs` | `DocumentStore`, `Document`, `Analysis`; `analyze_at`; definition collection; the text helpers that find the word, qualifier or import path at a position; URI and path conversion; `KEYWORDS` |
 | `members.rs` | enum members: what a dotted path such as `Kind.park` or `k.code` resolves to, and its completions, hover and declaration |
+| `docs.rs` | a declaration's `@doc` as hover Markdown and as a completion item's detail, documentation and tags |
 | `symbols.rs` | the document outline |
 | `host.rs` | `HostView`: what the document's project says its host puts in scope (`[host]` in `petal.toml`), and `Joined`, the document joined with the host's prelude files, with the line each joined line came from |
 | `position.rs` | `PositionEncoding`: negotiating the column unit and converting columns between it and code points |
@@ -336,18 +337,35 @@ wins.
    (the innermost one), else the last declaration of that name above the
    cursor, else the first one in the file. The answer carries the
    declaration's range.
-4. **A name an import binds bare**, with the module it came from.
-5. **A keyword**: ``(keyword) `fn` ``.
+4. **A qualifier itself** (`hud` in `hud.draw`): `(module) <name>`, with
+   the module's `@module_doc`.
+5. **A name an import binds bare**, with the module it came from.
+6. **A builtin**: a declaration of the bundled `core` package (`clamp`,
+   `print`: its `native fn`s), with `# builtin`
+   (`document::builtin_definitions`, parsed once per process).
+7. **A keyword**: ``(keyword) `fn` ``.
 
-Otherwise `null`. A builtin implemented in Rust (`print`, `len`) has no
-declaration to show and gets no hover. A function of the `std` prelude does,
-because `std` is a module the document imports implicitly.
+Otherwise `null`. A function of the `std` prelude is case 5, because `std`
+is a module the document imports implicitly.
 
 The text is `(kind) name detail` in a `petal` code block. The kinds are
-`variable`, `function`, `enum` and `parameter`. The detail is built when
-definitions are collected: `: type` for an annotated binding,
+`variable`, `function`, `enum`, `class` and `parameter`. The detail is built
+when definitions are collected: `: type` for an annotated binding,
 `fn(a, b: int = 2) -> T` for a function (defaults as the source spells them),
-`native fn(…)` for a native declaration, and the variants for an enum.
+`native fn(…)` for a native declaration, `class(x: int, y)` for a class, and
+the variants for an enum.
+
+**The doc.** When the declaration has a `@doc(…)`
+([doc-annotation.md](../proposals/doc-annotation.md)), its Markdown follows
+the code block (`docs::doc_markdown`): `**Deprecated:** …` first, then the
+body with its indentation cleaned, `**Parameters**` and `**Options**` as
+lists, `**Returns:** …`, each example as a `petal` block, and `**See:** …`.
+`hidden` and `extra` are not shown. Each `Definition` carries its statement's
+`doc`; a form of an overload set written without one gets the first
+documented form's (`share_overload_docs`), and a method of an enum carries
+its doc on its `MethodShape`. Docs come from the same parses that collect the
+definitions, so a doc in an imported module reaches a bare name and `m.name`
+alike.
 
 **The static-value note.** For a top-level declaration, case 3 adds a comment
 line with what the static-value classifier makes of it: `static`,
@@ -400,14 +418,17 @@ the one that ends just before it) and then picks one of four lists.
 3. **After an import's qualifier and a dot**: the module's exports and
    nothing else.
 4. **Anywhere else**: the qualifiers of the document's imports, the names
-   the imports bind bare, every definition collected from the file, and the
-   keywords, each filtered by the prefix.
+   the imports bind bare, every definition collected from the file, the
+   builtins (once a prefix is typed; names starting with `_` left out), and
+   the keywords, each filtered by the prefix.
 
 In the fourth list, definitions are not filtered by scope: a parameter of one
 function is offered inside another. With an empty prefix the names of the
 implicit `std` prelude are left out, since that is every `std` function on
 every keystroke. Items carry a label, a kind and a detail string, and no edit
-or snippet.
+or snippet. An item whose declaration has a `@doc` has the doc's summary as
+its detail, the signature and the doc as Markdown `documentation`, and the
+`Deprecated` tag when the doc says `deprecated:` (`docs::document_item`).
 
 `KEYWORDS` in `document.rs` is the lexer's keyword list plus the contextual
 ones (`as`, `class`, `config`, `native`).

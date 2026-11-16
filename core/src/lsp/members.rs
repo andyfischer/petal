@@ -35,6 +35,8 @@ pub struct MethodShape {
     /// The declaration's signature as written: `fn(k: Kind) -> string`.
     pub signature: String,
     pub span: SourceSpan,
+    /// The method's `@doc(…)`.
+    pub doc: Option<Box<crate::ast::Doc>>,
 }
 
 #[derive(Debug, Clone)]
@@ -403,6 +405,7 @@ impl<'a> Member<'a> {
             label: label.to_string(),
             kind: Some(kind),
             detail: Some(detail),
+            ..Default::default()
         };
         let field = |label: &str, detail: String| item(label, CompletionItemKind::Field, detail);
         match *self {
@@ -551,6 +554,25 @@ impl<'a> Member<'a> {
         }
     }
 
+    /// The `@doc` of the method `name`, when a `.name` after this reaches
+    /// one of the enum's methods (and not a field of the same name).
+    pub fn method_doc(&self, name: &str) -> Option<&'a crate::ast::Doc> {
+        let e = self.of();
+        match *self {
+            Member::Variant(..) | Member::Value(_) => {}
+            _ => return None,
+        }
+        let shadowed = e
+            .shape
+            .variants
+            .iter()
+            .any(|v| v.fields.iter().any(|f| f == name) || v.datum(name).is_some());
+        if shadowed || name == NAME_FIELD {
+            return None;
+        }
+        e.shape.method(name)?.doc.as_deref()
+    }
+
     /// Where `name`, written after this and a `.`, is declared.
     pub fn declaration(&self, name: &str) -> Option<Declared<'a>> {
         let e = self.of();
@@ -586,6 +608,7 @@ fn method_items(e: EnumAt<'_>, enum_name: &str) -> Vec<CompletionItem> {
             label: m.name.clone(),
             kind: Some(CompletionItemKind::Method),
             detail: Some(format!("{enum_name}.{} {}", m.name, m.signature)),
+            ..Default::default()
         })
         .collect()
 }

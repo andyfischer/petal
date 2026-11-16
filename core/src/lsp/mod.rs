@@ -9,6 +9,7 @@
 //! [`stdio::serve`] wraps that core in the standard LSP stdio transport
 //! (Content-Length framing over stdin/stdout), which is what `petal lsp` runs.
 
+pub mod docs;
 pub mod document;
 pub mod folding;
 pub mod lsp_types;

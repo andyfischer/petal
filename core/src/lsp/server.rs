@@ -2,6 +2,7 @@
 
 use serde_json::Value;
 
+use crate::lsp::docs::{document_item, hover_markdown};
 use crate::lsp::document::{
     self, Definition, DefinitionKind, DocumentStore, KEYWORDS, identifier_at_position,
     qualifier_at_position,
@@ -317,6 +318,7 @@ impl Server {
                 DefinitionKind::Variable | DefinitionKind::Loop => "variable",
                 DefinitionKind::Function => "function",
                 DefinitionKind::Enum => "enum",
+                DefinitionKind::Class => "class",
                 DefinitionKind::Parameter => "parameter",
             };
             let detail = def.detail.as_deref().unwrap_or("");
@@ -331,10 +333,11 @@ impl Server {
         // (A name the enum does not have is looked up by name below, as
         // any other is.)
         if let Some(value) = member.and_then(|m| m.hover(&ident)) {
+            let doc = member.and_then(|m| m.method_doc(&ident));
             let hover = Hover {
                 contents: MarkupContent {
                     kind: "markdown".to_string(),
-                    value: format!("```petal\n{value}\n```"),
+                    value: hover_markdown(&value, doc),
                 },
                 range: None,
             };
@@ -348,14 +351,14 @@ impl Server {
         let qualified = qualifier_at_position(&doc.text, position.line, position.character)
             .and_then(|q| doc.analysis.qualifier(&q));
         if let Some(module) = qualified {
-            let value = match module.export(&ident) {
-                Some(found) => format!("{}\n# from module {}", describe(&found.def), module.module),
-                None => return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))],
+            let Some(found) = module.export(&ident) else {
+                return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))];
             };
+            let value = format!("{}\n# from module {}", describe(&found.def), module.module);
             let hover = Hover {
                 contents: MarkupContent {
                     kind: "markdown".to_string(),
-                    value: format!("```petal\n{value}\n```"),
+                    value: hover_markdown(&value, found.def.doc.as_deref()),
                 },
                 range: None,
             };
@@ -375,12 +378,28 @@ impl Server {
             let hover = Hover {
                 contents: MarkupContent {
                     kind: "markdown".to_string(),
-                    value: format!("```petal\n{value}\n```"),
+                    value: hover_markdown(&value, def.doc.as_deref()),
                 },
                 range: Some(
                     self.encoding
                         .range_out(&doc.text, document::span_to_range(&def.span)),
                 ),
+            };
+            return vec![OutgoingMessage::Response(RpcResponse::ok(
+                id,
+                serde_json::to_value(hover).unwrap(),
+            ))];
+        }
+
+        // A qualifier itself (`hud` in `hud.draw`): the module, with its
+        // `@module_doc`.
+        if let Some(module) = doc.analysis.qualifier(&ident) {
+            let hover = Hover {
+                contents: MarkupContent {
+                    kind: "markdown".to_string(),
+                    value: hover_markdown(&format!("(module) {}", module.module), module.doc.as_deref()),
+                },
+                range: None,
             };
             return vec![OutgoingMessage::Response(RpcResponse::ok(
                 id,
@@ -401,7 +420,26 @@ impl Server {
             let hover = Hover {
                 contents: MarkupContent {
                     kind: "markdown".to_string(),
-                    value: format!("```petal\n{}\n# from module {from}\n```", describe(&found.def)),
+                    value: hover_markdown(
+                        &format!("{}\n# from module {from}", describe(&found.def)),
+                        found.def.doc.as_deref(),
+                    ),
+                },
+                range: None,
+            };
+            return vec![OutgoingMessage::Response(RpcResponse::ok(
+                id,
+                serde_json::to_value(hover).unwrap(),
+            ))];
+        }
+
+        // A builtin: a `native fn` of the bundled `core` package, bound in
+        // every file with no import.
+        if let Some(def) = document::builtin_definitions().iter().find(|d| d.name == ident) {
+            let hover = Hover {
+                contents: MarkupContent {
+                    kind: "markdown".to_string(),
+                    value: hover_markdown(&format!("{}\n# builtin", describe(def)), def.doc.as_deref()),
                 },
                 range: None,
             };
@@ -561,14 +599,20 @@ impl Server {
                 identifier_at_position(&doc.text, position.line, before)
             })
             .unwrap_or_default();
-        let item_for = |def: &Definition, detail: Option<String>| CompletionItem {
-            label: def.name.clone(),
-            kind: Some(match def.kind {
-                DefinitionKind::Function => CompletionItemKind::Function,
-                DefinitionKind::Enum => CompletionItemKind::Enum,
-                _ => CompletionItemKind::Variable,
-            }),
-            detail,
+        let item_for = |def: &Definition, detail: Option<String>| {
+            let mut item = CompletionItem {
+                label: def.name.clone(),
+                kind: Some(match def.kind {
+                    DefinitionKind::Function => CompletionItemKind::Function,
+                    DefinitionKind::Enum => CompletionItemKind::Enum,
+                    DefinitionKind::Class => CompletionItemKind::Class,
+                    _ => CompletionItemKind::Variable,
+                }),
+                detail,
+                ..Default::default()
+            };
+            document_item(&mut item, def.doc.as_deref());
+            item
         };
         let respond = |items: Vec<CompletionItem>| {
             vec![OutgoingMessage::Response(RpcResponse::ok(
@@ -591,6 +635,7 @@ impl Server {
                         label: n.to_string(),
                         kind: Some(CompletionItemKind::Keyword),
                         detail: Some(document::annotation_detail(n).to_string()),
+                        ..Default::default()
                     })
                     .collect(),
             );
@@ -607,6 +652,7 @@ impl Server {
                         label,
                         kind: Some(CompletionItemKind::Variable),
                         detail: Some("module".to_string()),
+                        ..Default::default()
                     })
                     .collect(),
             );
@@ -654,11 +700,14 @@ impl Server {
                 && q.starts_with(&prefix)
                 && seen.insert(q.as_str())
             {
-                items.push(CompletionItem {
+                let mut item = CompletionItem {
                     label: q.clone(),
                     kind: Some(CompletionItemKind::Variable),
                     detail: Some(format!("module {}", module.module)),
-                });
+                    ..Default::default()
+                };
+                document_item(&mut item, module.doc.as_deref());
+                items.push(item);
             }
             for export in &module.exports {
                 let name = export.def.name.as_str();
@@ -676,17 +725,20 @@ impl Server {
             if !prefix.is_empty() && !def.name.starts_with(&prefix) {
                 continue;
             }
-            let kind = match def.kind {
-                DefinitionKind::Variable => CompletionItemKind::Variable,
-                DefinitionKind::Function => CompletionItemKind::Function,
-                DefinitionKind::Enum => CompletionItemKind::Enum,
-                DefinitionKind::Parameter | DefinitionKind::Loop => CompletionItemKind::Variable,
-            };
-            items.push(CompletionItem {
-                label: def.name.clone(),
-                kind: Some(kind),
-                detail: def.detail.clone(),
-            });
+            items.push(item_for(def, def.detail.clone()));
+        }
+
+        // The builtins, like the implicit prelude, once a prefix is typed.
+        if !prefix.is_empty() {
+            for def in document::builtin_definitions() {
+                let name = def.name.as_str();
+                // `_native_rect`: a declaration's private binding, not for
+                // calling.
+                if name.starts_with(&prefix) && !name.starts_with('_') && seen.insert(name) {
+                    let detail = def.detail.as_ref().map(|d| format!("{d} — builtin"));
+                    items.push(item_for(def, detail));
+                }
+            }
         }
 
         for &kw in KEYWORDS {
@@ -696,7 +748,7 @@ impl Server {
             items.push(CompletionItem {
                 label: kw.to_string(),
                 kind: Some(CompletionItemKind::Keyword),
-                detail: None,
+                ..Default::default()
             });
         }
 

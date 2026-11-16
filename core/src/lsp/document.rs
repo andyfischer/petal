@@ -120,6 +120,8 @@ pub struct ImportedModule {
     pub implicit: bool,
     /// The module's own file, when it has one.
     pub uri: Option<String>,
+    /// The module's `@module_doc(…)`, when it has one.
+    pub doc: Option<Box<crate::ast::Doc>>,
     /// Every name the module exports, with its declaration.
     pub exports: Vec<ImportedDefinition>,
 }
@@ -158,6 +160,9 @@ pub struct Definition {
     /// What is known of a variable's or parameter's value without running
     /// anything: its annotation, or the path its initializer spells.
     pub hint: Option<ValueHint>,
+    /// The declaration's `@doc(…)`. A form of an overload set written
+    /// without one has the set's (its first documented form's).
+    pub doc: Option<Box<crate::ast::Doc>>,
 }
 
 impl Definition {
@@ -169,6 +174,7 @@ impl Definition {
             detail,
             shape: None,
             hint: None,
+            doc: None,
         }
     }
 }
@@ -178,6 +184,8 @@ pub enum DefinitionKind {
     Variable,
     Function,
     Enum,
+    /// A `class` declaration: its name is its constructor.
+    Class,
     Parameter,
     /// A `for` loop's variable, in scope across the loop.
     Loop,
@@ -742,6 +750,7 @@ fn prelude_modules(host: &HostView) -> Vec<ImportedModule> {
                 names: None,
                 implicit: false,
                 uri: Some(uri.clone()),
+                doc: None,
                 exports: defs
                     .into_iter()
                     .map(|def| ImportedDefinition {
@@ -870,13 +879,18 @@ fn imported_modules(program: &crate::program::Program) -> Vec<ImportedModule> {
     let table = &program.imports;
     // Every module's top-level declarations, parsed once.
     let mut declared: HashMap<&str, (Option<String>, Vec<Definition>)> = HashMap::new();
+    let mut module_docs: HashMap<&str, Box<crate::ast::Doc>> = HashMap::new();
     for (module, &file) in &table.files {
         let Some(file) = program.source_map.files.get(file as usize) else {
             continue;
         };
-        let defs = crate::cst::parse_source(&file.source, crate::source_map::ENTRY_FILE)
-            .map(|(_, stmts)| top_level_definitions(&stmts, &file.source))
-            .unwrap_or_default();
+        let (defs, doc) =
+            crate::cst::parse_source_with_module_doc(&file.source, crate::source_map::ENTRY_FILE)
+                .map(|(_, stmts, doc)| (top_level_definitions(&stmts, &file.source), doc))
+                .unwrap_or_default();
+        if let Some(doc) = doc {
+            module_docs.insert(module.as_str(), Box::new(doc));
+        }
         declared.insert(
             module.as_str(),
             (file.origin.as_deref().map(path_to_uri), defs),
@@ -916,6 +930,7 @@ fn imported_modules(program: &crate::program::Program) -> Vec<ImportedModule> {
             uri: declared
                 .get(import.module.as_str())
                 .and_then(|(uri, _)| uri.clone()),
+            doc: module_docs.get(import.module.as_str()).cloned(),
             exports: table
                 .exports
                 .get(&import.module)
@@ -947,20 +962,69 @@ fn top_level_definitions(stmts: &[Stmt], source: &str) -> Vec<Definition> {
     for stmt in stmts {
         let mut defs = Vec::new();
         match &stmt.kind {
-            StmtKind::State { name, .. }
-            | StmtKind::Memo { name, .. }
-            | StmtKind::ClassDecl { name, .. } => {
-                defs.push(Definition::new(
-                    name.clone(),
-                    DefinitionKind::Variable,
-                    stmt.span,
-                    None,
-                ))
+            StmtKind::State { name, .. } | StmtKind::Memo { name, .. } => {
+                defs.push(Definition {
+                    doc: stmt.doc.clone(),
+                    ..Definition::new(name.clone(), DefinitionKind::Variable, stmt.span, None)
+                })
             }
             _ => collect_definitions_from_stmt(stmt, &src, &mut defs),
         }
         // An enum declares one name; its variants are members of it.
         out.extend(defs.into_iter().next());
+    }
+    share_overload_docs(&mut out);
+    out
+}
+
+/// Give each undocumented form of a function its overload set's doc: the
+/// doc of the first form of that name that has one. ("If exactly one form
+/// has a `@doc`, it describes the set"; a form with its own keeps it.)
+fn share_overload_docs(defs: &mut [Definition]) {
+    for i in 0..defs.len() {
+        if defs[i].kind != DefinitionKind::Function || defs[i].doc.is_some() {
+            continue;
+        }
+        let shared = defs
+            .iter()
+            .find(|d| d.kind == DefinitionKind::Function && d.name == defs[i].name && d.doc.is_some())
+            .and_then(|d| d.doc.clone());
+        defs[i].doc = shared;
+    }
+}
+
+/// The builtins every file can call with no import: the top-level
+/// declarations (the `native fn`s) of the bundled `core` package, with their
+/// signatures and docs. Parsed once per process.
+pub fn builtin_definitions() -> &'static [Definition] {
+    static DEFS: std::sync::OnceLock<Vec<Definition>> = std::sync::OnceLock::new();
+    DEFS.get_or_init(|| {
+        let Some(package) = crate::bundled::package(crate::bundled::CORE_PACKAGE) else {
+            return Vec::new();
+        };
+        let sources: Vec<&str> = package.sources().map(|(_, source)| source).collect();
+        builtin_definitions_from(&sources)
+    })
+}
+
+/// [`builtin_definitions`] read from `sources`, the core package's files:
+/// the first declaration of each name, with its overload set's doc.
+pub fn builtin_definitions_from(sources: &[&str]) -> Vec<Definition> {
+    let mut out: Vec<Definition> = Vec::new();
+    for source in sources {
+        let Ok((_, stmts)) = crate::cst::parse_source(source, crate::source_map::ENTRY_FILE) else {
+            continue;
+        };
+        for def in top_level_definitions(&stmts, source) {
+            match out.iter_mut().find(|d| d.name == def.name) {
+                Some(first) => {
+                    if first.doc.is_none() {
+                        first.doc = def.doc;
+                    }
+                }
+                None => out.push(def),
+            }
+        }
     }
     out
 }
@@ -1104,6 +1168,7 @@ fn collect_definitions(stmts: &[Stmt], source: &str) -> Vec<Definition> {
     for stmt in stmts {
         collect_definitions_from_stmt(stmt, src, &mut defs);
     }
+    share_overload_docs(&mut defs);
     attach_enum_methods(stmts, &mut defs);
     defs
 }
@@ -1117,11 +1182,11 @@ fn attach_enum_methods(stmts: &[Stmt], defs: &mut [Definition]) {
         let StmtKind::FnDecl { name, class: Some(class), .. } = &stmt.kind else {
             continue;
         };
-        let signature = defs
+        let own = defs
             .iter()
-            .find(|d| d.kind == DefinitionKind::Function && d.name == *name && d.span == stmt.span)
-            .and_then(|d| d.detail.clone())
-            .unwrap_or_default();
+            .find(|d| d.kind == DefinitionKind::Function && d.name == *name && d.span == stmt.span);
+        let signature = own.and_then(|d| d.detail.clone()).unwrap_or_default();
+        let doc = own.and_then(|d| d.doc.clone());
         let Some(shape) = defs
             .iter_mut()
             .find(|d| d.kind == DefinitionKind::Enum && d.name == *class)
@@ -1135,6 +1200,7 @@ fn attach_enum_methods(stmts: &[Stmt], defs: &mut [Definition]) {
                 name: method,
                 signature,
                 span: stmt.span,
+                doc,
             });
         }
     }
@@ -1152,6 +1218,7 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
             };
             defs.push(Definition {
                 hint,
+                doc: stmt.doc.clone(),
                 ..Definition::new(name.clone(), DefinitionKind::Variable, stmt.span, detail)
             });
             collect_definitions_from_expr(value, src, defs);
@@ -1183,12 +1250,10 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
             // A test block's function has a name nobody wrote (`__test_0`):
             // nothing to complete or to go to. Its body is read as usual.
             if stmt.test.is_none() {
-                defs.push(Definition::new(
-                    name.clone(),
-                    DefinitionKind::Function,
-                    stmt.span,
-                    detail,
-                ));
+                defs.push(Definition {
+                    doc: stmt.doc.clone(),
+                    ..Definition::new(name.clone(), DefinitionKind::Function, stmt.span, detail)
+                });
             }
             for p in params {
                 defs.push(param_definition(p, stmt.span, src));
@@ -1219,12 +1284,15 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
                 .as_ref()
                 .map(|r| format!(" -> {}", r.name))
                 .unwrap_or_default();
-            defs.push(Definition::new(
-                decl.name.clone(),
-                DefinitionKind::Function,
-                stmt.span,
-                Some(format!("native fn({}){ret_str}", parts.join(", "))),
-            ));
+            defs.push(Definition {
+                doc: stmt.doc.clone(),
+                ..Definition::new(
+                    decl.name.clone(),
+                    DefinitionKind::Function,
+                    stmt.span,
+                    Some(format!("native fn({}){ret_str}", parts.join(", "))),
+                )
+            });
         }
         // A `state` declares a name like a `let` does: hover and
         // go-to-definition reach it the same way.
@@ -1236,6 +1304,7 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
             };
             defs.push(Definition {
                 hint,
+                doc: stmt.doc.clone(),
                 ..Definition::new(name.clone(), DefinitionKind::Variable, stmt.span, detail)
             });
             collect_definitions_from_expr(init, src, defs);
@@ -1248,6 +1317,7 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
             };
             defs.push(Definition {
                 hint,
+                doc: stmt.doc.clone(),
                 ..Definition::new(name.clone(), DefinitionKind::Variable, stmt.span, detail)
             });
             collect_definitions_from_expr(key, src, defs);
@@ -1265,7 +1335,28 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
             );
             defs.push(Definition {
                 shape: Some(shape),
+                doc: stmt.doc.clone(),
                 ..Definition::new(name.clone(), DefinitionKind::Enum, stmt.span, detail)
+            });
+        }
+        // A class's name is its constructor: hover shows the fields it
+        // takes, in order.
+        StmtKind::ClassDecl { name, fields } => {
+            let fields: Vec<String> = fields
+                .iter()
+                .map(|f| match &f.ty {
+                    Some(ty) => format!("{}: {}", f.name, ty.name),
+                    None => f.name.clone(),
+                })
+                .collect();
+            defs.push(Definition {
+                doc: stmt.doc.clone(),
+                ..Definition::new(
+                    name.clone(),
+                    DefinitionKind::Class,
+                    stmt.span,
+                    Some(format!("class({})", fields.join(", "))),
+                )
             });
         }
         StmtKind::For { var, iter, body, .. } => {

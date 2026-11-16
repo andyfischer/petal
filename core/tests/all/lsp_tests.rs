@@ -2093,3 +2093,221 @@ fn layout_errors_are_diagnostics_at_their_line() {
         assert_eq!(errors[0].range.start.line, line, "[{name}] {:?}", errors[0]);
     }
 }
+
+// ===========================================================================
+// `@doc` in hover and completion (docs/proposals/doc-annotation.md, step 4)
+// ===========================================================================
+
+const DOCUMENTED: &str = r#"@doc("""
+  Constrain a value to a range. Three `int` arguments
+  give an `int`.
+  """,
+  params: {value: "The number.", lo: "The lower bound."},
+  returns: "The value, inside the range.",
+  example: "limit(15, 0, 10)   # 10",
+  see: ["lerp"])
+fn limit(value, lo, hi)
+  value
+end
+
+fn limit(value)
+  value
+end
+
+@doc("Old spelling.", deprecated: "Use `limit`.")
+fn bound(v)
+  v
+end
+
+@doc("A point on the board.")
+class Spot
+  x: int,
+  y: int,
+
+@doc("Where a piece stands.")
+enum Square
+  empty, full
+
+@doc("Says what the square is.")
+fn Square.say(s: Square) -> string
+  "x"
+end
+
+@doc("Gravity, in px/s².") @tunable let gravity = 980.0
+
+let s = Square.empty
+print(limit(1, 0, 2), limit(3), bound(1), Spot(1, 2), s.say(), gravity)
+"#;
+
+#[test]
+fn hover_shows_a_functions_doc_under_its_signature() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///documented.ptl";
+    open(&mut server, uri, DOCUMENTED);
+    let text = hover_text(&mut server, uri, DOCUMENTED, "fn limit(value, lo", 4);
+    assert!(text.starts_with("```petal\n(function) limit fn(value, lo, hi)"), "{text}");
+    // The body with its indentation cleaned, then the structured fields.
+    assert!(
+        text.contains("```\n\nConstrain a value to a range. Three `int` arguments\ngive an `int`."),
+        "{text}"
+    );
+    assert!(text.contains("**Parameters**\n\n- `value`: The number.\n- `lo`: The lower bound."), "{text}");
+    assert!(text.contains("**Returns:** The value, inside the range."), "{text}");
+    assert!(text.contains("```petal\nlimit(15, 0, 10)   # 10\n```"), "{text}");
+    assert!(text.contains("**See:** `lerp`"), "{text}");
+    // On a use too.
+    assert!(hover_text(&mut server, uri, DOCUMENTED, "limit(1, 0", 1).contains("Constrain a value"));
+}
+
+#[test]
+fn an_undocumented_overload_shares_its_sets_doc() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///overload.ptl";
+    open(&mut server, uri, DOCUMENTED);
+    let text = hover_text(&mut server, uri, DOCUMENTED, "fn limit(value)", 4);
+    assert!(text.contains("(function) limit fn(value)"), "{text}");
+    assert!(text.contains("Constrain a value to a range."), "{text}");
+}
+
+#[test]
+fn hover_marks_a_deprecated_item_and_documents_classes_enums_methods_and_settings() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///kinds.ptl";
+    open(&mut server, uri, DOCUMENTED);
+    let mut on = |needle: &str, offset: u32| hover_text(&mut server, uri, DOCUMENTED, needle, offset);
+    let bound = on("bound(1)", 1);
+    assert!(bound.contains("**Deprecated:** Use `limit`.\n\nOld spelling."), "{bound}");
+    let spot = on("Spot(1, 2)", 1);
+    assert!(spot.contains("(class) Spot class(x: int, y: int)"), "{spot}");
+    assert!(spot.contains("A point on the board."), "{spot}");
+    let square = on("enum Square", 6);
+    assert!(square.contains("(enum) Square empty | full") && square.contains("Where a piece stands."), "{square}");
+    let say = on("s.say()", 3);
+    assert!(say.contains("(method) Square.say") && say.contains("Says what the square is."), "{say}");
+    let gravity = on("gravity)", 1);
+    assert!(gravity.contains("Gravity, in px/s²."), "{gravity}");
+    // Without a doc, a hover is the signature alone, as before.
+    let undocumented = "fn f(x)\n  x\nend\nprint(f(1))\n";
+    open(&mut server, "file:///plain.ptl", undocumented);
+    let plain = hover_text(&mut server, "file:///plain.ptl", undocumented, "f(1)", 0);
+    assert!(plain.starts_with("```petal\n(function) f fn(x)") && plain.ends_with("```"), "{plain}");
+}
+
+#[test]
+fn completion_items_carry_the_summary_as_detail_and_the_doc_as_documentation() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///complete_doc.ptl";
+    let text = format!("{DOCUMENTED}li\n\n");
+    open(&mut server, uri, &text);
+    let line = text.lines().count() as u32 - 2;
+    let resp = completion(&mut server, uri, line, 2);
+    let items = resp["result"]["items"].as_array().unwrap();
+    let limit = items.iter().find(|i| i["label"] == "limit").expect("limit offered");
+    assert_eq!(limit["detail"], "Constrain a value to a range.");
+    assert_eq!(limit["documentation"]["kind"], "markdown");
+    let doc = limit["documentation"]["value"].as_str().unwrap();
+    assert!(doc.starts_with("```petal\nlimit fn(value, lo, hi)\n```"), "{doc}");
+    assert!(doc.contains("- `lo`: The lower bound."), "{doc}");
+    assert!(limit.get("tags").is_none(), "{limit}");
+
+    let resp = completion(&mut server, uri, line + 1, 0);
+    let items = resp["result"]["items"].as_array().unwrap();
+    let bound = items.iter().find(|i| i["label"] == "bound").expect("bound offered");
+    assert_eq!(bound["tags"], json!([1]), "{bound}");
+    let spot = items.iter().find(|i| i["label"] == "Spot").expect("Spot offered");
+    assert_eq!(spot["kind"], 7, "{spot}");
+    assert_eq!(spot["detail"], "A point on the board.");
+    // An undocumented item keeps its signature as its detail.
+    let s = items.iter().find(|i| i["label"] == "s").expect("s offered");
+    assert!(s.get("documentation").is_none(), "{s}");
+}
+
+const DOC_HUD: &str = r#"@module_doc("""
+  The heads-up display. Drawn last.
+  """)
+
+@doc("Draws the score in the corner.", params: {n: "The score."})
+pub fn draw_score(n: int) -> string
+  "score"
+end
+
+@doc("Blits a sprite.")
+pub native fn blit(id: int)
+"#;
+
+#[test]
+fn hover_and_completion_show_the_doc_of_an_imported_item_and_module() {
+    let project = Project::new("hover-doc", &[("hud.ptl", DOC_HUD)]);
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = project.uri("main.ptl");
+    let text = "import ./hud as h\nprint(draw_score(1))\nprint(h.draw_score(2))\nh.blit(1)\n";
+    open(&mut server, &uri, text);
+    // Bare, through the import.
+    let bare = hover_text(&mut server, &uri, text, "draw_score(1)", 1);
+    assert!(bare.contains("# from module ./hud\n```\n\nDraws the score in the corner."), "{bare}");
+    assert!(bare.contains("- `n`: The score."), "{bare}");
+    // `m.name`.
+    let qualified = hover_text(&mut server, &uri, text, "draw_score(2)", 1);
+    assert!(qualified.contains("Draws the score in the corner."), "{qualified}");
+    // A `native fn` the module declares.
+    let blit = hover_text(&mut server, &uri, text, "blit(1)", 1);
+    assert!(blit.contains("native fn(id: int)") && blit.contains("Blits a sprite."), "{blit}");
+    // The qualifier: the module and its `@module_doc`.
+    let module = hover_text(&mut server, &uri, text, "h.draw_score", 0);
+    assert!(module.contains("(module) ./hud") && module.contains("The heads-up display. Drawn last."), "{module}");
+
+    // Completion after `h.`.
+    let typed = "import ./hud as h\nh.dr\n";
+    change(&mut server, &uri, 2, typed);
+    let resp = completion(&mut server, &uri, 1, 4);
+    let items = resp["result"]["items"].as_array().unwrap();
+    let draw = items.iter().find(|i| i["label"] == "draw_score").expect("draw_score offered");
+    assert_eq!(draw["detail"], "Draws the score in the corner.");
+    assert!(draw["documentation"]["value"].as_str().unwrap().contains("- `n`: The score."), "{draw}");
+}
+
+#[test]
+fn hover_and_completion_reach_the_builtins() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///builtins.ptl";
+    let text = "let x = clamp(1, 0, 2)\nprint(x)\n";
+    open(&mut server, uri, text);
+    let clamp = hover_text(&mut server, uri, text, "clamp", 1);
+    assert!(clamp.contains("(function) clamp native fn(value: num, lo: num, hi: num)\n# builtin"), "{clamp}");
+    assert!(hover_text(&mut server, uri, text, "print", 1).contains("(function) print native fn(...values)"));
+    // A local declaration of the same name wins.
+    let shadow = "fn clamp(v)\n  v\nend\nprint(clamp(1))\n";
+    open(&mut server, "file:///shadow.ptl", shadow);
+    let mine = hover_text(&mut server, "file:///shadow.ptl", shadow, "clamp(1)", 1);
+    assert!(mine.contains("(function) clamp fn(v)") && !mine.contains("builtin"), "{mine}");
+
+    // Offered once a prefix is typed (not on an empty one).
+    let typed = "let x = cla\n";
+    change(&mut server, uri, 2, typed);
+    assert!(labels(&completion(&mut server, uri, 0, 11)).contains(&"clamp".to_string()));
+}
+
+#[test]
+fn builtin_definitions_carry_their_native_declarations_docs() {
+    let core = r#"@doc("Constrain a value.", params: {lo: "The lower bound."})
+pub native fn clamp(value: num, lo: num, hi: num)
+pub native fn clamp(value: num)
+pub native fn floor(x: num) -> int
+"#;
+    let defs = petal::lsp::document::builtin_definitions_from(&[core]);
+    let clamp = defs.iter().find(|d| d.name == "clamp").unwrap();
+    assert_eq!(defs.iter().filter(|d| d.name == "clamp").count(), 1);
+    let doc = clamp.doc.as_ref().expect("clamp's doc");
+    assert_eq!(doc.summary().as_deref(), Some("Constrain a value."));
+    assert!(defs.iter().find(|d| d.name == "floor").unwrap().doc.is_none());
+    let text = petal::lsp::docs::hover_markdown("clamp", Some(doc));
+    assert!(text.contains("- `lo`: The lower bound."), "{text}");
+    // The bundled `core` package is read the same way.
+    assert!(petal::lsp::document::builtin_definitions().iter().any(|d| d.name == "clamp"));
+}

@@ -170,7 +170,8 @@ same rerun check.
    to the new literal. With `ResolveOptions::concretize_tidy` (or
    `concretize_with(.., &ConcretizeOptions { tidy: true })`) the literal is
    first written tidied (`tidied`): no `nil` props or `{nil}` children,
-   whole floats as ints, text with line breaks as lines with `<br />`. That
+   whole floats as ints (but not a float child, which is shown as text),
+   text with line breaks as lines with `<br />`. That
    form is kept when every output is the same up to the tidying (compared
    through `tidied` on both sides), and the exact literal is written
    otherwise.

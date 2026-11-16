@@ -425,3 +425,18 @@ fn tidied_values_round_trip() {
     let rec = StaticValue::Record(vec![("a".into(), StaticValue::Nil)]);
     assert_eq!(tidied(rec.clone()), rec);
 }
+
+/// petal-social-media's `stat(post, 2.0)`: a float shown as an element's
+/// text child stays a float when written out tidied (`{2}` would read "2",
+/// not "2.0"), while its props are still tidied.
+#[test]
+fn a_tidied_write_out_keeps_a_float_text_child() {
+    let r = value_runner();
+    let src = "fn stat(n)\n  <slide name=\"Stat\" background={nil}><text y={300.0}>{n}</text></slide>\nend\n[stat(2.0)]\n";
+    let rn = run(&r, src);
+    let c = concretize_with(&r, &rn, tagged(&rn, "slide")[0], &ConcretizeOptions { tidy: true }).unwrap();
+    assert!(c.tidy, "{}", c.source);
+    assert!(c.source.contains("<text y={300}>{2.0}</text>"), "{}", c.source);
+    assert!(c.source.ends_with("[<slide name=\"Stat\">\n  <text y={300}>{2.0}</text>\n</slide>]\n"), "{}", c.source);
+    assert_eq!(tidied(StaticValue::Float(2.0)), StaticValue::Int(2));
+}

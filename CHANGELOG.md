@@ -1227,6 +1227,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- **Programs as documents: a package's text and a tidied float child.**
+  `SetText` on a `<text>` written in a package with child elements (or not
+  an element literal) is `Refused` as another file's again, not left
+  `Unresolved` with the package's line and span. The tidy write-out keeps an
+  element's float child as a float (`{2.0}` is shown as "2.0", `{2}` as
+  "2"); its props are still tidied.
+
 - **Programs as documents: structural edits on items a `++` of lists and
   loops build.** An element bound to a name and read by one entry of one
   list literal is that entry (`clip` in `[clip] ++ lines ++ [count]`), so

@@ -55,7 +55,8 @@ pub struct ConcretizeOptions {
 
 /// `v` as an element written by hand would hold it: no `nil` props or
 /// children (on elements; a record keeps its `nil` fields), a whole float
-/// that converts to an int and back unchanged as that int (`594.0` → `594`),
+/// that converts to an int and back unchanged as that int (`594.0` → `594`;
+/// not an element's float child, which is shown as text: `{2.0}` stays),
 /// and a text child with line breaks as a run of text per line with `<br />`
 /// between them (an empty line has no run).
 pub fn tidied(v: StaticValue) -> StaticValue {
@@ -66,6 +67,9 @@ pub fn tidied(v: StaticValue) -> StaticValue {
                 match c {
                     StaticValue::Nil => {}
                     StaticValue::Str(s) if s.contains('\n') => kids.extend(crate::text::text_children(&s)),
+                    // A number child is shown as text, where `2.0` and `2`
+                    // read differently: it stays as it is.
+                    c @ StaticValue::Float(_) => kids.push(c),
                     c => kids.push(tidied(c)),
                 }
             }

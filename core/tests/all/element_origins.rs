@@ -284,3 +284,34 @@ end
     assert_eq!(text(program, x1.end), "6");
     assert_eq!(prop_trace(&env, pid, items[1], "title").constant(), Some(&StaticValue::Str("two".into())));
 }
+
+/// A parameter with a default lowers to `if p#given then p else <default>`:
+/// the call in the chain says whether the argument was passed, so a named (or
+/// positional) argument traces to the argument.
+#[test]
+fn a_defaulted_parameter_traces_to_the_argument_the_call_passes() {
+    let src = "fn slide(a, subtitle = nil, background = :203040)
+  <text v={subtitle} bg={background} />
+end
+[slide(1, subtitle: \"World\", background: :102030), slide(2), slide(3, \"Pos\")]";
+    let (env, pid, items) = run_traced(src);
+    let program = env.get_program(pid).unwrap();
+
+    let named = prop_trace(&env, pid, items[0], "v");
+    assert_eq!(named.constant(), Some(&StaticValue::Str("World".into())));
+    assert!(named.crosses_call());
+    assert_eq!(text(program, named.end), "\"World\"");
+    assert_eq!(named.end_chain.as_deref(), Some(&[][..]), "the argument is in top-level code");
+    let bg = prop_trace(&env, pid, items[0], "bg");
+    assert_eq!(text(program, bg.end), ":102030");
+
+    // An omitted argument stops at the default's branch, as before: the
+    // default is shared by every call that leaves it out.
+    let omitted = prop_trace(&env, pid, items[1], "v");
+    assert_eq!(omitted.end_kind, TraceEnd::Computed);
+    assert!(matches!(program.get_term(omitted.end).op, TermOp::Branch));
+
+    let positional = prop_trace(&env, pid, items[2], "v");
+    assert_eq!(positional.constant(), Some(&StaticValue::Str("Pos".into())));
+    assert!(positional.crosses_call());
+}

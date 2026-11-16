@@ -771,6 +771,14 @@ fn walk_value(
                     break;
                 }
             }
+            TermOp::Branch => {
+                // A parameter with a default lowers to
+                // `p = if p#given then p else <default>`: with the call in the
+                // chain, the branch it took is known statically.
+                let Some(next) = default_param_branch(program, t, ctx, chain) else { break };
+                hops.push(TraceHop::Alias { from: cur, to: next });
+                cur = next;
+            }
             TermOp::GetField(field) => {
                 let Some(field) = string_constant(program, *field) else { break };
                 let Some(&obj) = t.inputs.first() else { break };
@@ -802,6 +810,48 @@ fn walk_value(
         }
     }
     (cur, ctx)
+}
+
+/// For the `if p#given then p else <default>` branch the compiler writes for
+/// parameter `p` with a default: when the call at `chain[ctx]` passes `p`
+/// (positionally or by name), the then-arm, which reads the parameter and so
+/// leads on to the argument. `None` when the call omits it (the value is the
+/// default), for any other branch, or when the call is not known.
+fn default_param_branch(program: &Program, branch: &crate::program::Term, ctx: Option<usize>, chain: &[TermId]) -> Option<TermId> {
+    let f = program.functions.iter().find(|f| f.body_block == branch.block_id)?;
+    // The condition is a reference to the hidden `p#given` flag.
+    let mut cond = *branch.inputs.first()?;
+    for _ in 0..4 {
+        let c = program.terms.get(cond.0 as usize)?;
+        match (&c.op, c.inputs.first()) {
+            (TermOp::Copy, Some(&next)) => cond = next,
+            _ => break,
+        }
+    }
+    let flag = program.terms.get(cond.0 as usize)?;
+    if !matches!(flag.op, TermOp::Copy) || !flag.inputs.is_empty() || flag.block_id != f.body_block {
+        return None;
+    }
+    let flag_name = flag.name.as_deref()?;
+    let k = f.params.iter().position(|p| crate::ast::arg_given_name(p) == flag_name)?;
+    let then_b = *branch.child_blocks.first()?;
+    let then_v = program.blocks.get(then_b.0 as usize).and_then(|b| b.terms.last().copied())?;
+    // The then-arm reads the parameter itself.
+    let tv = program.terms.get(then_v.0 as usize)?;
+    let reads_param = matches!(tv.op, TermOp::Copy)
+        && tv.inputs.first().and_then(|i| program.terms.get(i.0 as usize)).is_some_and(|p| {
+            matches!(p.op, TermOp::Copy) && p.inputs.is_empty() && p.name.as_deref() == Some(f.params[k].as_str())
+        });
+    if !reads_param {
+        return None;
+    }
+    let call = *chain.get(ctx?)?;
+    if !matches!(program.terms.get(call.0 as usize)?.op, TermOp::Call) {
+        return None;
+    }
+    // An omitted argument leaves the default, which every call that omits
+    // it shares: that stays a stop (the branch), as before.
+    call_arg_for_param(program, call, &f.params, k).map(|_| then_v)
 }
 
 /// The input of record literal `rec` for field `field`, when it is plainly

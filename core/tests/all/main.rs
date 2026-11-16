@@ -21,6 +21,7 @@ mod computed_keys;
 mod const_decl;
 mod const_parity;
 mod copy_elision;
+mod core_docs;
 mod core_semantics;
 mod default_params;
 mod dep_classes;

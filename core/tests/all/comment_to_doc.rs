@@ -294,7 +294,9 @@ fn other_text_is_preserved_exactly() {
 fn library_files_convert_and_keep_their_ir() {
     // The libraries themselves are migrated by hand review (proposal step
     // 5); here the converter only has to produce a gated, idempotent result
-    // for each.
+    // for each. A file that has been migrated already (it has a
+    // `@module_doc`) must come back unchanged: its documented declarations
+    // are passed over, and what is left above them is maintainer notes.
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     for rel in [
         "core/prelude/std.ptl",
@@ -311,6 +313,10 @@ fn library_files_convert_and_keep_their_ir() {
             ..Default::default()
         };
         let out = migrate_source(&src, &opts).unwrap_or_else(|e| panic!("{rel}: {e}"));
+        if src.contains("@module_doc(") {
+            assert_eq!(out.output, src, "{rel}: a migrated library changed again");
+            continue;
+        }
         assert!(out.rewritten() > 0, "{rel}");
         assert!(out.output.contains("@module_doc("), "{rel}");
         petal::cst::parse_source_with_module_doc(&out.output, FileId(0)).unwrap_or_else(|e| panic!("{rel}: {e}"));

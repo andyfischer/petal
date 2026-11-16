@@ -83,3 +83,12 @@ fn strip_blanks_comment_lines_and_keeps_everything_else() {
         "\nlet x = 1 // trailing\n\n\nfn f() end\n"
     );
 }
+
+#[test]
+fn strip_keeps_the_lines_of_a_raw_string_verbatim() {
+    let src = "# note\n@doc(\"\"\"Body.  \n\"\"\", example: \"\"\"\n  f(1)   # 2  \n  # done\n\"\"\")\nfn f(x) x end  \n";
+    assert_eq!(
+        strip_comments::strip_comments(src),
+        "\n@doc(\"\"\"Body.  \n\"\"\", example: \"\"\"\n  f(1)   # 2  \n  # done\n\"\"\")\nfn f(x) x end\n"
+    );
+}

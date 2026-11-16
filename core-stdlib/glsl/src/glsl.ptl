@@ -1,24 +1,36 @@
-# glsl — translate a Petal function to GLSL. EXPERIMENTAL.
-#
-#     import glsl
-#
-#     let grade = fn(fx: Fx, amount = 0.5) -> fx.color * amount
-#     let g = glsl.glsl_function(grade, ENV)   // {code, common, params, uniforms, taps, error, ...}
-#     let text = glsl.to_glsl(grade, ENV)      // the same as one GLSL string
-#
-# The translator reads the function with the core introspection builtins
-# (`fn_info`, `fn_ast`) and walks its syntax tree. It runs nothing: the code
-# only has to be in the pure numeric subset (floats, ints, bools, vec2/vec3,
-# arithmetic, the math builtins, `let`/`var`/`set`, `if`, `for i in range`,
-# `while`, `return`, calls of other translatable functions). Anything else is
-# refused with the line and column of the construct.
-#
-# The result is cached under the function's `code_hash`, so a script that
-# calls this every frame translates once, and again only after an edit that
-# changes the function (or a function it calls). See
-# docs/game-engine-features/petal-to-glsl.md for the mapping, the environment record and the
-# limits.
+@module_doc("""
+Translate a Petal function to GLSL (experimental). It is written entirely in
+Petal. A host that draws with shaders can take a shader hook as a Petal
+lambda and hand the engine the GLSL this library writes for it.
 
+```petal
+import glsl
+
+let grade = fn(fx: Fx, amount = 0.5) -> fx.color * amount
+let g = glsl.glsl_function(grade, ENV)   # {code, common, params, uniforms, taps, error, ...}
+let text = glsl.to_glsl(grade, ENV)      # the same as one GLSL string
+```
+
+The translator reads the function with the core introspection builtins
+(`fn_info`, `fn_ast`) and walks its syntax tree. It runs nothing: the code
+only has to be in the pure numeric subset (floats, ints, bools, vec2/vec3,
+arithmetic, the math builtins, `let`/`var`/`set`, `if`, `for i in range`,
+`while`, `return`, calls of other translatable functions). Anything else is
+refused with the line and column of the construct.
+
+The result is cached under the function's `code_hash`, so a script that
+calls this every frame translates once, and again only after an edit that
+changes the function (or a function it calls). Captured floats and vectors
+are uniforms: a change to one between frames never causes a translation.
+
+The full description (the mapping, the environment record and the limits) is
+docs/game-engine-features/petal-to-glsl.md.
+""", see: ["to_glsl", "glsl_function", "fn_info"], extra: {experimental: true})
+
+@doc("""
+The level of the export surface. Levels are additive: a script written
+against an older one keeps working.
+""", example: """if glsl.VERSION < 1 then print("glsl is too old") end""")
 pub let VERSION = 1
 
 # --- GLSL types ------------------------------------------------------------
@@ -1130,32 +1142,49 @@ fn live_captures(info: record, prefix: string, inline: bool, depth: int) -> reco
 
 # --- The public surface ----------------------------------------------------
 
-# Translate the Petal function `f` to GLSL and return the parts a host needs:
-#
-#   error         nil, or {message, line, column} for code outside the subset
-#   kind          "hook" or "function"
-#   code          a hook: the statements of its body; a function: its definition
-#   common        the GLSL functions `code` calls (helpers), "" when none
-#   name          a function: its GLSL name; a hook: env.entry
-#   signature     a hook: "void <entry>(inout <Struct> <self>)"
-#   params        a hook: {name: default} for each parameter after the first
-#   param_types   {name: glsl type} for the same
-#   uniforms      {name: current value} for each captured float / vector /
-#                 color the code reads (they are uniforms, not constants)
-#   uniform_types {name: glsl type} for the same
-#   taps          how many times the functions named in env.count are called
-#                 (loops with constant bounds multiplied out), nil if unknown
-#   taps_in_loop  whether some of those calls sit in a loop
-#   code_hash     the function's code hash (what the cache is keyed on)
-#
-# `env` describes the shader side: {structs, functions, self, result,
-# uniforms, count, entry}. `opts`: {name, inline_captures}. Both are
-# documented in docs/game-engine-features/petal-to-glsl.md.
-#
 # The translation is cached in a `memo` per (code hash, structural captures,
-# environment, options), so calling this every frame is cheap: a hit costs
-# one `fn_info` per function involved and a memo lookup. It is a pure function
-# of that key, so every caller asking for the same shader shares the entry.
+# environment, options): a hit costs one `fn_info` per function involved and a
+# memo lookup. It is a pure function of that key, so every caller asking for
+# the same shader shares the entry.
+@doc("""
+Translate the Petal function `f` to GLSL and return the parts a host needs.
+It runs nothing: `f` is read with `fn_info` and `fn_ast`, and code outside
+the translatable subset is reported, with its line and column, in `error`.
+The result is cached under the function's code hash, so calling this every
+frame is cheap; the `uniforms` are read fresh on every call.
+""", params: {f: "A Petal function with source: a lambda or a named `fn`.", env: """
+    The shader side, `{structs, functions, self, result, uniforms, count,
+    entry}`: the structs a hook may take as its first parameter (with field
+    types), the shader's own functions (argument and return types), the
+    struct's name in the shader, the field a hook's value is assigned to, the
+    record uniforms are read from (`""` for bare names), the functions to
+    count into `taps`, and the hook's function name. All optional.
+  """,
+  opts: "Translation options."},
+  options: {
+    name: """A prefix for the GLSL functions emitted (`{name: "streak"}` names a helper `streak_weight`), and the name of a translated lambda.""",
+    inline_captures: "True writes captured floats, vectors and colors into the text as constants instead of making them uniforms.",
+  },
+  returns: """
+    `{error, kind, code, common, name, signature, params, param_types,
+    uniforms, uniform_names, uniform_types, taps, taps_in_loop, code_hash}`.
+    `error` is nil or `{message, line, column}`; `kind` is `"hook"` (the first
+    parameter is annotated with a struct of `env.structs`) or `"function"`;
+    `code` is a hook's body statements, or a function's whole definition;
+    `common` the GLSL functions `code` calls (`""` when none); `name` a
+    function's GLSL name, or a hook's `env.entry`; `signature` a hook's
+    `void <entry>(inout <Struct> <self>)`; `params` / `param_types` a hook's
+    `{name: default}` and `{name: glsl type}` for each parameter after the
+    first; `uniforms` / `uniform_types` the same for each captured float,
+    vector or color the code reads, with `uniform_names` listing them; `taps`
+    how many times the functions named in `env.count` are called (constant
+    loops multiplied out; nil when unknown) and `taps_in_loop` whether some
+    call sits in a loop; `code_hash` the key of the cache.
+  """,
+  example: """
+    let g = glsl.glsl_function(grade, ENV, {name: "grade"})
+    if g.error != nil then print(glsl.glsl_error_text(g.error)) end
+  """, see: ["to_glsl", "glsl_error_text", "fn_info"])
 pub fn glsl_function(f, env: record = {}, opts: record = {}) -> record
   if type(f) != "function" then
     return {...empty_result("to_glsl expects a function, got a " ++ type(f), nil, nil), uniforms: {}, code_hash: nil}
@@ -1173,10 +1202,26 @@ pub fn glsl_function(f, env: record = {}, opts: record = {}) -> record
     if held != nil then uniforms[name] = held.value end
   {...cached, uniforms: uniforms, code_hash: info.code_hash}
 
-# The GLSL of `f` as one string: its helpers, then the function itself (a
-# hook body is wrapped in its signature). Code outside the subset gives a
-# `#error` line carrying the message and position, so the failure surfaces
-# where the shader is compiled; use `glsl_function` to get it as data.
+@doc("""
+The GLSL of `f` as one string: its helpers, then the function itself (a
+hook body is wrapped in its signature). Code outside the subset gives a
+`#error` line carrying the message and position, so the failure surfaces
+where the shader is compiled; use `glsl_function` to get it as data.
+""", params: {f: "A Petal function with source.", env: "The shader side, as `glsl_function` takes it.",
+  opts: "Translation options, as `glsl_function` takes them."},
+  options: {
+    name: """A prefix for the GLSL functions emitted (`{name: "streak"}` names a helper `streak_weight`), and the name of a translated lambda.""",
+    inline_captures: "True writes captured floats, vectors and colors into the text as constants instead of making them uniforms.",
+  },
+  example: """
+    fn weight(i: int, n: int) -> float
+      1.0 - abs(i) / (n + 1.0)
+
+    print(glsl.to_glsl(weight))
+    # float weight(int i, int n) {
+    #     return 1.0 - float(abs(i)) / (float(n) + 1.0);
+    # }
+  """, see: ["glsl_function"])
 pub fn to_glsl(f, env: record = {}, opts: record = {}) -> string
   let g = glsl_function(f, env, opts)
   if g.error != nil then
@@ -1187,7 +1232,11 @@ pub fn to_glsl(f, env: record = {}, opts: record = {}) -> string
     g.code
   if g.common == "" then text else g.common ++ "\n\n" ++ text end
 
-# "message [line L, column C]" for an error record of `glsl_function`.
+@doc("""
+The text of a `glsl_function` error: `"message [line L, column C]"`, or the
+message alone when it has no position.
+""", params: {err: """The `error` of a `glsl_function` result: `{message, line, column}`."""},
+  example: """if g.error != nil then print(glsl.glsl_error_text(g.error)) end""", see: ["glsl_function"])
 pub fn glsl_error_text(err: record) -> string
   if err.line == nil then
     err.message

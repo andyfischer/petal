@@ -273,10 +273,26 @@ pub enum Command {
         json: bool,
         path: Option<String>,
     },
+    /// `doc` — the public surface of a package, a module or a file, with
+    /// its `@doc`s (`crate::api_doc`). Reads source only; nothing compiles.
+    Doc(DocArgs),
     /// The package-manager commands (`init`, `add`, `remove`, `install`,
     /// `update`, `vendor`, `bundle`), run by the `petal` binary with
     /// `petal-pkgman` (see [`pm`]).
     Pm(pm::PmCommand),
+}
+
+/// Every argument `petal doc` accepts.
+#[derive(Default)]
+pub struct DocArgs {
+    /// `--json`: the report as JSON (docs/schemas/petal-doc.schema.json).
+    pub json: bool,
+    /// `--brief`: one line per item.
+    pub brief: bool,
+    /// `--private`: items written without `pub` too.
+    pub private: bool,
+    /// The package, module or file.
+    pub target: String,
 }
 
 /// Every flag `petal suggest` accepts.
@@ -676,6 +692,11 @@ pub fn execute(cli: CliArgs) {
         handlers::handle_packages(json, path.as_deref(), &include_dirs);
         return;
     }
+    // `doc` resolves its own target, which may be a package name.
+    if let Command::Doc(opts) = &command {
+        handlers::handle_doc(opts, &include_dirs);
+        return;
+    }
 
     let source = read_source(&source_input);
 
@@ -754,7 +775,9 @@ pub fn execute(cli: CliArgs) {
             handlers::handle_show_graph(all, &source, &source_input, &include_dirs);
         }
         // Handled above, before the source read.
-        Command::Lsp | Command::Packages { .. } | Command::Pm(_) => unreachable!(),
+        Command::Lsp | Command::Packages { .. } | Command::Doc(_) | Command::Pm(_) => {
+            unreachable!()
+        }
     }
 }
 

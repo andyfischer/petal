@@ -549,6 +549,26 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `npm run lint:docs` runs `undocumented-pub` over Petal's own libraries, and
   CI runs it in report-only mode. See [CLI.md](docs/CLI.md#rules).
 
+- **`petal doc [--json | --brief] [--private] <target>`.** The documented
+  public surface of a package (`ui`, `core`, `bloom`, a package directory),
+  one module (`ui/input`, `core/math`), a file, or the prelude `std`: every
+  `pub` fn (an overload set as one item with all its call forms), `native
+  fn`, class, enum and binding, with parameters (name, type, optional,
+  default), return type, file and line, and its `@doc`, cleaned and with its
+  summary; each module's `@module_doc`; the package's doc (its root
+  module's `@module_doc`) and `petal.toml` description. Only the parser
+  runs, so host libraries document without a host. `--brief` is a
+  one-line-per-item index, `--json` the report described by
+  [docs/schemas/petal-doc.schema.json](docs/schemas/petal-doc.schema.json),
+  and `hidden: true` items are left out of the text forms and flagged in the
+  JSON. See [CLI.md](docs/CLI.md) (`doc`). Alongside: the `[package]
+  description` reaches `PackageInfo::description`, each bundled package has
+  one, `module::LoadedModule::module_doc` carries every loaded
+  file's `@module_doc`, a summary no longer ends inside a `` `code` `` span, and
+  `Env::find_package` / `Env::package_of_file` / `Env::memory_module` reach
+  a package's sources the way an import does. Most of Petal's own libraries
+  still document with comments, so their items have no doc yet.
+
 - **Documentation annotations: `@doc(…)` and `@module_doc(…)`.** `@doc`
   goes before a `fn` (`pub fn`, `fn T.m`, `native fn`), `class`, `enum`,
   `let`, `var`, `state` or `memo` and holds its documentation as literal

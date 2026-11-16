@@ -1,0 +1,37 @@
+# A maintainer's note: not documentation.
+
+@module_doc("""
+Shapes and sums, documented. The root module re-exports `doc_pkg/shapes`.
+
+    A second paragraph, kept in the body.
+""",
+  see: ["doc_pkg/shapes"],
+  extra: {since: "0.1", tier: 2, stable: true, tags: ["demo", nil], meta: {owner: "fixtures", ratio: 0.5}})
+
+pub import ./shapes
+
+# A comment above a function is not its doc.
+pub fn total(xs)
+  reduce(xs, 0, fn(acc, x) acc + x end)
+
+@doc("Scale every element by `k`. Returns a new list.", params: {xs: "The numbers.", k: "The factor."}, returns: "The scaled list.")
+pub fn scale(xs, k = 2)
+  map(xs, fn(x) x * k end)
+
+@doc("An old name.", deprecated: "Use `total`.")
+pub fn sum_all(xs)
+  total(xs)
+
+@doc("Internal plumbing, exported for the shapes module.", hidden: true)
+pub fn _plumbing()
+  nil
+
+fn private_helper(a)
+  a
+
+@doc("How many shapes have been drawn.")
+pub state drawn: int = 0
+
+@doc("The golden ratio.") @tunable(1, 2) pub let PHI = 1.618
+
+pub let ORIGIN = {x: 0, y: 0}

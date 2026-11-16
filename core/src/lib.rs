@@ -8,6 +8,7 @@
 // with `default-features = false` and skip them. The formatter, linter and
 // `suggest` stay in the library: `apply_change` and the compiler use them.
 
+pub mod api_doc;
 pub mod apply_change;
 pub mod ast;
 pub mod ast_display;

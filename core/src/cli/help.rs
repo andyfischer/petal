@@ -40,6 +40,10 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
                 "packages",
                 "Show the project's dependency graph and available libraries",
             ),
+            (
+                "doc",
+                "Show the documented public surface of a package, module or file",
+            ),
         ],
     ),
     (
@@ -171,6 +175,7 @@ fn page(name: &str) -> Option<&'static str> {
         "propose-edit" => PROPOSE_EDIT,
         "lsp" => LSP,
         "packages" => PACKAGES,
+        "doc" => DOC,
         "init" => super::pm::INIT,
         "add" => super::pm::ADD,
         "remove" => super::pm::REMOVE,
@@ -1965,6 +1970,64 @@ DESCRIPTION
 
 SEE ALSO
        petal help lint
+";
+
+const DOC: &str = "\
+NAME
+       petal-doc - Show the documented public surface of a package, a module
+       or a file
+
+SYNOPSIS
+       petal doc [--json | --brief] [--private] [-I <dir>]... <target>
+
+DESCRIPTION
+       Lists every pub item of <target> - functions with all their call forms
+       (an overload set is one item), native fns, classes, enums and pub
+       let/var/state bindings - with its parameters (name, type, optional),
+       return type, source line and its @doc(...). Each module's
+       @module_doc(...) comes with it, and for a package the root module's
+       @module_doc (the package's doc) and petal.toml's description.
+
+       Only the parser runs: nothing is compiled, so a library that needs a
+       host (ui, bloom) is documented without one. A comment is never
+       documentation; an item without @doc has no doc.
+
+       <target> is, in this order:
+       - a .ptl file (a module of the package it is in, or a loose file);
+       - a package directory (one holding a petal.toml);
+       - a package name (ui, core, bloom), found the way an import in the
+         working directory finds it: the project, its dependencies, -I and
+         PETAL_PATH packages, then the bundled ones;
+       - one module of a package (ui/input, core/math);
+       - a module registered in memory, such as the core prelude, std.
+
+OPTIONS
+       --json
+              Print the report as JSON. The shape is described by
+              docs/schemas/petal-doc.schema.json; items with `hidden: true`
+              in their doc are included and flagged.
+
+       --brief
+              Print one line per item: its signature and its doc's summary
+              (first sentence). Hidden items are left out.
+
+       --private
+              Include items written without pub.
+
+       -I <dir>
+              Add a directory of packages to search.
+
+       Without --json or --brief, the report is printed as Markdown: each
+       item's signatures, doc body, parameters, options, examples and file
+       and line. Hidden items are left out.
+
+EXAMPLES
+       petal doc --brief ui
+       petal doc --json core/math
+       petal doc --private lib/util.ptl
+
+SEE ALSO
+       petal help packages; docs/language-guide.md (Documentation)
 ";
 
 const PACKAGES: &str = "\

@@ -2034,6 +2034,47 @@ fn print_dep_nodes(nodes: &[DepNode], depth: usize) {
     }
 }
 
+/// `petal doc [--json | --brief] [--private] <target>`: the documented
+/// public surface of a package, a module or a file (`crate::api_doc`). Exits
+/// 1 when the target is not found, or when a module of it does not parse
+/// (after printing the rest).
+pub fn handle_doc(opts: &super::DocArgs, include_dirs: &[PathBuf]) {
+    let mut env = make_env(include_dirs);
+    // Documenting reads what is there; it fetches nothing.
+    env.set_install_on_demand(false);
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let report = match crate::api_doc::document(
+        &env,
+        &opts.target,
+        &cwd,
+        crate::api_doc::DocOptions {
+            private: opts.private,
+        },
+    ) {
+        Ok(report) => report,
+        Err(e) => die(opts.json, &e, "doc"),
+    };
+    if opts.json {
+        print_json(&report);
+    } else if opts.brief {
+        print!("{}", crate::api_doc::render_brief(&report));
+    } else {
+        print!("{}", crate::api_doc::render_text(&report));
+    }
+    let failed: Vec<&crate::api_doc::ModuleApi> =
+        report.modules.iter().filter(|m| m.error.is_some()).collect();
+    for module in &failed {
+        eprintln!(
+            "Error: {} does not parse: {}",
+            module.name,
+            module.error.as_deref().unwrap_or_default()
+        );
+    }
+    if !failed.is_empty() {
+        process::exit(1);
+    }
+}
+
 /// `petal packages [--json] [path]`: the project's resolved dependency graph
 /// and required host interfaces, what the `-I` directories make available,
 /// and the packages bundled in the binary.

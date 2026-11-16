@@ -1,0 +1,6 @@
+# The fixture for `petal doc` (cli/tests/doc_cli.rs): every kind of item,
+# documented and not.
+[package]
+name = "doc_pkg"
+version = "0.3.0"
+description = "Shapes and sums, documented."

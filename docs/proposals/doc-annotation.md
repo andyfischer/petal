@@ -11,6 +11,14 @@ slot kept by the state transfer), not as a layout-only relocation, and
 `show-ast --json` of a file with a `@module_doc` prints
 `{"module_doc", "stmts"}` instead of the bare statement array.
 
+Step 2, `petal doc [--json | --brief] [--private]`, is implemented too
+(2026-11-15; [CLI.md](../CLI.md), `doc`, and
+[the JSON schema](../schemas/petal-doc.schema.json)). It settles
+[open question 3](#open-questions): `--private` includes the items written
+without `pub`. The module doc is carried on `module::LoadedModule`
+(`module_doc`), not on `Program`: nothing downstream of the loader needs it
+yet. Each bundled package's `petal.toml` now has a `description`.
+
 ## Summary
 
 Petal gets a documentation syntax, and it is the only one: comments stop being

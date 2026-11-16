@@ -355,6 +355,9 @@ print(limit(9, 0, 5), GRAVITY)
   with the doc's text), and a package `description` that disagrees with the
   root `@module_doc` (`package-description`). The opt-in `undocumented-pub`
   lists `pub` items with no doc. See [CLI.md](CLI.md#rules).
+- `petal doc <package|module|file>` prints a module's or package's `pub`
+  items with their signatures and docs (`--brief` for an index, `--json` for
+  tools); see [CLI.md](CLI.md) (`doc`).
 
 ## Types
 

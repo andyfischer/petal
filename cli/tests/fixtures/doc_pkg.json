@@ -1,0 +1,716 @@
+{
+  "schema": "petal-doc/1",
+  "target": "doc_pkg",
+  "package": {
+    "name": "doc_pkg",
+    "version": "0.3.0",
+    "description": "Shapes and sums, documented.",
+    "root": "doc_pkg",
+    "root_module": "doc_pkg",
+    "doc": {
+      "body": "Shapes and sums, documented. The root module re-exports `doc_pkg/shapes`.\n\n    A second paragraph, kept in the body.",
+      "summary": "Shapes and sums, documented.",
+      "params": {},
+      "returns": null,
+      "options": {},
+      "example": [],
+      "see": [
+        "doc_pkg/shapes"
+      ],
+      "deprecated": null,
+      "hidden": false,
+      "extra": {
+        "since": "0.1",
+        "tier": 2,
+        "stable": true,
+        "tags": [
+          "demo",
+          null
+        ],
+        "meta": {
+          "owner": "fixtures",
+          "ratio": 0.5
+        }
+      }
+    },
+    "modules": [
+      "doc_pkg",
+      "doc_pkg/shapes"
+    ]
+  },
+  "modules": [
+    {
+      "name": "doc_pkg",
+      "file": "src/doc_pkg.ptl",
+      "doc": {
+        "body": "Shapes and sums, documented. The root module re-exports `doc_pkg/shapes`.\n\n    A second paragraph, kept in the body.",
+        "summary": "Shapes and sums, documented.",
+        "params": {},
+        "returns": null,
+        "options": {},
+        "example": [],
+        "see": [
+          "doc_pkg/shapes"
+        ],
+        "deprecated": null,
+        "hidden": false,
+        "extra": {
+          "since": "0.1",
+          "tier": 2,
+          "stable": true,
+          "tags": [
+            "demo",
+            null
+          ],
+          "meta": {
+            "owner": "fixtures",
+            "ratio": 0.5
+          }
+        }
+      },
+      "reexports": [
+        {
+          "module": "./shapes",
+          "canonical": "doc_pkg/shapes",
+          "names": null
+        }
+      ],
+      "items": [
+        {
+          "kind": "fn",
+          "name": "total",
+          "exported": true,
+          "hidden": false,
+          "line": 14,
+          "doc": null,
+          "forms": [
+            {
+              "params": [
+                {
+                  "name": "xs",
+                  "type": null,
+                  "optional": false
+                }
+              ],
+              "returns": null,
+              "native": false,
+              "line": 14,
+              "doc": null
+            }
+          ]
+        },
+        {
+          "kind": "fn",
+          "name": "scale",
+          "exported": true,
+          "hidden": false,
+          "line": 18,
+          "doc": {
+            "body": "Scale every element by `k`. Returns a new list.",
+            "summary": "Scale every element by `k`.",
+            "params": {
+              "xs": "The numbers.",
+              "k": "The factor."
+            },
+            "returns": "The scaled list.",
+            "options": {},
+            "example": [],
+            "see": [],
+            "deprecated": null,
+            "hidden": false,
+            "extra": {}
+          },
+          "forms": [
+            {
+              "params": [
+                {
+                  "name": "xs",
+                  "type": null,
+                  "optional": false
+                },
+                {
+                  "name": "k",
+                  "type": null,
+                  "optional": true,
+                  "default": "2"
+                }
+              ],
+              "returns": null,
+              "native": false,
+              "line": 18,
+              "doc": {
+                "body": "Scale every element by `k`. Returns a new list.",
+                "summary": "Scale every element by `k`.",
+                "params": {
+                  "xs": "The numbers.",
+                  "k": "The factor."
+                },
+                "returns": "The scaled list.",
+                "options": {},
+                "example": [],
+                "see": [],
+                "deprecated": null,
+                "hidden": false,
+                "extra": {}
+              }
+            }
+          ]
+        },
+        {
+          "kind": "fn",
+          "name": "sum_all",
+          "exported": true,
+          "hidden": false,
+          "line": 22,
+          "doc": {
+            "body": "An old name.",
+            "summary": "An old name.",
+            "params": {},
+            "returns": null,
+            "options": {},
+            "example": [],
+            "see": [],
+            "deprecated": "Use `total`.",
+            "hidden": false,
+            "extra": {}
+          },
+          "forms": [
+            {
+              "params": [
+                {
+                  "name": "xs",
+                  "type": null,
+                  "optional": false
+                }
+              ],
+              "returns": null,
+              "native": false,
+              "line": 22,
+              "doc": {
+                "body": "An old name.",
+                "summary": "An old name.",
+                "params": {},
+                "returns": null,
+                "options": {},
+                "example": [],
+                "see": [],
+                "deprecated": "Use `total`.",
+                "hidden": false,
+                "extra": {}
+              }
+            }
+          ]
+        },
+        {
+          "kind": "fn",
+          "name": "_plumbing",
+          "exported": true,
+          "hidden": true,
+          "line": 26,
+          "doc": {
+            "body": "Internal plumbing, exported for the shapes module.",
+            "summary": "Internal plumbing, exported for the shapes module.",
+            "params": {},
+            "returns": null,
+            "options": {},
+            "example": [],
+            "see": [],
+            "deprecated": null,
+            "hidden": true,
+            "extra": {}
+          },
+          "forms": [
+            {
+              "params": [],
+              "returns": null,
+              "native": false,
+              "line": 26,
+              "doc": {
+                "body": "Internal plumbing, exported for the shapes module.",
+                "summary": "Internal plumbing, exported for the shapes module.",
+                "params": {},
+                "returns": null,
+                "options": {},
+                "example": [],
+                "see": [],
+                "deprecated": null,
+                "hidden": true,
+                "extra": {}
+              }
+            }
+          ]
+        },
+        {
+          "kind": "state",
+          "name": "drawn",
+          "exported": true,
+          "hidden": false,
+          "line": 33,
+          "doc": {
+            "body": "How many shapes have been drawn.",
+            "summary": "How many shapes have been drawn.",
+            "params": {},
+            "returns": null,
+            "options": {},
+            "example": [],
+            "see": [],
+            "deprecated": null,
+            "hidden": false,
+            "extra": {}
+          },
+          "type": "int",
+          "value": "0"
+        },
+        {
+          "kind": "let",
+          "name": "PHI",
+          "exported": true,
+          "hidden": false,
+          "line": 35,
+          "doc": {
+            "body": "The golden ratio.",
+            "summary": "The golden ratio.",
+            "params": {},
+            "returns": null,
+            "options": {},
+            "example": [],
+            "see": [],
+            "deprecated": null,
+            "hidden": false,
+            "extra": {}
+          },
+          "value": "1.618"
+        },
+        {
+          "kind": "let",
+          "name": "ORIGIN",
+          "exported": true,
+          "hidden": false,
+          "line": 37,
+          "doc": null,
+          "value": "{x: 0, y: 0}"
+        }
+      ]
+    },
+    {
+      "name": "doc_pkg/shapes",
+      "file": "src/shapes.ptl",
+      "doc": {
+        "body": "Classes, enums and overloads.",
+        "summary": "Classes, enums and overloads.",
+        "params": {},
+        "returns": null,
+        "options": {},
+        "example": [],
+        "see": [],
+        "deprecated": null,
+        "hidden": false,
+        "extra": {}
+      },
+      "reexports": [],
+      "items": [
+        {
+          "kind": "class",
+          "name": "Box",
+          "exported": true,
+          "hidden": false,
+          "line": 7,
+          "doc": {
+            "body": "An axis-aligned box.\nFields are in constructor order.",
+            "summary": "An axis-aligned box.",
+            "params": {},
+            "returns": null,
+            "options": {},
+            "example": [],
+            "see": [],
+            "deprecated": null,
+            "hidden": false,
+            "extra": {}
+          },
+          "forms": [
+            {
+              "params": [
+                {
+                  "name": "x",
+                  "type": "num",
+                  "optional": false
+                },
+                {
+                  "name": "y",
+                  "type": "num",
+                  "optional": false
+                },
+                {
+                  "name": "w",
+                  "type": "num",
+                  "optional": false
+                },
+                {
+                  "name": "h",
+                  "type": "num",
+                  "optional": false
+                }
+              ],
+              "returns": "Box",
+              "native": false,
+              "line": 7,
+              "doc": null
+            }
+          ],
+          "fields": [
+            {
+              "name": "x",
+              "type": "num"
+            },
+            {
+              "name": "y",
+              "type": "num"
+            },
+            {
+              "name": "w",
+              "type": "num"
+            },
+            {
+              "name": "h",
+              "type": "num"
+            }
+          ]
+        },
+        {
+          "kind": "fn",
+          "name": "Box.area",
+          "exported": true,
+          "hidden": false,
+          "line": 14,
+          "doc": {
+            "body": "The area of a box.",
+            "summary": "The area of a box.",
+            "params": {},
+            "returns": "`w * h`.",
+            "options": {},
+            "example": [],
+            "see": [],
+            "deprecated": null,
+            "hidden": false,
+            "extra": {}
+          },
+          "receiver": "Box",
+          "forms": [
+            {
+              "params": [
+                {
+                  "name": "b",
+                  "type": "Box",
+                  "optional": false
+                }
+              ],
+              "returns": "num",
+              "native": false,
+              "line": 14,
+              "doc": {
+                "body": "The area of a box.",
+                "summary": "The area of a box.",
+                "params": {},
+                "returns": "`w * h`.",
+                "options": {},
+                "example": [],
+                "see": [],
+                "deprecated": null,
+                "hidden": false,
+                "extra": {}
+              }
+            }
+          ]
+        },
+        {
+          "kind": "enum",
+          "name": "Shape",
+          "exported": true,
+          "hidden": false,
+          "line": 18,
+          "doc": {
+            "body": "A shape to draw.",
+            "summary": "A shape to draw.",
+            "params": {},
+            "returns": null,
+            "options": {},
+            "example": [],
+            "see": [],
+            "deprecated": null,
+            "hidden": false,
+            "extra": {
+              "editor_category": "Shapes"
+            }
+          },
+          "variants": [
+            {
+              "name": "circle",
+              "fields": [
+                "r"
+              ],
+              "data": []
+            },
+            {
+              "name": "square",
+              "fields": [
+                "side"
+              ],
+              "data": []
+            },
+            {
+              "name": "dot",
+              "fields": [],
+              "data": []
+            }
+          ]
+        },
+        {
+          "kind": "enum",
+          "name": "Tone",
+          "exported": true,
+          "hidden": false,
+          "line": 23,
+          "doc": null,
+          "variants": [
+            {
+              "name": "warm",
+              "fields": [],
+              "data": [
+                "hex"
+              ]
+            },
+            {
+              "name": "cool",
+              "fields": [],
+              "data": [
+                "hex"
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "fn",
+          "name": "outline",
+          "exported": true,
+          "hidden": false,
+          "line": 34,
+          "doc": {
+            "body": "Draw a box. The style is optional.",
+            "summary": "Draw a box.",
+            "params": {},
+            "returns": null,
+            "options": {
+              "fill": "The fill colour.",
+              "stroke": "The outline colour."
+            },
+            "example": [
+              "outline(Box(0, 0, 4, 4))",
+              "outline(Box(0, 0, 4, 4), {fill: :f00})"
+            ],
+            "see": [],
+            "deprecated": null,
+            "hidden": false,
+            "extra": {}
+          },
+          "forms": [
+            {
+              "params": [
+                {
+                  "name": "b",
+                  "type": "Box",
+                  "optional": false
+                }
+              ],
+              "returns": "nil",
+              "native": false,
+              "line": 34,
+              "doc": {
+                "body": "Draw a box. The style is optional.",
+                "summary": "Draw a box.",
+                "params": {},
+                "returns": null,
+                "options": {
+                  "fill": "The fill colour.",
+                  "stroke": "The outline colour."
+                },
+                "example": [
+                  "outline(Box(0, 0, 4, 4))",
+                  "outline(Box(0, 0, 4, 4), {fill: :f00})"
+                ],
+                "see": [],
+                "deprecated": null,
+                "hidden": false,
+                "extra": {}
+              }
+            },
+            {
+              "params": [
+                {
+                  "name": "b",
+                  "type": "Box",
+                  "optional": false
+                },
+                {
+                  "name": "style",
+                  "type": "record",
+                  "optional": false
+                }
+              ],
+              "returns": "nil",
+              "native": false,
+              "line": 37,
+              "doc": null
+            }
+          ]
+        },
+        {
+          "kind": "fn",
+          "name": "grow",
+          "exported": true,
+          "hidden": false,
+          "line": 41,
+          "doc": {
+            "body": "Grow by one amount.",
+            "summary": "Grow by one amount.",
+            "params": {},
+            "returns": null,
+            "options": {},
+            "example": [],
+            "see": [],
+            "deprecated": null,
+            "hidden": false,
+            "extra": {}
+          },
+          "forms": [
+            {
+              "params": [
+                {
+                  "name": "b",
+                  "type": null,
+                  "optional": false
+                },
+                {
+                  "name": "n",
+                  "type": null,
+                  "optional": false
+                }
+              ],
+              "returns": null,
+              "native": false,
+              "line": 41,
+              "doc": {
+                "body": "Grow by one amount.",
+                "summary": "Grow by one amount.",
+                "params": {},
+                "returns": null,
+                "options": {},
+                "example": [],
+                "see": [],
+                "deprecated": null,
+                "hidden": false,
+                "extra": {}
+              }
+            },
+            {
+              "params": [
+                {
+                  "name": "b",
+                  "type": null,
+                  "optional": false
+                },
+                {
+                  "name": "dx",
+                  "type": null,
+                  "optional": false
+                },
+                {
+                  "name": "dy",
+                  "type": null,
+                  "optional": false
+                }
+              ],
+              "returns": null,
+              "native": false,
+              "line": 45,
+              "doc": {
+                "body": "Grow by two amounts.",
+                "summary": "Grow by two amounts.",
+                "params": {},
+                "returns": null,
+                "options": {},
+                "example": [],
+                "see": [],
+                "deprecated": null,
+                "hidden": false,
+                "extra": {}
+              }
+            }
+          ]
+        },
+        {
+          "kind": "native_fn",
+          "name": "measure",
+          "exported": true,
+          "hidden": false,
+          "line": 49,
+          "doc": {
+            "body": "Measure text with the host.",
+            "summary": "Measure text with the host.",
+            "params": {
+              "text": "What to measure.",
+              "size": "The font size."
+            },
+            "returns": null,
+            "options": {},
+            "example": [],
+            "see": [],
+            "deprecated": null,
+            "hidden": false,
+            "extra": {}
+          },
+          "forms": [
+            {
+              "params": [
+                {
+                  "name": "text",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "size",
+                  "type": "num",
+                  "optional": true
+                },
+                {
+                  "name": "rest",
+                  "type": null,
+                  "optional": true,
+                  "rest": true
+                }
+              ],
+              "returns": "float",
+              "native": true,
+              "host": "host_measure",
+              "line": 49,
+              "doc": {
+                "body": "Measure text with the host.",
+                "summary": "Measure text with the host.",
+                "params": {
+                  "text": "What to measure.",
+                  "size": "The font size."
+                },
+                "returns": null,
+                "options": {},
+                "example": [],
+                "see": [],
+                "deprecated": null,
+                "hidden": false,
+                "extra": {}
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

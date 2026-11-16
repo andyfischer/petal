@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://petal-lang.org/schemas/petal-doc.schema.json",
+  "title": "petal doc --json",
+  "description": "The documented public surface of a Petal package, module or file, as `petal doc --json` prints it (docs/CLI.md, `doc`; docs/proposals/doc-annotation.md). Signatures come from the declarations, prose from @doc(...) and @module_doc(...). A comment is never documentation: an item without @doc has \"doc\": null.",
+  "type": "object",
+  "required": ["schema", "target", "package", "modules"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "petal-doc/1",
+      "description": "The report format. Changes when a consumer would have to read it differently."
+    },
+    "target": {
+      "type": "string",
+      "description": "The argument as given: a package (`ui`), a module (`ui/input`), a file or a package directory."
+    },
+    "package": {
+      "description": "The package the documented modules belong to; null for a loose file or a module registered in memory (the core prelude `std`).",
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/package" }]
+    },
+    "modules": {
+      "type": "array",
+      "description": "Every module of the package in module order, or the one module asked for.",
+      "items": { "$ref": "#/$defs/module" }
+    }
+  },
+  "$defs": {
+    "optionalString": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+    "package": {
+      "type": "object",
+      "required": ["name", "version", "description", "root", "root_module", "doc", "modules"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "$ref": "#/$defs/optionalString" },
+        "description": {
+          "$ref": "#/$defs/optionalString",
+          "description": "`[package] description` in petal.toml: the one-line registry summary."
+        },
+        "root": {
+          "type": "string",
+          "description": "The package root directory, or `<bundled:NAME>` / `<package:NAME>` for a package held in memory."
+        },
+        "root_module": {
+          "$ref": "#/$defs/optionalString",
+          "description": "The module named like the package (`ui`, `core`), whose @module_doc is the package's doc."
+        },
+        "doc": {
+          "description": "The root module's @module_doc: the package's documentation.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/doc" }]
+        },
+        "modules": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Every module of the package, by canonical name."
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "required": ["name", "file", "doc", "reexports", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The canonical module name (`ui/draw`, `bloom`), or the path given for a loose file."
+        },
+        "file": {
+          "type": "string",
+          "description": "The module's file: relative to the package root for a package module, as given for a loose file, `<memory:NAME>` for one registered in memory."
+        },
+        "doc": {
+          "description": "The file's @module_doc.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/doc" }]
+        },
+        "reexports": {
+          "type": "array",
+          "description": "The module's `pub import`s.",
+          "items": {
+            "type": "object",
+            "required": ["module", "canonical", "names"],
+            "additionalProperties": false,
+            "properties": {
+              "module": { "type": "string", "description": "The path as written." },
+              "canonical": {
+                "$ref": "#/$defs/optionalString",
+                "description": "The canonical name of the module it re-exports; null for a relative path in a loose file."
+              },
+              "names": {
+                "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "string" } }],
+                "description": "The names re-exported (`pub import m: a, b`); null for all of them."
+              }
+            }
+          }
+        },
+        "items": {
+          "type": "array",
+          "description": "The module's items in source order; an overload set appears once, where its first form is.",
+          "items": { "$ref": "#/$defs/item" }
+        },
+        "error": {
+          "type": "string",
+          "description": "Present when the module does not parse; its items are then empty and `petal doc` exits 1."
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "required": ["kind", "name", "exported", "hidden", "line", "doc"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["fn", "native_fn", "class", "enum", "let", "const", "var", "state", "state_var", "memo"],
+          "description": "`native_fn` when every form is a `native fn`; `fn` otherwise."
+        },
+        "name": { "type": "string", "description": "The name it binds; `Class.method` for a method." },
+        "exported": { "type": "boolean", "description": "Written `pub`. Always true unless `--private`." },
+        "hidden": {
+          "type": "boolean",
+          "description": "The item's doc says `hidden: true`: left out of `--brief`, the default text and generated reference pages."
+        },
+        "line": { "type": "integer", "minimum": 1, "description": "The line of the (first) declaration keyword, past its annotations." },
+        "doc": {
+          "description": "The item's doc. For an overload set, the doc of its first documented form; each form also carries its own.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/doc" }]
+        },
+        "receiver": { "type": "string", "description": "For a method (`fn Rect.area`), the class." },
+        "forms": {
+          "type": "array",
+          "description": "How it is called: each overload of a function, or a class's constructor.",
+          "items": { "$ref": "#/$defs/form" }
+        },
+        "fields": {
+          "type": "array",
+          "description": "A class's fields, in constructor order.",
+          "items": {
+            "type": "object",
+            "required": ["name", "type"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "$ref": "#/$defs/optionalString" }
+            }
+          }
+        },
+        "variants": {
+          "type": "array",
+          "description": "An enum's variants.",
+          "items": {
+            "type": "object",
+            "required": ["name", "fields", "data"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "fields": { "type": "array", "items": { "type": "string" }, "description": "Payload fields (`circle(r)`)." },
+              "data": { "type": "array", "items": { "type": "string" }, "description": "Constant-data keys (`warm(hex: \"#f80\")`)." }
+            }
+          }
+        },
+        "type": { "type": "string", "description": "A binding's declared type, when written." },
+        "value": { "type": "string", "description": "A binding's initializer as written, when it fits on one line (80 characters)." }
+      }
+    },
+    "form": {
+      "type": "object",
+      "required": ["params", "returns", "native", "line", "doc"],
+      "additionalProperties": false,
+      "properties": {
+        "params": { "type": "array", "items": { "$ref": "#/$defs/param" } },
+        "returns": { "$ref": "#/$defs/optionalString", "description": "The declared result type (`-> int`)." },
+        "native": { "type": "boolean", "description": "A `native fn`: the host implements it." },
+        "host": { "type": "string", "description": "The host native a `native fn ... = \"name\"` binds." },
+        "line": { "type": "integer", "minimum": 1 },
+        "doc": {
+          "description": "This form's own @doc.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/doc" }]
+        }
+      }
+    },
+    "param": {
+      "type": "object",
+      "required": ["name", "type", "optional"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "$ref": "#/$defs/optionalString" },
+        "optional": {
+          "type": "boolean",
+          "description": "A call may leave it out: it has a default, is a native's `name?`, or is a rest parameter."
+        },
+        "default": { "type": "string", "description": "The default value's source text (`fn f(a, b = 2)`)." },
+        "rest": { "const": true, "description": "A native's `...name`: any number of further arguments." }
+      }
+    },
+    "doc": {
+      "type": "object",
+      "description": "A @doc(...) or @module_doc(...): every field, with the body and examples cleaned of a raw string's shared indentation and blank first and last lines.",
+      "required": ["body", "summary", "params", "returns", "options", "example", "see", "deprecated", "hidden", "extra"],
+      "additionalProperties": false,
+      "properties": {
+        "body": { "$ref": "#/$defs/optionalString", "description": "The Markdown body." },
+        "summary": {
+          "$ref": "#/$defs/optionalString",
+          "description": "The body's first sentence, on one line."
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "`params:`, by parameter name, in source order."
+        },
+        "returns": { "$ref": "#/$defs/optionalString" },
+        "options": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "`options:`: the keys a trailing style/opts record accepts."
+        },
+        "example": { "type": "array", "items": { "type": "string" }, "description": "Petal source, shown as code, not run." },
+        "see": { "type": "array", "items": { "type": "string" } },
+        "deprecated": { "$ref": "#/$defs/optionalString", "description": "What to use instead." },
+        "hidden": { "type": "boolean" },
+        "extra": {
+          "type": "object",
+          "description": "`extra:`, passed through: any literal (string, number, bool, null, or a list or record of them).",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

@@ -187,6 +187,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "bench" => parse_bench_args(&args[1..]),
         "lsp" => parse_lsp_args(&args[1..]),
         "packages" => parse_packages_args(&args[1..]),
+        "doc" => parse_doc_args(&args[1..]),
         "init" | "add" | "remove" | "install" | "update" | "vendor" | "bundle" => {
             super::pm::parse(first, &args[1..])
         }
@@ -514,6 +515,42 @@ fn parse_packages_args(args: &[String]) -> CliArgs {
 
     CliArgs {
         command: Command::Packages { json, path },
+        source: SourceInput::Inline(String::new()),
+        include_dirs: Vec::new(),
+    }
+}
+
+/// `doc [--json | --brief] [--private] <package|module|file>`.
+fn parse_doc_args(args: &[String]) -> CliArgs {
+    const USAGE: &str =
+        "Usage: petal doc [--json | --brief] [--private] [-I <dir>]... <package|module|file>";
+    let mut opts = super::DocArgs::default();
+    let mut target: Option<String> = None;
+    for arg in args {
+        match arg.as_str() {
+            "--json" => opts.json = true,
+            "--brief" => opts.brief = true,
+            "--private" => opts.private = true,
+            other if !other.starts_with('-') && target.is_none() => {
+                target = Some(other.to_string())
+            }
+            other => {
+                eprintln!("Unexpected argument '{other}'. {USAGE}");
+                process::exit(1);
+            }
+        }
+    }
+    if opts.json && opts.brief {
+        eprintln!("--json and --brief are two output forms; pick one. {USAGE}");
+        process::exit(1);
+    }
+    let Some(target) = target else {
+        eprintln!("Missing the package, module or file to document. {USAGE}");
+        process::exit(1);
+    };
+    opts.target = target;
+    CliArgs {
+        command: Command::Doc(opts),
         source: SourceInput::Inline(String::new()),
         include_dirs: Vec::new(),
     }

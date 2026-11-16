@@ -1,0 +1,49 @@
+@module_doc("Classes, enums and overloads.")
+
+@doc("""
+    An axis-aligned box.
+    Fields are in constructor order.
+    """)
+pub class Box
+  x: num,
+  y: num,
+  w: num,
+  h: num,
+
+@doc("The area of a box.", returns: "`w * h`.")
+pub fn Box.area(b: Box) -> num
+  b.w * b.h
+
+@doc("A shape to draw.", extra: {editor_category: "Shapes"})
+pub enum Shape
+  circle(r),
+  square(side),
+  dot,
+
+pub enum Tone
+  warm(hex: "#f80"),
+  cool(hex: "#08f"),
+
+@doc("""
+Draw a box. The style is optional.
+""",
+  options: {fill: "The fill colour.", stroke: "The outline colour."},
+  example: ["outline(Box(0, 0, 4, 4))", """
+    outline(Box(0, 0, 4, 4), {fill: :f00})
+  """])
+pub fn outline(b: Box) -> nil
+  outline(b, {})
+
+pub fn outline(b: Box, style: record) -> nil
+  nil
+
+@doc("Grow by one amount.")
+pub fn grow(b, n)
+  Box(b.x - n, b.y - n, b.w + 2 * n, b.h + 2 * n)
+
+@doc("Grow by two amounts.")
+pub fn grow(b, dx, dy)
+  Box(b.x - dx, b.y - dy, b.w + 2 * dx, b.h + 2 * dy)
+
+@doc("Measure text with the host.", params: {text: "What to measure.", size: "The font size."})
+pub native fn measure(text: string, size?: num, ...rest) -> float = "host_measure"

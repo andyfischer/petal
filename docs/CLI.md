@@ -92,6 +92,7 @@ the whole list.
 | `bench` | Measure what a call of a named function costs |
 | `lsp` | Serve the language server over stdio |
 | `packages` | Show the project's dependencies and required host interfaces, and the libraries available |
+| `doc` | Show the documented public surface of a package, module or file |
 | `init` | Start a project: write a `petal.toml` |
 | `add` / `remove` | Add or remove a dependency, then install |
 | `install` | Fetch the project's dependencies and write `petal.lock` |
@@ -1909,6 +1910,115 @@ Error: core-runtime/bloom/petal.toml: line 2: the value of 'name' must be a quot
 ```
 
 This command takes no source file.
+
+### `doc` — The documented surface of a package, module or file
+
+```
+petal doc [--json | --brief] [--private] [-I <dir>]... <target>
+```
+
+Lists every `pub` item of `<target>` with its signature and its
+[`@doc(…)`](language-guide.md#documentation): functions (an overload set is
+one item, with every call form), `native fn`s, classes, enums and `pub`
+`let`/`var`/`state`/`memo` bindings. For each: its kind, name, call forms
+(each parameter's name, type, whether a call may leave it out, its default),
+return type, file and line, and the doc. Each module's `@module_doc(…)`
+comes with it, and for a package its root module's `@module_doc` (the
+package's doc) and the `description` in its `petal.toml`.
+
+Only the parser runs: nothing is compiled, so a library that needs a host
+(`ui`, `bloom`) is documented without one. A comment is never
+documentation, so an item with no `@doc` has no doc (`doc: null`) — which is
+most of Petal's own libraries until they move their comments into `@doc`
+(docs/proposals/doc-annotation.md, step 5).
+
+`<target>` is, in this order:
+
+- a `.ptl` file: a module of the package it is in (reported with the
+  package's facts), or a loose file;
+- a package directory, one holding a `petal.toml`;
+- a package name (`ui`, `core`, `bloom`), found the way an import written in
+  the working directory finds it: the project's own package and its
+  dependencies, the `-I` and `PETAL_PATH` packages, then the bundled ones;
+- one module of a package (`ui/input`, `core/math`);
+- a module registered in memory: the core prelude, `std`.
+
+A directory that is not a package (`core/` at the repository root) does not
+hide the package of that name.
+
+| Option | Effect |
+|---|---|
+| *(none)* | Markdown: each module's doc, then each item's signatures, body, parameters, options, examples and `file:line`. |
+| `--brief` | One line per item: its signature (call forms joined by ` \| `) and its doc's summary. |
+| `--json` | The report as JSON (below). |
+| `--private` | Items written without `pub` too. |
+
+An item (or a module) whose doc says `hidden: true` is left out of the text
+and `--brief` forms and kept, flagged `"hidden": true`, in `--json`.
+
+```
+$ petal doc --brief doc_pkg
+package doc_pkg 0.3.0 — Shapes and sums, documented.
+doc_pkg (src/doc_pkg.ptl) — Shapes and sums, documented.
+  fn total(xs)
+  fn scale(xs, k = 2) — Scale every element by `k`.
+  fn sum_all(xs) — An old name. [deprecated]
+  state drawn: int = 0 — How many shapes have been drawn.
+  let PHI = 1.618 — The golden ratio.
+doc_pkg/shapes (src/shapes.ptl) — Classes, enums and overloads.
+  class Box(x: num, y: num, w: num, h: num) — An axis-aligned box.
+  fn Box.area(b: Box) -> num — The area of a box.
+  enum Shape { circle(r), square(side), dot } — A shape to draw.
+  fn outline(b: Box) -> nil | (b: Box, style: record) -> nil — Draw a box.
+  native fn measure(text: string, size?: num, ...rest) -> float — Measure text with the host.
+```
+
+**The JSON report** is described by
+[`docs/schemas/petal-doc.schema.json`](schemas/petal-doc.schema.json) and is
+tagged `"schema": "petal-doc/1"`:
+
+```
+{ "schema": "petal-doc/1", "target": "doc_pkg",
+  "package": { "name", "version", "description", "root", "root_module", "doc", "modules": [names] } | null,
+  "modules": [ { "name", "file", "doc", "reexports": [ {"module", "canonical", "names"} ],
+                 "items": [ <item> ], "error"? } ] }
+
+<item>: { "kind": "fn" | "native_fn" | "class" | "enum" | "let" | "const" | "var" | "state" | "state_var" | "memo",
+          "name", "exported", "hidden", "line", "doc",
+          "receiver"?,                        # a method's class
+          "forms"?: [ { "params": [ {"name", "type", "optional", "default"?, "rest"?} ],
+                        "returns", "native", "host"?, "line", "doc" } ],
+          "fields"?, "variants"?,             # class / enum
+          "type"?, "value"? }                 # bindings
+
+<doc>:  { "body", "summary", "params": {name: text}, "returns", "options": {key: text},
+          "example": [source], "see": [names], "deprecated", "hidden", "extra": {…} }
+```
+
+- `package` is `null` for a loose file and for `std`. Its `doc` is the root
+  module's `@module_doc`; `root` is a directory, or `<bundled:NAME>` for a
+  package compiled into the binary.
+- A module's `file` is relative to the package root (`src/menu.ptl`), the
+  path given for a loose file, or `<memory:std>`.
+- An item's `line` is the line of its declaration keyword (past its
+  annotations); an overload set's is its first form's.
+- **Overloads**: `doc` on the item is the doc of the set's first documented
+  form; each form also carries its own `doc`. One `@doc` on one form
+  describes the whole set; several each describe their own form.
+- A **class** has one form, its constructor (the fields, returning the
+  class), and its `fields`. A **method** (`fn Rect.area`) is its own item
+  named `Rect.area`, with `receiver`. An **enum** lists `variants`, each
+  with its payload `fields` and constant-`data` keys.
+- A binding's `value` is its initializer as written, when that fits on one
+  line (an `@tunable(…)` binding shows the value written, not the lowered
+  call).
+- In a doc, `body` and each `example` have a raw string's shared
+  indentation and blank first and last lines removed; `summary` is the
+  body's first sentence. `extra` is passed through as JSON.
+- A module that does not parse has an `error` and no items; the command
+  then exits 1 after printing the rest.
+
+The command exits 1 when the target names nothing. It takes no `-e`.
 
 ### `init`, `add`, `remove`, `install`, `update`, `vendor`, `bundle` — The package manager
 

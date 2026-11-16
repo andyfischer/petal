@@ -568,6 +568,19 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `@tunable` and the other value annotations on a `fn`, `class` or `enum`
   now say "a function takes only `@doc`".
 
+- **`petal migrate-old-code --only comment-to-doc`**, an opt-in migration
+  that turns documentation written as comments into `@doc` and
+  `@module_doc`. The comment block directly above a `pub` declaration
+  (every declaration with `--private`) becomes its `@doc`, and a file's
+  opening comment block, followed by a blank line, becomes its
+  `@module_doc`. Section rulers, `TODO`/`NOTE`/`FIXME` blocks, licence and
+  shebang lines and comments in bodies stay comments; a block that mixes a
+  note with text is listed for a hand edit. `--settings` also turns the
+  trailing comment of a `tunable` let into its `@doc`. It runs only on the
+  paths given, prints each file's diff, leaves every other character as it
+  was, and is gated on the parse and on `ir-equal`. See
+  [CLI.md](docs/CLI.md#comments-to-docs-comment-to-doc).
+
 - **bloom: `tab_enters_ring(on)`.** With it off, Tab and Shift+Tab with no
   control of the focus ring focused leave focus alone, for an app that
   gives Tab its own meaning then (petal-design steps the canvas selection);

@@ -1069,6 +1069,7 @@ petal migrate-old-code --markdown [<path>...]        # the ```petal fences of Ma
 petal migrate-old-code --list                        # the migrations, with the date each was added
 petal migrate-old-code -e '<code>'                   # print the migrated code
 petal migrate-old-code -                             # stdin to stdout
+petal migrate-old-code --only comment-to-doc [--private] [--settings] <path>...   # comments to @doc / @module_doc (opt-in)
 ```
 
 When the language changes a form, the rewrite from the old form to the new
@@ -1090,6 +1091,7 @@ one is an error that names the command.
 | `const-decl-deprecated` | `const X = e` → `let X = const(e)`, literals included, with a closing `)` after a multi-line initializer and trailing comments kept in their column ([plan](tasks/lifecycle-annotation-functions-refactor.md)) | warns (Phase 5); removed in Phase 6 |
 | `config-let-deprecated` | `config let X = v` → `let X = tunable(v)`, or only `config` dropped when `v` is already a `tunable(…)` call | warns (Phase 5); removed in Phase 6 |
 | `state-key-deprecated` | `state(k) x = e` → `memo(k) x = e` where the slot is never written and `e` is plainly a pure function of the key (no calls, no `get`, nothing the key does not hold: with the key `[g.id]`, `g.id` and what is read through it, but not `g.name` or `g`): not `state(k) var`, not `pub state(k)`, and only when the rewrite compiles, since a `memo` rejects every write. Any other `state(key)` is listed for a hand edit ([Removed: `state(key)`](features/inline-state.md#removed-statekey)): a keyed loop (`for t in xs key t.id do`) for state per item, a top-level `state var` Map for state shared on purpose, plain `state` for per-instance state. The parser no longer reads the form, so the migration finds each `state` + `(` itself, and the migrations before it plan on the file with each key group read as nothing: a site left for a hand edit does not hold the other rewrites back (only `end-lines`, which formats the file, waits for it) | removed 2026-11-13 (deprecated 2026-10-22): a parse error that names the command |
+| `comment-to-doc` | **opt-in** (see [Comments to docs](#comments-to-docs-comment-to-doc) below): the comment block directly above a `pub` declaration becomes its `@doc(…)`, and a file's opening comment block its `@module_doc(…)` | not a form: [a comment is never documentation](proposals/doc-annotation.md#decisions), so nothing reports one |
 | `end-lines` | the `end` on a line of its own: [indentation closes the block](syntax/indentation.md). The file is formatted first (`petal fmt`: a file whose indentation disagrees with its `end`s is indented by them), then each `end` alone on its line is deleted and `end)` / `end]` / `end}` keep the bracket, at the same column. A comment after a deleted `end` stays, on a line of its own at the block's column. What stays: an `end` on the line of the block it closes (`if c then a else b end`); `end,` (the next argument follows: two block lambdas in one call); `end \|> f` and `end.len()`; the `end` of a block with no statement; an `end` before a line that starts with an operator, which would otherwise continue the block's last statement; and any other `end` the parse needs (`if c then a; b` / `end`). The migrated text must parse to the same AST as the original, or the file keeps what the other migrations wrote and is listed as skipped. A file with no `end` at the start of a line is not reformatted. `# petal-lint-ignore-file end-lines` keeps a file's `end`s | still the language: `end` is optional, with no warning and no lint report |
 | `old-imports` | import lines for the current module system: everything [`fix-imports`](#fix-imports--migrate-imports) does | removed: an error |
 
@@ -1181,6 +1183,65 @@ end of its line, or `# petal-lint-ignore-file <migration>` anywhere: the
 same comment silences the compiler's warning there.
 `# petal-lint-ignore-file old-imports` keeps a file's imports as written (a
 fixture of an import that must not resolve).
+
+#### Comments to docs (`comment-to-doc`)
+
+```
+petal migrate-old-code --only comment-to-doc lib/              # pub declarations, and each file's header
+petal migrate-old-code --only comment-to-doc --private lib/    # every declaration
+petal migrate-old-code --only comment-to-doc --settings app.ptl # also: a tunable's trailing comment is its @doc
+```
+
+A comment is never documentation: only [`@doc(…)` and
+`@module_doc(…)`](language-guide.md#documentation) are. This migration moves
+what was written as documentation by convention into them. It is not run by
+a plain `petal migrate-old-code`: `--only` must name it, and it takes the
+files and directories given (`-` or `-e` for stdin and inline code), never
+`.` by default. Every file it changes is printed as a diff, in a run that
+writes as in `--check`, because the result is prose to review by hand: a
+file header often mixes text for users with notes for maintainers, which
+stay comments.
+
+- **Declarations.** For each top-level `pub` declaration with no `@doc`
+  (`fn`, `fn T.m`, `native fn`, `class`, `enum`, `let`, `var`, `state`,
+  `memo`; every one, `pub` or not, with `--private`), the whole-line comment
+  block directly above it, with no blank line between and at its
+  indentation, becomes `@doc(…)` in its place, above any other annotation.
+  Declarations nested in a body and their comments are left alone.
+- **The file.** The file's opening comment block, when a blank line
+  separates it from the first statement, becomes `@module_doc(…)`, whether
+  or not anything is `pub`. A shebang line and a licence block (a line naming
+  a copyright, `SPDX-License-Identifier` or a licence) are passed over, so the
+  block after them is the opening one. A block directly above the first
+  statement is that statement's, and a file that has a `@module_doc` is left
+  alone.
+- **What stays a comment.** Section rulers (`# ── Switch ──`, `# =====`): a
+  block's doc is what follows its last ruler, and rulers framing a file
+  header stay above and below the `@module_doc`. A block of `TODO`, `NOTE`,
+  `FIXME`, `XXX` or `HACK` lines, or a licence. A block that holds one of
+  those *and* other text, a header with a ruler inside it, and a block with a
+  `# petal-lint-ignore` line among its text are listed for a hand edit (split
+  the note from the doc). A `# petal-lint-ignore` directly above the
+  declaration stays there, below the new `@doc`. Trailing comments and
+  comments in bodies.
+- **`--settings`.** The trailing comment of a top-level `tunable` let
+  (`let g = tunable(980.0)   # px/s^2 at 1.0 g`, or `@tunable let …`) that
+  gets no doc from above becomes its `@doc`, written before it on its line
+  (`@doc("px/s^2 at 1.0 g") let g = tunable(980.0)`), `pub` or not, so a
+  settings panel can label it.
+
+The text: each line loses its `#`s and the indentation every line shares
+(relative indentation, as in a code sample, is kept), and blank comment lines
+at the ends go. One line with no `{`, `}`, `"` or `\` is a plain string
+(`@doc("Sum of a list.")`); anything else is a raw string, on lines of its
+own when the text has several (`@doc("""` … `""")`), so a `{x, y}` in the
+prose is never an interpolation. Everything else in the file is left as
+written. The gate: the output parses to the input's program, docs aside, and
+when the input compiles, the output compiles to IR that `petal ir-equal`
+reports as equivalent; otherwise nothing is written for the file. Running it
+again changes nothing (a documented declaration is passed over).
+`# petal-lint-ignore comment-to-doc` on the line before a declaration (or
+`-file` anywhere) keeps its comment.
 
 Adding a migration for a future syntax change: see
 [dev/migrations.md](dev/migrations.md).

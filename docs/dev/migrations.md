@@ -86,6 +86,19 @@ over each `petal` fence with `MigrateOptions::fragment` on: a fence that does
 not parse still gets the migrations that only read tokens. A migration that
 needs no parse should be added to that path (`tokens_only` in `run()`).
 
+## Opt-in migrations
+
+A migration with `opt_in: true` runs only when `--only` names it
+(`MigrateOptions::enabled`). `comment-to-doc` (`comment_to_doc.rs`) is the
+example: it rewrites no old form (`OldForm::Convention`: comments stay the
+language) but moves documentation written as comments into `@doc` /
+`@module_doc`, which needs a review, so a plain `petal migrate-old-code .`
+leaves it out, the CLI requires a path for it, and every file it changes is
+printed as a diff. Its fixtures are in `core/tests/all/comment_to_doc.rs`,
+not `FIXTURES`. Its gate is its own: the parse with docs stripped is the
+same, and the IR is equivalent (`ir_equiv::ir_equivalent`) when the input
+compiles.
+
 ## Rules of thumb
 
 - **Idempotent.** A migration rewrites only the old form, so its output has

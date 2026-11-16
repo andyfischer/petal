@@ -426,6 +426,14 @@ without losing pages:
    blocks inside function bodies alone. It is opt-in per file or directory and
    prints a diff. On non-`pub` items it does nothing unless `--private` is
    given.
+   *Implemented 2026-11-15* ([CLI.md](../CLI.md#comments-to-docs-comment-to-doc)),
+   with `--settings` for a `tunable`'s trailing comment (pair 5). It runs
+   only when `--only` names it and on the paths given. Beyond this text: a
+   shebang and a licence block are passed over (the block after them is the
+   header), rulers framing a header stay around the `@module_doc`, a
+   `# petal-lint-ignore` directly above a declaration stays below its new
+   `@doc`, and a block mixing a note or ruler with text is listed for a hand
+   edit rather than split.
 2. **Petal's own libraries** (`core/prelude`, `core/packages/*`, `core-libs/petal-ui/prelude`,
    `core-runtime/*`): run the converter, then review by hand. Each module
    header needs splitting into user-facing text (`@module_doc`) and

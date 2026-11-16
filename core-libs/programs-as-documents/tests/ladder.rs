@@ -13,8 +13,8 @@ use common::*;
 use petal::static_value::StaticValue;
 use programs_as_documents::{
     Choice, Document, DocumentRun, DocumentSession, Intent, OutputKey, OverrideEdit, OverrideHook, OverrideRequest,
-    Resolution, ResolveOptions, ResolvedEdit, Runner, Scope, ScopePolicy, Step, Verified, concretize,
-    concretize_and_apply, resolve,
+    ConcretizeOptions, Resolution, ResolveOptions, ResolvedEdit, Runner, Scope, ScopePolicy, Step, Verified, concretize,
+    concretize_and_apply, concretize_with, resolve, tidied,
 };
 
 fn set(target: OutputKey, field: &str, value: StaticValue) -> Intent {
@@ -346,4 +346,82 @@ fn a_hook_that_applies_its_overrides_itself_verifies_them() {
     // override), so without the hook's own check it would not be offered.
     assert_eq!(scopes(true), vec![Scope::EditShared, Scope::Override]);
     assert_eq!(scopes(false), vec![Scope::EditShared]);
+}
+
+/// petal-social-media's "Write out as `<slide>`" of `title_slide(post,
+/// "Hi")`: the exact literal has `background={nil}`, a `{nil}` hole,
+/// `y={594.0}` and `{"3 tips\nfor"}`; tidied, it reads as written by hand.
+const TITLE_SLIDE: &str = "fn title_slide(post, title, hint = nil, background = nil)\n  <slide background={background} name=\"Title\">\n    <text y={post.h * 0.55}>{title}</text>\n    {hint}\n  </slide>\nend\nlet post = {h: 1080.0}\nlet slides = [\n  title_slide(post, \"3 tips\\nfor\"),\n]\nslides\n";
+
+#[test]
+fn writing_out_exactly_keeps_nils_floats_and_string_lines() {
+    let r = value_runner();
+    let rn = run(&r, TITLE_SLIDE);
+    let c = concretize(&r, &rn, tagged(&rn, "slide")[0]).unwrap();
+    assert!(!c.tidy);
+    assert!(c.source.contains("background={nil}"), "{}", c.source);
+    assert!(c.source.contains("{nil}"), "{}", c.source);
+    assert!(c.source.contains("y={594.0}"), "{}", c.source);
+    assert!(c.source.contains("{\"3 tips\\nfor\"}"), "{}", c.source);
+}
+
+#[test]
+fn writing_out_tidied_leaves_out_nils_and_writes_whole_numbers_and_lines() {
+    let r = value_runner();
+    let rn = run(&r, TITLE_SLIDE);
+    let opts = ConcretizeOptions { tidy: true };
+    let c = concretize_with(&r, &rn, tagged(&rn, "slide")[0], &opts).unwrap();
+    assert!(c.tidy);
+    let written = c.source.split("[\n  ").nth(1).unwrap().split("\n]").next().unwrap();
+    assert_eq!(
+        written,
+        "<slide name=\"Title\">\n    <text y={594}>\n      3 tips<br />\n      for\n    </text>\n  </slide>,",
+        "{}",
+        c.source
+    );
+    // The same outputs, up to the tidying.
+    let after = run(&r, &c.source);
+    let tidy_all = |v: Vec<Option<StaticValue>>| v.into_iter().map(|v| v.map(tidied)).collect::<Vec<_>>();
+    assert_eq!(tidy_all(after.static_outputs()), tidy_all(rn.static_outputs()));
+    // Step 5 of the ladder (here on its own) tidies too, when asked.
+    let ropts = ResolveOptions { concretize: true, concretize_tidy: true, ..ResolveOptions::default() };
+    let k = key_of(&rn, "slide", 0);
+    let e = edit(concretize_and_apply(&r, &rn, &set(k, "name", StaticValue::str("Intro")), &ropts).unwrap());
+    assert_eq!(e.step, Step::Concretize);
+    assert!(e.source.contains("<slide name=\"Intro\">"), "{}", e.source);
+    assert!(!e.source.contains("nil}"), "{}", e.source);
+}
+
+#[test]
+fn a_tidied_write_out_that_changes_an_output_is_written_exactly() {
+    let r = value_runner();
+    // The document counts the slide's children, so leaving out `{nil}`
+    // changes another output: the exact literal is written.
+    let src = TITLE_SLIDE.replace("slides\n", "[slides, len(slides[0].children)]\n");
+    let rn = run(&r, &src);
+    let c = concretize_with(&r, &rn, tagged(&rn, "slide")[0], &ConcretizeOptions { tidy: true }).unwrap();
+    assert!(!c.tidy, "{}", c.source);
+    assert!(c.source.contains("{nil}"), "{}", c.source);
+    // A float that only reads the same as an int stays a float when the
+    // document divides it.
+    let src = "fn dot(x)\n  <dot x={x} />\nend\nlet d = [dot(5.0)]\n[d, d[0].props.x / 2]\n";
+    let rn = run(&r, src);
+    let c = concretize_with(&r, &rn, tagged(&rn, "dot")[0], &ConcretizeOptions { tidy: true }).unwrap();
+    assert!(c.source.contains("x={5.0}"), "{}", c.source);
+    // Without the division it is written as an int.
+    let src = "fn dot(x)\n  <dot x={x} />\nend\nlet d = [dot(5.0)]\n[d, d[0].props.x]\n";
+    let rn = run(&r, src);
+    let c = concretize_with(&r, &rn, tagged(&rn, "dot")[0], &ConcretizeOptions { tidy: true }).unwrap();
+    assert!(c.tidy && c.source.contains("x={5}"), "{}", c.source);
+}
+
+#[test]
+fn tidied_values_round_trip() {
+    assert_eq!(tidied(StaticValue::Float(594.0)), StaticValue::Int(594));
+    assert_eq!(tidied(StaticValue::Float(0.5)), StaticValue::Float(0.5));
+    assert_eq!(tidied(StaticValue::Float(-0.0)), StaticValue::Float(-0.0));
+    assert_eq!(tidied(StaticValue::Float(1e300)), StaticValue::Float(1e300));
+    // A record keeps its nil fields; an element doesn't.
+    let rec = StaticValue::Record(vec![("a".into(), StaticValue::Nil)]);
+    assert_eq!(tidied(rec.clone()), rec);
 }

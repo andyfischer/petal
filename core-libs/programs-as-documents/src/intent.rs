@@ -259,6 +259,10 @@ pub struct ResolveOptions {
     /// The caller's consent to write the output out as source when nothing
     /// else applies (step 5). Off by default.
     pub concretize: bool,
+    /// Write step 5's literal tidied ([`crate::concretize::tidied`]: no
+    /// `nil` props or children, whole floats as ints, `<br />` lines) when
+    /// the outputs stay the same up to that. Off by default.
+    pub concretize_tidy: bool,
 }
 
 impl Default for ResolveOptions {
@@ -270,6 +274,7 @@ impl Default for ResolveOptions {
             solve: true,
             hold: Vec::new(),
             concretize: false,
+            concretize_tidy: false,
         }
     }
 }
@@ -283,6 +288,7 @@ impl std::fmt::Debug for ResolveOptions {
             .field("solve", &self.solve)
             .field("hold", &self.hold)
             .field("concretize", &self.concretize)
+            .field("concretize_tidy", &self.concretize_tidy)
             .finish()
     }
 }
@@ -318,7 +324,12 @@ pub fn concretize_and_apply(
     opts: &ResolveOptions,
 ) -> Result<Resolution, String> {
     let node = run.map.find(intent.target()).ok_or_else(|| format!("the document has no output {}", intent.target()))?;
-    let written = crate::concretize::concretize(runner, run, node)?;
+    let written = crate::concretize::concretize_with(
+        runner,
+        run,
+        node,
+        &crate::concretize::ConcretizeOptions { tidy: opts.concretize_tidy },
+    )?;
     let after = runner.run(&written.source)?;
     let Some(new_node) = after.map.at_path(&node.path) else {
         return Err("the written-out document lost the output".into());

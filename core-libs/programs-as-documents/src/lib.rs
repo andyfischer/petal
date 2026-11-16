@@ -54,7 +54,7 @@ pub mod structure;
 pub mod text;
 
 pub use editable::{NotEditable, editable_literal};
-pub use concretize::{Concretized, concretize};
+pub use concretize::{ConcretizeOptions, Concretized, concretize, concretize_with, tidied};
 pub use intent::{
     Choice, Intent, Resolution, ResolveOptions, ResolvedEdit, Step, Verified, concretize_and_apply, resolve, source_hash,
     text_of, verify,

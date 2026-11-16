@@ -358,6 +358,10 @@ print(limit(9, 0, 5), GRAVITY)
 - `petal doc <package|module|file>` prints a module's or package's `pub`
   items with their signatures and docs (`--brief` for an index, `--json` for
   tools); see [CLI.md](CLI.md) (`doc`).
+- An editor shows the doc when hovering a name and beside each completion
+  (`petal lsp`), for the builtins too. A program reads a function's doc with
+  [`fn_info(f).doc`](features/function-introspection.md), and a host reads a
+  binding's from `static_bindings` (a setting's label).
 
 ## Types
 

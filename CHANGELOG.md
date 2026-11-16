@@ -559,6 +559,28 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   tidying (`tidied` on both sides); otherwise the exact literal is written.
   `concretize` is unchanged.
 
+- **`@doc` in the editor, in `fn_info` and in `static_bindings`.** LSP hover
+  shows a declaration's doc under its signature (the body, then parameters,
+  options, result, examples and related names, with "Deprecated: …" first)
+  for the file's own functions (an undocumented form of an overload set
+  shows the set's doc), `fn T.m` methods, classes, enums and bindings, for
+  names an import brings in bare or as `m.name`, and for the builtins: hover
+  and, once a prefix is typed, completion now reach the `native fn`s of the
+  bundled `core` package (`clamp`, `print`), which showed nothing before.
+  Hovering a module qualifier (`hud` in `hud.draw`) shows the module's
+  `@module_doc`. A completion item carries the summary as its `detail`, the
+  signature and doc as Markdown `documentation`, and the deprecated tag.
+  Classes hover as `(class) Name class(fields…)` and complete with the class
+  kind. `fn_info(f).doc` is the function's doc as a record (`body`,
+  `summary`, `params`, `returns`, `options`, `example`, `see`, `deprecated`,
+  `hidden`, `extra`), or `nil`; a lambda bound by a documented `let` takes
+  the `let`'s, and a doc never changes `code_hash`.
+  `static_value::StaticBinding` gains `doc`, and `pb_source_bindings_json`
+  a `"doc"` object in the `petal doc --json` shape, so a host can label a
+  setting from `@doc("…") @tunable let …`; `comment` stays as it was. See
+  [docs/features/function-introspection.md](docs/features/function-introspection.md)
+  and [docs/usage/config-files.md](docs/usage/config-files.md).
+
 - **Lint rules for `@doc`.** `doc-params`: a `params:` key that no form of
   the overload set takes (with a did-you-mean), and a `see:` entry that names
   nothing the file can reach. `deprecated`: a use of an item whose `@doc` has

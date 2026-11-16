@@ -624,6 +624,17 @@ Each step lands green on its own:
    argument count reaches is.
 4. **LSP hover and completion; `fn_info(f).doc`; `static_bindings.doc`.** Also
    the website highlighter.
+   *Implemented 2026-11-15 on the Petal side* (`core/src/lsp/docs.rs`); the
+   website highlighter is not part of it. Beyond this text: hover and
+   completion now reach the builtins (the `native fn`s of the bundled `core`
+   package), which showed nothing before; hovering a module qualifier shows
+   its `@module_doc`; a class hovers and completes as a class; a deprecated
+   item's completion carries the LSP deprecated tag; and a lambda bound by a
+   documented `let` takes the `let`'s doc in `fn_info`. `static_bindings`
+   gives `doc` as `ast::Doc`, and `pb_source_bindings_json` as the
+   `petal doc --json` doc object; a rebinding without a doc keeps the
+   declaration's. `comment` is unchanged ([open question 1](#open-questions)
+   stays open).
 5. **`comment-to-doc` converter**, then migrate `core/prelude`,
    `core/packages`, `ui`, `bloom`, `text-layout`, `glsl`: converter first,
    hand review after. Then move `Builtins.md` and the `ui`/`bloom` reference

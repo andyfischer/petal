@@ -526,3 +526,140 @@ fn text_between_children_goes_with_the_element_before_it() {
     let e = edit(resolve_src(&value_runner(), src, |r| StructureIntent::Move { target: key_of(r, "c", 0), to: at(r, 0) }));
     assert!(e.source.contains("<b /> // note"), "{}", e.source);
 }
+
+// ── `++` of lists, and loops written as entries ──────────────────────────
+
+/// petal-movies' word-by-word sample: a clip and a caption bound to names,
+/// joined with the words a `for` over `range(0, len(words))` builds.
+const WORDS: &str = "let words = [\"one\", \"frame\", \"at\"]
+let beat = 0.6
+let clip = <video src=\"a.mp4\" duration={5.0} muted />
+let lines = for i in range(0, len(words)) do
+  <text start={0.3 + i * beat} y={560 + i * 170}>{words[i]}</text>
+end
+let count = <text start={0.0} y={1760}>{len(words)} words</text>
+let items = [clip] ++ lines ++ [count]
+items
+";
+
+#[test]
+fn items_a_concatenation_of_lists_builds() {
+    let r = run(&value_runner(), WORDS);
+    let entries = sibling_entries(&r, &root()).unwrap();
+    assert!(matches!(&entries[0].source, EntrySource::Entry { entry: 0, group: 1, .. }), "{entries:?}");
+    assert!(matches!(&entries[2].source, EntrySource::Data { entry: 1, .. }), "{entries:?}");
+    assert!(matches!(&entries[4].source, EntrySource::Entry { entry: 0, group: 1, .. }), "{entries:?}");
+    // The clip and the caption are entries of their one-item lists.
+    let e = edit(resolve_src(&value_runner(), WORDS, |r| StructureIntent::Remove { target: key_of(r, "video", 0) }));
+    assert!(e.source.contains("let items = [] ++ lines ++ [count]\n"), "{}", e.source);
+    let e = edit(resolve_src(&value_runner(), WORDS, |r| StructureIntent::Duplicate { target: key_of(r, "video", 0) }));
+    assert!(e.source.contains("let items = [clip, clip] ++ lines ++ [count]\n"), "{}", e.source);
+    let e = edit(resolve_src(&value_runner(), WORDS, |r| StructureIntent::Move {
+        target: key_of(r, "text", 3),
+        to: Place { parent: root(), index: 0 },
+    }));
+    assert!(e.source.contains("let items = [count, clip] ++ lines ++ []\n"), "{}", e.source);
+    let e = edit(resolve_src(&value_runner(), WORDS, |r| StructureIntent::Move {
+        target: key_of(r, "video", 0),
+        to: Place { parent: root(), index: 3 },
+    }));
+    assert!(e.source.contains("let items = [] ++ lines ++ [clip, count]\n"), "{}", e.source);
+    // The loop's words are `words`' items: an edit that keeps the other
+    // outputs as they are is made there. (Here every word's place and the
+    // caption depend on the words, so removing one is refused when run.)
+    let reason = refused(resolve_src(&value_runner(), WORDS, |r| StructureIntent::Remove { target: key_of(r, "text", 2) }));
+    assert!(reason.contains("does not do what was asked"), "{reason}");
+    let src = "let words = [\"one\", \"frame\", \"at\"]\nlet lines = for i in range(len(words)) do\n  <text>{words[i]}</text>\nend\n[<video />] ++ lines\n";
+    let e = edit(resolve_src(&value_runner(), src, |r| StructureIntent::Move {
+        target: key_of(r, "text", 2),
+        to: Place { parent: root(), index: 1 },
+    }));
+    assert_eq!(e.step, Step::DataList);
+    assert!(e.source.starts_with("let words = [\"at\", \"one\", \"frame\"]\n"), "{}", e.source);
+    let e = edit(resolve_src(&value_runner(), src, |r| StructureIntent::Remove { target: key_of(r, "text", 1) }));
+    assert!(e.source.starts_with("let words = [\"one\", \"at\"]\n"), "{}", e.source);
+    // A loop that counts to a number is not a list's items.
+    let src = "let lines = for i in range(0, 3) do\n  <text n={i} />\nend\n[<video />] ++ lines\n";
+    let r = run(&value_runner(), src);
+    let EntrySource::Locked { reason } = &sibling_entries(&r, &root()).unwrap()[1].source else { panic!() };
+    assert!(reason.contains("counts to `3`"), "{reason}");
+}
+
+const LOOP_ENTRY: &str = "let tips = [\"x\", \"y\"]
+[
+  <slide id=\"a\" />,
+  for t in tips do
+    <slide title={t} />
+  end,
+  <slide id=\"z\" />,
+]
+";
+
+#[test]
+fn a_loop_written_as_an_entry_moves_as_one_entry() {
+    let keys = |r: &DocumentRun| -> Vec<OutputKey> {
+        programs_as_documents::siblings(r, &root()).unwrap().iter().map(|n| n.key.clone()).collect()
+    };
+    let mv = |from: usize, to: usize| {
+        resolve_src(&value_runner(), LOOP_ENTRY, move |r| StructureIntent::Move {
+            target: keys(r)[from].clone(),
+            to: Place { parent: root(), index: to },
+        })
+    };
+    // From the end to the start: before the loop's slides too.
+    let e = edit(mv(3, 0));
+    assert!(e.source.contains("[\n  <slide id=\"z\" />,\n  <slide id=\"a\" />,\n  for t in tips do"), "{}", e.source);
+    // From the start to the end: past the loop's slides.
+    let e = edit(mv(0, 3));
+    assert!(e.source.contains("  end,\n  <slide id=\"z\" />,\n  <slide id=\"a\" />,\n]"), "{}", e.source);
+    // Reordering the loop's slides edits the data.
+    let e = edit(mv(2, 1));
+    assert!(e.source.starts_with("let tips = [\"y\", \"x\"]\n"), "{}", e.source);
+    // Between the loop's slides, or a loop's slide out of them: refused.
+    for (from, to) in [(3, 2), (2, 0)] {
+        let reason = refused(mv(from, to));
+        assert!(reason.contains("one entry of the list on line 2"), "{reason}");
+        assert!(reason.contains("not between them"), "{reason}");
+    }
+    // A reorder that keeps the loop's slides together moves the loop.
+    let e = edit(resolve_src(&value_runner(), LOOP_ENTRY, |r| {
+        let k = keys(r);
+        StructureIntent::Reorder { parent: root(), order: vec![k[1].clone(), k[2].clone(), k[0].clone(), k[3].clone()] }
+    }));
+    assert!(e.source.contains("[\n  for t in tips do\n    <slide title={t} />\n  end,\n  <slide id=\"a\" />,"), "{}", e.source);
+    // An element inserted after the loop's slides goes beside the loop; a
+    // data entry goes in the data.
+    let el = StaticValue::Element { tag: "slide".into(), props: vec![("id".into(), StaticValue::Str("n".into()))], children: vec![] };
+    let e = edit(resolve_src(&value_runner(), LOOP_ENTRY, |_| StructureIntent::Insert {
+        at: Place { parent: root(), index: 3 },
+        template: Template::Value(el.clone()),
+    }));
+    assert!(e.source.contains("  end,\n  <slide id=\"n\" />,\n  <slide id=\"z\" />,"), "{}", e.source);
+    let e = edit(resolve_src(&value_runner(), LOOP_ENTRY, |_| StructureIntent::Insert {
+        at: Place { parent: root(), index: 3 },
+        template: Template::Value(StaticValue::Str("w".into())),
+    }));
+    assert!(e.source.starts_with("let tips = [\"x\", \"y\", \"w\"]\n"), "{}", e.source);
+}
+
+#[test]
+fn an_inserted_value_is_laid_out_like_the_multi_line_entry_before_it() {
+    let src = "[\n  <a\n    x={1}\n    y={2}\n  />,\n]\n";
+    let el = StaticValue::Element {
+        tag: "b".into(),
+        props: vec![("x".into(), StaticValue::Int(3)), ("y".into(), StaticValue::Int(4))],
+        children: vec![],
+    };
+    let e = edit(resolve_src(&value_runner(), src, |_| StructureIntent::Insert {
+        at: Place { parent: root(), index: 1 },
+        template: Template::Value(el.clone()),
+    }));
+    assert_eq!(e.source, "[\n  <a\n    x={1}\n    y={2}\n  />,\n  <b\n    x={3}\n    y={4}\n  />,\n]\n");
+    // Beside one-line entries it stays on one line.
+    let src = "[\n  <a x={1} y={2} />,\n]\n";
+    let e = edit(resolve_src(&value_runner(), src, |_| StructureIntent::Insert {
+        at: Place { parent: root(), index: 1 },
+        template: Template::Value(el.clone()),
+    }));
+    assert_eq!(e.source, "[\n  <a x={1} y={2} />,\n  <b x={3} y={4} />,\n]\n");
+}

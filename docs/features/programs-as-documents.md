@@ -287,7 +287,15 @@ element's children is written as a `{…}`, and must build one element when
 run. An entry moved out of a list takes the comment that trailed it on its
 line along, as a comment line above it (`{/* … */}` among children). For
 `shapes.LIBRARY ++ mine` only `mine` is edited, and nothing moves past a
-library element. The rerun must read as asked, with nothing else changed.
+library element. An element bound to a name and read by one entry of one
+list literal is that entry (`clip` in `[clip] ++ lines ++ [count]`), and a
+`for i in range(0, len(words))` loop's elements are `words`' items. A loop
+written as an entry of a list literal (`[<a />, for t in tips do … end,
+<z />]`) is one entry among its others: an element moves before or after
+all of the loop's elements, an element inserted beside them goes in the
+literal, and a position between them is refused. A `Template::Value` is
+laid out like its siblings (attribute per line after an entry written that
+way). The rerun must read as asked, with nothing else changed.
 `StructureOptions::write_ids` gives inserted, duplicated and pasted elements
 an `id=` of their own.
 

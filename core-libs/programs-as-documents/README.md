@@ -103,15 +103,25 @@ imported module or package is refused with a reason naming the file.
 - A `{…}` hole among an element's children that builds several elements is
   locked unless it reads a data list; the elements one builds as entries of
   a list literal in the document are that list's entries.
-- Text: `SetText` sets text children and `<br />`s only; an element with
-  other child elements (`<span>`), or with text mixed with holes, is
-  refused.
+- Text: `SetText` sets text children and `<br />`s only (a `{"…"}` string
+  among them counts as text); an element with other child elements
+  (`<span>`), or with text mixed with holes, is refused.
 - A data list is recognized only when the `map`/`each`/`for` reads a list
-  literal directly (through names); a filtered or sorted list is locked with
-  the reason. Several elements built per data item, or a filtered loop, make
+  literal directly (through names), or a `for i in range(0, len(xs))` (or
+  `range(len(xs))`) counts `xs`'s items; a filtered or sorted list, or a
+  range to a number (`range(0, 3)`), is locked with the reason. Several elements built per data item, or a filtered loop, make
   the iteration count disagree with the entry, and the rerun refuses.
 - A reorder across two of the document's lists (`xs ++ ys`) is refused with
-  a reason; a `Move` carries the entry's text into the other list.
+  a reason; a `Move` carries the entry's text into the other list. An
+  element bound to a name and read by one entry of one list literal
+  (`[clip] ++ lines ++ [count]`) is that entry.
+- A loop (or `map`) written as an entry of a list literal
+  (`[<a />, for t in tips do … end, <z />]`) is one entry among the
+  literal's others: an element moves before or after all the loop's
+  elements, and one inserted beside them goes in the literal; a position
+  between the loop's elements, or one of them leaving them, is refused.
+- `Template::Value` is laid out like its siblings (an element written an
+  attribute per line after one written that way).
 - An edit of an element literal that builds several outputs (a helper's
   `<box>` children) changes them all; the rerun sees that and refuses,
   rather than offering it as a choice.

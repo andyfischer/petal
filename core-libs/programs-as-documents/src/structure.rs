@@ -1128,13 +1128,13 @@ fn anchor_container(run: &DocumentRun, d: &Desired<'_>, k: usize, entry: bool) -
         Want::New(_) => None,
     };
     // An element next to a loop's elements goes in the list the loop is an
-    // entry of, beside it, not in the loop's data.
+    // entry of, beside it, not in the loop's data; and next to a loop that
+    // is no entry (`[clip] ++ lines ++ [count]`), in the nearest literal.
     let pick_entry = |w: &Want| match w {
         Want::Old(i) => d.unit_container(*i).map(|c| (c.clone(), false)),
         Want::New(_) => None,
     };
     if entry
-        && d.carriers.iter().any(Option::is_some)
         && let Some(hit) = d.want[..k].iter().rev().find_map(pick_entry).or_else(|| d.want[k + 1..].iter().find_map(pick_entry))
     {
         return Ok(hit);

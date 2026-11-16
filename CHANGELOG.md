@@ -1218,6 +1218,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- **Programs as documents: structural edits on items a `++` of lists and
+  loops build.** An element bound to a name and read by one entry of one
+  list literal is that entry (`clip` in `[clip] ++ lines ++ [count]`), so
+  remove, duplicate and move work on it. A `for i in range(0, len(words))`
+  loop's elements are `words`' items. A loop written as an entry of a list
+  literal moves as one entry: a literal slide moves before or after all the
+  loop's slides, and only a position between them is refused.
+  `Template::Value` is laid out like the multi-line entry before it.
+  `SetText` reads a `{"…"}` string among text and `<br />`s as text.
+
 - **Programs as documents: `SetText` with line breaks, and through a
   package helper's hole.** `<br />` children are part of an element's text
   (`text_of` reads `\n` for each), and a `\n` in the new text writes

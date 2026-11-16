@@ -231,10 +231,26 @@ children):
 | `<text />` | `<text>Hi</text>` |
 | `<text>{s}</text>` in `fn hint(s)`, called `hint("Swipe")` | the string `"Swipe"` the hole traces to |
 | `<text>{r.title}</text>` in a `map` over `rows` | `rows[1].title` |
+| `<text>{title}</text>` in a package's `title_slide`, called `title_slide(post, "Hello")` | the string `"Hello"` in the document |
+| the same in `for t in titles do title_slide(post, t) end` | `titles[1]` |
+| `<text>Hi<br />there</text>`, set to `"Hi\nyou"` | `<text>Hi<br />you</text>` |
+
+`<br />` children are line breaks: the element's text reads `\n` for each
+(`text_of`), and a `\n` in the new text writes one. An element written on
+one line keeps its text there (`One<br />two`); one with its text a line
+per line gets a line per line of text. Through a `{…}` hole the line break
+is a `\n` in the string the hole reads, which the text reads back the same.
+
+A hole in an element written in another file (a package's helper) is
+followed like one in the document: the element's children are read from
+that file, and only the string or data entry the hole traces to has to be
+in the document. Literal text in such an element is that file's, and is
+refused.
 
 A literal built for several outputs asks, as a field does. An element with
-child elements, or with text and holes mixed (`<text>{n} items</text>`), has
-no one place its text is written, and is refused with the line to edit.
+other child elements (`<span>`), or with text and holes mixed
+(`<text>{n} items</text>`), has no one place its text is written, and is
+refused with the line to edit.
 
 ## Committing a choice later
 
@@ -322,8 +338,8 @@ chain. See [provenance.md](provenance.md#where-an-element-came-from-element-trac
   filtered or sorted list is locked for structural edits.
 - **A `{…}` that builds several elements** is locked unless it reads a
   data list.
-- **Text** is set only as one run of text: text split by `<br />` or mixed
-  with holes is refused.
+- **Text** is set only as text runs and `<br />`s: text with other child
+  elements, or mixed with holes, is refused.
 - **Names in a reference** are checked by the compiler, and a name bound at
   the site to something else than at the top of the document (a parameter
   shadowing a token) is refused when the two values differ. A name bound

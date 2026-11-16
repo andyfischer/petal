@@ -20,6 +20,13 @@ use programs_as_documents::{
 const SOCIAL: &str = "pub fn title_slide(title, subtitle = nil, size = 12)
   <slide title={title} subtitle={subtitle} size={size} pad={2 * 3} />
 end
+
+pub fn cover(post, title)
+  <slide name=\"Title\">
+    <text size={110}>{title}</text>
+    <text size={30}>Swipe</text>
+  </slide>
+end
 ";
 
 fn social_runner() -> Runner {
@@ -105,4 +112,43 @@ fn a_helper_used_once_takes_the_hooks_override_before_a_refusal() {
     let src2 = "import social\nlet s = title_slide(\"Hi\")\n[s, s]\n";
     let res = resolve_with(&r, src2, &opts, |r| set(k(r), "subtitle", StaticValue::str("World")));
     assert!(!matches!(res, Resolution::Edit(_)), "{res:?}");
+}
+
+
+// petal-social-media's `title_slide(post, "Hello")`: the `<text>{title}</text>`
+// it builds is written in the package, the text in the document.
+
+fn set_text(target: OutputKey, text: &str) -> Intent {
+    Intent::SetText { target, text: text.into() }
+}
+
+#[test]
+fn text_through_a_hole_of_a_package_element_is_edited_at_the_string() {
+    let r = social_runner();
+    let opts = ResolveOptions::default();
+    let src = "import social\nlet post = {}\n[cover(post, \"Hello\")]\n";
+    let e = edit(resolve_with(&r, src, &opts, |r| set_text(key_of(r, "text", 0), "Hi there")));
+    assert_eq!(e.step, Step::DirectLiteral);
+    assert_eq!(e.source, src.replace("\"Hello\"", "\"Hi there\""));
+    assert_eq!(e.span.start.line, 3);
+    assert!(e.also_changes.is_empty(), "{:?}", e.also_changes);
+    // A line break is a `\n` in the string (the package's own convention).
+    let e = edit(resolve_with(&r, src, &opts, |r| set_text(key_of(r, "text", 0), "Hello\nworld")));
+    assert_eq!(e.source, src.replace("\"Hello\"", "\"Hello\\nworld\""));
+    // The package's own literal text is still the package's.
+    match resolve_with(&r, src, &opts, |r| set_text(key_of(r, "text", 1), "Go")) {
+        Resolution::Refused { reason } => assert!(reason.contains("social.ptl"), "{reason}"),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn text_through_a_package_hole_in_a_loop_is_edited_in_the_data() {
+    let r = social_runner();
+    let opts = ResolveOptions::default();
+    let src = "import social\nlet post = {}\nlet titles = [\"One\", \"Two\"]\nlet slides = for t in titles do cover(post, t) end\nslides\n";
+    let e = edit(resolve_with(&r, src, &opts, |r| set_text(key_of(r, "text", 2), "Second")));
+    assert_eq!(e.step, Step::Scope(Scope::EditData));
+    assert_eq!(e.source, src.replace("\"Two\"", "\"Second\""));
+    assert!(e.also_changes.is_empty(), "{:?}", e.also_changes);
 }

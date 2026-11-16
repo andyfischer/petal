@@ -14,8 +14,14 @@
 //!    is edited; or to the data entry a `map`/`for` read it from. A literal
 //!    shared by other outputs is offered as a choice, like a field's.
 //!
-//! An element with child elements, or with text and holes mixed, has no
-//! single place its text is written, and is refused with the reason.
+//! `<br />` children are line breaks: the text reads `\n` for each, and a
+//! `\n` in the new text writes one (through a hole, a `\n` in the string).
+//! A hole of an element written in another file (a package's helper) is
+//! followed the same way: its children are read from that file, and only
+//! the string or data entry the hole reads has to be in the document.
+//!
+//! An element with other child elements, or with text and holes mixed, has
+//! no single place its text is written, and is refused with the reason.
 
 use petal::ast::{Expr, ExprKind, ExprVisitor, JsxChild, walk_expr};
 use petal::provenance::{self, TraceEnd};
@@ -106,31 +112,45 @@ pub(crate) fn set_text(
     let Some(span) = site.span else {
         return Resolution::Unresolved { reason: format!("<{tag}>'s element literal has no source position"), at: None };
     };
-    if let Some(r) = file_check(run, span.file, &format!("<{tag}>"), opts) {
-        return r;
-    }
     let line = span.start.line;
-    let Some(el) = expr_at(&run.source, &span) else {
+    // The element's children are read from the file its literal is in: a
+    // package's `<text>{title}</text>` is edited at the string the hole
+    // reads, which may well be in the document.
+    let in_document = span.file == FileId(0);
+    let file_text = if in_document { Some(run.source.as_str()) } else { provenance::file_source(run.program(), span.file).map(|(s, _)| s) };
+    let Some(el) = file_text.and_then(|src| expr_at(src, &span)) else {
+        if let Some(r) = file_check(run, span.file, &format!("<{tag}>"), opts) {
+            return r;
+        }
         return Resolution::Unresolved { reason: format!("<{tag}> on line {line} could not be found in the source"), at: Some(span) };
     };
     let ExprKind::Element { children, .. } = &el.kind else {
         return Resolution::Unresolved { reason: format!("<{tag}> on line {line} is not an element literal"), at: Some(span) };
     };
-    if children.iter().any(|c| matches!(c, JsxChild::Expr(e) if matches!(e.kind, ExprKind::Element { .. }))) {
+    if children.iter().any(|c| matches!(c, JsxChild::Expr(e) if matches!(e.kind, ExprKind::Element { .. }) && !is_line_break(e))) {
         return Resolution::Unresolved {
             reason: format!("<{tag}> on line {line} has child elements, so its text is not one run of text; edit it by hand"),
             at: Some(span),
         };
     }
-    let holes = children.iter().filter(|c| matches!(c, JsxChild::Expr(_))).count();
+    let holes = children.iter().filter(|c| matches!(c, JsxChild::Expr(e) if !is_line_break(e))).count();
     let value = StaticValue::Str(text.to_string());
-    let new_children: Vec<StaticValue> = if text.is_empty() { Vec::new() } else { vec![value.clone()] };
     if holes == 0 {
-        // Literal text between the tags, or none yet.
+        // Literal text (and `<br />`s) between the tags, or none yet.
+        if let Some(r) = file_check(run, span.file, &format!("<{tag}>"), opts) {
+            return r;
+        }
+        let new_children = text_children(text);
         let step = if children.is_empty() { Step::SingleSite } else { Step::DirectLiteral };
         let what = format!("<{tag}> on line {line}");
         let edit = LiteralEdit::SetChildren { path: "", children: &new_children };
-        let apply = |e: LiteralEdit<'_>| edit_span(&run.source, &span, e);
+        // An element written on one line keeps its text on that line:
+        // `<text>One<br />two</text>`.
+        let one_line = provenance::span_text(run.program(), &span).is_some_and(|t| !t.contains('\n'));
+        let apply = |e: LiteralEdit<'_>| match one_line.then(|| inline_lines(&run.source, &span, text)).flatten() {
+            Some(s) => Ok(s),
+            None => edit_span(&run.source, &span, e),
+        };
         let (source, verified) = match edit_and_verify(runner, run, node, intent, edit, &apply, &what) {
             Ok(s) => s,
             Err(e) => return Resolution::Refused { reason: format!("could not edit <{tag}> on line {line}: {e}") },
@@ -140,6 +160,9 @@ pub(crate) fn set_text(
         return finish_verified(runner, run, node, intent, edit, verified, site.fan_out, &what, opts);
     }
     if holes > 1 || children.len() > 1 {
+        if !in_document && let Some(r) = file_check(run, span.file, &format!("<{tag}>"), opts) {
+            return r;
+        }
         return Resolution::Unresolved {
             reason: format!("<{tag}> on line {line} mixes text and `{{…}}` holes, so its text is not written in one place; edit it by hand"),
             at: Some(span),
@@ -169,7 +192,7 @@ pub(crate) fn set_text(
             Ok(s) => s,
             Err(e) => return Resolution::Refused { reason: format!("could not edit {what}: {e}") },
         };
-        let description = format!("set the string on line {lit_line} (the text of <{tag}>) to \"{text}\"");
+        let description = format!("set the string on line {lit_line} (the text of <{tag}>) to {}", value.to_source());
         let edit = ResolvedEdit { source, step: Step::DirectLiteral, span: lit_span, description, also_changes: Vec::new(), base: None };
         return finish_verified(runner, run, node, intent, edit, verified, 1, &what, opts);
     }
@@ -184,11 +207,54 @@ pub(crate) fn set_text(
                 edit: Some(e),
             }],
         },
+        None if !in_document => file_check(run, span.file, &format!("<{tag}>"), opts).unwrap_or_else(|| Resolution::Unresolved {
+            reason: format!("the text of <{tag}> is computed by `{{{hole_text}}}` on line {line}; edit it by hand"),
+            at: Some(span),
+        }),
         None => Resolution::Unresolved {
             reason: format!("the text of <{tag}> is computed by `{{{hole_text}}}` on line {line}; edit it by hand"),
             at: Some(span),
         },
     }
+}
+
+/// `source` with the element literal at `span` given the text `text`, which
+/// has line breaks, written on the literal's line: the lines as bare text
+/// with `<br />` between them. `None` when a line can't be bare text (it
+/// would be a quoted hole) or `text` has no line break.
+fn inline_lines(source: &str, span: &SourceSpan, text: &str) -> Option<String> {
+    const MARK: char = '\u{E000}';
+    if !text.contains('\n') || text.contains(MARK) || source.contains(MARK) {
+        return None;
+    }
+    let joined = text.replace('\n', &MARK.to_string());
+    let children = [StaticValue::Str(joined.clone())];
+    let edited = edit_span(source, span, LiteralEdit::SetChildren { path: "", children: &children }).ok()?;
+    let start = crate::splice::byte_range(source, span)?.start;
+    let at = start + edited[start..].find(&joined)?;
+    let bare = edited[..at].ends_with('>') && edited[at + joined.len()..].starts_with('<');
+    bare.then(|| edited.replace(MARK, "<br />"))
+}
+
+/// Whether `e` is a line break, `<br />`: a `br` element with no attributes
+/// or children.
+fn is_line_break(e: &Expr) -> bool {
+    matches!(&e.kind, ExprKind::Element { tag, props, children } if tag == "br" && props.is_empty() && children.is_empty())
+}
+
+/// An element's children that read as `text`: a run of text per line, with
+/// `<br />` between lines (an empty line has no run).
+pub(crate) fn text_children(text: &str) -> Vec<StaticValue> {
+    let mut out = Vec::new();
+    for (i, l) in text.split('\n').enumerate() {
+        if i > 0 {
+            out.push(StaticValue::Element { tag: "br".into(), props: Vec::new(), children: Vec::new() });
+        }
+        if !l.is_empty() {
+            out.push(StaticValue::Str(l.to_string()));
+        }
+    }
+    out
 }
 
 /// The data-scope edit of an [`Intent::SetText`]: the entry of the data

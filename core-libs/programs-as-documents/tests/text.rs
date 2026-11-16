@@ -87,7 +87,75 @@ fn text_with_no_one_place_is_refused_with_the_reason() {
     let src = "let n = 3\n[<text id=\"t\">{\"{n} items\"}</text>]\n";
     let why = reason(resolve_src(&value_runner(), src, |_| text(OutputKey::Id("t".into()), "4 items")));
     assert!(why.contains("computed") && why.contains("line 2"), "{why}");
-    let src = "[<text id=\"t\">Hi<br />there</text>]\n";
+    let src = "[<text id=\"t\">Hi <span>there</span></text>]\n";
     let why = reason(resolve_src(&value_runner(), src, |_| text(OutputKey::Id("t".into()), "Bye")));
     assert!(why.contains("child elements"), "{why}");
+}
+
+
+// petal-movies' text and captions items: lines of text with `<br />`
+// between them.
+
+#[test]
+fn line_breaks_are_part_of_the_text() {
+    let src = "[<text id=\"t\">Hi<br />there</text>]\n";
+    let r = run(&value_runner(), src);
+    let n = r.map.find(&OutputKey::Id("t".into())).unwrap();
+    assert_eq!(programs_as_documents::text_of(&r.observed_node(n)).as_deref(), Some("Hi\nthere"));
+    assert_eq!(resolve_src(&value_runner(), src, |_| text(OutputKey::Id("t".into()), "Hi\nthere")), Resolution::AlreadyHolds);
+    // One line replaces the lines, and the `<br />` goes.
+    let e = edit(resolve_src(&value_runner(), src, |_| text(OutputKey::Id("t".into()), "Bye")));
+    assert_eq!(e.step, Step::DirectLiteral);
+    assert_eq!(e.source, "[<text id=\"t\">Bye</text>]\n");
+    assert!(e.also_changes.is_empty(), "{:?}", e.also_changes);
+}
+
+#[test]
+fn a_line_break_in_the_new_text_writes_a_br() {
+    // On one line, the text stays on it.
+    let src = "[<text id=\"t\" size={12}>Hello</text>]\n";
+    let e = edit(resolve_src(&value_runner(), src, |_| text(OutputKey::Id("t".into()), "One\ntwo\n\nthree")));
+    assert_eq!(e.source, "[<text id=\"t\" size={12}>One<br />two<br /><br />three</text>]\n");
+    assert!(e.description.contains("One\\ntwo"), "{}", e.description);
+    // An element with no text yet.
+    let src = "[<text id=\"t\" />]\n";
+    let e = edit(resolve_src(&value_runner(), src, |_| text(OutputKey::Id("t".into()), "A\nB")));
+    assert_eq!(e.step, Step::SingleSite);
+    let r = run(&value_runner(), &e.source);
+    let n = r.map.find(&OutputKey::Id("t".into())).unwrap();
+    assert_eq!(programs_as_documents::text_of(&r.observed_node(n)).as_deref(), Some("A\nB"));
+}
+
+#[test]
+fn lines_written_one_per_line_keep_that_layout() {
+    // petal-movies' title-card.ptl.
+    let src = "[\n  <text\n    id=\"t\"\n    size={72}\n  >\n    Every movie<br />\n    is a Petal script.<br />\n    <br />\n    Write it as JSX.\n  </text>,\n]\n";
+    let e = edit(resolve_src(&value_runner(), src, |_| {
+        text(OutputKey::Id("t".into()), "Every movie\nis a Petal script.\n\nWrite it in Petal.")
+    }));
+    assert_eq!(e.source, src.replace("Write it as JSX.", "Write it in Petal."));
+    let e = edit(resolve_src(&value_runner(), src, |_| text(OutputKey::Id("t".into()), "Every movie\nis a script.")));
+    assert_eq!(
+        e.source,
+        "[\n  <text\n    id=\"t\"\n    size={72}\n  >\n    Every movie<br />\n    is a script.\n  </text>,\n]\n"
+    );
+    assert!(e.also_changes.is_empty(), "{:?}", e.also_changes);
+}
+
+#[test]
+fn a_line_break_through_a_hole_is_written_in_the_string() {
+    // The string the hole reads gets a `\n`, which the element's text
+    // reads back as the line break.
+    let src = "fn hint(s)\n  <text>{s}</text>\nend\n[hint(\"Swipe\")]\n";
+    let e = edit(resolve_src(&value_runner(), src, |r| text(key_of(r, "text", 0), "Swipe\nleft")));
+    assert_eq!(e.step, Step::DirectLiteral);
+    assert_eq!(e.source, src.replace("\"Swipe\"", "\"Swipe\\nleft\""));
+    assert!(e.also_changes.is_empty(), "{:?}", e.also_changes);
+}
+
+#[test]
+fn a_hole_beside_lines_is_still_refused() {
+    let src = "let n = 3\n[<text id=\"t\">{n}<br />items</text>]\n";
+    let why = reason(resolve_src(&value_runner(), src, |_| text(OutputKey::Id("t".into()), "4\nitems")));
+    assert!(why.contains("mixes text"), "{why}");
 }

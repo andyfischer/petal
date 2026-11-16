@@ -64,9 +64,10 @@ pub enum Intent {
     /// names must be in scope there, and the rerun must show the field
     /// holding the value the expression has at that place.
     SetFieldExpr { target: OutputKey, field: String, expr: StaticExpr },
-    /// Output `target`'s text (its text children) is `text`, written as
-    /// literal text between its tags, or in the string literal or data
-    /// entry a `{…}` hole among its children reads it from.
+    /// Output `target`'s text (its text children, with `\n` for each
+    /// `<br />`) is `text`, written as literal text between its tags, or in
+    /// the string literal or data entry a `{…}` hole among its children
+    /// reads it from (which may be in a package's helper).
     SetText { target: OutputKey, text: String },
 }
 
@@ -839,6 +840,7 @@ pub(crate) fn describe_edit(edit: LiteralEdit<'_>, on: &str, at: &str) -> String
         LiteralEdit::SetChildren { children, .. } => {
             let text: String = children.iter().filter_map(|c| match c {
                 StaticValue::Str(s) => Some(s.as_str()),
+                c if is_line_break(c) => Some("\\n"),
                 _ => None,
             }).collect();
             format!("set the text of {on} {at} to \"{text}\"")
@@ -1079,6 +1081,10 @@ fn changed_others(
         if n.key == node.key || n.path == node.path || before.is_derived(&n.path) {
             continue;
         }
+        // The target's own `<br />`s are its text, which the intent sets.
+        if matches!(intent, Intent::SetText { .. }) && n.tag == "br" && n.path.starts_with(&node.path) {
+            continue;
+        }
         let Some(m) = after.map.find(&n.key) else {
             out.push(format!("<{}> {}", n.tag, n.key));
             continue;
@@ -1091,9 +1097,20 @@ fn changed_others(
     }
     if out.is_empty() {
         // Anything outside the elements (a project record, text).
-        let (mut want, got) = (before.compared_outputs(), after.compared_outputs());
+        let (mut want, mut got) = (before.compared_outputs(), after.compared_outputs());
         if let Some(el) = node_at_mut(&mut want, &node.path) {
             apply_intent(el, intent);
+            if matches!(intent, Intent::SetText { .. }) {
+                text_as_lines(el);
+            }
+        }
+        // The target's text was verified; a line break in it is written as
+        // `<br />` or as `\n` in the string a hole reads, which read alike.
+        if matches!(intent, Intent::SetText { .. })
+            && let Some(m) = after.map.find(new_key)
+            && let Some(el) = node_at_mut(&mut got, &m.path)
+        {
+            text_as_lines(el);
         }
         if want.len() != got.len() || want.iter().zip(&got).any(|(a, b)| !same(a, b)) {
             out.push("other values in the result".into());
@@ -1113,6 +1130,21 @@ fn shallow(run: &DocumentRun, n: &OutputNode) -> Option<StaticValue> {
         }),
         _ => None,
     }
+}
+
+/// Element value `el` with its text, when it has only text, as a run per
+/// line and `<br />` between them.
+fn text_as_lines(el: &mut StaticValue) {
+    if let Some(t) = text_of(el)
+        && let StaticValue::Element { children, .. } = el
+    {
+        *children = crate::text::text_children(&t);
+    }
+}
+
+/// Whether `v` is a line break, `<br />`.
+pub(crate) fn is_line_break(v: &StaticValue) -> bool {
+    matches!(v, StaticValue::Element { tag, props, children } if tag == "br" && props.is_empty() && children.is_empty())
 }
 
 fn holds_element(v: &StaticValue) -> bool {
@@ -1152,22 +1184,22 @@ fn apply_intent(el: &mut StaticValue, intent: &Intent) {
         Intent::RemoveField { .. } => remove_in(props, &parts),
         Intent::SetFieldExpr { .. } => {}
         Intent::SetText { text, .. } => {
-            children.retain(holds_element);
-            if !text.is_empty() {
-                children.insert(0, StaticValue::Str(text.clone()));
-            }
+            children.retain(|c| holds_element(c) && !is_line_break(c));
+            children.splice(0..0, crate::text::text_children(text));
         }
     }
 }
 
-/// The text of element value `el`: its text children run together, or
-/// `None` when it has child elements or other values among its children.
+/// The text of element value `el`: its text children run together, with a
+/// line break (`\n`) for each `<br />`, or `None` when it has other child
+/// elements or other values among its children.
 pub fn text_of(el: &StaticValue) -> Option<String> {
     let StaticValue::Element { children, .. } = el else { return None };
     children
         .iter()
         .map(|c| match c {
             StaticValue::Str(s) => Some(s.as_str()),
+            c if is_line_break(c) => Some("\n"),
             _ => None,
         })
         .collect::<Option<Vec<&str>>>()

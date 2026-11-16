@@ -349,6 +349,12 @@ print(limit(9, 0, 5), GRAVITY)
   removed, so an `example:` can be indented with the code around it.
 - A comment above a declaration is not its documentation, however it is
   written.
+- `petal lint` checks docs against the code: a `params:` key that no form of
+  the function takes and a `see:` entry that names nothing reachable
+  (`doc-params`), a call to an item whose doc says `deprecated:` (`deprecated`,
+  with the doc's text), and a package `description` that disagrees with the
+  root `@module_doc` (`package-description`). The opt-in `undocumented-pub`
+  lists `pub` items with no doc. See [CLI.md](CLI.md#rules).
 
 ## Types
 

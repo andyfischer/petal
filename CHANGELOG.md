@@ -536,6 +536,19 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **Lint rules for `@doc`.** `doc-params`: a `params:` key that no form of
+  the overload set takes (with a did-you-mean), and a `see:` entry that names
+  nothing the file can reach. `deprecated`: a use of an item whose `@doc` has
+  `deprecated:`, across imports, qualified access, `pub import` re-exports
+  and builtins, with the doc's replacement text. `package-description`: a
+  `petal.toml` `description` that disagrees with the root module's
+  `@module_doc`. `undocumented-pub` (opt-in): a `pub` item, or a package root
+  module, with no doc. Opt-in rules can now be turned on beside the default
+  ones with `petal lint --rules-enable=<rule>,…` or a project's `[lint]
+  enable = […]`, and `petal.toml` reads `[package] description`.
+  `npm run lint:docs` runs `undocumented-pub` over Petal's own libraries, and
+  CI runs it in report-only mode. See [CLI.md](docs/CLI.md#rules).
+
 - **Documentation annotations: `@doc(…)` and `@module_doc(…)`.** `@doc`
   goes before a `fn` (`pub fn`, `fn T.m`, `native fn`), `class`, `enum`,
   `let`, `var`, `state` or `memo` and holds its documentation as literal

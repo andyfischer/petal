@@ -599,6 +599,13 @@ Each step lands green on its own:
    module docs. Add a JSON schema and a snapshot test on a fixture package.
 3. **Lints** `doc-params`, `undocumented-pub` (CI-on for Petal's own libs,
    initially in report-only mode), `deprecated`, `package-description`.
+   *Implemented 2026-11-15* (`core/src/lint/docs.rs`). Beyond this text:
+   opt-in rules can be turned on beside the defaults with
+   `--rules-enable` or `[lint] enable` in `petal.toml`, which also reads
+   `[package] description` now; a `params:` finding has a did-you-mean; a
+   use inside a declaration that is itself deprecated is not reported; and
+   with several documented forms, a call is deprecated when every form its
+   argument count reaches is.
 4. **LSP hover and completion; `fn_info(f).doc`; `static_bindings.doc`.** Also
    the website highlighter.
 5. **`comment-to-doc` converter**, then migrate `core/prelude`,

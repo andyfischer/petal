@@ -604,6 +604,16 @@ Options:
 - `--rules-include=<rule>,...` / `--rules-exclude=<rule>,...` — run only these
   rules, or all but these. An empty list (`--rules-include=`) runs none: the
   compile check alone.
+- `--rules-enable=<rule>,...` — run these opt-in rules as well as the others
+  (`--rules-enable=undocumented-pub`). A project can do the same in its
+  `petal.toml`, for every file under it:
+
+  ```toml
+  [lint]
+  enable = ["undocumented-pub"]
+  ```
+
+  The manifest's list is not read when `--rules-include` names the rules.
 - `--error-format full|bare` — as on [`run`](#run--execute-a-program).
 
 #### Which names exist
@@ -841,6 +851,10 @@ finding a `fixable` field. `petal lint --rules` lists them.
 | `never-replays` (opt-in) | a function whose calls are never replayed from the memo table, and why: an effect on every call (`print`, a random draw, a host write), itself or through a function it calls on every call; a read whose answer changes every run (a native declared `ticks`, such as `time`); a top-level plain `var`, a new cell every run. A read of a revisioned class (`PHYSICS`, `NET`) on every call is reported as *rarely* replayed. The same analysis as [`show-static --deps`](#--deps--dependency-classes-and-why-a-helper-never-replays) | none |
 | `old-syntax` | a deprecated form the compiler accepts without a warning: the `export` spelling of `pub`, `//` comments, the `elsif` spelling of `else if` | none: [`petal migrate-old-code`](#migrate-old-code--rewrite-old-syntax) rewrites it |
 | `const-of-literal` (opt-in) | `const X = v` or `let X = const(v)` where `v` is literal data (a literal, a colour, a list or record of them): `const` checks nothing a reader cannot see | none: dropping the check is the author's call |
+| `doc-params` | a `@doc` `params:` key that no form of the overload set takes (`` `@doc` describes `lo`, which `clamp` does not take ``, with a did-you-mean), and a `see:` entry (on `@doc` or `@module_doc`) that names nothing reachable: not a declaration of the file, a name its imports bring in, a builtin, or a module or package and its export (`"ui/drag"`, `"ui.button"`, `"Rect.inset"`) | none |
+| `deprecated` | a use of an item whose `@doc` has `deprecated:`, declared in the file, in a module it imports (or one that module re-exports with `pub import`, or reached as `q.name`), or a builtin. The message carries the doc's text: `` `old_clamp` is deprecated: use `clamp` instead ``. A use inside a declaration that is itself deprecated is not reported | none |
+| `package-description` | a package root module (`src/<name>.ptl`) whose `@module_doc`'s first sentence disagrees with the `description` in the package's `petal.toml`. Case, spacing, backticks and the closing stop do not count | none |
+| `undocumented-pub` (opt-in) | a `pub` item (`fn`, `native fn`, `class`, `enum`, `let`, `state`, …) with no `@doc` on any form of its overload set, reported once at its first form; and a package's root module with no `@module_doc` | none |
 | `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`; `pub state` included, since importers cannot write an export) that nothing in the program assigns and whose initializer is static | `state X = e` → `let X = const(e)` |
 
 Layout is not a finding: that is `fmt`. A file `--fix` changes is formatted
@@ -859,6 +873,16 @@ remainder ``.
 script that prints from a helper is not wrong, and the rule compiles the
 file. It is for a script a host runs every frame with memoization on, where
 it says which helpers re-run every frame and what to change.
+
+The four documentation rules read [`@doc` and
+`@module_doc`](language-guide.md#documentation). An overload set's `params:`
+may name a parameter of any of its forms. When one form of a set has a
+`@doc`, it describes the set, so its `deprecated:` covers every form; when
+several do, a call is deprecated when every form its argument count reaches
+is. `undocumented-pub` is **opt-in** (`--rules-enable=undocumented-pub`, or
+`[lint] enable` in `petal.toml`): a script or an app has no reference to fill.
+Petal's own libraries are checked with it in CI, in report-only mode for now
+(`npm run lint:docs`).
 
 **Old syntax is not lint's.** Rewriting a deprecated or removed form into
 the current one is [`petal migrate-old-code`](#migrate-old-code--rewrite-old-syntax),

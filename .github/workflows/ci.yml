@@ -126,6 +126,13 @@ jobs:
           git diff --exit-code docs/stdlib.json \
             || { echo "::error::docs/stdlib.json is stale — run 'npm run stdlib:json' and commit the result"; exit 1; }
 
+      # Report-only for now (docs/proposals/doc-annotation.md, step 3): the
+      # libraries are not migrated to `@doc` yet. It becomes a failing check
+      # with `--strict` once they are.
+      - name: Report undocumented pub items in Petal's own libraries
+        continue-on-error: true
+        run: npm run lint:docs
+
       - name: Type-check TypeScript
         run: npx tsc --noEmit
 

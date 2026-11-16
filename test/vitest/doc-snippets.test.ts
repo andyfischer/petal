@@ -63,8 +63,15 @@ function docFiles(): string[] {
     .sort();
 }
 
+// A fence of four or more backticks quotes Markdown, so a ```petal block
+// inside it is an example of a page, not a snippet: blank those lines out
+// (keeping the line count, so reported lines stay right).
+const OUTER_FENCE = /^(````+)[^\n]*\n[\s\S]*?^\1[ \t]*$/gm;
+
 function extractSnippets(relFile: string): Snippet[] {
-  const text = readFileSync(join(repoRoot, "docs", relFile), "utf8");
+  const text = readFileSync(join(repoRoot, "docs", relFile), "utf8").replace(OUTER_FENCE, (block) =>
+    block.replace(/[^\n]/g, ""),
+  );
   const snippets: Snippet[] = [];
   let m: RegExpExecArray | null;
   let index = 0;

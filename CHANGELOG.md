@@ -1211,6 +1211,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- **Programs as documents: named arguments, bare attributes, and the
+  override hook for a helper used once.** `provenance::trace_value` follows a
+  parameter with a default to the argument its call passes (by name or
+  position), not stopping at the `p#given` branch, so the resolver edits
+  `subtitle: "World"` on a package helper's call. Setting a bare attribute
+  (`<text box_lines>`) writes `box_lines={false}` in its place instead of
+  the value over its name. Before refusing, an output a call in the
+  document made asks the host's `OverrideHook` for a verified override on
+  that call.
+
 - **No value an edit writes can spell code.** A `StaticValue` rendered its
   call function, variant names, element tag and attribute names as
   written, so `StaticValue::Call { function: "(launch()) + f" }` given to a

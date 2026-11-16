@@ -1,33 +1,46 @@
 # Proposal: `@doc(…)` and `@module_doc(…)`, documentation annotations
 
-Status: **accepted**, 2026-11-14, with the owner's decisions recorded under
-[Decisions](#decisions). Proposed 2026-11-13. Step 1 of the
-[implementation plan](#implementation-plan) (parser and AST, diagnostics,
-`fmt`, `show-ast`, tree-sitter) is implemented (2026-11-15); steps 2–6
-(`petal doc`, lints, LSP and `fn_info(f).doc`, migration, generated
-reference) are not yet. Differences from this text in step 1: an edit that
-only adds or changes a doc hot-reloads by recompiling (with every `state`
-slot kept by the state transfer), not as a layout-only relocation, and
-`show-ast --json` of a file with a `@module_doc` prints
-`{"module_doc", "stmts"}` instead of the bare statement array.
+Status: **implemented**, 2026-11-15. Accepted 2026-11-14, with the owner's
+decisions recorded under [Decisions](#decisions); proposed 2026-11-13. Every
+step of the [implementation plan](#implementation-plan) has landed: the
+syntax (step 1), `petal doc` (2), the lints (3), LSP hover and completion,
+`fn_info(f).doc` and `static_bindings.doc` (4), the `comment-to-doc`
+converter and the migration of `core/prelude`, `core/packages`, `ui`,
+`bloom`, `text_layout`, `glsl` and garden's interface packages (5), and the
+generated reference tools (6). Each step's notes below say what it did
+beyond this text. CI now fails on any `undocumented-pub` or `doc-params`
+finding in Petal's own libraries (`npm run lint:docs`, `--strict`).
 
-Step 2, `petal doc [--json | --brief] [--private]`, is implemented too
-(2026-11-15; [CLI.md](../CLI.md), `doc`, and
-[the JSON schema](../schemas/petal-doc.schema.json)). It settles
-[open question 3](#open-questions): `--private` includes the items written
-without `pub`. The module doc is carried on `module::LoadedModule`
-(`module_doc`), not on `Program`: nothing downstream of the loader needs it
-yet. Each bundled package's `petal.toml` now has a `description`.
+Deviations from this text:
 
-Step 6, the generated reference, has its tools (2026-11-15):
-`tools/extract-stdlib.ts` reads signatures and docs from `petal doc --json`,
-`npm run reference` (`tools/gen-reference.ts`) renders the Markdown
-references with a CI freshness check, and petal-lang.org imports the JSON
-(`pnpm import:api`) for its `/docs/api/` pages. `Builtins.md` and the `ui`
-and `bloom` references are **not replaced yet**: step 5 has not moved their
-prose into `@doc`, so replacing them would lose all of it.
-`npm run reference -- --coverage` measures that, and `--replace <id>` does
-the replacement once it reports nothing missing.
+- **Hot reload.** An edit that only adds or changes a doc hot-reloads by
+  recompiling (every `state` slot kept by the state transfer), not as a
+  layout-only relocation.
+- **`show-ast --json`** of a file with a `@module_doc` prints
+  `{"module_doc", "stmts"}` instead of the bare statement array.
+- **The module doc** is carried on `module::LoadedModule` (`module_doc`),
+  not on `Program`: nothing downstream of the loader needs it. Each bundled
+  package's `petal.toml` has a `description`.
+- **`--private`** settles [open question 3](#open-questions): `petal doc
+  --private` includes the items written without `pub`.
+- **The hand-written references are not replaced yet** (Migration items 4
+  and 5). `docs/Builtins.md`, `ui`'s `docs/reference.md` and bloom's
+  `docs/components.md` still exist, marked as moving into the sources.
+  Every item's prose is in `@doc` now, but their section introductions,
+  tables and cross-cutting explanations (layering, key names, the target
+  registry) are not in any doc yet: `npm run reference -- --coverage`
+  reports 100 of 410, 63 of 81 and 46 of 52 paragraphs with no `@doc`
+  counterpart. `--replace <id>` swaps each one for the generated page once
+  that prose has a home (a `@module_doc`, or a guide page beside it).
+- **petal-lang.org's** `/docs/api/` pages are generated from `petal doc
+  --json` (`pnpm import:api`); the committed import predates the library
+  migration and is refreshed by the next re-import.
+- **The wasm build's comment stripping** (`core/build_support/strip_comments.rs`)
+  now keeps the lines of a `"""` raw string verbatim, since a `@doc`
+  example's `# …` lines are string content.
+
+Open questions 1 (settings' `comment` field), 2 (`example:` on
+`@module_doc`) and 4 (doctests) stay open.
 
 ## Summary
 

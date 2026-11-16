@@ -651,8 +651,11 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   module, with no doc. Opt-in rules can now be turned on beside the default
   ones with `petal lint --rules-enable=<rule>,…` or a project's `[lint]
   enable = […]`, and `petal.toml` reads `[package] description`.
-  `npm run lint:docs` runs `undocumented-pub` over Petal's own libraries, and
-  CI runs it in report-only mode. See [CLI.md](docs/CLI.md#rules).
+  `npm run lint:docs` runs `undocumented-pub` and `doc-params` over Petal's
+  own libraries with `--strict`, and CI fails on any finding, now that every
+  library is migrated (the doc-annotation proposal is
+  [implemented](docs/proposals/doc-annotation.md)). See
+  [CLI.md](docs/CLI.md#rules).
 
 - **`petal doc [--json | --brief] [--private] <target>`.** The documented
   public surface of a package (`ui`, `core`, `bloom`, a package directory),
@@ -1354,6 +1357,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   the value over its name. Before refusing, an output a call in the
   document made asks the host's `OverrideHook` for a verified override on
   that call.
+
+- **A wasm build's embedded sources keep their `@doc` examples.** The
+  comment stripping applied to the bundled `.ptl` files blanked every line
+  starting with `# `, including the lines of a `"""` raw string, so a
+  `@doc(example: """…""")` lost its comments (and the strings' trailing
+  whitespace) in the browser. Lines inside, opening or closing a raw string
+  are now kept verbatim.
 
 - **No value an edit writes can spell code.** A `StaticValue` rendered its
   call function, variant names, element tag and attribute names as

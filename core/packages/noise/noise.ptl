@@ -1,13 +1,37 @@
-# Package `noise` — Perlin noise (core/src/builtins/noise.rs).
-#
-# A bundled builtin package: the petal runtime registers these natives in
-# every Env, and `import noise` puts them in scope — bare (`noise(…)`), qualified
-# (`noise.noise(…)`) and as methods (`x.noise(…)`).
+@module_doc("""
+Perlin noise.
+
+Needs `import noise`, which puts these in scope bare (`noise(x)`), qualified
+(`noise.noise_seed(1)`) and as methods (`x.noise()`).
+""")
+
+# Package `noise` (core/src/builtins/noise.rs). A bundled builtin package:
+# the petal runtime registers these natives in every Env, and the import is
+# what puts them in scope.
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. Several declarations of one name are that native's call forms.
 # See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+Perlin noise in 1D, 2D, or 3D. Returns a smooth value centered around 0.
+Ideal for organic motion, terrain, clouds, and flow fields.
+""",
+  example: """
+    import noise
+    noise(0.5)                  # smooth 1D value
+    noise(0.3, 0.7)             # smooth 2D value
+    noise(0.1, 0.2, 0.3)        # smooth 3D value
+  """,
+  see: ["noise_seed"])
 pub native fn noise(x, y?, z?)
+
+@doc("""
+Sets the global noise seed for reproducibility. Takes an integer.
+""",
+  example: """
+    import noise
+    noise_seed(42)
+  """)
 pub native fn noise_seed(seed)

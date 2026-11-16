@@ -1,21 +1,28 @@
-# Package `autodiff` — derivatives and solving by finite differences
-# (docs/features/differentiation.md).
-#
-# `deriv`, `jacobian`, `solve_step` and `solve` take a function and call it
-# with its inputs nudged, then measure how its output moved. Every probe
-# runs inside `speculate`, so the function may read and write `state`, emit
-# draw commands or call effectful natives and nothing it does is left
-# behind; when the caller is itself speculating (inside a `ui/drag`
-# candidate rendering, or a `speculate` call), the probes run directly,
-# since the outer call already puts everything back. The numbers go to two
-# natives (core/src/builtins/drag_math.rs): `fd_column`, which classifies a
-# column by direct manipulation v2's rules (smooth, kink, branch flip, step,
-# zero, errored) and asks for the points to sample, and `gn_step`, the
+@module_doc("""
+Derivatives and solving by finite differences: deriv, jacobian, solve_step
+and solve.
+
+Needs `import autodiff`, which puts these in scope bare (`deriv(…)`),
+qualified (`autodiff.deriv(…)`) and as methods.
+
+Each function calls `f` with its inputs nudged (every call inside
+[`speculate`](features/speculate.md), so nothing `f` writes or draws is left
+behind) and measures how the output moved. `f` returns a number or a list of
+numbers. Because every probe runs inside `speculate`, `f` may read and write
+`state`, emit draw commands or call effectful natives; when the caller is
+itself speculating (inside a `ui/drag` candidate rendering, or a `speculate`
+call), the probes run directly, since the outer call already puts everything
+back. The rules for each measurement's `quality`, the options and worked
+examples are in [features/differentiation.md](features/differentiation.md).
+""",
+  see: ["speculate", "fd_column", "gn_step"])
+
+# Package `autodiff`, written in Petal over two natives
+# (core/src/builtins/drag_math.rs): `fd_column`, which classifies a column by
+# direct manipulation v2's rules (smooth, kink, branch flip, step, zero,
+# errored) and asks for the points to sample, and `gn_step`, the
 # Gauss-Newton step `ui/drag`'s `vary` and DM v2 share.
-#
-# A bundled builtin package: `import autodiff` puts these in scope — bare
-# (`deriv(…)`), qualified (`autodiff.deriv(…)`) and as methods.
-#
+
 # `f(arg)`, put back afterwards: under `speculate`, or directly when a
 # speculative call is already running (`speculate` does not nest).
 fn _run(f, arg)
@@ -55,12 +62,22 @@ fn _result(c)
   else
     {value: c.value, quality: c.quality, step: c.step}
 
-# The derivative of `f` (one number in, a number or a list of numbers out)
-# at `x`, by central differences with `h = 1e-4 * max(|x|, 1)`.
-# `{value, quality, step}`: `quality` says whether `value` can be trusted as
-# a slope ("smooth", "kink", "branch_flip", "step", "zero", "errored"), and
-# `step` is the `h` it was measured with. `opts`: `h`, and `mode`
-# ("central" or "forward").
+@doc("""
+The derivative of `f` at `x` by central differences, with
+`h = 1e-4 * max(abs(x), 1)`. `quality` says whether `value` can be trusted
+as a slope: `"smooth"`, `"kink"`, `"branch_flip"`, `"step"`, `"zero"` or
+`"errored"` (the record then has `error`), and `step` is the `h` the value
+was measured with.
+""",
+  params: {f: "One number in, a number or a list of numbers out.", x: "Where to measure."},
+  options: {h: "The step to measure with, in place of the default.", mode: """`"central"` (the default) or `"forward"` differences."""},
+  returns: """`{value, quality, step}`, plus `error` when `quality` is `"errored"`.""",
+  example: """
+    import autodiff
+    print(round(deriv(fn(x) x * x end, 3.0).value, 6))   # 6.0
+    print(deriv(abs, 0.0).quality)                       # kink
+  """,
+  see: ["jacobian", "fd_column"])
 pub fn deriv(f, x, opts = {})
   let x0 = float(x)
   let base = _run(f, x0)
@@ -83,10 +100,20 @@ fn _jacobian(f, xs, opts)
     base: base,
   }
 
-# The Jacobian of `f` (a list of numbers in, a number or a list of numbers
-# out) at `xs`: `{rows, quality, step}`, where `rows[i][j]` is
-# `d out_i / d in_j` (a number out is one row), and `quality` and `step`
-# have one entry per input. Same options as `deriv`.
+@doc("""
+The Jacobian of `f` at the list `xs`: `rows[i][j]` is the derivative of
+output `i` by input `j` (`d out_i / d in_j`; a number out is one row), and
+`quality` and `step` have one entry per input. Same options as `deriv`.
+""",
+  params: {f: "A list of numbers in, a number or a list of numbers out.", xs: "The inputs to measure at."},
+  options: {h: "The step to measure with, in place of the default.", mode: """`"central"` (the default) or `"forward"` differences."""},
+  returns: """`{rows, quality, step}`.""",
+  example: """
+    import autodiff
+    let j = jacobian(fn(p) [p[0] + p[1], p[0] * p[1]] end, [2.0, 3.0])
+    print(j.quality)   # ["smooth", "smooth"]
+  """,
+  see: ["deriv", "solve_step"])
 pub fn jacobian(f, xs, opts = {})
   let j = _jacobian(f, xs, opts)
   {rows: j.rows, quality: j.quality, step: j.step}
@@ -109,15 +136,32 @@ fn _limit(xs, next, max_step, bounds)
     let d2 = if cap == nil then d else clamp(d, -abs(cap), abs(cap)) end
     _bound(xs[i] + d2, if bounds == nil then nil else bounds[i] end)
 
-# One damped Gauss-Newton step from `xs` toward `f(xs) == target`, with the
-# Jacobian measured as `jacobian` does. A step that does not bring the
-# output closer is halved, up to four times; when none does, `xs` comes back
-# unchanged with `improved: false`. `{xs, residual, improved, stuck,
-# quality}`: `residual` is the distance from `f(xs)` to `target` at the
-# returned `xs`, `stuck` the indices of inputs that do not move the output
-# (quality "zero" or "errored"), and `quality` the Jacobian's, one per
-# input. `opts`: `bounds` (`[[lo, hi], …]`), `max_step` (a number, or one
-# per input), `damping` (the step's scale, default 1), plus `deriv`'s.
+@doc("""
+One damped Gauss-Newton step from `xs` toward `f(xs) == target`, with the
+Jacobian measured as `jacobian` does. A step that does not bring the output
+closer is halved, up to four times; when none does, `xs` comes back
+unchanged with `improved: false`.
+
+The result: `xs`, the new inputs; `residual`, the distance from `f(xs)` to
+`target` there; `improved`, whether the step got closer; `stuck`, the
+indices of inputs that do not move the output (quality `"zero"` or
+`"errored"`); and `quality`, the Jacobian's, one per input.
+""",
+  params: {f: "A list of numbers in, a number or a list of numbers out.", xs: "The inputs to start from.", target: "The output wanted: a number or a list of numbers."},
+  options: {
+    bounds: "`[[lo, hi], …]`, one per input; either end may be nil.",
+    max_step: "The most an input may move: a number for all, or one per input.",
+    damping: "The step's scale (default `1.0`).",
+    h: "As for `deriv`.",
+    mode: "As for `deriv`.",
+  },
+  returns: """`{xs, residual, improved, stuck, quality}`.""",
+  example: """
+    import autodiff
+    let r = solve_step(fn(p) [p[0] + p[1], p[0] - p[1]] end, [0.0, 0.0], [3.0, 1.0])
+    print(r.xs)   # [2.0, 1.0]
+  """,
+  see: ["solve", "jacobian", "gn_step"])
 pub fn solve_step(f, xs, target, opts = {})
   let j = _jacobian(f, xs, opts)
   let x0 = map(xs, fn(v) float(v) end)
@@ -151,10 +195,29 @@ pub fn solve_step(f, xs, target, opts = {})
       scale *= 0.5
   out
 
-# `solve_step` repeated until the residual is at most `tol` (default 1e-6)
-# or `max_iter` steps (default 20) are spent, or a step stops improving.
-# `{xs, residual, improved, stuck, quality, iterations}`, where `improved`
-# says whether any step got closer and the rest are the last step's.
+@doc("""
+`solve_step` repeated until `residual` is at most `tol`, `max_iter` steps
+are spent, or a step stops improving. The result is `solve_step`'s record
+from the last step, with `improved` true when any step improved, plus
+`iterations`.
+""",
+  params: {f: "A list of numbers in, a number or a list of numbers out.", xs: "The inputs to start from.", target: "The output wanted: a number or a list of numbers."},
+  options: {
+    tol: "The residual that counts as solved (default `1e-6`).",
+    max_iter: "The most steps to take (default 20).",
+    bounds: "As for `solve_step`.",
+    max_step: "As for `solve_step`.",
+    damping: "As for `solve_step`.",
+    h: "As for `deriv`.",
+    mode: "As for `deriv`.",
+  },
+  returns: """`{xs, residual, improved, stuck, quality, iterations}`.""",
+  example: """
+    import autodiff
+    let s = solve(fn(a) 200.0 + 80.0 * cos(a[0]) end, [0.6], 240.0)
+    print(round(s.xs[0], 4))   # 1.0472
+  """,
+  see: ["solve_step"])
 pub fn solve(f, xs, target, opts = {})
   let tol = opts.tol ?? 0.000001
   let max_iter = opts.max_iter ?? 20

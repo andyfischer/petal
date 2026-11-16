@@ -1,14 +1,30 @@
-# Petal core prelude — module `std`
+@module_doc("""
+The standard library written in Petal: list reductions and selections,
+sublists, ragged-record reads and text helpers.
+
+Every program imports it implicitly, so these are called bare with no
+import; `import std` / `import std: sum` also work, and are no-ops on top of
+the implicit import. A program's own declaration of one of these names
+shadows it silently, which `petal lint` reports (`shadows-builtin`). They
+are ordinary functions, not natives: they take no method syntax (`xs.sum()`
+is an error; write `sum(xs)` or `xs |> sum()`). `any`, `all` and `find` are
+natives, among the core package's higher-order functions.
+
+Reading a field a record does not carry is a hard error — a typo should not
+pass silently. Data that is legitimately ragged (decoded JSON, a partial
+style record) asks for the absence explicitly: `rec.key ?? fallback`, which
+tolerates the missing field, or `field` / `has_field` by name.
+""",
+  see: ["any", "all", "find"])
+
+# Petal core prelude — module `std`.
 #
 # The standard library the core language ships in Petal source (as opposed to
 # the native builtins registered in core/src/builtins). Registered by
-# `Env::new` as a permanent implicit import, so every program calls these bare
-# with zero ceremony — `import std` / `import std: sum` also work, and are
-# no-ops on top of the implicit import.
-#
-# Implicit bindings are weak: a program's own declaration of the same name
-# shadows the prelude silently, and these never raise collision errors. Only
-# declarations marked `pub` are visible to importers.
+# `Env::new` as a permanent implicit import. Implicit bindings are weak: a
+# program's own declaration of the same name shadows the prelude silently,
+# and these never raise collision errors. Only declarations marked `pub` are
+# visible to importers.
 #
 # Everything here is pure Petal built on the native builtins — no host natives
 # (a frame clock, a renderer). Timing/interaction helpers that need a host
@@ -17,34 +33,75 @@
 
 # ── List reductions ────────────────────────────────────────────────────────
 
-# First element, or nil when empty. The complement of the native `last`.
+@doc("""
+The first element, or `nil` when the list is empty. The complement of
+`last`.
+""",
+  example: """
+    first([3, 4])   # 3
+    first([])       # nil
+  """,
+  see: ["last"])
 pub fn first(xs)
   if len(xs) == 0 then nil else xs[0] end
 
-# True when the list (or string) has no elements.
+@doc("Whether a list or string has no elements: `len(xs) == 0`.")
 pub fn is_empty(xs)
   len(xs) == 0
 
-# Sum of a list of numbers; 0 for the empty list.
+@doc("""
+The sum of a list of numbers; 0 for the empty list.
+""",
+  example: """
+    sum([1, 2, 3])       # 6
+  """,
+  see: ["product", "mean"])
 pub fn sum(xs)
   reduce(xs, 0, fn(acc, x) acc + x end)
 
-# Product of a list of numbers; 1 for the empty list.
+@doc("""
+The product of a list of numbers; 1 for the empty list.
+""",
+  example: """
+    product([2, 3, 4])   # 24
+  """,
+  see: ["sum"])
 pub fn product(xs)
   reduce(xs, 1, fn(acc, x) acc * x end)
 
-# Arithmetic mean as a float, or nil for the empty list (no divide by zero).
+@doc("""
+The arithmetic mean as a float, or `nil` for the empty list (no divide by
+zero).
+""",
+  example: """
+    mean([1, 2, 3, 6])   # 3.0
+  """,
+  see: ["sum"])
 pub fn mean(xs)
   if len(xs) == 0 then nil else float(sum(xs)) / len(xs) end
 
-# Smallest element, or nil when empty. Works for any comparable element type.
+@doc("""
+The smallest element, or `nil` for the empty list. Works on any elements `<`
+compares. (`min` and `max` take two numbers.)
+""",
+  example: """
+    minimum([3, 1, 2])   # 1
+  """,
+  see: ["maximum", "min", "min_by"])
 pub fn minimum(xs)
   if len(xs) == 0 then
     nil
   else
     reduce(xs, xs[0], fn(acc, x) if x < acc then x else acc end end)
 
-# Largest element, or nil when empty.
+@doc("""
+The largest element, or `nil` for the empty list. Works on any elements `<`
+compares. (`min` and `max` take two numbers.)
+""",
+  example: """
+    maximum([3, 1, 2])   # 3
+  """,
+  see: ["minimum", "max", "max_by"])
 pub fn maximum(xs)
   if len(xs) == 0 then
     nil
@@ -53,7 +110,14 @@ pub fn maximum(xs)
 
 # ── Predicate queries ──────────────────────────────────────────────────────
 
-# How many elements satisfy `pred`.
+@doc("""
+How many elements satisfy `pred`. It calls `pred` on every element; see
+`any` and `all` for the forms that stop early.
+""",
+  example: """
+    count([1, 2, 3, 4], fn(x) x > 2 end)   # 2
+  """,
+  see: ["any", "all", "filter"])
 pub fn count(xs, pred)
   len(filter(xs, pred))
 
@@ -66,83 +130,178 @@ pub fn count(xs, pred)
 # `key` is called once per element. The native `argmin` / `argmax` /
 # `top_indices` do the selecting, over the list of keys.
 
-# The element whose `key(x)` is smallest (the first of equals), or nil when
-# the list is empty.
+@doc("""
+The **element** whose `key(x)` is smallest, the first of equals; `nil` for
+the empty list. `key` is called once per element and must return a number.
+This replaces the hand-written "best so far" loop.
+
+For the index instead, take `argmin` of the keys: `argmin(map(xs, key))`.
+
+`key` is a function call per element, which is most of what `min_by` costs
+(about 50 ns an element). In a loop that is hot, write the keys with a `for`,
+which calls nothing, and let `argmin` choose — it runs as fast as the
+hand-written "best so far" loop:
+
+```petal ignore
+let nearest = stops[argmin(for s in stops do distance(s.at, here) end)]
+```
+""",
+  example: """
+    min_by(["ccc", "a", "bb"], len)                       # a
+    min_by([], len)                                       # nil
+  """,
+  see: ["max_by", "argmin", "minimum"])
 pub fn min_by(xs, key)
   let i = argmin(map(xs, key))
   if i == nil then nil else xs[i] end
 
-# The element whose `key(x)` is largest (the first of equals), or nil when
-# the list is empty.
+@doc("""
+The **element** whose `key(x)` is largest, the first of equals; `nil` for
+the empty list. `key` is called once per element and must return a number.
+For the index instead, take `argmax` of the keys: `argmax(map(xs, key))`.
+`min_by` has the note on cost.
+""",
+  example: """
+    max_by([{n: 1, w: 5}, {n: 2, w: 9}], fn(r) -> r.w).n  # 2
+  """,
+  see: ["min_by", "argmax", "maximum"])
 pub fn max_by(xs, key)
   let i = argmax(map(xs, key))
   if i == nil then nil else xs[i] end
 
-# The `k` largest elements, largest first — by `key(x)` when a key is given,
-# by the elements themselves (numbers) when not. Fewer than `k` when the list
-# is shorter. A bounded selection, not a sort of the whole list.
+@doc("""
+The `k` largest elements, largest first — by `key(x)` when a key is given, by
+the elements themselves (numbers) when not. Equals stay in list order, and a
+list shorter than `k` gives all of it. A bounded selection: where
+`take(sort_by(xs, key, "desc"), k)` sorts everything, this keeps `k`.
+""",
+  example: """
+    top_k([5, 1, 9, 3], 2)                   # [9, 5]
+    top_k(["aa", "b", "cccc"], 2, len)       # ["cccc", "aa"]
+  """,
+  see: ["top_indices", "max_by", "sort_by"])
 pub fn top_k(xs, k, key = nil)
   let scores = if key == nil then xs else map(xs, key) end
   map(top_indices(scores, k), fn(i) xs[i] end)
 
-# A record of lists: each element goes into the group named by `key(x)`.
-# Groups are in the order their key first appears, each in list order. A key
-# that is not a string is named by its `str()`.
+@doc("""
+A record of lists: each element goes into the group named by `key(x)`.
+Groups are in the order their key first appears, and each keeps list order.
+A key that is not a string is named by its `str()`.
+
+It is linear in the list. The hand-written version
+(`set by[k] = append(field(by, k, []), x)`) copies a group each time it
+grows: for 20,000 elements in 8 groups it took 58 ms where `group_by` took 2.
+""",
+  example: """
+    let parity = fn(x) -> if x % 2 == 0 then "even" else "odd" end
+    group_by([1, 2, 3, 4, 5], parity)   # { odd: [1, 3, 5], even: [2, 4] }
+  """,
+  see: ["group_by_keys"])
 pub fn group_by(xs, key)
   group_by_keys(xs, map(xs, key))
 
-# `f` of every element, with the lists it returns joined end to end:
-# `flat(map(xs, f))`.
+@doc("""
+`f` of every element, with the lists it returns joined end to end:
+`flat(map(xs, f))`, and what a `for` with two generators would be.
+""",
+  example: """
+    flat_map([1, 2, 3], fn(x) -> [x, x * 10])   # [1, 10, 2, 20, 3, 30]
+    flat_map(["ab", "c"], chars)                # ["a", "b", "c"]
+  """,
+  see: ["flat", "map"])
 pub fn flat_map(xs, f)
   flat(map(xs, f))
 
 # ── Sublists ───────────────────────────────────────────────────────────────
 
-# The first `n` elements, clamped to the list bounds (never errors).
+@doc("""
+The first `n` elements. `n` is clamped to the list, so it is never an error.
+""",
+  example: """
+    take([1, 2, 3], 2)   # [1, 2]
+    take([1, 2, 3], 9)   # [1, 2, 3]
+  """,
+  see: ["drop", "slice"])
 pub fn take(xs, n)
   slice(xs, 0, max(0, min(n, len(xs))))
 
-# Everything after the first `n` elements, clamped to the list bounds.
+@doc("""
+Everything after the first `n` elements. `n` is clamped to the list, so it
+is never an error.
+""",
+  example: """
+    drop([1, 2, 3], 2)   # [3]
+  """,
+  see: ["take", "slice"])
 pub fn drop(xs, n)
   slice(xs, max(0, min(n, len(xs))), len(xs))
 
 # ── Ragged records ─────────────────────────────────────────────────────────
-#
-# Reading a field a record does not carry is a hard error — a typo should not
-# pass silently. Data that is legitimately ragged (decoded JSON, a partial
-# style record) asks for the absence explicitly: `rec.key ?? fallback`, which
-# tolerates the missing field, or one of these two by name.
 
-# True when `rec` carries `key` at all — including when its value is nil,
-# which is the one case `rec[key] ?? false` cannot tell apart.
+@doc("""
+Whether the record has `key` at all, even when its value is nil (which `??`
+cannot tell apart from an absent key).
+""",
+  example: """
+    has_field({a: nil}, "a")   # true
+    has_field({a: 1}, "zz")    # false
+  """,
+  see: ["field"])
 pub fn has_field(rec, key)
   contains(keys(rec), key)
 
-# Field `key` of `rec`, or `fallback` when the record does not carry it (or
-# carries it as nil). The named spelling of `rec[key] ?? fallback`, useful
-# when the key is computed.
+@doc("""
+Reads `rec[key]`, or `fallback` when the key is absent or nil. Same as
+`rec[key] ?? fallback`, and useful when the key is computed. A bare
+`record.missing` is still an error — see
+[Ragged records](language-guide.md#ragged-records--reading-a-field-that-may-not-be-there).
+""",
+  example: """
+    field({a: 1}, "a", 7)    # 1
+    field({a: 1}, "zz", 7)   # 7
+  """,
+  see: ["has_field"])
 pub fn field(rec, key, fallback)
   rec[key] ?? fallback
 
 # ── Numbers ────────────────────────────────────────────────────────────────
 
-# Clamp a number to the 0..1 range — the common `clamp(x, 0, 1)` shorthand.
+@doc("`clamp(x, 0, 1)`: a number clamped to the 0..1 range.", see: ["clamp"])
 pub fn clamp01(x)
   clamp(x, 0, 1)
 
 # ── Text ───────────────────────────────────────────────────────────────────
 
-# A count with its noun: `plural(1, "car")` is "1 car", `plural(3, "car")`
-# is "3 cars", `plural(2, "city", "cities")` is "2 cities". The count is
-# written with thousands separators (`commas`).
+@doc("""
+A count with its noun: `one` when `n` is 1, `many` otherwise (`one` with an
+`s` when `many` is left off). The count is written with thousands
+separators (`commas`).
+""",
+  params: {n: "The count.", one: "The noun for one.", many: "The noun for any other count (default: `one` with an `s`)."},
+  example: """
+    plural(1, "car")                    # 1 car
+    plural(3, "car")                    # 3 cars
+    plural(2, "city", "cities")         # 2 cities
+    plural(12500, "person", "people")   # 12,500 people
+  """,
+  see: ["commas", "list_and"])
 pub fn plural(n, one, many = nil)
   if n == 1 then
     "1 {one}"
   else
     "{commas(n)} {many ?? one ++ "s"}"
 
-# A list as prose: "a", "a and b", "a, b and c"; "" for the empty list.
-# `word` replaces "and" (`list_and(xs, "or")`).
+@doc("""
+A list as prose, its elements through `str`: `a`, `a and b`, `a, b and c`.
+`word` replaces `and`. The empty list is `""`.
+""",
+  example: """
+    list_and(["tolls", "bonds"])            # tolls and bonds
+    list_and(["tolls", "bonds", "fares"])   # tolls, bonds and fares
+    list_and([1, 2, 3], "or")               # 1, 2 or 3
+  """,
+  see: ["join", "plural"])
 pub fn list_and(xs, word = "and")
   let n = len(xs)
   if n == 0 then

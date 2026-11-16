@@ -1,13 +1,57 @@
-# Package `json` — The JSON string codec (core/src/builtins/json.rs).
-#
-# A bundled builtin package: the petal runtime registers these natives in
-# every Env, and `import json` puts them in scope — bare (`json_stringify(…)`), qualified
-# (`json.json_stringify(…)`) and as methods (`x.json_stringify(…)`).
+@module_doc("""
+The JSON string codec.
+
+Needs `import json`, which puts these in scope bare (`json_stringify(…)`),
+qualified (`json.json_stringify(…)`) and as methods
+(`x.json_stringify(…)`).
+""")
+
+# Package `json` (core/src/builtins/json.rs). A bundled builtin package: the
+# petal runtime registers these natives in every Env, and the import is what
+# puts them in scope.
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. Several declarations of one name are that native's call forms.
 # See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+Encodes a value as JSON text: `nil` → `null`, bools, numbers, strings, lists
+→ arrays, records → objects (field order kept). The one-argument form is
+compact; `indent` pretty-prints with that many spaces per level. A class
+instance encodes as its fields; a value with no JSON form (a function)
+encodes as its display string. This is the codec for `panel_store_set` and
+any other string-only channel.
+""",
+  params: {value: "The value to encode.", indent: "Spaces per level; leave off for compact output."},
+  returns: "A string of JSON.",
+  example: """
+    import json
+    json_stringify({a: 1, b: [true, nil]})   # {"a":1,"b":[true,null]}
+    json_stringify("q\"uote")                # "q\"uote"
+  """,
+  see: ["json_parse"])
 pub native fn json_stringify(value, indent?)
+
+@doc("""
+Decodes JSON text into the matching value — objects become plain records —
+or returns `nil` when the text is not JSON, so a corrupt store entry is a
+`?? default` rather than an aborted frame. (The text `null` also parses to
+`nil`.)
+
+```petal ignore
+import json
+import garden
+state todos = json_parse(panel_store_get("todos") ?? "[]") ?? []
+panel_store_set("todos", json_stringify(todos))
+```
+""",
+  returns: "The decoded value, or `nil` when `text` is not JSON.",
+  example: """
+    import json
+    json_parse("[1, 2.5, \"x\"]")        # [1, 2.5, "x"]
+    json_parse("\{\"a\": \{\"b\": 2}}").a.b   # 2  (`\{` — a bare `{` interpolates)
+    json_parse("not json")             # nil
+  """,
+  see: ["json_stringify"])
 pub native fn json_parse(text)

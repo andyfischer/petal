@@ -1,14 +1,47 @@
-# Package `io` — Host I/O: symbols, output buffers and host bindings (core/src/builtins/output.rs).
-#
-# A bundled builtin package: the petal runtime registers these natives in
-# every Env, and `import io` puts them in scope — bare (`symbol(…)`), qualified
-# (`io.symbol(…)`) and as methods (`x.symbol(…)`).
+@module_doc("""
+Host I/O: symbols, output buffers and host bindings.
+
+Needs `import io`, which puts these in scope bare (`symbol(…)`), qualified
+(`io.symbol(…)`) and as methods (`x.symbol(…)`). These are the script's
+side of the channels a host reads and writes.
+[usage/host-io.md](usage/host-io.md) covers them from the script, with how
+they behave in a module, and
+[usage/embedding-guide.md](usage/embedding-guide.md) describes the host's
+side.
+""")
+
+# Package `io` (core/src/builtins/output.rs). A bundled builtin package: the
+# petal runtime registers these natives in every Env, and the import is what
+# puts them in scope.
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. Several declarations of one name are that native's call forms.
 # See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+The symbol called `name`: an interned name that identifies an output buffer
+or a host binding. Two calls with the same name give the same symbol, and
+`type` of one is `"symbol"`.
+""",
+  see: ["push_output", "binding"])
 pub native fn symbol(name) -> symbol
+
+@doc("""
+Appends `value` to the output buffer the symbol `buffer` names, for the host
+to drain after the run. Returns `nil`.
+""",
+  params: {buffer: "A symbol naming the output buffer.", value: "The value to append."},
+  example: """
+    import io
+    push_output(symbol("shapes"), {kind: "dot", x: 10, y: 20})
+  """,
+  see: ["symbol"])
 pub native fn push_output(buffer, value)
+
+@doc("""
+The value the host has bound to the symbol (a uniform the host sets before a
+run), or `nil` when nothing is bound.
+""",
+  see: ["symbol"])
 pub native fn binding(symbol)

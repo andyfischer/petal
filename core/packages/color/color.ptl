@@ -1,16 +1,82 @@
-# Package `color` — Color constructors and blending (core/src/builtins/color.rs).
-#
-# A bundled builtin package: the petal runtime registers these natives in
-# every Env, and `import color` puts them in scope — bare (`hsv(…)`), qualified
-# (`color.hsv(…)`) and as methods (`x.hsv(…)`).
+@module_doc("""
+Color constructors and blending.
+
+Needs `import color`, which puts these in scope bare (`hsv(…)`), qualified
+(`color.hsv(…)`) and as methods (`x.hsv(…)`).
+
+All color builtins return an RGB record `{r: int, g: int, b: int}` with
+channels in 0..255 — the same shape produced by the `:rrggbb` color literal.
+""")
+
+# Package `color` (core/src/builtins/color.rs). A bundled builtin package:
+# the petal runtime registers these natives in every Env, and the import is
+# what puts them in scope.
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. Several declarations of one name are that native's call forms.
 # See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+Create an RGB color from Hue-Saturation-Value. All three arguments are in
+`[0, 1]`; hue wraps, so `1.0` is the same as `0.0`. For hue in degrees, use
+`hsv_deg`.
+""",
+  params: {h: "Hue, in `[0, 1]` (wraps).", s: "Saturation, in `[0, 1]`.", v: "Value (brightness), in `[0, 1]`."},
+  returns: """An RGB record `{r, g, b}`, channels 0..255.""",
+  example: """
+    import color
+    hsv(0.0, 1.0, 1.0)          # { r: 255, g: 0, b: 0 }   (red)
+    hsv(1.0 / 3.0, 1.0, 1.0)    # { r: 0, g: 255, b: 0 }   (green)
+  """,
+  see: ["hsv_deg", "hsl"])
 pub native fn hsv(h: num, s: num, v: num) -> record
+
+@doc("""
+Create an RGB color from Hue-Saturation-Lightness. Same argument ranges as
+`hsv`. For hue in degrees, use `hsl_deg`.
+""",
+  params: {h: "Hue, in `[0, 1]` (wraps).", s: "Saturation, in `[0, 1]`.", l: "Lightness, in `[0, 1]`."},
+  returns: """An RGB record `{r, g, b}`, channels 0..255.""",
+  example: """
+    import color
+    hsl(0.0, 1.0, 0.5)      # { r: 255, g: 0, b: 0 }
+  """,
+  see: ["hsl_deg", "hsv"])
 pub native fn hsl(h: num, s: num, l: num) -> record
+
+@doc("""
+Interpolate between two RGB color records. `t=0` returns `c1`, `t=1` returns
+`c2`. If either color has an alpha `a`, the result does too (a color without
+one counts as opaque, 255). `lerp` does the same on two colors.
+""",
+  example: """
+    import color
+    let red = hsv_deg(0.0, 1.0, 1.0)
+    let blue = hsv_deg(240.0, 1.0, 1.0)
+    color_lerp(red, blue, 0.5)   # { r: 128, g: 0, b: 128 }
+  """,
+  see: ["lerp"])
 pub native fn color_lerp(c1, c2, t) -> record
+
+@doc("""
+Like `hsv` but with hue in **degrees** `[0, 360)`.
+""",
+  params: {h: "Hue, in degrees `[0, 360)`.", s: "Saturation, in `[0, 1]`.", v: "Value (brightness), in `[0, 1]`."},
+  example: """
+    import color
+    hsv_deg(120.0, 1.0, 1.0)    # { r: 0, g: 255, b: 0 }
+  """,
+  see: ["hsv", "hsl_deg"])
 pub native fn hsv_deg(h: num, s: num, v: num) -> record
+
+@doc("""
+Like `hsl` but with hue in **degrees** `[0, 360)`.
+""",
+  params: {h: "Hue, in degrees `[0, 360)`.", s: "Saturation, in `[0, 1]`.", l: "Lightness, in `[0, 1]`."},
+  example: """
+    import color
+    hsl_deg(120.0, 1.0, 0.5)    # { r: 0, g: 255, b: 0 }
+  """,
+  see: ["hsl", "hsv_deg"])
 pub native fn hsl_deg(h: num, s: num, l: num) -> record

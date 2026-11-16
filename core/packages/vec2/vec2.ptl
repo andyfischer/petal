@@ -1,18 +1,125 @@
-# Package `vec2` — 2D and 3D vectors (core/src/builtins/vec2.rs).
-#
-# A bundled builtin package: the petal runtime registers these natives in
-# every Env, and `import vec2` puts them in scope — bare (`vec2(…)`), qualified
-# (`vec2.vec2(…)`) and as methods (`x.vec2(…)`).
+@module_doc("""
+2D and 3D vectors.
+
+Needs `import vec2` (which declares `vec3` and the shared helpers too). The
+import puts them in scope bare (`vec2(…)`), qualified (`vec2.vec2(…)`) and
+as methods (`x.normalize()`).
+
+Petal has built-in `vec2` and `vec3` types, backed by two and three f64s.
+Both work with the usual arithmetic operators and share the helpers below
+(`normalize`, `dot`, `limit`, plus `mag`, `distance` and `lerp` from the
+core math builtins), which answer in the kind of vector they were given.
+`rotate` is 2D-only and `cross` 3D-only.
+
+Operators, for either kind:
+
+- `a + b`, `a - b`, `a * b`, `a / b` between two vectors of the same kind work
+  component-wise. Mixing a `vec2` with a `vec3` is an error.
+- `v + s`, `v - s`, `v * s`, `v / s` with a number `s` apply `s` to every
+  component; `s + v`, `s - v`, `s * v` work too.
+- `-v` negates every component.
+- `==` / `!=` compare components.
+- `.x`, `.y` (and `.z` on a `vec3`) read a component as a float.
+
+Both are small immutable heap objects. One visible difference: a zero `vec2`
+is falsy in an `if`, while every `vec3` is truthy, like a record — compare
+against `vec3(0, 0, 0)` explicitly. Both survive `json_stringify` /
+`json_parse` (as `{"type": "vec3", "x": ..., "y": ..., "z": ...}`) and a
+state save/restore.
+""",
+  see: ["mag", "distance", "lerp"])
+
+# Package `vec2` (core/src/builtins/vec2.rs). A bundled builtin package: the
+# petal runtime registers these natives in every Env, and the import is what
+# puts them in scope.
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. Several declarations of one name are that native's call forms.
 # See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+Construct a 2D vector.
+""",
+  example: """
+    import vec2
+    let v = vec2(3.0, 4.0)
+    print(mag(v))    # 5.0
+  """,
+  see: ["vec3"])
 pub native fn vec2(x, y) -> vec2
+
+@doc("""
+Return a vector pointing in the same direction as `v` with magnitude 1. The
+zero vector normalizes to the zero vector (`vec2(0, 0)` / `vec3(0, 0, 0)`).
+""",
+  example: """
+    import vec2
+    normalize(vec2(3.0, 4.0))    # vec2(0.6, 0.8)
+    normalize(vec3(0.0, 0.0, 5.0))    # vec3(0.0, 0.0, 1.0)
+  """,
+  see: ["mag", "limit"])
 pub native fn normalize(v)
+
+@doc("""
+Dot product of two `vec2` or two `vec3` values.
+""",
+  example: """
+    import vec2
+    dot(vec2(1.0, 0.0), vec2(0.0, 1.0))   # 0.0
+    dot(vec2(2.0, 3.0), vec2(4.0, 5.0))   # 23.0
+    dot(vec3(1.0, 2.0, 3.0), vec3(4.0, 5.0, 6.0))   # 32.0
+  """,
+  see: ["cross"])
 pub native fn dot(a, b) -> float
+
+@doc("""
+Return `v` if its magnitude is at most `max_mag`, otherwise a vector in the
+same direction scaled to that magnitude. Useful for capping velocities.
+""",
+  params: {v: "A `vec2` or `vec3`.", max_mag: "The largest magnitude to allow."},
+  example: """
+    import vec2
+    limit(vec2(6.0, 8.0), 5.0)    # vec2(3.0, 4.0)
+    limit(vec2(1.0, 0.0), 5.0)    # vec2(1.0, 0.0)
+    limit(vec3(0.0, 0.0, 10.0), 2.0)    # vec3(0.0, 0.0, 2.0)
+  """,
+  see: ["normalize", "mag"])
 pub native fn limit(v, max_mag)
+
+@doc("""
+Return `v` turned by `angle` radians, in the same sense as
+`vec2(cos(angle), sin(angle))` — so on a y-down screen a positive angle
+turns clockwise. Useful for ship headings and polygon outlines. 2D only.
+""",
+  params: {v: "A `vec2`.", angle: "The turn, in radians."},
+  example: """
+    import vec2
+    rotate(vec2(1.0, 0.0), pi() / 2)   # vec2(~0.0, 1.0)
+    rotate(vec2(2.0, 1.0), pi())       # vec2(-2.0, ~-1.0)
+  """)
 pub native fn rotate(v, angle) -> vec2
+
+@doc("""
+Construct a 3D vector.
+""",
+  example: """
+    import vec2
+    let p = vec3(1.0, 2.0, 2.0)
+    print(mag(p))    # 3.0
+    print(p * 2)     # vec3(2.0, 4.0, 4.0)
+    print(p.z)       # 2.0
+  """,
+  see: ["vec2"])
 pub native fn vec3(x, y, z) -> vec3
+
+@doc("""
+Cross product of two `vec3` values: a vector perpendicular to both,
+following the right-hand rule. 3D only.
+""",
+  example: """
+    import vec2
+    cross(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0))   # vec3(0.0, 0.0, 1.0)
+  """,
+  see: ["dot"])
 pub native fn cross(a, b) -> vec3

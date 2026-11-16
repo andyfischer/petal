@@ -134,11 +134,10 @@ jobs:
           npm run -s reference:check \
             || { echo "::error::a generated reference is stale — run 'npm run reference' and commit the result"; exit 1; }
 
-      # Report-only for now (docs/proposals/doc-annotation.md, step 3): the
-      # libraries are not migrated to `@doc` yet. It becomes a failing check
-      # with `--strict` once they are.
-      - name: Report undocumented pub items in Petal's own libraries
-        continue-on-error: true
+      # Every pub item of Petal's own libraries has a @doc whose params:
+      # match (docs/proposals/doc-annotation.md). `lint:docs` runs
+      # `petal lint --strict`, so any finding fails the build.
+      - name: Check Petal's own libraries are fully documented
         run: npm run lint:docs
 
       - name: Type-check TypeScript

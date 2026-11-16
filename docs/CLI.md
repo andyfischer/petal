@@ -882,8 +882,8 @@ may name a parameter of any of its forms. When one form of a set has a
 several do, a call is deprecated when every form its argument count reaches
 is. `undocumented-pub` is **opt-in** (`--rules-enable=undocumented-pub`, or
 `[lint] enable` in `petal.toml`): a script or an app has no reference to fill.
-Petal's own libraries are checked with it in CI, in report-only mode for now
-(`npm run lint:docs`).
+Petal's own libraries are checked with it and `doc-params` in CI, which fails
+on any finding (`npm run lint:docs`, which runs `petal lint --strict`).
 
 **Old syntax is not lint's.** Rewriting a deprecated or removed form into
 the current one is [`petal migrate-old-code`](#migrate-old-code--rewrite-old-syntax),

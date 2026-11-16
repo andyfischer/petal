@@ -1,9 +1,11 @@
-# bloom/controls — the value-editing controls: switch, checkbox, radio, slider,
-# stepper and progress. The text fields are bloom/fields.
-#
-# Same contract as the buttons: you hand in the current value and get the new
-# one back. Nothing here holds your data — only its own animation — so two of
-# the same control never fight over state and an undo stack stays honest.
+@module_doc("""
+The value-editing controls: switch, checkbox, radio group, slider, stepper
+and progress bar. The text fields are in `bloom/fields`.
+
+Same contract as the buttons: you hand in the current value and get the new
+one back. Nothing here holds your data — only its own animation — so two of
+the same control never fight over state and an undo stack stays honest.
+""", see: ["bloom/fields"])
 
 # The drawing and input names used below (`rect`, `draw_rect_rounded`,
 # `mix` and friends) come from the `ui` package. This module imports it
@@ -19,8 +21,15 @@ import ui
 
 # ── Switch ────────────────────────────────────────────────────────────────
 
-# The on/off switch. The knob is a spring, so it lands with a small overshoot
-# that makes the control feel mechanical rather than interpolated.
+@doc("""
+The on/off switch. The knob is a spring, so it lands with a small overshoot
+that makes the control feel mechanical rather than interpolated, and it
+stretches toward its travel while pressed.
+""", params: {r: "The switch's rect.", on: "The current state."},
+  options: {color: "The track color when on (`t.accent`).", disabled: "Inert, with a dimmed knob."},
+  returns: "The new state: flipped on the frame it is clicked.",
+  example: """dark_mode = bloom.switch(rect(20, 20, 44, 24), dark_mode)""",
+  see: ["checkbox"])
 pub fn switch(r: record, on: bool) -> bool
   switch(r, on, {})
 
@@ -49,8 +58,15 @@ pub fn switch(r: record, on: bool, opts: record) -> bool
 
 # ── Checkbox ──────────────────────────────────────────────────────────────
 
-# The tick is *drawn in*: the check's two strokes grow from the corner as the
-# box fills, rather than appearing whole.
+@doc("""
+A checkbox with a label beside it; the whole row is the hit area. The tick is
+*drawn in*: the check's two strokes grow from the corner as the box fills,
+rather than appearing whole.
+""", params: {r: "The row's rect.", label: """The label; `""` draws the box alone.""", on: "The current state."},
+  options: {size: "Label size in px (`font_md`); the box follows it.", disabled: "Inert, with a dim label."},
+  returns: "The new state: flipped on the frame it is clicked.",
+  example: """wrap = bloom.checkbox(rect(20, 60, 200, 24), "Wrap lines", wrap)""",
+  see: ["switch"])
 pub fn checkbox(r: record, label: string, on: bool) -> bool
   checkbox_impl(r, label, on, {})
 
@@ -92,8 +108,15 @@ fn checkbox_impl(r: record, label: string, on: bool, opts: record) -> bool
 
 # ── Radio group ───────────────────────────────────────────────────────────
 
-# One row per label; returns the new index. The dot scales in, and the ring of
-# the row you are hovering warms toward the accent.
+@doc("""
+A vertical group of radio buttons, one row per label. The dot springs in,
+and the ring of the row you are hovering warms toward the accent.
+""", params: {r: "The group's rect; rows stack down from its top.", labels: "One label per option.",
+  index: "The selected option."},
+  options: {row_h: "Row height (the theme's `row_h`).", size: "Label size in px (`font_md`)."},
+  returns: "The new index: the row clicked this frame, else `index`.",
+  example: """quality = bloom.radio_group(rect(20, 20, 200, 90), ["Low", "Medium", "High"], quality)""",
+  see: ["bloom/button.segmented", "bloom/menu.select"])
 pub fn radio_group(r: record, labels: list, index: num)
   radio_group_impl(r, labels, index, {})
 
@@ -129,9 +152,19 @@ fn radio_group_impl(r: record, labels: list, index: num, opts: record)
 
 # ── Slider ────────────────────────────────────────────────────────────────
 
-# Press anywhere on the track to jump there, then keep dragging — the drag
-# tracks outside the control, so running off the end does not drop the grab.
-# While dragging, the value floats above the knob.
+@doc("""
+A horizontal slider. Press anywhere on the track to jump there, then keep
+dragging: the drag tracks outside the control, so running off the end does
+not drop the grab. While dragging (and faintly on hover), the value floats
+above the knob.
+""", params: {r: "The slider's rect.", value: "The current value.", lo: "The value at the left end.",
+  hi: "The value at the right end."},
+  options: {step: "Quantize to multiples of `step` from `lo` (0, off).", color: "The filled part of the track (`t.accent`).",
+    readout: "False hides the floating value.", format: "Text put before the readout's number.",
+    places: "Decimal places in the readout (2)."},
+  returns: "The new value, a float.",
+  example: """volume = bloom.slider(rect(20, 20, 200, 24), volume, 0, 100, {step: 1, places: 0})""",
+  see: ["stepper", "bloom/fields.number_field"])
 pub fn slider(r: record, value: num, lo: num, hi: num)
   slider_impl(r, value, lo, hi, {})
 
@@ -177,8 +210,15 @@ fn slider_impl(r: record, value: num, lo: num, hi: num, opts: record)
 
 # ── Stepper ───────────────────────────────────────────────────────────────
 
-# − value + . The value rolls: it springs between the old and new number's
-# vertical position, so a change is visible even when you are not watching.
+@doc("""
+A − value + stepper. The number rolls: it springs between the old and new
+value's vertical position, so a change is visible even when you are not
+watching.
+""", params: {r: "The stepper's rect; the buttons are square at its ends.", value: "The current value.",
+  lo: "The smallest value.", hi: "The largest value.", step: "How much one click changes it."},
+  returns: "The new value, kept within [`lo`, `hi`].",
+  example: """count = bloom.stepper(rect(20, 20, 120, 28), count, 0, 10, 1)""",
+  see: ["slider", "bloom/panes.cycle"])
 pub fn stepper(r: record, value: num, lo: num, hi: num, step: num)
   let t = theme()
   let bw = min(r.h, r.w / 3.0)
@@ -204,8 +244,13 @@ fn _step_btn(r: record, name: string, t: record)
 
 # ── Progress ──────────────────────────────────────────────────────────────
 
-# `frac` in [0, 1]; negative runs the indeterminate sweep. The bar eases toward
-# its target, so a jump from 10% to 90% is a movement rather than a cut.
+@doc("""
+A progress bar. The bar eases toward its target, so a jump from 10% to 90%
+is a movement rather than a cut.
+""", params: {r: "The bar's rect.", frac: "Progress in [0, 1]; negative runs the indeterminate sweep."},
+  options: {color: "The bar's color (`t.accent`)."},
+  example: """bloom.progress(rect(20, 20, 200, 6), if loading then -1 else done / total end)""",
+  see: ["bloom/button.spinner"])
 pub fn progress(r: record, frac: num)
   progress(r, frac, {})
 

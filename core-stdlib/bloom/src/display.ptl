@@ -1,12 +1,15 @@
-# bloom/display — the components that show rather than take input: badges
-# and pills, cards, the empty state, the keyboard-hint bar, section labels,
-# the scrollbar, the load view and the text spinner.
-#
-# These were `ui`'s (core-stdlib/ui/src/widgets.ptl) until bloom
-# took over the widgets. The calls and the return values are the same, so a
-# port is a change of qualifier; the look is bloom's (labels placed by
-# text-layout, theme tokens, eased hover), and each `opts` record still takes
-# the keys the `ui` style record did.
+@module_doc("""
+The components that show rather than take input: badges and pills, cards,
+the empty state, the keyboard-hint bar, section labels, the scrollbar, the
+load view and the text spinner.
+
+These were `ui`'s until bloom took over the widgets. The calls and the return
+values are the same, so a port is a change of qualifier; the look is bloom's
+(labels placed by `text_layout`, theme tokens, eased hover), and each `opts`
+record still takes the keys the `ui` style record did.
+""", see: ["card", "badge"])
+
+# The `ui` originals lived in core-stdlib/ui/src/widgets.ptl.
 
 import bloom/theme: theme, ts, tone, hair, stroke, rate
 import bloom/motion: ease_to, ease_flag
@@ -17,9 +20,17 @@ import ui
 
 # ── Badge and pill ─────────────────────────────────────────────────────────
 
-# A small rounded label chip at (x, y). Returns the rect it drew, so a row of
-# them can flow. `opts`: {size, bg, fg, gradient, gradient_angle} —
-# `gradient: [c0, c1]` fills the chip with a ramp instead of a flat colour.
+@doc("""
+A small rounded label chip at (`x`, `y`).
+""", params: {x: "Left edge.", y: "Top edge.", text: "The label."},
+  options: {size: "Text size in px (`font_sm`).", bg: "The fill.", fg: "Text color (`t.muted`).",
+    gradient: "`[c0, c1]` fills the chip with a ramp instead of a flat color.",
+    gradient_angle: "The ramp's angle."},
+  returns: "The rect it drew, so a row of them can flow.",
+  example: """
+    let b = bloom.badge(20, 20, "v1.2")
+    bloom.badge(b.x + b.w + 6, 20, "beta", {gradient: [:7c5cff, :3c8cff], fg: :ffffff})
+  """, see: ["pill", "bloom/button.chip"])
 pub fn badge(x: num, y: num, text: string) -> record
   _badge(x, y, text, {})
 
@@ -43,10 +54,14 @@ fn _badge(x: num, y: num, text: string, opts: record) -> record
   draw_text_line(text, Rect(r.x + 7, r.y, r.w - 14, r.h), style, "center")
   r
 
-# The coloured badge: `color` tints the fill and the text — the status-chip
-# look (pass t.success / t.warn / t.danger / t.accent). Returns its rect.
-# `opts`: {size, on} — `on` is the surface the pill sits on, which the tint is
-# flattened against, so two overlapping pills still read as one wash.
+@doc("""
+The colored badge: `color` tints the fill and the text, the status-chip look.
+""", params: {x: "Left edge.", y: "Top edge.", text: "The label.",
+  color: "The tint: pass `t.success`, `t.warn`, `t.danger` or `t.accent`."},
+  options: {size: "Text size in px (`font_sm`).",
+    on: "The surface the pill sits on (`t.panel`), which the tint is flattened against, so two overlapping pills still read as one wash."},
+  returns: "Its rect, so a row of them can flow.",
+  example: """bloom.pill(20, 20, "passing", t.success)""", see: ["badge"])
 pub fn pill(x: num, y: num, text: string, color: record) -> record
   _pill(x, y, text, color, {})
 
@@ -69,10 +84,17 @@ fn _chip_rect(x: num, y: num, text: string, style: record, size: num) -> record
 
 # ── Card ───────────────────────────────────────────────────────────────────
 
-# A raised surface: a soft shadow, a face and a hairline. Returns the padded
-# content rect. `opts`: {radius, pad, bg, outline, shadow, elevation} —
-# `shadow: false` skips the shadow, `elevation` picks a step of the theme's
-# elevation scale (1 by default).
+@doc("""
+A raised surface: a soft shadow, a face and a hairline.
+""", params: {r: "The card's rect."},
+  options: {radius: "Corner radius (the theme's `radius`).", pad: "Padding to the content rect (`space_lg`).",
+    bg: "The face (`t.panel`).", outline: "The hairline color.", shadow: "False skips the shadow.",
+    elevation: "A step of the theme's elevation scale (1)."},
+  returns: "The padded content rect, to draw into.",
+  example: """
+    let inner = bloom.card(rect(20, 20, 280, 160))
+    bloom.text_in("Storage", inner, bloom.ts(t, 15, t.text))
+  """, see: ["bloom/theme.surface"])
 pub fn card(r: record) -> record
   _card(r, {})
 
@@ -90,8 +112,15 @@ fn _card(r: record, opts: record) -> record
 
 # ── Empty state ────────────────────────────────────────────────────────────
 
-# Centred "nothing here" copy for an empty region: a dim title and, when
-# `hint` is not "", a dimmer line under it. `opts`: {size, fg}.
+@doc("""
+Centered "nothing here" copy for an empty region: a dim title and a dimmer
+line under it.
+""", params: {r: "The empty region.", title: "The title.", hint: """The line under it; `""` for none."""},
+  options: {size: "Title size in px (`font_lg`).", fg: "Title color (`t.dim`)."},
+  example: """
+    if len(items) == 0 then
+      bloom.empty_state(list_r, "No results", "Try a shorter search.")
+  """, see: ["load_view"])
 pub fn empty_state(r: record, title: string, hint: string)
   _empty_state(r, title, hint, {})
 
@@ -114,16 +143,20 @@ fn _empty_state(r: record, title: string, hint: string, opts: record)
 
 # ── Hint bar ───────────────────────────────────────────────────────────────
 
-# One entry of a hint bar: the key-cap text and what it does.
+@doc("One entry of a hint bar: the key-cap text and what it does.",
+  params: {key: """The key cap (`"j/k"`, `"enter"`).""", label: "What the key does."},
+  returns: """`{key, label}`.""", see: ["hint_bar"])
 pub fn hint(key: string, label: string) -> record
   {key: key, label: label}
 
-# The keyboard-hint bar a full-pane app draws along its bottom edge: key caps
-# in small rounded boxes, labels dim beside them.
-#
-#   hint_bar(bottom, [hint("j/k", "move"), hint("enter", "open")])
-#
-# `opts`: {bg, rule, size, fg, cap, cap_fg}.
+@doc("""
+The keyboard-hint bar a full-pane app draws along its bottom edge: key caps
+in small rounded boxes, labels dim beside them.
+""", params: {r: "The bar's rect.", hints: "A list of `hint(key, label)` entries."},
+  options: {bg: "The bar's fill (`t.panel`).", rule: "The line along its top edge.", size: "Text size in px (`font_sm`).",
+    fg: "Label color (`t.dim`).", cap: "The key caps' fill.", cap_fg: "Key-cap text color (`t.muted`)."},
+  example: """bloom.hint_bar(bottom, [bloom.hint("j/k", "move"), bloom.hint("enter", "open")])""",
+  see: ["hint"])
 pub fn hint_bar(r: record, hints: list)
   _hint_bar(r, hints, {})
 
@@ -152,10 +185,15 @@ fn _hint_bar(r: record, hints: list, opts: record)
 
 # ── Section label ──────────────────────────────────────────────────────────
 
-# A section heading that shows which region owns the keyboard: accent with an
-# underline (grown from the left) when `active`, dim otherwise. `(x, y)` is
-# the top-left of the run. Pass `has_focus(id)` as `active`. Returns the
-# run's width. `opts`: {active, inactive, size}.
+@doc("""
+A section heading that shows which region owns the keyboard: accent with an
+underline (grown from the left) when `active`, dim otherwise.
+""", params: {label: "The heading.", x: "The run's left edge.", y: "The run's top.",
+  active: "Whether the region owns the keyboard: pass `has_focus(id)`."},
+  options: {active: "The active color (`t.accent`).", inactive: "The inactive color (`t.dim`).",
+    size: "Text size in px (`font_md`)."},
+  returns: "The run's width.",
+  example: """bloom.section_label("Files", 12, 8, has_focus("files"))""")
 pub fn section_label(label: string, x: num, y: num, active: bool) -> num
   _section_label(label, x, y, active, {})
 
@@ -177,11 +215,14 @@ fn _section_label(label: string, x: num, y: num, active: bool, opts: record) -> 
 
 # ── Scrollbar ──────────────────────────────────────────────────────────────
 
-# A proportional thumb along the right edge of scroll region `r`: `count`
-# rows in all, `rows` visible, `scroll` the top offset (as `list_update` /
-# `scroll_update` keep it). Draws nothing when the content fits. The thumb
-# brightens while the pointer is over the region. `opts`: {track, thumb,
-# width}.
+@doc("""
+A proportional scroll thumb along the right edge of the scroll region `r`.
+It draws nothing when the content fits, and brightens while the pointer is
+over the region.
+""", params: {r: "The scroll region.", count: "Rows in all.", rows: "Rows visible.",
+  scroll: "The top row offset, as `list_update` / `scroll_update` keep it."},
+  options: {track: "The track's color.", thumb: "The thumb's color (`t.dim`).", width: "Width in px (4)."},
+  example: """bloom.scrollbar(list_r, len(items), visible_rows, ls.scroll)""")
 pub fn scrollbar(r: record, count: num, rows: num, scroll: num)
   scrollbar(r, count, rows, scroll, {})
 
@@ -200,17 +241,20 @@ pub fn scrollbar(r: record, count: num, rows: num, scroll: num, opts: record)
 
 # ── Load view ──────────────────────────────────────────────────────────────
 
-# The non-ready states of a `ui` load state (`load_state` / `load_poll`):
-# a spinner while loading, the error while failed, a hint while idle. Returns
-# true when the value is ready and the caller should draw it instead.
-#
-#   state ls = load_state()
-#   ls = load_poll(ls, key, query("diff", sha))
-#   if bloom.load_view(content, ls) then
-#     ...draw ls.value...
-#   end
-#
-# `opts`: {radius, error_title, idle_title}.
+@doc("""
+Draw the non-ready states of a `ui` load state (`load_state` /
+`load_poll`): a spinner while loading, the error while failed, a hint while
+idle.
+""", params: {r: "The region the value will fill.", ls: "The `ui` load state record."},
+  options: {radius: "The spinner's radius (10).", error_title: """The title over the error (`"Something went wrong"`).""",
+    idle_title: """The title while idle (`"Nothing loaded"`)."""},
+  returns: "True when the value is ready: draw it then, instead.",
+  example: """
+    state ls = load_state()
+    ls = load_poll(ls, key, query("diff", sha))
+    if bloom.load_view(content, ls) then
+      draw_diff(ls.value)
+  """, see: ["bloom/button.spinner", "empty_state"])
 pub fn load_view(r: record, ls: record) -> bool
   load_view(r, ls, {})
 
@@ -230,8 +274,11 @@ pub fn load_view(r: record, ls: record, opts: record) -> bool
 
 # ── Text spinner ───────────────────────────────────────────────────────────
 
-# The one-character spinner for a line of text: | / - \ cycling on the frame
-# clock. Draw it in the line's own style.
+@doc("""
+The one-character spinner for a line of text: `|` `/` `-` `\` cycling on
+the frame clock. Draw it in the line's own style.
+""", example: """bloom.text_in(bloom.spinner_glyph() ++ " syncing", status_r, style)""",
+  see: ["bloom/button.spinner"])
 pub fn spinner_glyph() -> string
   let glyphs = ["|", "/", "-", "\\"]
   glyphs[(frame_count() / 6) % 4]

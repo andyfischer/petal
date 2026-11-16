@@ -1,11 +1,15 @@
-# bloom/panes — the components that divide and navigate a pane: tabs, the
-# ‹ value › cycle control, the splitter and the table.
-#
-# These replace `ui`'s `tab_bar`, `stepper`, `splitter` and `table`. Where
-# `ui` made the caller keep a state record (`splitter_state`, `table_state`)
-# these keep it per callsite, like every bloom component: the caller passes
-# the value it owns (the split fraction) and gets the new one back, or reads
-# the table's selection and sort request off the result.
+@module_doc("""
+The components that divide and navigate a pane: tabs, the ‹ value › cycle
+control, the splitter and the table.
+
+These replace `ui`'s `tab_bar`, `stepper`, `splitter` and `table`. Where
+`ui` made the caller keep a state record (`splitter_state`, `table_state`)
+these keep it per callsite, like every bloom component: the caller passes
+the value it owns (the split fraction) and gets the new one back, or reads
+the table's selection and sort request off the result.
+
+The table stands still while an open bloom menu holds the pointer.
+""", see: ["tabs", "splitter", "table"])
 
 import bloom/theme: theme, ts, tone, hair, rate, text_cut
 import bloom/motion: ease_to, ease_flag, spring
@@ -17,12 +21,18 @@ import ui
 
 # ── Tabs ───────────────────────────────────────────────────────────────────
 
-# A horizontal tab strip filling `r`. Each tab is as wide as its label plus
-# padding; a click (press and release) switches. The underline springs from
-# the old tab to the new one. Returns the new index.
-#
-# `opts`: {size, gap, fg, fg_active, underline, hover, rule, on} — `on` is the
-# surface the strip is drawn over, which the hover wash is flattened against.
+@doc("""
+A horizontal tab strip filling `r`. Each tab is as wide as its label plus
+padding; a click (press and release) switches. The underline springs from
+the old tab to the new one.
+""", params: {r: "The strip's rect.", labels: "One label per tab.", index: "The selected tab."},
+  options: {size: "Label size in px (`font_md`).", gap: "Space between tabs (4).", fg: "Label color.",
+    fg_active: "The selected tab's label color.", underline: "The underline's color.", hover: "The hover wash.",
+    rule: "The line along the strip's bottom edge.",
+    on: "The surface the strip is drawn over (`t.bg`), which the hover wash is flattened against."},
+  returns: "The new index: the tab clicked this frame, else `index`.",
+  example: """tab = bloom.tabs(rect(0, 0, w, 32), ["General", "Keys", "Advanced"], tab)""",
+  see: ["cycle", "bloom/button.segmented"])
 pub fn tabs(r: record, labels: list, index: num) -> num
   tabs(r, labels, index, {})
 
@@ -63,13 +73,18 @@ pub fn tabs(r: record, labels: list, index: num, opts: record) -> num
 
 # ── Cycle ──────────────────────────────────────────────────────────────────
 
-# ‹ value › — the arrows step back and forward through `options`, wrapping,
-# and a click on the value steps forward. Returns the new index (an `index`
-# outside the list reads as 0). This is `ui`'s `stepper`; bloom's own
-# `stepper` steps a number.
-#
-# `opts`: {labels (shown in place of `str(option)`), size, bg, hover, fg,
-# radius, arrow_w (22)}.
+@doc("""
+A ‹ value › control: the arrows step back and forward through `options`,
+wrapping, and a click on the value steps forward. This is `ui`'s `stepper`;
+bloom's own `stepper` steps a number.
+""", params: {r: "The control's rect.", options: "The values to cycle through.",
+  index: "The current option; outside the list it reads as 0."},
+  options: {labels: "Shown in place of `str(option)`.", size: "Text size in px (`font_sm`).", bg: "The fill.",
+    hover: "The arrows' hover wash.", fg: "Text color.", radius: "Corner radius (the theme's `radius_sm`).",
+    arrow_w: "Each arrow's width in px (22)."},
+  returns: "The new index.",
+  example: """speed_i = bloom.cycle(rect(20, 20, 140, 26), [0.5, 1, 2], speed_i, {labels: ["½×", "1×", "2×"]})""",
+  see: ["bloom/controls.stepper", "bloom/menu.select"])
 pub fn cycle(r: record, options: list, index: num) -> num
   cycle(r, options, index, {})
 
@@ -111,20 +126,24 @@ pub fn cycle(r: record, options: list, index: num, opts: record) -> num
 
 # ── Splitter ───────────────────────────────────────────────────────────────
 
-# A draggable divider splitting `r` in two. `frac` is the caller's: pass it
-# in, store what comes back. The drag itself is per callsite.
-#
-#   state left = 0.3
-#   let s = bloom.splitter(content, left)
-#   left = s.frac
-#   ...draw into s.a (left / top) and s.b (right / bottom)...
-#
-# Returns {frac, a, b, divider, dragging}. `opts`: axis ("x", the default: a
-# vertical divider sliding left–right, side-by-side panes; "y": top and
-# bottom; "h" and "v" are accepted as "x" and "y"), min_a / min_b (px floors
-# for each side, 80), min / max (bounds on `frac`, 0.02 / 0.98), band (the
-# grab zone's thickness, 9), gap (blank space beside the line, 4), line /
-# active (colours).
+@doc("""
+A draggable divider splitting `r` in two. `frac` is the caller's: pass it
+in, store what comes back. The drag itself is per callsite, and keeps
+tracking off the band.
+""", params: {r: "The region to split.", frac: "The first pane's share of it, 0 to 1."},
+  options: {axis: """`"x"` (the default: a vertical divider sliding left–right, side-by-side panes) or `"y"` (top and bottom); `"h"` and `"v"` are accepted as `"x"` and `"y"`.""",
+    min_a: "The first pane's least size in px (80).", min_b: "The second pane's least size in px (80).",
+    min: "The least `frac` (0.02).", max: "The greatest `frac` (0.98).",
+    band: "The grab zone's thickness in px (9).", gap: "Blank space beside the line in px (4).",
+    line: "The divider's color.", active: "Its color while hovered or dragged (`t.accent`)."},
+  returns: """`{frac, a, b, divider, dragging}`: the new fraction, the two panes (`a` left or top, `b` right or bottom), the grab band's rect and whether a drag is live.""",
+  example: """
+    state left = 0.3
+    let s = bloom.splitter(content, left)
+    left = s.frac
+    draw_sidebar(s.a)
+    draw_editor(s.b)
+  """)
 pub fn splitter(r: record, frac: num) -> record
   _splitter(r, frac, {})
 
@@ -176,9 +195,12 @@ fn _split_band(r: record, horiz: bool, apx: num, band: num) -> record
 
 # ── Table ──────────────────────────────────────────────────────────────────
 
-# Column rects for `cols` across `r`: each col is {label, w} — `w` >= 1 is
-# fixed pixels, 0 < w < 1 a weight over what is left, missing or 0 an equal
-# share of it.
+@doc("""
+The column rects `table` uses for `cols` across `r`, for drawing cells of
+your own.
+""", params: {r: "The row (or header) to divide.",
+  cols: """The columns, each `{label, w}`: `w` >= 1 is fixed pixels, 0 < w < 1 a weight over what is left, missing or 0 an equal share of it."""},
+  returns: "One rect per column, left to right.", see: ["table"])
 pub fn table_columns(r: record, cols: list) -> list
   let fixed = 0
   let weights = 0.0
@@ -206,25 +228,26 @@ pub fn table_columns(r: record, cols: list) -> list
     x += cw
   out
 
-# A header and rows grid: column sizing (`table_columns`), list selection
-# (j/k, arrows, page keys, a press on a row; the wheel scrolls), zebra rows,
-# a scrollbar, and click-to-sort headers. The table records the *request*
-# (`sort_col`, `sort_asc`); the caller owns the data and sorts it — the
-# table never reorders rows.
-#
-#   let tb = bloom.table(r, [{label: "Name", w: 0.6}, {label: "Size", w: 90}], rows)
-#   ...sort `rows` by tb.sort_col / tb.sort_asc before passing them in...
-#
-# `rows` is a list of row lists. The selection, the scroll and the sort live
-# per callsite. Returns {selected, scroll, sort_col, sort_asc, changed,
-# clicked} — `changed` is true on a frame the selection moved, `clicked` the
-# row pressed this frame, else -1.
-#
-# `opts`: {row_h (26), head_h (28), size, fg, head_bg, selection, zebra, rule,
-# on, active} — `active: false` turns the keyboard off (the table does not
-# have the focus); `on` is the surface the grid sits on. `selected` /
-# `sort_col` / `sort_asc` in `opts` set those from the caller every frame,
-# for a table whose selection the app also moves.
+@doc("""
+A header and rows grid: column sizing (`table_columns`), list selection
+(j/k, arrows, page keys, a press on a row; the wheel scrolls), zebra rows, a
+scrollbar, and click-to-sort headers. The table records the sort *request*
+(`sort_col`, `sort_asc`); the caller owns the data and sorts it: the table
+never reorders rows. The selection, the scroll and the sort live per
+callsite.
+""", params: {r: "The table's rect, header included.", cols: """The columns, each `{label, w}` as `table_columns` takes them.""",
+  rows: "A list of row lists, one value per column."},
+  options: {row_h: "Row height (26).", head_h: "Header height (28).", size: "Text size in px (`font_md`).",
+    fg: "Cell text color.", head_bg: "The header's fill.", selection: "The selected row's fill.",
+    zebra: "False turns the alternate-row tint off.", rule: "The line under the header.",
+    on: "The surface the grid sits on (`t.bg`).", active: "False turns the keyboard off (the table does not have the focus).",
+    selected: "Set the selection from the caller, every frame.", sort_col: "Set the sort column from the caller.",
+    sort_asc: "Set the sort direction from the caller."},
+  returns: """`{selected, scroll, sort_col, sort_asc, changed, clicked}`: `changed` is true on a frame the selection moved, `clicked` the row pressed this frame, else -1; `sort_col` is -1 until a header is clicked.""",
+  example: """
+    let tb = bloom.table(r, [{label: "Name", w: 0.6}, {label: "Size", w: 90}], sorted_rows)
+    if tb.clicked >= 0 then open(sorted_rows[tb.clicked]) end
+  """, see: ["table_columns"])
 pub fn table(r: record, cols: list, rows: list) -> record
   _table(r, cols, rows, {})
 

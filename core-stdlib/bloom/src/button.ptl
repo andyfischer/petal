@@ -1,22 +1,13 @@
-# bloom/button — buttons and the controls shaped like them.
-#
-# The API is a value, not a callback: `if button(r, "Save") then …` is the
-# whole event model. Everything animates without being asked — hover wash,
-# press squash, a ripple from the point you actually clicked, a focus ring
-# that blooms outside the control — because the animators are per-callsite
-# `state` inside these functions and cost the caller nothing.
-#
-# `opts` (all optional):
-#   variant   "default" | "primary" | "danger" | "success" | "warn" | "ghost" | "quiet"
-#   icon      an icon name drawn before the label (see bloom/icon)
-#   icon_end  an icon name drawn after it — a chevron for a menu button
-#   size      label size in px           radius    corner radius
-#   pill      true for a fully round end  align    "center" | "left"
-#   disabled  inert and dimmed            loading  spinner instead of the label
-#   id        makes it focusable: Tab reaches it, Return/Space fires it
-#   ripple    false to switch the click ripple off
-#   fill      the face colour, in place of the variant's (a solid face)
-#   ink       the label and icon colour, in place of the variant's
+@module_doc("""
+Buttons and the controls shaped like them: `button`, `icon_button`,
+`segmented`, `chip`, `link` and the `spinner`.
+
+The API is a value, not a callback: `if button(r, "Save") then …` is the
+whole event model. Everything animates without being asked (hover wash,
+press squash, a ripple from the point you actually clicked, a focus ring
+that blooms outside the control) because the animators are per-callsite
+`state` inside these functions and cost the caller nothing.
+""", see: ["button"])
 
 # The drawing and input names used below (`rect`, `draw_rect_rounded`,
 # `mix` and friends) come from the `ui` package. This module imports it
@@ -30,6 +21,32 @@ import bloom/icon: icon
 import text_layout: text_baseline, text_top, draw_text_line, draw_text_baseline
 import ui
 
+@doc("""
+A push button. It fires on **release inside**, so sliding off cancels.
+`disabled` fades it out rather than snapping, and a button with an `id` is
+in the Tab ring: Return or Space fires it, with a flash, since there is no
+pointer to press.
+""", params: {r: "The button's rect.", label: "The label text."},
+  options: {
+    variant: """`"default"` (outlined), `"primary"`, `"danger"`, `"success"`, `"warn"`, `"ghost"` (the hover wash alone) or `"quiet"`.""",
+    icon: "An icon name drawn before the label.",
+    icon_end: "An icon name drawn after it: a chevron for a menu button.",
+    size: "Label size in px (`font_md`).",
+    radius: "Corner radius (the theme's `radius`).",
+    pill: "True for fully round ends.",
+    align: """`"center"` (the default) or `"left"`, for a rail item.""",
+    disabled: "Inert and dimmed.",
+    loading: "A spinner instead of the label; inert.",
+    id: "A focus id: makes the button focusable.",
+    ripple: "False switches the click ripple off.",
+    fill: "The face color, in place of the variant's (a solid face).",
+    ink: "The label and icon color; by default one that reads on `fill`.",
+  },
+  returns: "True on the frame the button is clicked (or fired from the keyboard).",
+  example: """
+    if bloom.button(rect(20, 20, 120, 32), "Save", {variant: "primary", icon: "check"}) then
+      bloom.toast("Saved", "success")
+  """, see: ["icon_button", "link", "variant_fill"])
 pub fn button(r: record, label: string) -> bool
   button_impl(r, label, {})
 
@@ -126,7 +143,16 @@ fn button_impl(r: record, label: string, opts: record) -> bool
       icon(icon_end, Rect(x + iw + lw + gap, cy - size * 0.55, size * 1.05, size * 1.1), fg)
   fired
 
-# A circular icon-only button: toolbars, close buttons, steppers.
+@doc("""
+A circular icon-only button: toolbars, close buttons, steppers. It has no
+face at rest, only the hover wash.
+""", params: {r: "The button's rect.", name: "The icon's name (see `icon`)."},
+  options: {color: "The icon color (`t.muted`); it brightens toward `t.text` on hover.",
+    radius: "Corner radius (half the shorter side: a circle).",
+    disabled: "Inert, with a dim icon.", ripple: "False switches the click ripple off."},
+  returns: "True on the frame it is clicked.",
+  example: """if bloom.icon_button(rect(8, 8, 24, 24), "close") then open = false end""",
+  see: ["button", "bloom/icon.icon"])
 pub fn icon_button(r: record, name: string)
   icon_button(r, name, {})
 
@@ -145,8 +171,14 @@ pub fn icon_button(r: record, name: string, opts: record)
   icon(name, pad(face, max(2.0, min(r.w, r.h) * 0.24)), if enabled then fg else t.dim end)
   p.click
 
-# A row of mutually exclusive options with a thumb that slides — and springs —
-# between them. Returns the new index.
+@doc("""
+A row of mutually exclusive options with a thumb that slides, and springs,
+between them.
+""", params: {r: "The control's rect.", labels: "One label per cell.", index: "The selected cell."},
+  options: {radius: "Corner radius (the theme's `radius`).", size: "Label size in px (`font_sm`)."},
+  returns: "The new index: the cell clicked this frame, else `index`.",
+  example: """mode = bloom.segmented(rect(20, 20, 240, 30), ["Day", "Week", "Month"], mode)""",
+  see: ["bloom/controls.radio_group", "bloom/panes.tabs"])
 pub fn segmented(r: record, labels: list, index: num)
   segmented(r, labels, index, {})
 
@@ -176,14 +208,26 @@ pub fn segmented(r: record, labels: list, index: num, opts: record)
     draw_text_line(labels[i], cr, ts(t, size, fg), "center")
   chosen
 
-# The width a chip will take, for a caller that has to place it before it
-# draws it (right-aligning one against an edge, flowing a row backwards).
+@doc("""
+The width a chip will take, for a caller that has to place it before it
+draws it (right-aligning one against an edge, flowing a row backwards).
+""", params: {label: "The chip's text.", opts: "The same `opts` the chip will get; only `size` matters."},
+  example: """bloom.chip(r.x + r.w - bloom.chip_width("Beta", {}), r.y, "Beta")""", see: ["chip"])
 pub fn chip_width(label: string, opts: record) -> num
   let t = theme()
   let size = field(opts, "size", t.font_sm)
   text_width(label, ts(t, size, t.text)) + size * 1.4
 
-# A small status chip. Returns its rect so a row of them can flow.
+@doc("""
+A small rounded status chip at (`x`, `y`): the text in `color` on a faint
+tint of it.
+""", params: {x: "Left edge.", y: "Top edge.", label: "The chip's text."},
+  options: {size: "Text size in px (`font_sm`).", color: "The text color and the tint (`t.accent`)."},
+  returns: "Its rect, so a row of them can flow.",
+  example: """
+    let c = bloom.chip(20, 20, "draft")
+    bloom.chip(c.x + c.w + 6, 20, "shared", {color: t.success})
+  """, see: ["chip_width", "bloom/display.badge", "bloom/display.pill"])
 pub fn chip(x: num, y: num, label: string) -> Rect
   chip(x, y, label, {})
 
@@ -199,7 +243,13 @@ pub fn chip(x: num, y: num, label: string, opts: record) -> Rect
   draw_text_line(label, Rect(x + size * 0.7, y, w - size * 1.4, h), style, "left")
   r
 
-# A text link: underline grows from the left on hover.
+@doc("""
+A text link at (`x`, `y`), the top of its box: its underline grows from the
+left on hover.
+""", params: {x: "Left edge.", y: "Top of the link's box.", label: "The link text."},
+  options: {size: "Text size in px (`font_md`).", color: "Text and underline color (`t.accent`)."},
+  returns: "True on the frame it is clicked.",
+  example: """if bloom.link(20, 60, "Show details") then expanded = true end""", see: ["button"])
 pub fn link(x: num, y: num, label: string)
   link(x, y, label, {})
 
@@ -252,10 +302,13 @@ fn _spinner(cx: num, cy: num, radius: num, color: record)
     draw_line({x: cx + cos(a0) * radius, y: cy + sin(a0) * radius},
       {x: cx + cos(a1) * radius, y: cy + sin(a1) * radius}, color, fade, 2)
 
-# Exposed because a panel that rolls its own control still wants bloom's
-# spinner in it. The last argument is a colour, or an `opts` record
-# ({color}): a record with a `color` key, or without the `r` of a colour, is
-# read as opts. With no colour it is the theme's accent.
+@doc("""
+Draw bloom's spinning arc, centered on (`cx`, `cy`): the one a `loading`
+button shows, for a panel that rolls its own control. It turns on `age()`, so
+it spins in a headless trace too.
+""", params: {cx: "Center x.", cy: "Center y.", radius: "The arc's radius.",
+  color_or_opts: """A color, or an `{color}` record: a record with a `color` key, or without the `r` of a color, is read as opts. With neither, the theme's accent."""},
+  example: """bloom.spinner(r.x + r.w / 2, r.y + r.h / 2, 8, t.muted)""", see: ["bloom/display.load_view"])
 pub fn spinner(cx: num, cy: num, radius: num)
   _spinner(cx, cy, radius, theme().accent)
 

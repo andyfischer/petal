@@ -1,15 +1,23 @@
-# bloom/interact — the interaction layer: pointer probes, focus, hotkeys, and
-# the input capture that lets an overlay drawn *last* still swallow the click.
-#
-# A probe is the unit every bloom component is built on. It answers the
-# pointer questions for one rect (hovering? held? clicked?) and, in the same
-# record, the *animated* versions of those answers (`hot`, `active`), because
-# a component that has to ask twice — once for the logic, once for the fade —
-# is where hand-rolled UIs start to drift.
-#
-# Click means press-and-release inside, not press. Pressing a button and
-# sliding off it cancels, which is what every real toolkit does and what
-# makes a drag out of a menu item work.
+@module_doc("""
+bloom's interaction layer: pointer probes, dragging, the keyboard focus and
+its Tab ring, hotkeys, and the input capture that lets an overlay drawn
+*last* still swallow the click.
+
+A probe is the unit every bloom component is built on. It answers the
+pointer questions for one rect (hovering? held? clicked?) and, in the same
+record, the *animated* versions of those answers (`hot`, `active`), because
+a component that has to ask twice — once for the logic, once for the fade —
+is where hand-rolled UIs start to drift.
+
+Click means press-and-release inside, not press. Pressing a button and
+sliding off it cancels, which is what every real toolkit does and what
+makes a drag out of a menu item work.
+
+Tab and Shift+Tab walk the ring the previous frame built (the only complete
+ring that exists when the key arrives), so focus moves on the frame after the
+keypress. With nothing in the ring focused, Tab focuses its first control;
+`tab_enters_ring(false)` turns that off.
+""", see: ["probe", "capture", "focusable"])
 
 # The drawing and input names used below (`rect`, `draw_rect_rounded`,
 # `mix` and friends) come from the `ui` package. This module imports it
@@ -35,37 +43,56 @@ state var _owner_frame = -2
 # sit under the box.
 var _owner_area = nil
 
-# Claim the pointer for `owner` (any stable string). Call it every frame the
-# overlay is open.
+@doc("""
+Claim the pointer for an overlay. Call it every frame the overlay is open:
+while a claim is live (this frame or the last), every `probe` goes inert, so
+the page under an open menu ignores the click. Immediate mode draws overlays
+last, so the one-frame lag is invisible: the menu opened on the frame before.
+
+With `area`, the claim is for an overlay whose contents the app draws after
+it (a dialog, a popover): probes made later this frame that lie inside
+`area` stay live, so the buttons and fields inside a dialog work while
+everything else is inert.
+""", params: {owner: "Any stable string naming the overlay.",
+  area: "The overlay's box, inside which later probes stay live."},
+  example: """
+    if open then
+      bloom.capture("my-dialog", box)
+      bloom.surface(t, box, 12, 3)
+      if bloom.button(ok_r, "OK") then open = false end
+  """, see: ["capture_release", "is_captured", "pointer_free", "probe_over"])
 pub fn capture(owner: string)
   set _owner = owner
   set _owner_frame = frame_count()
   set _owner_area = nil
 
-# The same claim, for an overlay whose contents the app draws after it:
-# probes made later this frame that lie inside `area` stay live, so the
-# buttons and fields inside a dialog work while everything else is inert.
 pub fn capture(owner: string, area: record)
   set _owner = owner
   set _owner_frame = frame_count()
   set _owner_area = area
 
-# Whether the pointer is free for a control at `r`: no claim is live, or
-# `r` lies inside the box an overlay claimed earlier this frame. `probe`
-# asks this; a control that reads the mouse itself asks it too.
+@doc("""
+Whether the pointer is free for a control at `r`: no claim is live, or `r`
+lies inside the box an overlay claimed earlier this frame. `probe` asks
+this; a control that reads the mouse itself asks it too.
+""", params: {r: "The control's rect."}, see: ["capture"])
 pub fn pointer_free(r: record) -> bool
   let a = get _owner_area
   !is_captured() || (a != nil && r.x >= a.x && r.y >= a.y &&
     r.x + r.w <= a.x + a.w && r.y + r.h <= a.y + a.h)
 
-# Whether some overlay is holding input right now.
+@doc("Whether some overlay is holding input right now: a `capture` claim made this frame or the last.", see: ["capture", "capture_owner"])
 pub fn is_captured()
   (get _owner) != "" && frame_count() - (get _owner_frame) <= 1
 
+@doc("""
+The `owner` string of the live capture claim, or `""` when nothing holds
+input.
+""", see: ["is_captured"])
 pub fn capture_owner()
   if is_captured() then get _owner else "" end
 
-# Drop a claim early (a menu closing mid-frame).
+@doc("Drop the capture claim early (a menu closing mid-frame).", see: ["capture"])
 pub fn capture_release()
   set _owner = ""
   set _owner_frame = -2
@@ -73,28 +100,39 @@ pub fn capture_release()
 
 # ── Probes ────────────────────────────────────────────────────────────────
 
-# The full interaction record for `r`:
-#
-#   rect     the rect probed
-#   hover    pointer inside, and not blocked by an overlay
-#   down     pressed inside and still held (even if the pointer left)
-#   press    went down inside on this frame
-#   click    released inside after pressing inside — the one to act on
-#   hot      0→1 eased hover, for a fade
-#   active   0→1 eased press, for a squash
-#   enabled  what was passed in
-#
-# `enabled: false` returns a record that is inert *and* still animates its way
-# back to rest, so disabling a hovered button fades it out rather than
-# snapping.
+@doc("""
+The interaction record for `r`: the unit every bloom component is built on.
+It answers the pointer questions and, in the same record, the eased versions
+of those answers, per callsite.
+
+`click` means **press and release inside**: pressing a control and sliding
+off it cancels. A probe is inert while an overlay holds input (`capture`).
+""", params: {r: "The rect to probe.",
+  enabled: "False (default true) returns a record that is inert *and* still animates its way back to rest, so disabling a hovered button fades it out rather than snapping."},
+  returns: """
+    `{rect, hover, down, press, click, hot, active, enabled}`: `hover` is the
+    pointer inside and not blocked by an overlay; `down` pressed inside and
+    still held (even if the pointer left); `press` went down inside on this
+    frame; `click` released inside after pressing inside (the one to act on);
+    `hot` the 0→1 eased hover, for a fade; `active` the 0→1 eased press, for a
+    squash; `rect` and `enabled` what was passed in.
+  """,
+  example: """
+    let p = bloom.probe(r)
+    draw_rect_rounded(r, t.radius, bloom.wash(t, t.panel, p.hot, p.active))
+    if p.click then count = count + 1 end
+  """, see: ["probe_over", "hovering", "clicked", "drag"])
 pub fn probe(r: record, enabled: bool) -> record
   probe_at(r, enabled, pointer_free(r))
 
 pub fn probe(r: record) -> record
   probe(r, true)
 
-# The overlay's own probe: identical, but it ignores the capture claim (an
-# open menu is the thing holding the pointer, so its items must still see it).
+@doc("""
+The overlay's own probe: identical to `probe`, but it ignores the capture
+claim (an open menu is the thing holding the pointer, so its items must
+still see it).
+""", params: {r: "The rect to probe."}, see: ["probe", "capture"])
 pub fn probe_over(r: record) -> record
   probe_at(r, true, true)
 
@@ -112,18 +150,36 @@ fn probe_at(r: record, enabled: bool, allowed: bool) -> record
   {rect: r, enabled: enabled, hover: over, down: down, press: press, click: click,
     hot: ease_flag(over && !down, 18.0), active: ease_flag(down, 34.0)}
 
-# The two shorthands, for the many places that want one bool.
+@doc("""
+Whether the pointer is over `r` and free (no overlay holds it): `probe`'s
+`hover` as one bool, with no animator.
+""", params: {r: "The rect."}, see: ["probe", "clicked"])
 pub fn hovering(r: record)
   pointer_free(r) && point_in(mouse_x(), mouse_y(), r)
 
+@doc("""
+Whether `r` was clicked this frame (pressed and released inside): `probe`'s
+`click` as one bool.
+""", params: {r: "The rect."}, example: """if bloom.clicked(row) then selected = i end""", see: ["probe", "hovering"])
 pub fn clicked(r: record)
   probe(r).click
 
 # ── Dragging ──────────────────────────────────────────────────────────────
 
-# A drag that starts inside `r` and keeps tracking once the pointer leaves it
-# (the slider that keeps following your hand off the end of its track).
-# Returns {active, x, y, dx, dy, start_x, start_y}.
+@doc("""
+A drag that starts inside `r` and keeps tracking once the pointer leaves it
+(the slider that keeps following your hand off the end of its track), per
+callsite.
+""", params: {r: "Where the drag can start."},
+  returns: """
+    `{active, x, y, dx, dy, start_x, start_y}`: `active` while the button is
+    held after a press inside; `x`, `y` the pointer; `dx`, `dy` its offset
+    from the press point `start_x`, `start_y`.
+  """,
+  example: """
+    let d = bloom.drag(handle)
+    if d.active then offset = base + d.dx end
+  """, see: ["probe"])
 pub fn drag(r: record) -> record
   state on = false
   state sx = 0
@@ -160,9 +216,22 @@ state var _enters = true
 # control in it could ever be skipped by the frame gate.
 var _building = []
 
-# Announce `id` as focusable this frame and report whether it has focus.
-# Every focusable bloom component calls this; an app only calls it when it
-# builds a focusable control of its own.
+@doc("""
+Announce `id` as focusable this frame and report whether it has focus. Every
+focusable bloom component calls this; an app only calls it when it builds a
+focusable control of its own.
+
+Components announce themselves each frame in draw order, which is exactly
+the tab order. The ring is rebuilt every frame, so it needs no registration
+and holds no stale entries when a control disappears. Tab and Shift+Tab walk
+the ring the previous frame built, so focus moves on the frame after the
+keypress.
+""", params: {id: "The control's focus id, the same id `ui`'s `has_focus` takes."},
+  returns: "Whether `id` has the keyboard.",
+  example: """
+    let has = bloom.focusable("volume")
+    if has && bloom.key("up") then volume = volume + 1 end
+  """, see: ["focused", "focus_set", "tab_enters_ring"])
 pub fn focusable(id: string) -> bool
   if len(get _building) == 0 then
     _begin_frame()
@@ -188,37 +257,49 @@ fn _begin_frame()
   if key_pressed("tab") then
     set _pending = if mod_shift() then -1 else 1 end
 
-# Whether Tab (Shift+Tab) with no control of the ring focused focuses the
-# first (last) one. On by default. An app that gives Tab a meaning of its own
-# while nothing is focused turns it off (petal-design steps the canvas
-# selection through siblings); Tab still walks the ring from a focused
-# control. It writes its state only when it changes, so calling it every
-# frame is free.
+@doc("""
+Set whether Tab (Shift+Tab) with no control of the ring focused focuses the
+first (last) one. On by default. An app that gives Tab a meaning of its own
+while nothing is focused turns it off; Tab still walks the ring from a
+focused control. It writes its state only when it changes, so calling it
+every frame is free.
+""", params: {on: "Whether Tab enters the ring."}, example: "bloom.tab_enters_ring(false)", see: ["focusable"])
 pub fn tab_enters_ring(on: bool)
   if get _enters != on then
     set _enters = on
 
+@doc("Whether `id` has the keyboard: `ui`'s `has_focus(id)`.", params: {id: "The focus id."}, see: ["focusable", "focus_set"])
 pub fn focused(id: string) -> bool
   has_focus(id)
 
+@doc("Give the keyboard to `id`: `ui`'s `focus_request(id)`.", params: {id: "The focus id."}, see: ["focus_clear", "focused"])
 pub fn focus_set(id: string)
   focus_request(id)
 
+@doc("Take the keyboard away from whichever control has it.", see: ["focus_set"])
 pub fn focus_clear()
   focus_request(nil)
 
+@doc("The id of the control that has the keyboard, or nil: `ui`'s `focus_owner()`.", see: ["focused"])
 pub fn focus_id()
   focus_owner()
 
 # ── Keys ──────────────────────────────────────────────────────────────────
 
-# A plain key press, ignored while an overlay holds input.
+@doc("""
+Whether the key `k` was pressed this frame, ignored while an overlay holds
+input.
+""", params: {k: """A key name as `ui`'s `key_pressed` takes it (`"escape"`, `"up"`, `"a"`)."""},
+  example: """if bloom.key("escape") then bloom.focus_clear() end""", see: ["chord"])
 pub fn key(k: string) -> bool
   !is_captured() && key_pressed(k)
 
-# A modified chord: `chord("k", "cmd")`, `chord("p", "ctrl")`. `mods` is one
-# of "cmd", "ctrl", "alt", "shift", or "cmdctrl" for the accelerator that is
-# Cmd on macOS and Ctrl elsewhere — which is what an app almost always means.
+@doc("""
+Whether a modified chord was pressed this frame: the key `k` with the
+modifier `mods` held. Unlike `key`, it does not check for an overlay.
+""", params: {k: "The key name.",
+  mods: """`"cmd"`, `"ctrl"`, `"alt"`, `"shift"`, or `"cmdctrl"` for the accelerator that is Cmd on macOS and Ctrl elsewhere (what an app almost always means)."""},
+  example: """if bloom.chord("s", "cmdctrl") then save() end""", see: ["key"])
 pub fn chord(k: string, mods: string) -> bool
   if !key_pressed(k) then
     false

@@ -1,15 +1,17 @@
-# bloom/icon — the icon set, drawn as vectors.
-#
-# No font, no atlas, no asset pipeline: every glyph is a handful of strokes in
-# a unit box, scaled into whatever rect it is given. That is what keeps bloom
-# droppable — a host that can draw a line can draw the whole icon set, and an
-# icon inherits its color, weight and size from the control around it instead
-# of from a font file that has to ship beside the script.
-#
-# Coordinates are unit coordinates: (-0.5, -0.5) is the top-left of the glyph
-# box and (0.5, 0.5) the bottom-right, y down.
+@module_doc("""
+bloom's icon set: 22 glyphs drawn as vectors.
+
+No font, no atlas, no asset pipeline: every glyph is a handful of strokes in
+a unit box, scaled into whatever rect it is given. A host that can draw a
+line can draw the whole icon set, and an icon inherits its color, weight and
+size from the control around it instead of from a font file that has to ship
+beside the script.
+""", see: ["icon", "NAMES"])
 
 import ui
+
+# Coordinates below are unit coordinates: (-0.5, -0.5) is the top-left of the
+# glyph box and (0.5, 0.5) the bottom-right, y down.
 
 # The drawing and input names used below (`rect`, `draw_rect_rounded`,
 # `mix` and friends) come from the `ui` package. This module imports it
@@ -36,11 +38,21 @@ fn _box(r: record) -> record
 fn _w(r: record) -> float
   max(1.0, min(r.w, r.h) / 11.0)
 
+@doc("""
+Draw a glyph centered in `r`, scaled to its shorter side. An unknown name
+draws a dot, so a typo is visible in place rather than an invisible hole in a
+toolbar.
+
+The names (`NAMES`, `bloom.ICONS`): `check` `close` `plus` `minus`
+`chevron_down` `chevron_up` `chevron_right` `chevron_left` `arrow_right`
+`search` `menu` `more` `dot` `circle` `play` `pause` `folder` `file`
+`warning` `info` `star` `trash`.
+""", params: {name: "The glyph's name.", r: "The box to draw in.", color: "The stroke color.",
+  w: "Stroke weight in px; by default it follows the box size (at least 1)."},
+  example: """bloom.icon("search", rect(8, 8, 16, 16), t.muted)""", see: ["NAMES"])
 pub fn icon(name: string, r: record, color: record)
   icon(name, r, color, _w(r))
 
-# `name` is one of the glyphs below; an unknown name draws a dot, so a typo is
-# visible in place rather than an invisible hole in a toolbar.
 pub fn icon(name: string, r: record, color: record, w: num)
   let b = _box(r)
   match name
@@ -68,8 +80,15 @@ pub fn icon(name: string, r: record, color: record, w: num)
     when "trash" -> _trash(b, color, w)
     when _ -> draw_circle({x: b.cx, y: b.cy}, b.s * 0.18, color)
 
-# Every glyph the set answers to, in a stable order — the gallery draws this
-# rather than a list it keeps in sync by hand.
+@doc("""
+Every glyph name `icon` answers to, in a stable order: draw this rather than
+a list kept in sync by hand. The facade exports it as `ICONS`.
+""", example: """
+    let x = 8
+    for name in bloom.ICONS do
+      bloom.icon(name, rect(x, 8, 16, 16), t.text)
+      x = x + 24
+  """, see: ["icon"])
 pub let NAMES = ["check", "close", "plus", "minus", "chevron_down", "chevron_up",
   "chevron_right", "chevron_left", "arrow_right", "search", "menu",
   "more", "dot", "circle", "play", "pause", "folder", "file",

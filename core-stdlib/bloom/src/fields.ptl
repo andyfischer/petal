@@ -1,21 +1,27 @@
-# bloom/fields — the text fields and a property inspector's fields.
-#
-# The editing is `ui`'s: `ui.text_field_update` and `ui.text_area_update`
-# hold the caret, the selection, the clipboard and undo, and own the
-# keyboard through the runtime focus. bloom paints them and puts each one in
-# its Tab ring. So a bloom field selects, copies, pastes and undoes like a
-# desktop field, and shares one keyboard owner with any `ui` code beside it.
-#
-# Every field takes its focus id as `opts.id`. A field without one falls
-# back to its placeholder, then to "field" — enough for the one search box
-# of a panel, and wrong for two fields: give each its own id.
-#
-# The inspector fields (`commit_field`, `number_field`, `color_field`) apply
-# only when the edit is done: the result holds the new value on the frame it
-# is committed (Return, or the field losing the keyboard) and the old one,
-# or nil, before. Escape abandons the edit and gives the focus up. Each keeps
-# its edit in widget `state`, keyed per callsite — so in a loop, key it by
-# the row (`for p in props key p.name do … end`).
+@module_doc("""
+The text fields (`text_field`, `text_area`) and a property inspector's fields
+(`commit_field`, `number_field`, `color_field`, `swatches`).
+
+The editing is `ui`'s: `ui.text_field_update` and `ui.text_area_update`
+hold the caret, the selection, the clipboard and undo, and own the
+keyboard through the runtime focus. bloom paints them and puts each one in
+its Tab ring. So a bloom field selects, copies, pastes and undoes like a
+desktop field, and shares one keyboard owner with any `ui` code beside it.
+
+Every field takes its focus id as `opts.id`. A field without one falls
+back to its placeholder, then to "field" — enough for the one search box
+of a panel, and wrong for two fields: give each its own id.
+
+The inspector fields (`commit_field`, `number_field`, `color_field`) apply
+only when the edit is done: the result holds the new value on the frame it
+is committed (Return, or the field losing the keyboard) and the old one,
+or nil, before. Escape abandons the edit and gives the focus up. Each keeps
+its edit in widget `state`, keyed per callsite — so in a loop, key it by
+the row (`for p in props key p.name do … end`).
+
+`ui` keeps `color_to_hex`, `color_from_hex` and `same_color` for color text
+of your own.
+""", see: ["text_field", "commit_field"])
 
 # The drawing and input names used below come from the `ui` package, which
 # this module imports itself: an import reaches only the file it is written
@@ -73,28 +79,43 @@ fn _caret_on(changed: bool) -> bool
 
 # ── Text field ────────────────────────────────────────────────────────────
 
-# A single-line editor with a caret, a selection, the clipboard and undo.
-# `buf` is the text (keep it in `state`); the field returns the edited one.
-#
-#   state name = ""
-#   let res = bloom.text_field(r, name, {id: "name", placeholder: "Name"})
-#   name = res.text
-#   if res.submitted then … end
-#
-# Mouse: a click focuses and places the caret, shift+click extends the
-# selection, a drag selects, a double click selects a word and a triple
-# click everything; a press elsewhere gives the focus up. Keys: the arrows
-# (alt/ctrl by word, cmd to either end, shift to select), backspace and
-# delete (alt/ctrl by word, cmd to the start), cmd+A/C/X/V, cmd+Z and
-# cmd+shift+Z / cmd+Y, Return (`submitted`) and Escape (`cancelled`).
-#
-# `opts`: id, placeholder, size, color, text_style, inset (theme pad_x),
-# radius, bg, focus, caret, selection, scroll (true: the text scrolls to
-# keep the caret in view), pointer (false keeps the mouse out this frame).
-#
-# Returns `ui.text_field_update`'s record — {text, caret, submitted,
-# changed, anchor, sel_start, sel_end, scroll, overflow, blurred, cancelled}
-# — plus `focused`.
+@doc("""
+A single-line editor with a caret, a selection, the clipboard and undo.
+
+Mouse: a click focuses and places the caret, shift+click extends the
+selection, a drag selects, a double click selects a word and a triple
+click everything; a press elsewhere gives the focus up. Keys: the arrows
+(alt/ctrl by word, cmd to either end, shift to select), backspace and
+delete (alt/ctrl by word, cmd to the start), cmd+A/C/X/V, cmd+Z and
+cmd+shift+Z / cmd+Y, Return (`submitted`) and Escape (`cancelled`; the
+field keeps the focus). `blurred` is true on the frame after the field lost
+the keyboard.
+""", params: {r: "The field's rect.", buf: "The text: keep it in `state` and store `res.text` back."},
+  options: {
+    id: """The focus id. Without one the field falls back to its placeholder, then to `"field"`: fine for a panel's one search box, wrong for two fields. An int id works.""",
+    placeholder: "Drawn dim while the text is empty.",
+    size: "Text size in px (`font_md`), for a style built from `size` and `color`.",
+    color: "Text color (`t.text`).",
+    text_style: "A whole text style record, in place of `size` and `color`.",
+    inset: "Text inset in px (the theme's `pad_x` for a field, 8 for an area).",
+    radius: "Corner radius.", bg: "The box's fill (`t.panel`).",
+    focus: "The border and underline color when focused (`t.accent`).",
+    caret: "Caret color (`t.accent`).", selection: "Selection highlight.",
+    scroll: "`text_field` only, default true: the text scrolls to keep the caret in view.",
+    pointer: "False keeps the mouse out for this frame (it is out anyway while an overlay holds input).",
+    line_gap: "`text_area` only: extra px between rows (2).",
+  },
+  returns: """
+    `ui.text_field_update`'s record, `{text, caret, submitted, changed,
+    anchor, sel_start, sel_end, scroll, overflow, blurred, cancelled}`, plus
+    `focused`.
+  """,
+  example: """
+    state name = ""
+    let res = bloom.text_field(r, name, {id: "name", placeholder: "Name"})
+    name = res.text
+    if res.submitted then save(name) end
+  """, see: ["text_area", "draw_text_field", "commit_field"])
 pub fn text_field(r: record, buf: string) -> record
   text_field_impl(r, buf, {})
 
@@ -117,11 +138,22 @@ fn text_field_impl(r: record, buf: string, opts: record) -> record
   draw_field_impl(r, res, has, opts)
   {...res, focused: has}
 
-# The paint half, for a caller that runs `ui.text_field_update` itself (to
-# gate the keys, or to share one edit between two views). `res` is what the
-# update returned (or any record with `text` and `caret`; the selection,
-# `scroll` and `overflow` are read when present). `opts` as `text_field`'s —
-# pass the update the same `text_style` and `inset`, or the caret drifts.
+@doc("""
+The paint half of `text_field`, for a caller that runs `ui.text_field_update`
+itself (to gate the keys, or to share one edit between two views). Pass the
+update the same `text_style` and `inset` as `opts`, or the caret lands off
+the glyphs.
+""", params: {r: "The field's rect.",
+  res: "What the update returned, or any record with `text` and `caret`; the selection, `scroll` and `overflow` are read when present.",
+  focused: "Whether to draw the field focused (caret, selection, accent border).",
+  opts: "As `text_field`'s."},
+  returns: "`res`, unchanged.",
+  example: """
+    let st = {text_style: bloom.ts(t, 13, t.text), inset: 12}
+    let res = text_field_update("q", r, query, st)
+    query = res.text
+    bloom.draw_text_field(r, res, has_focus("q"), st)
+  """, see: ["text_field"])
 pub fn draw_text_field(r: record, res: record, focused: bool) -> record
   draw_field_impl(r, res, focused, {})
 
@@ -168,16 +200,36 @@ fn draw_field_impl(r: record, res: record, has: bool, opts: record) -> record
 
 # ── Text area ─────────────────────────────────────────────────────────────
 
-# `text_field` for text with line breaks: notes, captions, a chat message.
-# The text wraps to the box, Return starts a new line, and a box whose text
-# is taller than it scrolls with the wheel and follows the caret. Beyond the
-# field's keys: up / down by a row keeping the column, cmd+up / down to
-# either end, home / end to the ends of the row.
-#
-# `opts`: as `text_field`'s, plus line_gap (2). Returns
-# `ui.text_area_update`'s record — {text, caret, changed, anchor, sel_start,
-# sel_end, scroll, overflow, rows, line_h, content_h} — plus `focused`.
-# There is no `submitted`.
+@doc("""
+`text_field` for text with line breaks: notes, captions, a chat message.
+The text wraps to the box, Return starts a new line, and a box whose text
+is taller than it scrolls with the wheel and follows the caret. Beyond the
+field's keys: up / down by a row keeping the column, cmd+up / down to
+either end, home / end to the ends of the row.
+""", params: {r: "The area's rect.", buf: "The text: keep it in `state` and store `res.text` back."},
+  options: {
+    id: """The focus id. Without one the field falls back to its placeholder, then to `"field"`: fine for a panel's one search box, wrong for two fields. An int id works.""",
+    placeholder: "Drawn dim while the text is empty.",
+    size: "Text size in px (`font_md`), for a style built from `size` and `color`.",
+    color: "Text color (`t.text`).",
+    text_style: "A whole text style record, in place of `size` and `color`.",
+    inset: "Text inset in px (the theme's `pad_x` for a field, 8 for an area).",
+    radius: "Corner radius.", bg: "The box's fill (`t.panel`).",
+    focus: "The border and underline color when focused (`t.accent`).",
+    caret: "Caret color (`t.accent`).", selection: "Selection highlight.",
+    scroll: "`text_field` only, default true: the text scrolls to keep the caret in view.",
+    pointer: "False keeps the mouse out for this frame (it is out anyway while an overlay holds input).",
+    line_gap: "`text_area` only: extra px between rows (2).",
+  },
+  returns: """
+    `ui.text_area_update`'s record, `{text, caret, changed, anchor,
+    sel_start, sel_end, scroll, overflow, rows, line_h, content_h}`, plus
+    `focused`. There is no `submitted`: Return is a line break.
+  """,
+  example: """
+    state notes = ""
+    notes = bloom.text_area(rect(20, 20, 300, 120), notes, {id: "notes"}).text
+  """, see: ["text_field", "draw_text_area"])
 pub fn text_area(r: record, buf: string) -> record
   text_area_impl(r, buf, {})
 
@@ -194,9 +246,13 @@ fn text_area_impl(r: record, buf: string, opts: record) -> record
   draw_area_impl(r, res, has, opts)
   {...res, focused: has}
 
-# The paint half of `text_area`: the box, the selection, the rows, the caret
-# and, when the text overflows, a scroll thumb. `res` is what
-# `ui.text_area_update` returned.
+@doc("""
+The paint half of `text_area`: the box, the selection, the rows, the caret
+and, when the text overflows, a scroll thumb, for a caller that runs
+`ui.text_area_update` itself.
+""", params: {r: "The area's rect.", res: "What `ui.text_area_update` returned.",
+  focused: "Whether to draw the area focused.", opts: "As `text_area`'s."},
+  returns: "`res`, unchanged.", see: ["text_area", "draw_text_field"])
 pub fn draw_text_area(r: record, res: record, focused: bool) -> record
   draw_area_impl(r, res, focused, {})
 
@@ -247,11 +303,18 @@ fn draw_area_impl(r: record, res: record, has: bool, opts: record) -> record
 
 # ── Inspector fields ──────────────────────────────────────────────────────
 
-# One line of text that applies on Return or when the field loses the
-# keyboard; Escape reverts. While unfocused it shows `current`. Returns
-# {text, editing}: `text` is nil except on the frame the edit is applied.
-# `opts` is `text_field`'s, plus `start`: take the keyboard as soon as the
-# field shows (a rename opened by a double-click), rather than on a click.
+@doc("""
+One line of text that applies on Return or when the field loses the
+keyboard; Escape reverts and gives the focus up. While unfocused it shows
+`current`.
+""", params: {r: "The field's rect.", current: "The value shown while not editing (any value; `str` of it, nil as empty)."},
+  options: {start: "Take the keyboard as soon as the field shows (a rename opened by a double-click), rather than on a click.",
+    id: "The focus id; every other `text_field` option applies too."},
+  returns: """`{text, editing}`: `text` is nil except on the frame the edit is applied.""",
+  example: """
+    let res = bloom.commit_field(r, layer.name, {id: "rename"})
+    if res.text != nil then layer = {...layer, name: res.text} end
+  """, see: ["text_field", "number_field", "color_field"])
 pub fn commit_field(r: record, current) -> record
   commit_impl(r, current, {})
 
@@ -283,14 +346,20 @@ fn commit_impl(r: record, current, opts: record) -> record
     out = buf
   {text: out, editing: editing}
 
-# A number box: drag sideways to scrub (shift for fine steps), double-click
-# to type, Return or a click away to apply the typed value, Escape to drop
-# it. Returns {value, changed}: `value` is the new value (the old one when
-# nothing happened), `changed` whether it differs.
-#
-# `opts`: id, step (1.0 per pixel of drag), places (2, decimals shown and
-# typed), min, max, fine (0.1, the shift multiplier), tip (the hover hint;
-# "" for none), size, color, bg, radius.
+@doc("""
+A number box: drag sideways to scrub (shift for fine steps), double-click or
+Tab to type, Return or a click away to apply the typed value, Escape to drop
+it.
+""", params: {r: "The box's rect.", value: "The current value."},
+  options: {id: "The focus id.", step: "Change per px of drag (1.0).", places: "Decimals shown and typed (2).",
+    min: "Lower bound on the result.", max: "Upper bound on the result.", fine: "The shift multiplier (0.1).",
+    tip: """The hover hint; `""` for none.""", size: "Text size in px (`font_sm`).", color: "Text color.",
+    bg: "The box's fill.", radius: "Corner radius (the theme's `radius_sm`)."},
+  returns: """`{value, changed}`: `value` is the new value (the old one when nothing happened), `changed` whether it differs.""",
+  example: """
+    let w = bloom.number_field(r, shape.w, {id: "w", min: 1, places: 0})
+    if w.changed then shape = {...shape, w: w.value} end
+  """, see: ["commit_field", "bloom/controls.slider"])
 pub fn number_field(r: record, value: num) -> record
   number_impl(r, value, {})
 
@@ -356,10 +425,17 @@ fn number_impl(r: record, value: num, opts: record) -> record
     if hi != nil then out = min(out, hi) end
   {value: out, changed: out != value}
 
-# A colour chip and its hex, typed: Return or a click away applies, Escape
-# reverts. Returns {color}: nil unless a valid new colour was entered. A nil
-# `color` shows an empty chip and field. `opts` is `commit_field`'s, plus
-# chip_radius and outline.
+@doc("""
+A color chip and its hex, typed (`#rrggbb` / `#rrggbbaa`): Return or a click
+away applies, Escape reverts. A nil `color` shows an empty chip and field.
+""", params: {r: "The field's rect; the chip is square at its left.", color: "The current color, or nil."},
+  options: {chip_radius: "The chip's corner radius.", outline: "The chip's outline color.",
+    id: "The focus id; every other `commit_field` option applies too."},
+  returns: """`{color}`: nil unless a valid new color was entered.""",
+  example: """
+    let c = bloom.color_field(r, fill, {id: "fill"})
+    if c.color != nil then fill = c.color end
+  """, see: ["swatches", "commit_field"])
 pub fn color_field(r: record, color) -> record
   color_impl(r, color, {})
 
@@ -378,10 +454,17 @@ fn color_impl(r: record, color, opts: record) -> record
   let picked = if res.text == nil then nil else color_from_hex(res.text) end
   {color: if same_color(picked, color) then nil else picked end}
 
-# A row of square colour chips, `r.h` on a side, `current` ringed; chips
-# that would overrun `r.w` are left out. Returns the colour clicked (on
-# release, like every bloom control), or nil. `opts`: gap (4), radius,
-# ring, hover.
+@doc("""
+A row of square color chips, `r.h` on a side, with `current` ringed; chips
+that would overrun `r.w` are left out.
+""", params: {r: "The row's rect.", colors: "The colors to offer.", current: "The color to ring, or nil."},
+  options: {gap: "Space between chips (4).", radius: "Chip corner radius.", ring: "The ring color (`t.accent`).",
+    hover: "The hover outline color."},
+  returns: "The color clicked (on release, like every bloom control), or nil.",
+  example: """
+    let picked = bloom.swatches(rect(20, 20, 200, 20), [:e5484d, :30a46c, :3e63dd], fill)
+    if picked != nil then fill = picked end
+  """, see: ["color_field"])
 pub fn swatches(r: record, colors: list, current) -> any
   swatches_impl(r, colors, current, {})
 

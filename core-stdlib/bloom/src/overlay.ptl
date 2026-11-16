@@ -1,12 +1,18 @@
-# bloom/overlay — the things that float above a panel: tooltips, toasts,
-# dialogs, popovers, banners and loading skeletons.
-#
-# Overlays are the part of a UI where immediate mode usually goes wrong: the
-# dialog is drawn last but has to eat the input first, and the toast has to
-# outlive the frame that raised it. Both are handled here — dialogs claim
-# input through `bloom/interact`’s `capture`, and toasts live in a module-level
-# queue with their own clocks, so `toast("Saved")` from anywhere is a complete
-# interaction.
+@module_doc("""
+The things that float above a panel: tooltips, toasts, dialogs, popovers,
+banners and loading skeletons.
+
+Overlays are the part of a UI where immediate mode usually goes wrong: the
+dialog is drawn last but has to eat the input first, and the toast has to
+outlive the frame that raised it. Both are handled here — dialogs claim
+input through `bloom/interact`’s `capture`, and toasts live in a module-level
+queue with their own clocks, so `toast("Saved")` from anywhere is a complete
+interaction.
+
+Tooltips paint on the late layer (`overlays`). Dialogs and popovers paint
+immediately, because the app draws *into* them right after the call: put
+those calls late in the frame.
+""", see: ["dialog", "toast", "bloom/theme.overlays"])
 
 # The drawing and input names used below (`rect`, `draw_rect_rounded`,
 # `mix` and friends) come from the `ui` package. This module imports it
@@ -24,8 +30,17 @@ import ui
 
 # ── Tooltip ───────────────────────────────────────────────────────────────
 
-# Rests over `anchor` for `delay` seconds, then fades in above it. Call it
-# late in the frame so it lands on top of what it describes.
+@doc("""
+A tooltip: once the pointer rests over `anchor` for `delay` seconds, `text`
+fades in above it (below, near the top of the screen), wrapped to a bubble.
+It paints on the late layer; call it after the control it describes.
+""", params: {anchor: "The control the tip describes.", text: "The tip; it wraps rather than run off the screen."},
+  options: {delay: "Seconds of rest before it shows (0.4).", size: "Text size in px (`font_sm`).",
+    max_width: "The bubble's widest, in px (260)."},
+  example: """
+    if bloom.icon_button(r, "trash") then delete() end
+    bloom.tooltip(r, "Delete the selection")
+  """, see: ["bloom/theme.overlays"])
 pub fn tooltip(anchor: record, text: string)
   tooltip_impl(anchor, text, {})
 
@@ -79,7 +94,11 @@ fn tooltip_impl(anchor: record, text: string, opts: record)
 state var _toasts = []
 state var _toast_seq = 0
 
-# Raise a toast. `kind` is "info" | "success" | "warn" | "danger".
+@doc("""
+Raise a toast, from anywhere: it joins a program-wide queue that `toasts`
+draws and expires.
+""", params: {text: "The message.", kind: """`"info"`, `"success"`, `"warn"` or `"danger"`: the accent color and the icon. (`"info"`)."""},
+  example: """bloom.toast("Saved", "success")""", see: ["toasts", "toast_count"])
 pub fn toast(text: string, kind: string)
   set _toast_seq = (get _toast_seq) + 1
   set _toasts = append(get _toasts, {id: get _toast_seq, text: text, kind: kind, age: 0.0})
@@ -87,14 +106,22 @@ pub fn toast(text: string, kind: string)
 pub fn toast(text: string)
   toast(text, "info")
 
+@doc("How many toasts are queued (raised and not yet expired or dismissed).", see: ["toast", "toasts_clear"])
 pub fn toast_count() -> int
   len(get _toasts)
 
+@doc("Drop every queued toast.", see: ["toast_count"])
 pub fn toasts_clear()
   set _toasts = []
 
-# Draw the stack in the bottom-right of `r` and expire finished toasts.
-# `opts`: {life (seconds), width, corner ("br" | "bl" | "tr" | "tl")}.
+@doc("""
+Draw the toast stack in a corner of `r` and expire finished toasts. Each
+slides in, drains a hairline along its bottom edge as its life runs out, and
+has a close button. Call it once per frame, late.
+""", params: {r: "The region the stack sits in (usually the screen)."},
+  options: {life: "Seconds a toast stays (3.2).", width: "Toast width in px (280).",
+    height: "Toast height in px (44).", corner: """`"br"` (the default), `"bl"`, `"tr"` or `"tl"`."""},
+  example: """bloom.toasts(rect(0, 0, screen_width(), screen_height()))""", see: ["toast"])
 pub fn toasts(r: record)
   toasts(r, {})
 
@@ -159,25 +186,37 @@ fn _kind_icon(kind: string) -> string
 
 state var _dialog = ""
 
+@doc("Open the dialog `id`; the next `dialog(id, …)` call draws it.", params: {id: "The dialog's id."},
+  see: ["dialog", "dialog_close"])
 pub fn dialog_open(id: string)
   set _dialog = id
 
+@doc("Close the open dialog, and release its input capture.", see: ["dialog_open"])
 pub fn dialog_close()
   set _dialog = ""
   capture_release()
 
+@doc("Whether the dialog `id` is open.", params: {id: "The dialog's id."}, see: ["dialog"])
 pub fn dialog_is_open(id: string) -> bool
   (get _dialog) == id
 
-# Draw the modal `id` centered on the screen and return
-# `{open, content, closed}`: draw your own controls into `content` while
-# `open`. Escape, the close button, or a click on the backdrop dismisses it.
-#
-#   let d = dialog("confirm", 380, 170, "Delete branch?")
-#   if d.open then
-#     text_in("This cannot be undone.", d.content, …)
-#     if button(…, "Delete", {variant: "danger"}) then dialog_close() end
-#   end
+@doc("""
+Draw the modal dialog `id`, centered on the screen, while it is open: a
+backdrop fade, a pop-in, and a title bar with a close button. Escape, the
+close button, or a press on the backdrop dismisses it. While open it captures
+input, except inside its box, so the controls you draw into `content` work
+and the page under it does not.
+""", params: {id: "The dialog's id; `dialog_open(id)` opens it.", w: "Width in px.", h: "Height in px.",
+  title: """The title; `""` draws no title bar (and no close button).""",
+  opts: "Reserved; no keys are read yet."},
+  returns: """`{open, content, closed}`: draw into the rect `content` while `open`; `closed` is true on the frame it was dismissed.""",
+  example: """
+    let d = bloom.dialog("confirm", 380, 170, "Delete branch?")
+    if d.open then
+      bloom.text_in("This cannot be undone.", d.content, bloom.ts(t, 13, t.muted))
+      if bloom.button(rect(d.content.x, d.content.y + 60, 100, 30), "Delete", {variant: "danger"}) then
+        bloom.dialog_close()
+  """, see: ["dialog_open", "popover"])
 pub fn dialog(id: string, w: num, h: num, title: string) -> record
   dialog(id, w, h, title, {})
 
@@ -229,22 +268,35 @@ pub fn dialog(id: string, w: num, h: num, title: string, opts: record) -> record
 
 # ── Popover ───────────────────────────────────────────────────────────────
 
-# A floating card anchored under `anchor`, for a filter panel or a color
-# picker: same entrance as a menu, but you draw the contents. Returns
-# `{open, content}`. Toggle it with `popover_open` / `popover_close`.
-
 state var _popover = ""
 
+@doc("Open the popover `id`, closing any other.", params: {id: "The popover's id."}, see: ["popover", "popover_close"])
 pub fn popover_open(id: string)
   set _popover = id
 
+@doc("Close the open popover, and release its input capture.", see: ["popover_open"])
 pub fn popover_close()
   set _popover = ""
   capture_release()
 
+@doc("Whether the popover `id` is open.", params: {id: "The popover's id."}, see: ["popover"])
 pub fn popover_is_open(id: string) -> bool
   (get _popover) == id
 
+@doc("""
+A floating card anchored under `anchor`, for a filter panel or a color
+picker: the same entrance as a menu, but you draw the contents. Escape or a
+press outside closes it. While open it captures input, except inside its
+box.
+""", params: {id: "The popover's id; `popover_open(id)` opens it.", anchor: "The rect it opens under.",
+  w: "Width in px.", h: "Height in px."},
+  returns: """`{open, content}`: draw into the padded rect `content` while `open`.""",
+  example: """
+    if bloom.button(r, "Filter") then bloom.popover_open("filter") end
+    let p = bloom.popover("filter", r, 220, 140)
+    if p.open then
+      show_done = bloom.checkbox(rect(p.content.x, p.content.y, p.content.w, 24), "Show done", show_done)
+  """, see: ["popover_open", "dialog"])
 pub fn popover(id: string, anchor: record, w: num, h: num) -> record
   let t = theme()
   let open = popover_is_open(id)
@@ -270,8 +322,14 @@ pub fn popover(id: string, anchor: record, w: num, h: num) -> record
 
 # ── Banner ────────────────────────────────────────────────────────────────
 
-# An inline status strip that slides down into `r` when `show` turns true.
-# Returns true while it is visible (so the caller can leave room for it).
+@doc("""
+An inline status strip that slides down into `r` when `show` turns true, and
+back up when it turns false.
+""", params: {r: "The strip's rect.", text: "The message.", kind: """`"info"`, `"success"`, `"warn"` or `"danger"`: the accent color and the icon.""",
+  show: "Whether it should be showing."},
+  returns: "True while it is visible, so the caller can leave room for it.",
+  example: """let shown = bloom.banner(rect(0, 0, w, 32), "You are offline", "warn", !online)""",
+  see: ["toast"])
 pub fn banner(r: record, text: string, kind: string, show: bool) -> bool
   let t = theme()
   let k = ease_out(enter(show, dur(t, 0.2)))
@@ -289,8 +347,16 @@ pub fn banner(r: record, text: string, kind: string, show: bool) -> bool
 
 # ── Skeleton ──────────────────────────────────────────────────────────────
 
-# The shimmering placeholder a row shows while its data is in flight. The
-# sweep is dt-driven, so it also shimmers under the headless harness.
+@doc("""
+The shimmering placeholder a row shows while its data is in flight. The
+sweep is dt-driven, so it also shimmers under the headless harness.
+""", params: {r: "The placeholder's rect."},
+  options: {radius: "Corner radius (the theme's `radius_sm`).",
+    phase: "An offset into the sweep, 0 to 1, so stacked rows do not shimmer in lockstep."},
+  example: """
+    for i in range(0, 3) do
+      bloom.skeleton(rect(20, 20 + i * 28, 240, 20), {phase: i * 0.15})
+  """, see: ["bloom/display.load_view"])
 pub fn skeleton(r: record)
   skeleton(r, {})
 

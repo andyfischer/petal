@@ -1,18 +1,23 @@
-# bloom/menu — dropdowns, menu bars, context menus and the command palette.
-#
-# One menu is open at a time, program-wide, and the library holds that fact,
-# not the app: `menu(id, anchor, items)` returns the index of the item chosen
-# on the frame it is chosen and -1 otherwise. There is no menu state record to
-# thread, and a second menu opening closes the first because they are asking
-# the same cell.
-#
-# While a menu is open it *captures* input (see bloom/interact), so the panel
-# underneath goes inert for exactly as long as the menu is up — no ordering
-# discipline, no `if !m.open` around every other control.
-#
-# An item is a string, or a record:
-#   {label, hint, icon, disabled, sep, danger}
-# `sep: true` draws a divider and cannot be chosen.
+@module_doc("""
+Menus: the popup `menu`, and the `dropdown`, `select`, `menu_bar` and
+`context_menu` built on it.
+
+One menu is open at a time, program-wide, and the library holds that fact,
+not the app: `menu(id, anchor, items)` returns the index of the item chosen
+on the frame it is chosen and -1 otherwise. There is no menu state record to
+thread, and a second menu opening closes the first because they are asking
+the same cell.
+
+While a menu is open it *captures* input (see bloom/interact), so the panel
+underneath goes inert for exactly as long as the menu is up — no ordering
+discipline, no `if !m.open` around every other control.
+
+An item is a string, or a record: `{label, hint, icon, disabled, sep,
+danger}`. `sep: true` draws a divider and cannot be chosen. Menus flip up and
+pull left rather than draw off-screen, handle up/down/Return/Escape, close on
+an outside click, and capture input while open: bloom's own probes, and,
+through `ui_modal` on a high layer, every control built on `ui.interact`.
+""", see: ["menu", "dropdown", "bloom/interact.capture"])
 
 # The drawing and input names used below (`rect`, `draw_rect_rounded`,
 # `mix` and friends) come from the `ui` package. This module imports it
@@ -35,23 +40,36 @@ state var _open_frame = -1
 state var _origin = {x: 0, y: 0}
 state var _hl = 0
 
+@doc("""
+Open the menu `id`, closing any other: one menu is open at a time. The next
+`menu(id, …)` call draws it under its anchor.
+""", params: {id: "The menu's id, as `menu` takes it."},
+  example: """if bloom.button(r, "Actions") then bloom.menu_open("actions") end""",
+  see: ["menu", "menu_open_at", "menu_close"])
 pub fn menu_open(id: string)
   set _open = id
   set _open_frame = frame_count()
   set _hl = 0
 
-# Open at an explicit point rather than under an anchor (a context menu).
+@doc("""
+Open the menu `id` at an explicit point rather than under its anchor (a
+context menu). Draw it with `menu(id, anchor, items, {at: "point"})`.
+""", params: {id: "The menu's id.", x: "The popup's left edge.", y: "The popup's top edge."},
+  see: ["menu_open", "context_menu"])
 pub fn menu_open_at(id: string, x: num, y: num)
   menu_open(id)
   set _origin = {x: x, y: y}
 
+@doc("Close whichever menu is open, and release its input capture.", see: ["menu_open"])
 pub fn menu_close()
   set _open = ""
   capture_release()
 
+@doc("Whether the menu `id` is the open one.", params: {id: "The menu's id."}, see: ["menu_any_open"])
 pub fn menu_is_open(id: string) -> bool
   (get _open) == id
 
+@doc("Whether any menu is open.", see: ["menu_is_open"])
 pub fn menu_any_open() -> bool
   (get _open) != ""
 
@@ -74,7 +92,11 @@ fn _row_h(t: record)
 fn _sep_h(t: record) -> int
   9
 
-# The popup's own size, measured from its items.
+@doc("""
+The popup's own size, measured from its items: for placing a menu before it
+opens.
+""", params: {items: "The items: strings, or item records (see `menu`).", opts: "`menu`'s options; `size` and `min_width` matter."},
+  returns: """`{w, h}` in px.""", see: ["menu"])
 pub fn menu_size(items: list, opts: record) -> record
   let t = theme()
   let size = field(opts, "size", t.font_md)
@@ -96,8 +118,24 @@ pub fn menu_size(items: list, opts: record) -> record
         set w = need
   {w: w, h: h + t.space}
 
-# Draw the open menu `id` anchored under `anchor` and report the chosen index
-# (-1 for none). Safe to call every frame: it does nothing while closed.
+@doc("""
+Draw the menu `id` while it is open, anchored under `anchor`, and report the
+item chosen. Safe to call every frame: it does nothing while closed. Choosing
+an item (a click, or Return on the highlighted row) closes the menu.
+
+The popup is painted on the late layer (`overlays`), so it lands above
+everything drawn after its button. While it is open it captures input, so
+the panel underneath needs no guard of its own.
+""", params: {id: "The menu's id; `menu_open(id)` opens it.", anchor: "The rect it opens under (a button's).",
+  items: "The items. A string is a plain item; in a record, `label` is the text, `hint` a dim right-aligned note (a shortcut), `icon` an icon name, `disabled` greys it out, `danger` colors it, and `sep: true` makes a divider that cannot be chosen."},
+  options: {size: "Label size in px (`font_md`).", min_width: "The popup's least width (150).",
+    at: """`"below"` the anchor (the default), or `"point"`: where `menu_open_at` put it."""},
+  returns: "The index chosen this frame, else -1.",
+  example: """
+    if bloom.button(r, "File") then bloom.menu_open("file") end
+    let picked = bloom.menu("file", r, ["New", "Open…", {sep: true}, {label: "Quit", hint: "⌘Q"}])
+    if picked == 0 then new_doc() end
+  """, see: ["dropdown", "menu_open", "context_menu", "bloom/theme.overlays"])
 pub fn menu(id: string, anchor: record, items: list)
   menu(id, anchor, items, {})
 
@@ -247,7 +285,18 @@ fn _next_enabled(items: list, from: num, dir: num)
 
 # ── Dropdown button ───────────────────────────────────────────────────────
 
-# A button that opens a menu under itself. Returns the chosen index, or -1.
+@doc("""
+A button that opens a menu under itself: a chevron after the label, and a
+click toggles the menu.
+""", params: {r: "The button's rect.", label: "The button's label.", items: "The items: strings, or item records (see `menu`)."},
+  options: {id: "The menu's id (the label).", variant: "The button's variant.", icon: "An icon before the label.",
+    size: "Label size in px (`font_md`).", radius: "The button's corner radius.",
+    min_width: "The popup's least width."},
+  returns: "The index chosen this frame, else -1.",
+  example: """
+    let picked = bloom.dropdown(rect(160, 20, 140, 32), "Actions",
+                                ["Rename", {sep: true}, {label: "Delete", danger: true}])
+  """, see: ["select", "menu"])
 pub fn dropdown(r: record, label: string, items: list)
   dropdown(r, label, items, {})
 
@@ -261,7 +310,15 @@ pub fn dropdown(r: record, label: string, items: list, opts: record)
     if open then menu_close() else menu_open(id) end
   menu(id, r, items, opts)
 
-# A dropdown bound to a value: shows the current option, returns the new index.
+@doc("""
+A dropdown bound to a value: the button shows the current option, and the
+menu offers them all.
+""", params: {r: "The control's rect.", options: "The option labels.", index: "The selected option; out of range shows the placeholder."},
+  options: {placeholder: """Shown when `index` is out of range (`"Select…"`).""",
+    id: "The menu's id (by default one made from the rect's position).", size: "Label size in px (`font_md`)."},
+  returns: "The new index: the option chosen this frame, else `index`.",
+  example: """unit = bloom.select(rect(20, 20, 160, 30), ["px", "pt", "em"], unit)""",
+  see: ["dropdown", "bloom/controls.radio_group"])
 pub fn select(r: record, options: list, index: num)
   select(r, options, index, {})
 
@@ -273,9 +330,19 @@ pub fn select(r: record, options: list, index: num, opts: record)
 
 # ── Menu bar ──────────────────────────────────────────────────────────────
 
-# `menus` is a list of {label, items}. Returns {menu, item}, both -1 when
-# nothing was chosen. Once one menu is open, hovering along the bar opens the
-# next — the behavior every desktop menu bar has and nobody implements twice.
+@doc("""
+A menu bar: a row of titles, each opening its menu. Once one menu is open,
+hovering along the bar opens the next, the behavior every desktop menu bar
+has and nobody implements twice.
+""", params: {r: "The bar's rect.", menus: """A list of `{label, items}`, `items` as `menu` takes them."""},
+  options: {size: "Title size in px (`font_md`).", inset: "Space before the first title (the theme's `gap`).",
+    min_width: "Each popup's least width."},
+  returns: """`{menu, item}`: the indexes of the menu and the item chosen this frame, both -1 for nothing.""",
+  example: """
+    let pick = bloom.menu_bar(rect(0, 0, screen_width(), 28),
+      [{label: "File", items: ["New", "Open…"]}, {label: "Edit", items: ["Undo", "Redo"]}])
+    if pick.menu == 0 && pick.item == 0 then new_doc() end
+  """, see: ["menu"])
 pub fn menu_bar(r: record, menus: list)
   menu_bar(r, menus, {})
 
@@ -318,8 +385,17 @@ fn _bar_owns(menus: list, owner: string) -> bool
 
 # ── Context menu ──────────────────────────────────────────────────────────
 
-# Right-click anywhere in `area` to open `items` at the pointer. Returns the
-# chosen index, or -1.
+@doc("""
+A context menu: a right-click anywhere in `area` opens `items` at the
+pointer.
+""", params: {area: "Where a right-click opens it.", items: "The items: strings, or item records (see `menu`)."},
+  options: {id: """The menu's id (`"context"`): give two context menus their own.""",
+    size: "Label size in px (`font_md`).", min_width: "The popup's least width (170)."},
+  returns: "The index chosen this frame, else -1.",
+  example: """
+    let picked = bloom.context_menu(canvas, ["Cut", "Copy", "Paste"])
+    if picked == 2 then paste() end
+  """, see: ["menu", "menu_open_at"])
 pub fn context_menu(area: record, items: list)
   context_menu_impl(area, items, {})
 

@@ -1,27 +1,85 @@
-# bloom — a component library written entirely in Petal.
+@module_doc("""
+A UI component library written entirely in Petal. Buttons, menus, controls,
+text and inspector fields, tabs, splitters, tables, overlays, an animation
+core and a vector icon set, on top of `ui`'s host layer.
+
+Import this module and you have the whole library:
+
+```petal
+import bloom                      # bloom.button(r, "Save")
+import bloom: button, dropdown    # button(r, "Save")
+```
+
+Import one module instead when you want only a slice of it
+(`import bloom/motion: spring` in a game's HUD). Every export of every
+`bloom/…` module is re-exported here under its own name.
+
+Conventions used throughout:
+
+- **Rects** are `rect(x, y, w, h)` (the built-in `Rect`) or any `{x, y, w, h}`
+  record. **Colors** are `{r, g, b}` records; hex literals like `:3c8cff` work.
+- **A component returns its value**, on the frame it changes: `button` returns
+  true when clicked, `switch(r, on)` returns the new bool. There are no
+  callbacks and no event objects.
+- **The last argument is always an optional `opts` record.** Any key it omits
+  comes from the theme, so `{}` (or the shorter arity) is the themed component.
+- **Animation is internal.** Every component holds its own animators in
+  call-path-keyed `state`. Two callsites never share them; a component inside a
+  `for` loop gets one animator per iteration.
+- **Every export is type-annotated**, so `petal lint` catches a wrong argument
+  at the callsite rather than at the draw call. A rect parameter is `record`,
+  not `Rect`, because of the first convention: both spellings are accepted,
+  and `Rect` would reject the plain-record one.
+
+bloom sits on top of `petal-ui`'s host layer (the input and draw natives and
+the `ui` prelude's primitives) and adds a component layer with its own theme,
+its own interaction model (press-and-release clicks, one open menu, input
+capture for overlays) and animation in every component by default. It is pure
+Petal: no Rust, no assets. It works in any host that provides the `ui`
+interface.
+
+bloom owns the widgets; `ui` keeps the primitives and the interaction logic
+under them. Layout (`cut_left`, `row`, `col`, `pad`, `split_h`), list and
+scroll state (`list_update`, `scroll_update`), the editing logic behind a
+field (`text_field_update`, `text_area_update`), the keyboard focus
+(`has_focus`, `focus_request`, `shortcut`), drag and drop, the load state,
+gradients, layers and the draw primitives all still come from there, and
+bloom paints through them. Mixing the two in one script is expected:
+
+```petal
+import bloom
+
+let all = rect(0, 0, screen_width(), screen_height())
+let bar = cut_top(all, 34)                  # ui layout
+if bloom.button(bar.cut, "Run") then        # bloom component
+  run()
+```
+
+bloom's focus *is* `ui`'s: `bloom.focused(id)` is `has_focus(id)`, and a
+field built on `text_field_update` and a bloom control share one keyboard
+owner. bloom adds the draw-order Tab ring on top.
+
+`ui`'s own drawn widgets (`ui.button`, `ui.text_field`, `ui.context_menu`,
+…) are deprecated: each call warns `[ui-widget-moved]` with its bloom
+replacement. They click on press where bloom clicks on release, so two
+components of different families stacked on the same pixel would both see
+the same gesture.
+
+The runnable tour is `examples/ui/bloom-gallery`.
+""", see: ["theme", "probe", "ease_to", "overlays", "text_layout"])
+
+# Maintainer notes.
 #
-# This file is the front door. Import it and you have the whole library:
+# This file is a facade: every line below re-exports a whole implementation
+# module, so the implementation stays in small files and an app never has to
+# know which one a component lives in.
 #
-#     import bloom                      // bloom.button(r, "Save")
-#     import bloom: button, dropdown    // button(r, "Save")
-#
-# It is a facade: every line below re-exports a whole implementation module,
-# so the implementation stays in small files and an app never has to know
-# which one a component lives in. Import an individual module instead when you
-# want only a slice of it (`import bloom/motion: spring` in a game's HUD).
-#
-# bloom sits on top of `petal-ui`'s host layer — the input and draw natives
-# and the `ui` prelude's primitives — and adds a component layer with its own
-# theme, its own interaction model (press-and-release clicks, one open menu,
-# input capture for overlays), and animation in every component by default.
-# It is pure Petal: no Rust, no assets. Put the library on the module path
-# (`-I core-stdlib`, `PETAL_PATH`) or register it with `env.add_package` /
-# `env.register_package`, and it works in any host that embeds petal-ui.
-#
-# `petal.toml` at the library root is what makes the paths below work: the
-# package is named `bloom`, so its modules answer to `bloom/<name>` wherever
-# the directory sits, and this file — named like its package — is what a bare
-# `import bloom` finds.
+# Put the library on the module path (`-I core-stdlib`, `PETAL_PATH`) or
+# register it with `env.add_package` / `env.register_package`. `petal.toml` at
+# the library root is what makes the paths below work: the package is named
+# `bloom`, so its modules answer to `bloom/<name>` wherever the directory
+# sits, and this file (named like its package) is what a bare `import bloom`
+# finds.
 
 # `pub import m` re-exports every export of `m` under its own name, and
 # carries whole overload sets across, so `bloom.button` has both of
@@ -43,13 +101,26 @@ pub import bloom/panes
 # `on` and `NAMES` are clear inside `bloom/theme` and `bloom/icon`, and much
 # too generic out here. A star binds locally as well as re-exporting, so the
 # aliases are ordinary declarations over what the stars just brought in.
+@doc("""
+The text color that reads on the fill `c`: a light or a dark ink, whichever
+contrasts with it (`contrast_text(c)`). `t` is the theme record. It is
+`bloom/theme`'s `on` under a less generic name.
+""", example: "let label_color = bloom.ink_on(bloom.theme(), :3c8cff)", see: ["on"])
 pub let ink_on = on
+
+@doc("""
+The names of the icons `icon(name, r, color)` draws, in display order. It is
+`bloom/icon`'s `NAMES` under a less generic name.
+""", see: ["icon"])
 pub let ICONS = NAMES
 
-# Bumped when the export surface grows. Additive: a script written against an
-# older level keeps working. Level 2 is what the star re-exports published on
-# their own: `step` and `capture_owner`, two exports the hand-written facade
-# had been missing. Level 3 is bloom taking over `ui`'s widgets: the
-# `fields`, `display` and `panes` modules, `button`'s `fill` / `ink`, and a
-# `text_field` whose record is `ui.text_field_update`'s plus `focused`.
+# Level 2 is what the star re-exports published on their own: `step` and
+# `capture_owner`, two exports the hand-written facade had been missing.
+# Level 3 is bloom taking over `ui`'s widgets: the `fields`, `display` and
+# `panes` modules, `button`'s `fill` / `ink`, and a `text_field` whose record
+# is `ui.text_field_update`'s plus `focused`.
+@doc("""
+The level of bloom's export surface. It is bumped when the surface grows, and
+growth is additive: a script written against an older level keeps working.
+""", example: """if bloom.VERSION < 3 then print("this bloom has no text_field") end""")
 pub let VERSION = 3

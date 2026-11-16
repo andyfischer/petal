@@ -27,7 +27,9 @@ and none of it is state the caller holds.
 
 The showcase and usage reference is
 [`examples/ui/bloom-gallery`](../../examples/ui/bloom-gallery/); the API
-reference is [docs/components.md](docs/components.md).
+reference is the `@doc` on each export: `petal doc bloom` (or
+`petal doc --brief bloom`) prints it. [docs/components.md](docs/components.md)
+is the older hand-written page.
 
 ## How it sits on `ui`
 

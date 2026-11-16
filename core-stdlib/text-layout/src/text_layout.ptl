@@ -1,25 +1,43 @@
-# text_layout — the facade.
-#
-# Named like its package, so a bare `import text_layout` finds this module and
-# gets the whole surface. Import one module instead when you want a slice of
-# it (`import text_layout/fit: elide` in a list row that only truncates).
-#
-#     import text_layout
-#
-#     // one line, centred the way a designer means centred
-#     text_layout.draw_text_line("Save", r, style, "center")
-#
-#     // a paragraph, wrapped, two lines maximum, the second one elided
-#     text_layout.draw_text_block(body, r, style, {lines: 2, lead: 1.15})
-#
-# Everything here is placement: what to hand `draw_text`. Nothing holds state
-# and nothing draws anything but the text it was given.
+@module_doc("""
+Placing text, written entirely in Petal. Cap-height centring, alignment on
+both axes, wrapping, elision and caret hit-testing, over the host's text
+metrics.
 
+Import this module for the whole surface, or one module when you want a
+slice of it (`import text_layout/fit: elide` in a list row that only
+truncates):
+
+```petal
+import text_layout
+
+# One line, centred the way a designer means centred.
+text_layout.draw_text_line("Save", r, style, "center")
+
+# A paragraph: wrapped, two lines at most, the second one elided.
+text_layout.draw_text_block(summary, card, style, {lines: 2, lead: 1.15})
+
+# A path that has to fit a column.
+text_layout.elide(path, style, col.w, "tail")     # "…/src/place.ptl"
+```
+
+Everything here is placement: what to hand `draw_text`. Nothing holds state
+and nothing draws anything but the text it was given. "Centred" means the
+**cap height** is centred, not the line box: a label like "Save" has no
+descender, so centring its line box leaves it looking high.
+
+It needs a host that provides the `ui` interface. A host that publishes no
+vertical metrics is not an error: `text_metrics` answers with typical UI-sans
+proportions.
+""", see: ["text_layout/place", "text_layout/fit", "text_layout/block"])
+
+# Named like its package, so a bare `import text_layout` finds this module and
+# gets the whole surface.
 pub import text_layout/place
 pub import text_layout/fit
 pub import text_layout/block
 
-# Counts additions to the export surface. Levels are additive: every existing
-# export keeps its signature, so a script written against an older one keeps
-# working.
+@doc("""
+The level of the export surface. Levels are additive: every existing export
+keeps its signature, so a script written against an older one keeps working.
+""", example: """if text_layout.VERSION < 1 then print("text_layout is too old") end""")
 pub let VERSION = 1

@@ -1,27 +1,31 @@
-# The specification of the native `text_wrap_rows` (core-stdlib/ui/native/src/
-# text.rs `wrap_lines` + `wrap_rows`), in Petal: what the rows of a wrap are.
-# The native stays the fast path — this is 30-85x slower on a document
-# (core-stdlib/ui/native/examples/bench_text_wrap.rs; docs/dev/performance.md,
-# "Text wrap: native vs Petal") — and `core-stdlib/ui/native/tests/text_wrap_reference.rs`
+@module_doc("""
+The specification of the native `text_wrap_rows`, in Petal: what the rows of
+a wrap are. The native stays the fast path; this is 30-85x slower on a
+document. Import it by name, since the rest of `text_layout` does not
+re-export it (so `import text_layout` does not compile it):
+
+```petal
+import text_layout/wrap_reference: wrap_rows_reference
+```
+
+Greedy word wrap honouring hard newlines (a trailing "\r" dropped), a break
+at the last blank run that fits with the run discarded, trailing blanks not
+counted and trimmed, a paragraph's leading blanks kept on its first row, a
+word wider than the box broken at a character boundary, a non-positive
+width passing each paragraph through whole. Two native quirks it keeps: a
+paragraph's leading blanks make an over-wide first word overflow instead of
+breaking, and a tab is measured as one glyph advance. Rows are
+`{text, start, end}` with code point offsets into `s`.
+
+It measures one `text_advance` call per word and per blank run, and one
+per character only inside a word that has to be broken.
+""", see: ["wrap_rows_reference"])
+
+# The native is core-stdlib/ui/native/src/text.rs `wrap_lines` + `wrap_rows`.
+# Speed: core-stdlib/ui/native/examples/bench_text_wrap.rs; docs/dev/performance.md,
+# "Text wrap: native vs Petal". core-stdlib/ui/native/tests/text_wrap_reference.rs
 # holds the two to the same rows over ~900 (document, style, width) cases.
 # Change one, change the other.
-#
-#     import text_layout/wrap_reference: wrap_rows_reference
-#
-# The rest of text_layout does not re-export it, so `import text_layout`
-# does not compile it.
-#
-# Greedy word wrap honouring hard newlines (a trailing "\r" dropped), a break
-# at the last blank run that fits with the run discarded, trailing blanks not
-# counted and trimmed, a paragraph's leading blanks kept on its first row, a
-# word wider than the box broken at a character boundary, a non-positive
-# width passing each paragraph through whole. Two native quirks it keeps: a
-# paragraph's leading blanks make an over-wide first word overflow instead of
-# breaking, and a tab is measured as one glyph advance. Rows are
-# `{text, start, end}` with code point offsets into `s`.
-#
-# It measures one `text_advance` call per word and per blank run, and one
-# per character only inside a word that has to be broken.
 
 import ui
 
@@ -89,7 +93,16 @@ fn _ref_para(out0, para, base, ts, max_w)
   else
     append(out, _ref_row(para, base, ls, le))
 
-# The rows `text_wrap_rows(s, ts, max_w)` answers.
+@doc("""
+The rows `text_wrap_rows(s, ts, max_w)` answers, computed in Petal by the
+rules in this module's doc.
+""", params: {s: "The text; hard newlines break paragraphs.", ts: "The text style record it is measured in.",
+  max_w: "The wrap width in px; 0 or less passes each paragraph through whole."},
+  returns: """A list of rows, `{text, start, end}`, with code point offsets into `s`.""",
+  example: """
+    let rows = wrap_rows_reference("one two three", {size: 14, font: "ui"}, 60)
+    assert_eq(rows, text_wrap_rows("one two three", {size: 14, font: "ui"}, 60))
+  """)
 pub fn wrap_rows_reference(s, ts, max_w)
   var out = []
   var base = 0

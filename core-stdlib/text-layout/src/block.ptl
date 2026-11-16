@@ -1,41 +1,50 @@
-# text_layout/block — a paragraph placed in a box.
-#
-# One call takes a string, a rect and an options record and returns every line
-# with the exact `{x, y}` to draw it at, or draws them itself. Wrapping,
-# alignment on both axes, a line limit with an ellipsis, and a leading — the
-# things a label needs once it is more than one word.
-#
-# The layout is a *value*: `text_block` measures and places without drawing, so
-# a caller can size a panel to its text, decide whether it overflowed, or hand
-# the same layout to a hit-test and to the paint. `draw_text_block` is that
-# call plus the loop that draws it.
+@module_doc("""
+A paragraph placed in a box: wrapped, aligned on both axes, line-limited and
+elided, as a layout value or drawn.
+
+One call takes a string, a rect and an options record and returns every line
+with the exact `{x, y}` to draw it at, or draws them itself. Wrapping,
+alignment on both axes, a line limit with an ellipsis, and a leading — the
+things a label needs once it is more than one word.
+
+The layout is a *value*: `text_block` measures and places without drawing, so
+a caller can size a panel to its text, decide whether it overflowed, or hand
+the same layout to a hit-test and to the paint. `draw_text_block` is that
+call plus the loop that draws it.
+""", see: ["text_block", "draw_text_block"])
 
 import text_layout/place: text_baseline, text_align_x
 import text_layout/fit: wrap_text, elide, clamp_lines, line_step, lines_width
 import ui
 
-# Lay `s` out in `r`. Returns
-#
-#   {lines: [{text, x, y, baseline, w}], w, h, overflow}
-#
-# where each line's `y` is ready for `draw_text` and `baseline` is the same
-# line's baseline, for a caller drawing its own decorations. `w`/`h` are the
-# block's own extent (which may be smaller than `r`), and `overflow` says the
-# text needed more room than `r` gave it.
-#
-# `opts`, all optional:
-#   align     "left" | "center" | "right"                       (default left)
-#   valign    "top" | "middle" | "bottom"                      (default top)
-#   wrap      false to keep one line whatever its width         (default true)
-#   lines     a maximum line count; 0 for no limit                (default 0)
-#   elide     true to mark a cut with "…"; "tail"/"both" to
-#             choose which end survives                        (default true)
-#   lead      line spacing, ×the face's own recommendation, or
-#             a pixel distance when 4 or more                   (default 1.0)
-#
-# A single-line, unwrapped, elided label is the common case and is what the
-# defaults produce for text that does not fit: it is cut with an ellipsis
-# rather than allowed to run out of its box.
+@doc("""
+Lay `s` out in `r`, without drawing it: every line with the exact position
+to draw it at. The layout is a value, so a caller can size a panel to its
+text, decide whether it overflowed, or hand the same layout to a hit-test and
+to the paint.
+
+A line that is still too wide after wrapping is cut with an ellipsis rather
+than allowed to run out of its box.
+""", params: {s: "The text.", r: "The box.", style: "The text style record it is drawn with."},
+  options: {
+    align: """`"left"` (the default), `"center"` or `"right"`.""",
+    valign: """`"top"` (the default), `"middle"` (or `"center"`) or `"bottom"`: where the block sits in `r`.""",
+    wrap: "False keeps each line whole whatever its width; the text's own newlines still break (true).",
+    lines: "A maximum line count, the last line elided; 0 for no limit (0).",
+    elide: """True marks a cut with "…" (the default); `"tail"` / `"both"` choose which end survives, as `elide`'s `keep`; false lets a line overflow.""",
+    lead: "Line spacing: a multiple of the face's own recommendation, or a pixel distance when 4 or more (1.0).",
+  },
+  returns: """
+    `{lines, w, h, overflow}`: `lines` is a list of `{text, x, y, baseline,
+    w}`, each `y` ready for `draw_text` and `baseline` the same line's
+    baseline, for a caller drawing its own decorations; `w` and `h` are the
+    block's own extent (which may be smaller than `r`; `h` is ink to ink);
+    `overflow` says the text needed more room than `r` gave it.
+  """,
+  example: """
+    let b = text_block(body, card, style, {lines: 3, lead: 1.2})
+    if b.overflow then show_more = true end
+  """, see: ["draw_text_block", "text_size"])
 pub fn text_block(s: string, r: record, style: record, opts: record) -> record
   let wrapping = field(opts, "wrap", true)
   let limit = field(opts, "lines", 0)
@@ -93,9 +102,22 @@ pub fn text_block(s: string, r: record, style: record, opts: record) -> record
 pub fn text_block(s: string, r: record, style: record) -> record
   text_block(s, r, style, {})
 
-# Lay `s` out in `r` and draw it. Returns the same record `text_block` does,
-# so the caller that needs the block's height for the next row gets it without
-# laying the text out twice.
+@doc("""
+Lay `s` out in `r` and draw it: `text_block` plus the loop that draws it.
+""", params: {s: "The text.", r: "The box.", style: "The text style record."},
+  options: {
+    align: """`"left"` (the default), `"center"` or `"right"`.""",
+    valign: """`"top"` (the default), `"middle"` (or `"center"`) or `"bottom"`: where the block sits in `r`.""",
+    wrap: "False keeps each line whole whatever its width; the text's own newlines still break (true).",
+    lines: "A maximum line count, the last line elided; 0 for no limit (0).",
+    elide: """True marks a cut with "…" (the default); `"tail"` / `"both"` choose which end survives, as `elide`'s `keep`; false lets a line overflow.""",
+    lead: "Line spacing: a multiple of the face's own recommendation, or a pixel distance when 4 or more (1.0).",
+  },
+  returns: "The record `text_block` returns, so the caller that needs the block's height for the next row gets it without laying the text out twice.",
+  example: """
+    let b = text_layout.draw_text_block(summary, card, style, {lines: 2, lead: 1.15})
+    let next_y = card.y + b.h + 12
+  """, see: ["text_block", "text_layout/place.draw_text_line"])
 pub fn draw_text_block(s: string, r: record, style: record, opts: record) -> record
   let b = text_block(s, r, style, opts)
   for line in b.lines do
@@ -105,9 +127,14 @@ pub fn draw_text_block(s: string, r: record, style: record, opts: record) -> rec
 pub fn draw_text_block(s: string, r: record, style: record) -> record
   draw_text_block(s, r, style, {})
 
-# The size `s` would take in a box `max_w` wide: `{w, h}`. For a caller that
-# sizes a panel, a tooltip or a table row to its content before it has
-# anywhere to put it.
+@doc("""
+The size `s` would take in a box `max_w` wide: for a caller that sizes a
+panel, a tooltip or a table row to its content before it has anywhere to put
+it.
+""", params: {s: "The text.", style: "The text style record.", max_w: "The wrap width, in px.",
+  opts: "`text_block`'s options."},
+  returns: """`{w, h}` in px.""",
+  example: """let sz = text_size(tip, style, 240)""", see: ["text_block"])
 pub fn text_size(s: string, style: record, max_w: num, opts: record) -> record
   let b = text_block(s, Rect(0, 0, float(max_w), 0), style, opts)
   {w: b.w, h: b.h}

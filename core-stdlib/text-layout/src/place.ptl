@@ -1,40 +1,44 @@
-# text_layout/place — where one line of text goes.
-#
-# Every `draw_text` in every Petal UI has had to answer the same question, and
-# almost all of them have answered it wrong:
-#
-#     draw_text(label, {x: x, y: r.y + (r.h - size) / 2}, style)
-#
-# That line says "the run is `size` px tall and starts at `y`". Neither half
-# is true. `y` is the top of the run's *line box*, the baseline sits some way
-# down inside it, and the ink of a capital reaches nowhere near either edge —
-# so the label lands a pixel or two high at 14 px and visibly high at 32.
-#
-# The host knows the real numbers, and now says so: `text_metrics(style)`
-# reports, in pixels, where the baseline falls below the `y` a script hands
-# `draw_text`, how far the descenders go, how tall a capital and an "x" are,
-# and how far apart to set two lines. This module turns those into the answer
-# a caller actually wants — a `y` to draw at.
-#
+@module_doc("""
+Where one line of text goes: the baseline and the `y` to draw at for text set
+in a box, horizontal alignment, and one line placed and drawn.
+
+Every `draw_text` in every Petal UI has had to answer the same question, and
+almost all of them have answered it wrong:
+
+```petal
+draw_text(label, {x: x, y: r.y + (r.h - size) / 2}, style)
+```
+
+That line says "the run is `size` px tall and starts at `y`". Neither half
+is true. `y` is the top of the run's *line box*, the baseline sits some way
+down inside it, and the ink of a capital reaches nowhere near either edge —
+so the label lands a pixel or two high at 14 px and visibly high at 32.
+
+The host knows the real numbers, and now says so: `text_metrics(style)`
+reports, in pixels, where the baseline falls below the `y` a script hands
+`draw_text`, how far the descenders go, how tall a capital and an "x" are,
+and how far apart to set two lines. This module turns those into the answer
+a caller actually wants — a `y` to draw at.
+""", see: ["draw_text_line", "text_baseline"])
+
 # `text_width`, `text_metrics` and `draw_text` come from the `ui` package,
 # which this module imports itself: an import reaches only the file it is
 # written in.
-
 import ui
 
 # ── Vertical placement ────────────────────────────────────────────────────
 
-# The baseline y for text set in `r`, vertically aligned by `valign`:
-#
-#   "middle"    the *cap height* is centred in the box — what a designer means
-#               by a centred button label. A label with no descender looks
-#               high when its line box is centred instead, which is exactly
-#               the bug this library exists to fix.
-#   "center"    a spelling of "middle", for callers that spell the other axis
-#               "center" and would rather not switch vocabulary mid-record.
-#   "top"       the line box's top sits on `r.y`
-#   "bottom"    the descenders sit on `r.y + r.h`
-#   "baseline"  `r.y + r.h` *is* the baseline
+@doc("""
+The baseline y for text set in `r`, vertically aligned by `valign`.
+
+`"middle"` centres the *cap height* in the box: what a designer means by a
+centred button label. A label with no descender looks high when its line box
+is centred instead, which is exactly the bug this library exists to fix.
+`"center"` is a spelling of `"middle"`, for callers that spell the other axis
+`"center"` and would rather not switch vocabulary mid-record.
+""", params: {r: "The box.", style: "The text style record the run is drawn with.",
+  valign: """`"middle"` (the default: the cap height centred in the box), `"center"` (the same), `"top"` (the line box's top on `r.y`), `"bottom"` (the descenders on `r.y + r.h`) or `"baseline"` (`r.y + r.h` is the baseline)."""},
+  example: """let base = text_baseline(r, style)""", see: ["text_top", "text_line_y"])
 pub fn text_baseline(r: record, style: record, valign: string) -> float
   let m = text_metrics(style)
   match valign
@@ -43,18 +47,24 @@ pub fn text_baseline(r: record, style: record, valign: string) -> float
     when "baseline" -> float(r.y) + float(r.h)
     when _ -> float(r.y) + float(r.h) / 2.0 + m.cap_height / 2.0
 
-# The same, defaulting to a centred label — the case every control wants.
 pub fn text_baseline(r: record, style: record) -> float
   text_baseline(r, style, "middle")
 
-# The `y` to hand `draw_text` so that the run's baseline lands on `baseline`.
-# The one conversion between the two coordinate systems in play: a script
-# reasons in baselines, `draw_text` takes line-box tops.
+@doc("""
+The `y` to hand `draw_text` so that the run's baseline lands on `baseline`.
+The one conversion between the two coordinate systems in play: a script
+reasons in baselines, `draw_text` takes line-box tops.
+""", params: {baseline: "Where the baseline should fall.", style: "The text style record."},
+  example: """draw_text(label, {x: x, y: text_top(axis_y, style)}, style)""", see: ["text_baseline"])
 pub fn text_top(baseline: num, style: record) -> float
   float(baseline) - text_metrics(style).baseline
 
-# The `y` to hand `draw_text` for a single line set in `r` — the composition
-# of the two above, and the call a control actually makes.
+@doc("""
+The `y` to hand `draw_text` for a single line set in `r`: `text_top` of
+`text_baseline`, the call a control actually makes.
+""", params: {r: "The box.", style: "The text style record.", valign: """`"middle"` (the default: the cap height centred in the box), `"center"` (the same), `"top"` (the line box's top on `r.y`), `"bottom"` (the descenders on `r.y + r.h`) or `"baseline"` (`r.y + r.h` is the baseline)."""},
+  example: """draw_text(label, {x: r.x + 8, y: text_line_y(r, style)}, style)""",
+  see: ["text_baseline", "text_place"])
 pub fn text_line_y(r: record, style: record, valign: string) -> float
   text_top(text_baseline(r, style, valign), style)
 
@@ -63,9 +73,12 @@ pub fn text_line_y(r: record, style: record) -> float
 
 # ── Horizontal placement ──────────────────────────────────────────────────
 
-# The x for a run of width `w` aligned in `r`. `align` is "left" | "center" |
-# "right"; anything else reads as "left", so a caller may pass a value
-# straight through from an options record without validating it.
+@doc("""
+The x for a run of width `w` aligned in `r`. Anything but `"center"` or
+`"right"` reads as `"left"`, so a caller may pass a value straight through
+from an options record without validating it.
+""", params: {w: "The run's width.", r: "The box.", align: """`"left"`, `"center"` or `"right"`; anything else reads as `"left"`."""},
+  see: ["text_place"])
 pub fn text_align_x(w: num, r: record, align: string) -> float
   match align
     when "center" -> float(r.x) + (float(r.w) - float(w)) / 2.0
@@ -74,10 +87,18 @@ pub fn text_align_x(w: num, r: record, align: string) -> float
 
 # ── One line, placed and drawn ────────────────────────────────────────────
 
-# Where `s` goes in `r`: `{x, y, w, baseline}`, with `y` ready for
-# `draw_text`. Measures once and returns the width alongside, so a caller that
-# needs to underline the run or place something after it does not measure
-# again.
+@doc("""
+Where `s` goes in `r`, without drawing it. It measures once and returns the
+width alongside, so a caller that needs to underline the run or place
+something after it does not measure again.
+""", params: {s: "The text.", r: "The box.", style: "The text style record.",
+  align: """`"left"`, `"center"` or `"right"`; anything else reads as `"left"`.""", valign: """`"middle"` (the default: the cap height centred in the box), `"center"` (the same), `"top"` (the line box's top on `r.y`), `"bottom"` (the descenders on `r.y + r.h`) or `"baseline"` (`r.y + r.h` is the baseline)."""},
+  returns: """`{x, y, w, baseline}`, with `y` ready for `draw_text`.""",
+  example: """
+    let p = text_place(label, r, style, "center")
+    draw_text(label, {x: p.x, y: p.y}, style)
+    draw_line({x: p.x, y: p.baseline + 2}, {x: p.x + p.w, y: p.baseline + 2}, style.color)
+  """, see: ["draw_text_line"])
 pub fn text_place(s: string, r: record, style: record, align: string, valign: string) -> record
   let w = float(text_width(s, style))
   let base = text_baseline(r, style, valign)
@@ -86,12 +107,17 @@ pub fn text_place(s: string, r: record, style: record, align: string, valign: st
 pub fn text_place(s: string, r: record, style: record, align: string) -> record
   text_place(s, r, style, align, "middle")
 
-# Draw one line of `s` in `r`, aligned horizontally and centred on its cap
-# height vertically. Returns the run's width, which is what a caller laying
-# out a row next to it wants.
-#
-# This is the drop-in for every `draw_text(s, {x: …, y: r.y + (r.h - size) / 2}, …)`
-# in a codebase, and it is the whole fix for off-centre labels.
+@doc("""
+Draw one line of `s` in `r`, aligned horizontally and, by default, centred on
+its cap height vertically.
+
+This is the drop-in for every `draw_text(s, {x: …, y: r.y + (r.h - size) / 2}, …)`
+in a codebase, and it is the whole fix for off-centre labels.
+""", params: {s: "The text.", r: "The box.", style: "The text style record.",
+  align: """`"left"`, `"center"` or `"right"`; anything else reads as `"left"`. (`"left"`).""", valign: """`"middle"` (the default: the cap height centred in the box), `"center"` (the same), `"top"` (the line box's top on `r.y`), `"bottom"` (the descenders on `r.y + r.h`) or `"baseline"` (`r.y + r.h` is the baseline)."""},
+  returns: "The run's width, which is what a caller laying out a row next to it wants.",
+  example: """text_layout.draw_text_line("Save", r, style, "center")""",
+  see: ["draw_text_baseline", "text_layout/block.draw_text_block", "text_place"])
 pub fn draw_text_line(s: string, r: record, style: record, align: string, valign: string) -> float
   let p = text_place(s, r, style, align, valign)
   draw_text(s, {x: p.x, y: p.y}, style)
@@ -103,9 +129,16 @@ pub fn draw_text_line(s: string, r: record, style: record, align: string) -> flo
 pub fn draw_text_line(s: string, r: record, style: record) -> float
   draw_text_line(s, r, style, "left", "middle")
 
-# Draw `s` on a baseline, aligned about `x` — for a caller that already knows
-# its baseline (a chart axis, a run following another run) and wants nothing
-# vertical decided for it.
+@doc("""
+Draw `s` on a baseline, aligned about `x`: for a caller that already knows
+its baseline (a chart axis, a run following another run) and wants nothing
+vertical decided for it.
+""", params: {s: "The text.", x: "The anchor x: the left edge, the centre or the right edge, by `align`.",
+  baseline: "The baseline y.", style: "The text style record.",
+  align: """`"left"` (the default), `"center"` or `"right"` about `x`."""},
+  returns: "The run's width.",
+  example: """draw_text_baseline(str(tick), tx, axis_y + 14, style, "center")""",
+  see: ["draw_text_line", "text_top"])
 pub fn draw_text_baseline(s: string, x: num, baseline: num, style: record, align: string) -> float
   let w = float(text_width(s, style))
   let left = match align

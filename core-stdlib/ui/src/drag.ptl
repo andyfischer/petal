@@ -1,59 +1,71 @@
-# petal-ui drag — module `ui/drag`: declarative dragging (D2)
-#
-#   import ui
-#   import ui/drag
-#
-# The author says which *model states* a drag can reach; the engine renders
-# each one, finds the dragged element in each rendering, and builds the
-# interaction from those positions: snapping, floating, reordering, drop
-# targets, and the animation of everything that moves. The guide is
-# core-stdlib/ui/docs/drag.md; the design is
-# docs/proposals/declarative-dragging.md.
-#
-#   state items = ["A", "B", "C"]
-#   fn view(items)
-#     for i in range(0, len(items)) key items[i] do
-#       let r = place(items[i], rect(40 + i * 70, 100, 60, 60))
-#       draggable(items[i], r, fn() closest(moves(items, i)) |> floating() end)
-#       place(items[i], r, fn(p) draw_rect(p, COLORS[items[i]]) end)
-#     end
-#   end
-#   let d = drag_session(items, view)
-#   view(d.preview)
-#   if d.dropped then items = d.drop end
-#
-# Three calls do the work:
-#
-#   place(key, value)            where `key` landed; returns the value to draw
-#   draggable(key, rect, spec)   a press on `rect` starts a drag of `key`
-#   drag_session(model, view)    the engine: {active, key, preview, drop, ...}
-#
-# A drag spec is data: tagged records built by `fixed_state`, `closest`,
-# `floating`, `snap_radius`, `when_far`, `drop_target`, `on_drop` and
-# `switch_to`. The engine resolves it once, at drag start, into a table of
-# positions; frames during the drag only read that table.
-#
-# Speculation is the core `speculate(f, ...args)` hypothetical call: the
-# view's drawing and hit-test registrations are captured and dropped, and
-# every `state` write, `set` and random draw it makes is put back. So the
-# view can be ordinary immediate-mode drawing code that calls widgets with
-# their own state; `place` records into the call's `places`.
+@module_doc("""
+Declarative dragging: the view says where each element is and which model
+states a drag can reach, and the engine does the rest. It renders each
+reachable state, finds the dragged element in each rendering, and builds the
+interaction from those positions: snapping, floating, reordering, drop
+targets, and the animation of everything that moves. `ui` does not
+re-export it: a script writes `import ui` and then `import ui/drag`.
+
+```petal
+state items = ["A", "B", "C"]
+fn view(items)
+  for i in range(0, len(items)) key items[i] do
+    let r = place(items[i], rect(40 + i * 70, 100, 60, 60))
+    draggable(items[i], r, fn() closest(moves(items, i)) |> floating() end)
+    place(items[i], r, fn(p) draw_rect(p, COLORS[items[i]]) end)
+  end
+end
+let d = drag_session(items, view)
+view(d.preview)
+if d.dropped then items = d.drop end
+```
+
+Three calls do the work: `place(key, value)` says where `key` landed and
+returns the value to draw; `draggable(key, rect, spec)` makes a press on
+`rect` start a drag of `key`; `drag_session(model, view)` is the engine.
+
+A drag spec is data: tagged records built by `fixed_state`, `closest`,
+`floating`, `snap_radius`, `when_far`, `drop_target`, `on_drop`,
+`switch_to`, `between` and `vary`, over candidate states from `moves`,
+`moves_nested`, `tree_moves` and `choices`. The engine resolves it once, at
+drag start, into a table of positions; frames during the drag only read
+that table. The renderings are hypothetical calls (`speculate`): their
+drawing and hit-test registrations are dropped, and every `state` write,
+`set` and random draw is put back, so the view can be ordinary
+immediate-mode code that calls widgets with their own state.
+
+The guide, with worked examples and the mistakes to avoid, is
+core-stdlib/ui/docs/drag.md; the design is
+docs/proposals/declarative-dragging.md.
+""", see: ["ui", "drag_session", "place", "draggable"])
+
+# petal-ui drag — module `ui/drag`: declarative dragging (D2, after the
+# Drag2 design). `place` records into the speculation's `places`.
 
 import ui
 import autodiff
 import io
 
-# The layer a dragged element is drawn on, and stays on until it has settled
-# into its slot: above the base UI, below popups.
+@doc("""
+The layer a dragged element is drawn on (900), and stays on until it has
+settled into its slot: above the base UI, below popups.
+""", see: ["place"])
 pub let UI_LAYER_DRAG = 900
-# How far (px) the pointer moves with the button held before a press on a
-# draggable becomes a drag. Below it the press is still a click.
+@doc("""
+How far (4 px) the pointer moves with the button held before a press on a
+draggable becomes a drag. Below it the press is still a click.
+""", see: ["draggable", "drag_session"])
 pub let DRAG_SLOP = 4
-# The rate `place` eases an element toward where the view put it (1/s, as
-# `approach` takes it).
+@doc("""
+The rate `place` eases an element toward where the view put it: 18 per
+second, as `approach` takes it.
+""", see: ["place", "ui.approach"])
 pub let PLACE_RATE = 18.0
-# The output channel a drop is announced on: `{key, model, drop}` per drop,
-# for a host that edits source (Garden's edit mode).
+@doc("""
+The output channel each drop is announced on (`"drag_drops"`), as
+`{key, model, drop}`: what an editor reads to write a drop on a literal
+model back to source (Garden's edit mode).
+""", see: ["drag_session"])
 pub let DRAG_DROPS_CHANNEL = "drag_drops"
 
 # ── Engine cells ──────────────────────────────────────────────────────────
@@ -180,11 +192,30 @@ fn _approach_value(cur, target, rate)
   target
 
 # ── place ─────────────────────────────────────────────────────────────────
-# Mark where `key` landed in this rendering, and get back the value to draw.
-# Outside a drag that is `value` eased from where `key` was last frame, so a
-# keyed element that moves animates; the dragged element under `floating`
-# follows the pointer. Inside a speculation it records `value` and returns it
-# unchanged. Keys compare like `for … key` keys and must be unique on screen.
+@doc("""
+Mark where `key` landed in this rendering, and get back the value to draw.
+Outside a drag that is `value` eased from where `key` was last frame, so a
+keyed element that moves animates (layout animation); the dragged element
+under `floating` follows the pointer. Inside a speculation it records
+`value` and returns it unchanged. Keys compare like `for … key` keys and
+must be unique on screen.
+
+With `body`: then call `body(v)` with the displayed value, on the drag layer
+with the clip suspended while `key` is dragged or settling after a drop, so
+the dragged element is drawn on top of everything it passes over. Not run
+while the engine speculates, which needs only the position.
+""",
+  params: {
+    key: "The element's identity.",
+    value: "A rect, a point, a number or a colour.",
+    body: "Draws the element: `fn(v)`, given the displayed value.",
+  },
+  returns: "The value to draw (nil with `body`).",
+  example: """
+    let r = place(item.id, rect(x, y, 60, 60))
+    place(item.id, r, fn(p) draw_rect(p, item.color) end)
+  """,
+  see: ["draggable", "drag_session", "place_origin", "PLACE_RATE"])
 pub fn place(key, value)
   if speculating() then return speculate_place(key, value) end
   # Placing the value this run already displayed for `key` (the usual
@@ -226,11 +257,6 @@ fn _shift(v, o, sign)
   if o == nil || _center(v) == nil then return v end
   _at(v, v.x + sign * o.x, v.y + sign * o.y)
 
-# The same, drawing: `body(v)` gets the displayed value and runs on the drag
-# layer while `key` is being dragged or is settling after a drop, so the
-# dragged element is drawn on top of everything it passes over, and outside
-# the clip of the container it came from. A speculation needs only the
-# position, so there the body is not run.
 pub fn place(key, value, body)
   let v = place(key, value)
   if speculating() then return nil end
@@ -239,11 +265,16 @@ pub fn place(key, value, body)
   else
     body(v)
 
-# Inside `body()`, `place` eases positions relative to `origin` ({x, y}, in
-# screen coordinates) instead of the screen. Put a scrolled container's
-# elements under its scroll origin — `place_origin({x: 0, y: -scroll}, …)` —
-# and scrolling moves them at once, while a reorder inside still animates.
-# Values without a position (numbers, colours) are unaffected.
+@doc("""
+Inside `body()`, `place` eases positions relative to `origin` instead of
+the screen. Put a scrolled container's elements under its scroll origin and
+scrolling moves them at once, while a reorder inside still animates. Values
+without a position (numbers, colours) are unaffected.
+""",
+  params: {origin: """`{x, y}`, in screen coordinates."""},
+  returns: "What `body()` returned.",
+  example: """place_origin({x: 0, y: -scroll}, fn() draw_rows(list_r) end)""",
+  see: ["place"])
 pub fn place_origin(origin, body)
   let prev = get _origin
   set _origin = origin
@@ -251,7 +282,7 @@ pub fn place_origin(origin, body)
   set _origin = prev
   out
 
-# The key of the element being dragged right now, or nil.
+@doc("The key of the element being dragged now, or `nil`.", see: ["is_dragging"])
 pub fn drag_key()
   let live = get _live
   if live == nil then nil else live.key end
@@ -260,17 +291,21 @@ fn _on_top(key)
   let live = get _live
   (live != nil && live.key == key) || ((get _settle) != nil && (get _settle) == key)
 
-# Whether `key` is the element being dragged right now.
+@doc("Whether `key` is the element being dragged now.", see: ["drag_key"])
 pub fn is_dragging(key)
   let live = get _live
   live != nil && live.key == key
 
 # ── draggable ─────────────────────────────────────────────────────────────
-# A press on `r` starts a drag of `key` once the pointer has moved
-# `DRAG_SLOP` px with the button held. `spec_fn()` returns the drag spec; it
-# is called at the press, and its value — data — is all the engine keeps.
-# The rect is registered for hit testing as `interact(r, "drag:<key>")`
-# would, and the interact record is returned (hover for styling).
+@doc("""
+Make `r` a drag handle for `key`: a press on it starts a drag once the
+pointer has moved `DRAG_SLOP` px with the button held. The rect is
+registered for hit testing as `interact(r, "drag:<key>")` would.
+""",
+  params: {spec_fn: "Returns the drag spec. It is called at the press, and its value (data) is all the engine keeps. A bare model state means `fixed_state(state)`."},
+  returns: "The `interact` record, for hover styling.",
+  example: """draggable(items[i], r, fn() closest(moves(items, i)) |> floating() end)""",
+  see: ["place", "closest", "DRAG_SLOP"])
 pub fn draggable(key, r, spec_fn)
   if speculating() then
     set _cap_drags[key] = {rect: r, spec: spec_fn}
@@ -290,79 +325,104 @@ fn _is_spec(x)
 fn _spec_of(x)
   if _is_spec(x) then x else fixed_state(x) end
 
-# One target state. (D2 calls it `fixed`; Petal's `fixed` formats numbers.)
+# D2 calls it `fixed`; Petal's `fixed` formats numbers.
+@doc("""
+Spec: one target state. A bare state where a spec goes means this.
+""", returns: "A spec.", see: ["closest", "drop_target"])
 pub fn fixed_state(st)
   {d2: "fixed", state: st, drop: st}
 
-# The option whose target is nearest the dragged element. `stickiness` (px)
-# favours the option chosen last frame, so a pointer on a boundary does not
-# flicker between two.
+@doc("""
+Spec: the option whose target is nearest the dragged element.
+""",
+  params: {options: "Specs or model states, often from `moves`."},
+  options: {stickiness: "Pixels of favour for the option chosen last frame, so a pointer on a boundary does not flicker between two (0)."},
+  returns: "A spec.",
+  see: ["moves", "floating"])
 pub fn closest(options, opts = {})
   {d2: "closest", options: for o in options do _spec_of(o) end, stickiness: opts.stickiness ?? 0}
 
-# The dragged element follows the pointer while the rest of the view
-# previews the chosen state (D2 `withFloating`).
+# D2 `withFloating`.
+@doc("""
+Spec: the dragged element follows the pointer while the rest of the view
+previews the chosen state.
+""", returns: "A spec.", example: "closest(moves(items, i)) |> floating()", see: ["snap_radius"])
 pub fn floating(spec)
   {d2: "floating", inner: _spec_of(spec)}
 
-# Snap onto the inner choice when the element is within `px` of it: the
-# dragged element stops floating and is drawn in its slot (D2
-# `withSnapRadius`). Further away nothing changes. `{chain: true}` makes the
-# snapped state the drag's new starting point, so the drag goes on from there
-# with the spec the view's `draggable` gives in that state.
+# D2 `withSnapRadius`.
+@doc("""
+Spec: within `px` of its target the element snaps into its slot, no longer
+floating. Further away nothing changes.
+""",
+  options: {chain: "`true` makes the snapped state the drag's new starting point, so the drag goes on from there with the spec the view's `draggable` gives in that state."},
+  returns: "A spec.",
+  example: "closest(moves(items, i)) |> floating() |> snap_radius(20)",
+  see: ["floating"])
 pub fn snap_radius(spec, px, opts = {})
   {d2: "snap_radius", inner: _spec_of(spec), px: px, chain: opts.chain ?? false}
 
-# `spec` while its target is within `px` (default 60) of the element,
-# `far` beyond that.
+@doc("""
+Spec: `spec` while its target is within `opts.px` of the element, `far`
+beyond that.
+""", options: {px: "The distance, px (60)."}, returns: "A spec.", see: ["drop_target"])
 pub fn when_far(spec, far, opts = {})
   {d2: "when_far", inner: _spec_of(spec), far: _spec_of(far), px: opts.px ?? 60}
 
-# Dropping with the pointer over the element placed as `key` (a trash can,
-# a toolbar slot) gives `st`.
+@doc("""
+Spec: a release with the pointer over the element placed as `key` (a trash
+can, a toolbar slot) gives `st`.
+""", returns: "A spec.", see: ["when_far"])
 pub fn drop_target(key, st)
   {d2: "drop_target", key: key, state: st, drop: st}
 
-# Transform what a drop commits: every target's drop state goes through
-# `f` when the spec is built, so the spec stays data.
+@doc("""
+Spec: every drop state of `spec` goes through `f`, applied when the spec is
+built, so the spec stays data (for `between` and `vary`, to each frame's
+drop).
+""", returns: "A spec.")
 pub fn on_drop(spec, f)
   _map_leaves(_spec_of(spec), fn(l) {...l, drop: f(l.drop)} end)
 
-# Reaching this option switches the drag's model to `st` at once and keeps
-# dragging the element placed as `key` (D2 `switchToStateAndFollow`). The
-# drag goes on with `spec_fn()`, or, without one, with the spec the view's
-# `draggable(key, …)` gives in `st`. `spec_fn` is called here, when the spec
-# is built: a chain of switches that never ends must use the view's.
+# D2 `switchToStateAndFollow`.
+@doc("""
+Spec: reaching this option switches the drag's model to `st` at once and
+keeps dragging the element placed as `key`.
+""",
+  params: {spec_fn: "The spec the drag goes on with. Without it, the spec the view's `draggable(key, …)` gives in `st`. It is called here, when the spec is built, so a chain of switches that never ends must use the view's."},
+  returns: "A spec.")
 pub fn switch_to(st, key, spec_fn = nil)
   let follow = if spec_fn == nil then nil else _spec_of(spec_fn()) end
   {d2: "switch_to", state: st, drop: st, key: key, follow: follow}
 
-# Interpolate between the options' renderings. The dragged element moves
-# continuously inside the region its positions in the options span — along
-# the segment for 2 options, over a Delaunay triangulation of the positions
-# for 3 or more — and stops at its edge. Every key that all the options
-# place, the dragged one included, is drawn at the blend of its values in
-# the options around the pointer (rects, points, numbers, colours). The
-# preview and the drop are the option with the largest weight. Each option
-# is a model state (or `fixed_state`).
+@doc("""
+Spec: interpolate between the options' renderings. The dragged element
+moves continuously inside the region its positions in the options span
+(along the segment for 2 options, over a Delaunay triangulation of the
+positions for 3 or more) and stops at its edge. Every key that all the
+options place is drawn at the blend of its values (rects, points, numbers,
+colours). The preview and the drop are the option with the largest weight.
+No speculation per frame.
+""", params: {options: "Model states (or `fixed_state`s)."}, returns: "A spec.", see: ["vary", "closest"])
 pub fn between(options)
   {d2: "between", options: for o in options do _spec_of(o) end}
 
-# Solve the numbers at `paths` in `st` so the dragged element tracks the
-# pointer: each frame one step of the DM v2 solver (Gauss-Newton, warm-started
-# from the last frame, with a step-length backtrack). `paths` is one path
-# (`["meetings", 2, "start"]`, or a field name) or a list of them; each must
-# hold a number in `st`. The preview and the drop are `st` with the solved
-# numbers in.
-#
-# opts:
-#   bounds       [lo, hi] for one path, or a list with one [lo, hi] (or nil)
-#                per path; either end may be nil
-#   constraint   fn(state) -> bool: a step to a state it refuses is shortened
-# The sensitivities are forward differences, one rendering per path. (The
-# removed `sensitivity` option is ignored for one release; `petal lint`
-# warns about it, rule `vary-sensitivity`, and `--fix` deletes it.)
-# Each frame costs one speculative rendering per path plus one or two.
+# The removed `sensitivity` option is ignored for one release; `petal lint`
+# warns about it (rule `vary-sensitivity`) and `--fix` deletes it.
+@doc("""
+Spec: solve the numbers at `paths` in `st` so the dragged element tracks the
+pointer, one step of the DM solver a frame (Gauss-Newton, warm-started from
+the last frame, with a step-length backtrack). The preview and the drop are
+`st` with the solved numbers in. The sensitivities are forward differences,
+so each frame costs one speculative rendering per path plus one or two.
+""",
+  params: {paths: """One path (`["meetings", 2, "start"]`, or a field name) or a list of them; each must hold a number in `st`."""},
+  options: {
+    bounds: "`[lo, hi]` for one path, or a list with one `[lo, hi]` (or nil) per path; either end may be nil.",
+    constraint: "`fn(state) -> bool`: a step to a state it refuses is shortened.",
+  },
+  returns: "A spec.",
+  see: ["between"])
 pub fn vary(st, paths, opts = {})
   let ps = _paths_of(paths)
   {d2: "vary", state: st, drop: st, paths: ps, bounds: _bounds_of(opts.bounds ?? nil, len(ps)),
@@ -747,22 +807,31 @@ fn _rebase(view, s, leaf)
   if res.home == nil then return nil end
   {...s, key: key, base: leaf.state, raw: raw, spec: res.spec, home: res.home, choice: nil}
 
-# The engine. Call it once per frame, before drawing `view(d.preview)`, with
-# the committed model and the view function (`fn(model)`, pure apart from
-# `place` / `draggable`). Its own state is call-path `state` holding only
-# values. Returns
-#
-#   active     a drag is in flight
-#   key        the dragged element's key (nil when idle)
-#   preview    the state to render: the chosen target's, else `model`
-#   drop       what a release would commit now (nil: nothing)
-#   dropped    true on the frame the drag ended on a target: commit `drop`
-#   cancelled  true on the frame it ended without one (Escape, no target,
-#              the element no longer placed); `reason` says which
-#   spec       the drag's spec (data)
-#   target     the chosen leaf's id (spec order, from 1), gap its distance
-#
-# opts: {slop} — the press-to-drag threshold in px (default DRAG_SLOP).
+@doc("""
+The drag engine. Call it once per frame, before drawing `view(d.preview)`.
+Its own state is call-path `state` holding only values. While
+`ui_debug("drag")` is on it draws the drag debugger by itself.
+
+| Field | Meaning |
+|---|---|
+| `active` | A drag is in flight. |
+| `key` | The dragged element's key (nil when idle). |
+| `preview` | The state to render: the chosen target's, else `model`. |
+| `drop` | What a release would commit now (nil: nothing). |
+| `dropped` | True on the frame the drag ended on a target: commit `drop`. |
+| `cancelled` | True on the frame it ended without one (Escape, no target, the element no longer placed); `reason` says which. |
+| `spec` | The drag's spec (data). |
+| `target` | The chosen leaf's id (spec order, from 1); `gap` its distance. |
+""",
+  params: {model: "The committed model.", view: "`fn(model)`: draws a model, pure apart from `place` and `draggable`."},
+  options: {slop: "The press-to-drag threshold, px (`DRAG_SLOP`)."},
+  returns: """`{active, key, preview, drop, dropped, cancelled, spec, target, gap, reason}`.""",
+  example: """
+    let d = drag_session(items, view)
+    view(d.preview)
+    if d.dropped then items = d.drop end
+  """,
+  see: ["place", "draggable", "drag_explain", "drag_debug"])
 pub fn drag_session(model, view, opts = {})
   state s = {phase: "idle"}
   let slop = opts.slop ?? DRAG_SLOP
@@ -891,8 +960,10 @@ fn _fn(f)
 
 # ── Candidate sets ────────────────────────────────────────────────────────
 
-# `xs` with item `i` reinserted at every index (its own included): the
-# states of a reorderable list.
+@doc("""
+Candidate states: `xs` with item `i` moved to every index (its own
+included). The states of a reorderable list.
+""", returns: "A list of lists.", example: "closest(moves(items, i))", see: ["moves_nested", "closest"])
 pub fn moves(xs, i)
   let x = xs[i]
   let rest = remove_at(xs, i)
@@ -912,9 +983,14 @@ fn _items(col, field)
 fn _items_path(c, field)
   if field == nil then [c] else [c, field] end
 
-# The kanban shape: `lists` is a list of columns, each a list of items (or,
-# with `field`, a record whose `field` is that list), and the item whose
-# identity is `key` moves to every slot of every column.
+@doc("""
+Candidate states, the kanban shape: the item whose identity is `key` moved
+to every slot of every column. An item's identity is its `id`, else its
+`key`, else the item itself.
+""",
+  params: {lists: "A list of columns, each a list of items (or, with `field`, a record whose `field` is that list).", field: "The name of the item list in a column record."},
+  returns: "A list of states shaped like `lists`.",
+  see: ["moves"])
 pub fn moves_nested(lists, key, field = nil)
   let ci = -1
   let ii = -1
@@ -929,8 +1005,9 @@ pub fn moves_nested(lists, key, field = nil)
     let items = _items(removed[c], field)
     set_in(removed, _items_path(c, field), slice(items, 0, j) ++ [item] ++ slice(items, j))
 
-# `st` with the value at `path` (a list of keys and indices, or one key) set
-# to each of `values`.
+@doc("""
+Candidate states: `st` with the value at `path` set to each of `values`.
+""", params: {path: "A list of keys and indices, or one key."}, returns: "A list of states.", see: ["closest"])
 pub fn choices(st, path, values)
   let p = if type(path) == "list" then path else [path] end
   for v in values do set_in(st, p, v) end
@@ -965,12 +1042,15 @@ fn _forest_at(forest, path, field)
   let n = forest[path[0]]
   if len(path) == 1 then n else _forest_at(n[field] ?? [], slice(path, 1), field) end
 
-# The layers-panel shape: `tree` is a list of nodes, each a record whose
-# `children` (opts.children) is a list of nodes, and `path` the indices of
-# the node to move. Every state with that node above, below or into (as the
-# last child of) another node, never into itself or its descendants, each
-# distinct state once. opts.into: false, or fn(node) -> bool, limits which
-# nodes take children.
+@doc("""
+Candidate states, the layers-panel shape: every state with the node at
+`path` above, below or into (as the last child of) another node, never into
+itself or its descendants, each distinct state once.
+""",
+  params: {tree: "A list of nodes, each a record whose children list is a list of nodes.", path: "The indices of the node to move."},
+  options: {children: """The field that holds a node's children (`"children"`).""", into: "`false`, or `fn(node) -> bool`, limits which nodes take children."},
+  returns: "A list of trees.",
+  see: ["moves"])
 pub fn tree_moves(tree, path, opts = {})
   let field = opts.children ?? "children"
   let into = opts.into ?? true
@@ -1056,14 +1136,12 @@ fn _explain(g)
     branch: if s.choice == nil then nil else _branch(s.spec, s.choice) end,
     targets: targets, spec: s.raw, speculations: get _spec_runs}
 
-# The drag in flight this frame, as data — or nil when nothing is dragged.
-# Call it after `drag_session`. `targets` is the target table: each leaf of
-# the spec with its `id`, `kind`, where the dragged element lands in its
-# state (`at`), a drop target's `zone`, its distance from the element now
-# (`gap`), whether it is the chosen one (`active`) and what it drops. Also
-# `key`, `pointer`, `element` (the element's centre), `grab`, `home`,
-# `choice`, `gap`, `branch` (the kinds on the way to the chosen leaf),
-# `spec` (as built) and `speculations` (renderings made this frame).
+@doc("""
+The drag in flight this frame, as data, or `nil` when nothing is dragged.
+Call it after `drag_session`. It speculates nothing.
+""",
+  returns: """`{key, pointer, element, grab, home, choice, gap, branch, targets, spec, speculations}`: `element` is the dragged element's centre, `branch` the kinds on the way to the chosen leaf, `speculations` the renderings made this frame. `targets` is the target table, one `{id, kind, at, zone, gap, active, drop}` per leaf of the spec: where the element lands in its state, a drop target's zone, its distance now, whether it is the chosen one, and what it drops.""",
+  see: ["drag_debug", "drag_session"])
 pub fn drag_explain()
   let g = get _dbg
   if g == nil then nil else _explain(g) end
@@ -1118,13 +1196,17 @@ fn _dbg_label(text, x, y, c)
   draw_rect(rect(x - 4, y - 2, 8 + len(text) * 7, 17), _DBG_BG, 220)
   draw_text(text, x, y, 12, c)
 
-# Draw the drag debugger over the app: the drop-zone map (which target wins
-# where the pointer is), the target table with each target's distance from
-# the dragged element, and the spec tree with the chosen branch lit. Call it
-# with the session's result, after drawing the view. `drag_session` draws it
-# by itself while the host's debug key for "drag" is on (`ui_debug("drag")`:
-# F8 in petal-sdl, Cmd/Ctrl+Shift+G in Garden). opts: {zones: true, step: 24,
-# tree: true, max_lines: 28}.
+@doc("""
+Draw the drag debugger over the app: the drop-zone map (which target wins
+where the pointer is), the target table with each target's distance from
+the dragged element, and the spec tree with the chosen branch lit. Call it
+with the session's result, after drawing the view. `drag_session` draws it
+by itself while the host's debug key for "drag" is on (`ui_debug("drag")`:
+F8 in petal-sdl, Cmd/Ctrl+Shift+G in Garden).
+""",
+  params: {d: "What `drag_session` returned."},
+  options: {zones: "Draw the drop-zone map (true).", step: "The zone map's cell size, px (24).", tree: "Draw the spec tree (true).", max_lines: "The most lines of the table and tree (28)."},
+  see: ["drag_explain", "ui.ui_debug"])
 pub fn drag_debug(d, opts = {})
   let g = get _dbg
   ui_overlay(max(ui_layer(), UI_LAYER_DRAG + 10), fn()

@@ -149,7 +149,7 @@ diff ~/petal/dist/uninstall.sh ~/biz/petal-lang.org/frontend/public/uninstall.sh
 
 If either differs, copy the `dist/` version over and commit it in the site
 repo. The site also vendors a Petal WASM build, the example sketches and the
-stdlib manifest. Refresh them so the site's docs and playground match the
+API reference (`content/api`, from `petal doc --json`). Refresh them so the site's docs and playground match the
 release (the syntax has moved since the site was last built, for example
 `pub`):
 
@@ -158,17 +158,14 @@ cd ~/biz/petal-lang.org
 pnpm install
 pnpm build:sdk
 pnpm sync:examples
-pnpm sync:stdlib
+pnpm import:docs              # ~/petal/docs → content/docs
+pnpm import:api               # petal doc --json → content/api (the /docs/api/ reference)
 git status --short            # review, then commit what changed
 ```
 
 Known problems in the site repo, found while preparing this and not fixed
 (they are outside the petal repo):
 
-- `scripts/sync-stdlib.ts` runs the extractor with `cwd: <petal>/ts`. That
-  directory no longer has it; the script is now `tools/extract-stdlib.ts` from
-  the petal repo root. The sync prints a warning and keeps the committed, stale
-  manifest instead of failing.
 - `frontend/src/components/Nav.tsx` links "source" to `https://github.com/`
   rather than `https://github.com/andyfischer/petal`.
 - `frontend/out/` is a build from August. The deploy rebuilds it, so this only

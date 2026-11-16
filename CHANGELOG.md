@@ -677,6 +677,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   was, and is gated on the parse and on `ir-equal`. See
   [CLI.md](docs/CLI.md#comments-to-docs-comment-to-doc).
 
+- **`bloom`, `text_layout`, `glsl` and Garden's `garden` / `garden_config`
+  interfaces are documented with `@doc`.** Every `pub` item has a summary,
+  and parameters, `opts` keys, return values, examples and related names
+  where they help; each module has a `@module_doc` (bloom's conventions and
+  its composition with `ui` are the `bloom` module's). `undocumented-pub`
+  and `doc-params` report nothing for them, and `petal doc bloom` is the
+  reference that `bloom/docs/components.md` was written by hand. Header
+  notes for maintainers stay comments. No code changed: every file compiles
+  to IR that `petal ir-equal` reports as equivalent.
+
 - **bloom: `tab_enters_ring(on)`.** With it off, Tab and Shift+Tab with no
   control of the focus ring focused leave focus alone, for an app that
   gives Tab its own meaning then (petal-design steps the canvas selection);

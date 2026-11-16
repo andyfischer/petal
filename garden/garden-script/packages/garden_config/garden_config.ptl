@@ -1,25 +1,76 @@
-# The Garden config host interface (garden-script/src/native_fns.rs): what
-# `init.ptl` describes the window with.
+@module_doc("""
+The Garden config host interface: what `init.ptl` describes the window with.
+A config script writes `import garden_config`.
 
-# `{ kind: "editor", file, line_numbers, wrap }`. `config` recognizes
-# `line_numbers` (default false) and `wrap` (default true).
+```petal
+layout(
+    row([
+        column([ editor("src/main.rs"), editor("notes.md") ], [0.7, 0.3]),
+        editor("README.md"),
+    ], [0.6, 0.4])
+)
+```
+""", see: ["layout", "editor", "panel", "process"])
+
+# Implemented in garden-script/src/native_fns.rs.
+
+@doc("""
+A text pane. With no path it opens an empty buffer.
+""", params: {path: "The file to open.", config: "Pane settings."},
+  options: {line_numbers: "Show line numbers (false).", wrap: "Soft wrap (true)."},
+  returns: """`{ kind: "editor", file, line_numbers, wrap }`.""",
+  example: """editor("notes.md", {line_numbers: true})""", see: ["layout"])
 pub native fn editor(path?, config?) -> record
 
-# `{ kind: "process", command, args }`.
+@doc("""
+A pane driven by a GPP subprocess (garden/docs/gpp.md).
+""", params: {command: "The program to run.", args: "Its arguments, a list of strings."},
+  returns: """`{ kind: "process", command, args }`.""",
+  example: """process("repo-browser", ["--root", "."])""", see: ["panel"])
 pub native fn process(command, args?) -> record
 
-# `{ kind: "panel", script, screens }`. `config` recognizes `screens`.
+@doc("""
+A pane drawn by a Petal panel script running in-process
+(garden/docs/petal-graphical-panels.md).
+""", params: {script: "The panel script's path.", config: "Pane settings."},
+  options: {screens: "The scripts the panel may `navigate` to."},
+  returns: """`{ kind: "panel", script, screens }`.""",
+  example: """panel("panels/list.ptl", {screens: ["panels/detail.ptl"]})""", see: ["process"])
 pub native fn panel(script, config?) -> record
 
-# Containers: `ratios`, when given, has one entry per child.
+@doc("""
+A container laying its children out side by side. Containers nest
+arbitrarily.
+""", params: {children: "The panes and containers inside it.",
+  ratios: "One size ratio per child; an equal split when missing or malformed."},
+  example: """row([editor("a.rs"), editor("b.rs")], [0.6, 0.4])""", see: ["column", "layout"])
 pub native fn row(children, ratios?) -> record
+
+@doc("""
+A container stacking its children top to bottom. Containers nest
+arbitrarily.
+""", params: {children: "The panes and containers inside it.",
+  ratios: "One size ratio per child; an equal split when missing or malformed."},
+  see: ["row", "layout"])
 pub native fn column(children, ratios?) -> record
 
-# Emit the layout tree for the window.
+@doc("""
+Emit the layout tree for the window. Garden saves a rearranged layout to a
+per-window overlay, so `init.ptl` itself is never rewritten.
+""", params: {node: "The root pane or container."},
+  example: """layout(row([editor("src/main.rs"), editor("README.md")]))""", see: ["row", "column"])
 pub native fn layout(node)
 
-# Emit a record of `field: "#hexcolor"` overrides.
+@doc("""
+Recolor the editor: a record of `field: "#hexcolor"` overrides, any subset
+of keys such as `window_bg`, `text`, `cursor`, `selection`, `syntax_*`.
+""", params: {theme: "The overrides."},
+  example: """color_theme({cursor: "#ff8800"})""", see: ["color_scheme"])
 pub native fn color_theme(theme)
 
-# Emit the base scheme name ("dark", "light").
+@doc("""
+Pick the base palette. Choosing one from View ▸ Color Scheme writes this
+call back into `init.ptl` in place.
+""", params: {name: """`"dark"`, `"light"`, `"brown"` or `"amiga"`."""},
+  example: """color_scheme("light")""", see: ["color_theme"])
 pub native fn color_scheme(name)

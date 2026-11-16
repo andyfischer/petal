@@ -1,79 +1,217 @@
-# The Garden panel host interface (garden-script/src/panel.rs, query.rs,
-# panel_store.rs). Every native here is registered by Garden on a panel
-# script; petal-ui's `panel_stubs` registers inert stand-ins for a bare
-# runner.
+@module_doc("""
+The Garden panel host interface: the natives Garden registers on a panel
+script, beyond petal-ui's (`import ui`). A panel script writes
+`import garden`. In a bare runner, petal-ui's `panel_stubs` registers inert
+stand-ins for them.
+
+The guides are garden/docs/petal-graphical-panels.md (in-process panels) and
+garden/docs/writing-gpp-apps.md (panels whose data comes from a subprocess).
+""", see: ["query", "mutate", "navigate", "text_view"])
+
+# Implemented in garden-script/src/panel.rs, query.rs and panel_store.rs.
 
 # ── Theme ────────────────────────────────────────────────────────────────
 
-# The host UI theme injected this frame: `{ key: { r, g, b, a }, … }`, or `{}`.
+@doc("""
+The host UI theme injected this frame: `{ key: { r, g, b, a }, … }`, or `{}`
+when the host sent none.
+""", see: ["palette"])
 pub native fn panel_theme() -> record
 
-# The full active palette: the host theme overlaid on a built-in fallback.
+@doc("""
+The full active palette: the host theme overlaid on a built-in fallback, so
+every key is present.
+""", example: """let BODY = {size: 15, color: palette().text}""", see: ["panel_theme"])
 pub native fn palette() -> record
 
 # ── Push channels to the pane's subprocess ───────────────────────────────
 
-# Fire-and-forget event to the pane's subprocess.
+@doc("""
+Send a fire-and-forget event to the pane's subprocess. Garden drains emits
+once per frame tick, so guard the call with an edge (a key press, a drag
+end); an unconditional `emit` re-fires every frame.
+""", params: {event: "The event's name, as the app's `on_emit` handler registers it.", arg: "Any JSON-representable value."},
+  example: """
+    if divider_drag && mouse_released(0) then
+      emit("divider", {pos: divider_x})
+  """, see: ["mutate"])
 pub native fn emit(event: string, arg)
 
-# Request an effectful action; returns a handle for `mutate_result`.
+@doc("""
+Ask for an effectful action. A host-owned name (`open_path`, `open_project`,
+`open_pr`, `open_file_dialog`) is answered by Garden; every other name is
+forwarded to the app's `on_mutation` handler. The round trip does not block
+a redraw, so the frame that makes the request never sees its own answer.
+""", params: {name: "The action's name.", arg: "Any JSON-representable value."},
+  returns: "An integer handle for `mutate_result`; ignore it for fire-and-forget.",
+  example: """
+    state saving = 0
+    if key_down("ctrl") && key_pressed("s") then
+      saving = mutate("save", {text: edit_view_text(1)})
+  """, see: ["mutate_result", "emit"])
 pub native fn mutate(name: string, arg) -> int
 
-# What the mutation identified by `handle` resolved to, or nil.
+@doc("""
+What the mutation identified by `handle` resolved to: nil while in flight,
+otherwise `{ok, value, error}`.
+""", params: {handle: "What `mutate` returned."},
+  example: """let save_failed = mutate_result(saving)?.ok == false""", see: ["mutate"])
 pub native fn mutate_result(handle)
 
 # ── Keys and frames ──────────────────────────────────────────────────────
 
-# Claim a chord for the panel: the host forwards it instead of consuming it.
-# `mods` is a modifier string or bitmask.
+@doc("""
+Claim a chord for the panel: Garden forwards it instead of consuming it.
+Garden owns the Cmd/Ctrl chords; a panel whose bare letters are content (a
+spreadsheet, a console) asks for one back. A claim is declarative and per
+frame: state it unconditionally near the top of the script. The chord then
+arrives like any other key (`key_pressed("z")` with `mod_cmd()` true).
+Cmd/Ctrl+Q cannot be claimed.
+""", params: {key: "The key, as `key_pressed` names it.",
+  mods: """A modifier spelling (`"shift"`, `"ctrl"` / `"control"`, `"alt"` / `"option"`, `"cmd"` / `"super"` / `"meta"`, combined with `+`) or the bitmask `1=shift 2=ctrl 4=alt 8=cmd`; omitted, the key under any modifier combination. An unknown spelling is an error."""},
+  example: """
+    claim_key("z", "cmd")          # Cmd+Z reaches this panel, not Garden's Undo
+    claim_key("escape")            # this key under any modifiers
+  """)
 pub native fn claim_key(key: string, mods?)
 
-# This frame is part of an animation: keep the panel ticking.
+@doc("""
+Mark this frame as part of an animation: keep the panel ticking. A panel
+sleeps ten seconds after its last activity; the call is declarative and
+covers only the frame that makes it, so ask while the motion runs. Calling
+it every frame is free.
+""", example: """
+    if loading() then
+      request_frame()
+  """, see: ["animating"])
 pub native fn request_frame()
+
+@doc("`request_frame`, under a name that reads better in a loop.", see: ["request_frame"])
 pub native fn animating()
 
 # ── Navigation (per-pane history) ────────────────────────────────────────
 
+@doc("""
+Push a new entry onto the pane's browser-style history and go to `screen`.
+A screen must be declared: by `panel(script, {screens: [...]})` for an
+in-process pane, or by a GPP app. Back and forward restore each entry's
+`state`.
+""", params: {screen: "The screen's script, as declared.",
+  arg: "The subject the screen is for: any JSON-representable value, read back with `nav_arg()`."},
+  example: """if clicked then navigate("detail.ptl", {id: 7}) end""",
+  see: ["navigate_replace", "navigate_back", "nav_arg"])
 pub native fn navigate(screen: string, arg?)
+
+@doc("Go to `screen` in place of the current history entry.",
+  params: {screen: "The screen's script, as declared.", arg: "The subject, as `navigate` takes it."},
+  see: ["navigate"])
 pub native fn navigate_replace(screen: string, arg?)
+
+@doc("Go back one history entry (as `Ctrl+[` and `:back` do).", see: ["navigate_forward", "navigate"])
 pub native fn navigate_back()
+
+@doc("Go forward one history entry (as `Ctrl+]` and `:forward` do).", see: ["navigate_back"])
 pub native fn navigate_forward()
 
-# The argument the navigation that opened this screen carried.
+@doc("""
+The argument the navigation that opened this screen carried, or nil for a
+screen reached without one (the panel's origin screen included), so pair it
+with a `??` fallback.
+""", example: """let id = nav_arg()?.id ?? 0""", see: ["navigate"])
 pub native fn nav_arg()
 
 # ── Host-rendered text regions ───────────────────────────────────────────
 
-# A read-only, natively selectable text region. `id` is a stable key.
+@doc("""
+Embed a read-only, natively selectable text region: highlight to select,
+Cmd-C, native scroll. Script-drawn `draw_text` cannot be selected or copied,
+so route any body the user might copy through a `text_view`. Draw it every
+frame it should show.
+""", params: {id: "A stable key for the region.", x: "Left edge.", y: "Top edge.", w: "Width.", h: "Height.",
+  text: "The text."},
+  example: """text_view(1, 388, 8, w - 396, h - 16, join(lines, "\n"))""",
+  see: ["text_view_line_styles", "text_view_scroll_to", "text_view_wrap", "edit_view"])
 pub native fn text_view(id, x, y, w, h, text: string)
 
-# The editable sibling: the host routes vim keystrokes into it.
+@doc("""
+Embed an editable region: Garden's real vim editor, routed the keystrokes
+while it has focus. It is seeded once from `text`; read the buffer back with
+`edit_view_text`.
+""", params: {id: "A stable key for the region.", x: "Left edge.", y: "Top edge.", w: "Width.", h: "Height.",
+  text: "The seed text, used when the region is first created."},
+  example: """edit_view(1, x, y, col_w, body_h, seed)""",
+  see: ["edit_view_text", "edit_view_projection", "text_view"])
 pub native fn edit_view(id, x, y, w, h, text: string)
 
-# Region `id`'s live (post-edit) text, or "" when there is no such region.
+@doc("""Region `id`'s live (post-edit) text, or `""` when there is no such region.""",
+  params: {id: "The region's key."},
+  example: """mutate("save", {text: edit_view_text(1)})""", see: ["edit_view"])
 pub native fn edit_view_text(id) -> string
 
-# Where each line of an `edit_view` came from, so edits fold back to sources.
+@doc("""
+Declare where each line of an `edit_view` came from, so edits fold back to
+their sources (`edit_view_edits`).
+""", params: {id: "The region's key.",
+  spec: """A record of parallel arrays: `sources`, `span_source`, `span_start`, `span_end`, `span_group`, `kinds`, `line_spans` and `styles` (garden/docs/writing-gpp-apps.md)."""},
+  example: """edit_view_projection(5, doc.unified.projection)""", see: ["edit_view_edits"])
 pub native fn edit_view_projection(id, spec)
 
-# What the user's edits currently resolve to.
+@doc("""
+What the user's edits to a projected `edit_view` currently resolve to: a
+list of `{source, start, end, lines}`, each replacing the lines
+`[start, end)` of `source`.
+""", params: {id: "The region's key."},
+  example: """mutate("apply", {edits: edit_view_edits(5)})""", see: ["edit_view_projection"])
 pub native fn edit_view_edits(id) -> list
 
+@doc("""
+Per-line colors for a `text_view`: `"added"`, `"removed"`, `"hunk"`,
+`"title"`, `"dim"`, `"comment"`.
+""", params: {id: "The region's key.", styles: "One style name per line."},
+  see: ["text_view"])
 pub native fn text_view_line_styles(id, styles)
+
+@doc("""
+Scroll a `text_view` to a line. A one-shot action: call it only on the frame
+the navigation happens.
+""", params: {id: "The region's key.", line: "The line to show."}, see: ["text_view"])
 pub native fn text_view_scroll_to(id, line)
+
+@doc("""
+Whether a `text_view` soft-wraps. Frame state: declare it every frame.
+""", params: {id: "The region's key.", wrap: "True to wrap."}, see: ["text_view"])
 pub native fn text_view_wrap(id, wrap)
 
 # ── The panel's own persistent store ─────────────────────────────────────
 
-# The stored string, or nil.
+@doc("""
+The stored string, or nil. The store is string to string, scoped to the
+script's own path (or a GPP drawer's app), and outlives the process.
+""", params: {key: "The key."},
+  example: """state todos = json_parse(panel_store_get("todos") ?? "[]")""", see: ["panel_store_set"])
 pub native fn panel_store_get(key: string)
 
-# Store a string; nil deletes the key.
+@doc("""
+Store a string; nil deletes the key. It is written after any frame that
+changed it, capped at 256 KiB per value and 1024 keys (over either, the call
+errors).
+""", params: {key: "The key.", value: "A string, or nil to delete."},
+  example: """panel_store_set("todos", json_stringify(todos))""", see: ["panel_store_get"])
 pub native fn panel_store_set(key: string, value)
 
 # ── Async queries ────────────────────────────────────────────────────────
 
-# Answers from the host's cache; a pending value while loading.
+@doc("""
+Ask the host for data. The answer comes from its cache: the value when
+ready, otherwise a pending value to inspect with `is_ready`, `is_loading`,
+`is_error`, `error_of` or `??`. The per-frame rerun is the retry loop.
+""", params: {kind: "The query's kind, as the app registers it.", arg: "Any JSON-representable value."},
+  example: """let rd = query("log", "")""", see: ["invalidate"])
 pub native fn query(kind: string, arg)
 
+@doc("""
+Drop a cached answer so the next `query` with the same kind and argument
+asks again: how a panel refreshes.
+""", params: {kind: "The query's kind.", arg: "The query's argument."},
+  example: """invalidate("doc", "")""", see: ["query"])
 pub native fn invalidate(kind: string, arg)

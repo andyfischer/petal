@@ -19,10 +19,13 @@ running the edited script again before anything is written.
   direct-manipulation goals on elements (`Observable::Element`), the
   `entry-file` selector, and [expression goals](goal-based-editing.md#expression-goals)
   (`StaticExpr`), which reference intents write with.
-- **Used by:** in `~/petal-creative`, petal-images (every layer edit of its
-  editor) and petal-design (node attributes and token references, the page
+- **Used by:** all four editors in `~/petal-creative`: petal-images (every
+  layer edit), petal-design (node attributes and token references, the page
   tree, tokens and instance overrides, by output identity through
-  `design(...)`'s pages).
+  `design(...)`'s pages), petal-movies (every item edit: fields, timeline
+  drags and trims, effects, text and captions, add/remove/duplicate/move/
+  split) and petal-social-media (slides and their layers: options, text,
+  structure, writing a helper's slide out with `concretize`).
 - **Tests:** `core-libs/programs-as-documents/tests/` (`cargo test` in that
   directory); the core hook in `core/tests/all/` (element tracing) and the
   DM tests.
@@ -331,4 +334,6 @@ chain. See [provenance.md](provenance.md#where-an-element-came-from-element-trac
   multi-element clip, document schemas.
 - **Cost.** Every edit reruns the document at least once, and a solve reruns
   it many times. Tracing turns the static cache off. In petal-images a drag
-  frame on its largest example takes about 55 ms.
+  frame on its largest example takes about 55 ms; in petal-movies a
+  timeline drag frame of the demo's text item takes about 2.6 to 2.9 ms
+  (0.4 to 0.5 ms more than its old goal-path editor).

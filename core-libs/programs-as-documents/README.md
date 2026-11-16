@@ -68,6 +68,12 @@ imported module or package is refused with a reason naming the file.
   `design(...)`'s emitted pages; the instance expansions are a derived
   result value; instance overrides are its `OverrideHook`, which verifies
   them itself.
+- petal-movies (`~/petal-creative/petal-movies/src/doc.rs`): every item
+  edit, by output identity in the `movie_emit` buffer's items.
+- petal-social-media (`~/petal-creative/petal-social-media/src/doc.rs`):
+  slides and layers by output identity in the `social_emit` buffer (its
+  slide counters are a derived value); "Write out as `<slide>`" is
+  `concretize`.
 
 ## Not yet
 

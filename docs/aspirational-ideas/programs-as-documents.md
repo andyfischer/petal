@@ -1,6 +1,6 @@
 # Programs as documents
 
-Status (2026-11-14): **part 1 and the write path are implemented**; part 2
+Status (2026-11-15): **part 1 and the write path are implemented**; part 2
 (a schema for documents) and the saved-state file are not. The user-facing
 page is [features/programs-as-documents.md](../features/programs-as-documents.md).
 
@@ -26,8 +26,22 @@ page is [features/programs-as-documents.md](../features/programs-as-documents.md
   pages, so documents that end in `design({...})` with their own pages are
   editable (they used to open read-only for lack of a top-level
   `let pages`). See "Other projects this touches".
-- **What remains.** Porting petal-movies and petal-social-media; part 2 (a
-  schema for documents); wrap/unwrap as intents and intents as an undo log;
+- **petal-movies and petal-social-media are ported** (2026-11-15), so all
+  four tools in `~/petal-creative` edit through the crate. petal-movies
+  edits every item (inspector fields, timeline drags and trims, canvas
+  moves, effects, text and captions, add/remove/duplicate/move/split) and
+  petal-social-media every slide and layer (options, text, structure in
+  and out of groups) by output identity, so items and slides made by
+  helpers, loops and named constants are editable; scope choices and
+  refusal reasons go to each status bar. The gaps they found (text split by
+  `<br />`, a bare attribute in step 1, `++` of lists, `SetText` through a
+  package's hole, a named argument's trace, the override hook for a helper
+  used once, tidying `concretize`, reordering across a loop's data) have
+  host-side workarounds there, listed in
+  `petal-creative/docs/petal-upstream-ideas.md`.
+- **What remains.** Those gaps in the crate (and the named-argument trace
+  in core); part 2 (a schema for documents); wrap/unwrap as intents and
+  intents as an undo log;
   setting one named argument of a call in place (petal-design rewrites a
   token's whole `modes(...)`/`per(...)` value when its shape changes); saved
   state (which petal-creative will not use).
@@ -540,7 +554,15 @@ petal-creative it is the rule.
   overrides are applied in Rust) through the crate, with
   `ScopePolicy::Prefer([EditData, Override])`. Pages and components built in
   an imported module are locked with a reason naming the module.
-  petal-movies and petal-social-media are not ported yet.
+  **petal-movies and petal-social-media are ported** (2026-11-15): each
+  runs its documents with a `Runner` over its vocabulary's output buffer
+  (social marks its slide counters derived), finds an item or slide (and a
+  layer through its slide's children) by output key in the latest run, and
+  makes every edit as intents committed as one undo step, a step that stops
+  at a choice keeping the rest for after it. Both prefer `EditData` and add
+  an `Override` choice through a named-argument `OverrideHook`; the social
+  editor's "Write out as `<slide>`" is `concretize`. Their byte-for-byte
+  tests compare every example with the old goal-path editors.
 - **garden.** Already turns drag-mode drops into goals with `drop_edit`, and
   restores top-level `state` from JSON for panels. It is the natural place
   for the hand-edit side of the "peers" model, with the intent rebase when

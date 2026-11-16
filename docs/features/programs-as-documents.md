@@ -129,9 +129,11 @@ doc.session.save()?;
 same rerun check.
 
 1. **Direct literal.** The field's value flows unchanged from one literal:
-   the element's own attribute, a call argument, a `let` constant, or a field
-   of a record literal. That literal is edited with Petal's
-   [path edits](edit-paths.md), so only its text changes.
+   the element's own attribute, a call argument (positional, or named for a
+   parameter with a default), a `let` constant, or a field of a record
+   literal. That literal is edited with Petal's
+   [path edits](edit-paths.md), so only its text changes. A bare attribute
+   (`<text box_lines>`) is written out as `box_lines={false}` in its place.
 2. **Single site.** The element does not have the field yet, or the intent
    removes an attribute. The attribute is added to (or removed from) the
    element literal that built the output, wherever that literal is. If the
@@ -166,7 +168,11 @@ same rerun check.
    children, and only if the result is unchanged. Then the intent is applied
    to the new literal.
 6. **Refuse with a reason** that names the line to edit by hand
-   (`Unresolved { reason, at }`).
+   (`Unresolved { reason, at }`). Before refusing, when a call in the
+   document made the output, the host's `OverrideHook` is asked for an
+   override on that call (a helper used once has no shared site, so step 3
+   never asked it); one that verifies and changes no other output is the
+   edit (`Step::Scope(Scope::Override)`).
 
 An edit whose site is in another file (an imported module, a package) is
 `Refused`, and the reason names the file. Only the document is written.

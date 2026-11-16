@@ -189,6 +189,29 @@ fn dotted_fields_edit_inside_record_literals() {
     assert!(e.source.contains("style={{h: 3}}"), "{}", e.source);
 }
 
+/// petal-movies' "per line" box on `<text … box_lines>`: a bare attribute's
+/// span is its name, so setting it writes `name={value}` there, not the value
+/// over the name.
+#[test]
+fn setting_a_bare_attribute_writes_it_out_with_its_value() {
+    let src = "[<text id=\"a\" box_lines>hi</text>, <text id=\"b\" box_lines />]\n";
+    let r = value_runner();
+    let e = edit(resolve_src(&r, src, |_| set(OutputKey::Id("a".into()), "box_lines", StaticValue::Bool(false))));
+    assert_eq!(e.step, Step::DirectLiteral);
+    assert_eq!(e.source, "[<text id=\"a\" box_lines={false}>hi</text>, <text id=\"b\" box_lines />]\n");
+    let e = edit(resolve_src(&r, src, |_| set(OutputKey::Id("b".into()), "box_lines", StaticValue::Int(3))));
+    assert_eq!(e.source, "[<text id=\"a\" box_lines>hi</text>, <text id=\"b\" box_lines={3} />]\n");
+    assert!(matches!(
+        resolve_src(&r, src, |_| set(OutputKey::Id("a".into()), "box_lines", StaticValue::Bool(true))),
+        Resolution::AlreadyHolds
+    ));
+    // A field inside it has nowhere to go.
+    assert!(!matches!(
+        resolve_src(&r, src, |_| set(OutputKey::Id("a".into()), "box_lines.n", StaticValue::Int(1))),
+        Resolution::Edit(_)
+    ));
+}
+
 #[test]
 fn removing_a_field_removes_the_attribute() {
     let src = "[<rect x={1} y={2} />]";

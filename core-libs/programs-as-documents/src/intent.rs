@@ -26,7 +26,10 @@
 //!    ([`ResolveOptions::concretize`]), the call that made the output is
 //!    replaced by the literal of its value, and the intent applied to that
 //!    ([`crate::concretize`]).
-//! 6. **Refuse with a reason** that names the place to edit by hand:
+//! 6. **Refuse with a reason** that names the place to edit by hand, unless
+//!    the output was made by a call in the document and the host's
+//!    [`OverrideHook`] writes a verified override on that call (a helper
+//!    used once has no shared site, so step 3 never asked it):
 //!    [`Resolution::Unresolved`] (nothing applies), or
 //!    [`Resolution::Refused`] (the edit lands in another file, or does not
 //!    do what was asked when run).
@@ -285,7 +288,13 @@ impl std::fmt::Debug for ResolveOptions {
 
 /// Resolve `intent` against `run`, the latest run of `source` with `runner`.
 pub fn resolve(runner: &Runner, run: &DocumentRun, intent: &Intent, opts: &ResolveOptions) -> Resolution {
-    let res = resolve_in_place(runner, run, intent, opts).stamped(&run.source);
+    let res = match resolve_in_place(runner, run, intent, opts) {
+        res @ (Resolution::Unresolved { .. } | Resolution::Refused { .. }) => {
+            last_resort_override(runner, run, intent, opts).unwrap_or(res)
+        }
+        res => res,
+    }
+    .stamped(&run.source);
     if !opts.concretize || !matches!(res, Resolution::Unresolved { .. }) {
         return res;
     }
@@ -775,7 +784,15 @@ fn direct_literal(
         return r;
     }
     let what = format!("`{text}` on line {}", lit.span.start.line);
-    let apply = |e: LiteralEdit<'_>| edit_span(&run.source, &lit.span, e);
+    let (head, _) = split_field(field);
+    let bare = is_bare_attribute(run, lit, head);
+    let apply = |e: LiteralEdit<'_>| {
+        if bare {
+            bare_attribute_edit(&run.source, &lit.span, head, e)
+        } else {
+            edit_span(&run.source, &lit.span, e)
+        }
+    };
     let (source, verified) = match edit_and_verify(runner, run, node, intent, edit, &apply, &what) {
         Ok(s) => s,
         Err(e) => return Resolution::Refused { reason: format!("could not edit `{text}` on line {}: {e}", lit.span.start.line) },
@@ -783,6 +800,30 @@ fn direct_literal(
     let description = describe_edit(edit, &format!("`{text}`"), &format!("on line {}", lit.span.start.line));
     let edit = ResolvedEdit { source, step: Step::DirectLiteral, span: lit.span, description, also_changes: Vec::new(), base: None };
     finish_verified(runner, run, node, intent, edit, verified, lit.shared, &what, opts)
+}
+
+/// Whether `lit`, the literal field `head` flows from, is a bare attribute
+/// (`<text box_lines>`): its span is the attribute's name, which stands for
+/// `true`, so an edit writes `name={value}` in its place, not the value over
+/// the name.
+fn is_bare_attribute(run: &DocumentRun, lit: &LiteralSource, head: &str) -> bool {
+    lit.file() == FileId(0)
+        && lit.within.is_none()
+        && head != "true"
+        && lit.constant == Some(StaticValue::Bool(true))
+        && crate::splice::byte_range(&run.source, &lit.span).is_some_and(|r| run.source[r] == *head)
+}
+
+/// `edit` to the bare attribute `name` written at `span`: the attribute
+/// written out as `name={value}` (or `name={expr}`).
+fn bare_attribute_edit(source: &str, span: &SourceSpan, name: &str, edit: LiteralEdit<'_>) -> Result<String, String> {
+    let range = crate::splice::byte_range(source, span).ok_or("the attribute's position is outside the source")?;
+    let value = match edit {
+        LiteralEdit::Set { path: "", value } => value.to_source(),
+        LiteralEdit::SetExpr { path: "", expr } => expr.to_string(),
+        _ => return Err(format!("`{name}` is written as a bare attribute, which has no fields")),
+    };
+    Ok(format!("{}{name}={{{value}}}{}", &source[..range.start], &source[range.end..]))
 }
 
 /// "set `x` on <rect> (line 3) to `40`", for the user.
@@ -897,6 +938,30 @@ fn other_scopes(runner: &Runner, run: &DocumentRun, node: &OutputNode, intent: &
         }
     }
     out
+}
+
+/// The end of the ladder, before refusing: an output a call in the document
+/// made (a helper used once, say, whose field is computed or defaulted in a
+/// package) can still take the host's override on that call. Verified like
+/// any other edit; only an override that changes no other output is taken.
+fn last_resort_override(runner: &Runner, run: &DocumentRun, intent: &Intent, opts: &ResolveOptions) -> Option<Resolution> {
+    let hook = opts.overrides.as_ref()?;
+    let node = run.map.find(intent.target())?;
+    let site = use_site(run, node)?;
+    let req = OverrideRequest { run, node, intent, use_site: Some(site) };
+    let o = hook.write_override(&req)?.ok()?;
+    let verified = hook.verify(runner, &req, &o).unwrap_or_else(|| verify(runner, run, node, intent, &o.source));
+    match verified {
+        Verified::Holds { others } if others.is_empty() => Some(Resolution::Edit(ResolvedEdit {
+            source: o.source,
+            step: Step::Scope(Scope::Override),
+            span: o.span,
+            description: o.description,
+            also_changes: Vec::new(),
+            base: None,
+        })),
+        _ => None,
+    }
 }
 
 /// Apply `policy` to the verified `options`.

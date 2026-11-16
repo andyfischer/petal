@@ -550,6 +550,15 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **Programs as documents: a tidy write-out.** `concretize_with(runner,
+  run, node, &ConcretizeOptions { tidy: true })` (and
+  `ResolveOptions::concretize_tidy` for step 5) writes the output as a
+  person would: no `nil` props or `{nil}` children, a whole float as an int
+  (`594.0` → `594`) and a text child with line breaks as lines with
+  `<br />`. That form is kept only when every output is the same up to the
+  tidying (`tidied` on both sides); otherwise the exact literal is written.
+  `concretize` is unchanged.
+
 - **Lint rules for `@doc`.** `doc-params`: a `params:` key that no form of
   the overload set takes (with a did-you-mean), and a `see:` entry that names
   nothing the file can reach. `deprecated`: a use of an item whose `@doc` has

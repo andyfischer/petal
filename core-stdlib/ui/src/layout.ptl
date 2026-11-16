@@ -1,34 +1,52 @@
+@module_doc("""
+RectCut layout, motion (smoothing and easing) and pixel-budget word wrap.
+`ui` re-exports every name here.
+
+Layout is rects in, rects out, with no constraint solver: slice a strip off
+one edge (`cut_top`), split in two (`split_h`), inset (`pad`), or
+distribute (`row`, `hstack`). Nothing here draws. Motion is deterministic
+under the headless harness, where `time` and `dt` are fixed.
+""", see: ["ui", "ui.flow_begin"])
+
 # petal-ui layout — module `ui/layout`
-#
-# RectCut slicing, motion (smoothing and easing), and pixel-budget word wrap.
-# `ui` re-exports every name here.
 
 import ./input
 import ./_base
 
 # ── Layout: RectCut ───────────────────────────────────────────────────────
-# Slice-off-a-side layout (no constraint solver): each `cut_*` returns
-# {cut, rest} — the strip taken off `r` and what remains. Chain them to build
-# a whole pane:
-#
-#   let top = cut_top(screen, 40)      // header
-#   let side = cut_left(top.rest, 220) // sidebar
-#   ...draw into top.cut / side.cut / side.rest...
 
+@doc("""
+Slice a strip `px` wide off the left of `r`. Chain the `cut_*` calls to
+build a whole pane.
+""",
+  returns: """`{cut, rest}`: the strip, and what is left of `r`.""",
+  example: """
+    let top = cut_top(screen, 40)        # header
+    let side = cut_left(top.rest, 220)   # sidebar
+    # draw into top.cut, side.cut and side.rest
+  """,
+  see: ["cut_right", "cut_top", "cut_bottom", "split_h"])
 pub fn cut_left(r, px)
   {cut: rect(r.x, r.y, px, r.h), rest: rect(r.x + px, r.y, r.w - px, r.h)}
 
+@doc("Slice a strip `px` wide off the right of `r`.", returns: """`{cut, rest}`: the strip, and what is left of `r`.""", see: ["cut_left"])
 pub fn cut_right(r, px)
   {cut: rect(r.x + r.w - px, r.y, px, r.h), rest: rect(r.x, r.y, r.w - px, r.h)}
 
+@doc("Slice a strip `px` tall off the top of `r`.", returns: """`{cut, rest}`: the strip, and what is left of `r`.""", see: ["cut_left"])
 pub fn cut_top(r, px)
   {cut: rect(r.x, r.y, r.w, px), rest: rect(r.x, r.y + px, r.w, r.h - px)}
 
+@doc("Slice a strip `px` tall off the bottom of `r`.", returns: """`{cut, rest}`: the strip, and what is left of `r`.""", see: ["cut_left"])
 pub fn cut_bottom(r, px)
   {cut: rect(r.x, r.y + r.h - px, r.w, px), rest: rect(r.x, r.y, r.w, r.h - px)}
 
-# Split `r` into {a, b} at fraction `frac` of its width (a takes the left).
-# The optional `gap` is left empty between them.
+@doc("""
+Split `r` into two rects side by side, at fraction `frac` of its width.
+""",
+  params: {frac: "The share of the width `a` takes, 0–1.", gap: "Pixels left empty between the two (0 by default)."},
+  returns: """`{a, b}`: `a` on the left.""",
+  see: ["split_v", "row"])
 pub fn split_h(r, frac)
   split_h(r, frac, 0)
 
@@ -36,7 +54,12 @@ pub fn split_h(r, frac, gap)
   let aw = int(float(r.w - gap) * frac)
   {a: rect(r.x, r.y, aw, r.h), b: rect(r.x + aw + gap, r.y, r.w - aw - gap, r.h)}
 
-# The vertical counterpart: `a` takes the top.
+@doc("""
+Split `r` into two stacked rects, at fraction `frac` of its height.
+""",
+  params: {frac: "The share of the height `a` takes, 0–1.", gap: "Pixels left empty between the two (0 by default)."},
+  returns: """`{a, b}`: `a` on top.""",
+  see: ["split_h", "col"])
 pub fn split_v(r, frac)
   split_v(r, frac, 0)
 
@@ -44,8 +67,10 @@ pub fn split_v(r, frac, gap)
   let ah = int(float(r.h - gap) * frac)
   {a: rect(r.x, r.y, r.w, ah), b: rect(r.x, r.y + ah + gap, r.w, r.h - ah - gap)}
 
-# Shrink `r` by a margin: pad(r, n) all sides, pad(r, h, v) horizontal /
-# vertical, pad(r, l, t, rt, b) each side.
+@doc("""
+`r` inset by a margin: `pad(r, n)` on all sides, `pad(r, h, v)` horizontally
+and vertically, `pad(r, l, t, rt, b)` per side.
+""", example: "let content = pad(panel, 12, 8)")
 pub fn pad(r, n)
   rect(r.x + n, r.y + n, r.w - n * 2, r.h - n * 2)
 
@@ -55,7 +80,7 @@ pub fn pad(r, h, v)
 pub fn pad(r, l, t, rt, b)
   rect(r.x + l, r.y + t, r.w - l - rt, r.h - t - b)
 
-# `count` equal columns across `r`, `gap` px apart. Returns a list of rects.
+@doc("`count` equal columns across `r`.", params: {gap: "Pixels between columns (8 by default)."}, returns: "A list of `count` rects.", see: ["vstack", "row"])
 pub fn hstack(r, count)
   hstack(r, count, 8)
 
@@ -67,7 +92,7 @@ pub fn hstack(r, count, gap)
     out = append(out, rect(r.x + i * (cw + gap), r.y, cw, r.h))
   out
 
-# `count` equal rows down `r`.
+@doc("`count` equal rows down `r`.", params: {gap: "Pixels between rows (8 by default)."}, returns: "A list of `count` rects.", see: ["hstack", "col"])
 pub fn vstack(r, count)
   vstack(r, count, 8)
 
@@ -79,10 +104,16 @@ pub fn vstack(r, count, gap)
     out = append(out, rect(r.x, r.y + i * (ch + gap), r.w, ch))
   out
 
-# Distribute `r` into columns by `widths`: an int entry is fixed pixels, a
-# float entry is a weight over whatever the fixed columns and gaps leave
-# (weights need not sum to 1 — they are normalized against each other).
-#   row(bar, [80, 0.5, 0.5, 120], 8)   // fixed, two equal flexes, fixed
+@doc("""
+Distribute `r` into columns of given widths.
+""",
+  params: {
+    widths: "One entry per column: an int is fixed pixels, a float is a weight over what the fixed columns and gaps leave. Weights are normalized against each other, so they need not sum to 1.",
+    gap: "Pixels between columns.",
+  },
+  returns: "A list of rects, one per entry.",
+  example: "row(bar, [80, 0.5, 0.5, 120], 8)   # fixed, two equal flexes, fixed",
+  see: ["col", "hstack"])
 pub fn row(r, widths, gap)
   let fixed = 0
   let weights = 0.0
@@ -104,8 +135,15 @@ pub fn row(r, widths, gap)
     x = x + cw + gap
   out
 
-# The vertical counterpart of `row`: heights instead of widths (int = fixed
-# pixels, float = weight).
+@doc("""
+Distribute `r` into rows of given heights: `row` turned on its side.
+""",
+  params: {
+    heights: "One entry per row: an int is fixed pixels, a float is a weight over what is left.",
+    gap: "Pixels between rows.",
+  },
+  returns: "A list of rects, one per entry.",
+  see: ["row", "vstack"])
 pub fn col(r, heights, gap)
   let fixed = 0
   let weights = 0.0
@@ -132,9 +170,18 @@ pub fn col(r, heights, gap)
 # headless harness (dt is fixed there), so animated widgets still trace
 # reproducibly.
 
-# Exponential approach: move `cur` toward `target` by rate `rate` (1/seconds —
-# higher is snappier; ~16 lands in ~120ms). Snaps exactly onto the target when
-# within a thousandth, so settled values stop generating churn.
+@doc("""
+Move `cur` toward `target` exponentially, frame-rate independent. It lands
+exactly on the target once within a thousandth, so a settled value stops
+redrawing.
+""",
+  params: {rate: "In 1/seconds; higher is snappier. About 16 lands in roughly 120 ms."},
+  returns: "The next value: store it and pass it back next frame.",
+  example: """
+    state glow = 0.0
+    glow = approach(glow, if hovered(r) then 1.0 else 0.0 end, 16.0)
+  """,
+  see: ["ease_out"])
 pub fn approach(cur, target, rate)
   # Already there: answer without reading the clock, so a settled motion no
   # longer makes the frame depend on `dt()` (and keep ticking) for nothing.
@@ -142,12 +189,12 @@ pub fn approach(cur, target, rate)
   let next = cur + (target - cur) * (1.0 - exp(-rate * dt()))
   if abs(target - next) < 0.001 then target else next end
 
-# Cubic ease-out: fast start, gentle landing. t in [0, 1] (clamped).
+@doc("Cubic ease-out: a fast start and a gentle landing.", params: {t: "Progress, clamped to 0–1."}, returns: "Eased progress, 0.0–1.0.", see: ["ease_in_out", "approach"])
 pub fn ease_out(t)
   let c = clamp(float(t), 0.0, 1.0)
   1.0 - (1.0 - c) * (1.0 - c) * (1.0 - c)
 
-# Cubic ease-in-out: gentle at both ends.
+@doc("Cubic ease-in-out: gentle at both ends.", params: {t: "Progress, clamped to 0–1."}, returns: "Eased progress, 0.0–1.0.", see: ["ease_out"])
 pub fn ease_in_out(t)
   let c = clamp(float(t), 0.0, 1.0)
   if c < 0.5 then
@@ -156,11 +203,14 @@ pub fn ease_in_out(t)
     1.0 - pow(-2.0 * c + 2.0, 3.0) / 2.0
 
 # ── Pixel-budget word wrap ────────────────────────────────────────────────
-# `wrap` with a pixel budget instead of a char budget: lines measured with
-# text_width at `size` (a bare px size or a style record, like ellipsize), so
-# what fits is what actually fits. Explicit "\n"s split first; a word wider
-# than the budget is hard-broken. The pixel counterpart every drawer's local
-# `wrap2` approximated.
+@doc("""
+Word wrap by pixels: `wrap` with a pixel budget instead of a character one.
+Lines are measured with `text_width`, so what fits is what actually fits.
+An explicit `"\n"` splits first, and a word wider than the budget is broken.
+""",
+  params: {avail_px: "The width each line must fit.", size: "A pixel size, or a text style record."},
+  returns: "A list of lines.",
+  see: ["ui.wrap", "text_wrap"])
 pub fn wrap_px(s, avail_px, size)
   if avail_px <= 0 then
     [s]

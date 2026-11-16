@@ -1,9 +1,33 @@
+@module_doc("""
+Drawing: shapes, images, text, clipping, gradients, scrims, shadows and
+elevation, offscreen canvases, fonts, colour, compositing and the theme.
+`ui` re-exports every name here.
+
+Each shape comes flat (`draw_line(x1, y1, x2, y2, r, g, b)`), with records
+(`draw_line(p1, p2, c)`), and mixed (`draw_line(x1, y1, x2, y2, c)`). All
+take a trailing alpha `a` (0–255); strokes also take a trailing `width`.
+Arguments can be named, and are spelt the same way throughout: `x, y, w, h`
+/ `rect`, `cx, cy` / `center`, `x1, y1, x2, y2` / `p1, p2`, `radius`,
+`r, g, b` / `c`, then `a` and `width`:
+
+```petal
+draw_rect_outline(x: 0, y: 0, w: 10, h: 4, c: :ff0000, width: 2)
+draw_circle(center: p, radius: 6, c: :ff0000, a: 128)
+```
+
+Coordinates may be fractional. A host that draws only whole pixels truncates
+them. A host that draws at fractional positions keeps them for circles,
+ellipses, arcs, lines, polylines, triangles and polygons, and by default
+snaps the rect family (rects, outlines, rect gradients, shadows, images,
+canvases, text positions) so that touching rects meet without a seam; see
+`pixel_snap`. drawing.md (core-libs/petal-ui/docs) covers the primitives in
+depth.
+""", see: ["ui", "pixel_snap"])
+
 # petal-ui draw — module `ui/draw`
 #
-# Drawing: the public natives, geometry and timing (`./_base`), the record
-# overloads over the draw natives, clipping, gradients, scrims, shadows,
-# elevation, offscreen canvases, fonts, colour, compositing and the theme.
-# `ui` re-exports every name here.
+# The public natives, geometry and timing (`./_base`), the record overloads
+# over the draw natives, and the rest of the draw surface.
 
 pub import ./_base
 pub import ./_style: theme, ui_theme, theme_set, theme_reset, theme_from_palette
@@ -63,29 +87,28 @@ fn _is_num(v)
   let t = type(v)
   t == "int" || t == "float"
 
-# draw_image(source, rect[, a[, radius]]) / draw_image(source, x, y, w, h[, a[,
-# radius]]) — a host-resolved bitmap scaled into the destination. `source` is
-# an asset path or name the host understands. `radius` rounds the corners —
-# the avatar, the card thumbnail. A host that can't round a bitmap draws the
-# square image rather than nothing.
-#
-# In place of `a`, an options record says the rest:
-#
-#   draw_image("ui/atlas.png", r, {src: rect(32, 0, 16, 16), tint: #ffcc00})
-#   draw_image("ui/frame.png", panel, {slice: 6})
-#
-#   a       opacity 0–255 (default 255)
-#   radius  corner radius in px (default 0)
-#   tint    a colour the image's pixels are multiplied by — one white sprite,
-#           recoloured per use (default: none)
-#   src     the part of the image to draw, {x, y, w, h} in the image's own
-#           pixels: one cell of an atlas (default: the whole image)
-#   slice   nine-slice insets in the image's own pixels, one number for all
-#           four edges or {l, t, r, b}: corners are drawn unscaled, edges
-#           stretch one way, the middle both — a small frame image makes a
-#           panel of any size (default: none, the image scales whole)
-#
-# A host that lacks one of these draws the image without it.
+@doc("""
+Draw a host-resolved bitmap scaled into a rect. A host that can't round a
+bitmap draws the square image rather than nothing; a host that lacks one of
+the `opts` draws the image without it.
+""",
+  params: {
+    source: "An asset path or name the host understands.",
+    a: "Opacity, 0–255 (255), or in its place an options record.",
+    radius: "Rounds the corners: the avatar, the card thumbnail.",
+  },
+  options: {
+    a: "Opacity, 0–255 (255).",
+    radius: "Corner radius in px (0).",
+    tint: "A colour the image's pixels are multiplied by: one white sprite, recoloured per use.",
+    src: """The part of the image to draw, `{x, y, w, h}` in the image's own pixels: one cell of an atlas.""",
+    slice: """Nine-slice insets in the image's own pixels, one number or `{l, t, r, b}`. Corners are drawn unscaled, edges stretch one way, the middle both: a small frame image makes a panel of any size.""",
+  },
+  example: """
+    draw_image("ui/atlas.png", r, {src: rect(32, 0, 16, 16), tint: :ffcc00})
+    draw_image("ui/frame.png", panel, {slice: 6})
+  """,
+  see: ["image_load", "image_size"])
 pub fn draw_image(source, x, y, w, h, a = 255, radius = 0)
   if _is_num(a) then
     _native_image(source, x, y, w, h, a, radius)
@@ -116,6 +139,7 @@ fn _image_opts(source, x, y, w, h, o)
     _native_image(source, x, y, w, h, o["a"] ?? 255, o["radius"] ?? 0, o["tint"] ?? nil,
                   sx, sy, sw, sh, sl["l"] ?? 0, sl["t"] ?? 0, sl["r"] ?? 0, sl["b"] ?? 0)
 
+@doc("A filled rect with rounded corners.", params: {radius: "The corner radius, in px."}, see: ["draw_rect", "draw_rect_rounded_outline"])
 pub fn draw_rect_rounded(x, y, w, h, radius, r, g, b, a = 255)
   _native_rect_rounded(x, y, w, h, radius, r, g, b, a)
 pub fn draw_rect_rounded(rect, radius, c, a = 255)
@@ -123,6 +147,9 @@ pub fn draw_rect_rounded(rect, radius, c, a = 255)
 pub fn draw_rect_rounded(x, y, w, h, radius, c, a = 255)
   _native_rect_rounded(x, y, w, h, radius, c.r, c.g, c.b, a)
 
+@doc("""
+A stroked rect, inside the rect's edge.
+""", params: {width: "Stroke width in px (1)."}, example: "draw_rect_outline(r, :3a404c, 255, 2)", see: ["draw_rect_rounded_outline", "draw_rect"])
 pub fn draw_rect_outline(x, y, w, h, r, g, b, a = 255, width = 1)
   _native_rect_outline(x, y, w, h, r, g, b, a, width)
 pub fn draw_rect_outline(x, y, w, h, c)
@@ -138,6 +165,12 @@ pub fn draw_rect_outline(x, y, w, h, c, a = 255, width = 1)
 pub fn draw_rect_outline(rect, c, a = 255, width = 1)
   _native_rect_outline(rect.x, rect.y, rect.w, rect.h, c.r, c.g, c.b, a, width)
 
+@doc("""
+A line from one point to another.
+""",
+  params: {p1: """The start, `{x, y}`.""", p2: "The end.", width: "Stroke width in px (1)."},
+  example: """draw_line({x: 0, y: 0}, {x: 100, y: 50}, :ffffff, 200, 2)""",
+  see: ["draw_polyline"])
 pub fn draw_line(x1, y1, x2, y2, r, g, b, a = 255, width = 1)
   _native_line(x1, y1, x2, y2, r, g, b, a, width)
 pub fn draw_line(x1, y1, x2, y2, c, a)
@@ -164,6 +197,7 @@ pub fn draw_line(p1, p2, c, a = 255, width = 1)
   else
     _native_line(p1.x, p1.y, p2.x, p2.y, c.r, c.g, c.b, a, width)
 
+@doc("A filled disc.", params: {center: """The centre, `{x, y}`."""}, see: ["draw_circle_outline", "draw_ellipse", "draw_circle_gradient"])
 pub fn draw_circle(cx, cy, radius, r, g, b, a = 255)
   _native_circle(cx, cy, radius, r, g, b, a)
 pub fn draw_circle(center, radius, c)
@@ -184,6 +218,7 @@ pub fn draw_circle(cx, cy, radius, c, a = 255)
 # round-trip the prelude exists to save. The shapes mirror the flat natives
 # exactly — the same optional alpha and stroke width, in the same order — so
 # switching a call from packed ints to a colour record changes nothing else.
+@doc("A stroked rect with rounded corners.", params: {radius: "The corner radius, in px.", width: "Stroke width in px (1)."}, see: ["draw_rect_outline", "draw_rect_rounded"])
 pub fn draw_rect_rounded_outline(x, y, w, h, radius, r, g, b, a = 255, width = 1)
   _native_rect_rounded_outline(x, y, w, h, radius, r, g, b, a, width)
 pub fn draw_rect_rounded_outline(x, y, w, h, radius, c)
@@ -204,6 +239,7 @@ pub fn draw_rect_rounded_outline(rect, radius, c, a = 255, width = 1)
 # flat form. So the centre-record form keeps a declaration per count, each
 # looking at its first argument, and the mixed form's own declaration looks at
 # its fourth.
+@doc("A ring: a stroked circle.", params: {center: """The centre, `{x, y}`.""", width: "Stroke width in px (1)."}, see: ["draw_circle"])
 pub fn draw_circle_outline(cx, cy, radius, r, g, b, a = 255, width = 1)
   _native_circle_outline(cx, cy, radius, r, g, b, a, width)
 # Also positionally the flat `(cx, cy, radius, r, g, b)`.
@@ -231,6 +267,7 @@ pub fn draw_circle_outline(center, radius, c, a = 255, width = 1)
   else
     _native_circle_outline(center.x, center.y, radius, c.r, c.g, c.b, a, width)
 
+@doc("A filled ellipse.", params: {rx: "The horizontal radius.", ry: "The vertical radius."}, see: ["draw_ellipse_outline", "draw_circle"])
 pub fn draw_ellipse(cx, cy, rx, ry, r, g, b, a = 255)
   _native_ellipse(cx, cy, rx, ry, r, g, b, a)
 pub fn draw_ellipse(center, rx, ry, c)
@@ -247,6 +284,7 @@ pub fn draw_ellipse(cx, cy, rx, ry, c, a = 255)
 # As with `draw_circle_outline`, the mixed `(cx, cy, rx, ry, c[, a[, width]])`
 # shares its counts: five and six with the centre-record form, seven with the
 # flat form.
+@doc("A stroked ellipse.", params: {rx: "The horizontal radius.", ry: "The vertical radius.", width: "Stroke width in px (1)."}, see: ["draw_ellipse"])
 pub fn draw_ellipse_outline(cx, cy, rx, ry, r, g, b, a = 255, width = 1)
   _native_ellipse_outline(cx, cy, rx, ry, r, g, b, a, width)
 # Also positionally the flat `(cx, cy, rx, ry, r, g, b)`.
@@ -274,8 +312,12 @@ pub fn draw_ellipse_outline(center, rx, ry, c, a = 255, width = 1)
   else
     _native_ellipse_outline(center.x, center.y, rx, ry, c.r, c.g, c.b, a, width)
 
-# `fill_arc(center, r_in, r_out, a0, a1, c[, a])` — angles in radians,
-# clockwise from +x, as the flat form takes them.
+@doc("""
+A filled ring segment, between radii `r_in` and `r_out` and angles `a0` to
+`a1`: a pie slice (`r_in` 0), a gauge, a progress ring.
+""",
+  params: {a0: "The start angle, in radians clockwise from +x.", a1: "The end angle."},
+  example: """fill_arc({x: 60, y: 60}, 20, 28, 0.0, PI * frac * 2.0, :3c8cff)""")
 pub fn fill_arc(cx, cy, r_in, r_out, a0, a1, r, g, b, a = 255)
   _native_arc(cx, cy, r_in, r_out, a0, a1, r, g, b, a)
 pub fn fill_arc(center, r_in, r_out, a0, a1, c)
@@ -289,8 +331,7 @@ pub fn fill_arc(center, r_in, r_out, a0, a1, c, a)
 pub fn fill_arc(cx, cy, r_in, r_out, a0, a1, c, a = 255)
   _native_arc(cx, cy, r_in, r_out, a0, a1, c.r, c.g, c.b, a)
 
-# `fill_triangle(p1, p2, p3, c[, a])` with `{x, y}` (or `vec2`) corners, next
-# to the nine-int form.
+@doc("""A filled triangle. The record form takes `{x, y}` (or `vec2`) corners.""", see: ["fill_poly"])
 pub fn fill_triangle(x1, y1, x2, y2, x3, y3, r, g, b, a = 255)
   _native_triangle(x1, y1, x2, y2, x3, y3, r, g, b, a)
 pub fn fill_triangle(p1, p2, p3, c, a = 255)
@@ -300,16 +341,19 @@ pub fn fill_triangle(x1, y1, x2, y2, x3, y3, c, a = 255)
 
 # The point-list primitives take their points as a list already, so the
 # record form only swaps the packed r, g, b for a colour.
+@doc("A filled convex polygon.", params: {points: """The corners, `{x, y}` records in order."""}, see: ["fill_polygon", "draw_polygon_outline"])
 pub fn fill_poly(points, r, g, b, a = 255)
   _native_poly(points, r, g, b, a)
 pub fn fill_poly(points, c, a = 255)
   _native_poly(points, c.r, c.g, c.b, a)
 
+@doc("A filled simple polygon, concave included.", params: {points: """The corners, `{x, y}` records in order."""}, see: ["fill_poly"])
 pub fn fill_polygon(points, r, g, b, a = 255)
   _native_polygon(points, r, g, b, a)
 pub fn fill_polygon(points, c, a = 255)
   _native_polygon(points, c.r, c.g, c.b, a)
 
+@doc("A triangle fan from a centre to each consecutive pair of `points`.", params: {center: """The hub, `{x, y}`."""})
 pub fn fill_fan(cx, cy, points, r, g, b, a = 255)
   _native_fan(cx, cy, points, r, g, b, a)
 pub fn fill_fan(center, points, c)
@@ -330,6 +374,12 @@ pub fn fill_fan(cx, cy, points, c, a = 255)
 # a type or unpacks a record: each only forwards. They stay Petal functions
 # for the named calls that skip `a` to reach `width`.
 
+@doc("""
+One open stroked path through `points`. Translucent joins do not darken.
+The colour may be a record or a packed int.
+""",
+  params: {points: """`{x, y}` records in order.""", width: "Stroke width in px (1)."},
+  see: ["draw_polygon_outline", "draw_line"])
 pub fn draw_polyline(points, r, g, b, a = 255, width = 1)
   _native_polyline(points, r, g, b, a, width)
 pub fn draw_polyline(points, c)
@@ -345,6 +395,11 @@ pub fn draw_polyline(points, c, a = 255, width = 1)
 # call. Takes exactly `draw_polyline`'s argument shapes.
 fn _closed(points)
   if len(points) > 1 then append(points, points[0]) else points end
+@doc("""
+A closed stroked path: `draw_polyline` with the first point repeated at the
+end, so a ship, a hex or a rotated box needs no `append(pts, pts[0])`. Takes
+exactly `draw_polyline`'s argument shapes.
+""", params: {width: "Stroke width in px (1)."}, see: ["draw_polyline"])
 pub fn draw_polygon_outline(points, r, g, b, a = 255, width = 1)
   draw_polyline(_closed(points), r, g, b, a, width)
 pub fn draw_polygon_outline(points, c)
@@ -355,6 +410,40 @@ pub fn draw_polygon_outline(points, c, a)
 pub fn draw_polygon_outline(points, c, a = 255, width = 1)
   draw_polyline(_closed(points), c, a, width)
 
+@doc("""
+Draw a run of text. `y` (or `pos.y`) is the top of the line. With a style
+record, omitted fields mean plain text (the host's own face, upright,
+regular), so a style is a diff against the plain call. Measure with the same
+record (`text_width(s, style)`) and the two agree.
+
+A **text style** is a record; every field is optional.
+
+| Field | Meaning |
+|---|---|
+| `size` | Pixel size. |
+| `color` | A colour record; its `a` is the run's alpha. |
+| `font` | A face: an installed family name (`"Georgia"`, any case), a host role (`"ui"`, `"mono"`), or a fallback list (`"Georgia, ui"`). A family the host can't find draws, and measures, in the default face. |
+| `weight` | 400 regular, 600 semibold, 700 bold. |
+| `italic` | `true` for italic. |
+| `spacing` or `tracking` | Extra pixels between letters. Measured as well as drawn. |
+| `shadow` | `true`, or `{dx, dy, color, a}`: one copy under the text, offset (1, 1) and black at alpha 160 by default. |
+| `outline` | `true`, a colour, or `{color, width, a}`: a ring around the glyphs, 1 px and black by default. |
+
+`shadow` and `outline` fade with the text's own alpha. See docs/usage/text-and-fonts.md
+for which hosts look font families up.
+""",
+  params: {
+    pos: """Where the run starts: `{x, y}`, `y` the top of the line.""",
+    style: "A text style record (above).",
+    size: "A pixel size, in the host's default face.",
+    c: "The colour, with `size`.",
+  },
+  example: """
+    let title = {size: 22, color: :ffffff, tracking: 2, outline: :000000}
+    draw_text("ROUND 3", 40, 20, title)
+    draw_text("#482", {x: 60, y: 20}, {size: 15, color: :d8dee9, weight: 700})
+  """,
+  see: ["text_width", "font", "ui.draw_text_center", "ui.draw_text_right"])
 pub fn draw_text(text, x, y, size, r, g, b, a = 255)
   _native_text(text, x, y, size, r, g, b, a)
 pub fn draw_text(text, x, y, size, c, a = 255)
@@ -382,18 +471,16 @@ pub fn draw_text(text, x, y, style)
 
 # ── Pixel snapping ────────────────────────────────────────────────────────
 
-# pixel_snap(on) — how what is drawn after it lands on the pixel grid, on a
-# host that draws at fractional positions. By default rects (and images,
-# gradients, shadows, canvases, text positions) snap to whole pixels, so
-# rects that tile meet without a seam, and circles, lines, polylines and
-# polygons keep their fractions, so a slow drift moves smoothly.
-#
-#   pixel_snap(true)    snap everything: pixel art
-#   pixel_snap(false)   snap nothing
-#   pixel_snap(nil)     back to the default
-#
-# Every frame starts at the default. A host that draws only whole pixels
-# snaps everything whatever this says.
+@doc("""
+How what is drawn after it lands on the pixel grid, on a host that draws at
+fractional positions, until the frame ends. By default rects (and images,
+gradients, shadows, canvases, text positions) snap to whole pixels, so rects
+that tile meet without a seam, and circles, lines, polylines and polygons
+keep their fractions, so a slow drift moves smoothly. Every frame starts at
+the default. A host that draws only whole pixels snaps everything whatever
+this says.
+""",
+  params: {on: "`true` snaps everything (pixel art), `false` nothing, `nil` restores the default."})
 pub fn pixel_snap(on)
   _native_pixel_snap(on)
 
@@ -412,6 +499,21 @@ pub fn pixel_snap(on)
 fn _stop_a(c)
   c["a"] ?? 255
 
+@doc("""
+A rect filled with a two-stop linear gradient from `c0` to `c1`.
+
+A stop is an ordinary colour record, and may carry its own `a`: the one
+primitive where alpha rides with the colour, because a two-stop fade needs
+two of them. The trailing `a0`, `a1` default to the stops' own alphas and
+override them.
+""",
+  params: {
+    angle: "The direction the gradient travels, in radians clockwise from +x with y downward: 0 runs left to right, `GRAD_DOWN` top to bottom.",
+    a0: "The alpha at `c0` (its own `a`, or 255).",
+    a1: "The alpha at `c1`.",
+  },
+  example: """draw_rect_gradient(header, :3c8cff, {r: 60, g: 140, b: 255, a: 0}, GRAD_DOWN)""",
+  see: ["draw_rect_gradient_rounded", "linear_gradient", "GRAD_DOWN"])
 pub fn draw_rect_gradient(rect, c0, c1, angle, a0 = _stop_a(c0), a1 = _stop_a(c1))
   _native_rect_gradient(rect.x, rect.y, rect.w, rect.h, c0.r, c0.g, c0.b, a0,
                         c1.r, c1.g, c1.b, a1, angle)
@@ -422,6 +524,7 @@ pub fn draw_rect_gradient(x, y, w, h, c0, c1, angle)
 pub fn draw_rect_gradient(x, y, w, h, r0, g0, b0, a0, r1, g1, b1, a1, angle)
   _native_rect_gradient(x, y, w, h, r0, g0, b0, a0, r1, g1, b1, a1, angle)
 
+@doc("`draw_rect_gradient` with rounded corners.", params: {radius: "The corner radius, in px."}, see: ["draw_rect_gradient"])
 pub fn draw_rect_gradient_rounded(rect, radius, c0, c1, angle, a0 = _stop_a(c0), a1 = _stop_a(c1))
   _native_rect_gradient_rounded(rect.x, rect.y, rect.w, rect.h, radius,
                                 c0.r, c0.g, c0.b, a0, c1.r, c1.g, c1.b, a1, angle)
@@ -432,8 +535,11 @@ pub fn draw_rect_gradient_rounded(x, y, w, h, radius, c0, c1, angle)
 pub fn draw_rect_gradient_rounded(x, y, w, h, radius, r0, g0, b0, a0, r1, g1, b1, a1, angle)
   _native_rect_gradient_rounded(x, y, w, h, radius, r0, g0, b0, a0, r1, g1, b1, a1, angle)
 
-# A disc shading from `c0` at the center to `c1` at the rim — glow, vignette,
-# soft spotlight.
+@doc("""
+A radial gradient: a disc shading from `c0` at the centre to `c1` at the
+rim. A glow, a vignette, a soft spotlight. Stops may carry their own `a`,
+as in `draw_rect_gradient`.
+""", example: """draw_circle_gradient({x: 200, y: 120}, 80, {r: 255, g: 220, b: 120, a: 160}, {r: 255, g: 220, b: 120, a: 0})""", see: ["draw_rect_gradient"])
 pub fn draw_circle_gradient(center, radius, c0, c1, a0 = _stop_a(c0), a1 = _stop_a(c1))
   _native_circle_gradient(center.x, center.y, radius, c0.r, c0.g, c0.b, a0,
                           c1.r, c1.g, c1.b, a1)
@@ -443,17 +549,24 @@ pub fn draw_circle_gradient(cx, cy, radius, c0, c1)
 pub fn draw_circle_gradient(cx, cy, radius, r0, g0, b0, a0, r1, g1, b1, a1)
   _native_circle_gradient(cx, cy, radius, r0, g0, b0, a0, r1, g1, b1, a1)
 
-# A multi-stop gradient: `stops` is a list of color records, spaced evenly
-# along the axis. Two stops is exactly `draw_rect_gradient`; more than two is
-# subdivided here into one two-stop band per pair, so a three-stop sky or a
-# heat ramp costs no new draw command. Neighbouring bands share their edge
-# color and the host interpolates per vertex, so the seams do not show.
-#
-# The bands are laid out along whichever axis the angle leans toward, which
-# makes them exact for an axis-aligned `angle` and an approximation for a
-# diagonal one (each band still gradates along the true angle; only the band
-# *boundaries* are axis-aligned). Two stops has no bands and is exact at any
-# angle.
+# More than two stops is subdivided here into one two-stop band per pair, so
+# a three-stop sky or a heat ramp costs no new draw command. Neighbouring
+# bands share their edge colour and the host interpolates per vertex, so the
+# seams do not show.
+@doc("""
+A linear gradient with any number of evenly spaced stops: a three-stop sky,
+a heat ramp. Two stops is exactly `draw_rect_gradient`. With more, the
+bands between stops are laid out along whichever axis `angle` leans toward,
+so the result is exact for an axis-aligned angle and an approximation for a
+diagonal one (each band still runs along the true angle).
+""",
+  params: {
+    stops: "A list of colour records, which may carry an `a`.",
+    angle: "Radians clockwise from +x with y downward (`GRAD_RIGHT`, `GRAD_DOWN`, …).",
+    radius: "Rounds the rect's corners (0).",
+  },
+  example: "linear_gradient(sky, [:0b1d3a, :3c6fb0, :f2b880], GRAD_DOWN)",
+  see: ["draw_rect_gradient"])
 pub fn linear_gradient(rect, stops, angle, radius = 0)
   let n = len(stops)
   if n == 1 then
@@ -493,25 +606,36 @@ pub fn linear_gradient(rect, stops, angle, radius = 0)
   nil
 
 # The four axis-aligned gradient angles, named. `angle` is radians clockwise
-# from +x with y downward, so these are the directions a fade *travels*:
-# `GRAD_DOWN` starts opaque at the top edge.
+# from +x with y downward, so these are the directions a fade *travels*.
+@doc("The gradient angle that runs left to right (0).", see: ["GRAD_DOWN", "draw_rect_gradient"])
 pub let GRAD_RIGHT = 0.0
+@doc("The gradient angle that runs top to bottom (π/2): a fade from the top edge.", see: ["GRAD_RIGHT"])
 pub let GRAD_DOWN = 1.5707963267948966
+@doc("The gradient angle that runs right to left (π).", see: ["GRAD_RIGHT"])
 pub let GRAD_LEFT = 3.141592653589793
+@doc("The gradient angle that runs bottom to top (3π/2): a fade from the bottom edge.", see: ["GRAD_RIGHT"])
 pub let GRAD_UP = 4.71238898038469
 
 # ── Scrims, fades and area fills ──────────────────────────────────────────
 # The three things a two-stop gradient is for in an interface, as helpers, so
 # no panel has to work out the stop-and-angle arithmetic again.
 
-# A scrim: a band of `color` fading to nothing, laid over content so text can
-# sit on top of it and stay legible — a caption over a photo, a title over a
-# hero image, a toolbar over a map. The band is opaque at the edge the text is
-# anchored to and gone at the other, which is what keeps the underlying image
-# visible everywhere the text is not.
-#
-#   draw_scrim(caption_band, {edge: "bottom"})
-#   draw_text(caption, {x: ..., y: ...}, ...)
+@doc("""
+A scrim: a band of colour fading to nothing, laid over content so text on
+top of it stays legible. A caption over a photo, a title over a hero image,
+a toolbar over a map. The band is solid at the edge the text is anchored to
+and gone at the other, so the image stays visible everywhere the text is not.
+""",
+  options: {
+    color: "The band's colour (black).",
+    a: "Its alpha at the solid edge (190).",
+    edge: """Which side of `r` is solid: `"bottom"` (the default, a caption band), `"top"`, `"left"` or `"right"`.""",
+  },
+  example: """
+    draw_scrim(caption_band, {edge: "bottom"})
+    draw_text(caption, caption_band.x + 8, caption_band.y + 8, {size: 14, color: :ffffff})
+  """,
+  see: ["draw_fade"])
 pub fn draw_scrim(r)
   draw_scrim(r, {})
 
@@ -533,16 +657,24 @@ pub fn draw_scrim(r, style)
     angle = GRAD_LEFT
   draw_rect_gradient(r, c, c, angle, a, 0)
 
-# A fade-out mask along one edge of a scrolling region: the region's own
-# background, opaque at the edge and transparent a few pixels in, so content
-# scrolling past the boundary dissolves instead of being guillotined by the
-# clip. The counterpart to a scrim — a scrim hides what is under it, a fade
-# hides where content *ends*.
-#
-#   clip_push(list_rect)
-#   ...rows...
-#   clip_pop()
-#   draw_fade(cut_bottom(list_rect, 24).cut, {edge: "bottom"})
+@doc("""
+A fade-out mask along one edge of a scrolling region: the region's own
+background, opaque at the edge and transparent a few pixels in, so content
+scrolling past the boundary dissolves instead of being cut by the clip. A
+scrim hides what is under it; a fade hides where content ends.
+""",
+  options: {
+    color: "What the fade dissolves into (the theme's `bg`).",
+    a: "The alpha at the solid edge (255).",
+    edge: """The side that is solid: `"bottom"` (the default), `"top"`, `"left"`, `"right"`.""",
+  },
+  example: """
+    clip_push(list_rect)
+    draw_rows(list_rect)
+    clip_pop()
+    draw_fade(cut_bottom(list_rect, 24).cut, {edge: "bottom"})
+  """,
+  see: ["draw_scrim"])
 pub fn draw_fade(r)
   draw_fade(r, {})
 
@@ -556,16 +688,30 @@ pub fn draw_fade(r, style)
     edge: _get(style, "edge", "bottom")
   })
 
-# The filled area under a line chart, fading to transparent at the baseline —
-# the shape a plain rect fill cannot make, because the top edge follows the
-# data.
-#
-# `points` is the polyline, in order, as {x, y} records; `baseline_y` is the
-# axis the fill drops to. Each segment is cut into `step`-px columns and each
-# column drawn as its own vertical gradient. That is exact rather than
-# approximate: the fill's alpha at a pixel is a linear function of y alone, so
-# starting each column at its own top with the alpha that ramp has *there*
-# reproduces the single global ramp, column by column.
+# Each segment is cut into `step`-px columns and each column drawn as its own
+# vertical gradient. That is exact rather than approximate: the fill's alpha
+# at a pixel is a linear function of y alone, so starting each column at its
+# own top with the alpha that ramp has *there* reproduces the single global
+# ramp, column by column.
+@doc("""
+The filled area under a line chart, fading to transparent at the baseline:
+the shape a plain rect fill cannot make, because its top edge follows the
+data.
+""",
+  params: {
+    points: """The series' polyline, in order, as `{x, y}` records.""",
+    baseline_y: "The axis the fill drops to.",
+    color: "The fill colour.",
+  },
+  options: {
+    a: "The alpha at the highest point of the series (the fill is weakest where the data is lowest, which reads as depth).",
+    step: "The column width in px.",
+  },
+  example: """
+    draw_area_fill(pts, plot.y + plot.h, :3c8cff, {a: 90})
+    draw_polyline(pts, :3c8cff, 255, 2)
+  """,
+  see: ["draw_polyline"])
 pub fn draw_area_fill(points, baseline_y, color)
   draw_area_fill(points, baseline_y, color, {})
 
@@ -605,14 +751,26 @@ pub fn draw_area_fill(points, baseline_y, color, style)
 
 # ── Shadows ───────────────────────────────────────────────────────────────
 
-# A CSS box-shadow cast by the rounded rect `rect`. `opts` is a partial record
-# of {radius, blur, spread, dx, dy, color, a} — anything omitted defaults to
-# the plain drop shadow (square corners, no spread, no offset, black at 25%).
-# The whole shadow composites once, so it never shows a seam:
-#
-#   draw_shadow(card, {radius: 8, blur: 16, dy: 4, a: 60})
-#   draw_rect_rounded(card, 8, t.panel)
-
+@doc("""
+A box shadow cast by the rounded rect `rect`, like CSS `box-shadow`. The
+whole shadow composites once, so it never shows a seam. Draw it before the
+surface. The positional form `(rect, radius, blur, c[, a])` is the common
+"soft shadow under this card" call.
+""",
+  options: {
+    radius: "The casting rect's corner radius (0).",
+    blur: "The blur radius in px (8).",
+    spread: "Grows the shadow on every side (0).",
+    dx: "Horizontal offset (0).",
+    dy: "Vertical offset (0).",
+    color: "Shadow colour (black).",
+    a: "Shadow alpha (64, about 25%)."
+  },
+  example: """
+    draw_shadow(card, {radius: 8, blur: 16, dy: 4, a: 60})
+    draw_rect_rounded(card, 8, ui_theme().panel)
+  """,
+  see: ["draw_elevation", "elevation"])
 pub fn draw_shadow(rect, opts)
   let c = opts["color"] ?? :000000
   _native_shadow(rect.x, rect.y, rect.w, rect.h,
@@ -638,7 +796,12 @@ pub fn draw_shadow(x, y, w, h, radius, blur, spread, dx, dy, r, g, b, a = 255)
 #   draw_elevation(card_rect, t.radius, 1)
 #   draw_rect_rounded(card_rect, t.radius, t.surface)
 
-# The `draw_shadow` opts record for elevation `level` (1–3, clamped).
+@doc("""
+The theme's shadow for elevation `level`, as a `draw_shadow` options record.
+One scale for every floating thing (cards at 1, menus, popovers and
+dropdowns at 2, modals and toasts at 3) makes a panel read as one surface
+lit by one light.
+""", params: {level: "1–3, clamped."}, returns: """`{blur, spread, dy, a}` from the theme's `elevation_1/2/3`.""", see: ["draw_elevation", "draw_shadow"])
 pub fn elevation(level)
   let t = _palette()
   let l = clamp(level, 1, 3)
@@ -649,8 +812,17 @@ pub fn elevation(level)
   else
     t.elevation_3
 
-# Cast elevation `level`'s shadow for a rounded rect. Draw it *before* the
-# surface itself — the shadow is what is behind the card, not on it.
+@doc("""
+Cast elevation `level`'s shadow for a rounded rect. Draw it *before* the
+surface: the shadow is what is behind the card, not on it.
+""",
+  params: {level: "1 resting (cards), 2 floating (menus), 3 lifted (modals)."},
+  options: {blur: "Override the level's blur.", spread: "Override its spread.", dx: "Horizontal offset.", dy: "Vertical offset.", color: "Shadow colour, for a coloured glow.", a: "Shadow alpha."},
+  example: """
+    draw_elevation(card_rect, t.radius, 1)
+    draw_rect_rounded(card_rect, t.radius, t.surface)
+  """,
+  see: ["elevation", "draw_shadow"])
 pub fn draw_elevation(r, radius, level)
   draw_elevation(r, radius, level, {})
 
@@ -668,9 +840,13 @@ pub fn draw_elevation(r, radius, level, style)
     a: _get(style, "a", e.a)
   })
 
-# A focus ring: the accent colour bloomed around `r` rather than a hard
-# second outline, so focus reads as attention rather than as a doubled
-# border. Draw it before the widget's own surface, like any other shadow.
+@doc("""
+A focus ring: the accent colour bloomed around `r` rather than a hard second
+outline, so focus reads as attention rather than as a doubled border. Draw
+it before the widget's own surface, like any other shadow.
+""",
+  options: {color: "The glow's colour (the theme's accent).", blur: "Blur radius.", spread: "How far it reaches past `r`.", a: "Its alpha."},
+  see: ["draw_elevation"])
 pub fn draw_focus_ring(r, radius)
   draw_focus_ring(r, radius, {})
 
@@ -686,11 +862,14 @@ pub fn draw_focus_ring(r, radius, style)
     a: _get(style, "a", 150)
   })
 
-# The shadow a sticky header casts over content scrolled underneath it: a
-# short vertical fade below `header_rect`, at a strength that follows how far
-# the content has scrolled, so a list at rest shows no seam at all. `frac` is
-# 0 (at the top, nothing drawn) to 1 (fully lifted); scaling it by
-# `min(1.0, scroll_px / 24.0)` is the usual call.
+@doc("""
+The shadow a sticky header casts over content scrolled under it: a short
+fade below `header_rect`, as strong as the content is scrolled, so a list at
+rest shows no seam at all.
+""",
+  params: {frac: "0 (at the top: nothing drawn) to 1 (fully lifted)."},
+  options: {height: "The fade's height in px.", color: "Shadow colour.", a: "Alpha at full strength."},
+  example: "draw_scroll_shadow(header, min(1.0, scroll_px / 24.0))")
 pub fn draw_scroll_shadow(header_rect, frac)
   draw_scroll_shadow(header_rect, frac, {})
 
@@ -732,13 +911,23 @@ pub fn draw_scroll_shadow(header_rect, frac, style)
 # *outside* the layer — `draw_material` draws its tint after the blurred
 # snapshot, which on such a host is the tint alone: right in aggregate.
 
-# An offscreen canvas, transparent until drawn into, recreated each frame.
+@doc("""
+A transparent offscreen canvas `w` by `h` (or the size of rect `r`), good
+for this frame. Hosts without render targets draw nothing for a canvas.
+""", returns: "The canvas id, for `draw_to` and `draw_canvas`.", see: ["layer", "draw_canvas", "create_canvas"])
 pub fn canvas(w, h)
   create_canvas(int(w), int(h))
 pub fn canvas(r)
   create_canvas(int(r.w), int(r.h))
 
 # The flat form, forwarded so it stays reachable under the record one.
+@doc("""
+Composite canvas `id`: at a point `{x, y}` at its natural size, or scaled
+into a rect. Three arguments is also, positionally, the flat
+`draw_canvas(id, x, y)`.
+""",
+  params: {at: """A point `{x, y}`, or a rect to scale into.""", opts: """`{a}`: the canvas's opacity."""},
+  see: ["canvas", "layer"])
 pub fn draw_canvas(id, x, y, a = 255, w = 0, h = 0)
   _native_draw_canvas(id, x, y, a, w, h)
 
@@ -759,11 +948,22 @@ fn _draw_canvas_at(id, at, opts)
   _native_draw_canvas(id, at.x, at.y, _get(opts, "a", 255),
                       _get(at, "w", 0), _get(at, "h", 0))
 
-# Draw `body()` into a fresh canvas the size of `r` — canvas-local
-# coordinates — then composite it at `r`. `opts` is {a, blur}: the group's
-# opacity, and a Gaussian blur (px) applied to the whole layer before it is
-# drawn. Returns the canvas id, so the caller can draw it again (a repeated
-# stamp) or filter it further.
+@doc("""
+An offscreen layer: draw `body()` into a fresh canvas the size of `r`, in
+canvas-local coordinates ((0, 0) is the rect's top-left), then composite it
+at `r`. Group opacity (overlapping translucent shapes at 50% as one object,
+which drawing each at 50% gets wrong), glows. Layers nest.
+""",
+  options: {a: "The group's opacity, 0–255.", blur: "A Gaussian blur in px, applied to the whole layer before it is drawn."},
+  returns: "The canvas id, to draw again (a repeated stamp) or filter further.",
+  example: """
+    layer(card, {a: 128}, fn()
+      draw_circle({x: 40, y: 40}, 40, c1)
+      draw_circle({x: 80, y: 40}, 40, c2)
+    )
+    layer(halo, {blur: 12}, fn() draw_circle({x: halo.w / 2, y: halo.h / 2}, halo.h / 2, accent) end)
+  """,
+  see: ["canvas", "draw_material", "ui.cached_layer"])
 pub fn layer(r, body)
   layer(r, {}, body)
 pub fn layer(r, opts, body)
@@ -777,33 +977,37 @@ pub fn layer(r, opts, body)
   _native_draw_canvas(c, int(r.x), int(r.y), _get(opts, "a", 255), 0, 0)
   c
 
-# A canvas holding what is currently painted under `r` — the backdrop
-# primitive. Order matters: it copies the target as drawn *so far*.
+@doc("""
+A canvas holding a copy of what is already painted under `r`: the backdrop
+primitive. It copies the target as drawn *so far*.
+""", returns: "The canvas id.", see: ["draw_backdrop_blur", "snapshot_to"])
 pub fn snapshot(r)
   let c = create_canvas(int(r.w), int(r.h))
   snapshot_to(c, int(r.x), int(r.y))
   c
 
-# Replace what is under `r` with a `radius`-px Gaussian blur of itself.
+@doc("Replace what is already painted under `r` with a `radius`-px Gaussian blur of itself.", see: ["draw_material", "snapshot"])
 pub fn draw_backdrop_blur(r, radius)
   let c = snapshot(r)
   blur_canvas(c, radius)
   _native_draw_canvas(c, int(r.x), int(r.y), 255, 0, 0)
 
-# The translucent, background-sampling surface Apple's chrome is made of —
-# navigation and tab bars, sheets, the floating search pill: what is behind
-# it, blurred, under a tint. `opts`:
-#   kind      "thin" | "regular" | "thick" — how much the backdrop shows
-#             through (sets the default blur and tint strength)
-#   radius    corner radius (a bar is 0, a pill is r.h / 2)
-#   blur      Gaussian radius in px (default by kind: 12 / 20 / 32)
-#   tint      the material's colour (default: the theme surface)
-#   a         tint opacity 0–255 (default by kind: 110 / 165 / 215)
-#   hairline  true draws the 1-px separator a bar carries on the edge facing
-#             the content ("top" / "bottom" choose the edge; true = bottom)
-#
-# Content that scrolls under the material must be drawn *before* it — the
-# snapshot reads what is already there.
+@doc("""
+The translucent, blurred bar content scrolls under: navigation and tab bars,
+sheets, a floating search pill. What is behind it, blurred, under a tint.
+Content that scrolls under it must be drawn *before* it, since it reads what
+is already there. On a host without render targets it is the tint alone.
+""",
+  options: {
+    kind: """`"thin"`, `"regular"` (the default) or `"thick"`: how much the backdrop shows through. Sets the default blur and tint strength.""",
+    radius: "Corner radius (a bar is 0, a pill is `r.h / 2`).",
+    blur: "Gaussian radius in px (by kind: 12 / 20 / 32).",
+    tint: "The material's colour (the theme's surface).",
+    a: "Tint opacity, 0–255 (by kind: 110 / 165 / 215).",
+    hairline: """`true` or `"bottom"` draws the 1-px separator a bar carries on the edge facing the content; `"top"` puts it on top.""",
+  },
+  example: """draw_material(bar, {kind: "regular", hairline: true})""",
+  see: ["draw_backdrop_blur", "layer"])
 pub fn draw_material(r)
   draw_material(r, {})
 pub fn draw_material(r, opts)
@@ -832,25 +1036,24 @@ pub fn draw_material(r, opts)
 
 # ── Fonts ─────────────────────────────────────────────────────────────────
 
-# `font(name)` names a face as an *object* rather than a string, so the size
-# and decorations that belong with it can travel with it:
-#
-#   let title = font_bold(font("Helvetica Neue", 22))
-#   draw_text("Chapter One", {x: 20, y: 40}, title)
-#   let w = text_width("Chapter One", title)
-#
-# A font object is an ordinary style record — the same `{size, color, font,
-# weight, italic, spacing}` `draw_text`, `text_width` and every widget `style`
-# argument already take — so it drops into all of them, and merges with a
-# style the usual way (`{...title, color: FG}`). That is the point: one value
-# describes a run's whole appearance, so what you measure is what you draw.
-#
-# `name` is a family name (`"Helvetica Neue"`), one of the host's role names
-# (`"mono"`, `"ui"`), or a CSS-style fallback list (`"Menlo, mono"`). The host
-# resolves it against the fonts actually installed; one it cannot draw keeps
-# the name as written and falls back to the host's default face for both
-# measuring and drawing, so a script written on one machine still lays out
-# sensibly on another. `fonts()` lists what this host offers.
+@doc("""
+A font object: a style record naming a face, so the size and decorations
+that belong with it travel with it. It is an ordinary text style record
+(see `draw_text`), so it drops into `draw_text`, `text_width` and every
+widget `style`, and merges the usual way (`{...title, color: FG}`): one
+value describes a run's whole appearance, so what is measured is what is
+drawn.
+""",
+  params: {
+    name: """A family name (`"Helvetica Neue"`), a host role (`"mono"`, `"ui"`), or a CSS-style fallback list (`"Menlo, mono"`). One the host cannot draw falls back to its default face, for measuring and drawing alike.""",
+    size: "The pixel size.",
+  },
+  example: """
+    let title = font_bold(font("Helvetica Neue", 22))
+    draw_text("Chapter One", {x: 20, y: 40}, title)
+    let w = text_width("Chapter One", title)
+  """,
+  see: ["fonts", "font_size", "font_bold", "draw_text"])
 pub fn font(name)
   _native_font(name)
 
@@ -858,56 +1061,71 @@ pub fn font(name)
 pub fn font(name, size)
   {..._native_font(name), size: size}
 
-# The decorations. Each returns a *new* font object with one field set, so
-# they compose and never mutate the font they were given:
-#   let body = font("Inter", 14)
-#   let emphasis = font_italic(font_color(body, ACCENT))
+@doc("""
+A copy of font `f` at `size`. Like every `font_*` decoration it returns a
+new font object with one field set, so they compose and never change the
+font they were given.
+""",
+  example: """
+    let body = font("Inter", 14)
+    let emphasis = font_italic(font_color(body, :3c8cff))
+  """,
+  see: ["font", "font_weight", "font_color"])
 pub fn font_size(f, size)
   {...f, size: size}
 
-# CSS numeric weight, 100–900. A host draws the nearest cut the family ships,
-# synthesizing bold only for a family that has none.
+@doc("""
+A copy of font `f` at weight `w`.
+""", params: {w: "A CSS numeric weight, 100–900. A host draws the nearest cut the family ships, synthesizing bold only for a family that has none."}, see: ["font_bold"])
 pub fn font_weight(f, w)
   {...f, weight: w}
 
+@doc("A copy of font `f` in bold (weight 700).", see: ["font_weight", "font_italic"])
 pub fn font_bold(f)
   {...f, weight: 700}
 
+@doc("A copy of font `f` in italic.", see: ["font_bold"])
 pub fn font_italic(f)
   {...f, italic: true}
 
-# Letter-spacing in pixels, added after each glyph.
+@doc("A copy of font `f` with `px` of letter-spacing, added after each glyph.", see: ["font"])
 pub fn font_spacing(f, px)
   {...f, spacing: px}
 
-# The color a run in this font draws in — a `{r, g, b}` (or `{r, g, b, a}`)
-# record, the same shape every other draw call takes.
+@doc("""
+A copy of font `f` that draws in colour `c`: a `{r, g, b}` (or `{r, g, b,
+a}`) record.
+""", see: ["font"])
 pub fn font_color(f, c)
   {...f, color: c}
 
 # ── Color helpers ─────────────────────────────────────────────────────────
 
-# Blend two colors: `t` = 0 is `a`, 1 is `b`. Thin wrapper over the `color_lerp`
-# builtin so the prelude's own name for it is discoverable next to `theme` —
-# several apps hand-rolled this same three-channel average.
+# A thin wrapper over the `color_lerp` builtin, so the prelude's own name for
+# it is discoverable next to `theme`.
+@doc("""
+Blend two colours: `t` = 0 is `a`, 1 is `b`.
+""", example: "let hover_bg = mix(t.panel, t.accent, 0.15)", see: ["lerp_color", "over"])
 pub fn mix(a, b, t)
   color_lerp(a, b, t)
 
-# `lerp_color` is the same function under the name the graphics-minded reach
-# for first.
+@doc("Blend two colours: `mix` under the name the graphics-minded reach for first.", see: ["mix"])
 pub fn lerp_color(a, b, t)
   color_lerp(a, b, t)
 
-# Perceived brightness of a color, 0 (black) – 255 (white), using the Rec. 601
-# luma weights. The one thing a themeable widget actually needs to know about a
-# color it did not choose: `luma(bg) > 128` means "this is a light surface", so
-# pick dark ink. Handy for deriving a readable foreground for arbitrary tags,
-# avatars and status chips.
+@doc("""
+The perceived brightness of a colour, 0 (black) to 255 (white), by the Rec.
+601 luma weights. What a themeable widget needs to know about a colour it
+did not choose: `luma(bg) > 128` means a light surface, so pick dark ink.
+""", see: ["contrast_text"])
 pub fn luma(c)
   (c.r * 299 + c.g * 587 + c.b * 114) / 1000
 
-# A foreground that stays readable on `bg`: near-black on light surfaces,
-# near-white on dark ones.
+@doc("""
+Black or white, whichever reads on `bg`: near-black on light surfaces,
+near-white on dark ones. A readable label for arbitrary tags, avatars and
+status chips.
+""", example: """draw_text(tag.name, x, y, {size: 12, color: contrast_text(tag.color)})""", see: ["luma"])
 pub fn contrast_text(bg)
   if luma(bg) > 140 then :14161c else :f2f5fa end
 
@@ -930,25 +1148,38 @@ pub fn contrast_text(bg)
 # against ahead of time. Widgets that flatten a tint therefore take an `on`
 # style key naming the surface they sit on.
 
-# A percentage as the 0–255 alpha every draw primitive takes: alpha_pct(40)
-# is 102. The unit conversion that flat-tint percentages keep needing.
+@doc("""
+A percentage as the 0–255 alpha every draw call takes: `alpha_pct(40)` is
+102.
+""", see: ["tint"])
 pub fn alpha_pct(p)
   clamp(int(p * 255 / 100), 0, 255)
 
-# `fg` composited over `bg` at alpha `a`, as an opaque colour. `a` is either
-# the 0–255 alpha every primitive takes or a 0.0–1.0 fraction — a float is
-# read as the fraction, an int as the byte.
+@doc("""
+`fg` composited over `bg` at alpha `a`, as an opaque colour: a hover wash, a
+disabled label, a zebra stripe over a surface you already know. Drawing the
+result opaque gives the same pixel however many times it is drawn, where a
+translucent fill drawn twice reads darker. Genuine translucency, over
+content the widget did not paint, still takes a plain alpha.
+""",
+  params: {a: "An int is the 0–255 alpha; a float is a 0.0–1.0 fraction."},
+  example: "draw_rect(row_r, over(t.panel, t.accent, 0.12))",
+  see: ["tint", "hairline"])
 pub fn over(bg, fg, a)
   let f = if type(a) == "float" then clamp(a, 0.0, 1.0) else clamp(float(a) / 255.0, 0.0, 1.0) end
   color_lerp(bg, fg, f)
 
-# `over` with the alpha written as a percentage — how tints are actually
-# specified ("a 10% hairline", "disabled text at 40%").
+@doc("""
+`over` with the alpha as a percentage, which is how tints are specified ("a
+10% hairline", "disabled text at 40%").
+""", example: "let disabled = tint(t.panel, t.text, 40)", see: ["over"])
 pub fn tint(bg, fg, pct)
   over(bg, fg, alpha_pct(pct))
 
-# The hairline every divider, rule and table gridline wants: the surface's own
-# ink at 10%, which stays a hairline on a light theme and on a dark one
-# without either being hand-tuned.
+@doc("""
+A separator colour for a surface: the ink at 10% over `bg`, which stays a
+hairline on a light theme and on a dark one without either being
+hand-tuned. Every divider, rule and table gridline wants it.
+""", example: "draw_rect(rect(r.x, r.y + r.h - 1, r.w, 1), hairline(t.panel, t.text))", see: ["tint"])
 pub fn hairline(bg, ink)
   tint(bg, ink, 10)

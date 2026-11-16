@@ -295,8 +295,9 @@ fn library_files_convert_and_keep_their_ir() {
     // The libraries themselves are migrated by hand review (proposal step
     // 5); here the converter only has to produce a gated, idempotent result
     // for each. A file that has been migrated already (it has a
-    // `@module_doc`) must come back unchanged: its documented declarations
-    // are passed over, and what is left above them is maintainer notes.
+    // `@module_doc`) must come back unchanged without `--private`: its
+    // documented declarations are passed over, and what is left above them
+    // is maintainer notes.
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     for rel in [
         "core/prelude/std.ptl",
@@ -314,6 +315,14 @@ fn library_files_convert_and_keep_their_ir() {
         };
         let out = migrate_source(&src, &opts).unwrap_or_else(|e| panic!("{rel}: {e}"));
         if src.contains("@module_doc(") {
+            // Only for its public surface: a private helper's maintainer
+            // note stays a comment in a migrated library, and `--private`
+            // would still turn it into a `@doc`.
+            let public = MigrateOptions {
+                doc_private: false,
+                ..opts
+            };
+            let out = migrate_source(&src, &public).unwrap_or_else(|e| panic!("{rel}: {e}"));
             assert_eq!(out.output, src, "{rel}: a migrated library changed again");
             continue;
         }

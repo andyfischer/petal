@@ -1,13 +1,31 @@
+@module_doc("""
+The drawn widgets: buttons, scrollbars, text fields and areas, context menus
+and popovers, checkboxes, sliders, inspector fields, tab bars, tooltips,
+modals, badges and cards, splitters, tables and the load view. Deprecated:
+bloom (core-stdlib/bloom) owns the widgets now, and every name here has a
+bloom replacement, which `petal lint` rule `ui-widget-moved` names at
+each call. `ui` still re-exports these during the deprecation period. The
+parts that draw nothing (focus, list state, text editing, drag and drop, the
+load state) are `ui/interaction` and stay.
+
+Every widget takes an optional trailing `style` record; any key it leaves out
+comes from `ui_theme()`, and `{}` (or the shorter form) is the themed widget.
+A widget returns its new value (`checkbox` the new bool, `button` true on the
+frame it was clicked) rather than calling back. Buttons, checkboxes,
+toggles, radios, tabs and sliders ease their hover, press and check
+transitions (about 120 ms); at rest they paint the exact resting colours, so
+a still frame is pixel-stable. Where it pays, a widget comes in three forms:
+`x_update` (logic, no pixels), `draw_x` (pixels, no logic) and `x` (both).
+Widget state is per call site, so in a loop over a list that can reorder,
+key the loop (`for item in items key item.id do`) so each widget's state
+stays with its item.
+""",
+  deprecated: "bloom owns the widgets: `import bloom` (core-stdlib/bloom/docs/components.md).",
+  see: ["ui/interaction", "ui"])
+
 # petal-ui widgets — module `ui/widgets` (deprecated)
 #
-# The drawn widgets: buttons, scrollbars, text fields and areas, context
-# menus and popovers, checkboxes, sliders, inspector fields, tab bars,
-# tooltips, modals, badges and cards, splitters, tables and the load view.
-# bloom (core-stdlib/bloom) owns the widgets now, and every name here has a
-# bloom replacement; `petal lint` rule `ui-widget-moved` names it at each
-# call. `ui` still re-exports these during the deprecation period. Add
-# nothing here: new widgets go in bloom. The parts that draw nothing (focus,
-# list state, text editing, drag and drop, the load state) are `ui/interaction`.
+# Add nothing here: new widgets go in bloom.
 
 import ./interaction
 import ./input
@@ -39,21 +57,24 @@ fn _anim_flag(on, rate)
 
 # ── Button (immediate-mode): draws, returns true on click this frame ─────
 
+@doc("""
+A push button that draws itself and reports a click. The face eases between
+its resting and hover colours and dips toward black while pressed.
+""",
+  options: {
+    bg: "Face colour.", hover: "Face colour under the pointer.", fg: "Label colour.",
+    outline: "Border colour.", size: "Label size.", font: "Label face.", radius: "Corner radius (0).",
+    gradient: "`[c0, c1]`: a two-stop ramp in place of the flat face, for the primary action. Hover and press lighten and darken both stops.",
+    gradient_angle: "The ramp's angle (`GRAD_DOWN`).",
+    elevation: "1 or 2: cast the theme's elevation shadow under it.",
+    id: "The name it registers under for `ui_target_rect` and tests (its label).",
+  },
+  returns: "True on the frame it is clicked.",
+  example: """if button(r, "Save", {gradient: [:4c9aff, :2f6fd6], elevation: 1}) then save() end""",
+  deprecated: """Use `bloom.button(r, label[, opts])` (`import bloom`).""")
 pub fn button(r, label)
   button(r, label, {})
 
-# `style` overrides any of {bg, hover, fg, outline, size, font, radius,
-# gradient, gradient_angle, elevation}; anything it omits comes from
-# `ui_theme()`. A `{}` style is the themed button. The face eases between its
-# resting and hover colors (~120ms) and dips toward black while pressed; at
-# rest it paints exactly the resting color, so a still frame is
-# pixel-identical to the pre-animation button.
-#
-# `gradient: [c0, c1]` fills the face with a two-stop ramp instead of a flat
-# colour — the primary-action button, where a flat fill reads as inert. The
-# hover and press states still apply, as a lightening and a darkening of both
-# stops, so the whole ramp reacts together. `elevation: 1` (or 2) casts the
-# shared elevation shadow under it.
 pub fn button(r, label, style)
   let t = _palette()
   # Registered under `style.id`, or its label: `ui_target_rect("Save")`.
@@ -105,16 +126,16 @@ pub fn button(r, label, style)
 
 # ── Scrollbar ─────────────────────────────────────────────────────────────
 
-# Proportional scrollbar thumb along the right edge of scroll region `r`.
-# `count` is the total row count, `rows` the visible rows, `scroll` the current
-# top offset (as fed to list_update / scroll_update). Draws nothing when the
-# content fits (count <= rows); otherwise a dim track with an accent-neutral
-# thumb sized rows/count of the track and positioned by scroll/(count - rows).
+@doc("""
+A proportional scrollbar thumb along the right edge of scroll region `r`.
+Draws nothing when the content fits.
+""",
+  params: {count: "The total rows.", rows: "The visible rows.", scroll: "The first visible row, as `list_update` or `scroll_update` keeps it."},
+  options: {track: "Track colour.", thumb: "Thumb colour.", width: "Bar width."},
+  deprecated: """Use `bloom.scrollbar(r, count, rows, scroll[, opts])` (`import bloom`).""")
 pub fn draw_scrollbar(r, count, rows, scroll)
   draw_scrollbar(r, count, rows, scroll, {})
 
-# `style` overrides any of {track, thumb, width}; omitted keys come from
-# `ui_theme()`.
 pub fn draw_scrollbar(r, count, rows, scroll, style)
   if count > rows then
     let t = _palette()
@@ -126,14 +147,16 @@ pub fn draw_scrollbar(r, count, rows, scroll, style)
     draw_rect({x: track.x, y: thumb_y, w: bar_w, h: thumb_h}, _get(style, "thumb", t.dim))
 
 # ── Section label ─────────────────────────────────────────────────────────
-# A section heading that shows which region owns the keyboard: accent-colored
-# with an underline when `active`, dim otherwise. Pairs with the focus
-# registry — pass `has_focus(id)` as `active` to label each focusable region.
+@doc("""
+A section heading that shows which region has the keyboard: the accent
+colour with an underline when `active`, dim otherwise.
+""",
+  params: {active: "Pass `has_focus(id)` for the region it labels."},
+  options: {active: "Colour when active.", inactive: "Colour when not.", size: "Text size.", font: "The face."},
+  deprecated: """Use `bloom.section_label(label, x, y, active[, opts])` (`import bloom`).""")
 pub fn section_label(label, x, y, active)
   section_label(label, x, y, active, {})
 
-# `style` overrides any of {active, inactive, size, font}; omitted keys come
-# from `ui_theme()`.
 pub fn section_label(label, x, y, active, style)
   let t = _palette()
   let size = _get(style, "size", t.font_md)
@@ -187,26 +210,33 @@ pub fn section_label(label, x, y, active, style)
 # returned (the app cleared or replaced it), the history is dropped: it
 # described a different string.
 
-# The draw half. `has` is whether the field holds focus (draws the accent
-# border and the caret). Without an explicit caret the bar sits at the end of
-# the text, which is what the pre-caret prelude always drew.
+@doc("""
+The draw half of a text field: the box, the selection behind the text, the
+text and, when `has`, the accent border and the caret. Without a caret the
+bar sits at the end of the text. A field whose text overflows is clipped and
+shifted by `view.scroll`.
+""",
+  params: {
+    has: "Whether the field has the keyboard.",
+    caret: "The character index the caret is drawn at (clamped).",
+    view: """What `text_field_update` returned (any of `{sel_start, sel_end, scroll, overflow}`); its whole result works.""",
+  },
+  options: {
+    bg: "Fill.", fg: "Text colour.", outline: "Border when unfocused.", focus: "Border when focused.",
+    caret: "Caret colour.", selection: "Selection highlight.", size: "Text size.", font: "The face.",
+    inset: "Padding inside the border.", text_style: "A whole text style record.",
+    placeholder: "Drawn dim while the field is empty.",
+  },
+  deprecated: """Use `bloom.draw_text_field(r, res, focused[, opts])` (`import bloom`).""")
 pub fn draw_text_field(r, text, has)
   draw_text_field(r, text, has, char_len(text), {}, {})
 
-# `style` overrides any of {bg, fg, outline, focus, caret, selection, size,
-# font, inset, text_style, placeholder}; omitted keys come from `ui_theme()`.
-# `placeholder` is drawn dim while the field is empty.
 pub fn draw_text_field(r, text, has, style)
   draw_text_field(r, text, has, char_len(text), {}, style)
 
-# `caret` is the char index the caret bar is drawn at (clamped).
 pub fn draw_text_field(r, text, has, caret, style)
   draw_text_field(r, text, has, caret, {}, style)
 
-# Full form. `view` carries what `text_field_update` returned beyond the
-# caret — any of {sel_start, sel_end, scroll, overflow} — so passing its whole
-# result works: the selection is painted behind the text, and a field whose
-# text overflows is clipped and shifted by `scroll`.
 pub fn draw_text_field(r, text, has, caret, view, style)
   let t = _palette()
   let accent = _get(style, "focus", t.accent)
@@ -243,6 +273,28 @@ pub fn draw_text_field(r, text, has, caret, view, style)
   if clipped then
     clip_pop()
 
+@doc("""
+A single-line text editor: `text_field_update` and `draw_text_field` in one
+call, with a caret, selection, clipboard and undo, and horizontal scrolling.
+A press inside focuses it; a press anywhere else takes the keyboard away,
+unless something on a higher layer took the press (a popup opened from the
+field), so a click on the rest of the UI ends the edit. Registers under its
+id.
+""",
+  params: {id: "The focus id: a string or an int.", buf: "The text, kept in the caller's `state`."},
+  options: {
+    size: "Text size.", font: "The face.", text_style: "A whole text style record.", inset: "Padding inside the border.",
+    bg: "Fill.", fg: "Text colour.", outline: "Border.", focus: "Border when focused.", caret: "Caret colour.",
+    selection: "Selection highlight.", placeholder: "Drawn dim while empty.", pointer: "`false` keeps the mouse out this frame.",
+  },
+  returns: """What `text_field_update` returns: `{text, caret, submitted, changed, blurred, cancelled, …}`. `blurred` is true on the frame after it lost the keyboard; `cancelled` when Escape was pressed in it.""",
+  example: """
+    state name = ""
+    let res = text_field("name", rect(20, 20, 240, 26), name, {placeholder: "Name"})
+    name = res.text
+    if res.submitted then rename(name) end
+  """,
+  deprecated: """Use `bloom.text_field(r, buf, {id})` (`import bloom`).""")
 pub fn text_field(id, r, buf)
   text_field(id, r, buf, {})
 
@@ -286,10 +338,17 @@ fn _area_caret(rows, ts, at, lh)
   let x = text_width(char_slice(row.text, 0, clamp(at - row.start, 0, row.end - row.start)), ts)
   {x: x, y: i * lh, row: i}
 
-# The draw half: the box, the selection, the rows, the caret and, when the
-# text overflows, a scrollbar. `res` is what `text_area_update` returned (or
-# a record with the same fields). `style` overrides any of {bg, fg, outline,
-# focus, caret, selection, size, font, inset, text_style, placeholder}.
+@doc("""
+The draw half of a text area: the box, the selection, the rows, the caret
+and, when the text overflows, a scrollbar.
+""",
+  params: {res: "What `text_area_update` returned, or a record with the same fields.", has: "Whether the area has the keyboard."},
+  options: {
+    bg: "Fill.", fg: "Text colour.", outline: "Border.", focus: "Border when focused.", caret: "Caret colour.",
+    selection: "Selection highlight.", size: "Text size.", font: "The face.", inset: "Padding inside the border.",
+    text_style: "A whole text style record.", placeholder: "Drawn dim while empty.",
+  },
+  deprecated: """Use `bloom.draw_text_area(r, res, focused[, opts])` (`import bloom`).""")
 pub fn draw_text_area(r, res, has)
   draw_text_area(r, res, has, {})
 
@@ -328,6 +387,27 @@ pub fn draw_text_area(r, res, has, style)
     let inner_h = r.h - 2 * inset
     draw_scrollbar({x: r.x, y: r.y + 1, w: r.w - 1, h: r.h - 2}, res.content_h, inner_h, res.scroll)
 
+@doc("""
+A multi-line text editor: `text_area_update` and `draw_text_area` in one
+call. `text_field` for text with line breaks: it wraps to its width, Return
+is a line break, and the wheel scrolls it. It shares the field's selection,
+clipboard, undo and focus rules.
+""",
+  options: {
+    size: "Text size.", font: "The face.", text_style: "A whole text style record.", inset: "Padding inside the border.",
+    bg: "Fill.", fg: "Text colour.", outline: "Border.", focus: "Border when focused.", caret: "Caret colour.",
+    selection: "Selection highlight.", placeholder: "Drawn dim while empty.", pointer: "`false` keeps the mouse out this frame.",
+    line_gap: "Pixels added to the face's line height between rows (2).",
+    select_all: "Select the whole text on this frame (a layer just added, whose placeholder the next keystroke should replace).",
+  },
+  returns: """`{text, caret, changed, sel_start, sel_end, scroll, overflow, rows, line_h, content_h, …}`.""",
+  example: """
+    state notes = ""
+    let h = text_area_height(notes, 320)
+    let res = text_area("notes", rect(20, 80, 320, h), notes)
+    notes = res.text
+  """,
+  deprecated: """Use `bloom.text_area(r, buf, {id})` (`import bloom`).""")
 pub fn text_area(id, r, buf)
   text_area(id, r, buf, {})
 
@@ -362,14 +442,21 @@ pub fn text_area(id, r, buf, style)
 # `tag` is any value you want handed back with the choice — the row the menu
 # was opened on, typically. It is never interpreted here.
 
-# One menu row. `enabled: false` draws dim and cannot be chosen.
+@doc("""
+One row of a context menu or popover.
+""",
+  params: {enabled: "`false` draws it dim, and it cannot be chosen."},
+  deprecated: """Use a plain item: a string, or a `{label, disabled, sep}` record, in a bloom menu (`import bloom`).""")
 pub fn menu_item(label)
   menu_item(label, true)
 
 pub fn menu_item(label, enabled)
   {label: label, enabled: enabled, sep: false}
 
-# A divider rule between groups of items. Never hoverable or choosable.
+@doc("""
+A divider between groups of menu items. Never hovered or chosen.
+""",
+  deprecated: """Use a plain item: a string, or a `{label, disabled, sep}` record, in a bloom menu (`import bloom`).""")
 pub fn menu_sep()
   {label: "", enabled: false, sep: true}
 
@@ -383,6 +470,25 @@ fn _pop_new_id()
   set _pop_seq = (get _pop_seq) + 1
   "menu-" ++ str(get _pop_seq)
 
+@doc("""
+A fresh context-menu state, to keep in `state`. Several menus coexist, each
+with its own record, and it survives hot reload. Draw the menu with
+`context_menu` late in the frame, so it sits over the rest. An open menu is
+modal: the runtime closes it (Escape, a press outside) before the frame
+runs, and the press that closes it reaches no widget under it. Code that
+reads the mouse itself (`mouse_pressed`, `point_in`) still stands down while
+`menu.open`. At most one menu or popover is open at a time.
+""",
+  returns: """A record with `open`: whether the menu is showing.""",
+  example: """
+    state menu = menu_state()
+    menu = menu_open_on_right_click(menu, row_r, i)
+    # near the bottom of the frame, so it draws over everything else:
+    let picked = context_menu(menu, [menu_item("Copy"), menu_sep(), menu_item("Delete", false)])
+    menu = picked.menu
+    if picked.index >= 0 then act(picked.label, picked.tag) end
+  """,
+  deprecated: """Use `bloom.context_menu(area, items)`, or `bloom.menu(id, anchor, items)` with `bloom.menu_open_at` / `bloom.menu_close` (`import bloom`).""")
 pub fn menu_state()
   {open: false, x: 0, y: 0, tag: "", hover: -1, id: _pop_new_id(), live: false, waited: false}
 
@@ -390,19 +496,33 @@ pub fn menu_state()
 fn _menu_id(m)
   str(_get(m, "id", "menu"))
 
+@doc("""
+Close the menu.
+""",
+  returns: "The next state.",
+  deprecated: """Use `bloom.context_menu(area, items)`, or `bloom.menu(id, anchor, items)` with `bloom.menu_open_at` / `bloom.menu_close` (`import bloom`).""")
 pub fn menu_close(m)
   if m.open then _ui_popover_request(false, _menu_id(m)) end
   {...m, open: false, x: 0, y: 0, hover: -1, live: false, waited: false}
 
-# Open (or move) the menu to `(x, y)`, remembering `tag`. Hover starts on
-# nothing, so a menu opened under the pointer highlights only once it moves.
+@doc("""
+Open (or move) the menu at `x`, `y`, remembering `tag`. Hover starts on
+nothing, so a menu opened under the pointer highlights only once it moves.
+""",
+  params: {tag: "Any value handed back with the choice: typically the row the menu was opened on."},
+  returns: "The next state.",
+  deprecated: """Use `bloom.context_menu(area, items)`, or `bloom.menu(id, anchor, items)` with `bloom.menu_open_at` / `bloom.menu_close` (`import bloom`).""")
 pub fn menu_show(m, x, y, tag)
   _ui_popover_request(true, _menu_id(m))
   {...m, open: true, x: x, y: y, tag: tag, hover: -1, live: popover_shown(_menu_id(m)), waited: false}
 
-# The common trigger: a right press inside `r` opens the menu at the pointer.
-# Any other frame leaves the state alone, so this is safe to call every frame
-# for every row.
+@doc("""
+Open the menu at the pointer on a right press inside `r`. Any other frame
+leaves the state alone, so it is safe to call every frame for every row.
+""",
+  params: {tag: "Handed back with the choice."},
+  returns: "The next state.",
+  deprecated: """Use `bloom.context_menu(area, items)`, or `bloom.menu(id, anchor, items)` with `bloom.menu_open_at` / `bloom.menu_close` (`import bloom`).""")
 pub fn menu_open_on_right_click(m, r, tag)
   if mouse_pressed(1) && _over(r) then
     menu_show(m, mouse_x(), mouse_y(), tag)
@@ -414,10 +534,13 @@ let _MENU_SEP_H = 9
 let _MENU_PAD = 6
 let _MENU_SIZE = 14
 
-# The menu's metrics, with a style record's overrides applied. Exported so an
-# app that draws its own menu chrome measures with the same numbers the
-# prelude lays out with instead of copying the constants (which is exactly
-# what two testbed apps had to do, and what silently rots when these change).
+@doc("""
+The numbers a menu is laid out with, with a style record's overrides
+applied, so an app that draws its own menu chrome measures as the prelude
+does.
+""",
+  returns: """`{row_h, sep_h, pad, size, font}`.""",
+  deprecated: """Use `bloom.context_menu(area, items)`, or `bloom.menu(id, anchor, items)` with `bloom.menu_open_at` / `bloom.menu_close` (`import bloom`).""")
 pub fn menu_metrics()
   menu_metrics({})
 
@@ -457,16 +580,14 @@ fn _menu_w(items, mm)
   # geometry that has to stay integral.
   clamp(widest + 28, 120, max(140, screen_width() - 24))
 
-# Where the menu actually lands: it prefers down-and-right of the click, and
-# flips to the other side of the pointer when that would put it off-screen —
-# so a right-click near the bottom edge opens upward instead of being clipped.
-#
-# EXPORTED because the flip rule is not something an app can guess: a panel
-# that has to know where the menu will be — to suppress its own hover, to skip
-# drawing text under it, to scroll it into view — otherwise reimplements this
-# function *and* the four metric constants above, and the copy drifts the
-# moment either changes. `context_menu` also hands the same rect back as
-# `.rect` in its result, for the common case of "where did the open menu land".
+@doc("""
+Where the menu lands: down and right of the click, flipped to the other side
+of the pointer when that would put it off-screen. For a panel that must know
+where the menu will be (to suppress its own hover, or skip drawing under
+it); `context_menu` hands back the same rect as `.rect`.
+""",
+  returns: "A rect.",
+  deprecated: """Use `bloom.context_menu(area, items)`, or `bloom.menu(id, anchor, items)` with `bloom.menu_open_at` / `bloom.menu_close` (`import bloom`).""")
 pub fn menu_rect(m, items)
   menu_rect(m, items, {})
 
@@ -510,18 +631,21 @@ fn _menu_step(items, from, step)
     i = i + step
   found
 
-# Draw the menu and resolve this frame's input. Returns
-# {menu, index, label, tag, rect}: `index` is -1 unless something was chosen,
-# `tag` is whatever was passed to `menu_show` / `menu_open_on_right_click`, and
-# `rect` is where the menu landed this frame (an empty rect when closed) — so a
-# panel can keep its own painting out from under the menu without recomputing
-# the geometry. A closed menu draws nothing and always returns index -1.
+@doc("""
+Draw an open menu and resolve this frame's input: the pointer, the arrow
+keys and Return. A closed menu draws nothing. Modal while open.
+""",
+  params: {items: "Rows from `menu_item` and `menu_sep`."},
+  options: {
+    bg: "Fill.", fg: "Text.", dim: "Disabled text.", outline: "Border.", rule: "Separator colour.",
+    selection: "Highlighted row.", shadow: "The shadow.", radius: "Corner radius.", size: "Text size.",
+    font: "The face.", row_h: "Row height (24).", sep_h: "Separator height (9).", pad: "Vertical padding (6).",
+  },
+  returns: """`{menu, index, label, tag, rect}`: `index` is -1 unless something was chosen; `tag` is what `menu_show` or `menu_open_on_right_click` was given; `rect` is where the menu landed (empty when closed).""",
+  deprecated: """Use `bloom.context_menu(area, items)`, or `bloom.menu(id, anchor, items)` with `bloom.menu_open_at` / `bloom.menu_close` (`import bloom`).""")
 pub fn context_menu(m, items)
   context_menu(m, items, {})
 
-# `style` overrides any of {bg, fg, dim, outline, rule, selection, shadow,
-# radius, size, font, row_h, sep_h, pad}; omitted keys come from `ui_theme()`
-# and the menu metrics.
 pub fn context_menu(m, items, style)
   let id = _menu_id(m)
   let shown = popover_shown(id)
@@ -639,9 +763,19 @@ pub fn context_menu(m, items, style)
 # `popover_open`, and it has the keys while it is open: `shortcut(chord)`
 # is quiet, `shortcut(chord, id)` answers.
 
-# The popover's menu, under `anchor` (a rect: below it; a point {x, y}: at
-# it). Returns {open, index, label, rect}; `index` is -1 unless an item was
-# chosen, which also closes it. `style` is `context_menu`'s.
+@doc("""
+A menu whose open state is the runtime's, by id: no record to thread. Open
+it with `popover_open(id)`; it shows from the next frame, under `anchor`.
+Choosing an item closes it. At most one popover or menu is open.
+""",
+  params: {anchor: """A rect (the menu opens below it) or a point `{x, y}` (at it).""", style: "`context_menu`'s style keys."},
+  returns: """`{open, index, label, rect}`; `index` is -1 unless an item was chosen.""",
+  example: """
+    if button(r, "Sort") then popover_open("sort") end
+    let p = popover("sort", r, [menu_item("Name"), menu_item("Date")])
+    if p.index >= 0 then sort_by(p.label) end
+  """,
+  deprecated: """Use `bloom.menu(id, anchor, items)` with `bloom.menu_open(id)` (`import bloom`).""")
 pub fn popover(id, anchor, items, style = {})
   state hov = {hover: -1, px: -1, py: -1}
   if !popover_shown(id) then
@@ -657,8 +791,11 @@ pub fn popover(id, anchor, items, style = {})
 
 # ── Spinner + progress ────────────────────────────────────────────────────
 
-# An indeterminate spinner: a rotating arc, driven by `time()`.
-# `style` overrides {color, width}.
+@doc("""
+An indeterminate spinner: an arc rotating on `time()`.
+""",
+  options: {color: "Arc colour.", width: "Stroke width."},
+  deprecated: """Use `bloom.spinner(cx, cy, radius[, opts])` (`import bloom`).""")
 pub fn spinner(cx, cy, radius)
   spinner(cx, cy, radius, {})
 
@@ -669,14 +806,21 @@ pub fn spinner(cx, cy, radius, style)
   let a0 = time() * 5.5
   fill_arc(cx, cy, float(radius - thick), float(radius), a0, a0 + 4.5, col.r, col.g, col.b, 235)
 
-# The one-character text spinner several apps hand-rolled: | / - \ cycling on
-# the frame clock. Draw it with the app's own font size and color.
+@doc("""
+One character of a text spinner, `|`, `/`, `-` or `\`, cycling on the
+frame clock. Draw it in the app's own size and colour.
+""",
+  deprecated: """Use `bloom.spinner_glyph()` (`import bloom`).""")
 pub fn spinner_glyph()
   let glyphs = ["|", "/", "-", "\\"]
   glyphs[(frame_count() / 6) % 4]
 
-# A progress bar. `frac` in [0, 1]; a negative `frac` draws the indeterminate
-# sweep. `style` overrides {track, fill, radius}.
+@doc("""
+A progress bar filled to `frac`.
+""",
+  params: {frac: "0–1; negative draws the indeterminate sweep."},
+  options: {track: "Track colour.", fill: "Fill colour.", radius: "Corner radius."},
+  deprecated: """Use `bloom.progress(r, frac[, opts])` (`import bloom`).""")
 pub fn progress_bar(r, frac)
   progress_bar(r, frac, {})
 
@@ -699,8 +843,17 @@ pub fn progress_bar(r, frac, style)
 
 # ── Checkbox / toggle / radio / slider ────────────────────────────────────
 
-# A checkbox with a label. Returns the new value; click anywhere in `r`
-# toggles. `style` overrides {box, bg, fill, outline, focus, fg, size}.
+@doc("""
+A checkbox with a label. A click anywhere in `r` toggles it. Registers under
+its label.
+""",
+  options: {box: "Box size (16, or `r.h` if less).", bg: "Box fill when unchecked.", fill: "Box fill when checked.", outline: "Border.", focus: "Border when checked or hovered.", fg: "Label colour.", size: "Label size.", font: "Label face."},
+  returns: "The new value.",
+  example: """
+    state snap = true
+    snap = checkbox(r, "Snap to grid", snap)
+  """,
+  deprecated: """Use `bloom.checkbox(r, label, on[, opts])` (`import bloom`).""")
 pub fn checkbox(r, label, value)
   checkbox(r, label, value, {})
 
@@ -734,8 +887,12 @@ pub fn checkbox(r, label, value, style)
             _ts(_face(t, style), size, _get(style, "fg", t.text)))
   v
 
-# An animated on/off switch. Returns the new value; click anywhere in `r`
-# flips it. `style` overrides {height, track, fill, knob}.
+@doc("""
+An animated on/off switch. A click anywhere in `r` flips it.
+""",
+  options: {height: "Track height.", track: "Track colour when off.", fill: "Track colour when on.", knob: "Knob colour."},
+  returns: "The new value.",
+  deprecated: """Use `bloom.switch(r, on[, opts])` (`import bloom`).""")
 pub fn toggle(r, value)
   toggle(r, value, {})
 
@@ -755,9 +912,13 @@ pub fn toggle(r, value, style)
   draw_circle({x: kx + kd / 2, y: tr.y + th / 2}, kd / 2, _get(style, "knob", t.text))
   v
 
-# A vertical radio group: one row per label, dot on the selected one. Returns
-# the new selected index. `style` overrides {row_h, size, bg, fill, outline,
-# focus, fg}.
+@doc("""
+A vertical radio group: one row per label, a dot on the selected one. Each
+row registers under its label.
+""",
+  options: {row_h: "Row height (24).", size: "Label size.", font: "Label face.", bg: "Circle fill.", fill: "The selected dot.", outline: "Border.", focus: "Border when selected or hovered.", fg: "Label colour."},
+  returns: "The new selected index.",
+  deprecated: """Use `bloom.radio_group(r, labels, index[, opts])` (`import bloom`).""")
 pub fn radio_group(r, labels, selected)
   radio_group(r, labels, selected, {})
 
@@ -783,14 +944,16 @@ pub fn radio_group(r, labels, selected, style)
     draw_text(labels[i], {x: r.x + d + t.space, y: rr.y + (row_h - size) / 2}, ts)
   sel
 
-# A horizontal slider over [lo, hi]. Returns the new value (a float). Press
-# anywhere in `r` to jump-and-drag; the drag keeps tracking outside the rect
-# until release. `style` overrides {track_h, track, fill, knob}.
-#
-# The drag lives in widget `state`, keyed per callsite — so in a loop it is
-# keyed by *position*, and a slider whose list reorders mid-drag hands its drag
-# to whichever row now sits in that slot. Key the loop to keep each row's drag
-# with its row: `for n in nodes key n.id do slider(r, n.gain, 0, 1) end`.
+@doc("""
+A horizontal slider over `lo`..`hi`. Press anywhere in `r` to jump and drag;
+the drag keeps tracking outside the rect until release. The drag lives in
+widget `state`, keyed per call site, so in a loop over a list that can
+reorder, key the loop to keep each row's drag with its row.
+""",
+  options: {track_h: "Track height.", track: "Track colour.", fill: "Filled part.", knob: "Knob colour."},
+  returns: "The new value, a float.",
+  example: """for n in nodes key n.id do n.gain = slider(row_r(n), n.gain, 0, 1) end""",
+  deprecated: """Use `bloom.slider(r, value, lo, hi[, opts])` (`import bloom`).""")
 pub fn slider(r, value, lo, hi)
   slider(r, value, lo, hi, {})
 
@@ -845,12 +1008,17 @@ fn _slider_draw(r, value, lo, hi, style, dragging, act)
 # keyboard) and the old one, or nil, before. Escape abandons the edit and
 # gives the focus up.
 
-# One line of text that applies on Return or when the field loses the
-# keyboard; Escape reverts. While unfocused it shows `current`. Returns
-# {text, editing}: `text` is nil except on the frame the edit is
-# applied. `style` is `text_field`'s ({placeholder, size, font, ...}), plus
-# `start`: take the keyboard as soon as the field shows (a rename opened by
-# a double-click), rather than on a click in it.
+@doc("""
+One line of text that applies on Return or when the field loses the
+keyboard; Escape reverts. While unfocused it shows `current`. In a loop, key
+the rows (`for p in props key p.name do`) so an edit stays with its row.
+""",
+  options: {
+    placeholder: "Drawn dim while empty.", size: "Text size.", font: "The face.",
+    start: "Take the keyboard as soon as the field shows (a rename opened by a double click), rather than on a click in it.",
+  },
+  returns: """`{text, editing}`: `text` is nil except on the frame the edit applies.""",
+  deprecated: """Use `bloom.commit_field(r, current, {id})` (`import bloom`).""")
 pub fn commit_field(id, r, current)
   commit_field(id, r, current, {})
 
@@ -878,14 +1046,23 @@ pub fn commit_field(id, r, current, style)
     out = buf
   {text: out, editing: editing}
 
-# A number box: drag sideways to scrub (shift for fine steps), double-click
-# to type, Return or a click away to apply the typed value, Escape to drop
-# it. Returns {value, changed}: `value` is the new value (the old one
-# when nothing happened), `changed` whether it differs.
-#
-# `style` sets {step (1.0, per pixel of drag), places (2, decimals shown and
-# typed), min, max, fine (0.1, the shift multiplier), tip (the hover hint; ""
-# for none), size, font, bg, hover, active, fg, radius}.
+@doc("""
+A number box for a property panel: drag sideways to scrub (Shift for fine),
+double-click to type, Return or a click away to apply the typed value,
+Escape to drop it. The drag is measured from `mouse_x()`, so it scrubs in
+every host.
+""",
+  options: {
+    step: "Change per pixel of drag (1.0).", places: "Decimals shown and typed (2).", min: "Lower bound.", max: "Upper bound.",
+    fine: "The Shift multiplier (0.1).", tip: """The hover hint (`""` for none).""", size: "Text size.", font: "The face.",
+    bg: "Fill.", hover: "Fill under the pointer.", active: "Fill while scrubbing or typing.", fg: "Text colour.", radius: "Corner radius.",
+  },
+  returns: """`{value, changed}`: the new value (the old one when nothing happened), and whether it differs.""",
+  example: """
+    let res = number_field("opacity", rect(x, y, 64, 22), layer.opacity, {step: 0.01, places: 2, min: 0, max: 1})
+    if res.changed then set_opacity(res.value) end
+  """,
+  deprecated: """Use `bloom.number_field(r, value, {id})` (`import bloom`).""")
 pub fn number_field(id, r, value)
   number_field(id, r, value, {})
 
@@ -944,10 +1121,13 @@ pub fn number_field(id, r, value, style)
     if hi != nil then out = min(out, hi) end
   {value: out, changed: out != value}
 
-# A colour chip and its hex, typed: Return or a click away applies, Escape
-# reverts. Returns {color}: `color` is nil unless a valid new colour
-# was entered. A nil `color` shows an empty chip and field. `style` is
-# `commit_field`'s, plus {chip_radius, outline}.
+@doc("""
+A colour chip and its hex, typed: Return or a click away applies, Escape
+reverts. A nil `color` shows an empty chip and field.
+""",
+  options: {chip_radius: "The chip's corner radius.", outline: "The chip's border.", placeholder: "Drawn dim while empty.", size: "Text size.", font: "The face."},
+  returns: """`{color}`: `color` is nil unless a valid new colour was entered.""",
+  deprecated: """Use `bloom.color_field(r, color, {id})` (`import bloom`).""")
 pub fn color_field(id, r, color)
   color_field(id, r, color, {})
 
@@ -963,9 +1143,13 @@ pub fn color_field(id, r, color, style)
   let picked = if res.text == nil then nil else color_from_hex(res.text) end
   {color: if same_color(picked, color) then nil else picked end}
 
-# A row of square colour chips, `r.h` on a side, `current` ringed; chips
-# that would overrun `r.w` are left out. Returns the colour clicked, or nil. `style` sets {gap (4), radius (3), ring, hover,
-# id (the hit-test name prefix)}.
+@doc("""
+A row of square colour chips, `r.h` on a side, `current` ringed in the
+accent. Chips that would overrun `r.w` are left out.
+""",
+  options: {gap: "Space between chips (4).", radius: "Chip corner radius (3).", ring: "The ring's colour.", hover: "Ring under the pointer.", id: "The hit-test name prefix."},
+  returns: "The colour clicked, or nil.",
+  deprecated: """Use `bloom.swatches(r, colors, current[, opts])` (`import bloom`).""")
 pub fn swatches(r, colors, current)
   swatches(r, colors, current, {})
 
@@ -997,10 +1181,13 @@ fn _chevron(r, dir, c)
   draw_line({x: cx + dir * s / 2, y: cy - s}, {x: cx - dir * s / 2, y: cy}, c, 255, 2)
   draw_line({x: cx - dir * s / 2, y: cy}, {x: cx + dir * s / 2, y: cy + s}, c, 255, 2)
 
-# ‹ value › — the arrows step back and forward through `options` (wrapping),
-# and a click on the value steps forward. Returns the chosen option.
-# `style` sets {labels (shown in place of `str(option)`), id, size, font, bg,
-# hover, fg, radius, arrow_w (22)}.
+@doc("""
+‹ value ›: the arrows step back and forward through `options`, wrapping, and
+a click on the value steps forward.
+""",
+  options: {labels: "Shown in place of `str(option)`.", id: "The hit-test name.", size: "Text size.", font: "The face.", bg: "Fill.", hover: "Fill under the pointer.", fg: "Text colour.", radius: "Corner radius.", arrow_w: "The arrows' width (22)."},
+  returns: "The chosen option.",
+  deprecated: """Use `bloom.cycle(r, options, index[, opts])` (`import bloom`).""")
 pub fn stepper(r, options, current)
   stepper(r, options, current, {})
 
@@ -1032,9 +1219,12 @@ pub fn stepper(r, options, current, style)
   draw_text_center(text_ellipsize(shown, ts, max(0, mid.w - 4)), mid.x + mid.w / 2, mid.y + (mid.h - size) / 2, ts)
   out
 
-# One of n, as a row of equal segments. Returns the new selected index.
-# `style` sets {id, size, font, bg, on (the selected segment), hover, fg,
-# fg_on, radius, inset (2)}.
+@doc("""
+One of n, as a row of equal segments.
+""",
+  options: {id: "The hit-test name.", size: "Text size.", font: "The face.", bg: "Fill.", on: "The selected segment's fill.", hover: "Fill under the pointer.", fg: "Text colour.", fg_on: "The selected segment's text.", radius: "Corner radius.", inset: "Inset of the selected segment (2)."},
+  returns: "The new selected index.",
+  deprecated: """Use `bloom.segmented(r, labels, index[, opts])` (`import bloom`).""")
 pub fn segmented(r, labels, index)
   segmented(r, labels, index, {})
 
@@ -1063,12 +1253,15 @@ pub fn segmented(r, labels, index, style)
     draw_text_center(text_ellipsize(labels[i], ts, max(0, sr.w - 6)), sr.x + sr.w / 2, sr.y + (r.h - size) / 2, ts)
   out
 
-# A button showing `current` that opens a menu of `options` under itself.
-# Returns the chosen option (`current` until one is picked). The menu is a
-# `context_menu` on the popup layer, so it draws over the widgets after it
-# and takes the pointer while open: call `dropdown` where the button goes.
-# `style` sets {labels, id, placeholder, size, font, bg, hover, fg, radius}
-# plus `context_menu`'s keys for the menu.
+@doc("""
+A button showing `current` that opens a menu of `options` under itself. The
+menu is a `context_menu` on the popup layer, so it draws over the widgets
+after it and takes the pointer while open: call `dropdown` where the button
+goes.
+""",
+  options: {labels: "Shown in place of the options.", id: "The hit-test name.", placeholder: "Shown while `current` is nil.", size: "Text size.", font: "The face.", bg: "Fill.", hover: "Fill under the pointer.", fg: "Text colour.", radius: "Corner radius."},
+  returns: "The chosen option (`current` until one is picked).",
+  deprecated: """Use `bloom.select(r, options, index[, opts])` (`import bloom`).""")
 pub fn dropdown(r, options, current)
   dropdown(r, options, current, {})
 
@@ -1101,11 +1294,14 @@ pub fn dropdown(r, options, current, style)
 
 # ── Tab bar ───────────────────────────────────────────────────────────────
 
-# A horizontal tab strip along the top of `r` (use the full height of `r` as
-# the strip). Returns the new active index; click a tab to switch. `style`
-# overrides {size, font, gap, fg, fg_active, underline, hover, rule, on} —
-# `on` is the surface colour the strip is drawn over, which the hover wash is
-# composited against.
+@doc("""
+A horizontal tab strip along the top of `r` (the strip takes all of `r`'s
+height): the active tab underlined, a hover fade, a hairline along the
+bottom. Each tab registers under its label.
+""",
+  options: {size: "Text size.", font: "The face.", gap: "Space between tabs.", fg: "Tab text.", fg_active: "Active tab text.", underline: "The active tab's underline.", hover: "Hover wash.", rule: "The bottom hairline.", on: "The surface the strip is drawn over, which the hover wash is composited against."},
+  returns: "The new active index.",
+  deprecated: """Use `bloom.tabs(r, labels, index[, opts])` (`import bloom`).""")
 pub fn tab_bar(r, labels, active)
   tab_bar(r, labels, active, {})
 
@@ -1145,9 +1341,13 @@ pub fn tab_bar(r, labels, active, style)
 
 # ── Tooltip ───────────────────────────────────────────────────────────────
 
-# Show `text` near the pointer after it has rested over `anchor` for a beat
-# (default 0.45s), fading in. Call it late in the frame so the tip draws over
-# the widgets beneath. `style` overrides {delay, size, font, bg, fg, outline}.
+@doc("""
+Show `text` near the pointer after it has rested over `anchor` for a beat,
+fading in. Drawn on the tooltip layer, so it can be called anywhere in the
+frame.
+""",
+  options: {delay: "Seconds of rest before it shows (0.45).", size: "Text size.", font: "The face.", bg: "Fill.", fg: "Text colour.", outline: "Border."},
+  deprecated: """Use `bloom.tooltip(anchor, text[, opts])` (`import bloom`).""")
 pub fn tooltip(anchor, text)
   tooltip(anchor, text, {})
 
@@ -1199,29 +1399,67 @@ pub fn tooltip(anchor, text, style)
 #     ...draw into res.content; call modal_close(md) on your buttons...
 #   end
 
+@doc("""
+A fresh dialog state, to keep in `state`. A dialog is two calls: guard the
+panel's own input with `modal_blocking` near the top of the frame, and draw
+`modal` near the bottom, so it sits on top. Escape or a click outside
+closes it.
+""",
+  returns: """`{open, at}`.""",
+  example: """
+    state md = modal_state()
+    if button(open_r, "Delete…") then md = modal_open(md) end
+    let res = modal(md, 380, 200, "Delete branch?")
+    md = res.modal
+    if res.open then
+      if button(cut_bottom(res.content, 28).cut, "Delete") then
+        delete_branch()
+        md = modal_close(md)
+  """,
+  deprecated: """Use `bloom.dialog(id, w, h, title)` with `bloom.dialog_open` / `bloom.dialog_close` (`import bloom`).""")
 pub fn modal_state()
   {open: false, at: -1}
 
 # `at` records the opening frame: the click (or keypress) that opened the
 # modal is still a live edge when the modal runs later the same frame, and
 # must not be read as the click-outside that dismisses it.
+@doc("""
+Open the dialog.
+""",
+  returns: "The next state.",
+  deprecated: """Use `bloom.dialog(id, w, h, title)` with `bloom.dialog_open` / `bloom.dialog_close` (`import bloom`).""")
 pub fn modal_open(m)
   {open: true, at: frame_count()}
 
+@doc("""
+Close the dialog.
+""",
+  returns: "The next state.",
+  deprecated: """Use `bloom.dialog(id, w, h, title)` with `bloom.dialog_open` / `bloom.dialog_close` (`import bloom`).""")
 pub fn modal_close(m)
   {open: false, at: -1}
 
-# True while the modal owns the input. Guard the panel's own click/keyboard
-# handling with this so one press is not acted on twice.
+@doc("""
+Whether the dialog has the input. Guard the panel's own click and keyboard
+handling with it, so one press is not acted on twice.
+""",
+  deprecated: """Use `bloom.dialog(id, w, h, title)` with `bloom.dialog_open` / `bloom.dialog_close` (`import bloom`).""")
 pub fn modal_blocking(m)
   m.open
 
-# Where a w×h modal sits: centered on the screen.
+@doc("""
+Where a `w` by `h` dialog sits: centred on the screen.
+""",
+  deprecated: """Use `bloom.dialog(id, w, h, title)` with `bloom.dialog_open` / `bloom.dialog_close` (`import bloom`).""")
 pub fn modal_rect(w, h)
   rect((screen_width() - w) / 2, (screen_height() - h) / 2, w, h)
 
-# The input half: Escape or a press outside `r` closes. Safe to call every
-# frame; a closed modal passes through untouched.
+@doc("""
+The dialog's input half: Escape or a press outside `r` closes it. Safe to
+call every frame; a closed dialog passes through untouched.
+""",
+  returns: "The next state.",
+  deprecated: """Use `bloom.dialog(id, w, h, title)` with `bloom.dialog_open` / `bloom.dialog_close` (`import bloom`).""")
 pub fn modal_update(m, r)
   if !m.open || m.at == frame_count() then
     m
@@ -1240,20 +1478,27 @@ fn _modal_layer()
     ui_layer(UI_LAYER_MODAL)
   ui_modal()
 
-# The dimming layer between the panel and the dialog.
+@doc("""
+The dimming layer between the panel and a dialog. From it on, the frame is
+on the modal layer and everything below is inert.
+""",
+  deprecated: """Use `bloom.dialog(id, w, h, title)` with `bloom.dialog_open` / `bloom.dialog_close` (`import bloom`).""")
 pub fn draw_modal_backdrop()
   draw_modal_backdrop({})
 
 # The backdrop is the one place a flat alpha is right rather than lazy: it
 # covers content the modal did not paint, so there is nothing to composite it
-# against ahead of time (see `over`). What was wrong was the *number* being a
-# bare 120 with no stated intent — it is 47% dim, written as such.
+# against ahead of time (see `over`). It is 47% dim, written as such.
 pub fn draw_modal_backdrop(style)
   _modal_layer()
   draw_rect(rect(0, 0, screen_width(), screen_height()),
             _get(style, "shadow", :000000), _get(style, "dim", alpha_pct(47)))
 
-# The dialog chrome: shadow, rounded panel, title. Returns the content rect.
+@doc("""
+The dialog's chrome: shadow, rounded panel and title.
+""",
+  returns: "The content rect, to draw the body into.",
+  deprecated: """Use `bloom.dialog(id, w, h, title)` with `bloom.dialog_open` / `bloom.dialog_close` (`import bloom`).""")
 pub fn draw_modal(r, title)
   draw_modal(r, title, {})
 
@@ -1273,8 +1518,14 @@ pub fn draw_modal(r, title, style)
             {..._ts(_face(t, style), size, _get(style, "fg", t.text)), weight: 600})
   rect(r.x + inset, r.y + inset + size + 8, r.w - inset * 2, r.h - inset * 2 - size - 8)
 
-# The one-call form: update + backdrop + chrome. Returns
-# {modal, open, rect, content}; draw your body into `content` when `open`.
+@doc("""
+A dialog in one call: `modal_update`, the backdrop and the chrome.
+Everything drawn before it is inert while it is open. Registers under its
+title.
+""",
+  params: {m: "The state from `modal_state`.", w: "The dialog's width.", h: "Its height."},
+  returns: """`{modal, open, rect, content}`: the next state, whether it is open, where it is, and the rect to draw the body into when `open`.""",
+  deprecated: """Use `bloom.dialog(id, w, h, title)` with `bloom.dialog_open` / `bloom.dialog_close` (`import bloom`).""")
 pub fn modal(m, w, h, title)
   modal(m, w, h, title, {})
 
@@ -1290,10 +1541,12 @@ pub fn modal(m, w, h, title, style)
 
 # ── Badge / pill / card / empty state / hint bar ──────────────────────────
 
-# A small rounded label chip at (x, y). Returns the rect it drew (so callers
-# can flow the next one after it). `style` overrides {size, font, bg, fg,
-# gradient, gradient_angle} — `gradient: [c0, c1]` fills the chip with a ramp
-# instead of a flat colour.
+@doc("""
+A small rounded label chip at `x`, `y`.
+""",
+  options: {size: "Text size.", font: "The face.", bg: "Fill.", fg: "Text colour.", gradient: "`[c0, c1]`: a ramp in place of the flat fill.", gradient_angle: "The ramp's angle."},
+  returns: "The rect it drew, so the next one can flow after it.",
+  deprecated: """Use `bloom.badge(x, y, text[, opts])` (`import bloom`).""")
 pub fn badge(x, y, text)
   badge(x, y, text, {})
 
@@ -1314,10 +1567,13 @@ pub fn badge(x, y, text, style)
   draw_text(text, {x: x + 7, y: y + 4}, ts)
   r
 
-# The colored badge: `color` tints the fill and the text — the status-chip
-# look (pass t.success / t.warn / t.danger / t.accent). `style` overrides
-# {size, font, on} — `on` is the surface colour the chip sits on, which the
-# tint is composited against.
+@doc("""
+A tinted status chip: `color` tints the fill and the text. Pass the theme's
+`success`, `warn`, `danger` or `accent`.
+""",
+  options: {size: "Text size.", font: "The face.", on: "The surface the chip sits on, which the tint is composited against."},
+  returns: "The rect it drew.",
+  deprecated: """Use `bloom.pill(x, y, text, color[, opts])` (`import bloom`).""")
 pub fn pill(x, y, text, color)
   pill(x, y, text, color, {})
 
@@ -1335,10 +1591,12 @@ pub fn pill(x, y, text, color, style)
   draw_text(text, {x: x + 7, y: y + 4}, ts)
   r
 
-# A raised surface with a rounded border and a soft shadow. Returns the
-# padded content rect. `style` overrides {radius, pad, bg, outline, shadow,
-# elevation} — `shadow: false` skips the drop shadow, `elevation` picks a
-# step of the theme's elevation scale (1 by default).
+@doc("""
+A raised surface with a rounded border and a soft shadow.
+""",
+  options: {radius: "Corner radius.", pad: "Padding to the content.", bg: "Fill.", outline: "Border.", shadow: "`false` skips the shadow.", elevation: "A step of the theme's elevation scale (1)."},
+  returns: "The padded content rect.",
+  deprecated: """Use `bloom.card(r[, opts])` (`import bloom`).""")
 pub fn card(r)
   card(r, {})
 
@@ -1352,8 +1610,12 @@ pub fn card(r, style)
   draw_rect_rounded(pad(r, 1), max(0, rad - 1), _get(style, "bg", t.surface))
   pad(r, _get(style, "pad", t.space_lg))
 
-# Centered "nothing here" copy for an empty region: a dim title plus an even
-# dimmer hint line. `style` overrides {size, font, fg}.
+@doc("""
+Centred "nothing here" copy for an empty region: a dim title and a dimmer
+hint line.
+""",
+  options: {size: "Text size.", font: "The face.", fg: "Text colour."},
+  deprecated: """Use `bloom.empty_state(r, title, hint[, opts])` (`import bloom`).""")
 pub fn empty_state(r, title, hint_text)
   empty_state(r, title, hint_text, {})
 
@@ -1369,13 +1631,21 @@ pub fn empty_state(r, title, hint_text, style)
   if len(hint_text) > 0 then
     draw_text_center(hint_text, cx, cy + 8, _ts(face, t.font_sm, mix(t.dim, t.bg, 0.35)))
 
-# One entry of a hint bar: the key cap text and what it does.
+@doc("""
+One entry of a hint bar: the key cap's text and what the key does.
+""",
+  returns: """`{key, label}`.""",
+  deprecated: """Use `bloom.hint_bar(r, hints[, opts])` with `{key, label}` hints (`import bloom`).""")
 pub fn hint(key, label)
   {key: key, label: label}
 
-# The keyboard-hint bar every full-pane app draws along its bottom edge:
-# key caps in small pills, labels dim beside them.
-#   hint_bar(bottom, [hint("j/k", "move"), hint("enter", "open")])
+@doc("""
+The keyboard-hint strip along the bottom of a pane: key caps in small pills,
+labels dim beside them.
+""",
+  options: {bg: "Fill.", rule: "The top hairline.", fg: "Label colour.", size: "Text size.", font: "The face.", cap: "Key cap fill.", cap_fg: "Key cap text."},
+  example: """hint_bar(bottom, [hint("j/k", "move"), hint("enter", "open")])""",
+  deprecated: """Use `bloom.hint_bar(r, hints[, opts])` with `{key, label}` hints (`import bloom`).""")
 pub fn hint_bar(r, hints)
   hint_bar(r, hints, {})
 
@@ -1405,26 +1675,36 @@ pub fn hint_bar(r, hints, style)
     x = x + text_width(hn.label, lbl_ts) + 16
 
 # ── Splitter ──────────────────────────────────────────────────────────────
-# A draggable divider splitting `r` in two — the widget git_panel/db_view
-# hand-rolled as `left_frac` + `drag_div`. State is an explicit record so
-# several splitters coexist:
-#
-#   state sp = splitter_state(0.3)
-#   let s = splitter(sp, content)
-#   sp = s.state
-#   ...draw into s.a (left/top) and s.b (right/bottom)...
-#
-# `style`: axis ("x" divider slides horizontally splitting left|right — the
-# default — or "y" for top|bottom), min_a / min_b (px floors for each side),
-# band (grab-zone thickness), gap (space left blank beside the divider line),
-# line / active (colors).
 
+@doc("""
+A fresh splitter state, to keep in `state`: the divider at fraction `frac`
+of the way across (0.5 by default).
+""",
+  example: """
+    state sp = splitter_state(0.3)
+    let s = splitter(sp, content, {min_a: 180, min_b: 260})
+    sp = s.state
+    draw_tree(s.a)
+    draw_editor(s.b)
+  """,
+  deprecated: """Use `bloom.splitter(r, frac[, opts])` (`import bloom`).""")
 pub fn splitter_state()
   splitter_state(0.5)
 
 pub fn splitter_state(frac)
   {frac: frac, drag: false}
 
+@doc("""
+A draggable divider splitting `r` in two.
+""",
+  options: {
+    axis: """`"x"` (the default) splits left and right; `"y"` top and bottom.""",
+    min_a: "The least size of the first pane, px.", min_b: "The least size of the second.",
+    band: "The grab zone's thickness.", gap: "Space left blank beside the divider line.",
+    line: "Divider colour.", active: "Divider colour while dragged.",
+  },
+  returns: """`{state, a, b, divider}`: the next state, the two panes, and the divider's rect.""",
+  deprecated: """Use `bloom.splitter(r, frac[, opts])` (`import bloom`).""")
 pub fn splitter(sp, r)
   splitter(sp, r, {})
 
@@ -1472,22 +1752,21 @@ pub fn splitter(sp, r, style)
   {state: s, a: a, b: b, divider: hit}
 
 # ── Table ─────────────────────────────────────────────────────────────────
-# A header + rows grid with column sizing, keyboard/mouse selection (list
-# semantics), zebra striping, a scrollbar, and click-to-sort headers. The
-# table records the *request* (sort_col / sort_asc); the caller owns the data
-# and applies the sort — the widget never reorders rows itself.
-#
-#   state tb = table_state()
-#   tb = table(tb, r, [{label: "Name", w: 0.6}, {label: "Size", w: 90}],
-#              rows)                       // rows: a list of row lists
-#   ...sort `rows` by tb.sort_col / tb.sort_asc before passing them in...
 
+@doc("""
+A fresh table state, to keep in `state`.
+""",
+  returns: """`{selected, scroll, sort_col, sort_asc}`.""",
+  deprecated: """Use `bloom.table(r, cols, rows[, opts])` (`import bloom`).""")
 pub fn table_state()
   {selected: 0, scroll: 0, sort_col: -1, sort_asc: true}
 
-# Column rects for `cols` across `r`: each col is {label, w} — `w` >= 1 is
-# fixed pixels, 0 < w < 1 a weight over the leftover, missing/0 an equal
-# flex share.
+@doc("""
+The column rects a table lays `cols` out in across `r`.
+""",
+  params: {cols: """Each `{label, w}`: `w` of 1 or more is fixed pixels, between 0 and 1 a weight over what is left, and absent an equal share."""},
+  returns: "A list of rects, one per column.",
+  deprecated: """Use `bloom.table(r, cols, rows[, opts])` (`import bloom`).""")
 pub fn table_col_rects(r, cols)
   let fixed = 0
   let weights = 0.0
@@ -1514,13 +1793,29 @@ pub fn table_col_rects(r, cols)
     x = x + cw
   out
 
+@doc("""
+A sortable table: a header and rows with column sizing, list selection by
+keyboard and mouse, zebra striping, a scrollbar, and click-to-sort headers.
+The table records the sort *request* (`sort_col`, `sort_asc`); sort your
+rows by it before passing them in, as it never reorders data. Each header
+registers under its column label.
+""",
+  params: {tb: "The state from `table_state`.", cols: """Each `{label, w}`, as `table_col_rects` takes.""", rows_data: "A list of rows, each a list of cell values."},
+  options: {
+    row_h: "Row height.", head_h: "Header height.", size: "Text size.", font: "The face.", fg: "Text colour.",
+    head_bg: "Header fill.", selection: "Selected row.", zebra: "The alternate rows' stripe.", rule: "Gridlines.",
+    on: "The surface the grid sits on, which the stripe is composited against.",
+    active: "Whether the table has the keyboard, as `list_update` takes it.",
+  },
+  returns: "The next state.",
+  example: """
+    state tb = table_state()
+    tb = table(tb, r, [{label: "Name", w: 0.6}, {label: "Size", w: 90}], sorted(rows, tb))
+  """,
+  deprecated: """Use `bloom.table(r, cols, rows[, opts])` (`import bloom`).""")
 pub fn table(tb, r, cols, rows_data)
   table(tb, r, cols, rows_data, {})
 
-# `style` overrides {row_h, head_h, size, font, fg, head_bg, selection, zebra,
-# rule, on, active} — `active` gates keyboard navigation, like list_update's,
-# and `on` is the surface colour the grid sits on (what the zebra stripe is
-# composited against).
 pub fn table(tb, r, cols, rows_data, style)
   let t = _palette()
   let row_h = _get(style, "row_h", 26)
@@ -1580,10 +1875,15 @@ pub fn table(tb, r, cols, rows_data, style)
   nt
 
 # ── Load view ─────────────────────────────────────────────────────────────
-# Draw the non-ready states into `r` (spinner while loading, the error while
-# failed, a hint while idle); returns true when the content is ready and the
-# caller should draw it instead. `style` overrides {radius, error_title,
-# idle_title}.
+@doc("""
+Draw a load's non-ready states into `r`: a spinner while loading, the error
+when it failed, a hint while idle.
+""",
+  params: {ls: "A load state (`load_state`)."},
+  options: {radius: "Corner radius.", error_title: "The heading over an error.", idle_title: "The idle hint."},
+  returns: "True when the content is ready, and the caller should draw it instead.",
+  example: """if draw_load(content, ls) then draw_diff(content, ls.value) end""",
+  deprecated: """Use `bloom.load_view(r, ls[, opts])` (`import bloom`).""")
 pub fn draw_load(r, ls)
   draw_load(r, ls, {})
 

@@ -1,10 +1,31 @@
+@module_doc("""
+The parts of a widget that draw nothing: the keyboard focus, list and scroll
+state, the text-editing logic behind a field, the popover runtime, drag and
+drop, the async load state and colour text. `ui` re-exports every name here.
+The drawn widgets are bloom's (core-stdlib/bloom); the ones still in
+`ui/widgets` are deprecated.
+
+**Focus.** At most one widget id has the keyboard, and the runtime decides
+who once per frame, before the script runs. A press on a rect that declared
+`{text: true}` or `{focus: true}` (see `interact`; every text field does)
+gives it the keyboard on that same frame. A press anywhere else takes it
+away, unless it lands on a higher layer than the focused widget, as a menu
+opened from a field does. While a widget has the keyboard, the keys it
+claims are not the app's shortcuts: a text widget claims every key pressed
+without Cmd/Ctrl and the editing chords (Cmd+A, C, X, V, Z, Shift+Z, Y, and
+Cmd with an arrow, Backspace or Delete), and any widget claims the chords it
+listed in `keys`. So `shortcut("v")` and `shortcut("escape")` are quiet
+while the user types, and `shortcut("cmd+s")` still fires. The fields read
+this focus, so an app keeps no focus record of its own. An id is a string
+or an int.
+
+**State records.** A widget with state that outlives a frame takes and
+returns a plain record you keep in `state` (`list_state()`,
+`drag_state()`, `load_state()`), so several instances coexist because you
+hold their state.
+""", see: ["ui", "ui/widgets", "ui.interact"])
+
 # petal-ui interaction — module `ui/interaction`
-#
-# The parts of a widget that draw nothing: the keyboard focus, list and
-# scroll state, the text-editing logic behind a field, the popover runtime,
-# drag and drop, the async load state and colour text. `ui` re-exports
-# every name here. The drawn widgets are bloom's (core-stdlib/bloom); the
-# ones still in `ui/widgets` are deprecated.
 
 import ./input
 import ./_native
@@ -16,24 +37,33 @@ import ./text
 import ./layout
 
 # ── Lists ─────────────────────────────────────────────────────────────────
-# State is an explicit record so multiple lists coexist:
-#   state files = list_state()
-#   files = list_update(files, count, visible_rows, r)
-# Semantics: j/k/arrows/home/end/pageup/pagedown move the selection, a click
-# inside `r` selects the row under the pointer, the wheel scrolls when the
-# pointer is over `r`, and the selection is always kept visible.
 
+@doc("""
+A fresh list state, to keep in `state` and pass to `list_update`.
+""",
+  returns: """`{selected, scroll}`: the selected index and the first visible row.""",
+  example: """
+    state files = list_state()
+    files = list_update(files, len(names), 12, list_r, has_focus("files"))
+  """,
+  see: ["list_update", "list_row_rect"])
 pub fn list_state()
   {selected: 0, scroll: 0}
 
 fn _row_h(r, visible_rows)
   max(1, r.h / visible_rows)
 
-# Rect of the item with absolute index `i`, given the list's current scroll.
+@doc("""
+Where row `i` of a list is drawn, given the list's scroll: rows are
+`r.h / visible_rows` tall.
+""", params: {i: "The item's index in the whole list, not in the window."}, see: ["list_update"])
 pub fn list_row_rect(r, visible_rows, i, scroll)
   {x: r.x, y: r.y + (i - scroll) * _row_h(r, visible_rows), w: r.w, h: _row_h(r, visible_rows)}
 
-# Scroll offset that keeps `selected` inside a `visible_rows` window.
+@doc("""
+The scroll (in rows) that keeps row `selected` inside a window of
+`visible_rows`, moving as little as it can.
+""", see: ["ensure_visible_px"])
 pub fn ensure_visible(scroll, selected, visible_rows)
   let s = scroll
   if selected < s then
@@ -42,12 +72,15 @@ pub fn ensure_visible(scroll, selected, visible_rows)
     s = selected - visible_rows + 1
   s
 
-# Pixel counterpart of ensure_visible for a VARIABLE-height row list: return the
-# scroll offset (px) that keeps the selected row's full [row_off, row_off+row_h)
-# span inside a `view_h`-tall viewport. `scroll`, `row_off`, `row_h`, `view_h`
-# are all pixels. A row taller than the viewport pins its top (its overflow then
-# runs off the bottom); for any row that fits, this leaves an already-visible
-# row untouched, scrolls up to reveal a row above, or down to reveal one below.
+@doc("""
+`ensure_visible` in pixels, for rows of different heights: the scroll that
+keeps a row wholly inside a `view_h`-tall viewport. A row already visible
+leaves the scroll alone; one above or below scrolls just enough. A row
+taller than the viewport pins its top.
+""",
+  params: {scroll: "The current scroll, px.", row_off: "The row's top, px from the content's top.", row_h: "The row's height.", view_h: "The viewport's height."},
+  returns: "The new scroll, px.",
+  see: ["ensure_visible"])
 pub fn ensure_visible_px(scroll, row_off, row_h, view_h)
   let s = scroll
   if row_off + row_h > s + view_h then
@@ -56,6 +89,19 @@ pub fn ensure_visible_px(scroll, row_off, row_h, view_h)
     s = row_off
   s
 
+@doc("""
+One frame of a list's input: the arrow keys, j/k, Home/End and the page keys
+move the selection; a click in `r` selects the row under it; the wheel over
+`r` scrolls. Keyboard navigation keeps the selection visible; the wheel
+scrolls freely past it, as native lists do.
+""",
+  params: {
+    lst: "The state from `list_state` (or the last call).",
+    visible_rows: "How many rows fit in `r`.",
+    active: "Whether the list has the keyboard (`has_focus(id)`); keys are ignored when false. A click selects either way, so pair it with `focus_request` to focus the list.",
+  },
+  returns: "The next state.",
+  see: ["list_state", "list_row_rect", "ensure_visible", "has_focus"])
 pub fn list_update(lst, item_count, visible_rows, r)
   list_update(lst, item_count, visible_rows, r, true)
 
@@ -105,9 +151,17 @@ pub fn list_update(lst, item_count, visible_rows, r, active)
   {selected: sel, scroll: scroll}
 
 # ── Scroll region (row/line based) ────────────────────────────────────────
-# Wheel scrolls when the pointer is over `r`; pageup/pagedown page; the
-# offset is clamped to [0, total_lines - visible_lines].
 
+@doc("""
+One frame of a scroll region with no selection: the wheel scrolls while the
+pointer is over `r`, and PageUp/PageDown page.
+""",
+  params: {
+    offset: "The first visible line.",
+    active: "Whether the region has the keyboard; the page keys are ignored when false, so PageDown in the focused region does not page every region on screen.",
+  },
+  returns: "The next offset, clamped to `[0, total_lines - visible_lines]`.",
+  see: ["scroll_keys"])
 pub fn scroll_update(offset, total_lines, visible_lines, r)
   scroll_update(offset, total_lines, visible_lines, r, true)
 
@@ -127,51 +181,50 @@ pub fn scroll_update(offset, total_lines, visible_lines, r, active)
   clamp(off, 0, max(0, total_lines - visible_lines))
 
 # ── Focus ──────────────────────────────────────────────────────────────────
-# At most one widget id has the keyboard. The runtime keeps track of it,
-# once per frame before the script runs (core-stdlib/ui/native/src/focus.rs):
-#
-#   has_focus(id)       whether `id` has the keyboard this frame
-#   focus_owner()       the id that has it, "" for nobody
-#   focus_request(id)   give `id` the keyboard from the next frame (nil:
-#                       nobody); the last request in a frame wins
-#   shortcut(chord)     whether `chord` ("cmd+z", "escape", "alt+shift+up")
-#                       was pressed this frame and is the app's: the widget
-#                       with the keyboard does not claim it
-#   shortcut(chord, id) whether it was pressed while `id` has the keyboard
-#
-# A press on a rect that declared `{text: true}` or `{focus: true}` (see
-# `interact`) gives it the keyboard on that same frame; every text field
-# declares `text`. A press anywhere else takes the keyboard away, unless it
-# lands on a layer above the focused widget (a menu opened from a field).
-#
-# A widget that takes text claims every key without Cmd/Ctrl and the
-# editing chords (Cmd+A/C/X/V/Z…), so `shortcut("v")` is quiet while the
-# user types and `shortcut("cmd+s")` is not. In a chord, `cmd` is Cmd or
-# Ctrl, and the modifiers must match exactly.
-#
-# A request is seen by the rest of the run that made it: after
-# `focus_request("name")`, `has_focus("name")` is true for the rest of this
-# frame, and the runtime gives it the keyboard from the next.
-#
-# The fields (`text_field`, `commit_field`, `number_field`, ...) read the
-# runtime's focus, so an app keeps no focus record of its own. An id is a
-# string or an int.
+# The runtime keeps track of the focus once per frame before the script runs
+# (core-stdlib/ui/native/src/focus.rs); see the module doc for the rules.
 
 # This run's last request, made afresh each run; `frame` guards a host that
 # keeps the module between frames.
 var _focus_now = {frame: -1, id: ""}
 
+@doc("""
+Whether `id` has the keyboard this frame (including a `focus_request` made
+earlier in this run).
+""", example: """
+    if has_focus("search") && shortcut("escape") then focus_request(nil) end
+""", see: ["focus_owner", "focus_request"])
 pub fn has_focus(id)
   id != nil && focus_owner() == str(id)
 
+@doc("""The id that has the keyboard this frame, `""` for nobody.""", see: ["has_focus"])
 pub fn focus_owner()
   let p = get _focus_now
   if p.frame == frame_count() then p.id else _ui_focus() end
 
+@doc("""
+Give `id` the keyboard from the next frame; `nil` gives it to nobody. The
+rest of this run sees it already: `has_focus(id)` is true after the call.
+The last request in a frame wins.
+""", see: ["has_focus", "focus_next"])
 pub fn focus_request(id)
   _ui_focus_request(id)
   set _focus_now = {frame: frame_count(), id: if id == nil then "" else str(id) end}
 
+@doc("""
+Whether `chord` was pressed this frame and is the app's: the focused widget
+does not claim it, and no menu or popover is open. With `id`: whether it
+was pressed while `id` has the keyboard (or `id` is the open popover).
+""",
+  params: {
+    chord: """Modifiers and a key name joined with `+`: `"cmd+shift+z"`, `"escape"`, `"alt+left"`. `cmd` is Cmd or Ctrl. The modifiers must match exactly.""",
+    id: "A widget id: answer for that widget instead of for the app.",
+  },
+  example: """
+    if shortcut("cmd+s") then save() end
+    if shortcut("delete", "layers") then delete_selected() end
+  """,
+  see: ["has_focus", "ui.key_pressed"])
 pub fn shortcut(chord)
   _ui_shortcut(chord)
 
@@ -187,8 +240,10 @@ fn _index_of(ids, id)
       found = i
   found
 
-# Move focus to the next / previous id in the ordered ring `ids`. From nothing
-# focused, next lands on the first and prev on the last; both wrap.
+@doc("""
+Move the keyboard to the id after the one that has it, in the ordered ring
+`ids`. From nothing focused it lands on the first; it wraps.
+""", see: ["focus_prev", "focus_update"])
 pub fn focus_next(ids)
   if len(ids) > 0 then
     let j = _index_of(ids, focus_owner()) + 1
@@ -196,6 +251,10 @@ pub fn focus_next(ids)
       j = 0
     focus_request(ids[j])
 
+@doc("""
+Move the keyboard to the id before the one that has it, in the ordered ring
+`ids`. From nothing focused it lands on the last; it wraps.
+""", see: ["focus_next", "focus_update"])
 pub fn focus_prev(ids)
   if len(ids) > 0 then
     let idx = _index_of(ids, focus_owner())
@@ -204,8 +263,10 @@ pub fn focus_prev(ids)
       j = len(ids) - 1
     focus_request(ids[j])
 
-# Convenience: Tab advances focus, Shift+Tab reverses it. Call once per frame
-# with the ring of focusable widget ids.
+@doc("""
+Tab and Shift+Tab over a ring of ids: Tab moves the keyboard to the next,
+Shift+Tab to the previous. Call it once per frame.
+""", example: """focus_update(["name", "email", "notes"])""", see: ["focus_next"])
 pub fn focus_update(ids)
   if key_pressed("tab") then
     if mod_shift() then
@@ -390,17 +451,55 @@ fn _edit_keys(st0, h, multiline)
       typing = typed_only && !_is_gap(char_slice(typed, char_len(typed) - 1, char_len(typed)))
   {st: st, h: {undo: undo, redo: redo, typing: typing}}
 
-# The input half, with no pixels of its own: focus, caret, selection,
-# clipboard, undo and Return.
-# An app with its own palette keeps the editing logic — which is the fiddly
-# part — and draws the box itself:
-#
-#   let res = text_field_update("name", r, buf)
-#   buf = res.text
-#   ...my own box, my own caret (at char index res.caret), my own selection
-#   (text_range_rects(res.text, style, res.sel_start, res.sel_end))...
-#
-# bloom's `draw_text_field(r, res, focused, opts)` is the stock look.
+# The update half reads {size, font, inset, text_style, pointer, scroll} from
+# `style`. The face matters as much as the size: measuring monospace
+# advances against a proportionally-drawn run puts the caret several
+# characters away by the end of a long field.
+@doc("""
+The logic of a single-line text field with no pixels of its own: focus,
+caret, selection, clipboard, undo and Return. An app with its own look keeps
+the editing logic, the fiddly part, and draws the box itself; bloom's
+`draw_text_field(r, res, focused, opts)` is the stock look. `buf` is a plain
+string kept in the caller's `state`; the caret, the selection and the undo
+history are kept per call site.
+
+| Input | Does |
+|---|---|
+| click / shift+click / drag | focus and place the caret / extend the selection / select |
+| a press anywhere else | gives the focus up, unless a higher layer took the press |
+| double click / triple click | select the word / everything |
+| left, right, home, end | move the caret; with shift, extend the selection |
+| alt or ctrl + left/right | by word; cmd + left/right goes to either end |
+| backspace, delete | the selection, else one character (alt/ctrl+backspace: back to the word start; cmd+backspace: to the start) |
+| cmd+A | select all |
+| cmd+C / cmd+X / cmd+V | copy, cut, paste through the clipboard |
+| cmd+Z, cmd+shift+Z or cmd+Y | undo, redo |
+| return | sets `submitted` |
+| escape | sets `cancelled` (the field keeps the focus; a caller that reverts drops it) |
+
+Cmd and Ctrl are interchangeable. Typing replaces the selection; a run of
+typing is one undo step, a word at a time. A paste loses its line breaks.
+When `buf` is not what the field last returned (the app cleared or replaced
+it), the history is dropped.
+""",
+  params: {id: "The focus id: a string or an int."},
+  options: {
+    size: "Text size; must match what the draw half uses, or click-to-place lands off.",
+    font: "The face; must match the draw half too.",
+    text_style: "A whole text style record, for an app with its own type ramp, in place of `size` and `font`.",
+    inset: "Padding between the box and the text.",
+    pointer: "`false` keeps the mouse out for this frame (the field is under a modal).",
+    scroll: "`true` turns on horizontal scrolling: the result's `scroll` is how far the text is shifted left to keep the caret in the box, and the draw half shifts by it too.",
+  },
+  returns: """`{text, caret, submitted, changed, anchor, sel_start, sel_end, scroll, overflow, blurred, cancelled}`. `caret`, `anchor`, `sel_start` and `sel_end` are character offsets; `sel_start == sel_end` means no selection. `blurred` is true on the frame after the field lost the keyboard, the cue to apply an edit on blur.""",
+  example: """
+    let res = text_field_update("name", r, buf, {text_style: MY_STYLE, inset: 0})
+    buf = res.text
+    for q in text_range_rects(buf, MY_STYLE, res.sel_start, res.sel_end) do
+      draw_rect(r.x + q.x, r.y + q.y, q.w, q.h, MY_HIGHLIGHT)
+    draw_text(buf, {x: r.x, y: r.y}, MY_STYLE)
+  """,
+  see: ["text_area_update", "ui.text_field", "ui.clipboard_get"])
 pub fn text_field_update(id, r, buf)
   text_field_update(id, r, buf, {})
 
@@ -585,9 +684,40 @@ fn _area_caret(rows, ts, at, lh)
   let x = text_width(char_slice(row.text, 0, clamp(at - row.start, 0, row.end - row.start)), ts)
   {x: x, y: i * lh, row: i}
 
-# The input half, with no pixels of its own (see `text_field_update`). Reads
-# {size, font, inset, text_style, line_gap, pointer} from `style`; they must
-# match what the draw half uses.
+@doc("""
+`text_field_update` for text with line breaks (captions, notes, a chat
+message), with no pixels of its own. The text wraps to the box
+(`text_wrap_rows`); Return inserts a line break, so there is no
+`submitted`; a paste keeps its line breaks. Everything else is the field's:
+focus, selection, the clipboard and undo.
+
+| Input | Does |
+|---|---|
+| return | inserts a line break |
+| up / down | a row up or down, keeping the column across short rows |
+| cmd + up / down | to the start / end of the text |
+| home / end, cmd + left / right | to the start / end of the row |
+| wheel over the box | scrolls text taller than the box (by rows) |
+
+A caret that moves, or a text that changes, is scrolled into view; on a
+quiet frame the wheel is free to scroll away from it.
+""",
+  options: {
+    size: "Text size; must match the draw half.",
+    font: "The face; must match the draw half.",
+    text_style: "A whole text style record, in place of `size` and `font`.",
+    inset: "Padding between the box and the text.",
+    line_gap: "Pixels added to the face's line height between rows (2).",
+    pointer: "`false` keeps the mouse out for this frame.",
+    select_all: "Select the whole text on this frame (text the next keystroke should replace).",
+  },
+  returns: """`{text, caret, changed, anchor, sel_start, sel_end, scroll, overflow, rows, line_h, content_h}`: `rows` is the wrap (`text_wrap_rows` rows), `scroll` how many pixels the text is shifted up, `content_h` its whole height.""",
+  example: """
+    state notes = ""
+    let res = text_area_update("notes", r, notes)
+    notes = res.text
+  """,
+  see: ["text_field_update", "text_area_height", "ui.text_area"])
 pub fn text_area_update(id, r, buf)
   text_area_update(id, r, buf, {})
 
@@ -730,9 +860,18 @@ pub fn text_area_update(id, r, buf, style)
    sel_start: min(caret, anchor), sel_end: max(caret, anchor), scroll: scroll,
    overflow: content_h > inner_h, rows: rows, line_h: lh, content_h: content_h}
 
-# The height a text area `w` wide needs to show `text`, between `min_lines`
-# and `max_lines` rows — for a box that grows with what is typed into it.
-# `style` is the one the area is given.
+@doc("""
+The height a text area `w` wide needs to show `text`, between `min_lines`
+and `max_lines` rows: a box that grows as it fills.
+""",
+  params: {min_lines: "The fewest rows (3).", max_lines: "The most rows (12); past it the area scrolls.", style: "The style the area is given."},
+  example: """
+    state notes = ""
+    let h = text_area_height(notes, 320)
+    let res = text_area("notes", rect(20, 80, 320, h), notes)
+    notes = res.text
+  """,
+  see: ["text_area_update"])
 pub fn text_area_height(text, w, min_lines = 3, max_lines = 12, style = {})
   let t = _palette()
   let ts = _field_measure(t, style)
@@ -742,57 +881,64 @@ pub fn text_area_height(text, w, min_lines = 3, max_lines = 12, style = {})
 
 # ── Popover runtime ───────────────────────────────────────────────────────
 # Which popover is open, held by the runtime by id
-# (core-stdlib/ui/native/src/popover.rs). At most one is open: opening one
-# closes the rest. Escape and a press outside close it before the frame
-# runs, and that press reaches nothing underneath. It opens on the frame
-# after `popover_open`, and it has the keys while it is open:
-# `shortcut(chord)` is quiet, `shortcut(chord, id)` answers. The drawn
-# menus and popovers are bloom's.
+# (core-stdlib/ui/native/src/popover.rs). The drawn menus and popovers are
+# bloom's.
 
+@doc("""
+Open popover `id` from the next frame. The runtime holds which popover is
+open, by id, so there is no record to thread. At most one is open: opening
+one closes the rest. Escape and a press outside close it before the frame
+runs, and that press reaches nothing underneath. While it is open it has the
+keys: `shortcut(chord)` is quiet and `shortcut(chord, id)` answers.
+""", see: ["popover_close", "popover_shown", "ui.popover"])
 pub fn popover_open(id)
   _ui_popover_request(true, id)
 
+@doc("Close popover `id` if it is the open one.", see: ["popover_open"])
 pub fn popover_close(id)
   _ui_popover_request(false, id)
 
-# Whether `id` is the open popover this frame.
+@doc("Whether `id` is the open popover this frame.", see: ["popover_open", "popover_owner"])
 pub fn popover_shown(id)
   id != nil && _ui_popover() == str(id)
 
-# The open popover's id, "" for none.
+@doc("""The open popover's id, `""` for none.""", see: ["popover_shown"])
 pub fn popover_owner()
   _ui_popover()
 
 # ── Drag and drop (immediate-mode) ────────────────────────────────────────
 # The primitive every reorderable list, kanban board, timeline editor and tab
-# strip was hand-rolling. State is an explicit record; keep it in `state` and
-# thread it through one `drag_update` call per draggable item per frame:
-#
-#   state dg = drag_state()
-#   for i in range(0, len(cards)) do
-#     let r = card_rect(i)
-#     dg = drag_update(dg, cards[i].id, r)
-#     ...draw the card, offset by (dg.dx, dg.dy) when dg.dragging && dg.id == id
-#   end
-#   if dg.dropped then
-#     let to = insertion_index(card_rects, mouse_y())
-#     ...move dg.id to `to`...
-#   end
-#
-# Fields: `dragging` (a drag is in flight), `id` (which item — the value you
-# passed as `item_id`), `dx`/`dy` (pointer offset from where the press landed),
-# `dropped` (true for exactly the frame the button came up, with `id`/`dx`/`dy`
-# still describing the finished drag). `sx`/`sy` are the press position and
-# `at` the frame the drop happened on — internal bookkeeping, but harmless to
-# read.
-#
-# `dropped` survives the rest of the frame's `drag_update` calls (it is cleared
-# on the next frame, not by the next call), so the app can loop over every item
-# and still see the drop afterwards.
+# strip was hand-rolling. `sx`/`sy` in the state are the press position and
+# `at` the frame the drop happened on: internal bookkeeping.
 
+@doc("""
+A fresh drag-and-drop state, to keep in `state` and thread through one
+`drag_update` per draggable item per frame. For drags that snap, reorder or
+re-parent with the animation done for you, see `ui/drag`.
+""",
+  returns: """`{dragging, id, dx, dy, dropped, …}`: `dragging` while a drag is in flight; `id` the item (the `item_id` passed); `dx`, `dy` the pointer's offset from where the press landed; `dropped` true for exactly the frame the button came up, with `id`, `dx`, `dy` still describing the finished drag.""",
+  example: """
+    state dg = drag_state()
+    for i in range(0, len(cards)) do
+      dg = drag_update(dg, cards[i].id, card_rect(i))
+    if dg.dropped then
+      let to = insertion_index(card_rects, mouse_y())
+      move_card(dg.id, to)
+  """,
+  see: ["drag_update", "insertion_index", "ui/drag"])
 pub fn drag_state()
   {dragging: false, id: "", dx: 0, dy: 0, dropped: false, sx: 0, sy: 0, at: -1}
 
+@doc("""
+One draggable item for one frame: a press on `r` that then moves starts
+dragging `item_id`, and the release drops it. `dropped` survives the rest of
+the frame's `drag_update` calls (it is cleared on the next frame, not by the
+next call), so the app can loop over every item and still see the drop
+afterwards.
+""",
+  params: {ds: "The state from `drag_state` (or the last call).", item_id: "Which item this is.", r: "The item's rect."},
+  returns: "The next state.",
+  see: ["drag_state", "dragging", "drag_cancel"])
 pub fn drag_update(ds, item_id, r)
   let d = ds
   # A finished drag is visible for one whole frame, then cleared.
@@ -814,19 +960,25 @@ pub fn drag_update(ds, item_id, r)
         sx: d.sx, sy: d.sy, at: frame_count()}
   d
 
-# Abandon an in-flight drag (Escape, a lost window, a list that just changed
-# under the pointer). Returns a fresh state, so no `dropped` is reported.
+@doc("""
+Abandon an in-flight drag (Escape, a lost window, a list that just changed
+under the pointer).
+""", returns: "A fresh state, so no `dropped` is reported.", see: ["drag_update"])
 pub fn drag_cancel(ds)
   drag_state()
 
-# True while `item_id` is the item being dragged.
+@doc("Whether `item_id` is the item being dragged.", see: ["drag_update"])
 pub fn dragging(ds, item_id)
   ds.dragging && ds.id == item_id
 
-# Where an item dropped at pixel `y` belongs in a vertical list whose rows are
-# `rects` (in list order): the count of rows whose midpoint is above `y`. 0
-# means "before the first row", len(rects) means "after the last" — exactly the
-# index an insert wants, and the index to draw the drop indicator at.
+@doc("""
+Where an item dropped at pixel `y` belongs among the rows of a vertical
+list: the number of rows whose midpoint is above `y`. That is the index an
+insert wants, and the index to draw the drop indicator at.
+""",
+  params: {rects: "The rows' rects, in list order."},
+  returns: "0 (before the first row) to `len(rects)` (after the last).",
+  see: ["insertion_index_x", "drag_update"])
 pub fn insertion_index(rects, y)
   let idx = 0
   for r in rects do
@@ -834,7 +986,10 @@ pub fn insertion_index(rects, y)
       idx = idx + 1
   idx
 
-# The horizontal counterpart, for tab strips and kanban columns.
+@doc("""
+Where an item dropped at pixel `x` belongs among columns: `insertion_index`
+for tab strips and kanban columns.
+""", returns: "0 to `len(rects)`.", see: ["insertion_index"])
 pub fn insertion_index_x(rects, x)
   let idx = 0
   for r in rects do
@@ -852,7 +1007,7 @@ fn _hex2(v)
   let n = clamp(int(round(float(v))), 0, 255)
   char_at(_HEX, n / 16) ++ char_at(_HEX, n % 16)
 
-# A colour as `#rrggbb`, or `#rrggbbaa` when it is not opaque.
+@doc("A colour as `#rrggbb`, or `#rrggbbaa` when it is not opaque.", example: """color_to_hex(:3c8cff)   # is "#3c8cff" """, see: ["color_from_hex"])
 pub fn color_to_hex(c)
   let a = c["a"] ?? 255
   let base = "#" ++ _hex2(c.r) ++ _hex2(c.g) ++ _hex2(c.b)
@@ -866,8 +1021,10 @@ fn _hex_pair(s, i)
   let lo = _hex_digit(s, i + 1)
   if hi < 0 || lo < 0 then -1 else hi * 16 + lo end
 
-# The colour `#rgb`, `#rrggbb` or `#rrggbbaa` names (the `#` is optional,
-# case and surrounding space don't matter), or nil when it names none.
+@doc("""
+The colour `#rgb`, `#rrggbb` or `#rrggbbaa` names, or `nil` when it names
+none. The `#` is optional; case and surrounding space don't matter.
+""", example: """color_from_hex("#fc0")   # {r: 255, g: 204, b: 0}""", see: ["color_to_hex", "same_color"])
 pub fn color_from_hex(text)
   let s = lower(trim(text))
   if char_slice(s, 0, 1) == "#" then s = char_slice(s, 1, char_len(s)) end
@@ -888,8 +1045,10 @@ pub fn color_from_hex(text)
   else
     nil
 
-# Whether two colours are the same, alpha included (absent is opaque). Two
-# nils are the same; a nil and a colour are not.
+@doc("""
+Whether two colours are equal, alpha included (absent is opaque). Two nils
+are the same; a nil and a colour are not.
+""", see: ["color_from_hex"])
 pub fn same_color(a, b)
   if a == nil || b == nil then
     a == b
@@ -898,11 +1057,18 @@ pub fn same_color(a, b)
 
 # ── Keyboard scrolling ────────────────────────────────────────────────────
 
-# The keys a scrolled view (a log, a table, a preview) answers when it has
-# the keyboard: j / k or down / up by a line, space by a page, home / end to
-# either end. Pair it with `scroll_update`, which handles the wheel and
-# pageup / pagedown; this one adds what a reader expects on top. Returns the
-# new offset, clamped to [0, total_lines - visible_lines].
+@doc("""
+The keys a scrolled view (a log, a table, a preview) answers when it has the
+keyboard: j/k or down/up a line, space a page, Home/End to either end. Call
+it when the region has the keyboard, beside `scroll_update`, which handles
+the wheel and the page keys.
+""",
+  returns: "The next offset, clamped to `[0, total_lines - visible_lines]`.",
+  example: """
+    scroll = scroll_update(scroll, len(lines), 30, log_r, has_focus("log"))
+    if has_focus("log") then scroll = scroll_keys(scroll, len(lines), 30) end
+  """,
+  see: ["scroll_update"])
 pub fn scroll_keys(offset, total_lines, visible_lines)
   let off = offset
   if key_pressed("down") || key_pressed("j") then off += 1 end
@@ -914,44 +1080,58 @@ pub fn scroll_keys(offset, total_lines, visible_lines)
 
 # ── Async load state ──────────────────────────────────────────────────────
 # The `X_ready / X_err / X_loading` pattern every data-driven panel
-# hand-rolls, blessed as one record + a poll step. Keep it in `state` and
-# feed it the pending value your data channel returns:
-#
-#   state ls = load_state()
-#   let key = "diff:" ++ sha
-#   ls = load_poll(ls, key, query("diff", sha))
-#   if bloom.load_view(content, ls) then
-#     ...draw ls.value...
-#   end
-#
-# A changed `key` restarts the load (the stale value stays readable in
-# `ls.value` while the new one is in flight, if you want to keep painting it).
+# hand-rolls, as one record and a poll step.
 
+@doc("""
+A fresh load state: one record for the loading, ready and failed lifecycle
+of a value. Keep it in `state` and feed `load_poll` the pending value your
+data channel returns.
+""",
+  returns: """`{status, key, value, error}`; `status` is `"idle"`, `"loading"`, `"ready"` or `"error"`.""",
+  example: """
+    state ls = load_state()
+    ls = load_poll(ls, "diff:" ++ sha, query("diff", sha))
+    if load_ready(ls) then draw_diff(content, ls.value) end
+  """,
+  see: ["load_poll", "load_ready", "ui.draw_load"])
 pub fn load_state()
   {status: "idle", key: "@none", value: nil, error: ""}
 
+@doc("Whether the load is in flight.", see: ["load_ready", "load_failed"])
 pub fn load_loading(ls)
   ls.status == "loading"
 
+@doc("Whether the value has arrived: draw `ls.value`.", see: ["load_loading"])
 pub fn load_ready(ls)
   ls.status == "ready"
 
+@doc("Whether the load failed: `ls.error` says why.", see: ["load_loading"])
 pub fn load_failed(ls)
   ls.status == "error"
 
-# Begin (or restart) a load for `key`.
+@doc("""
+Begin (or restart) a load for `key`, by hand. The last value stays readable
+in `ls.value` while the new one is in flight.
+""", returns: "The next state.", see: ["load_poll"])
 pub fn load_begin(ls, key)
   {status: "loading", key: key, value: ls.value, error: ""}
 
+@doc("The load succeeded with `value`, set by hand.", returns: "The next state.", see: ["load_fail"])
 pub fn load_ok(ls, value)
   {status: "ready", key: ls.key, value: value, error: ""}
 
+@doc("The load failed with message `msg`, set by hand.", returns: "The next state.", see: ["load_ok"])
 pub fn load_fail(ls, msg)
   {status: "error", key: ls.key, value: ls.value, error: msg}
 
-# One poll step: restart when `key` changed, then absorb `pv` — a pending
-# value from an async channel (Garden's `query`), or a plain value (ready
-# immediately). Uses the core is_ready / is_error / error_of builtins.
+@doc("""
+One poll step: restart when `key` changed, then absorb `pv`. While a new
+load is in flight the stale value stays readable in `ls.value`, for a panel
+that keeps painting it.
+""",
+  params: {key: "What is being loaded; a new key restarts the load.", pv: "A pending value from an async channel (Garden's `query`; read with `is_ready`, `is_error`, `error_of`), or a plain value, ready at once."},
+  returns: "The next state.",
+  see: ["load_state"])
 pub fn load_poll(ls, key, pv)
   let s = ls
   if s.key != key then

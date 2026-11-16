@@ -66,12 +66,12 @@ fn run_commands(commands)
         set x += step
       when Command.jump(height) ->
         if height > 3 then
-          set log = push(get log, "too high")
+          set log = append(get log, "too high")
           continue
-        set log = push(get log, "jumped {height}")
-      when Command.say(text) -> set log = push(get log, text)
+        set log = append(get log, "jumped {height}")
+      when Command.say(text) -> set log = append(get log, text)
       when Command.quit -> break
-    set log = push(get log, "x={get x}")
+    set log = append(get log, "x={get x}")
   join(get log, ", ")
 
 print(run_commands([

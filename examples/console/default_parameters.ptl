@@ -28,7 +28,7 @@ print("inset:", inset(20, pad: 0))
 # The expression runs on *every* call that omits the argument, so a list
 # default is a fresh list each time — the two calls below do not share one.
 fn tagged(item, tags: list = [])
-  push(tags, item)
+  append(tags, item)
 
 print("tagged:", tagged("a"))
 print("tagged:", tagged("b"))

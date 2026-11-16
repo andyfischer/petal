@@ -1,15 +1,145 @@
-# Package `core` — Output, conversion to text, type names and assertions (core/src/builtins/io.rs).
+@module_doc("""
+Output, conversion to text, type names, assertions and expectations.
+
+**Assertions** stop the program with a message and source location when
+their condition fails.
+
+**Expectations** check something and, when it does not hold, **record** the
+failure and carry on, where an assertion stops the program. They are what a
+[`test` block](testing.md) checks with: every failure of a test is reported,
+each with its file and line. Outside a test, `petal run` prints the recorded
+failures when the run ends and exits 1. Each one returns `true` when it held
+and `false` when it did not.
+""")
+
+# Package `core`, module `basics` (core/src/builtins/io.rs).
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. Several declarations of one name are that native's call forms.
 # See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+Prints arguments to stdout, separated by spaces, followed by a newline.
+Variadic: it takes no named arguments.
+""",
+  example: """
+    print("hello")           # hello
+    print(1, "and", 2)       # 1 and 2
+    print([1, 2], {a: 3})    # [1, 2] { a: 3 }
+  """,
+  see: ["str", "format"])
 pub native fn print(...values)
+
+@doc("""
+Converts any value to its string representation.
+
+An enum variant converts to the way it is written in source:
+`str(Color.red)` is `"Color.red"` and `str(Op.fight("bridge", true))` is
+`"Op.fight(\"bridge\", true)"`. For the variant's bare name use `.name`
+(`Color.red.name` is `"red"`).
+
+Petal does no implicit casting. When a value has the wrong type for a slot
+(a `float` where an `int` is expected, say), convert it explicitly with
+`str`, `int`, `float`, `parse_int` or `parse_float`.
+""",
+  example: """
+    str(42)        # "42"
+    str(true)      # "true"
+    str([1, 2])    # "[1, 2]"
+  """,
+  see: ["int", "float", "fixed", "format"])
 pub native fn str(value) -> string
+
+@doc("""
+Returns the type name as a string. For a class instance it is the class's
+name, and for an enum variant the enum's name.
+""",
+  example: [
+    """
+      type(42)          # "int"
+      type(3.14)        # "float"
+      type("hello")     # "string"
+      type([1, 2])      # "list"
+      type({a: 1})      # "record"
+      type(Map())       # "map"
+      type(true)        # "bool"
+      type(nil)         # "nil"
+    """,
+    """
+      enum Color
+        red,
+        custom(r, g, b),
+
+      print(type(Color.red))                # Color
+      print(type(Color.custom(1, 2, 3)))    # Color
+      print(type(Rect(0, 0, 1, 1)))         # Rect
+    """,
+  ])
 pub native fn type(value) -> string
+
+@doc("""
+Fails with `assertion failed: <message>` when `condition` is falsy.
+
+Direct manipulation treats a failing assert as a constraint: a proposed
+edit that would fail it is rejected, and the report says which assert did it
+([Constraints between literals](features/direct-manipulation.md#constraints-between-literals-assert)).
+
+```petal ignore
+assert(x > 0, "x must be positive")
+assert(len(items) == 3)
+```
+""",
+  see: ["assert_eq", "expect"])
 pub native fn assert(condition, message?)
+
+@doc("""
+Fails with `assertion failed: assert_eq: left=<actual> right=<expected>` when
+the two values are not equal. Prefer it over `assert(a == b)` because the
+message shows both values.
+""",
+  example: """
+    assert_eq(2 + 2, 4)
+    assert_eq(sort([3, 1, 2]), [1, 2, 3])
+  """,
+  see: ["assert", "expect_eq"])
 pub native fn assert_eq(actual, expected)
+
+@doc("""
+Records a failure when `condition` is `false` or `nil`. The failure reads
+`message`, or `expected a true value`.
+""",
+  returns: "`true` when it held, `false` when it did not.",
+  example: """
+    expect(len("abc") == 3)
+    expect(sqrt(16.0) > 3.9, "sqrt is close")
+  """,
+  see: ["expect_eq", "expect_near", "assert"])
 pub native fn expect(condition, message?) -> bool
+
+@doc("""
+Records a failure when the two values are not `==`, as `expected <expected>,
+got <actual>` (with `message` in parentheses after it). Strings are shown
+quoted, so `"1"` and `1` read differently.
+""",
+  returns: "`true` when it held, `false` when it did not.",
+  example: """
+    expect_eq(2 + 2, 4)
+    expect_eq(sort([3, 1, 2]), [1, 2, 3], "sorted ascending")
+  """,
+  see: ["expect", "expect_near", "assert_eq"])
 pub native fn expect_eq(actual, expected, message?) -> bool
+
+@doc("""
+Records a failure when two numbers differ by more than `tolerance`, as
+`expected 0.6 within 0.01, got 0.5 (off by 0.1)`. The tolerance is required
+and must not be negative. A value that is not a number, and a NaN, is never
+near anything.
+""",
+  returns: "`true` when it held, `false` when it did not.",
+  example: """
+    expect_near(0.1 + 0.2, 0.3, 0.000001)
+    expect_near(sin(pi()), 0.0, 0.000001, "sin of pi")
+  """,
+  see: ["expect", "expect_eq"])
 pub native fn expect_near(actual: num, expected: num, tolerance: num, message?) -> bool

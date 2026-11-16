@@ -1,9 +1,34 @@
-# Package `core` — Function introspection, experimental (docs/features/function-introspection.md).
+@module_doc("""
+Function introspection (experimental): read a function value as plain
+records and lists.
+
+The builtins are global, and their result shapes may still change.
+[Function Introspection](features/function-introspection.md) is the full
+description: every field, `code_hash`, the nodes of the tree, and the limits.
+""")
+
+# Package `core`, module `introspect` (docs/features/function-introspection.md).
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. Several declarations of one name are that native's call forms.
 # See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+A record describing the function `f` (a lambda or a named `fn`): `name`,
+`file`, `line`, `column`, `params`, `returns`, `captures` and `code_hash`.
+`nil` for a builtin and for an overloaded name. See
+[`fn_info`](features/function-introspection.md#fn_infof).
+""",
+  returns: """`{name, file, line, column, params, returns, captures, code_hash}`, or `nil`.""",
+  see: ["fn_ast"])
 pub native fn fn_info(f: function) -> record?
+
+@doc("""
+The function's syntax tree as nested records, each with a `tag`. `nil` when
+there is no source to read (a builtin, an overloaded name, a class
+constructor, a program loaded from IR). See
+[`fn_ast`](features/function-introspection.md#fn_astf).
+""",
+  see: ["fn_info"])
 pub native fn fn_ast(f: function) -> record?

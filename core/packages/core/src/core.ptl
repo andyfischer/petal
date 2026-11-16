@@ -1,8 +1,99 @@
-# Package `core` — the package's own module: `import core` binds the
-# qualifier `core` over every builtin the package declares, so a script can
-# write `core.len(xs)` where a declaration or an import of its own has taken
-# the bare name. Nothing needs this import to *use* a builtin: every name
-# below is in scope in every file already.
+@module_doc("""
+The builtins every Petal program can call without an import.
+
+The built-in functions of the Petal runtime: the ones in scope in every
+program (this package), and the domain sets a file imports (the bundled
+packages `noise`, `color`, `vec2`, `json`, `io` and `autodiff`). For
+language syntax (variables, control flow, functions, state, pattern
+matching), see the [Language Guide](language-guide.md). The drawing and
+input builtins used by `petal-ui` apps (`draw_rect`, `mouse_x`, ...) are
+covered in the [petal-ui README](../core-libs/petal-ui/README.md); how a
+browser page runs them is in [usage/embedding-web.md](usage/embedding-web.md).
+
+`import core` binds the qualifier `core` over every builtin the package
+declares, so a script can write `core.len(xs)` where a declaration or an
+import of its own has taken the bare name. Nothing needs this import to
+*use* a builtin: every name is in scope in every file already.
+
+## Named arguments
+
+**The parameter names in this reference are real.** Every builtin with a
+fixed parameter list takes [named arguments](syntax/function-overloading.md#named-arguments)
+under the names its signature shows, in any order after the positional ones:
+
+```petal
+print(clamp(15, lo: 0, hi: 10))                        # 10
+print(map_range(value: 5, in_lo: 0, in_hi: 10, out_lo: 0, out_hi: 100))  # 50.0
+print([1, 2, 3, 4].slice(start: 1, end: 3))            # [2, 3]
+```
+
+- A parameter marked `?` (`slice(collection, start, end?)`) is optional and
+  may be left off, named or not. Optional parameters are always last, and one
+  cannot be skipped to reach a later one: `noise(x: 1, z: 2)` is
+  `noise() is missing a value for parameter 'y'`.
+- A builtin listed in several forms (`random()` / `random(max)` /
+  `random(min, max)`, `distance(x1, y1, x2, y2)` / `distance(v1, v2)`) takes
+  the names of whichever form the call fits.
+- With method syntax the receiver is the first parameter, so
+  `xs.slice(start: 1)` names the ones after it.
+- A name may be a keyword: `end:` is an ordinary argument label
+  (`range(start: 0, end: 5)`).
+- The variadic builtins — `print(args...)` and `format(template, args...)` —
+  have no parameter names to give, and refuse a named argument
+  (`builtin 'print' does not accept named arguments`).
+
+A wrong name is an error when the line runs (`clamp() has no parameter named
+'low'`), and from `petal lint` before that.
+
+Each builtin's signature is written once, as a `native fn` declaration in a
+package compiled into the binary (`core/packages/`): parameter names, which
+are optional, the argument types the checker holds a call to, and the result
+type. See [usage/ffi.md](usage/ffi.md#native-interfaces-native-fn) for the declaration
+syntax. What a builtin does besides computing its result (reading the clock,
+drawing, reading host data) is declared in its effect row when it is
+registered; [dev/native-effects.md](dev/native-effects.md) defines the rows
+and how they are checked.
+
+## Which builtins need an import
+
+What reads as language is **global**: it is declared by the `core` package and
+in scope in every file with no import — `print`, `len`, `str`, `type`,
+`range`, the casts, assertions, the collection, string and record functions,
+the higher-order functions, formatting (`core/format`), the reductions and
+selections of the Petal prelude (`std`), the plain math of `core/math`, and
+the creative-coding math (`clamp`, `lerp`, `map_range`, `distance`, `mag`,
+`smoothstep`, `random_int`, `choose`).
+
+The **domain builtins** live in bundled packages and are in scope only in a
+file that imports the package:
+
+| Import | Names |
+|---|---|
+| `import noise` | `noise`, `noise_seed` |
+| `import color` | `hsv`, `hsl`, `hsv_deg`, `hsl_deg`, `color_lerp` |
+| `import vec2` | `vec2`, `vec3`, `normalize`, `dot`, `cross`, `limit`, `rotate` |
+| `import json` | `json_stringify`, `json_parse` |
+| `import io` | `symbol`, `push_output`, `binding` |
+
+After `import noise` the names work bare (`noise(x)`), qualified
+(`noise.noise_seed(1)`) and as methods (`x.noise()`); `import noise: noise_seed`
+takes just the names listed. Without the import, a call is an error that says
+which import to add (`petal lint` reports it, and `petal fix-imports` adds
+it). Method syntax follows the same rule: `v.normalize()` reaches the `vec2`
+builtin only in a file that imports `vec2` — the import of some other file of
+the program does not count, and `petal lint` reports the call when the
+receiver is plainly a number, string, list or vector. The values themselves need no
+import: a `vec2` a function was handed still has `.x`, arithmetic and `==`.
+""",
+  see: ["std", "noise", "color", "vec2", "json", "io", "autodiff"])
+
+# Package `core` — the package's own module. The natives themselves are
+# registered by the runtime (core/src/builtins/); this package is their
+# interface: names, parameters and types. It is compiled into the petal
+# binary (core/build.rs) and is in scope in every file.
+#
+# The docs in this package (and in std.ptl and the other bundled packages)
+# link relative to docs/, where the generated reference lives.
 pub import ./basics
 pub import ./classes
 pub import ./collections

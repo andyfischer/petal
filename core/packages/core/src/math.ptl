@@ -1,56 +1,547 @@
-# Package `core` — Arithmetic, rounding, trigonometry and the numeric casts (core/src/builtins/math.rs).
+@module_doc("""
+Arithmetic, rounding, trigonometry and the numeric casts, and the
+creative-coding math: Processing-style helpers for animation, layout, and
+generative code (interpolation, range mapping and shaping, distances and
+vector lengths, random picks).
+
+Petal does no implicit casting. When a value has the wrong type for a slot
+(a `float` where an `int` is expected, say), convert it explicitly with
+`int`, `float`, `parse_int`, `parse_float` or `str`.
+""",
+  see: ["str"])
+
+# Package `core`, module `math` (core/src/builtins/math.rs, and
+# core/src/builtins/creative_coding.rs for the creative-coding set).
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. Several declarations of one name are that native's call forms.
 # See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+Returns the absolute value.
+""",
+  example: """
+    abs(-5)    # 5
+    abs(3.2)   # 3.2
+  """,
+  see: ["sign"])
 pub native fn abs(x: num)
+
+@doc("""
+Returns the square root.
+""",
+  example: """
+    sqrt(9.0)   # 3.0
+    sqrt(2.0)   # 1.4142135623730951
+  """,
+  see: ["pow", "hypot"])
 pub native fn sqrt(x: num)
+
+@doc("""
+Rounds down to the nearest integer (returns float).
+""",
+  example: """
+    floor(3.7)   # 3.0
+    floor(-1.2)  # -2.0
+  """,
+  see: ["ceil", "round", "int"])
 pub native fn floor(x: num)
+
+@doc("""
+Rounds up to the nearest integer (returns float).
+""",
+  example: """
+    ceil(3.2)   # 4.0
+    ceil(-1.7)  # -1.0
+  """,
+  see: ["floor", "round"])
 pub native fn ceil(x: num)
+
+@doc("""
+Converts to a float. Accepts numbers and numeric strings (surrounding
+whitespace is ignored). A string that isn't a number is an error — use
+`parse_float` when the input might be bad.
+""",
+  example: """
+    float(42)      # 42.0
+    float("3.5")   # 3.5
+    float("42")    # 42.0
+  """,
+  see: ["parse_float", "int", "str"])
 pub native fn float(value) -> float
+
+@doc("""
+Converts to an integer. Accepts numbers and numeric strings.
+""",
+  example: """
+    int(3.7)     # 3
+    int("42")    # 42
+  """,
+  see: ["parse_int", "float", "round"])
 pub native fn int(value) -> int
+
+@doc("""
+Returns a pseudo-random float in the range [min, max). `min` defaults to 0.0
+and `max` to 1.0.
+""",
+  params: {min: "The lower end, included (default 0.0).", max: "The upper end, excluded (default 1.0)."},
+  example: """
+    random()            # 0.7342... (varies), in [0, 1)
+    random(16.0)        # 9.310...  (varies), in [0, 16)
+    random(1.0, 10.0)   # 4.218...  (varies)
+  """,
+  see: ["random_int", "choose", "hash01"])
 pub native fn random() -> float
 pub native fn random(max: num) -> float
 pub native fn random(min: num, max: num) -> float
+
+@doc("""
+Returns the smaller of two values. Works with numbers and strings.
+""",
+  example: """
+    min(3, 5)       # 3
+    min("a", "b")   # "a"
+  """,
+  see: ["max", "minimum", "clamp"])
 pub native fn min(a, b)
+
+@doc("""
+Returns the larger of two values. Works with numbers and strings.
+""",
+  example: """
+    max(3, 5)       # 5
+    max("a", "b")   # "b"
+  """,
+  see: ["min", "maximum", "clamp"])
 pub native fn max(a, b)
+
+@doc("""
+Rounds to the nearest integer, or — with `places` — to that many decimal
+digits. Int-preserving: an `int` argument rounds to an `int`. A negative
+`places` rounds to the left of the decimal point.
+""",
+  params: {x: "The number to round.", places: "Decimal digits to keep (default 0); negative rounds left of the point."},
+  example: """
+    round(3.4)            # 3.0
+    round(3.6)            # 4.0
+    round(3.14159, 2)     # 3.14
+    round(1234.0, -2)     # 1200.0
+    round(7, 3)           # 7
+  """,
+  see: ["floor", "ceil", "fixed"])
 pub native fn round(x: num, places?: num)
+
+@doc("""
+The sine of `x`. Input is in radians.
+""",
+  example: """
+    sin(0.0)         # 0.0
+  """,
+  see: ["cos", "tan", "asin", "radians"])
 pub native fn sin(x: num)
+
+@doc("""
+The cosine of `x`. Input is in radians.
+""",
+  example: """
+    cos(pi())        # -1.0
+  """,
+  see: ["sin", "tan", "acos", "radians"])
 pub native fn cos(x: num)
+
+@doc("""
+The tangent of `x`. Input is in radians.
+""",
+  example: """
+    tan(pi() / 4)    # 0.9999999999999999
+  """,
+  see: ["sin", "cos", "atan", "radians"])
 pub native fn tan(x: num)
+
+@doc("""
+Two-argument arctangent. Returns the angle in radians between the positive
+x-axis and the point `(x, y)`, which knows the quadrant.
+""",
+  example: """
+    atan2(1.0, 1.0)   # 0.7853981633974483 (π/4)
+  """,
+  see: ["atan", "degrees"])
 pub native fn atan2(y: num, x: num)
+
+@doc("""
+Returns the mathematical constant π.
+""",
+  example: """
+    pi()    # 3.141592653589793
+  """,
+  see: ["radians", "degrees"])
 pub native fn pi() -> float
+
+@doc("""
+Like `float`, but returns `nil` instead of erroring when the text isn't a
+number.
+
+```petal ignore
+import ui
+
+let n = parse_float(text_input())
+if n == nil then
+  show_error("Enter a number")
+else
+  total = total + n
+```
+""",
+  example: """
+    parse_float("3.5")     # 3.5
+    parse_float("abc")     # nil
+    parse_float("")        # nil
+  """,
+  see: ["float", "parse_int"])
 pub native fn parse_float(string)
+
+@doc("""
+Like `int`, but returns `nil` instead of erroring when the text isn't a
+number. `parse_int` accepts only whole numbers: `"3.5"` is `nil`, not `3`.
+Write `int(parse_float(s))` when truncating is what you want.
+""",
+  example: """
+    parse_int("42")        # 42
+    parse_int("3.5")       # nil
+  """,
+  see: ["int", "parse_float"])
 pub native fn parse_int(string)
+
+@doc("""
+Division that returns `nil` instead of aborting when the divisor is zero.
+Otherwise it is exactly `/`: int / int truncates, floats divide as floats.
+Bare `/` aborts on a zero divisor by design; use `safe_div` where the divisor
+comes from input or can legitimately be zero, and default with `??`.
+""",
+  example: """
+    safe_div(7, 2)          # 3
+    safe_div(7.0, 2)        # 3.5
+    safe_div(1, 0)          # nil
+    safe_div(1.0, 0.0)      # nil
+    safe_div(3, 0) ?? 0     # 0
+  """)
 pub native fn safe_div(a, b)
+
+@doc("""
+Inverse sine, returning radians. `x` is in [-1, 1]; outside it the result is
+NaN.
+""",
+  example: """
+    asin(1.0)            # 1.5707963267948966 (π/2)
+  """,
+  see: ["sin", "acos", "atan"])
 pub native fn asin(x: num)
+
+@doc("""
+Inverse cosine, returning radians. `x` is in [-1, 1]; outside it the result
+is NaN.
+""",
+  example: """
+    degrees(acos(0.5))   # 59.99999999999999
+  """,
+  see: ["cos", "asin", "atan"])
 pub native fn acos(x: num)
+
+@doc("""
+Inverse tangent, returning radians; it takes any number. For the angle of a
+point, use `atan2(y, x)`, which knows the quadrant.
+""",
+  example: """
+    atan(1.0)            # 0.7853981633974483 (π/4)
+  """,
+  see: ["atan2", "tan"])
 pub native fn atan(x: num)
+
+@doc("""
+The length of the vector `(x, y)`, `sqrt(x*x + y*y)`, without overflowing on
+large inputs.
+""",
+  example: """
+    hypot(3.0, 4.0)   # 5.0
+  """,
+  see: ["mag", "distance"])
 pub native fn hypot(x: num, y: num)
+
+@doc("""
+The piecewise-linear function through a table of `[x, y]` knots (ascending
+`x`), read at `x`: a schedule by year, a response curve, a falloff. Before
+the first knot it is the first `y` and after the last it is the last `y` — it
+clamps and never extrapolates. Always a float.
+
+Two knots at one `x` are a step, which takes the earlier `y` at exactly that
+`x`. A knot may also be a `vec2`. The table is searched by bisection, so a
+long one costs no more than a short one.
+""",
+  params: {table: "A list of `[x, y]` knots (or `vec2`s), ascending in `x`.", x: "Where to read the function."},
+  example: """
+    let rate = [[1900, 5], [1950, 10], [2000, 0]]
+    interp(rate, 1925)    # 7.5
+    interp(rate, 1950)    # 10.0
+    interp(rate, 1800)    # 5.0
+    interp(rate, 2100)    # 0.0
+  """,
+  see: ["lerp", "map_range"])
 pub native fn interp(table: list, x: num)
+
+@doc("""
+A stateless hash of one to four numbers: an int from 0 to 2^53 − 1. The
+result depends only on the arguments: it is the same in every run, on every
+machine, in every module, and `--seed` does not touch it. An int and the
+float of the same value hash alike (`2` and `2.0`).
+
+Use it for generated content that must be the same every time — placement,
+per-entity jitter, a stable pick — where `random()` would need a generator
+carried in state: `hash_int(seed, i) % n` is pick `i` of `n`, and the result
+is a seed for the next call (`hash_int(hash_int(seed, x), y)`). It is a
+constant function, so a table built from it can be
+[`const(…)`](language-guide.md#const--a-value-that-must-be-constant).
+
+The algorithm is fixed and will not change. With `mix` one round of SplitMix64
+(`x += 0x9e3779b97f4a7c15; x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9;
+x = (x ^ (x >> 27)) * 0x94d049bb133111eb; x ^ (x >> 31)`, all in wrapping
+64-bit arithmetic): start with `h = 0x243f6a8885a308d3`; for each argument, in
+order, `h = mix(h ^ bits)`, where `bits` is the argument as an IEEE-754
+double (`-0.0` taken as `0.0`); the result is `h >> 11`.
+""",
+  example: """
+    hash_int(3, 7)                       # 8394216175903167
+    hash_int(3, 7) % 6                   # 3
+    ["a", "b", "c"][hash_int(42, 5) % 3] # a
+  """,
+  see: ["hash01", "hash_str", "random_int"])
 pub native fn hash_int(a: num, b?: num, c?: num, d?: num) -> int
+
+@doc("""
+The same hash as `hash_int`, as a float in `[0, 1)`
+(`hash_int(...) / 2^53`). The same in every run and on every machine, and a
+constant function, like `hash_int`.
+""",
+  example: """
+    hash01(3, 7)                         # 0.9319452072168629
+  """,
+  see: ["hash_int", "random"])
 pub native fn hash01(a: num, b?: num, c?: num, d?: num) -> float
+
+@doc("""
+An int from 0 to 2^53 − 1 from a string — an id, a name — and an optional
+number. The same on every machine.
+
+The algorithm, with `mix` as for `hash_int`: start with
+`h = 0x452821e638d01377`; if there is a salt, `h = mix(h ^ bits(salt))`;
+then `h = mix(h ^ n)` for the text's length `n` in UTF-8 bytes; then
+`h = mix(h ^ w)` for each 8-byte little-endian word `w` of the text, the
+last one zero-padded; the result is `h >> 11`.
+""",
+  example: """
+    hash_str("moses")                  # 4381410558642330
+    hash_str("moses", 2)               # 2442254591726810
+    hash_int(hash_str("east_side"), 4) # 1917956827534837
+  """,
+  see: ["hash_int"])
 pub native fn hash_str(text: string, salt?: num) -> int
 
 # The creative-coding set (core/src/builtins/creative_coding.rs):
 # interpolation, range mapping and shaping, distances and vector lengths,
 # random picks.
+
+@doc("""
+Constrain a value to the range `[lo, hi]`. Three `int` arguments give an
+`int` (so the result can still be a list index); one `float` argument makes
+the result a `float`.
+
+```petal ignore
+xs[clamp(i, 0, len(xs) - 1)]   # a clamped index is still an index
+```
+""",
+  params: {value: "The number to constrain.", lo: "The lower bound.", hi: "The upper bound."},
+  example: """
+    clamp(15.0, 0.0, 10.0)   # 10.0
+    clamp(-3.0, 0.0, 10.0)   #  0.0
+    clamp(5.0, 0.0, 10.0)    #  5.0
+    clamp(9, 0, 5)           # 5     (int in, int out)
+    clamp(3, 0.0, 5)         # 3.0   (one float makes it float)
+  """,
+  see: ["clamp01", "min", "max"])
 pub native fn clamp(value: num, lo: num, hi: num)
+
+@doc("""
+Exponentiation: `base` raised to the power `exp`.
+""",
+  example: """
+    pow(2.0, 10.0)   # 1024.0
+    pow(9.0, 0.5)    # 3.0
+  """,
+  see: ["exp", "sqrt"])
 pub native fn pow(base: num, exp: num)
+
+@doc("""
+Returns `-1`, `0`, or `1` depending on the sign of the argument.
+""",
+  example: """
+    sign(-5)     # -1
+    sign(0)      #  0
+    sign(3.2)    #  1.0
+  """,
+  see: ["abs"])
 pub native fn sign(x: num)
+
+@doc("""
+The natural exponential, e to the power `x`.
+""",
+  example: """
+    exp(1.0)   # 2.718281828459045
+  """,
+  see: ["log", "pow"])
 pub native fn exp(x: num)
+
+@doc("""
+The natural logarithm.
+""",
+  example: """
+    log(exp(2.0))   # 2.0
+  """,
+  see: ["exp"])
 pub native fn log(x)
+
+@doc("""
+Fractional part of a float (`x - floor(x)`).
+""",
+  example: """
+    fract(3.5)     # 0.5
+    fract(-1.25)   # 0.75
+  """,
+  see: ["floor"])
 pub native fn fract(x: num)
+
+@doc("""
+Convert degrees to radians.
+""",
+  example: """
+    radians(180.0)     # 3.141592653589793
+  """,
+  see: ["degrees", "pi"])
 pub native fn radians(degrees: num)
+
+@doc("""
+Convert radians to degrees.
+""",
+  example: """
+    degrees(pi())      # 180.0
+  """,
+  see: ["radians", "pi"])
 pub native fn degrees(radians: num)
+
+@doc("""
+Random integer in the half-open range `[lo, hi)`.
+""",
+  example: """
+    random_int(0, 10)    # 0..9
+  """,
+  see: ["random", "choose", "hash_int"])
 pub native fn random_int(lo: num, hi: num) -> int
+
+@doc("""
+Linear interpolation. `t=0` returns `a`, `t=1` returns `b`. `a` and `b` may
+also be two `vec2`s or two `vec3`s, two colors, two equal-length lists of
+numbers, or two records, interpolated component-wise. Colors blend like
+`color_lerp`: per channel, alpha included, rounded to int channels.
+
+Two **records** blend field by field, which is how a whole look, pose or
+style is faded from one to another in one call. The result has `a`'s fields
+(and its class). A field blends with the field of the same name in `b` when
+both are numbers, vectors of one kind, colors, records, or equal-length lists
+whose elements blend; anything else (a string, a bool, two different kinds)
+is taken whole from `a` while `t < 0.5` and from `b` after. A field `b` does
+not have keeps `a`'s value.
+""",
+  params: {a: "The start: what `t = 0` gives.", b: "The end: what `t = 1` gives.", t: "How far from `a` to `b`."},
+  example: [
+    """
+      let noir   = {sepia: 0.0, grain: 0.8, tint: :202830, id: "noir"}
+      let golden = {sepia: 1.0, grain: 0.2, tint: :ffd08a, id: "golden"}
+      lerp(noir, golden, 0.25)   # { sepia: 0.25, grain: 0.65, tint: { r: 88, g: 82, b: 71 }, id: "noir" }
+    """,
+    """
+      import vec2
+      lerp(0.0, 100.0, 0.3)   # 30.0
+      lerp(10.0, 20.0, 0.5)   # 15.0
+      lerp(vec3(0.0, 0.0, 0.0), vec3(10.0, 20.0, 30.0), 0.5)   # vec3(5.0, 10.0, 15.0)
+      lerp(:6a5a48, :ffd08a, 0.5)            # { r: 181, g: 149, b: 105 }
+      lerp([0.0, 10.0], [1.0, 20.0], 0.5)    # [0.5, 15.0]
+    """,
+  ],
+  see: ["map_range", "smoothstep", "color.color_lerp", "interp"])
 pub native fn lerp(a, b, t: num)
+
+@doc("""
+Remap a value from one range to another — for example a pixel coordinate in
+`[0, width]` to an angle in `[0, 2π]`.
+""",
+  params: {
+    value: "The number to remap.",
+    in_lo: "The start of the range `value` is in.",
+    in_hi: "The end of the range `value` is in.",
+    out_lo: "What `in_lo` maps to.",
+    out_hi: "What `in_hi` maps to.",
+  },
+  example: """
+    map_range(5.0, 0.0, 10.0, 100.0, 200.0)   # 150.0
+    map_range(0.5, 0.0, 1.0, -1.0, 1.0)       #   0.0
+  """,
+  see: ["lerp", "clamp"])
 pub native fn map_range(value: num, in_lo: num, in_hi: num, out_lo: num, out_hi: num)
+
+@doc("""
+Euclidean distance. Accepts either four scalars, two `vec2` values, or two
+`vec3` values.
+""",
+  example: """
+    import vec2
+    distance(0.0, 0.0, 3.0, 4.0)                # 5.0
+    distance(vec2(0.0, 0.0), vec2(3.0, 4.0))    # 5.0
+    distance(vec3(1.0, 1.0, 1.0), vec3(3.0, 4.0, 7.0))    # 7.0
+  """,
+  see: ["mag", "hypot"])
 pub native fn distance(x1, y1, x2, y2)
 pub native fn distance(v1, v2) -> float
+
+@doc("""
+Vector magnitude (length). Accepts 2D or 3D scalars, or a single `vec2` or
+`vec3`.
+""",
+  example: """
+    import vec2
+    mag(3.0, 4.0)          # 5.0
+    mag(vec2(3.0, 4.0))    # 5.0
+    mag(vec3(2.0, 3.0, 6.0))    # 7.0
+  """,
+  see: ["distance", "hypot", "vec2.normalize"])
 pub native fn mag(x, y, z?)
 pub native fn mag(v)
+
+@doc("""
+Hermite interpolation between two edges — produces a smooth S-curve from 0
+to 1. Equivalent to GLSL's `smoothstep`.
+""",
+  params: {edge0: "Where the curve starts to rise (gives 0).", edge1: "Where it reaches 1.", x: "The input."},
+  example: """
+    smoothstep(0.0, 1.0, 0.5)   # 0.5
+    smoothstep(0.0, 1.0, 0.25)  # 0.15625
+  """,
+  see: ["lerp", "clamp"])
 pub native fn smoothstep(edge0: num, edge1: num, x: num)
+
+@doc("""
+Returns a random element from a list, or `nil` for an empty list.
+""",
+  example: """
+    choose([1, 2, 3])             # one of 1, 2, or 3
+    choose(["red", "green"])      # "red" or "green"
+  """,
+  see: ["random_int", "random"])
 pub native fn choose(list)

@@ -1,24 +1,105 @@
-# Package `core` — the numeric half of `ui/drag`'s `between` and `vary`
-# (core/src/builtins/drag_math.rs, docs/proposals/declarative-dragging.md).
-#
-# The drag engine runs its speculative renderings in Petal and hands these
-# only numbers. `drag_triangulate(points)` is a Delaunay triangulation of
-# `[[x, y], …]` as `[[i, j, k], …]`; `drag_weights(points, tris, x, y)` the
-# barycentric weights of a point over it, one per point, clamped to the hull
-# (no triangles: the projection onto the nearest segment on the line);
-# `gn_step(values, rows, targets, jac, bounds, scale)` one Gauss-Newton
-# step of the DM v2 solver for levers `values` (`drag_solve_step` is its old
-# name, kept for one release); `fd_column(x, base, samples, opts)` one
-# finite-difference column classified by DM v2's rules, or the next point to
-# sample (the `autodiff` package's `deriv`, `jacobian` and `solve_step` are
-# built on these two).
+@module_doc("""
+Drag math: the numeric half of `ui/drag`'s `between` and `vary`
+([drag guide](../core-libs/petal-ui/docs/drag.md#continuous-drags-between-and-vary)).
+
+The drag engine renders its candidate states in Petal (a native cannot call
+a Petal function) and hands these only numbers. Each reads nothing but its
+arguments. The `autodiff` package's `deriv`, `jacobian` and `solve_step` are
+built on `fd_column` and `gn_step`.
+""",
+  see: ["autodiff"])
+
+# Package `core`, module `drag_math` (core/src/builtins/drag_math.rs,
+# docs/proposals/declarative-dragging.md).
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+A Delaunay triangulation of `points` (`[[x, y], …]`), as `[[i, j, k], …]`
+point indices, each triangle counter-clockwise. A point equal to an earlier
+one is left out; fewer than three distinct points, or all on one line, give
+`[]`.
+""",
+  example: """
+    drag_triangulate([[0, 0], [100, 0], [0, 100]])   # [[0, 1, 2]]
+  """,
+  see: ["drag_weights"])
 pub native fn drag_triangulate(points: list) -> list
+
+@doc("""
+One weight per point for `(x, y)`, summing to 1: the barycentric weights in
+the triangle of `tris` that holds it. A point outside every triangle is
+first moved to the nearest point of their edges (clamped to the hull). With
+no triangles — two points, or points on a line — it is the projection onto
+the nearest segment between neighbours along the line.
+""",
+  params: {points: "`[[x, y], …]`.", tris: "A triangulation of `points`, as `drag_triangulate` gives.", x: "The point's x.", y: "The point's y."},
+  example: """
+    let pts = [[0, 0], [100, 0], [0, 100]]
+    let tris = drag_triangulate(pts)
+    print(tris)                                  # [[0, 1, 2]]
+    print(drag_weights(pts, tris, 25, 25))       # [0.5, 0.25, 0.25]
+    print(drag_weights(pts, tris, 50, -40))      # [0.5, 0.5, 0.0]
+    print(drag_weights([[0, 0], [100, 0]], [], 25, 30))  # [0.75, 0.25]
+  """,
+  see: ["drag_triangulate"])
 pub native fn drag_weights(points: list, tris: list, x: num, y: num) -> list
+
+@doc("""
+The old name of `gn_step`, kept as an alias for one release.
+""",
+  deprecated: "use `gn_step`.",
+  see: ["gn_step"])
 pub native fn drag_solve_step(values: list, rows: list, targets: list, jac: list, bounds, scale: num) -> list
+
+@doc("""
+One Gauss-Newton step of the direct-manipulation solver (`core/src/dm`) for
+the levers `values` (`k` numbers). Returns the next values, each clamped
+into its bounds. When the levers outnumber the goals, the step moves each in
+proportion to its size. `ui/drag`'s `vary` and the `autodiff` package's
+`solve_step` take their steps through it.
+""",
+  params: {
+    values: "The levers: `k` numbers.",
+    rows: "The goals' current values (`m` numbers; for a dragged point, its `[x, y]`).",
+    targets: "Where the goals should be (`m` numbers; for a dragged point, the pointer's `[x, y]`).",
+    jac: "`m` rows of `k` sensitivities.",
+    bounds: "nil, or one `[lo, hi]` (or nil; either end may be nil) per lever.",
+    scale: "Shortens the step: 1 for a full one.",
+  },
+  returns: "The next values, `k` numbers.",
+  example: """
+    let jac = [[2.0]]   # y = 2·v, now 2 at v = 1; the pointer wants y = 10
+    print(gn_step([1.0], [2.0], [10.0], jac, nil, 1))       # [5.0]
+    print(gn_step([1.0], [2.0], [10.0], jac, [[0, 3]], 1))  # [3.0]
+  """,
+  see: ["autodiff.solve_step", "fd_column"])
 pub native fn gn_step(values: list, rows: list, targets: list, jac: list, bounds, scale: num) -> list
+
+@doc("""
+One finite-difference column, classified by the direct-manipulation rules
+(`core/src/dm/jacobian.rs`): what `autodiff`'s `deriv` and `jacobian` are
+built on. Returns a float, the next point to measure (call again with it
+added to `samples`), or the finished `{value, quality, step}` (see
+`autodiff.deriv`).
+""",
+  params: {
+    x: "Where the column is measured.",
+    base: "The function at `x`: a number or a list of numbers.",
+    samples: "Its values measured so far, as `[[x_i, y_i], …]`.",
+    opts: """nil or `{h, mode}`.""",
+  },
+  options: {h: "The step to measure with.", mode: """`"central"` or `"forward"`."""},
+  example: """
+    let f = fn(x) x * x end
+    let samples = []
+    let r = fd_column(3.0, f(3.0), samples, nil)
+    while type(r) == "float" do
+      samples = append(samples, [r, f(r)])
+      r = fd_column(3.0, f(3.0), samples, nil)
+    print(r.quality)   # smooth
+  """,
+  see: ["autodiff.deriv", "gn_step"])
 pub native fn fd_column(x: num, base, samples: list, opts)

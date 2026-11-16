@@ -1,21 +1,67 @@
-# Package `core` — Hypothetical calls (core/src/backend/bytecode/vm/speculate.rs,
+@module_doc("""
+Hypothetical calls: run a function "as if" and keep only what it computed.
+
+[`speculate`](features/speculate.md) is the full description: what is put
+back, which natives run, and how `state` behaves inside the call.
+""")
+
+# Package `core`, module `speculate` (core/src/backend/bytecode/vm/speculate.rs,
 # docs/features/speculate.md).
-#
-# `speculate(f, ...args)` calls `f(...args)` "as if": its `state` writes and
-# `set`s are put back when it returns, a native whose effect escapes the run
-# is not called, what it emits is handed back instead of reaching the host,
-# and random draws do not advance the live stream. It returns
-# `{value, emits, places}`. `speculating()` is true inside one;
-# `speculate_place(key, value)` records `{key, value}` into its `places` and
-# returns `value` (outside one it only returns `value`).
-# `speculate_value(f, ...args)` is `speculate(f, ...args).value` without
-# building the record: for a caller that wants only the value.
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+Calls `f(args...)` against the live program, then puts back every `state`
+write, every `set` on a cell older than the call, the random stream, the
+noise seed and the print buffer. A native whose effect escapes the run, and
+any host-handle method, is not called (it answers `nil`, with a warning once
+per call site). Nothing it emitted reaches the host. A `speculate` inside
+another is an error.
+
+The result: `value` is `f`'s result; `emits` is what it pushed into output
+buffers, as `[{channel, value, at}]` with `at` the `{file, line, column}`
+that emitted; and `places` is what `speculate_place` recorded, as
+`[{key, value}]`.
+""",
+  returns: """`{value, emits, places}`.""",
+  example: """
+    var calls = 0
+    fn view(x)
+      set calls += 1
+      x * 2
+    print(speculate(view, 21).value)   # 42
+    print(get calls)                   # 0
+  """,
+  see: ["speculate_value", "speculating", "speculate_place"])
 pub native fn speculate(f: function, ...args) -> record
+
+@doc("""
+`true` while a speculative call is running, `false` otherwise.
+""",
+  see: ["speculate"])
 pub native fn speculating() -> bool
+
+@doc("""
+Inside a speculative call, appends `{key, value}` to its `places`; returns
+`value` either way (outside one it only returns `value`). The key must be
+one a `for … key` loop accepts (not a function, a cell, a pending value or
+NaN).
+""",
+  returns: "`value`, unchanged.",
+  see: ["speculate"])
 pub native fn speculate_place(key, value)
+
+@doc("""
+`speculate(f, args...).value`, without building the record: the same call,
+the same rules, and what it emitted is dropped all the same. For a caller
+that wants only the value (`ui_measure`, a derivative probe), it is the
+cheaper entry: a call that touches nothing allocates nothing.
+""",
+  example: """
+    fn square(x) x * x end
+    print(speculate_value(square, 3))  # 9
+  """,
+  see: ["speculate"])
 pub native fn speculate_value(f: function, ...args)

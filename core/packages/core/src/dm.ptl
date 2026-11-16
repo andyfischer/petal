@@ -1,22 +1,171 @@
-# Package `core` — Direct-manipulation hints (core/src/builtins/hints.rs,
-# docs/proposals/dm-v2-hints.md).
-#
-# Both return their first argument unchanged. Tools read them from the
-# program: `tunable` marks the literal `value` resolves to as a preferred
-# target for a drag, optionally with a range and a step, or every number in
-# it when `value` is data (a record, a list); `options:` lists the values a
-# setting can take. A top-level `let X = tunable(…)` is a setting that hosts
-# list and set. `rigid` marks a literal as never moving, and stops feedback
-# from passing through the call. Neither name can be redefined.
-# See docs/Builtins.md (Direct-Manipulation Hints).
+@module_doc("""
+Direct-manipulation hints: `tunable` and `rigid`, and the `const`
+annotation.
 
+Direct manipulation moves a number in the source when a shape is dragged or a
+goal is set for an output: the tools re-run the program with literals nudged,
+measure how the output moves, and change the literals that get it where it
+should be, through function calls if need be
+([dev/direct-manipulation-v2-plan.md](dev/direct-manipulation-v2-plan.md)).
+Usually several literals could serve. `tunable` and `rigid` tell the tools
+which ones to prefer and which never to touch. Both return their first
+argument unchanged and do nothing else at run time; the tools read them from
+the program. They are global (no import), and the names are reserved:
+declaring a function, binding, parameter or loop variable called `tunable` or
+`rigid` is a compile error.
+
+**Settings.** A top-level `let` whose whole initializer is a `tunable(…)`
+call is a *setting*: a binding hosts list, set live and override from
+outside, of any data type. Hosts read `let SPEED = tunable(4.0, 0, 10)` as
+the setting `4.0` with the range 0..10, and the path `SPEED` names the
+`4.0`. This replaces `config let X = v`, which still works and means the
+same but is deprecated: the compile check warns, and `petal
+migrate-old-code` rewrites each one
+([plan](tasks/lifecycle-annotation-functions-refactor.md)).
+
+```petal
+pub let SPEED = tunable(4.0, 0, 10)                                 # a number with a range
+pub let START = tunable("title", options: ["title", "select", "play"])
+pub let GOD = tunable(false)
+pub let POST = tunable({exposure: 1.2, bloom: 0.32})               # every number is a knob
+print(SPEED, START, GOD, POST.bloom)                               # 4.0 title false 0.32
+```
+
+A `var` is never a setting (`tunable-on-var`), and neither is a `let` with
+the hint inside an operator, `let X = tunable(4) * 2`
+(`tunable-not-whole-initializer`): there the hint only marks the `4`.
+""",
+  see: ["tunable", "rigid", "const"])
+
+# Package `core`, module `dm` (core/src/builtins/hints.rs,
+# docs/proposals/dm-v2-hints.md). Neither name can be redefined.
+#
+# Native interface declarations: each `native fn` binds a name to the host
+# native of the same name and gives the checker its parameter names, arity
+# and types. Several declarations of one name are that native's call forms.
+# See docs/usage/ffi.md (Native interfaces).
+
+@doc("""
+Marks a literal as a preferred target for direct manipulation, optionally
+with a range and a step, and returns `value` unchanged. The literal `value`
+is, or the literal a name in its place is bound to, becomes a preferred target for direct manipulation, kept within
+`[min, max]` and to multiples of `step` when those are given. It can go at
+the definition, at a use, or on a line of its own naming a binding.
+
+Rules:
+
+- `value` is a literal, a name bound to one, or data: a record, a list or a
+  constructor call such as `rgb(255, 0, 80)`. A drag only moves numbers, so
+  on data every number literal in it is marked (without bounds), and a
+  string, bool or `nil` marks nothing but is still a valid setting.
+- On a computed value (`tunable(a + b)`) nothing is marked, and `petal lint`
+  reports `dm-hint-not-literal`. Wrap the literal itself: `tunable(a) + b`.
+  For a setting it reports `config-not-data` instead, since hosts see no
+  value.
+- `min`, `max` and `step` describe a number, and are passed by position
+  (in that order) or by name in any order: `tunable(4.0, min: 0, max: 10)`,
+  `tunable(4.0, max: 10)`. On anything else they are ignored, with a
+  `dm-hint-bounds` warning.
+- On a declaration, `@tunable(…) let X = v` means `let X = tunable(v, …)`:
+  `@tunable(0, 10) let speed = 4.0`, `@tunable(min: 0, max: 10)`. See
+  [Writing an annotation with `@`](language-guide.md#writing-an-annotation-with-).
+  `@rigid let X = v` and `@const let X = e` likewise.
+- `options:` lists the values a setting can take, for a host to offer as a
+  dropdown. `petal lint` reports `tunable-value-not-in-options` when `value`
+  is not one of them; nothing else enforces it, and its numbers are never
+  moved by a drag.
+- The range is advice. Direct manipulation keeps a drag inside it; nothing
+  else enforces it, and `set_config_value` / `pb_vm_set_tunable` do not clamp
+  to it.
+- The bounds must be number literals, and `min` must not be above `max`
+  (`dm-hint-bounds`). A computed bound is evaluated and ignored.
+- A bound is never edited itself: changing the range to reach a goal would
+  defeat it.
+- On a `state` initializer the hint cannot work, because a running program
+  keeps its state across a reload (`dm-hint-state-init`). Put the start value
+  in a setting, `let START = tunable(…)`, and initialise the state from it.
+""",
+  params: {
+    value: "The literal (or name, or data) to mark; returned unchanged.",
+    min: "The lowest a drag may take a number to.",
+    max: "The highest a drag may take a number to.",
+    step: "Keep a dragged number to multiples of this.",
+    options: "The values a setting can take, for a host's dropdown.",
+  },
+  returns: "`value`, unchanged.",
+  example: """
+    let radius = tunable(40, 10, 80)               # at the definition
+    let gap = 12
+    tunable(gap, min: 0, max: 40, step: 2)          # a declaration on its own line
+    let dx = tunable(-5) + gap                      # at a use: only the -5 is marked
+    print(radius, dx)                               # 40 7
+  """,
+  see: ["rigid", "const"])
 pub native fn tunable(value, min?: num, max?: num, step?: num, options?: list)
-# The form a setting with choices uses: `tunable("title", options: [...])`.
+@doc("""
+The form a setting with choices uses: `tunable("title", options: [...])`.
+""",
+  example: """
+    pub let START = tunable("title", options: ["title", "select", "play"])
+  """)
 pub native fn tunable(value, options: list)
+
+@doc("""
+Pins a literal so direct manipulation never moves it, and returns `value`
+unchanged. The literal `value` resolves to is never moved by direct
+manipulation, and nothing upstream of the call receives feedback through it:
+while the tools measure, the call keeps answering what it answered in the
+unmodified run. Use it for a number that has a perfectly good derivative but
+is not a layout knob, such as an animation rate.
+
+On a computed value (`rigid(a + b)`) it marks no literal and is still a
+barrier: `a` and `b` can still move the output along any other path.
+
+A host that registers a native named `rigid` (a physics engine's rigid-body
+constructor) turns the hint off for that name, and the tools say so.
+
+Natives can say the same about their own result: an effect row marked
+`no_feedback` ([dev/native-effects.md](dev/native-effects.md)) keeps literals
+that reach an output only through that native from being moved. `random`,
+`random_int`, `choose`, `noise`, `hash_int`, `hash01` and `hash_str` are.
+""",
+  returns: "`value`, unchanged.",
+  example: """
+    let t = 2.0
+    let angle = t * rigid(1.1)          # the rate stays; dragging moves the radius
+    let radius = tunable(11.0, 4, 30)
+    print(cos(angle) * radius > -12)    # true
+  """,
+  see: ["tunable"])
 pub native fn rigid(value)
 
-# `const(e)`: `e`, which must be static. Around the whole initializer of a
-# top-level `let` it is the `const` declaration: `let X = const(e)` means
-# `const X = e` (docs/tasks/lifecycle-annotation-functions-refactor.md). The
-# compiler erases the call. The name cannot be redefined.
+# `const(e)` is the `const` declaration around the whole initializer of a
+# top-level `let` (docs/tasks/lifecycle-annotation-functions-refactor.md).
+# The compiler erases the call. The name cannot be redefined.
+@doc("""
+Requires a top-level binding to be static data, and returns `value`
+unchanged. Not a direct-manipulation hint but an annotation of the same
+kind (an [annotation](language-guide.md#annotations)): it changes only what
+the checker does with the value. Around the whole initializer of a top-level
+`let`, as in `let TILES = const(build_tiles())`, the binding must be static
+data, built once
+([language guide, `const(…)`](language-guide.md#const--a-value-that-must-be-constant)),
+or the compile reports an error with the reasons. The compiler erases the
+call, so the program is the same as without it. The name is reserved like
+`tunable` and `rigid`.
+
+Anywhere else (inside a part of an initializer, a function body, a `var` or
+a `state`) it is an error, and so is `const(tunable(…))`, which would hide
+the setting. It replaces the `const NAME = e` declaration, which still works
+and means the same but is deprecated (the compile check warns, and `petal
+migrate-old-code` rewrites it;
+[plan](tasks/lifecycle-annotation-functions-refactor.md)).
+""",
+  returns: "`value`, unchanged.",
+  example: """
+    let TILES = const([{name: "grass", cost: 1}, {name: "road", cost: 0}])
+    let COSTS = const(map(TILES, fn(t) -> t.cost))
+    print(COSTS)                                    # [1, 0]
+  """,
+  see: ["tunable"])
 pub native fn const(value)

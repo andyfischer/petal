@@ -1,19 +1,134 @@
-# Package `core` — The built-in classes: constructors, methods, and the internals behind
-# method and enum declarations (core/src/builtins/classes.rs, core/src/compiler/enums.rs).
+@module_doc("""
+The built-in classes: available with no declaration and no import.
+
+See the [Language Guide](language-guide.md#classes--methods) for declaring
+your own, and for how `value.method(...)` resolves.
+""")
+
+# Package `core`, module `classes`: the built-in classes' constructors and
+# methods, and the internals behind method and enum declarations
+# (core/src/builtins/classes.rs, core/src/compiler/enums.rs).
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. Several declarations of one name are that native's call forms.
 # See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+A rectangle with fields `x`, `y`, `w`, `h`. An instance is an ordinary
+record with a class tag, so anything that accepts an `{x, y, w, h}` record —
+including every `petal-ui` draw call — accepts a `Rect`. (`petal-ui`'s
+`rect(x, y, w, h)` is the same constructor.)
+
+Each field holds exactly the number it was given, `int` or `float`:
+`Rect(10.5, 20.9, 100.4, 40.6).x` is `10.5`. A non-numeric argument is an
+error naming the field.
+
+The methods are each exactly their equivalent expression, so an int rect
+gives int answers (`/` on two ints truncates) and a float rect gives float
+ones. `inset` and `offset` return a `Rect`, so calls chain.
+
+| Method | Result | Equivalent |
+|--------|--------|------------|
+| `r.center_x()` | number | `r.x + r.w / 2` |
+| `r.center_y()` | number | `r.y + r.h / 2` |
+| `r.right()` | number | `r.x + r.w` (half-open, like the hit tests) |
+| `r.bottom()` | number | `r.y + r.h` |
+| `r.inset(n)` | `Rect` | pulled in by `n` on all four sides; a negative `n` grows it, and `w`/`h` clamp at 0 |
+| `r.offset(dx, dy)` | `Rect` | moved by a delta, same size |
+
+Add your own methods with `fn Rect.<name>(r: Rect, ...)`; a user declaration
+wins over a built-in method of the same name.
+""",
+  example: [
+    """
+      let r = Rect(10, 20, 100, 40)
+      r.x            # 10
+      type(r)        # "Rect"
+      keys(r)        # ["x", "y", "w", "h"]
+    """,
+    """
+      let card = Rect(0, 0, 100, 40)
+      card.center_x()             # 50
+      card.right()                # 100
+      card.inset(5)               # Rect(5, 5, 90, 30)
+      card.inset(5).center_x()    # 50
+      card.offset(10, 10).right() # 110
+
+      let sub = Rect(0.0, 0.0, 101.0, 40.0)
+      sub.center_x()              # 50.5, not 50
+    """,
+  ],
+  see: ["Rect.center_x", "Rect.center_y", "Rect.right", "Rect.bottom", "Rect.inset", "Rect.offset"])
 pub native fn Rect(x, y, w, h)
+
+@doc("""
+The horizontal center, `r.x + r.w / 2` (an int rect gives an int).
+""",
+  example: """
+    Rect(0, 0, 100, 40).center_x()       # 50
+    Rect(0.0, 0.0, 101.0, 40.0).center_x()   # 50.5
+  """,
+  see: ["Rect.center_y"])
 pub native fn Rect.center_x(r)
+
+@doc("""
+The vertical center, `r.y + r.h / 2` (an int rect gives an int).
+""",
+  example: """
+    Rect(0, 0, 100, 40).center_y()   # 20
+  """,
+  see: ["Rect.center_x"])
 pub native fn Rect.center_y(r)
+
+@doc("""
+The right edge, `r.x + r.w`: half-open, like the hit tests.
+""",
+  example: """
+    Rect(0, 0, 100, 40).right()   # 100
+  """,
+  see: ["Rect.bottom"])
 pub native fn Rect.right(r)
+
+@doc("""
+The bottom edge, `r.y + r.h`: half-open, like the hit tests.
+""",
+  example: """
+    Rect(0, 0, 100, 40).bottom()   # 40
+  """,
+  see: ["Rect.right"])
 pub native fn Rect.bottom(r)
+
+@doc("""
+The `Rect` pulled in by `n` on all four sides; a negative `n` grows it, and
+`w`/`h` clamp at 0.
+""",
+  example: """
+    Rect(0, 0, 100, 40).inset(5)               # Rect(5, 5, 90, 30)
+    Rect(0, 0, 100, 40).inset(5).center_x()    # 50
+  """,
+  see: ["Rect.offset"])
 pub native fn Rect.inset(r, n)
+
+@doc("""
+The `Rect` moved by a delta, the same size.
+""",
+  example: """
+    Rect(0, 0, 100, 40).offset(10, 10).right()   # 110
+  """,
+  see: ["Rect.inset"])
 pub native fn Rect.offset(r, dx, dy)
+
+# The internals behind declarations: the compiler emits calls to these.
+
+@doc("Internal: `__declare_method(class, name, f)`, what a method declaration `fn T.m(…)` compiles to.", hidden: true)
 pub native fn __declare_method(...args)
+
+@doc("Internal: `__enum_all(enum)`, behind `Enum.all`: the payload-free variants, in declaration order.", hidden: true)
 pub native fn __enum_all(...args)
+
+@doc("Internal: `__enum_data(tag, record)`, emitted once per variant that declares `key: expr` data.", hidden: true)
 pub native fn __enum_data(...args)
+
+@doc("Internal: `__enum_from(enum, name)`, behind `Enum.from(name)`: the payload-free variant of that name, or nil.", hidden: true)
 pub native fn __enum_from(...args)

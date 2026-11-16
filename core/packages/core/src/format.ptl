@@ -1,12 +1,104 @@
-# Package `core` — Number and text formatting (core/src/builtins/format.rs).
+@module_doc("""
+Number and text formatting for display.
+
+`str(x)` and a `"{x}"` hole print a float the way it is stored, which is
+correct and not what a table, a price or a label wants (`str(12.3 * 3)` is
+`36.900000000000006`). These are the functions for display. A hole holds any
+expression, so they go straight into it: `"{fixed(x, 1)} km"`,
+`"${commas(total)}"`. (There is no `{x:.1f}` format spec.)
+""",
+  see: ["plural", "list_and", "str"])
+
+# Package `core`, module `format` (core/src/builtins/format.rs).
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. Several declarations of one name are that native's call forms.
 # See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+The number as a string with exactly `places` digits after the decimal point
+(2 when omitted; clamped to 0..17). Rounds half away from zero, as `round`
+does.
+""",
+  params: {value: "The number to write.", places: "Digits after the point (default 2; clamped to 0..17)."},
+  example: """
+    fixed(12.3456, 2)    # 12.35
+    fixed(5, 2)          # 5.00
+    fixed(5)             # 5.00
+    fixed(91.25, 1)      # 91.3
+    fixed(3.14159)       # 3.14
+    fixed(-0.001, 2)     # 0.00
+  """,
+  see: ["commas", "round", "format"])
 pub native fn fixed(value, places?: num) -> string
+
+@doc("""
+The number with a `,` every three digits of its integer part (thousands
+separators). With `places` it is rounded to that many decimals first;
+without, an int prints as an int and a float keeps the digits `str` would
+give it.
+""",
+  params: {value: "The number to write.", places: "Decimals to round to first; left off, the number is written as `str` would."},
+  example: """
+    commas(1234567)        # 1,234,567
+    commas(1234.5678, 2)   # 1,234.57
+    commas(-9876543)       # -9,876,543
+    commas(1234.5, 0)      # 1,235
+  """,
+  see: ["fixed", "plural"])
 pub native fn commas(value, places?: num) -> string
+
+@doc("""
+The value padded to `width` characters with `fill` (a space when omitted)
+on the left, which right-aligns it. A value that is not a string is
+rendered as `str` does first. A value already `width` long or longer is
+returned as it is.
+""",
+  params: {value: "Any value; not a string, it goes through `str`.", width: "The width to pad to, in characters.", fill: "The padding (default a space)."},
+  example: """
+    pad_start(7, 3, "0")       # 007
+    pad_start("ab", 5) ++ "|"  # "   ab|"
+  """,
+  see: ["pad_end", "format"])
 pub native fn pad_start(value, width: num, fill?: string) -> string
+
+@doc("""
+The value padded to `width` characters with `fill` (a space when omitted)
+on the right. A value that is not a string is rendered as `str` does first.
+A value already `width` long or longer is returned as it is.
+""",
+  params: {value: "Any value; not a string, it goes through `str`.", width: "The width to pad to, in characters.", fill: "The padding (default a space)."},
+  example: """
+    pad_end("ab", 5)           # "ab   "
+    pad_end("ab", 5) ++ "|"    # "ab   |"
+  """,
+  see: ["pad_start", "format"])
 pub native fn pad_end(value, width: num, fill?: string) -> string
+
+@doc("""
+printf-style templating. Each `%` placeholder takes the next argument:
+
+| Placeholder | Meaning |
+|---|---|
+| `%s` | the value, as `str` renders it |
+| `%d` | the value as a whole number (truncated toward zero) |
+| `%f` | the value as a float; `%.2f` fixes two decimals |
+| `%x` | the value in lowercase hex |
+| `%%` | a literal `%` |
+
+A `,` straight after the `%` groups thousands (`%,d`, `%,.2f`). A number
+sets a minimum field width, padded on the left, or on the right when it is
+written negative (`%8.2f`, `%-10s`). The placeholders start with `%` and not
+`{` because `{` in a string literal opens an interpolation hole. `format` is
+variadic and takes no named arguments.
+""",
+  example: """
+    print(format("%s has %,d points (%.1f%%)", "Ana", 12345, 99.5))   # Ana has 12,345 points (99.5%)
+    print(format("%-6s|%6.2f|%x", "ab", 3.14159, 255))                # ab    |  3.14|ff
+    format("%s scored %d", "Ada", 97.8)       # Ada scored 97
+    format("%,.2f", 1234567.891)              # 1,234,567.89
+    format("[%5d] [%-5s]", 42, "ab")          # "[   42] [ab   ]"
+  """,
+  see: ["fixed", "commas", "pad_start"])
 pub native fn format(template: string, ...args) -> string

@@ -1,89 +1,921 @@
-# Package `core` — Lists, records and strings (core/src/builtins/collections.rs), and the
-# higher-order functions the VM drives itself.
+@module_doc("""
+Lists, records, maps and strings, typed numeric arrays, frozen data, and the
+higher-order functions.
+
+## String offsets
+
+Every string position counts **characters** (Unicode code points): `len(s)`,
+`s.length`, `slice(s, a, b)`, `s[i]` and `index_of(s, needle)` all use the same
+unit, so an offset one of them returns can be handed to another. In `"Óscar"`
+the first character takes two bytes of storage, and `len("Óscar")` is still 5.
+
+```petal
+let s = "Óscar"
+print(len(s))            # 5
+print(s[0])              # Ó
+print(s[-1])             # r
+print(slice(s, 0, 2))    # Ós
+print(index_of(s, "c"))  # 2
+```
+
+`s[i]` is the one-character string at index `i`. Like a list index it counts
+from the end when negative and is an error when out of range; use
+`char_at` where an out-of-range read should give `""`.
+
+These are constant-time on a string that is all ASCII, however long. A string
+containing a non-ASCII character is walked to find the position; reading it in
+order (`s[i]`, then `s[i + 1]`) resumes from the last position, so a pass over
+the whole string is still linear. To visit every character, `for c in chars(s)`
+is the simplest form.
+
+A code point is not always what a reader sees as one character: `"é"` written
+as `e` plus a combining accent is two, and so is a flag emoji.
+
+`chars`, `char_len`, `char_at` and `char_slice` date from when `len` and `slice`
+counted bytes. `char_len` and `char_slice` now do exactly what `len` and `slice`
+do on a string, and remain for existing scripts. `byte_len` and `byte_slice`
+work in bytes of the UTF-8 encoding.
+
+## Higher-order functions
+
+`map`, `filter`, `reduce`, `forEach`, `sort_by`, `any`, `all` and `find`
+call back into script code. A builtin may itself be the function:
+`map(words, upper)`, `map(rows, len)`, `sort_by(names, lower)`,
+`reduce(xs, 0, max)`.
+
+A callback of any of these may not declare `state`: it runs once per element
+and has no place in the program to keep a slot at. Reaching a `state` or
+`state var` declaration from one is an error, and `petal lint` reports it
+when it can prove it. A loop or `reduce`'s accumulator is the fix
+([State is not allowed in callbacks](features/inline-state.md#state-is-not-allowed-in-callbacks)).
+
+## Typed numeric arrays
+
+An `f64_array` is a flat array of floats. It is faster than a list for numeric
+inner loops (particle sims, grids, field evaluations) because its elements are
+stored unboxed. Like lists, it is an immutable value: `set_at` and `swap`
+return a new array, so keep the result.
+
+Reading an element is plain indexing, and `a[i] = v` writes:
+
+```petal
+let a = f64_array(2)
+a[0] = 2.5
+a[0]             # 2.5
+```
+""",
+  see: ["std"])
+
+# Package `core`, module `collections` (core/src/builtins/collections.rs),
+# and the higher-order functions the VM drives itself.
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. Several declarations of one name are that native's call forms.
 # See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+Returns a list of integers from `start` (inclusive) to `end` (exclusive).
+With a `step`, counts by it; a negative step counts down, stopping before
+`end`. A step of 0 is an error. (`range(n)` is `range(0, n)`.)
+""",
+  params: {start: "The first number (default 0).", end: "Where to stop, excluded.", step: "The increment (default 1); negative counts down."},
+  example: """
+    range(0, 5)        # [0, 1, 2, 3, 4]
+    range(3, 7)        # [3, 4, 5, 6]
+    range(0, 10, 3)    # [0, 3, 6, 9]
+    range(5, 0, -1)    # [5, 4, 3, 2, 1]
+  """)
 pub native fn range(end: num) -> list
 pub native fn range(start: num, end: num, step?: num) -> list
+
+@doc("""
+Returns the length of a list, string, `f64_array` or map (its number of
+entries). A string's length is its number of **characters** (Unicode code
+points), not bytes; see String offsets in this module's doc.
+""",
+  example: """
+    len([1, 2, 3])      # 3
+    len("hello")        # 5
+    len("Óscar")        # 5
+    len([])             # 0
+    len(f64_array(4))   # 4
+  """,
+  see: ["byte_len", "Map"])
 pub native fn len(collection) -> int
+
+@doc("""
+Deprecated alias for `append`. Like `append` it returns a new list;
+`push(items, 3)` on its own does nothing.
+""",
+  deprecated: "use `append`, and keep its result: `xs = append(xs, v)`.",
+  see: ["append"])
 pub native fn push(list, value)
+
+@doc("""
+Returns a **new** list with `value` added to the end. Lists are immutable
+values, so `append` never changes its input — keep the result.
+
+**Appending in a loop is linear.** When the binding being rebound is the
+list's only holder, `append` adds to the list where it is instead of copying
+it, so building a list of `n` elements this way costs `n` appends, not
+`n²/2` element copies. That covers a `let` rebound with `=`
+(`xs = append(xs, v)`), a `var` or a `state var` written
+with `set` (`set xs = append(xs, v)`, `set xs = append(get xs, v)`), inside a
+function or at the top level, and with reads of the list between the
+appends. 10,000, 20,000 and 40,000 appends take 3.6, 4.0 and 4.9 ms as a
+whole `petal run`, start-up included. There is no need to collect pieces
+some other way and join them at the end.
+
+Giving the list to something else is still free of surprises: `let snap =
+xs` keeps what it read, and the next `append` pays for one copy before
+carrying on in place. Three shapes still copy the whole list on **every**
+append, and are quadratic (35, 127 and 565 ms for the same three sizes):
+
+```petal ignore
+set r.items = append(r.items, v)     # a list held in a record field
+set grid[k] = append(grid[k], v)     # a list held in another list
+set xs = add(xs, v)                  # through a function: fn add(xs, v) return append(xs, v) end
+```
+
+For those, build the list in a `var` of its own and store it once the loop
+is done, or have the helper write the `var` itself (`fn add(v) set xs =
+append(get xs, v) end`, called as a statement). A call inside the appended
+value copies too, `set xs = append(xs, f(x))`, unless it is one of `float`,
+`int`, `min`, `max`, `clamp`, `abs`, `floor`, `len` or `type`; bind
+`let v = f(x)` first. The rules are in the language guide under
+[`var`](language-guide.md#var-and-set).
+""",
+  example: """
+    let items = [1, 2]
+    let more = append(items, 3)   # more is [1, 2, 3]; items is still [1, 2]
+    items = append(items, 3)      # grow an accumulator by rebinding
+  """,
+  see: ["prepend", "concat", "drop_last"])
 pub native fn append(list, value)
+
+@doc("""
+Deprecated alias for `drop_last`. Returns a new list without the last
+element — it does **not** return the removed element (use `last` for that).
+""",
+  deprecated: "use `drop_last`, and `last` for the element.",
+  example: """
+    pop([1, 2, 3])   # [1, 2]
+  """,
+  see: ["drop_last", "last"])
 pub native fn pop(list)
+
+@doc("""
+Returns a list of all keys of a record or a map, in insertion order.
+""",
+  example: """
+    keys({name: "Alice", age: 30})     # ["name", "age"]
+    keys(Map([[[0, 1], "a"], [7, "b"]]))  # [[0, 1], 7]
+  """,
+  see: ["values", "entries"])
 pub native fn keys(record) -> list
+
+@doc("""
+Returns a list of all values of a record or a map, in insertion order.
+""",
+  example: """
+    values({a: 1, b: 2})   # [1, 2]
+  """,
+  see: ["keys", "entries"])
 pub native fn values(record) -> list
+
+@doc("""
+Returns the `[key, value]` pairs of a record or a map, in insertion order —
+the list `Map(pairs)` builds from, so `Map(entries(m)) == m`.
+""",
+  example: """
+    entries({a: 1, b: 2})            # [["a", 1], ["b", 2]]
+    entries(Map([[[0, 1], true]]))   # [[[0, 1], true]]
+  """,
+  see: ["keys", "values", "Map"])
 pub native fn entries(record) -> list
+
+@doc("""
+Checks if a list contains a value, a string contains a substring, or a map
+has the key `needle`.
+""",
+  example: """
+    contains([1, 2, 3], 2)       # true
+    contains("hello", "ell")     # true
+    contains([1, 2, 3], 5)       # false
+    contains(Map([[1, "a"]]), 1) # true
+  """,
+  see: ["includes", "index_of", "has_field"])
 pub native fn contains(collection, needle) -> bool
+
+@doc("""
+Returns a new sorted list. Numbers sort before strings; NaNs sort after every
+other number.
+
+With `compare`, sorts with a comparator of two elements. `compare(a, b)`
+returns a number (negative: `a` first; positive: `b` first; zero: a tie) or
+a bool (`true`: `a` first). The sort is stable.
+""",
+  params: {list: "The list to sort.", compare: "Optional: `fn(a, b)`, a number or a bool, as above."},
+  example: [
+    """
+      sort([3, 1, 2])           # [1, 2, 3]
+      sort(["c", "a", "b"])     # ["a", "b", "c"]
+    """,
+    """
+      let rows = [{name: "b", score: 9}, {name: "a", score: 4}]
+      sort([3, 1, 2], fn(a, b) -> b - a)            # [3, 2, 1]
+      sort(rows, fn(a, b) -> a.score < b.score)     # lowest score first
+    """,
+  ],
+  see: ["sort_by", "reverse"])
 pub native fn sort(list, compare?) -> list
+
+@doc("""
+Returns a new reversed list or string.
+""",
+  example: """
+    reverse([1, 2, 3])    # [3, 2, 1]
+    reverse("hello")      # "olleh"
+  """)
 pub native fn reverse(collection)
+
+@doc("""
+Joins list elements into a string with the given separator.
+""",
+  example: """
+    join(["a", "b", "c"], ", ")   # "a, b, c"
+    join([1, 2, 3], "-")          # "1-2-3"
+  """,
+  see: ["split", "list_and"])
 pub native fn join(list: list, separator: string) -> string
+
+@doc("""
+Splits a string into a list by the given separator. To split into
+characters, use `chars`.
+""",
+  example: """
+    split("a,b,c", ",")     # ["a", "b", "c"]
+    split("a  b", " ")      # ["a", "", "b"]
+  """,
+  see: ["join", "chars"])
 pub native fn split(string: string, separator: string) -> list
+
+@doc("""
+The string in upper case, Unicode-aware.
+""",
+  example: """
+    upper("aeronaut belt")    # "AERONAUT BELT"
+  """,
+  see: ["lower"])
 pub native fn upper(string: string) -> string
+
+@doc("""
+The string in lower case, Unicode-aware.
+""",
+  example: """
+    let a = "Petal"
+    let b = "PETAL"
+    lower("ÉCLAIR")           # "éclair"
+    lower(a) == lower(b)      # case-insensitive compare
+  """,
+  see: ["upper"])
 pub native fn lower(string: string) -> string
+
+@doc("""
+Returns a list of `[index, value]` pairs.
+""",
+  example: """
+    enumerate(["a", "b", "c"])   # [[0, "a"], [1, "b"], [2, "c"]]
+  """,
+  see: ["zip"])
 pub native fn enumerate(list) -> list
+
+@doc("""
+Pairs elements from two lists. Stops at the shorter list.
+""",
+  example: """
+    zip([1, 2], ["a", "b"])   # [[1, "a"], [2, "b"]]
+  """,
+  see: ["enumerate"])
 pub native fn zip(list_a, list_b) -> list
+
+@doc("""
+Returns a slice of a list or string. Supports negative indices. `end`
+defaults to the length of the collection. On a string the indices count
+**characters**, so a slice never cuts one in half.
+""",
+  params: {collection: "A list or a string.", start: "The first index, included; negative counts from the end.", end: "The index to stop before (default: the length)."},
+  example: """
+    slice([1, 2, 3, 4], 1, 3)    # [2, 3]
+    slice([1, 2, 3, 4], -2)      # [3, 4]
+    slice("hello", 1, 3)         # "el"
+    slice("Óscar Delgado", 0, 1) # "Ó"
+  """,
+  see: ["take", "drop", "byte_slice"])
 pub native fn slice(collection, start, end?)
+
+@doc("""
+Flattens one level of nesting.
+""",
+  example: """
+    flat([[1, 2], [3, 4]])       # [1, 2, 3, 4]
+    flat([[1, [2]], [3]])         # [1, [2], 3]
+  """,
+  see: ["flat_map", "concat"])
 pub native fn flat(list) -> list
+
+@doc("""
+JavaScript-style alias for `contains`. Same behavior.
+""",
+  example: """
+    [1, 2, 3].includes(2)        # true
+    "hello".includes("ell")      # true
+  """,
+  see: ["contains"])
 pub native fn includes(collection, needle) -> bool
+
+@doc("""
+Creates a zero-filled `f64_array` of `length` elements. An `f64_array` is a
+flat array of floats, faster than a list for numeric inner loops (see Typed
+numeric arrays in this module's doc).
+""",
+  example: """
+    f64_array(3)   # [0.0, 0.0, 0.0]
+    f64_array(0)   # []
+  """,
+  see: ["set_at", "swap"])
 pub native fn f64_array(length) -> f64_array
+
+@doc("""
+Returns a new array with slot `index` set to `value` (an int or float). An
+out-of-bounds or negative index is an error.
+""",
+  example: """
+    let a = f64_array(3)
+    a = set_at(a, 1, 5.5)
+    a[1]             # 5.5
+  """,
+  see: ["f64_array", "swap"])
 pub native fn set_at(array, index, value)
+
+@doc("""
+Returns a new array with the elements at `i` and `j` exchanged. Both indices
+are bounds-checked.
+""",
+  example: """
+    let a = f64_array(3)
+    a = set_at(a, 0, 1.0)
+    a = swap(a, 0, 2)    # [0.0, 0.0, 1.0]
+  """,
+  see: ["f64_array", "set_at"])
 pub native fn swap(array, i, j)
+
+@doc("""
+Returns the last element of a list, or `nil` if the list is empty.
+""",
+  example: """
+    last([1, 2, 3])   # 3
+    last([])          # nil
+  """,
+  see: ["first", "drop_last"])
 pub native fn last(list)
+
+@doc("""
+Returns a **new** list without the last element.
+""",
+  example: """
+    drop_last([1, 2, 3])   # [1, 2]
+    drop_last([])          # []
+  """,
+  see: ["last", "append"])
 pub native fn drop_last(list)
+
+@doc("""
+Returns a **new** record or map without `key`. Removing an absent key is not
+an error. Works on records and maps, not lists (for a list, see
+`remove_at`).
+""",
+  params: {record: "A record or a map.", key: "The key to leave out."},
+  example: """
+    remove({a: 1, b: 2}, "a")             # { b: 2 }
+    remove({a: 1}, "missing")             # { a: 1 }
+    remove(Map([[1, "a"], [2, "b"]]), 1)  # Map([[2, "b"]])
+  """,
+  see: ["remove_at"])
 pub native fn remove(record, key)
+
+@doc("""
+Returns a **new** list without the element at `index`. A negative index
+counts from the end, as `xs[i]` does. An index outside the list is an error.
+""",
+  example: """
+    remove_at(["a", "b", "c"], 1)    # ["a", "c"]
+    remove_at(["a", "b", "c"], -1)   # ["a", "b"]
+  """,
+  see: ["remove", "drop_last"])
 pub native fn remove_at(list, index: num) -> list
+
+@doc("""
+Read a value nested inside records, lists and maps, with the path given as
+data. The path is a list of steps, each a field name (a string), a list
+index (an int; negative counts from the end) or a map key. Every step must exist and a list
+index must be in bounds. An empty path is `value`. An error names the
+failing step by position and as the path so far
+([Paths as data](language-guide.md#paths-as-data)).
+""",
+  example: """
+    let st = {meetings: [{room: 1}, {room: 2}, {room: 5}]}
+    get_in(st, ["meetings", -1, "room"])      # 5
+  """,
+  see: ["set_in"])
 pub native fn get_in(value, path: list)
+
+@doc("""
+Replace a value nested inside records, lists and maps, with the path given
+as data (steps as for `get_in`). `set_in` returns a **new** value, the one
+the path assignment `value.a[i].b = v` would leave; `value` itself is
+unchanged. The last step may add a field or a map key; every earlier step
+must exist and a list index must be in bounds. An empty path is `v`. An
+error names the failing step by position and as the path so far
+([Paths as data](language-guide.md#paths-as-data)).
+
+```petal ignore
+set_in({a: [1, 2]}, ["a", 5], 0)   # error: set_in(): path step 2 of 2 (.a[5]): Index 5 out of bounds (len 2)
+```
+""",
+  params: {value: "The value to update.", path: "A list of field names, list indices and map keys.", v: "The value to put at the end of the path."},
+  example: """
+    let st = {meetings: [{room: 1}, {room: 2}, {room: 5}]}
+    set_in(st, ["meetings", 2, "room"], 3)   # { meetings: [{ room: 1 }, { room: 2 }, { room: 3 }] }
+    set_in({a: 1}, ["b"], 2)                  # { a: 1, b: 2 }
+  """,
+  see: ["get_in"])
 pub native fn set_in(value, path: list, v)
+
+@doc("""
+The string as a list of single-character strings. `for c in chars(s)` is
+the simplest way to visit every character.
+""",
+  example: """
+    chars("Óscar")   # ["Ó", "s", "c", "a", "r"]
+    chars("")        # []
+  """,
+  see: ["split", "char_at"])
 pub native fn chars(string: string) -> list
+
+@doc("""
+Number of characters. The same as `len` on a string; it dates from when
+`len` counted bytes, and remains for existing scripts.
+""",
+  example: """
+    char_len("Óscar")   # 5
+    len("Óscar")        # 5
+  """,
+  see: ["len", "byte_len"])
 pub native fn char_len(string: string) -> int
+
+@doc("""
+The single character at character index `index`. Negative indices count from
+the end. An out-of-range index gives `""` rather than an error, where `s[i]`
+is an error.
+""",
+  example: """
+    char_at("Óscar", 0)    # "Ó"
+    char_at("Óscar", -1)   # "r"
+    char_at("Óscar", 99)   # ""
+  """,
+  see: ["chars", "ord"])
 pub native fn char_at(string: string, index: num) -> string
+
+@doc("""
+The same as `slice` on a string: the indices count characters. Negative
+indices count from the end, both ends clamp, and `end` defaults to the end
+of the string. It dates from when `slice` counted bytes, and remains for
+existing scripts.
+""",
+  example: """
+    char_slice("Óscar Delgado", 0, 1)   # "Ó"
+    char_slice("Óscar", 1)              # "scar"
+    char_slice("Óscar", -3, -1)         # "ca"
+  """,
+  see: ["slice", "byte_slice"])
 pub native fn char_slice(string, start, end?) -> string
+
+@doc("""
+Position of the first occurrence, or `-1` when absent. On a list this is the
+element index; on a string it is a **character** index, ready to pass to
+`slice` or to index with `s[i]`.
+
+```petal ignore
+let i = index_of(line, "=")
+if i >= 0 then
+  let key = slice(line, 0, i)
+  let value = slice(line, i + 1)
+```
+""",
+  example: """
+    index_of([10, 20, 30], 20)     # 1
+    index_of([10, 20], 99)         # -1
+    index_of("hello world", "wor") # 6
+    index_of("abc", "z")           # -1
+  """,
+  see: ["contains", "slice"])
 pub native fn index_of(collection, needle) -> int
+
+@doc("""
+Returns a **new** list with `value` in front. The mirror of `append`.
+""",
+  example: """
+    prepend([2, 3], 1)   # [1, 2, 3]
+  """,
+  see: ["append"])
 pub native fn prepend(list, value) -> list
+
+@doc("""
+Joins two lists, or two strings, into a new one. `append(xs, ys)` adds `ys`
+as a single element; `concat` splices its elements in.
+""",
+  example: """
+    concat([1, 2], [3, 4])   # [1, 2, 3, 4]
+    append([1, 2], [3, 4])   # [1, 2, [3, 4]]
+    concat("ab", "cd")       # "abcd"
+  """,
+  see: ["append", "flat"])
 pub native fn concat(a, b)
+
+@doc("""
+The string written `count` times in a row. A `count` of zero or less gives
+`""`; `count` must be an int.
+
+Use it instead of appending in a loop. `out = out ++ s` copies everything
+written so far on every pass, so a loop of `n` appends does work proportional
+to `n²`; `repeat` allocates the result once. When the pieces differ, collect
+them in a list and `join` it at the end.
+""",
+  example: """
+    repeat("-", 20)      # "--------------------"
+    repeat("ab", 3)      # "ababab"
+    repeat("x", 0)       # ""
+  """,
+  see: ["join", "fill", "pad_start"])
 pub native fn repeat(string: string, count: num) -> string
+
+@doc("""
+Whether the string begins with the given text. Every string starts with
+`""`.
+""",
+  example: """
+    starts_with("hello.ptl", "hello")   # true
+    starts_with("hello", "Hello")       # false (case matters; compare `lower` of both)
+  """,
+  see: ["ends_with", "index_of"])
 pub native fn starts_with(string: string, prefix: string) -> bool
+
+@doc("""
+Whether the string ends with the given text. Every string ends with `""`.
+""",
+  example: """
+    ends_with("hello.ptl", ".ptl")      # true
+  """,
+  see: ["starts_with"])
 pub native fn ends_with(string: string, suffix: string) -> bool
+
+@doc("""
+The string without its leading and trailing whitespace — spaces, tabs, line
+breaks, and the other Unicode whitespace characters. Whitespace inside the
+text stays.
+""",
+  example: """
+    trim("  hello world \n")   # "hello world"
+    trim("   ")                # ""
+  """)
 pub native fn trim(string: string) -> string
+
+@doc("""
+The string with every occurrence of `old` replaced by `new`, scanning left to
+right; occurrences do not overlap. Replacing `""` is an error.
+""",
+  example: """
+    replace("a-b-c", "-", ", ")    # "a, b, c"
+    replace("aaa", "aa", "b")      # "ba"
+    replace("hello", "x", "y")     # "hello"
+  """)
 pub native fn replace(string: string, old: string, new: string) -> string
+
+@doc("""
+Size of the string's UTF-8 encoding in bytes. For size limits and wire
+formats; use `len` for anything about the text.
+""",
+  example: """
+    byte_len("Óscar")   # 6
+    byte_len("hello")   # 5
+  """,
+  see: ["len", "byte_slice"])
 pub native fn byte_len(string: string) -> int
+
+@doc("""
+`slice` with **byte** offsets into the UTF-8 encoding. Negative indices count
+from the end and both ends clamp. A bound that falls inside a character moves
+inward to the next character boundary, so the result is always whole
+characters and never longer than the range asked for.
+""",
+  example: """
+    byte_slice("Óscar", 0, 2)   # "Ó"
+    byte_slice("Óscar", 0, 1)   # ""  (half of "Ó" is dropped)
+    byte_slice("hello", 1, 3)   # "el"
+  """,
+  see: ["slice", "byte_len"])
 pub native fn byte_slice(string: string, start: num, end?: num) -> string
+
+@doc("""
+A list of `count` copies of `value`; `[]` when `count` is zero or negative.
+The way to start a list of zeros, a row of a grid, or one empty list per
+bucket — in place of `for i in range(0, n) do 0.0 end`.
+
+The copies are values, as everything in Petal is: `fill(3, [])` is three
+empty lists, and writing to one later (`set grid[1] = append(grid[1], x)`)
+leaves the other two alone.
+""",
+  example: """
+    fill(3, 0.0)        # [0.0, 0.0, 0.0]
+    fill(2, "ab")       # ["ab", "ab"]
+    fill(0, 1)          # []
+  """,
+  see: ["range", "f64_array", "repeat"])
 pub native fn fill(count: num, value) -> list
+
+@doc("""
+The **index** of the smallest number in a list or `f64_array`, the first of
+equals; `nil` when the list is empty. For the element rather than the index,
+and for a key, see `min_by`.
+""",
+  example: """
+    argmin([3, 1, 2, 1])     # 1
+    argmin([])               # nil
+  """,
+  see: ["argmax", "min_by", "minimum"])
 pub native fn argmin(list)
+
+@doc("""
+The **index** of the largest number in a list or `f64_array`, the first of
+equals; `nil` when the list is empty. For the element rather than the index,
+and for a key, see `max_by`.
+""",
+  example: """
+    argmax([3, 1, 9.5, 2])   # 2
+  """,
+  see: ["argmin", "max_by", "top_indices"])
 pub native fn argmax(list)
+
+@doc("""
+The indices of the `k` largest numbers, largest first, with equals in list
+order. Fewer than `k` when the list is shorter. It keeps `k` candidates as it
+goes and never sorts the whole list. `top_k` is the form that returns the
+elements.
+""",
+  example: """
+    top_indices([5, 1, 9, 9, 3], 3)   # [2, 3, 0]
+    top_indices([5, 1, 9], 10)        # [2, 0, 1]
+  """,
+  see: ["top_k", "argmax"])
 pub native fn top_indices(list, k: num) -> list
+
+@doc("""
+A record of lists: element `i` of `list` goes into the group named by
+`keys[i]`. Groups are in the order their key first appears, and each keeps
+list order. A key that is not a string is named by its `str()`, since a
+record's keys are strings. `group_by` is the form that takes a function.
+""",
+  example: """
+    group_by_keys(["a", "b", "c"], ["x", "y", "x"])   # { x: ["a", "c"], y: ["b"] }
+  """,
+  see: ["group_by"])
 pub native fn group_by_keys(list: list, keys: list) -> record
+
+@doc("""
+The Unicode code point of a string's first character. `chr` is its inverse,
+the one-character string of a code point; between them, arithmetic on letters
+needs no lookup table. `ord("")` is an error.
+""",
+  example: """
+    ord("A")             # 65
+    ord("é")             # 233
+    chr(ord("a") + 3)    # d
+  """,
+  see: ["chr"])
 pub native fn ord(string: string) -> int
+
+@doc("""
+The one-character string of a Unicode code point: the inverse of `ord`. A
+number that is no code point (negative, a surrogate, past `0x10FFFF`) is an
+error.
+""",
+  example: """
+    chr(97)              # a
+    chr(ord("a") + 3)    # d
+  """,
+  see: ["ord"])
 pub native fn chr(code: num) -> string
+
 # `{[key]: value}` is parsed as a spread of this one-field record.
+@doc("""Internal: `__record_of(key, value)`, the one-field record a `{[key]: value}` entry spreads.""", hidden: true)
 pub native fn __record_of(...args)
 
-# A map: entries keyed by any hashable value. `Map()` is empty; `Map(pairs)`
-# takes a list of `[key, value]` pairs. Read and write with `m[k]`; `len`,
-# `keys`, `values`, `entries`, `contains` and `remove` take a map too.
+@doc("""
+A new **map**: a lookup table whose keys can be any value. Keys are compared
+by content with the rule `==` uses (`m[[1, 2]]` finds the entry stored under
+another `[1, 2]`; `2` and `2.0` are one key). `Map()` is empty; `Map(pairs)`
+takes a list of `[key, value]` pairs, in order, and a repeated key keeps its
+first place and its last value. Read with `m[k]` (an absent key is `nil`),
+write with `m[k] = v` on a `let` or `set m[k] = v` on a `var`. `len`, `keys`,
+`values`, `entries`, `contains` (by key), `remove` and `for k in m` take a
+map; iteration is in insertion order. A function, a pending value or NaN
+cannot be a key. See [Maps](language-guide.md#maps).
+
+The name is capitalized like a class constructor's (`Rect`) because `map` is
+the higher-order builtin.
+""",
+  params: {pairs: "A list of `[key, value]` pairs."},
+  example: """
+    let m = Map([["a", 1], [[0, 0], "origin"]])
+    m[3] = "three"
+    print(m[[0, 0]])   # origin
+    print(m["zz"])     # nil
+    print(len(m))      # 3
+  """,
+  see: ["entries", "keys", "values", "remove"])
 pub native fn Map() -> map
 pub native fn Map(pairs: list) -> map
 
 # Higher-order: these call back into script code, so the VM runs them itself.
+
+@doc("""
+Applies a function to each element and returns a new list.
+""",
+  example: """
+    map([1, 2, 3], fn(x) -> x * 2)         # [2, 4, 6]
+    map(["a", "b"], fn(s) -> s ++ "!")     # ["a!", "b!"]
+  """,
+  see: ["filter", "reduce", "flat_map"])
 pub native fn map(list, f)
+
+@doc("""
+Returns a new list containing only elements where the function returns
+`true`.
+""",
+  example: """
+    filter([1, 2, 3, 4], fn(x) -> x > 2)            # [3, 4]
+    filter(["hi", "", "ok"], fn(s) -> len(s) > 0)   # ["hi", "ok"]
+  """,
+  see: ["map", "find", "count"])
 pub native fn filter(list, pred)
+
+@doc("""
+Folds over a list, accumulating a result.
+""",
+  params: {list: "The list to fold.", initial: "The starting accumulator.", f: "`fn(acc, x)`, returning the next accumulator."},
+  example: """
+    reduce([1, 2, 3], 0, fn(acc, x) -> acc + x)   # 6
+    reduce([1, 2, 3], 1, fn(acc, x) -> acc * x)   # 6
+  """,
+  see: ["map", "sum"])
 pub native fn reduce(list, initial, f)
+
+@doc("""
+Runs a function once for each element and returns `nil`. Use when you
+want the side effects (logging, drawing, mutations) but don't need a
+new list.
+""",
+  example: """
+    forEach([1, 2, 3], fn(x) -> print(x))
+  """,
+  see: ["map"])
 pub native fn forEach(list, f)
+
+@doc("""
+Sorts by a key read off each element. `key(element)` is called once per
+element and must return a number or a string (any other key is an error, and
+`petal lint` reports it ahead of time when it can see what the key function
+returns). The sort is stable in both directions, so chained calls sort by
+several keys — least significant first.
+""",
+  params: {list: "The list to sort.", key: "`fn(element)`, returning a number or a string.", descending: """`true` or `"desc"` for descending order; `false`, `"asc"` or left off for ascending."""},
+  example: """
+    let rows = [{name: "b", score: 9}, {name: "a", score: 4}, {name: "c", score: 9}]
+    sort_by(rows, fn(r) -> r.score)                  # lowest score first
+    sort_by(rows, fn(r) -> r.score, "desc")          # highest score first
+    sort_by(sort_by(rows, fn(r) -> r.name), fn(r) -> r.score, "desc")   # ties by name
+  """,
+  see: ["sort", "top_k", "min_by"])
 pub native fn sort_by(list: list, key: function, descending?) -> list
 
-# True when at least one element satisfies `pred` (false for the empty list).
-# Stops at the first element that does: `pred` is not called on the rest.
+@doc("""
+Whether at least one element satisfies `pred` (`false` for an empty list).
+It stops at the first element that satisfies `pred`: `pred` is not called
+on the elements after it. A map is walked by its keys.
+""",
+  example: """
+    any([1, 2, 3], fn(x) x > 2 end)   # true
+  """,
+  see: ["all", "find", "count"])
 pub native fn any(xs, pred) -> bool
-# True when every element satisfies `pred` (vacuously true for the empty list).
-# Stops at the first element that does not: `pred` is not called on the rest.
+
+@doc("""
+Whether every element satisfies `pred` (`true` for an empty list). It stops
+at the first element that does not: `pred` is not called on the elements
+after it. A map is walked by its keys.
+""",
+  example: """
+    all([1, 2, 3], fn(x) x > 2 end)   # false
+  """,
+  see: ["any", "count"])
 pub native fn all(xs, pred) -> bool
-# The first element satisfying `pred`, or nil when none does.
+
+@doc("""
+The first element that satisfies `pred`, or `nil` when none does. It stops
+there, like `any`.
+""",
+  example: """
+    find([1, 2, 3], fn(x) x > 1 end)   # 2
+  """,
+  see: ["any", "filter", "index_of"])
 pub native fn find(xs, pred)
 
-# Frozen (permanent) heap objects: `freeze` returns its argument, which the
-# collector then neither traces nor frees; `frozen` asks whether a value is.
-# One-way, for data that lives as long as the program. docs/Builtins.md.
+@doc("""
+Makes `value` and everything it holds frozen, and returns `value`. The
+collector no longer looks inside a frozen value and never frees one. Lists,
+records, strings, `f64_array`s, vectors and enum variants freeze, to any
+depth. Freezing a number, a bool or `nil`, or a value that is already
+frozen, does nothing.
+
+The garbage collector visits every value the program still holds each time
+it runs. For most programs that is cheap. For a program that keeps a very
+large table for its whole life (a generated world, a rule table, a level
+loaded from disk) it is a pause on every collection that grows with the
+table: about 2.5 ms for 100,000 records, before any garbage is freed.
+`freeze` takes such a value out of the collector's work. A frozen value is
+still an ordinary value: it reads, compares, prints and passes around
+exactly as before, and an update of it yields a new, unfrozen value as an
+update of any value does.
+
+The limits are part of the contract:
+
+- **Freezing is one-way.** There is no unfreeze, and a frozen value is never
+  freed, even after the program drops its last reference to it. The memory
+  comes back when the program's heap goes away (the program is restarted or
+  its context is dropped).
+- **Freeze data that lives as long as the program**, once: in a `state`
+  initializer, as in the example, or behind a check that it has not been built yet.
+  `freeze` on a value rebuilt every frame leaks every one of them, so a
+  top-level `let table = freeze(build())` in a script that runs once per
+  frame is a leak. `state` initializers run once.
+- **A top-level table that depends on no dynamic data is the exception to
+  that**, where the host keeps static values between runs (it does by
+  default; see [performance.md](dev/performance.md#static-values)): `let
+  table = [...]` followed by `freeze(table)` freezes the one table the stack
+  keeps, once, and `frozen(table)` is then true from the top of every later
+  run. `let table = freeze(build())` is still rebuilt and frozen on every
+  run, because a call of `freeze` is never static. With static values off
+  both forms leak a table per run.
+- **A value holding a function or a `var` cell cannot be frozen.** The call
+  is an error (`freeze: the value holds a function, which cannot be frozen`)
+  and nothing is frozen.
+- **A hot reload keeps frozen values**, like the rest of the heap. A table
+  that is rebuilt after a reload and frozen again leaves the old one
+  allocated.
+- **Freezing removes the value from a collection's work, not the rest of the
+  heap.** A collection afterwards costs what the unfrozen data and the garbage
+  cost. Freeze a table as soon as it is built: until then it is ordinary data
+  and every collection during the build visits it.
+
+A forked execution (and a snapshot restored from one) carries the frozen
+values it was taken with.
+""",
+  example: """
+    fn build_table(n)
+      for i in range(0, n) do
+        {id: i, name: "row " ++ str(i), tags: [i, i + 1]}
+
+    state table = freeze(build_table(1000))
+    print(frozen(table), len(table))      # true 1000
+
+    let longer = append(table, {id: 1000, name: "extra", tags: []})
+    print(frozen(longer), len(table))     # false 1000
+  """,
+  see: ["frozen"])
 pub native fn freeze(value)
+
+@doc("""
+Whether `value` is frozen. `false` for numbers, bools, `nil` and every value
+`freeze` has not reached.
+""",
+  example: """
+    let xs = [1, 2, 3]
+    print(frozen(xs))     # false
+    freeze(xs)
+    print(frozen(xs))     # true
+    print(frozen(42))     # false
+  """,
+  see: ["freeze"])
 pub native fn frozen(value) -> bool

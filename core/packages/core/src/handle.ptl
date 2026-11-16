@@ -1,8 +1,24 @@
-# Package `core` — Host handles (core/src/builtins/handle.rs).
+@module_doc("""
+Host handles: references to objects a host owns.
+
+See [host handles](game-engine-features/handles.md).
+""")
+
+# Package `core`, module `handle` (core/src/builtins/handle.rs).
 #
 # Native interface declarations: each `native fn` binds a name to the host
 # native of the same name and gives the checker its parameter names, arity
 # and types. Several declarations of one name are that native's call forms.
 # See docs/usage/ffi.md (Native interfaces).
 
+@doc("""
+Whether the value is a [host handle](game-engine-features/handles.md) whose
+object the host still considers alive. Never an error: `nil`, a value that
+is not a handle and a stale handle are all `false`. Why a handle can go
+stale between two frames is in
+[game-engine-features/frame-contract.md](game-engine-features/frame-contract.md#engine-objects).
+""",
+  example: """
+    is_valid(nil)   # false
+  """)
 pub native fn is_valid(handle)

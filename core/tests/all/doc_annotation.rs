@@ -302,6 +302,63 @@ fn fn_info_reports_the_fn_keyword_past_the_doc() {
     assert_eq!(env.take_output(), ["4 1"]);
 }
 
+fn run_output(src: &str) -> Vec<String> {
+    let mut env = petal::env::Env::new();
+    env.set_echo(false);
+    env.run_source(src).unwrap_or_else(|e| panic!("run failed: {e}\n{src}"));
+    env.take_output()
+}
+
+/// `fn_info(f).doc`: the function's `@doc` as a record, every field present.
+#[test]
+fn fn_info_doc_is_the_functions_doc_as_a_record() {
+    let out = run_output(
+        r#"@doc("""
+    Constrain a value. Three ints
+    give an int.
+    """,
+  params: {value: "The number.", lo: "The bound."},
+  returns: "The value.",
+  example: ["clamp2(1)", "clamp2(2)"],
+  see: ["lerp"],
+  deprecated: "Use `clamp`.",
+  extra: {since: "0.4", weight: 2, tags: ["math"]})
+fn clamp2(value, lo = 0)
+  value
+end
+let d = fn_info(clamp2).doc
+print(d.summary)
+print(d.body)
+print(d.params.value, d.params.lo, d.returns, d.deprecated, d.hidden)
+print(d.example, d.see, d.options)
+print(d.extra.since, d.extra.weight, d.extra.tags)
+"#,
+    );
+    assert_eq!(
+        out,
+        [
+            "Constrain a value.",
+            "Constrain a value. Three ints\ngive an int.",
+            "The number. The bound. The value. Use `clamp`. false",
+            "[\"clamp2(1)\", \"clamp2(2)\"] [\"lerp\"] {  }",
+            "0.4 2 [\"math\"]",
+        ]
+    );
+}
+
+/// No `@doc`, no doc; a lambda bound by a documented `let` takes the `let`'s;
+/// a doc does not reach `code_hash`.
+#[test]
+fn fn_info_doc_is_nil_without_a_doc_and_a_let_lends_its_doc_to_a_lambda() {
+    let out = run_output(
+        "fn plain(x)\n  x\nend\n@doc(\"Doubles.\") let twice = fn(x) x * 2\n\
+         let lam = fn(x) x\nprint(fn_info(plain).doc, fn_info(twice).doc.summary, fn_info(lam).doc)\n",
+    );
+    assert_eq!(out, ["nil Doubles. nil"]);
+    let hash = |src: &str| run_output(&format!("{src}fn f(x)\n  x\nend\nprint(fn_info(f).code_hash)\n"));
+    assert_eq!(hash("@doc(\"One.\")\n"), hash(""));
+}
+
 // ── The IR invariant ─────────────────────────────────────────────────────
 
 fn ptl_files(dir: &Path, out: &mut Vec<PathBuf>) {

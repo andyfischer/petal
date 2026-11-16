@@ -144,7 +144,7 @@ impl<'a> Vm<'a> {
             caps.push(Value::Map(self.heap.alloc_map(rec)));
         }
 
-        let mut rec = crate::heap::record_map_with_capacity(8);
+        let mut rec = crate::heap::record_map_with_capacity(9);
         let name = meta
             .as_ref()
             .map(|m| m.name.clone())
@@ -161,6 +161,11 @@ impl<'a> Vm<'a> {
         let v = self.opt_str_value(meta.as_ref().and_then(|m| m.returns.as_deref()));
         rec.insert("returns".to_string(), v);
         rec.insert("captures".to_string(), Value::List(self.heap.alloc_list(caps)));
+        let doc = match meta.as_ref().and_then(|m| m.doc.as_ref()) {
+            Some(json) => json_to_value(json, self.heap)?,
+            None => Value::Nil,
+        };
+        rec.insert("doc".to_string(), doc);
         Ok(Value::Map(self.heap.alloc_map(rec)))
     }
 

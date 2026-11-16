@@ -61,6 +61,20 @@ pub struct FnMeta {
     pub code_hash: u64,
     /// The function's AST in the flat encoding, positions included.
     pub ast: J,
+    /// The declaration's `@doc(…)` as [`crate::api_doc::DocJson`] gives it
+    /// (cleaned body, summary, every field; `extra` as written), or `None`
+    /// for an undocumented function. A `fn` declaration's own doc, or for a
+    /// lambda bound by `let`, the `let`'s. Not part of `ast` or `code_hash`:
+    /// a doc changes nothing a function computes.
+    pub doc: Option<J>,
+}
+
+impl FnMeta {
+    /// This function's metadata with `doc` as its doc.
+    fn with_doc(mut self, doc: Option<&crate::ast::Doc>) -> FnMeta {
+        self.doc = doc.and_then(|d| serde_json::to_value(crate::api_doc::DocJson::of(d)).ok());
+        self
+    }
 }
 
 #[derive(Default)]
@@ -161,6 +175,15 @@ impl ExprVisitor for Finder<'_> {
         if self.found.is_some() {
             return;
         }
+        // `@doc(…) let f = fn(…)`: the lambda takes the binding's doc.
+        if let StmtKind::Let { value, .. } = &s.kind
+            && let ExprKind::Lambda { params, body } = &value.kind
+            && same_place(value.span, self.span)
+        {
+            let meta = meta_of(None, None, params, None, body, value.span, self);
+            self.found = Some(meta.with_doc(s.doc.as_deref()));
+            return;
+        }
         if let StmtKind::FnDecl {
             name,
             class,
@@ -170,15 +193,8 @@ impl ExprVisitor for Finder<'_> {
         } = &s.kind
             && same_place(s.span, self.span)
         {
-            self.found = Some(meta_of(
-                Some(name),
-                class.as_deref(),
-                params,
-                ret.as_ref(),
-                body,
-                s.span,
-                self,
-            ));
+            let meta = meta_of(Some(name), class.as_deref(), params, ret.as_ref(), body, s.span, self);
+            self.found = Some(meta.with_doc(s.doc.as_deref()));
             return;
         }
         walk_stmt(self, s);
@@ -252,6 +268,7 @@ fn meta_of(
         returns: ret.map(|t| t.name.clone()),
         code_hash: hash.0,
         ast,
+        doc: None,
     }
 }
 

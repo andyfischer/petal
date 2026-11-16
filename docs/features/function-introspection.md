@@ -42,6 +42,7 @@ let info = fn_info(streak)
     {name: "tint", type: nil, has_default: true, default: {r: 26, g: 42, b: 108}, default_source: ":1a2a6c"},
   ],
   returns: nil,               # "float" for fn_info(weight)
+  doc: nil,                   # the function's @doc, see below
   captures: [
     {name: "weight", value: <function>},
     {name: "TAPS", value: 3},
@@ -60,6 +61,22 @@ let info = fn_info(streak)
   value is the cell's current contents. A function the body calls is a capture
   like any other, so a tool can follow it with another `fn_info`. A top-level
   constant declared *below* the function is not a capture and is not listed.
+- `doc` is the function's [`@doc(…)`](../language-guide.md#documentation)
+  as a record, or `nil` when it has none. A lambda bound by a documented
+  `let` (`@doc("…") let f = fn(x) …`) has the `let`'s doc. Every field is
+  present: `body` (indentation cleaned) and `summary` (its first sentence),
+  `params` and `options` (records of strings), `returns`, `example` (a list
+  of strings), `see` (a list), `deprecated`, `hidden` (a bool) and `extra`
+  (the record as written), with `nil`, `[]` or `{}` for a field the doc
+  leaves out. A doc is not part of `fn_ast` or `code_hash`.
+
+  ```petal
+  @doc("Twice `x`.", params: {x: "A number."})
+  fn twice(x)
+    x * 2
+  let d = fn_info(twice).doc
+  print(d.summary, d.params.x)   # Twice `x`. A number.
+  ```
 - For a builtin (`fn_info(floor)`) or an overloaded name the result is `nil`.
   A non-function argument is an error.
 

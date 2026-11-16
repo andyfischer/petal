@@ -36,11 +36,15 @@ page is [features/programs-as-documents.md](../features/programs-as-documents.md
   refusal reasons go to each status bar. The gaps they found (text split by
   `<br />`, a bare attribute in step 1, `++` of lists, `SetText` through a
   package's hole, a named argument's trace, the override hook for a helper
-  used once, tidying `concretize`, reordering across a loop's data) have
-  host-side workarounds there, listed in
-  `petal-creative/docs/petal-upstream-ideas.md`.
-- **What remains.** Those gaps in the crate (and the named-argument trace
-  in core); part 2 (a schema for documents); wrap/unwrap as intents and
+  used once, tidying `concretize`, reordering across a loop's data,
+  inserting after a multi-line entry) are fixed in the crate and core
+  (2026-11-16), and the host-side workarounds for them in petal-movies and
+  petal-social-media are gone; `petal-creative/docs/petal-upstream-ideas.md`
+  lists them under Done. petal-social-media still writes text with
+  `<span>` children itself (it drops the spans), which `SetText` refuses.
+- **What remains.** A loop counting to a plain number (`range(0, 3)`) as a
+  data list; text with `<span>` children or mixed holes in `SetText`;
+  part 2 (a schema for documents); wrap/unwrap as intents and
   intents as an undo log;
   setting one named argument of a call in place (petal-design rewrites a
   token's whole `modes(...)`/`per(...)` value when its shape changes); saved

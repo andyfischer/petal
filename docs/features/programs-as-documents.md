@@ -25,7 +25,8 @@ running the edited script again before anything is written.
   `design(...)`'s pages), petal-movies (every item edit: fields, timeline
   drags and trims, effects, text and captions, add/remove/duplicate/move/
   split) and petal-social-media (slides and their layers: options, text,
-  structure, writing a helper's slide out with `concretize`).
+  structure, writing a helper's slide out with `concretize_with` and
+  `tidy`).
 - **Tests:** `core-libs/programs-as-documents/tests/` (`cargo test` in that
   directory); the core hook in `core/tests/all/` (element tracing) and the
   DM tests.

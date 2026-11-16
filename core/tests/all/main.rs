@@ -10,6 +10,7 @@
 mod annotation_parity;
 mod autodiff;
 mod camera_class;
+mod comment_to_doc;
 mod candidate_state;
 mod capture_lag;
 mod cell_in_place;

@@ -25,7 +25,8 @@
 //! itself, since the parser no longer does), `export-to-pub`, `const-decl-deprecated`, `config-let-deprecated`,
 //! `state-key-deprecated` (which reads the removed `state(key)` itself; the
 //! ones before it plan on the file with each key group blanked, see
-//! [`state_key::blank_keys`]); and last `end-lines`, which is no rewrite of an
+//! [`state_key::blank_keys`]); then the opt-in `comment-to-doc`, which runs
+//! only when `--only` names it (see [`comment_to_doc`]); and last `end-lines`, which is no rewrite of an
 //! old form but of the layout (it formats the file and removes the `end`s
 //! indentation makes redundant, see [`end_lines`]). **`old-imports`** rewrites imports for the current
 //! module system and needs every file of the batch and a module resolver; it
@@ -62,6 +63,7 @@ use std::path::PathBuf;
 
 mod at_rebind;
 mod colour_literals;
+mod comment_to_doc;
 mod else_if;
 mod end_lines;
 mod export_to_pub;
@@ -163,6 +165,7 @@ pub const EXPORT_TO_PUB: &str = "export-to-pub";
 pub const CONST_DECL_DEPRECATED: &str = "const-decl-deprecated";
 pub const CONFIG_LET_DEPRECATED: &str = "config-let-deprecated";
 pub const STATE_KEY_DEPRECATED: &str = "state-key-deprecated";
+pub const COMMENT_TO_DOC: &str = "comment-to-doc";
 pub const END_LINES: &str = "end-lines";
 pub const OLD_IMPORTS: &str = "old-imports";
 
@@ -180,6 +183,11 @@ pub enum OldForm {
     /// migration converts a file from one spelling the language keeps to
     /// the one written since (`end-lines`: an `end` is optional).
     Optional,
+    /// Not a form at all: a convention the language never read, whose
+    /// content the migration moves into syntax (`comment-to-doc`: a comment
+    /// is never documentation, docs/proposals/doc-annotation.md). Comments
+    /// stay the language, so nothing reports one.
+    Convention,
 }
 
 /// One migration, as `petal migrate-old-code --list` shows it.
@@ -197,6 +205,9 @@ pub struct Migration {
     /// Needs the whole batch of files and a module resolver (the CLI runs
     /// it); [`migrate_source`] skips it.
     pub batch: bool,
+    /// Runs only when `--only` names it: a plain `petal migrate-old-code`
+    /// leaves it out ([`MigrateOptions::enabled`]).
+    pub opt_in: bool,
 }
 
 /// Every migration, in the order it runs.
@@ -215,6 +226,7 @@ pub const MIGRATIONS: &[Migration] = &[
         old_form: OldForm::Removed,
         partial: true,
         batch: false,
+        opt_in: false,
     },
     Migration {
         name: HASH_COMMENTS,
@@ -227,6 +239,7 @@ pub const MIGRATIONS: &[Migration] = &[
         old_form: OldForm::Accepted,
         partial: true,
         batch: false,
+        opt_in: false,
     },
     // `else if`: first the old nesting form, which no longer parses (it
     // reads the old form itself), then the old spelling of the chain.
@@ -242,6 +255,7 @@ pub const MIGRATIONS: &[Migration] = &[
         old_form: OldForm::Removed,
         partial: false,
         batch: false,
+        opt_in: false,
     },
     Migration {
         name: ELSIF_TO_ELSE_IF,
@@ -251,6 +265,7 @@ pub const MIGRATIONS: &[Migration] = &[
         old_form: OldForm::Accepted,
         partial: false,
         batch: false,
+        opt_in: false,
     },
     // Then the one whose old form the parser rejects: every later migration
     // needs a parse.
@@ -265,6 +280,7 @@ pub const MIGRATIONS: &[Migration] = &[
         old_form: OldForm::Removed,
         partial: true,
         batch: false,
+        opt_in: false,
     },
     Migration {
         name: EXPORT_TO_PUB,
@@ -274,6 +290,7 @@ pub const MIGRATIONS: &[Migration] = &[
         old_form: OldForm::Accepted,
         partial: false,
         batch: false,
+        opt_in: false,
     },
     Migration {
         name: CONST_DECL_DEPRECATED,
@@ -283,6 +300,7 @@ pub const MIGRATIONS: &[Migration] = &[
         old_form: OldForm::Warns,
         partial: false,
         batch: false,
+        opt_in: false,
     },
     Migration {
         name: CONFIG_LET_DEPRECATED,
@@ -293,6 +311,7 @@ pub const MIGRATIONS: &[Migration] = &[
         old_form: OldForm::Warns,
         partial: false,
         batch: false,
+        opt_in: false,
     },
     Migration {
         name: STATE_KEY_DEPRECATED,
@@ -303,6 +322,26 @@ pub const MIGRATIONS: &[Migration] = &[
         old_form: OldForm::Removed,
         partial: true,
         batch: false,
+        opt_in: false,
+    },
+    // Opt-in: comments that document a declaration or a file by convention
+    // become `@doc` / `@module_doc`. Before `end-lines`, which lays out
+    // whatever it wrote.
+    Migration {
+        name: COMMENT_TO_DOC,
+        summary: "opt-in (`--only comment-to-doc`): the whole-line comment block directly above \
+                  a `pub` declaration (any declaration with `--private`) becomes its \
+                  `@doc(…)`, and a file's opening comment block, followed by a blank line, its \
+                  `@module_doc(…)`; rulers, TODO/NOTE/FIXME and licence blocks, and comments in \
+                  bodies stay comments. `--settings`: a `tunable` let's trailing comment \
+                  becomes its `@doc`",
+        added: "2026-11-15",
+        replaces: "comments as documentation by convention, never read since `@doc` was added \
+                   2026-11-15 (docs/proposals/doc-annotation.md)",
+        old_form: OldForm::Convention,
+        partial: true,
+        batch: false,
+        opt_in: true,
     },
     // Last of the text migrations: it formats the file, and every one
     // before it leaves the layout as written.
@@ -318,6 +357,7 @@ pub const MIGRATIONS: &[Migration] = &[
         old_form: OldForm::Optional,
         partial: false,
         batch: false,
+        opt_in: false,
     },
     Migration {
         name: OLD_IMPORTS,
@@ -329,6 +369,7 @@ pub const MIGRATIONS: &[Migration] = &[
         old_form: OldForm::Removed,
         partial: true,
         batch: true,
+        opt_in: false,
     },
 ];
 
@@ -356,12 +397,25 @@ pub struct MigrateOptions {
     /// (`colour-literals`, `hash-comments`, `elsif-to-else-if`) still run,
     /// and the rest are skipped for it.
     pub fragment: bool,
+    /// `comment-to-doc --private`: every declaration's comment block, not
+    /// only a `pub` one's.
+    pub doc_private: bool,
+    /// `comment-to-doc --settings`: a `tunable` let's trailing comment
+    /// becomes its `@doc`.
+    pub doc_settings: bool,
 }
 
 impl MigrateOptions {
+    /// Whether migration `name` runs: one `--only` names, or every one but
+    /// those `--except` names; an opt-in migration only when `--only` names
+    /// it.
     pub fn enabled(&self, name: &str) -> bool {
-        self.only.as_ref().is_none_or(|only| only.iter().any(|r| r == name))
-            && !self.except.iter().any(|r| r == name)
+        let opt_in = migration(name).is_some_and(|m| m.opt_in);
+        let selected = match &self.only {
+            Some(only) => only.iter().any(|r| r == name),
+            None => !opt_in,
+        };
+        selected && !self.except.iter().any(|r| r == name)
     }
 }
 
@@ -654,6 +708,20 @@ fn run(source: &str, opts: &MigrateOptions, gate: bool, tokens_only: bool) -> Re
         let fixes = state_key::plan_state_key_fixes(&p.text, &lint_opts);
         rewrites += p.apply(STATE_KEY_DEPRECATED, fixes);
     }
+
+    // Comments that document by convention: gated on the parse (the same
+    // program, docs aside) and, where the file compiles, on its IR.
+    let doc_rules = comment_to_doc::DocRules {
+        private: opts.doc_private,
+        settings: opts.doc_settings,
+    };
+    rewrites += step(
+        &mut p,
+        opts,
+        COMMENT_TO_DOC,
+        |text| comment_to_doc::plan_doc_fixes(text, doc_rules),
+        |before, after| if gate { comment_to_doc::check(before, after, &lint_opts) } else { Ok(()) },
+    )?;
 
     let mut ends_on = opts.enabled(END_LINES) && !p.ignores_file(END_LINES);
     let (output, findings) = p.finish();

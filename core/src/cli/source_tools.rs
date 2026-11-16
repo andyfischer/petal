@@ -604,7 +604,8 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
         let width = MIGRATIONS.iter().map(|m| m.name.len()).max().unwrap_or(0);
         for m in MIGRATIONS {
             let partial = if m.partial { " [some sites left for a hand edit]" } else { "" };
-            println!("{:width$}  {}  {}{}", m.name, m.added, m.summary, partial);
+            let opt_in = if m.opt_in { " (opt-in: --only)" } else { "" };
+            println!("{:width$}  {}  {}{}{}", m.name, m.added, m.summary, partial, opt_in);
             println!("{:width$}              replaces {}", "", m.replaces);
         }
         return;
@@ -623,7 +624,12 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
         only: opts.only.clone(),
         except: opts.except.clone(),
         fragment: false,
+        doc_private: opts.private,
+        doc_settings: opts.settings,
     };
+    // `comment-to-doc` writes prose into the source: every file it changes
+    // is shown as a diff, written or not, for the review it needs.
+    let show_diff = opts.only.as_ref().is_some_and(|o| o.iter().any(|m| m == crate::migrate::COMMENT_TO_DOC));
 
     // The text migrations, file by file.
     let passes: Vec<TextPass> = inputs
@@ -775,6 +781,9 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
             continue;
         }
         written += 1;
+        if show_diff {
+            print!("{}", unified_diff(&input.name, &input.source, &output, "migrated"));
+        }
         println!("{}", input.name);
         for f in found.iter().filter(|f| f.fixable) {
             println!("  {}:{}: {}: {}", f.line, f.column, f.rule, f.message);
@@ -792,7 +801,12 @@ pub(super) fn handle_migrate(opts: &super::MigrateArgs, include_dirs: &[PathBuf]
         if files > 0 {
             eprintln!(
                 "{changed} of {files} file(s) need migrating{}",
-                if changed > 0 { " (run `petal migrate-old-code`)" } else { "" }
+                match (changed > 0, show_diff) {
+                    (false, _) => "",
+                    (true, false) => " (run `petal migrate-old-code`)",
+                    // An opt-in run: the same command without `--check`.
+                    (true, true) => " (run it again without --check)",
+                }
             );
             summary.print(true);
         }

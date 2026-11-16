@@ -640,7 +640,7 @@ fn rule_list(value: &str) -> Vec<String> {
 /// like `fmt`.
 fn parse_migrate_args(args: &[String]) -> CliArgs {
     let usage = "Usage: petal migrate-old-code [--check] [--markdown] [--only <migration>[,...]]... \
-                 [--except <migration>[,...]]... [-I <dir>]... [<path>...]  |  \
+                 [--except <migration>[,...]]... [--private] [--settings] [-I <dir>]... [<path>...]  |  \
                  petal migrate-old-code -e <code>  |  petal migrate-old-code --list";
     let mut opts = super::MigrateArgs::default();
     let mut only: Vec<String> = Vec::new();
@@ -679,6 +679,8 @@ fn parse_migrate_args(args: &[String]) -> CliArgs {
             "--check" | "--dry-run" => opts.check = true,
             "--list" => opts.list = true,
             "--markdown" => opts.markdown = true,
+            "--private" => opts.private = true,
+            "--settings" => opts.settings = true,
             _ => return false,
         }
         true
@@ -688,6 +690,19 @@ fn parse_migrate_args(args: &[String]) -> CliArgs {
     opts.inline = p.inline;
     if only_given {
         opts.only = Some(only);
+    }
+    // `comment-to-doc` is opt-in per file or directory: it runs only when
+    // `--only` names it, on the paths given, and its flags need it.
+    let docs = opts.only.as_ref().is_some_and(|o| o.iter().any(|m| m == crate::migrate::COMMENT_TO_DOC));
+    if (opts.private || opts.settings) && !docs {
+        eprintln!("--private and --settings are flags of `--only comment-to-doc`. {usage}");
+        process::exit(1);
+    }
+    if docs && opts.paths.is_empty() && opts.inline.is_none() && !opts.list {
+        eprintln!(
+            "comment-to-doc runs on the files and directories named: give a path (or `-` for stdin). {usage}"
+        );
+        process::exit(1);
     }
     CliArgs {
         command: Command::MigrateOldCode(opts),

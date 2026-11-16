@@ -799,3 +799,47 @@ fn old_imports_does_not_guess_when_other_names_are_unknown() {
     assert_eq!(code, 0, "{out}\n{err}");
     assert_eq!(t.read("window.ptl"), format!("import host_config\n\n{src}"));
 }
+
+/// `comment-to-doc` is opt-in: a plain run leaves the comments, `--only`
+/// must name it with a path, and each file it changes is shown as a diff,
+/// written or not.
+#[test]
+fn comment_to_doc_runs_only_when_named_and_prints_its_diff() {
+    let t = Tree::new("comment-to-doc");
+    let src = "# The helpers.\n\n# Adds one.\npub fn inc(x)\n  x + 1\n\n# Private.\nfn dec(x)\n  x - 1\n\nlet g = tunable(9.8)   # m/s^2\n";
+    t.write("lib/a.ptl", src);
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "."]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert_eq!(t.read("lib/a.ptl"), src);
+
+    let (_, err, code) = petal_in(&t.root, &["migrate-old-code", "--only", "comment-to-doc"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("comment-to-doc runs on the files and directories named"), "{err}");
+    let (_, err, code) = petal_in(&t.root, &["migrate-old-code", "--private", "lib"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("--private and --settings are flags of `--only comment-to-doc`"), "{err}");
+
+    let (out, err, code) = petal_in(&t.root, &["migrate-old-code", "--only", "comment-to-doc", "--check", "lib"]);
+    assert_eq!(code, 1, "{out}\n{err}");
+    assert!(out.contains("+@doc(\"Adds one.\")"), "{out}");
+    assert!(err.contains("(run it again without --check)"), "{err}");
+    assert_eq!(t.read("lib/a.ptl"), src);
+
+    let (out, err, code) =
+        petal_in(&t.root, &["migrate-old-code", "--only", "comment-to-doc", "--private", "--settings", "lib"]);
+    assert_eq!(code, 0, "{out}\n{err}");
+    assert!(out.contains("-# Adds one.\n+@doc(\"Adds one.\")"), "{out}");
+    assert!(err.contains("4 site(s) in 1 file(s)"), "{err}");
+    assert_eq!(
+        t.read("lib/a.ptl"),
+        "@module_doc(\"The helpers.\")\n\n@doc(\"Adds one.\")\npub fn inc(x)\n  x + 1\n\n\
+         @doc(\"Private.\")\nfn dec(x)\n  x - 1\n\n@doc(\"m/s^2\") let g = tunable(9.8)\n"
+    );
+    let (out, err, code) =
+        petal_in(&t.root, &["migrate-old-code", "--only", "comment-to-doc", "--private", "--settings", "--check", "lib"]);
+    assert_eq!(code, 0, "{out}\n{err}");
+
+    let (out, _, _) = petal_in(&t.root, &["migrate-old-code", "--list"]);
+    let line = out.lines().find(|l| l.starts_with("comment-to-doc")).unwrap_or_else(|| panic!("{out}"));
+    assert!(line.contains("(opt-in: --only)"), "{line}");
+}

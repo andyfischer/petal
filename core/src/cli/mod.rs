@@ -344,6 +344,12 @@ pub struct MigrateArgs {
     /// `--markdown`: the inputs are Markdown files (directories are searched
     /// for `.md`), and the migrations run over their `petal` fences.
     pub markdown: bool,
+    /// `--private` (`comment-to-doc`): convert every declaration's comment
+    /// block, not only a `pub` one's.
+    pub private: bool,
+    /// `--settings` (`comment-to-doc`): a `tunable` let's trailing comment
+    /// becomes its `@doc`.
+    pub settings: bool,
 }
 
 /// Every flag `petal lint` accepts.

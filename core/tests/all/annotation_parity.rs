@@ -84,6 +84,13 @@ fn rewrite(src: &str, own_line: bool) -> Option<(String, Vec<Rewritten>)> {
     let mut sites = Vec::new();
     for s in all {
         let (name, value) = binding(s).expect("a binding");
+        // A documented binding's statement starts at its `@doc`, which may
+        // sit on a line of its own: the `@` form written there would move
+        // the binding's reported line. (The fixtures of comment_to_doc.rs
+        // hold such bindings.)
+        if s.doc.is_some() {
+            continue;
+        }
         let ExprKind::Call { function, .. } = &value.kind else { continue };
         let ExprKind::Ident(f) = &function.kind else { continue };
         if !matches!(f.as_str(), "const" | "tunable" | "rigid") || petal::ast::is_annotation_call(value) {

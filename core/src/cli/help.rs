@@ -554,6 +554,8 @@ SYNOPSIS
                               [--only <migration>[,...]]...
                               [--except <migration>[,...]]...
                               [-I <dir>]... [<path>...]
+       petal migrate-old-code --only comment-to-doc [--private]
+                              [--settings] <path>...
        petal migrate-old-code -e <code>
        petal migrate-old-code -
        petal migrate-old-code --list
@@ -632,6 +634,18 @@ DESCRIPTION
               for a hand edit: a keyed loop (for t in xs key t.id do), a
               top-level state var holding a Map, or plain state (kept per
               call path)
+       comment-to-doc
+              opt-in: runs only when --only names it, on the paths given.
+              The whole-line comment block directly above a pub declaration
+              (any top-level declaration with --private) becomes its
+              @doc(...), and a file's opening comment block, followed by a
+              blank line, its @module_doc(...). Section rulers, TODO, NOTE
+              and FIXME blocks, licence and shebang lines, and comments in
+              bodies stay comments; a block that mixes a note with text is
+              reported and left for a hand edit. One line with no braces,
+              quotes or backslashes is a plain string, anything else a raw
+              string. Every file it changes is printed as a diff. The output
+              must compile to IR equivalent to the input's
        end-lines
               indentation closes a block, so the 'end' on a line of its own
               goes. The file is formatted first (as 'petal fmt' does: a file
@@ -685,6 +699,15 @@ OPTIONS
        --except <migration>[,<migration>...]
               Run every migration but the named ones. Repeatable.
 
+       --private
+              comment-to-doc: convert the comments of every top-level
+              declaration, not only the pub ones.
+
+       --settings
+              comment-to-doc: the trailing comment of a tunable let
+              (let g = tunable(9.8)   # m/s^2) becomes its @doc, written
+              before it on its line.
+
        --markdown
               Migrate the ```petal fences of Markdown files: directories are
               searched for .md files instead of .ptl. A .md file named on
@@ -712,6 +735,7 @@ EXAMPLES
        petal migrate-old-code --only const-decl-deprecated,config-let-deprecated game/
        petal migrate-old-code --except end-lines .
        petal migrate-old-code --markdown docs/
+       petal migrate-old-code --only comment-to-doc --check lib/
        petal migrate-old-code -e 'const N = 4'
 
 SEE ALSO

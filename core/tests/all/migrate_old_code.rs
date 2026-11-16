@@ -229,7 +229,9 @@ fn deprecation_warnings(src: &str) -> Vec<String> {
 
 #[test]
 fn every_text_migration_has_a_fixture() {
-    for m in MIGRATIONS.iter().filter(|m| !m.batch) {
+    // An opt-in migration (`comment-to-doc`) is no old form and runs only
+    // when named: it has its own tests (core/tests/all/comment_to_doc.rs).
+    for m in MIGRATIONS.iter().filter(|m| !m.batch && !m.opt_in) {
         assert!(
             FIXTURES.iter().any(|(rule, _, _)| *rule == m.name),
             "no fixture for {}",

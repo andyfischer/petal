@@ -2,7 +2,7 @@
 Lists, records, maps and strings, typed numeric arrays, frozen data, and the
 higher-order functions.
 
-## String offsets
+### String offsets
 
 Every string position counts **characters** (Unicode code points): `len(s)`,
 `s.length`, `slice(s, a, b)`, `s[i]` and `index_of(s, needle)` all use the same
@@ -36,7 +36,7 @@ counted bytes. `char_len` and `char_slice` now do exactly what `len` and `slice`
 do on a string, and remain for existing scripts. `byte_len` and `byte_slice`
 work in bytes of the UTF-8 encoding.
 
-## Higher-order functions
+### Higher-order functions
 
 `map`, `filter`, `reduce`, `forEach`, `sort_by`, `any`, `all` and `find`
 call back into script code. A builtin may itself be the function:
@@ -49,7 +49,7 @@ and has no place in the program to keep a slot at. Reaching a `state` or
 when it can prove it. A loop or `reduce`'s accumulator is the fix
 ([State is not allowed in callbacks](features/inline-state.md#state-is-not-allowed-in-callbacks)).
 
-## Typed numeric arrays
+### Typed numeric arrays
 
 An `f64_array` is a flat array of floats. It is faster than a list for numeric
 inner loops (particle sims, grids, field evaluations) because its elements are

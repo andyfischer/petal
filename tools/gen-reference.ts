@@ -66,6 +66,13 @@ export interface Target {
    * where they go instead.
    */
   moduleOrder?: string[];
+  /**
+   * The info string of the fences around signatures (`petal` when left off).
+   * A signature is not a program; a page whose ```petal blocks are compiled
+   * by test/vitest/doc-snippets.test.ts (one under docs/) tags them
+   * `petal no-check`, so its examples are still checked.
+   */
+  signatureFence?: string;
 }
 
 export const TARGETS: Target[] = [
@@ -86,6 +93,29 @@ export const TARGETS: Target[] = [
         target: `core/packages/${name}`,
         note: `Needs \`import ${name}\`.`,
       })),
+    ],
+    signatureFence: "petal no-check",
+    // Everyday language first, then the domain packages, then the machinery
+    // behind direct manipulation and hypothetical calls.
+    moduleOrder: [
+      "core/basics",
+      "core/math",
+      "noise",
+      "color",
+      "vec2",
+      "core/format",
+      "core/collections",
+      "std",
+      "core/classes",
+      "json",
+      "io",
+      "core/pending",
+      "core/handle",
+      "core/dm",
+      "core/speculate",
+      "autodiff",
+      "core/introspect",
+      "core/drag_math",
     ],
   },
   {
@@ -450,7 +480,7 @@ export function renderTarget(target: Target, reports: DocReport[]): string {
       if (g.doc) out.push(g.doc, "");
       for (const { item, file, from } of g.items) {
         out.push(`${g.name !== null ? "####" : "###"} \`${item.name}\``, "");
-        renderItem(item, link, out);
+        renderItem(item, link, out, target.signatureFence ?? "petal");
         out.push(
           `*Source: ${sourceLink(target.out, file, item.line)}${from ? ` (re-exported from \`${from}\`)` : ""}*`,
           "",
@@ -461,7 +491,7 @@ export function renderTarget(target: Target, reports: DocReport[]): string {
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 }
 
-function renderItem(item: DocItem, link: Linker, out: string[]) {
+function renderItem(item: DocItem, link: Linker, out: string[], fence = "petal") {
   const forms = item.forms ?? [];
   const documentedForms = forms.filter((f) => f.doc !== null);
   if (documentedForms.length > 1) {
@@ -469,7 +499,7 @@ function renderItem(item: DocItem, link: Linker, out: string[]) {
     // with the one before it.
     let block: string[] = [];
     const flush = (doc: Doc | null) => {
-      out.push("```petal", ...block, "```", "");
+      out.push("```" + fence, ...block, "```", "");
       if (doc) renderDocFields(doc, item, link, out);
       block = [];
     };
@@ -482,7 +512,7 @@ function renderItem(item: DocItem, link: Linker, out: string[]) {
     flush(pending);
     return;
   }
-  out.push("```petal", ...signatures(item), "```", "");
+  out.push("```" + fence, ...signatures(item), "```", "");
   if (item.doc) renderDocFields(item.doc, item, link, out);
   else out.push("*Undocumented.*", "");
 }

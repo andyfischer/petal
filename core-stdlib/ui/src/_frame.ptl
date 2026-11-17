@@ -349,8 +349,11 @@ says what the pointer did to it. Every widget is built on it.
 
 Of overlapping rects only the one in front has the pointer: the highest
 layer, then the rect registered last on it (drawn on top). So a button drawn
-over a list row takes its click alone. The clip in force counts too: a row
-scrolled half out of its list is not hot over the clipped part.
+over a list row takes its click alone, and the row takes clicks on the rest
+of it. Only the owner is hot, is `down` for a press, and gets the `click`. A
+rect that was not registered last frame (new, or moved) is answered by the
+pointer and the layers alone until it is. The clip in force counts too: a
+row scrolled half out of its list is not hot over the clipped part.
 
 What is above a rect is answered from the rects registered *last frame* and
 the rects already found hot *this frame*. A covered widget is inert from the
@@ -362,10 +365,12 @@ because by the release the cover is a frame old, so use `click` for
 anything that must not fire through a panel.
 
 A click belongs to what was pressed: on the release, only rects that were
-registered under the press point when the button went down get `click`
-(matched by layer and rect, or by `id`, so a button whose rect moves while
-held keeps its click if it has an id). A row of a panel the click itself
-opened gets `released` but not `click`.
+registered under the press point when the button went down (last frame's,
+plus anything the press frame itself registered) get `click` (matched by
+layer and rect, or by `id`, so a button whose rect moves while held keeps
+its click if it has an id). A row of a panel the click itself opened, or a
+widget that *appears* between the press and the release, gets `released`
+but not `click`. `down` still follows the press point alone.
 """,
   params: {
     r: "The rect.",

@@ -10,7 +10,29 @@ and the rect and nothing else; the layered ones (`interact`, `ui_hot`,
 about modal dialogs and about clipping. Every registered rect can carry an
 id, which a script, a test or an agent can look up (`ui_target_rect`)
 instead of re-deriving a layout.
-""", see: ["ui", "interact", "ui_layer"])
+""",
+  see: ["ui", "interact", "ui_layer"],
+  extra: {groups: [
+    {name: "Layers and hit testing", items: ["ui_layer", "with_layer", "ui_overlay", "ui_modal", "interact", "ui_hot", "ui_block", "pointer_captured", "UI_LAYER_BASE", "UI_LAYER_POPUP", "UI_LAYER_MODAL", "UI_LAYER_TOOLTIP"], doc: """
+The layers the built-in widgets use are 0, 1000, 2000 and 3000
+(`UI_LAYER_BASE`, `UI_LAYER_POPUP`, `UI_LAYER_MODAL`, `UI_LAYER_TOOLTIP`);
+an app's panels go in between. `interact` says how the pointer's one owner
+is chosen, the one-frame gap, and why a click belongs to what was pressed.
+"""},
+    {name: "Named targets", items: ["ui_target", "ui_target_rect"], doc: """
+`interact(r, id)`, `ui_hot(r, id)` and `ui_block(r, id)` register `r` under
+`id` (a string or an int), and the built-in widgets register themselves
+(see `ui_target_rect`). A host reads the same registry: see "The target
+registry" in host-contract.md.
+"""},
+    {name: "Flow layout", items: ["flow_begin", "flow_next", "flow_space", "flow_rest", "flow_used", "flow_end"]},
+    {name: "Measuring", items: ["ui_measure", "ui_measuring"]},
+    {name: "Retained drawing", items: ["cached_layer"], doc: """
+A frame's commands live one frame. For something that changes rarely and
+costs a lot to say, say it once: `cached_layer` keeps what its body drew,
+and `draw_rects` (`ui/draw`) is one command for many rects.
+"""},
+  ]})
 
 # petal-ui hit testing — module `ui/hit`
 #

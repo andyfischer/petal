@@ -37,7 +37,19 @@ immediate-mode code that calls widgets with their own state.
 The guide, with worked examples and the mistakes to avoid, is
 core-stdlib/ui/docs/drag.md; the design is
 docs/proposals/declarative-dragging.md.
-""", see: ["ui", "drag_session", "place", "draggable"])
+""",
+  see: ["ui", "drag_session", "place", "draggable"],
+  extra: {groups: [
+    {name: "Placing and dragging", items: ["place", "draggable", "drag_session", "place_origin", "is_dragging", "drag_key"]},
+    {name: "Specs", items: ["fixed_state", "closest", "floating", "snap_radius", "when_far", "drop_target", "on_drop", "switch_to", "between", "vary"], doc: """
+A spec says which model states a drag can reach and how the element
+behaves on the way. A bare model state where a spec goes means
+`fixed_state(state)`.
+"""},
+    {name: "Candidate states", items: ["moves", "moves_nested", "tree_moves", "choices"]},
+    {name: "Debugging", items: ["drag_explain", "drag_debug"]},
+    {name: "Constants", items: ["UI_LAYER_DRAG", "DRAG_SLOP", "PLACE_RATE", "DRAG_DROPS_CHANNEL"]},
+  ]})
 
 # petal-ui drag — module `ui/drag`: declarative dragging (D2, after the
 # Drag2 design). `place` records into the speculation's `places`.

@@ -6,7 +6,13 @@ Layout is rects in, rects out, with no constraint solver: slice a strip off
 one edge (`cut_top`), split in two (`split_h`), inset (`pad`), or
 distribute (`row`, `hstack`). Nothing here draws. Motion is deterministic
 under the headless harness, where `time` and `dt` are fixed.
-""", see: ["ui", "ui.flow_begin"])
+""",
+  see: ["ui", "ui.flow_begin"],
+  extra: {groups: [
+    {name: "Cutting and stacking rects", items: ["cut_left", "cut_right", "cut_top", "cut_bottom", "split_h", "split_v", "pad", "hstack", "vstack", "row", "col"]},
+    {name: "Motion", items: ["approach", "ease_out", "ease_in_out"]},
+    {name: "Word wrap by pixels", items: ["wrap_px"]},
+  ]})
 
 # petal-ui layout — module `ui/layout`
 

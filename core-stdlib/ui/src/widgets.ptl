@@ -21,7 +21,36 @@ key the loop (`for item in items key item.id do`) so each widget's state
 stays with its item.
 """,
   deprecated: "bloom owns the widgets: `import bloom` (core-stdlib/bloom/docs/components.md).",
-  see: ["ui/interaction", "ui"])
+  see: ["ui/interaction", "ui"],
+  extra: {groups: [
+    {name: "Buttons and controls", items: ["button", "checkbox", "toggle", "radio_group", "slider", "tab_bar", "splitter_state", "splitter"]},
+    {name: "Feedback", items: ["progress_bar", "spinner", "spinner_glyph", "tooltip", "badge", "pill", "card", "empty_state", "hint", "hint_bar", "section_label"]},
+    {name: "Lists, scrolling and tables", items: ["draw_scrollbar", "table_state", "table", "table_col_rects"], doc: """
+The list and scroll state that draws nothing (`list_state`, `list_update`,
+`scroll_update`, `scroll_keys`) is `ui/interaction`.
+"""},
+    {name: "Text entry", items: ["text_field", "draw_text_field", "text_area", "draw_text_area"], doc: """
+The fields read the runtime's keyboard focus (`ui/interaction`), so an app
+keeps no focus record of its own. `text_area` is `text_field` for text with
+line breaks, and shares its editing: the same selection by click,
+shift+click, drag, double click (a word) and triple click (everything), the
+same clipboard and undo (a run of typing undoes a word at a time), and the
+same focus rules.
+"""},
+    {name: "Inspector fields", items: ["commit_field", "number_field", "color_field", "swatches", "stepper", "segmented", "dropdown"], doc: """
+The controls of a property panel. The keyboard ones take the keyboard from
+the runtime and apply only when an edit is done: Return, or the field
+losing the keyboard. Escape abandons the edit.
+"""},
+    {name: "Menus", items: ["menu_state", "menu_item", "menu_sep", "menu_show", "menu_open_on_right_click", "menu_close", "context_menu", "menu_rect", "menu_metrics", "popover"], doc: """
+A context menu's open state is a record you keep (`menu_state`); a
+popover's is the runtime's, by id (`popover_open`). The rules they share
+(one open at a time, closed before the frame runs) are under "Popovers and
+menus" in `ui/interaction`.
+"""},
+    {name: "Dialogs", items: ["modal_state", "modal_open", "modal_close", "modal", "modal_blocking", "modal_rect", "modal_update", "draw_modal_backdrop", "draw_modal"]},
+    {name: "The load view", items: ["draw_load"]},
+  ]})
 
 # petal-ui widgets — module `ui/widgets` (deprecated)
 #

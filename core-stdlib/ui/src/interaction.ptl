@@ -5,8 +5,16 @@ drop, the async load state and colour text. `ui` re-exports every name here.
 The drawn widgets are bloom's (core-stdlib/bloom); the ones still in
 `ui/widgets` are deprecated.
 
-**Focus.** At most one widget id has the keyboard, and the runtime decides
-who once per frame, before the script runs. A press on a rect that declared
+**State records.** A widget with state that outlives a frame takes and
+returns a plain record you keep in `state` (`list_state()`,
+`drag_state()`, `load_state()`), so several instances coexist because you
+hold their state.
+""",
+  see: ["ui", "ui/widgets", "ui.interact"],
+  extra: {groups: [
+    {name: "Focus and shortcuts", items: ["has_focus", "focus_owner", "focus_request", "focus_next", "focus_prev", "focus_update", "shortcut"], doc: """
+At most one widget id has the keyboard, and the runtime decides who once
+per frame, before the script runs. A press on a rect that declared
 `{text: true}` or `{focus: true}` (see `interact`; every text field does)
 gives it the keyboard on that same frame. A press anywhere else takes it
 away, unless it lands on a higher layer than the focused widget, as a menu
@@ -18,12 +26,33 @@ listed in `keys`. So `shortcut("v")` and `shortcut("escape")` are quiet
 while the user types, and `shortcut("cmd+s")` still fires. The fields read
 this focus, so an app keeps no focus record of its own. An id is a string
 or an int.
-
-**State records.** A widget with state that outlives a frame takes and
-returns a plain record you keep in `state` (`list_state()`,
-`drag_state()`, `load_state()`), so several instances coexist because you
-hold their state.
-""", see: ["ui", "ui/widgets", "ui.interact"])
+"""},
+    {name: "Lists and scrolling", items: ["list_state", "list_update", "list_row_rect", "ensure_visible", "ensure_visible_px", "scroll_update", "scroll_keys"]},
+    {name: "Text editing", items: ["text_field_update", "text_area_update", "text_area_height"], doc: """
+The logic of `text_field` and `text_area` with no pixels of their own, for
+a field with its own chrome. A press inside a field focuses it. A press
+anywhere else takes the keyboard away, unless something on a higher layer
+took the press (a popup opened from the field), so a click on the rest of
+the UI ends the edit without wiring up Escape.
+"""},
+    {name: "Popovers and menus", items: ["popover_open", "popover_close", "popover_shown", "popover_owner"], doc: """
+At most one menu or popover is open: opening one closes the others. The
+runtime closes the open one before the frame runs, on Escape or a press
+outside it, and that press reaches nothing underneath. So the press that
+opened a menu can't close it, and a menu shown every frame still works.
+While one is open, `shortcut(chord)` is quiet, and an Escape that closed it
+is not also the app's. `shortcut(chord, id)` answers for the open popover.
+Widgets need no guard of their own while it is open. Code that reads the
+mouse itself (`mouse_pressed` and `point_in`) still stands down while
+`menu.open`.
+"""},
+    {name: "Drag and drop", items: ["drag_state", "drag_update", "dragging", "drag_cancel", "insertion_index", "insertion_index_x"], doc: """
+For drags that snap, reorder or re-parent, with the animation done for you,
+see `ui/drag`.
+"""},
+    {name: "Async loads", items: ["load_state", "load_begin", "load_ok", "load_fail", "load_poll", "load_loading", "load_ready", "load_failed"]},
+    {name: "Colour text", items: ["color_to_hex", "color_from_hex", "same_color"]},
+  ]})
 
 # petal-ui interaction — module `ui/interaction`
 
@@ -688,8 +717,8 @@ fn _area_caret(rows, ts, at, lh)
 `text_field_update` for text with line breaks (captions, notes, a chat
 message), with no pixels of its own. The text wraps to the box
 (`text_wrap_rows`); Return inserts a line break, so there is no
-`submitted`; a paste keeps its line breaks. Everything else is the field's:
-focus, selection, the clipboard and undo.
+`submitted`; a paste keeps its line breaks (a CR of a CRLF is dropped).
+Everything else is the field's: focus, selection, the clipboard and undo.
 
 | Input | Does |
 |---|---|

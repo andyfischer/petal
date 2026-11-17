@@ -9,7 +9,14 @@ measuring calls take a text style record (see `draw_text`) or a bare pixel
 size; pass the style you will draw with, so what is measured is what is
 drawn. **Rotated text is not available**: no host can rotate a text run.
 `draw_text_along` and `draw_axis_labels` are the workarounds.
-""", see: ["ui", "ui.draw_text", "ui.text_width"])
+""",
+  see: ["ui", "ui.draw_text", "ui.text_width"],
+  extra: {groups: [
+    {name: "Aligned and laid-out text", items: ["draw_text_center", "draw_text_right", "draw_text_along", "draw_axis_labels", "draw_axis_labels_y"]},
+    {name: "Fitting text", items: ["ellipsize", "ellipsize_tail", "truncate_head", "truncate_tail", "wrap", "preview", "fit_parts", "fit_parts_n"]},
+    {name: "Carets and selections", items: ["text_wrap_rows", "text_row_of", "text_range_rects"]},
+    {name: "The clipboard", items: ["clipboard_get", "clipboard_set"]},
+  ]})
 
 # petal-ui text — module `ui/text`
 

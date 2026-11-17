@@ -37,15 +37,16 @@ layout and retained drawing), `ui/text`, `ui/layout`, `ui/interaction` and
 them now. `ui/drag`, declarative dragging, is not re-exported: a script that
 drags writes `import ui/drag`.
 
-Guides beside this reference: drawing.md (the draw primitives in depth),
-drag.md (declarative dragging) and host-contract.md (what a host has to do),
-in core-stdlib/ui/docs. Two apps to read:
+Guides beside this reference, in core-stdlib/ui/docs: widgets.md (the
+reasoning behind a widget, worked examples and the theme tokens), drawing.md
+(the draw primitives in depth), drag.md (declarative dragging) and
+host-contract.md (what a host has to do to draw any of this). Two apps to read:
 `garden/examples/panels/gallery.ptl` uses every widget, and
 `examples/ui/layers` is a HUD over a "world" (layers, `pointer_captured`, a
 modal, `cached_layer` with `draw_rects`, flow layout and `ui_measure`). To
 test a UI with no window, `petal_ui_headless::harness::Headless` runs a
 script headless, and `petal-ui-run` does the same from the command line.
-""", see: ["ui/input", "ui/draw", "ui/hit", "ui/text", "ui/layout", "ui/interaction", "ui/widgets", "ui/drag"])
+""", see: ["ui/input", "ui/hit", "ui/draw", "ui/text", "ui/layout", "ui/interaction", "ui/widgets", "ui/drag"])
 
 # petal-ui prelude — module `ui`
 #

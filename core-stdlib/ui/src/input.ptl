@@ -8,7 +8,20 @@ name here, so a script that writes `import ui` has them all. A host that
 registers only this half (a console with its own video, say) has its
 scripts write `import ui/input`, and loading them needs none of the draw
 natives.
-""", see: ["ui"])
+""",
+  see: ["ui"],
+  extra: {groups: [
+    {name: "The pointer", items: ["mouse_x", "mouse_y", "mouse_dx", "mouse_dy", "mouse_down", "mouse_pressed", "mouse_released", "click_count", "drag_active", "drag_start_x", "drag_start_y", "scroll_x", "scroll_y", "hovered", "grab_mouse", "release_mouse"], doc: """
+Button 0 is the left mouse button. Positions are in logical pixels.
+"""},
+    {name: "The keyboard", items: ["key_down", "key_pressed", "key_released", "mod_shift", "mod_ctrl", "mod_alt", "mod_cmd", "text_input"], doc: """
+Key names are lower case and name the key, not what it types; `key_down`
+lists them. For an app's commands, `shortcut` (`ui/interaction`) is usually
+better than `key_pressed`: it stays quiet while a text field has the
+keyboard.
+"""},
+    {name: "Time and the frame", items: ["dt", "time", "frame_count", "screen_width", "screen_height", "ui_version", "ui_debug"]},
+  ]})
 
 # petal-ui input — module `ui/input`
 #

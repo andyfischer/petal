@@ -94,6 +94,10 @@ export const TARGETS: Target[] = [
     title: "`ui` reference",
     intro: "Every public function of the `ui` package, by module.",
     sources: [{ target: "core-stdlib/ui" }],
+    // The order a script meets them: input, the pointer and layers, drawing
+    // and text, layout; then the widget logic, the deprecated widgets, and
+    // `ui/drag`, which takes its own import.
+    moduleOrder: ["ui/input", "ui/hit", "ui/draw", "ui/text", "ui/layout", "ui/interaction", "ui/widgets", "ui/drag"],
   },
   {
     id: "bloom",
@@ -297,6 +301,55 @@ function sourceLink(outPath: string, file: string, line?: number): string {
   return `[\`${file}${line ? `:${line}` : ""}\`](${rel}${line ? `#L${line}` : ""})`;
 }
 
+/**
+ * The groups a module doc names in `extra.groups`, a list of
+ * `{name, items, doc?}`: subheadings for a long module, each with an
+ * optional intro (Markdown, any common indent removed).
+ */
+export function docGroups(doc: Doc | null): Array<{ name: string; items: string[]; doc: string | null }> {
+  const raw = doc?.extra?.groups;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((g): g is Record<string, unknown> => !!g && typeof g === "object" && typeof (g as any).name === "string")
+    .map((g) => ({
+      name: g.name as string,
+      items: Array.isArray(g.items) ? g.items.filter((n): n is string => typeof n === "string") : [],
+      doc: typeof g.doc === "string" && g.doc.trim() ? dedent(g.doc) : null,
+    }));
+}
+
+function dedent(text: string): string {
+  const lines = text.replace(/^\s*\n/, "").trimEnd().split("\n");
+  const indent = Math.min(...lines.filter((l) => l.trim()).map((l) => l.match(/^ */)![0].length));
+  return lines.map((l) => l.slice(indent)).join("\n");
+}
+
+type Entry = Section["items"][number];
+
+/**
+ * A section's items under the groups its module doc names, in the groups'
+ * order; items no group names follow under "Other". `null` when the module
+ * names no groups (the items stay flat, in source order).
+ */
+export function groupSection(s: Section): Array<{ name: string; doc: string | null; items: Entry[] }> | null {
+  const groups = docGroups(s.doc);
+  if (!groups.length) return null;
+  const byName = new Map(s.items.map((e) => [e.item.name, e]));
+  const placed = new Set<string>();
+  const out = groups.map((g) => {
+    const items: Entry[] = [];
+    for (const n of g.items) {
+      const e = byName.get(n);
+      if (!e) process.stderr.write(`gen-reference: ${s.name}: group "${g.name}" names ${n}, which the section does not list\n`);
+      else if (!placed.has(n)) (placed.add(n), items.push(e));
+    }
+    return { name: g.name, doc: g.doc, items };
+  });
+  const rest = s.items.filter((e) => !placed.has(e.item.name));
+  if (rest.length) out.push({ name: "Other", doc: null, items: rest });
+  return out.filter((g) => g.items.length);
+}
+
 /** `sections` in `order` (see `Target.moduleOrder`); the sort is stable. */
 export function orderSections<S extends { name: string }>(sections: S[], order?: string[]): S[] {
   if (!order?.length) return sections;
@@ -322,12 +375,18 @@ export function renderTarget(target: Target, reports: DocReport[]): string {
   anchors.take("Contents");
   const sectionAnchor = new Map<Section, string>();
   const itemAnchor = new Map<string, string>(); // "module::name" and bare "name"
+  // A section whose module doc names groups lists its items under them.
+  const grouped = new Map(sections.map((s) => [s, groupSection(s)]));
+  const groupAnchor = new Map<string, string>(); // "module::group"
   for (const s of sections) {
     sectionAnchor.set(s, anchors.take(`\`${s.name}\``));
-    for (const { item } of s.items) {
-      const a = anchors.take(`\`${item.name}\``);
-      itemAnchor.set(`${s.name}::${item.name}`, a);
-      if (!itemAnchor.has(item.name)) itemAnchor.set(item.name, a);
+    for (const g of grouped.get(s) ?? [{ name: null, items: s.items }]) {
+      if (g.name !== null) groupAnchor.set(`${s.name}::${g.name}`, anchors.take(g.name));
+      for (const { item } of g.items) {
+        const a = anchors.take(`\`${item.name}\``);
+        itemAnchor.set(`${s.name}::${item.name}`, a);
+        if (!itemAnchor.has(item.name)) itemAnchor.set(item.name, a);
+      }
     }
   }
   const sectionByName = new Map(sections.map((s) => [s.name, s]));
@@ -366,6 +425,7 @@ export function renderTarget(target: Target, reports: DocReport[]): string {
   for (const s of sections) {
     const summary = s.doc?.summary ?? (s.items.length ? `${s.items.length} item${s.items.length === 1 ? "" : "s"}` : "");
     out.push(`- [\`${s.name}\`](#${sectionAnchor.get(s)})${summary ? `: ${summary}` : ""}`);
+    for (const g of grouped.get(s) ?? []) out.push(`  - [${g.name}](#${groupAnchor.get(`${s.name}::${g.name}`)})`);
   }
   out.push("");
 
@@ -374,21 +434,28 @@ export function renderTarget(target: Target, reports: DocReport[]): string {
     if (s.note) out.push(`*${s.note}*`, "");
     if (s.doc && !s.pageRoot) renderDocFields(s.doc, null, link, out);
     out.push(`Source: ${sourceLink(target.out, s.file)}`, "");
-    if (s.items.length > 1) {
-      out.push(
-        s.items
-          .map(({ item }) => `[\`${item.name}\`](#${itemAnchor.get(`${s.name}::${item.name}`)})`)
-          .join(" · "),
-        "",
-      );
+    const itemLinks = (entries: Entry[]) =>
+      entries.map(({ item }) => `[\`${item.name}\`](#${itemAnchor.get(`${s.name}::${item.name}`)})`).join(" · ");
+    const groups = grouped.get(s);
+    if (groups) {
+      for (const g of groups) {
+        out.push(`- **[${g.name}](#${groupAnchor.get(`${s.name}::${g.name}`)}):** ${itemLinks(g.items)}`);
+      }
+      out.push("");
+    } else if (s.items.length > 1) {
+      out.push(itemLinks(s.items), "");
     }
-    for (const { item, file, from } of s.items) {
-      out.push(`### \`${item.name}\``, "");
-      renderItem(item, link, out);
-      out.push(
-        `*Source: ${sourceLink(target.out, file, item.line)}${from ? ` (re-exported from \`${from}\`)` : ""}*`,
-        "",
-      );
+    for (const g of groups ?? [{ name: null, doc: null, items: s.items }]) {
+      if (g.name !== null) out.push(`### ${g.name}`, "");
+      if (g.doc) out.push(g.doc, "");
+      for (const { item, file, from } of g.items) {
+        out.push(`${g.name !== null ? "####" : "###"} \`${item.name}\``, "");
+        renderItem(item, link, out);
+        out.push(
+          `*Source: ${sourceLink(target.out, file, item.line)}${from ? ` (re-exported from \`${from}\`)` : ""}*`,
+          "",
+        );
+      }
     }
   }
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
@@ -439,6 +506,7 @@ function docTexts(doc: Doc | null): string[] {
     doc.returns ?? "",
     ...doc.example,
     doc.deprecated ?? "",
+    ...docGroups(doc).map((g) => g.doc ?? ""),
   ];
 }
 

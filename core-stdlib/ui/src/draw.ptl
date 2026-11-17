@@ -22,7 +22,30 @@ snaps the rect family (rects, outlines, rect gradients, shadows, images,
 canvases, text positions) so that touching rects meet without a seam; see
 `pixel_snap`. drawing.md (core-stdlib/ui/docs) covers the primitives in
 depth.
-""", see: ["ui", "pixel_snap"])
+""",
+  see: ["ui", "pixel_snap"],
+  extra: {groups: [
+    {name: "Shapes", items: ["clear", "draw_rect", "draw_rect_rounded", "draw_rect_outline", "draw_rect_rounded_outline", "draw_rects", "draw_line", "draw_polyline", "draw_polygon_outline", "draw_circle", "draw_circle_outline", "draw_ellipse", "draw_ellipse_outline", "fill_arc", "fill_triangle", "fill_poly", "fill_polygon", "fill_fan", "pixel_snap"]},
+    {name: "Gradients, shadows and effects", items: ["draw_rect_gradient", "draw_rect_gradient_rounded", "draw_circle_gradient", "linear_gradient", "GRAD_RIGHT", "GRAD_DOWN", "GRAD_LEFT", "GRAD_UP", "draw_shadow", "elevation", "draw_elevation", "draw_focus_ring", "draw_scroll_shadow", "draw_scrim", "draw_fade", "draw_area_fill"]},
+    {name: "Images", items: ["draw_image", "image_load", "image_size"]},
+    {name: "Clipping", items: ["clip_push", "clip_pop", "clip", "clip_none", "clip_rect"], doc: """
+Use `clip_push` and `clip_pop` in anything reusable: they clip inside the
+clip already in force. `clip` and `clip_none` replace it.
+"""},
+    {name: "Offscreen layers", items: ["layer", "canvas", "create_canvas", "draw_to", "draw_to_screen", "draw_canvas", "snapshot", "snapshot_to", "blur_canvas", "draw_backdrop_blur", "draw_material"]},
+    {name: "Drawing and measuring text", items: ["draw_text", "text_width", "text_advance", "text_metrics", "text_wrap", "text_ellipsize", "text_index_at"], doc: """
+A text style is a record (see `draw_text` for its fields). Measure with the
+record you draw with. `ui/text` has the helpers built on these: alignment,
+truncation, wrapping, text on a path and carets.
+"""},
+    {name: "Font objects", items: ["font", "font_size", "font_weight", "font_bold", "font_italic", "font_spacing", "font_color", "fonts"], doc: """
+Font objects build a text style from a face: `font(name)` is a style
+record, and each `font_*` returns a copy with one thing changed.
+"""},
+    {name: "Colour", items: ["mix", "lerp_color", "luma", "contrast_text", "over", "tint", "hairline", "alpha_pct"]},
+    {name: "The theme", items: ["theme", "ui_theme", "theme_set", "theme_reset", "theme_from_palette"]},
+    {name: "Geometry, time and the host", items: ["rect", "point_in", "clicked", "elapsed", "host_data"]},
+  ]})
 
 # petal-ui draw — module `ui/draw`
 #

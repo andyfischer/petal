@@ -111,6 +111,24 @@ describe("gen-reference", () => {
     expect(ordered.indexOf("## `doc_pkg/shapes`")).toBeLessThan(ordered.indexOf("## `doc_pkg`\n"));
   });
 
+  it("lists a module's items under the groups its doc names in extra.groups", () => {
+    // The shapes module, as if its @module_doc said
+    // `extra: {groups: [{name: "Drawing", items: ["outline", "grow"], doc: "..."}]}`.
+    const withGroups = structuredClone(reports);
+    const shapes = withGroups[0].modules.find((m) => m.name === "doc_pkg/shapes")!;
+    shapes.doc!.extra = {
+      groups: [{ name: "Drawing", items: ["outline", "grow"], doc: "\n  Boxes, drawn.\n" }],
+    };
+    const grouped = renderTarget(fixture, withGroups);
+    expect(grouped).toContain("  - [Drawing](#drawing)\n  - [Other](#other)");
+    expect(grouped).toContain("- **[Drawing](#drawing):** [`outline`](#outline) · [`grow`](#grow)\n");
+    expect(grouped).toMatch(/### Drawing\n\nBoxes, drawn\.\n\n#### `outline`[\s\S]*#### `grow`[\s\S]*### Other\n\n#### `Box`/);
+    // Ungrouped modules keep their flat list.
+    expect(grouped).toContain("### `scale`");
+    // A group's intro counts as carried over.
+    expect(coverage("Boxes, drawn.", withGroups).missing).toEqual([]);
+  });
+
   it("slugs headings the way GitHub does", () => {
     expect(slug("`ui/draw`")).toBe("uidraw");
     expect(slug("`Box.area`")).toBe("boxarea");

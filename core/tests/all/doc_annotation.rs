@@ -281,6 +281,13 @@ fn misused_docs_are_parse_errors() {
     err("@doc(hidden: \"yes\") fn f()\n  1\nend\n", "`hidden:` is `true` or `false`");
     err("@doc(extra: [1]) fn f()\n  1\nend\n", "`extra:` is a record of fields");
     err("@doc(example: 3) fn f()\n  1\nend\n", "`example:` is a string, or a list of strings");
+    // A doc with nothing in it, with or without its parentheses.
+    err("@doc() fn f()\n  1\nend\n", "`@doc` with nothing in it documents nothing");
+    err("@doc\nlet y = 2\n", "`@doc` with nothing in it documents nothing");
+    err("@module_doc()\nfn f()\n  1\nend\n", "`@module_doc` with nothing in it documents nothing: give it the text, `@module_doc(\"What this module is for.\")`");
+    // A doc of fields alone is not empty.
+    let (stmts, _) = parse("@doc(see: [\"g\"]) fn f()\n  1\nend\n");
+    assert_eq!(doc_of(&stmts[0]).see, ["g"]);
 }
 
 #[test]

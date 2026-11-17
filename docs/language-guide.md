@@ -338,7 +338,9 @@ print(limit(9, 0, 5), GRAVITY)
 
   `@module_doc` takes the body, `see`, `deprecated`, `hidden` and `extra`.
   Any other field is an error with a suggestion (`param:` → `params:`), or
-  the hint to put a tool's own field in `extra: {…}`.
+  the hint to put a tool's own field in `extra: {…}`. A doc with nothing in
+  it (`@doc()`, or `@doc` with no parentheses) is an error too: give it the
+  text or remove it.
 - Every argument is a **literal**: a string, a number, `true`/`false`,
   `nil`, or a list or record of them, so a tool can read the docs without
   running anything. A `"…"` string with a `{…}` interpolation is an error,

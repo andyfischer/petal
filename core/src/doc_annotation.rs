@@ -30,6 +30,9 @@ pub type DocError = (SourceSpan, String);
 pub(crate) fn doc_from_annotation(ann: &Annotation, span: SourceSpan) -> Result<Doc, DocError> {
     let module = ann.name == MODULE_DOC_ANNOTATION;
     let at = format!("`@{}`", ann.name);
+    if ann.args.is_empty() {
+        return Err((span, empty_doc(&at, module)));
+    }
     let mut doc = Doc::empty(span);
     let mut seen: Vec<&str> = Vec::new();
     for (i, arg) in ann.args.iter().enumerate() {
@@ -103,6 +106,17 @@ pub(crate) fn doc_from_annotation(ann: &Annotation, span: SourceSpan) -> Result<
         }
     }
     Ok(doc)
+}
+
+/// The message for a `@doc` / `@module_doc` written with nothing to say
+/// (`@doc()`, or `@doc` with no parentheses): it would document nothing.
+fn empty_doc(at: &str, module: bool) -> String {
+    let example = if module {
+        "`@module_doc(\"What this module is for.\")`"
+    } else {
+        "`@doc(\"What it is.\")`"
+    };
+    format!("{at} with nothing in it documents nothing: give it the text, {example}, or remove it")
 }
 
 /// The message for a field `name` that `@doc`/`@module_doc` does not take.

@@ -12,6 +12,25 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **Declarations, writes, rebinds and loop headers have source spans.** In
+  the IR, `StateInit` (`state`, `state var`, `memo`), `CellNew` (`var`),
+  `StateWrite`, `CellWrite` and the `Copy` an assignment rebinds now cover
+  the whole statement; `ForLoop`, `NumericForLoop`, `WhileLoop` and the loop
+  variable cover the header through `do`; a function's `MakeClosure` covers
+  its declaration even when the name joins an imported overload set. Tools
+  that place terms by span (`explain`, provenance, Garden's panels) see
+  these terms, and a runtime error's "Caused by:" list can name more of
+  them.
+- **`petal show-ir --json --user-only` holds only the entry file's terms,
+  with readable floats.** An imported module's top-level terms (with
+  `import ui`: `ui/...` cells, `_focus_now`, hoisted-function `Constant(nil)`
+  seeds) no longer leak into the view, now that they carry their module's
+  file. A float constant in this view reads `{"Float": 1.7}` (`"NaN"`,
+  `"inf"`, `"-inf"` for the values JSON cannot hold) instead of its bit
+  pattern; the interchange `Program` JSON is unchanged. A script that
+  decoded the bits from the user-only view reads the number directly.
+- **`petal lint --json` and `check --json` diagnostics carry `end_line` and
+  `end_column`** (additive).
 - **`import ./../lib/x` suggests `../lib/x`, and `petal fix-imports`
   rewrites it.** A `.` or `..` past the start of a relative import path is
   still rejected, but the error now ends "did you mean `../lib/x`?" (the path
@@ -624,6 +643,32 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
     `petal migrate-old-code` from working.
 
 ### Added
+
+- **A `natives` table for the dataflow view.** `petal show-ir --json
+  --user-only` has a new top-level `natives` key, and petal-web-canvas's
+  `dataflow_ir(source)` returns `{ok, ir, natives, diagnostics}`. `natives`
+  lists every native the entry file reaches (directly, as a value, or
+  through a module or prelude function), by name, with its `NativeEffects`
+  row as JSON: `kind`, `reads` (`pointer`, `clock`, `viewport` …), `emits`,
+  `effect`, `constant` and the other flags, plus `direct` and `registered`.
+  A visualizer classifies host inputs, outputs and pure calls from it
+  instead of a hand-kept list. New in core: `NativeEffects::to_json`,
+  `Env::native_effects_of_name`, `ir_display::natives_json`.
+- **`dataflow_ir` reports compile diagnostics.** `diagnostics` holds each
+  warning and error (`message`, `severity`, `line`, `column`, `end_line`,
+  `end_column`, `file`), so `let delta = dt()` without `import ui` comes back
+  with "unknown function `dt`" instead of a diagram that fails on its first
+  run. New in core: `Diagnostic::to_json` and
+  `diagnostic::program_diagnostics_json`.
+- **Opt-in lint rule `import-overload-merge`** (report only): a top-level
+  `fn` in the linted file that the compiler merged by argument count with a
+  function of a plainly imported module, such as `fn toggle(label, x, y)`
+  beside `import ui`. A call then reaches `ui.toggle` or the file's own by
+  its argument count, and an arity the module adds later can take over the
+  file's calls. The message suggests a rename or `ui.toggle(…)`. Enable it
+  with `--rules-include=import-overload-merge`; silence one with
+  `# petal-lint-ignore import-overload-merge`. Not on by default: most such
+  merges in existing code are deliberate.
 
 - **An optional `regex` package** (`core-stdlib/regex`): `regex_find`,
   `regex_all`, `regex_test`, `regex_replace`, `regex_split` and

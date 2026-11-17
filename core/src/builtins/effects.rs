@@ -214,6 +214,10 @@ builtin_effects![
     ("argmax", NO_REF | PURE),
     ("top_indices", FRESH | NO_REF | PURE),
     ("group_by_keys", NO_REF | PURE),
+    // A new outer list on every path (never the argument's id), holding
+    // element ids of the argument: the `reverse` shape.
+    ("unique", FRESH | NO_REF | PURE),
+    ("unique_by_keys", FRESH | NO_REF | PURE),
     ("ord", NO_REF | PURE),
     ("chr", NO_REF | PURE),
     ("interp", NO_REF | PURE),
@@ -387,6 +391,8 @@ mod tests {
                 "slice",
                 "sort",
                 "top_indices",
+                "unique",
+                "unique_by_keys",
                 "values",
                 "zip"
             ]
@@ -453,6 +459,8 @@ mod tests {
                 "top_indices",
                 "trim",
                 "type",
+                "unique",
+                "unique_by_keys",
                 "values",
                 "zip"
             ]
@@ -584,6 +592,8 @@ mod tests {
                 "top_indices",
                 "trim",
                 "type",
+                "unique",
+                "unique_by_keys",
                 "values",
                 "vec2",
                 "vec3",

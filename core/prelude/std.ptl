@@ -202,6 +202,19 @@ pub fn group_by(xs, key)
   group_by_keys(xs, map(xs, key))
 
 @doc("""
+The elements whose `key(x)` has not been seen before, in list order: the
+first element of each key is kept. Keys are compared with `==`, as `unique`
+compares elements. It is linear in the list, and calls `key` once per element.
+""",
+  example: """
+    unique_by(["apple", "avocado", "banana"], fn(s) -> s[0])   # ["apple", "banana"]
+    unique_by([{id: 1, v: "a"}, {id: 1, v: "b"}], fn(r) -> r.id)  # [{ id: 1, v: "a" }]
+  """,
+  see: ["unique", "unique_by_keys", "group_by"])
+pub fn unique_by(xs, key)
+  unique_by_keys(xs, map(xs, key))
+
+@doc("""
 `f` of every element, with the lists it returns joined end to end:
 `flat(map(xs, f))`, and what a `for` with two generators would be.
 """,

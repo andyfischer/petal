@@ -1902,7 +1902,7 @@ a[0]             # 2.5
 
 Source: [`core/packages/core/src/collections.ptl`](../core/packages/core/src/collections.ptl)
 
-[`range`](#range) · [`len`](#len) · [`push`](#push) · [`append`](#append) · [`pop`](#pop) · [`keys`](#keys) · [`values`](#values) · [`entries`](#entries) · [`contains`](#contains) · [`sort`](#sort) · [`reverse`](#reverse) · [`join`](#join) · [`split`](#split) · [`upper`](#upper) · [`lower`](#lower) · [`enumerate`](#enumerate) · [`zip`](#zip) · [`slice`](#slice) · [`flat`](#flat) · [`includes`](#includes) · [`f64_array`](#f64_array) · [`set_at`](#set_at) · [`swap`](#swap) · [`last`](#last) · [`drop_last`](#drop_last) · [`remove`](#remove) · [`remove_at`](#remove_at) · [`get_in`](#get_in) · [`set_in`](#set_in) · [`chars`](#chars) · [`char_len`](#char_len) · [`char_at`](#char_at) · [`char_slice`](#char_slice) · [`index_of`](#index_of) · [`prepend`](#prepend) · [`concat`](#concat) · [`repeat`](#repeat) · [`starts_with`](#starts_with) · [`ends_with`](#ends_with) · [`trim`](#trim) · [`replace`](#replace) · [`byte_len`](#byte_len) · [`byte_slice`](#byte_slice) · [`fill`](#fill) · [`argmin`](#argmin) · [`argmax`](#argmax) · [`top_indices`](#top_indices) · [`group_by_keys`](#group_by_keys) · [`ord`](#ord) · [`chr`](#chr) · [`Map`](#map) · [`map`](#map-1) · [`filter`](#filter) · [`reduce`](#reduce) · [`forEach`](#foreach) · [`sort_by`](#sort_by) · [`any`](#any) · [`all`](#all) · [`find`](#find) · [`freeze`](#freeze) · [`frozen`](#frozen)
+[`range`](#range) · [`len`](#len) · [`push`](#push) · [`append`](#append) · [`pop`](#pop) · [`keys`](#keys) · [`values`](#values) · [`entries`](#entries) · [`contains`](#contains) · [`sort`](#sort) · [`reverse`](#reverse) · [`join`](#join) · [`split`](#split) · [`upper`](#upper) · [`lower`](#lower) · [`enumerate`](#enumerate) · [`zip`](#zip) · [`slice`](#slice) · [`flat`](#flat) · [`includes`](#includes) · [`f64_array`](#f64_array) · [`set_at`](#set_at) · [`swap`](#swap) · [`last`](#last) · [`drop_last`](#drop_last) · [`remove`](#remove) · [`remove_at`](#remove_at) · [`get_in`](#get_in) · [`set_in`](#set_in) · [`chars`](#chars) · [`char_len`](#char_len) · [`char_at`](#char_at) · [`char_slice`](#char_slice) · [`index_of`](#index_of) · [`prepend`](#prepend) · [`concat`](#concat) · [`repeat`](#repeat) · [`starts_with`](#starts_with) · [`ends_with`](#ends_with) · [`trim`](#trim) · [`replace`](#replace) · [`byte_len`](#byte_len) · [`byte_slice`](#byte_slice) · [`fill`](#fill) · [`argmin`](#argmin) · [`argmax`](#argmax) · [`top_indices`](#top_indices) · [`group_by_keys`](#group_by_keys) · [`unique`](#unique) · [`unique_by_keys`](#unique_by_keys) · [`ord`](#ord) · [`chr`](#chr) · [`Map`](#map) · [`map`](#map-1) · [`filter`](#filter) · [`reduce`](#reduce) · [`forEach`](#foreach) · [`sort_by`](#sort_by) · [`any`](#any) · [`all`](#all) · [`find`](#find) · [`freeze`](#freeze) · [`frozen`](#frozen)
 
 ### `range`
 
@@ -2972,6 +2972,48 @@ group_by_keys(["a", "b", "c"], ["x", "y", "x"])   # { x: ["a", "c"], y: ["b"] }
 
 *Source: [`core/packages/core/src/collections.ptl:694`](../core/packages/core/src/collections.ptl#L694)*
 
+### `unique`
+
+```petal no-check
+unique(list: list) -> list
+```
+
+The list with each value kept only where it first appears, in list order.
+Values are compared with `==`, so `1` and `1.0` are one value and two records
+with the same fields are one record. It is linear in the list. `unique_by`
+compares by a key instead.
+
+**Example**
+
+```petal
+unique([3, 1, 3, 2, 1])          # [3, 1, 2]
+unique(["b", "a", "b"])          # ["b", "a"]
+unique([{x: 1}, {x: 1}, {x: 2}]) # [{ x: 1 }, { x: 2 }]
+```
+
+**See also:** [`unique_by`](#unique_by), [`contains`](#contains), [`group_by`](#group_by)
+
+*Source: [`core/packages/core/src/collections.ptl:708`](../core/packages/core/src/collections.ptl#L708)*
+
+### `unique_by_keys`
+
+```petal no-check
+unique_by_keys(list: list, keys: list) -> list
+```
+
+The elements of `list` whose key, `keys[i]`, is the first of its value by
+`==`, in list order. `unique_by` is the form that takes a function.
+
+**Example**
+
+```petal
+unique_by_keys(["a", "b", "c"], [1, 2, 1])   # ["a", "b"]
+```
+
+**See also:** [`unique_by`](#unique_by), [`unique`](#unique)
+
+*Source: [`core/packages/core/src/collections.ptl:718`](../core/packages/core/src/collections.ptl#L718)*
+
 ### `ord`
 
 ```petal no-check
@@ -2992,7 +3034,7 @@ chr(ord("a") + 3)    # d
 
 **See also:** [`chr`](#chr)
 
-*Source: [`core/packages/core/src/collections.ptl:707`](../core/packages/core/src/collections.ptl#L707)*
+*Source: [`core/packages/core/src/collections.ptl:731`](../core/packages/core/src/collections.ptl#L731)*
 
 ### `chr`
 
@@ -3013,7 +3055,7 @@ chr(ord("a") + 3)    # d
 
 **See also:** [`ord`](#ord)
 
-*Source: [`core/packages/core/src/collections.ptl:719`](../core/packages/core/src/collections.ptl#L719)*
+*Source: [`core/packages/core/src/collections.ptl:743`](../core/packages/core/src/collections.ptl#L743)*
 
 ### `Map`
 
@@ -3051,7 +3093,7 @@ print(len(m))      # 3
 
 **See also:** [`entries`](#entries), [`keys`](#keys), [`values`](#values), [`remove`](#remove)
 
-*Source: [`core/packages/core/src/collections.ptl:748`](../core/packages/core/src/collections.ptl#L748)*
+*Source: [`core/packages/core/src/collections.ptl:772`](../core/packages/core/src/collections.ptl#L772)*
 
 ### `map`
 
@@ -3070,7 +3112,7 @@ map(["a", "b"], fn(s) -> s ++ "!")     # ["a!", "b!"]
 
 **See also:** [`filter`](#filter), [`reduce`](#reduce), [`flat_map`](#flat_map)
 
-*Source: [`core/packages/core/src/collections.ptl:761`](../core/packages/core/src/collections.ptl#L761)*
+*Source: [`core/packages/core/src/collections.ptl:785`](../core/packages/core/src/collections.ptl#L785)*
 
 ### `filter`
 
@@ -3090,7 +3132,7 @@ filter(["hi", "", "ok"], fn(s) -> len(s) > 0)   # ["hi", "ok"]
 
 **See also:** [`map`](#map-1), [`find`](#find), [`count`](#count)
 
-*Source: [`core/packages/core/src/collections.ptl:772`](../core/packages/core/src/collections.ptl#L772)*
+*Source: [`core/packages/core/src/collections.ptl:796`](../core/packages/core/src/collections.ptl#L796)*
 
 ### `reduce`
 
@@ -3115,7 +3157,7 @@ reduce([1, 2, 3], 1, fn(acc, x) -> acc * x)   # 6
 
 **See also:** [`map`](#map-1), [`sum`](#sum)
 
-*Source: [`core/packages/core/src/collections.ptl:783`](../core/packages/core/src/collections.ptl#L783)*
+*Source: [`core/packages/core/src/collections.ptl:807`](../core/packages/core/src/collections.ptl#L807)*
 
 ### `forEach`
 
@@ -3135,7 +3177,7 @@ forEach([1, 2, 3], fn(x) -> print(x))
 
 **See also:** [`map`](#map-1)
 
-*Source: [`core/packages/core/src/collections.ptl:794`](../core/packages/core/src/collections.ptl#L794)*
+*Source: [`core/packages/core/src/collections.ptl:818`](../core/packages/core/src/collections.ptl#L818)*
 
 ### `sort_by`
 
@@ -3166,7 +3208,7 @@ sort_by(sort_by(rows, fn(r) -> r.name), fn(r) -> r.score, "desc")   # ties by na
 
 **See also:** [`sort`](#sort), [`top_k`](#top_k), [`min_by`](#min_by)
 
-*Source: [`core/packages/core/src/collections.ptl:811`](../core/packages/core/src/collections.ptl#L811)*
+*Source: [`core/packages/core/src/collections.ptl:835`](../core/packages/core/src/collections.ptl#L835)*
 
 ### `any`
 
@@ -3186,7 +3228,7 @@ any([1, 2, 3], fn(x) x > 2 end)   # true
 
 **See also:** [`all`](#all), [`find`](#find), [`count`](#count)
 
-*Source: [`core/packages/core/src/collections.ptl:822`](../core/packages/core/src/collections.ptl#L822)*
+*Source: [`core/packages/core/src/collections.ptl:846`](../core/packages/core/src/collections.ptl#L846)*
 
 ### `all`
 
@@ -3206,7 +3248,7 @@ all([1, 2, 3], fn(x) x > 2 end)   # false
 
 **See also:** [`any`](#any), [`count`](#count)
 
-*Source: [`core/packages/core/src/collections.ptl:833`](../core/packages/core/src/collections.ptl#L833)*
+*Source: [`core/packages/core/src/collections.ptl:857`](../core/packages/core/src/collections.ptl#L857)*
 
 ### `find`
 
@@ -3225,7 +3267,7 @@ find([1, 2, 3], fn(x) x > 1 end)   # 2
 
 **See also:** [`any`](#any), [`filter`](#filter), [`index_of`](#index_of)
 
-*Source: [`core/packages/core/src/collections.ptl:843`](../core/packages/core/src/collections.ptl#L843)*
+*Source: [`core/packages/core/src/collections.ptl:867`](../core/packages/core/src/collections.ptl#L867)*
 
 ### `freeze`
 
@@ -3298,7 +3340,7 @@ print(frozen(longer), len(table))     # false 1000
 
 **See also:** [`frozen`](#frozen)
 
-*Source: [`core/packages/core/src/collections.ptl:907`](../core/packages/core/src/collections.ptl#L907)*
+*Source: [`core/packages/core/src/collections.ptl:931`](../core/packages/core/src/collections.ptl#L931)*
 
 ### `frozen`
 
@@ -3321,7 +3363,7 @@ print(frozen(42))     # false
 
 **See also:** [`freeze`](#freeze)
 
-*Source: [`core/packages/core/src/collections.ptl:921`](../core/packages/core/src/collections.ptl#L921)*
+*Source: [`core/packages/core/src/collections.ptl:945`](../core/packages/core/src/collections.ptl#L945)*
 
 ## `std`
 
@@ -3347,7 +3389,7 @@ tolerates the missing field, or `field` / `has_field` by name.
 
 Source: [`core/prelude/std.ptl`](../core/prelude/std.ptl)
 
-[`first`](#first) · [`is_empty`](#is_empty) · [`sum`](#sum) · [`product`](#product) · [`mean`](#mean) · [`minimum`](#minimum) · [`maximum`](#maximum) · [`count`](#count) · [`min_by`](#min_by) · [`max_by`](#max_by) · [`top_k`](#top_k) · [`group_by`](#group_by) · [`flat_map`](#flat_map) · [`take`](#take) · [`drop`](#drop) · [`has_field`](#has_field) · [`field`](#field) · [`clamp01`](#clamp01) · [`plural`](#plural) · [`list_and`](#list_and)
+[`first`](#first) · [`is_empty`](#is_empty) · [`sum`](#sum) · [`product`](#product) · [`mean`](#mean) · [`minimum`](#minimum) · [`maximum`](#maximum) · [`count`](#count) · [`min_by`](#min_by) · [`max_by`](#max_by) · [`top_k`](#top_k) · [`group_by`](#group_by) · [`unique_by`](#unique_by) · [`flat_map`](#flat_map) · [`take`](#take) · [`drop`](#drop) · [`has_field`](#has_field) · [`field`](#field) · [`clamp01`](#clamp01) · [`plural`](#plural) · [`list_and`](#list_and)
 
 ### `first`
 
@@ -3591,6 +3633,27 @@ group_by([1, 2, 3, 4, 5], parity)   # { odd: [1, 3, 5], even: [2, 4] }
 
 *Source: [`core/prelude/std.ptl:201`](../core/prelude/std.ptl#L201)*
 
+### `unique_by`
+
+```petal no-check
+unique_by(xs, key)
+```
+
+The elements whose `key(x)` has not been seen before, in list order: the
+first element of each key is kept. Keys are compared with `==`, as `unique`
+compares elements. It is linear in the list, and calls `key` once per element.
+
+**Example**
+
+```petal
+unique_by(["apple", "avocado", "banana"], fn(s) -> s[0])   # ["apple", "banana"]
+unique_by([{id: 1, v: "a"}, {id: 1, v: "b"}], fn(r) -> r.id)  # [{ id: 1, v: "a" }]
+```
+
+**See also:** [`unique`](#unique), [`unique_by_keys`](#unique_by_keys), [`group_by`](#group_by)
+
+*Source: [`core/prelude/std.ptl:214`](../core/prelude/std.ptl#L214)*
+
 ### `flat_map`
 
 ```petal no-check
@@ -3609,7 +3672,7 @@ flat_map(["ab", "c"], chars)                # ["a", "b", "c"]
 
 **See also:** [`flat`](#flat), [`map`](#map-1)
 
-*Source: [`core/prelude/std.ptl:213`](../core/prelude/std.ptl#L213)*
+*Source: [`core/prelude/std.ptl:226`](../core/prelude/std.ptl#L226)*
 
 ### `take`
 
@@ -3628,7 +3691,7 @@ take([1, 2, 3], 9)   # [1, 2, 3]
 
 **See also:** [`drop`](#drop), [`slice`](#slice)
 
-*Source: [`core/prelude/std.ptl:226`](../core/prelude/std.ptl#L226)*
+*Source: [`core/prelude/std.ptl:239`](../core/prelude/std.ptl#L239)*
 
 ### `drop`
 
@@ -3647,7 +3710,7 @@ drop([1, 2, 3], 2)   # [3]
 
 **See also:** [`take`](#take), [`slice`](#slice)
 
-*Source: [`core/prelude/std.ptl:237`](../core/prelude/std.ptl#L237)*
+*Source: [`core/prelude/std.ptl:250`](../core/prelude/std.ptl#L250)*
 
 ### `has_field`
 
@@ -3667,7 +3730,7 @@ has_field({a: 1}, "zz")    # false
 
 **See also:** [`field`](#field)
 
-*Source: [`core/prelude/std.ptl:251`](../core/prelude/std.ptl#L251)*
+*Source: [`core/prelude/std.ptl:264`](../core/prelude/std.ptl#L264)*
 
 ### `field`
 
@@ -3689,7 +3752,7 @@ field({a: 1}, "zz", 7)   # 7
 
 **See also:** [`has_field`](#has_field)
 
-*Source: [`core/prelude/std.ptl:265`](../core/prelude/std.ptl#L265)*
+*Source: [`core/prelude/std.ptl:278`](../core/prelude/std.ptl#L278)*
 
 ### `clamp01`
 
@@ -3701,7 +3764,7 @@ clamp01(x)
 
 **See also:** [`clamp`](#clamp)
 
-*Source: [`core/prelude/std.ptl:271`](../core/prelude/std.ptl#L271)*
+*Source: [`core/prelude/std.ptl:284`](../core/prelude/std.ptl#L284)*
 
 ### `plural`
 
@@ -3730,7 +3793,7 @@ plural(12500, "person", "people")   # 12,500 people
 
 **See also:** [`commas`](#commas), [`list_and`](#list_and)
 
-*Source: [`core/prelude/std.ptl:289`](../core/prelude/std.ptl#L289)*
+*Source: [`core/prelude/std.ptl:302`](../core/prelude/std.ptl#L302)*
 
 ### `list_and`
 
@@ -3751,7 +3814,7 @@ list_and([1, 2, 3], "or")               # 1, 2 or 3
 
 **See also:** [`join`](#join), [`plural`](#plural)
 
-*Source: [`core/prelude/std.ptl:305`](../core/prelude/std.ptl#L305)*
+*Source: [`core/prelude/std.ptl:318`](../core/prelude/std.ptl#L318)*
 
 ## `core/classes`
 

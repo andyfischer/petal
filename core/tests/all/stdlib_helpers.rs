@@ -1,8 +1,8 @@
 //! The refusals of the standard-library helpers added for the Moses debrief
 //! (`fill`, `argmin`, `top_indices`, `group_by_keys`, `interp`, `ord`, `chr`,
-//! the hashes, record `lerp`), and what a program's own function of one of
-//! those names does. What they compute is tested in Petal:
-//! test/ptl/stdlib_helpers.ptl.
+//! the hashes, record `lerp`) and of `unique`, and what a program's own
+//! function of one of those names does. What they compute is tested in
+//! Petal: test/ptl/stdlib_helpers.ptl.
 
 use petal::env::Env;
 
@@ -57,6 +57,41 @@ fn group_by_keys_wants_a_key_per_element() {
         "needs one key per element, got 3 elements and 1 keys",
     );
     refuses("group_by_keys(1, 2)", "group_by_keys(list, keys) expects two lists");
+}
+
+#[test]
+fn unique_wants_a_list_and_a_key_per_element() {
+    refuses("unique(\"aab\")", "unique(list) expects a list, got string");
+    refuses("unique(nil)", "unique(list) expects a list, got nil");
+    refuses("unique([1], [2])", "unique() expects 1 argument, got 2");
+    refuses("unique_by_keys([1, 2, 3], [1])", "needs one key per element, got 3 elements and 1 keys");
+    refuses("unique_by_keys(1, 2)", "unique_by_keys(list, keys) expects two lists");
+    refuses("unique_by(5, fn(x) -> x)", "map() expects a list");
+}
+
+/// Linear for hashable values: 20,000 distinct records would take seconds as
+/// a pairwise scan in a debug build.
+#[test]
+fn unique_of_many_values_is_linear() {
+    let src = "let xs = for i in range(0, 20000) do {k: i % 5000, s: str(i % 5000)} end
+print(len(unique(xs)), len(unique_by(xs, fn(r) -> r.k % 7)))";
+    assert_eq!(out(src), "5000 7");
+}
+
+/// NaN is not `==` to itself, so it is never a repeat — as `index_of` and
+/// `contains` would say.
+#[test]
+fn unique_keeps_every_nan() {
+    assert_eq!(out("let n = sqrt(-1.0)\nprint(len(unique([n, n, 1, 1])))"), "3");
+}
+
+/// Whether a pending element repeats is not known yet: the result is the
+/// (leftmost) pending value, as with `group_by_keys`.
+#[test]
+fn unique_of_a_list_holding_a_pending_value_is_pending() {
+    let src = "let p = __pending(\"k\")
+print(is_pending(unique([1, p, 1])), is_pending(unique_by([1, 2], fn(x) -> p)))";
+    assert_eq!(out(src), "true true");
 }
 
 #[test]
@@ -133,6 +168,16 @@ fn hash_int(a)
 end
 print(fill(2, 0), hash_int(1))";
     assert_eq!(out(src), "my fill 7");
+    // A program's `unique` of another shape (a name not yet taken, as in
+    // cheesecake's trailkeeper-art-tool) and `unique_by` are its own.
+    let src = "fn unique(taken, base)
+  if contains(taken, base) then base ++ \"2\" else base end
+end
+fn unique_by(xs, key)
+  \"mine\"
+end
+print(unique([\"a\"], \"a\"), unique_by([1], fn(x) -> x))";
+    assert_eq!(out(src), "a2 mine");
 }
 
 /// The hashes are constant functions: a table built from them is a `const`.

@@ -592,6 +592,17 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **`unique(xs)` and `unique_by(xs, key)`.** The list with the first
+  occurrence of each value (`unique`) or of each `key(x)` (`unique_by`), in
+  list order, compared with `==` — so `1` and `1.0` are one value, and two
+  records with the same fields one record. Linear in the list (hashed, then
+  compared with `==` within a bucket). A pending element (or key) makes the
+  result that pending value. `unique_by` is a std prelude function over the
+  new native `unique_by_keys(xs, keys)`, the `group_by` / `group_by_keys`
+  split. Replaces the `keys(group_by(xs, fn(x) -> x))` workaround, which
+  also turned every value into a string. A program's own `unique` or
+  `unique_by` still wins over the builtin (not breaking).
+
 - **Programs as documents: a tidy write-out.** `concretize_with(runner,
   run, node, &ConcretizeOptions { tidy: true })` (and
   `ResolveOptions::concretize_tidy` for step 5) writes the output as a

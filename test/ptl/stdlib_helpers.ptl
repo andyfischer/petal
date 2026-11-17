@@ -110,6 +110,37 @@ test "group_by_keys: the parallel-list form" do
   expect_eq(group_by_keys(["a", "b", "c"], ["x", "y", "x"]), {x: ["a", "c"], y: ["b"]})
   expect_eq(group_by_keys([], []), {})
 
+# ── unique / unique_by ─────────────────────────────────────────────────────
+
+test "unique: the first of each value, in list order" do
+  expect_eq(unique([3, 1, 3, 2, 1]), [3, 1, 2])
+  expect_eq(unique(["b", "a", "b", "c"]), ["b", "a", "c"])
+  expect_eq(unique([]), [])
+  expect_eq(unique([nil, nil, false]), [nil, false])
+
+test "unique: values compare with ==" do
+  expect_eq(unique([1, 1.0, 2]), [1, 2])
+  expect_eq(unique([{x: 1, y: 2}, {y: 2, x: 1}, {x: 2}]), [{x: 1, y: 2}, {x: 2}])
+  expect_eq(unique([[1, 2], [1, 2], [2, 1]]), [[1, 2], [2, 1]])
+  expect_eq(unique(["1", 1]), ["1", 1])
+
+test "unique: the argument is left as it was" do
+  let xs = [1, 1, 2]
+  let u = unique(xs)
+  expect_eq(xs, [1, 1, 2])
+  expect_eq(u, [1, 2])
+
+test "unique_by: the first element of each key" do
+  expect_eq(unique_by(["apple", "avocado", "banana"], fn(s) -> s[0]), ["apple", "banana"])
+  let firsts = unique_by(TOWNS, fn(t) -> t.state)
+  expect_eq(map(firsts, fn(t) -> t.state), ["IA", "OR", "WY", "IN"])
+  expect_eq(unique_by([1, 2, 3, 4, 5], fn(x) -> x % 2), [1, 2])
+  expect_eq(unique_by([], fn(x) -> x), [])
+
+test "unique_by_keys: the parallel-list form" do
+  expect_eq(unique_by_keys(["a", "b", "c"], [1, 2, 1]), ["a", "b"])
+  expect_eq(unique_by_keys([], []), [])
+
 test "count: how many satisfy the predicate" do
   expect_eq(count(TOWNS, fn(t) -> t.state == "OR"), 2)
   expect_eq(count([], fn(t) -> true), 0)

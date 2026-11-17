@@ -3471,7 +3471,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 761
+        "line": 785
       },
       "doc": {
         "body": "Applies a function to each element and returns a new list.",
@@ -3493,7 +3493,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       }
     },
     {
@@ -3527,7 +3527,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 772
+        "line": 796
       },
       "doc": {
         "body": "Returns a new list containing only elements where the function returns\n`true`.",
@@ -3549,7 +3549,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
     },
@@ -3592,7 +3592,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 783
+        "line": 807
       },
       "doc": {
         "body": "Folds over a list, accumulating a result.",
@@ -3617,7 +3617,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
     },
@@ -3652,7 +3652,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 794
+        "line": 818
       },
       "doc": {
         "body": "Runs a function once for each element and returns `nil`. Use when you\nwant the side effects (logging, drawing, mutations) but don't need a\nnew list.",
@@ -3672,7 +3672,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
     },
@@ -5259,7 +5259,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 811
+        "line": 835
       },
       "doc": {
         "body": "Sorts by a key read off each element. `key(element)` is called once per\nelement and must return a number or a string (any other key is an error, and\n`petal lint` reports it ahead of time when it can see what the key function\nreturns). The sort is stable in both directions, so chained calls sort by\nseveral keys — least significant first.",
@@ -5285,7 +5285,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
     },
@@ -6586,7 +6586,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
     },
@@ -6631,7 +6631,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
     },
@@ -6658,7 +6658,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 907
+        "line": 931
       },
       "doc": {
         "body": "Makes `value` and everything it holds frozen, and returns `value`. The\ncollector no longer looks inside a frozen value and never frees one. Lists,\nrecords, strings, `f64_array`s, vectors and enum variants freeze, to any\ndepth. Freezing a number, a bool or `nil`, or a value that is already\nfrozen, does nothing.\n\nThe garbage collector visits every value the program still holds each time\nit runs. For most programs that is cheap. For a program that keeps a very\nlarge table for its whole life (a generated world, a rule table, a level\nloaded from disk) it is a pause on every collection that grows with the\ntable: about 2.5 ms for 100,000 records, before any garbage is freed.\n`freeze` takes such a value out of the collector's work. A frozen value is\nstill an ordinary value: it reads, compares, prints and passes around\nexactly as before, and an update of it yields a new, unfrozen value as an\nupdate of any value does.\n\nThe limits are part of the contract:\n\n- **Freezing is one-way.** There is no unfreeze, and a frozen value is never\n  freed, even after the program drops its last reference to it. The memory\n  comes back when the program's heap goes away (the program is restarted or\n  its context is dropped).\n- **Freeze data that lives as long as the program**, once: in a `state`\n  initializer, as in the example, or behind a check that it has not been built yet.\n  `freeze` on a value rebuilt every frame leaks every one of them, so a\n  top-level `let table = freeze(build())` in a script that runs once per\n  frame is a leak. `state` initializers run once.\n- **A top-level table that depends on no dynamic data is the exception to\n  that**, where the host keeps static values between runs (it does by\n  default; see [performance.md](dev/performance.md#static-values)): `let\n  table = [...]` followed by `freeze(table)` freezes the one table the stack\n  keeps, once, and `frozen(table)` is then true from the top of every later\n  run. `let table = freeze(build())` is still rebuilt and frozen on every\n  run, because a call of `freeze` is never static. With static values off\n  both forms leak a table per run.\n- **A value holding a function or a `var` cell cannot be frozen.** The call\n  is an error (`freeze: the value holds a function, which cannot be frozen`)\n  and nothing is frozen.\n- **A hot reload keeps frozen values**, like the rest of the heap. A table\n  that is rebuilt after a reload and frozen again leaves the old one\n  allocated.\n- **Freezing removes the value from a collection's work, not the rest of the\n  heap.** A collection afterwards costs what the unfrozen data and the garbage\n  cost. Freeze a table as soon as it is built: until then it is ordinary data\n  and every collection during the build visits it.\n\nA forked execution (and a snapshot restored from one) carries the frozen\nvalues it was taken with.",
@@ -6704,7 +6704,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 921
+        "line": 945
       },
       "doc": {
         "body": "Whether `value` is frozen. `false` for numbers, bools, `nil` and every value\n`freeze` has not reached.",
@@ -7208,7 +7208,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 707
+        "line": 731
       },
       "doc": {
         "body": "The Unicode code point of a string's first character. `chr` is its inverse,\nthe one-character string of a code point; between them, arithmetic on letters\nneeds no lookup table. `ord(\"\")` is an error.",
@@ -7228,7 +7228,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1327
+        "line": 1394
       }
     },
     {
@@ -7254,7 +7254,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 719
+        "line": 743
       },
       "doc": {
         "body": "The one-character string of a Unicode code point: the inverse of `ord`. A\nnumber that is no code point (negative, a surrogate, past `0x10FFFF`) is an\nerror.",
@@ -7274,7 +7274,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1342
+        "line": 1409
       }
     },
     {
@@ -7570,7 +7570,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 748
+        "line": 772
       },
       "doc": {
         "body": "A new **map**: a lookup table whose keys can be any value. Keys are compared\nby content with the rule `==` uses (`m[[1, 2]]` finds the entry stored under\nanother `[1, 2]`; `2` and `2.0` are one key). `Map()` is empty; `Map(pairs)`\ntakes a list of `[key, value]` pairs, in order, and a repeated key keeps its\nfirst place and its last value. Read with `m[k]` (an absent key is `nil`),\nwrite with `m[k] = v` on a `let` or `set m[k] = v` on a `var`. `len`, `keys`,\n`values`, `entries`, `contains` (by key), `remove` and `for k in m` take a\nmap; iteration is in insertion order. A function, a pending value or NaN\ncannot be a key. See [Maps](language-guide.md#maps).\n\nThe name is capitalized like a class constructor's (`Rect`) because `map` is\nthe higher-order builtin.",
@@ -7677,7 +7677,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 822
+        "line": 846
       },
       "doc": {
         "body": "Whether at least one element satisfies `pred` (`false` for an empty list).\nIt stops at the first element that satisfies `pred`: `pred` is not called\non the elements after it. A map is walked by its keys.",
@@ -7699,7 +7699,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
     },
@@ -7734,7 +7734,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 833
+        "line": 857
       },
       "doc": {
         "body": "Whether every element satisfies `pred` (`true` for an empty list). It stops\nat the first element that does not: `pred` is not called on the elements\nafter it. A map is walked by its keys.",
@@ -7755,7 +7755,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
     },
@@ -7790,7 +7790,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 843
+        "line": 867
       },
       "doc": {
         "body": "The first element that satisfies `pred`, or `nil` when none does. It stops\nthere, like `any`.",
@@ -7812,7 +7812,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
     },
@@ -8159,7 +8159,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
     },
@@ -8194,7 +8194,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
     },
@@ -8247,7 +8247,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
     },
@@ -8781,9 +8781,112 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 715
+        "line": 721
       },
       "aliasOf": "map"
+    },
+    {
+      "name": "unique",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "list",
+          "type": "list"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "list"
+          }
+        ]
+      ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 708
+      },
+      "doc": {
+        "body": "The list with each value kept only where it first appears, in list order.\nValues are compared with `==`, so `1` and `1.0` are one value and two records\nwith the same fields are one record. It is linear in the list. `unique_by`\ncompares by a key instead.",
+        "summary": "The list with each value kept only where it first appears, in list order.",
+        "params": {},
+        "returns": null,
+        "options": {},
+        "example": [
+          "unique([3, 1, 3, 2, 1])          # [3, 1, 2]\nunique([\"b\", \"a\", \"b\"])          # [\"b\", \"a\"]\nunique([{x: 1}, {x: 1}, {x: 2}]) # [{ x: 1 }, { x: 2 }]"
+        ],
+        "see": [
+          "unique_by",
+          "contains",
+          "group_by"
+        ],
+        "deprecated": null,
+        "hidden": false,
+        "extra": {}
+      },
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 1348
+      }
+    },
+    {
+      "name": "unique_by_keys",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "list",
+          "type": "list"
+        },
+        {
+          "name": "keys",
+          "type": "list"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "list"
+          },
+          {
+            "name": "keys",
+            "type": "list"
+          }
+        ]
+      ],
+      "declaration": {
+        "module": "core/collections",
+        "file": "core/packages/core/src/collections.ptl",
+        "line": 718
+      },
+      "doc": {
+        "body": "The elements of `list` whose key, `keys[i]`, is the first of its value by\n`==`, in list order. `unique_by` is the form that takes a function.",
+        "summary": "The elements of `list` whose key, `keys[i]`, is the first of its value by `==`, in list order.",
+        "params": {},
+        "returns": null,
+        "options": {},
+        "example": [
+          "unique_by_keys([\"a\", \"b\", \"c\"], [1, 2, 1])   # [\"a\", \"b\"]"
+        ],
+        "see": [
+          "unique_by",
+          "unique"
+        ],
+        "deprecated": null,
+        "hidden": false,
+        "extra": {}
+      },
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 1369
+      }
     },
     {
       "name": "Rect",
@@ -9473,6 +9576,62 @@
       }
     },
     {
+      "name": "unique_by",
+      "category": "std",
+      "group": "prelude",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "xs",
+          "type": "any"
+        },
+        {
+          "name": "key",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "key",
+            "type": "any"
+          }
+        ]
+      ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 214
+      },
+      "doc": {
+        "body": "The elements whose `key(x)` has not been seen before, in list order: the\nfirst element of each key is kept. Keys are compared with `==`, as `unique`\ncompares elements. It is linear in the list, and calls `key` once per element.",
+        "summary": "The elements whose `key(x)` has not been seen before, in list order: the first element of each key is kept.",
+        "params": {},
+        "returns": null,
+        "options": {},
+        "example": [
+          "unique_by([\"apple\", \"avocado\", \"banana\"], fn(s) -> s[0])   # [\"apple\", \"banana\"]\nunique_by([{id: 1, v: \"a\"}, {id: 1, v: \"b\"}], fn(r) -> r.id)  # [{ id: 1, v: \"a\" }]"
+        ],
+        "see": [
+          "unique",
+          "unique_by_keys",
+          "group_by"
+        ],
+        "deprecated": null,
+        "hidden": false,
+        "extra": {}
+      },
+      "source": {
+        "file": "core/prelude/std.ptl",
+        "line": 214
+      }
+    },
+    {
       "name": "flat_map",
       "category": "std",
       "group": "prelude",
@@ -9503,7 +9662,7 @@
       "declaration": {
         "module": "std",
         "file": "core/prelude/std.ptl",
-        "line": 213
+        "line": 226
       },
       "doc": {
         "body": "`f` of every element, with the lists it returns joined end to end:\n`flat(map(xs, f))`, and what a `for` with two generators would be.",
@@ -9524,7 +9683,7 @@
       },
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 213
+        "line": 226
       }
     },
     {
@@ -9558,7 +9717,7 @@
       "declaration": {
         "module": "std",
         "file": "core/prelude/std.ptl",
-        "line": 226
+        "line": 239
       },
       "doc": {
         "body": "The first `n` elements. `n` is clamped to the list, so it is never an error.",
@@ -9579,7 +9738,7 @@
       },
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 226
+        "line": 239
       }
     },
     {
@@ -9613,7 +9772,7 @@
       "declaration": {
         "module": "std",
         "file": "core/prelude/std.ptl",
-        "line": 237
+        "line": 250
       },
       "doc": {
         "body": "Everything after the first `n` elements. `n` is clamped to the list, so it\nis never an error.",
@@ -9634,7 +9793,7 @@
       },
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 237
+        "line": 250
       }
     },
     {
@@ -9668,7 +9827,7 @@
       "declaration": {
         "module": "std",
         "file": "core/prelude/std.ptl",
-        "line": 251
+        "line": 264
       },
       "doc": {
         "body": "Whether the record has `key` at all, even when its value is nil (which `??`\ncannot tell apart from an absent key).",
@@ -9688,7 +9847,7 @@
       },
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 251
+        "line": 264
       }
     },
     {
@@ -9730,7 +9889,7 @@
       "declaration": {
         "module": "std",
         "file": "core/prelude/std.ptl",
-        "line": 265
+        "line": 278
       },
       "doc": {
         "body": "Reads `rec[key]`, or `fallback` when the key is absent or nil. Same as\n`rec[key] ?? fallback`, and useful when the key is computed. A bare\n`record.missing` is still an error — see\n[Ragged records](language-guide.md#ragged-records--reading-a-field-that-may-not-be-there).",
@@ -9750,7 +9909,7 @@
       },
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 265
+        "line": 278
       }
     },
     {
@@ -9776,7 +9935,7 @@
       "declaration": {
         "module": "std",
         "file": "core/prelude/std.ptl",
-        "line": 271
+        "line": 284
       },
       "doc": {
         "body": "`clamp(x, 0, 1)`: a number clamped to the 0..1 range.",
@@ -9794,7 +9953,7 @@
       },
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 271
+        "line": 284
       }
     },
     {
@@ -9838,7 +9997,7 @@
       "declaration": {
         "module": "std",
         "file": "core/prelude/std.ptl",
-        "line": 289
+        "line": 302
       },
       "doc": {
         "body": "A count with its noun: `one` when `n` is 1, `many` otherwise (`one` with an\n`s` when `many` is left off). The count is written with thousands\nseparators (`commas`).",
@@ -9863,7 +10022,7 @@
       },
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 289
+        "line": 302
       }
     },
     {
@@ -9899,7 +10058,7 @@
       "declaration": {
         "module": "std",
         "file": "core/prelude/std.ptl",
-        "line": 305
+        "line": 318
       },
       "doc": {
         "body": "A list as prose, its elements through `str`: `a`, `a and b`, `a, b and c`.\n`word` replaces `and`. The empty list is `\"\"`.",
@@ -9920,7 +10079,7 @@
       },
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 305
+        "line": 318
       }
     },
     {

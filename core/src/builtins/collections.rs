@@ -1323,6 +1323,73 @@ pub(super) fn native_group_by_keys(state: &mut PetalCxt) -> Result<u32, String> 
     Ok(1)
 }
 
+/// The indices of the elements of `keys` that are the first of their value
+/// under `==` (`value::values_equal`), in list order. Linear: candidates are
+/// bucketed by `value::hash_value`, which agrees with `==`, and compared only
+/// within a bucket. A key that is not `==` to itself (NaN) is never a
+/// repeat, as `==` says.
+fn first_occurrences(keys: &[Value], heap: &crate::heap::Heap) -> Vec<usize> {
+    let mut seen: std::collections::HashMap<u64, Vec<usize>> = std::collections::HashMap::new();
+    let mut kept = Vec::new();
+    for (i, key) in keys.iter().enumerate() {
+        let bucket = seen.entry(value::hash_value(key, heap)).or_default();
+        if bucket.iter().any(|&j| value::values_equal(&keys[j], key, heap)) {
+            continue;
+        }
+        bucket.push(i);
+        kept.push(i);
+    }
+    kept
+}
+
+/// `unique(list)` — the list with each value only at its first occurrence,
+/// by `==`, in list order. Always a new list. A pending element makes the
+/// result that pending value: whether it repeats is not known yet.
+pub(super) fn native_unique(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "unique")?;
+    let list = state.get_value(1)?;
+    let Value::List(id) = list else {
+        return Err(format!("unique(list) expects a list, got {}", list.type_name()));
+    };
+    let items = state.heap().get_list(id);
+    if let Some(p) = leftmost_pending_element(items) {
+        state.push_value(p);
+        return Ok(1);
+    }
+    let kept: Vec<Value> =
+        first_occurrences(items, state.heap()).into_iter().map(|i| items[i]).collect();
+    state.push_list(kept);
+    Ok(1)
+}
+
+/// `unique_by_keys(list, keys)` — element `i` of `list` is kept when
+/// `keys[i]` is the first of its value by `==`, in list order. The
+/// parallel-list form of the std prelude's `unique_by`, as `group_by_keys`
+/// is `group_by`'s.
+pub(super) fn native_unique_by_keys(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "unique_by_keys")?;
+    let (Value::List(items), Value::List(keys)) = (state.get_value(1)?, state.get_value(2)?)
+    else {
+        return Err("unique_by_keys(list, keys) expects two lists".into());
+    };
+    let (items, keys) = (state.heap().get_list(items), state.heap().get_list(keys));
+    if items.len() != keys.len() {
+        return Err(format!(
+            "unique_by_keys(list, keys) needs one key per element, got {} elements and {} keys",
+            items.len(),
+            keys.len()
+        ));
+    }
+    if let Some(p) = leftmost_pending_element(keys) {
+        state.push_value(p);
+        return Ok(1);
+    }
+    let kept: Vec<Value> =
+        first_occurrences(keys, state.heap()).into_iter().map(|i| items[i]).collect();
+    state.push_list(kept);
+    Ok(1)
+}
+
 /// `ord(s)` — the Unicode code point of the first character of `s`.
 pub(super) fn native_ord(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "ord")?;

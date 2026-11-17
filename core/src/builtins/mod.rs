@@ -684,6 +684,12 @@ pub fn register_builtins(table: &mut NativeFnTable) {
         NativeEffects::EFFECT.contained().with_pending(NativeClass::AllowPending),
     ));
 
+    // De-duplication by `==`. `unique_by` is the std prelude's, over
+    // `unique_by_keys` (the `group_by` / `group_by_keys` split). Each reads
+    // only its arguments. Append-only.
+    table.register("unique", collections::native_unique, NativeEffects::CONST);
+    table.register("unique_by_keys", collections::native_unique_by_keys, NativeEffects::CONST);
+
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
     for op in crate::backend::bytecode::isa::IntrinsicOp::ALL {
@@ -911,6 +917,8 @@ mod effect_tests {
             "trim",
             "tunable",
             "type",
+            "unique",
+            "unique_by_keys",
             "upper",
             "values",
             "vec2",

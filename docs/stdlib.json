@@ -68,7 +68,7 @@
       "id": "json",
       "title": "JSON",
       "group": "core",
-      "doc": "`json_stringify` / `json_parse`: the string codec for anything that has to leave the process as text — chiefly the panel store, whose values are strings, and whose docs have always told authors to \"pair it with `json_stringify`\". Every embedder already exposed the conversion (the debug server's `panel.values`, GPP, the MCP tools) through [`crate::value::value_to_json`]; this is the same conversion handed to the script.  The mapping is the one `value_to_json` / `json_to_value` define: nil ↔ `null`, bools, ints and floats ↔ numbers, strings, lists ↔ arrays, records ↔ objects. `json_parse` yields plain records, not class instances, so a round trip flattens a class value to its fields — the same thing a `state` dump shows. A value with no JSON form (a function, a symbol) stringifies as its display text rather than failing, since a stringified debug dump is more useful than an aborted frame."
+      "doc": "`json_stringify` / `json_parse`: the string codec for anything that has to leave the process as text — chiefly the panel store, whose values are strings, and whose docs have always told authors to \"pair it with `json_stringify`\". Every embedder already exposed the conversion (the debug server's `panel.values`, GPP, the MCP tools) through [`crate::value::value_to_json`]; this is the same conversion handed to the script.  The mapping is the one `value_to_json` / `json_to_value` define: nil ↔ `null`, bools, ints and floats ↔ numbers, strings, lists ↔ arrays, records ↔ objects. `json_parse` yields plain records, not class instances, so a round trip flattens a class value to its fields — the same thing a `state` dump shows. A value with no JSON form (a function, a symbol) stringifies as its display text rather than failing, since a stringified debug dump is more useful than an aborted frame. A value that is not fully loaded has no text yet: `json_stringify` of a record with a pending field is that pending value, the same as `json_stringify` of a pending value, never a string with a `\"<pending N>\"` placeholder in it."
     },
     {
       "id": "classes",
@@ -4466,7 +4466,7 @@
       },
       "source": {
         "file": "core/src/builtins/pending.rs",
-        "line": 25
+        "line": 16
       },
       "internal": true
     },
@@ -4497,7 +4497,7 @@
       },
       "source": {
         "file": "core/src/builtins/pending.rs",
-        "line": 52
+        "line": 38
       },
       "internal": true
     },
@@ -4528,7 +4528,7 @@
       },
       "source": {
         "file": "core/src/builtins/pending.rs",
-        "line": 64
+        "line": 50
       },
       "internal": true
     },
@@ -4574,7 +4574,7 @@
       },
       "source": {
         "file": "core/src/builtins/pending.rs",
-        "line": 83
+        "line": 69
       }
     },
     {
@@ -4620,7 +4620,7 @@
       },
       "source": {
         "file": "core/src/builtins/pending.rs",
-        "line": 95
+        "line": 81
       }
     },
     {
@@ -4668,7 +4668,7 @@
       },
       "source": {
         "file": "core/src/builtins/pending.rs",
-        "line": 110
+        "line": 96
       }
     },
     {
@@ -4714,7 +4714,7 @@
       },
       "source": {
         "file": "core/src/builtins/pending.rs",
-        "line": 119
+        "line": 105
       }
     },
     {
@@ -4758,7 +4758,7 @@
       },
       "source": {
         "file": "core/src/builtins/pending.rs",
-        "line": 128
+        "line": 114
       }
     },
     {
@@ -4810,7 +4810,7 @@
       },
       "source": {
         "file": "core/src/builtins/pending.rs",
-        "line": 145
+        "line": 131
       }
     },
     {
@@ -4852,7 +4852,7 @@
       },
       "source": {
         "file": "core/src/builtins/pending.rs",
-        "line": 160
+        "line": 146
       }
     },
     {
@@ -5778,10 +5778,10 @@
       "declaration": {
         "module": "json",
         "file": "core/packages/json/json.ptl",
-        "line": 34
+        "line": 37
       },
       "doc": {
-        "body": "Encodes a value as JSON text: `nil` → `null`, bools, numbers, strings, lists\n→ arrays, records → objects (field order kept). The one-argument form is\ncompact; `indent` pretty-prints with that many spaces per level. A class\ninstance encodes as its fields; a value with no JSON form (a function)\nencodes as its display string. This is the codec for `panel_store_set` and\nany other string-only channel.",
+        "body": "Encodes a value as JSON text: `nil` → `null`, bools, numbers, strings, lists\n→ arrays, records → objects (field order kept). The one-argument form is\ncompact; `indent` pretty-prints with that many spaces per level. A class\ninstance encodes as its fields; a value with no JSON form (a function)\nencodes as its display string. A value that is still loading — or holds one\nanywhere inside it, like a record with a pending field — has no text yet, so\nthe result is that pending value rather than a string with a placeholder in\nit. This is the codec for `panel_store_set` and any other string-only\nchannel.",
         "summary": "Encodes a value as JSON text: `nil` → `null`, bools, numbers, strings, lists → arrays, records → objects (field order kept).",
         "params": {
           "value": "The value to encode.",
@@ -5801,7 +5801,7 @@
       },
       "source": {
         "file": "core/src/builtins/json.rs",
-        "line": 28
+        "line": 31
       },
       "import": "json"
     },
@@ -5828,7 +5828,7 @@
       "declaration": {
         "module": "json",
         "file": "core/packages/json/json.ptl",
-        "line": 57
+        "line": 60
       },
       "doc": {
         "body": "Decodes JSON text into the matching value — objects become plain records —\nor returns `nil` when the text is not JSON, so a corrupt store entry is a\n`?? default` rather than an aborted frame. (The text `null` also parses to\n`nil`.)\n\n```petal ignore\nimport json\nimport garden\nstate todos = json_parse(panel_store_get(\"todos\") ?? \"[]\") ?? []\npanel_store_set(\"todos\", json_stringify(todos))\n```",
@@ -5848,7 +5848,7 @@
       },
       "source": {
         "file": "core/src/builtins/json.rs",
-        "line": 60
+        "line": 70
       },
       "import": "json"
     },

@@ -1,0 +1,147 @@
+@module_doc("""
+Regular expressions over strings. `import regex` puts `regex_find`,
+`regex_all`, `regex_test`, `regex_replace`, `regex_split` and `regex_escape`
+in scope.
+
+```petal ignore
+import regex
+
+let m = regex_find("Doors open 8:30 pm", "(\d+):(\d+)")
+m.match       # "8:30"
+m.groups[0]   # "8"
+m.start       # 11
+```
+
+**An optional package.** Its natives live in the Rust crate `petal-regex`
+(`core-stdlib/regex/native`), which a host links and registers with
+`petal_regex::register(&mut env)`. Neither core nor the `petal` command
+carries it, so a script that imports it loads only in a host that has
+registered it.
+
+**Syntax.** The pattern is the syntax of Rust's `regex` crate: Perl-like
+classes (`\d`, `\w`, `\s`, `\b`), groups `(…)`, named groups `(?<name>…)`,
+non-capturing `(?:…)`, flags `(?i)` (ignore case), `(?m)` (`^`/`$` at line
+breaks), `(?s)` (`.` matches a newline), `(?x)` (whitespace and `#` comments
+ignored). There are no backreferences and no look-around: in exchange, every
+match runs in time linear in the text, so a pattern from an untrusted source
+cannot hang the script.
+
+**Braces in a pattern.** In a `"…"` string a `{` starts an interpolation,
+so a counted repeat is written `"\d\{4}"`, or the pattern goes in a raw
+(triple-quoted) string, which keeps everything as written. A backslash before
+a letter that is not a string escape is kept (`"\d+"`, `"\s*"` and `"\b"`
+need nothing extra); `"\\"` is one backslash, so a pattern that matches a
+literal backslash is `"\\\\"`.
+
+**Positions count characters**, like every string position in Petal
+(`slice`, `index_of`), not bytes: `start` and `end` slice the match back out
+with `slice(text, m.start, m.end)`.
+
+**`nil` text is no match.** Every function takes `nil` for `text` and answers
+as for a text with no match (`nil`, `[]`, `false`), so a lookup that found
+nothing (`select_one(…)?.text`) flows through without a guard. Any other
+non-string is an error.
+
+**A bad pattern is an error** that names the function, the pattern and what
+is wrong with it. Compiled patterns are cached, so a pattern written inline
+in a loop is compiled once.
+""")
+
+@doc("""
+The first match of `pattern` in `text`, as a record: `match` is the matched
+text, `start` and `end` its character positions (`end` exclusive), and
+`groups` the text of each capture group in order (`nil` for a group that
+took no part in the match). A pattern with named groups adds `named`, a
+record of them by name. `nil` when nothing matches, or when `text` is `nil`.
+""",
+  params: {text: "The string to search; `nil` finds nothing.", pattern: "The regular expression."},
+  returns: "`\{match, start, end, groups}` (plus `named` when the pattern names a group), or `nil`.",
+  example: """
+    import regex
+    let m = regex_find("Lot 9 opens 8:30", "(\d+):(\d+)")
+    m.match                                          # "8:30"
+    m.groups                                         # ["8", "30"]
+    regex_find("x=1", "(?<k>\w+)=(?<v>\w+)").named   # {k: "x", v: "1"}
+    regex_find("abc", "\d")                          # nil
+  """,
+  see: ["regex_all", "regex_test"])
+pub native fn regex_find(text, pattern: string)
+
+@doc("""
+Every non-overlapping match of `pattern` in `text`, left to right, as the
+records `regex_find` returns. Empty when nothing matches or `text` is `nil`.
+""",
+  params: {text: "The string to search; `nil` finds nothing.", pattern: "The regular expression."},
+  returns: "A list of `\{match, start, end, groups}` records.",
+  example: """
+    import regex
+    map(regex_all("a1 b22 c333", "\d+"), fn(m) -> m.match)   # ["1", "22", "333"]
+    map(regex_all("k=v; x=y", "(\w)=(\w)"), fn(m) -> m.groups[1])    # ["v", "y"]
+  """,
+  see: ["regex_find"])
+pub native fn regex_all(text, pattern: string) -> list
+
+@doc("""
+Whether `pattern` matches anywhere in `text`. Anchor it (`^…$`) to ask about
+the whole string. `false` when `text` is `nil`.
+""",
+  params: {text: "The string to search; `nil` never matches.", pattern: "The regular expression."},
+  returns: "`true` or `false`.",
+  example: """
+    import regex
+    regex_test("2026-11-17", "^\d\{4}-\d\{2}-\d\{2}$")   # true
+    regex_test("Hello", "(?i)^hello$")                 # true
+  """,
+  see: ["regex_find"])
+pub native fn regex_test(text, pattern: string) -> bool
+
+@doc("""
+`text` with every match of `pattern` replaced by `with`. In `with`, `$1`
+(or `${1}`) is the text of group 1, `$0` the whole match, `${name}` a named
+group, and `$$` a literal `$`. Write `${1}x` rather than `$1x`, which names a
+group called `1x`. In a `"…"` string the brace needs its escape, `"$\{1}x"`,
+or the `{` starts an interpolation. `nil` when `text` is `nil`.
+""",
+  params: {
+    text: "The string to rewrite; `nil` gives `nil`.",
+    pattern: "The regular expression.",
+    with: "The replacement, with `$` group references.",
+  },
+  returns: "The rewritten string, or `nil`.",
+  example: """
+    import regex
+    regex_replace("a  b   c", "\s+", " ")                    # "a b c"
+    regex_replace("2026-11-17", "(\d+)-(\d+)-(\d+)", "$3/$2/$1")   # "17/11/2026"
+  """,
+  see: ["regex_split", "replace"])
+pub native fn regex_replace(text, pattern: string, with: string)
+
+@doc("""
+`text` cut at every match of `pattern`, the matches dropped. Like `split`,
+the pieces between adjacent matches and at the ends are kept, empty or not.
+Empty when `text` is `nil`.
+""",
+  params: {text: "The string to cut; `nil` gives `[]`.", pattern: "The regular expression that separates pieces."},
+  returns: "A list of strings.",
+  example: """
+    import regex
+    regex_split("a, b ,c", "\s*,\s*")   # ["a", "b", "c"]
+    regex_split("one  two", "\s+")      # ["one", "two"]
+  """,
+  see: ["regex_replace", "split"])
+pub native fn regex_split(text, pattern: string) -> list
+
+@doc("""
+`text` with every character that means something in a pattern escaped, so
+the result matches `text` literally. For building a pattern around text that
+comes from data.
+""",
+  params: {text: "The literal text."},
+  returns: "A pattern that matches exactly `text`.",
+  example: """
+    import regex
+    regex_escape("1+1=2?")                                      # "1\+1=2\?"
+    regex_find("price: $4.50", regex_escape("$4.50")).start     # 7
+  """,
+  see: ["regex_find"])
+pub native fn regex_escape(text: string) -> string

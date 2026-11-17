@@ -1,0 +1,66 @@
+# The regex package's tests. They need the natives, so `petal test` cannot
+# run them by itself; `cargo test` in core-stdlib/regex/native does
+# (tests/ptl_tests.rs), with the natives registered.
+import regex
+
+test "regex_find returns the match, its character positions and the groups" do
+  let m = regex_find("Lot 9 opens 8:30", "(\d+):(\d+)")
+  expect_eq(m.match, "8:30")
+  expect_eq(m.start, 12)
+  expect_eq(m.end, 16)
+  expect_eq(m.groups, ["8", "30"])
+  expect_eq(slice("Lot 9 opens 8:30", m.start, m.end), m.match)
+  expect(!has_field(m, "named"), "no named groups, no named field")
+
+test "regex_find finds nothing in nil or in a text with no match" do
+  expect_eq(regex_find("abc", "\d"), nil)
+  expect_eq(regex_find(nil, "\d"), nil)
+  expect_eq(regex_find(nil, "\d")?.groups[0] ?? "none", "none")
+
+test "a group that took no part is nil" do
+  let m = regex_find("ac", "a(b)?(c)")
+  expect_eq(m.groups, [nil, "c"])
+
+test "named groups" do
+  let m = regex_find("width=640", "(?<key>\w+)=(?<value>\d+)")
+  expect_eq(m.named.key, "width")
+  expect_eq(m.named.value, "640")
+  expect_eq(m.groups, ["width", "640"])
+
+test "positions count characters, not bytes" do
+  let m = regex_find("héllo wörld", "w\w+")
+  expect_eq(m.match, "wörld")
+  expect_eq(m.start, 6)
+  expect_eq(m.end, 11)
+
+test "regex_all" do
+  let ms = regex_all("a1 b22 c333", "[a-z](\d+)")
+  expect_eq(map(ms, fn(m) -> m.groups[0]), ["1", "22", "333"])
+  expect_eq(map(ms, fn(m) -> m.start), [0, 3, 7])
+  expect_eq(regex_all("abc", "\d"), [])
+  expect_eq(regex_all(nil, "\d"), [])
+
+test "regex_test" do
+  expect(regex_test("2026-11-17", "^\d\{4}-\d\{2}-\d\{2}$"), "a date")
+  expect(regex_test("2026-11-17", """^\d{4}-\d{2}-\d{2}$"""), "a date, raw")
+  expect(!regex_test("2026-11", "^\d\{4}-\d\{2}-\d\{2}$"), "not a date")
+  expect(regex_test("Hello", "(?i)^hello$"), "ignore case")
+  expect(!regex_test(nil, "."), "nil never matches")
+
+test "regex_replace" do
+  expect_eq(regex_replace("a  b   c", "\s+", " "), "a b c")
+  expect_eq(regex_replace("2026-11-17", "(\d+)-(\d+)-(\d+)", "$3/$2/$1"), "17/11/2026")
+  expect_eq(regex_replace("x=1", "(?<k>\w)=", "$\{k}:"), "x:1")
+  expect_eq(regex_replace("cost 5", "\d", "$$"), "cost $")
+  expect_eq(regex_replace(nil, "a", "b"), nil)
+
+test "regex_split" do
+  expect_eq(regex_split("a, b ,c", "\s*,\s*"), ["a", "b", "c"])
+  expect_eq(regex_split("one  two", "\s+"), ["one", "two"])
+  expect_eq(regex_split(",a,", ","), ["", "a", ""])
+  expect_eq(regex_split(nil, ","), [])
+
+test "regex_escape matches its text literally" do
+  expect_eq(regex_escape("1+1=2?"), "1\+1=2\?")
+  expect_eq(regex_find("price: $4.50", regex_escape("$4.50")).start, 7)
+  expect(!regex_test("price: 4x50", regex_escape("4.50")), "the dot is literal")

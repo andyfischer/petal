@@ -1,0 +1,15 @@
+[package]
+name = "petal-regex"
+version = "0.1.0"
+edition = "2024"
+description = "The natives of Petal's optional `regex` package (core-stdlib/regex)"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
+
+[dependencies]
+# Embedders build `petal` without its developer tooling; so does this crate,
+# which only registers natives and a package.
+petal = { path = "../../../core", default-features = false }
+# Linear-time matching: no backreferences or look-around, so a pattern from
+# an untrusted source cannot make a script run away.
+regex = "1"

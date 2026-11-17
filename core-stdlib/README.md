@@ -12,6 +12,7 @@ the natives its modules declare with `native fn`; a host links that crate.
 | [`ui/`](ui/) | **Native.** The petal-ui interface: input, drawing, hit testing, text and the widget prelude. `src/` declares and wraps the natives; `native/` is the Rust crate `petal-ui` that hosts link to register them (`petal_ui::register_all`) |
 | [`bloom/`](bloom/) | Petal's widget library: buttons, menus, controls, text and inspector fields, tabs, splitters, tables, overlays, an animation core, and a vector icon set. Built on `ui` |
 | [`text-layout/`](text-layout/) | Placing text: cap-height centring, alignment on both axes, wrapping, elision, caret hit-testing. What bloom draws every one of its labels through |
+| [`regex/`](regex/) | **Native, optional.** Regular expressions: `regex_find`, `regex_all`, `regex_test`, `regex_replace`, `regex_split`, `regex_escape`. Not bundled and not in any `Env` by default; a host opts in by linking the crate `petal-regex` (`native/`) and calling `petal_regex::register` |
 | [`glsl/`](glsl/) | **Experimental.** Translates a Petal function to GLSL (`to_glsl(lambda)`), for hosts that take shader hooks as Petal code. Needs no host layer; built on the core `fn_info` / `fn_ast` builtins |
 
 `bloom`, `text_layout` and `glsl` are downstream of `ui`'s natives (or of

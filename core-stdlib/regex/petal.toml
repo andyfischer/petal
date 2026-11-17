@@ -1,0 +1,13 @@
+# regex — regular expressions over strings: find, find all, test, replace,
+# split, escape. Scripts write `import regex`.
+#
+# An OPTIONAL native package: its natives are implemented by the Rust crate
+# in `native/` (`petal-regex`), which a host links and registers with
+# `petal_regex::register(&mut env)`. Neither core nor the `petal` binary
+# carries it, so a host that does not want a regex engine (a game, a wasm
+# build) pays nothing for it. See README.md.
+[package]
+name = "regex"
+version = "0.1.0"
+description = "Regular expressions over strings."
+modules = "src"

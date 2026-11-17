@@ -592,6 +592,20 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **An optional `regex` package** (`core-stdlib/regex`): `regex_find`,
+  `regex_all`, `regex_test`, `regex_replace`, `regex_split` and
+  `regex_escape` over Rust's `regex` crate (linear-time matching: no
+  backreferences or look-around, so an untrusted pattern cannot hang a
+  script). A match is `{match, start, end, groups}` (plus `named` for named
+  groups), positions in characters; a `nil` text is no match, so
+  `regex_find(select_one(…)?.text, p)?.groups[0]` needs no guard. A bad
+  pattern is an error naming the function, the pattern and the problem.
+  Compiled patterns are cached (128, least recently used out). It is
+  **opt-in**: neither core, the `petal` command nor Garden links it; a host
+  links the crate `petal-regex` (`core-stdlib/regex/native`) and calls
+  `petal_regex::register(&mut env)`, which registers the natives and the
+  package and provides the `regex` interface.
+
 - **`unique(xs)` and `unique_by(xs, key)`.** The list with the first
   occurrence of each value (`unique`) or of each `key(x)` (`unique_by`), in
   list order, compared with `==` — so `1` and `1.0` are one value, and two

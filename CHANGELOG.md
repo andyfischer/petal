@@ -679,6 +679,21 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `origin`/`frame`/`get_or_create_loading`/`reject`/`push_value` sequence.
   `petal::resource_table::hash_key` turns a string (or any `Hash` value) into
   the `u64` key. See [docs/usage/ffi.md](docs/usage/ffi.md).
+- **Hosts: a resource-provider shape and a settle loop for batch hosts.**
+  `petal::resource_provider` has `ResourceAnswer<T>` (`Loading`, `Ready(T)`,
+  `Errored(message)`) and the `ResourceProvider` trait (`answer(key)`,
+  `invalidate(key)`) a host's data source implements; `cx.push_answer(key,
+  answer, to_value)` returns an answer from a native. Garden's `query(kind,
+  arg)` provider is now this trait. `Env::run_until_settled(stack, max_runs,
+  resolve)` runs a script, hands `resolve` the resource keys the run asked
+  for and was answered loading, and runs again until a run asks for nothing
+  new, returning a per-run report — the loop a scraper or report builder used
+  to write itself. `ResourceTable::unanswered_since(frame)` /
+  `Env::unanswered_requests(stack)` are the test it uses
+  (`ResourceEntry::last_requested` records each ask), and `Env::resources`,
+  `resources_mut` and `frame` reach a stack's table. Fetch policy stays the
+  host's. See
+  [docs/usage/embedding-guide.md](docs/usage/embedding-guide.md#fetching-until-settled-batch-hosts).
 - **Programs as documents: a tidy write-out.** `concretize_with(runner,
   run, node, &ConcretizeOptions { tidy: true })` (and
   `ResolveOptions::concretize_tidy` for step 5) writes the output as a

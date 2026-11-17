@@ -63,7 +63,7 @@ pub use petal_ui::input::{buttons, InputEvent, Modifiers, KEY_NAMES};
 /// [`DataProvider`] returns (kept so `garden-app` code reads unchanged).
 pub use petal_ui::host_data::{DataProvider, HostData as PanelData};
 
-use crate::query::{self, QueryProvider};
+use crate::query::{self, DynQueryProvider};
 
 mod dm;
 mod model_drop;
@@ -1112,7 +1112,7 @@ pub struct PanelHost {
     /// pending values); without one, `query` answers a loading `Pending`.
     /// Installed into the query channel for the duration of each
     /// [`frame`](Self::frame), the same way `provider` is.
-    query_provider: Option<Box<dyn QueryProvider>>,
+    query_provider: Option<Box<DynQueryProvider>>,
     /// Live text of each `edit_view` region, keyed by region id — the host
     /// publishes the current buffer contents here each tick
     /// ([`set_edit_view_texts`](Self::set_edit_view_texts)) so `edit_view_text(id)`
@@ -1664,7 +1664,7 @@ impl PanelHost {
     /// Attach the host-side async data source the script reaches through
     /// `query(kind, arg)` / `invalidate(kind, arg)`. A panel without one sees a
     /// perpetual loading `Pending` from every `query`.
-    pub fn set_query_provider(&mut self, provider: Box<dyn QueryProvider>) {
+    pub fn set_query_provider(&mut self, provider: Box<DynQueryProvider>) {
         self.query_provider = Some(provider);
         self.core.env.note_host_data_changed(self.core.stack_id());
     }
@@ -2474,7 +2474,7 @@ struct PanelFrameHooks<'a> {
     mutation_results: &'a HashMap<i64, serde_json::Value>,
     last_input: &'a mut PanelInput,
     trace_origins: bool,
-    query_provider: &'a mut Option<Box<dyn QueryProvider>>,
+    query_provider: &'a mut Option<Box<DynQueryProvider>>,
     edit_view_texts: &'a mut HashMap<i64, String>,
     edit_view_edits: &'a mut HashMap<i64, PanelData>,
     store: &'a mut Option<crate::panel_store::PanelStore>,
@@ -2488,7 +2488,7 @@ struct PanelFrameHooks<'a> {
 
 /// The thread-local channel values a panel frame displaced.
 struct SavedChannels {
-    query: Option<Box<dyn QueryProvider>>,
+    query: Option<Box<DynQueryProvider>>,
     texts: HashMap<i64, String>,
     edits: HashMap<i64, PanelData>,
     store: Option<crate::panel_store::PanelStore>,

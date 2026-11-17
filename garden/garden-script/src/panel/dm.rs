@@ -54,7 +54,7 @@ use crate::panel_trace::{
     native_position_args, DragAlternative, DragFilter, DragOutcomeV2, DragProperty, DragSelector, DragStart,
     SourceRewrite,
 };
-use crate::query::{self, QueryProvider};
+use crate::query::{self, DynQueryProvider};
 
 /// Garden's speculative-run wrapper (plan R11): the frame core's providers
 /// (host data, fonts) plus Garden's own channels (the query provider, the
@@ -64,7 +64,7 @@ use crate::query::{self, QueryProvider};
 /// disagree with the frame on screen.
 struct PanelSpecHost<'a> {
     inner: FrameSpecHost<'a>,
-    query_provider: &'a mut Option<Box<dyn QueryProvider>>,
+    query_provider: &'a mut Option<Box<DynQueryProvider>>,
     edit_view_texts: &'a mut std::collections::HashMap<i64, String>,
     edit_view_edits: &'a mut std::collections::HashMap<i64, PanelData>,
     store: &'a mut Option<crate::panel_store::PanelStore>,

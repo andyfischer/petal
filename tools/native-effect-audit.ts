@@ -59,6 +59,7 @@ const INSTRUMENTED: Record<string, string> = {
   resources_mut: 'effect',
   push_loading: 'effect', // delegates to resources_mut()
   push_failed: 'effect', // delegates to resources_mut()
+  push_answer: 'effect', // delegates to push_loading / push_failed
   resources: 'resource_read',
   push_output: 'emit',
   emit: 'emit',

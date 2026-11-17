@@ -45,6 +45,14 @@ pub struct ResourceEntry {
     /// this resource was first requested in. With the current frame, yields the
     /// resource's age (see [`age_frames`](Self::age_frames)).
     pub frame_started: u64,
+    /// The latest frame a native asked for this resource
+    /// ([`get_or_create_loading`](ResourceTable::get_or_create_loading), which
+    /// `push_loading` and `push_failed` call). A native that answers a key
+    /// from its host's cache doesn't ask, so this stays at the frame of the
+    /// last loading answer: with [`frame_started`](Self::frame_started) it
+    /// tells a host which requests a run left unanswered
+    /// ([`ResourceTable::unanswered_since`]).
+    pub last_requested: u64,
     pub absorbed_count: u64,
 }
 
@@ -91,12 +99,24 @@ impl ResourceTable {
     /// can't reach an origin term) and the context `frame` it started in.
     /// Dedup: the same key always yields the same `PendingId` (a repeat fetch
     /// keeps the first entry's origin/start frame).
+    ///
+    /// Either way the entry is stamped as requested in `frame` (see
+    /// [`ResourceEntry::last_requested`]).
     pub fn get_or_create_loading(
         &mut self,
         key: u64,
         origin: Option<TermId>,
         frame: u64,
     ) -> PendingId {
+        let id = self.entry_for(key, origin, frame);
+        let entry = &mut self.entries[id.0 as usize];
+        entry.last_requested = entry.last_requested.max(frame);
+        id
+    }
+
+    /// The entry for `key`, created `Loading` if absent — without counting as
+    /// a request (a host resolving a key is not the script asking for it).
+    fn entry_for(&mut self, key: u64, origin: Option<TermId>, frame: u64) -> PendingId {
         if let Some(id) = self.by_key.get(&key) {
             return *id;
         }
@@ -107,6 +127,7 @@ impl ResourceTable {
             state: ResourceState::Loading,
             origin,
             frame_started: frame,
+            last_requested: frame,
             absorbed_count: 0,
         });
         self.by_key.insert(key, id);
@@ -116,7 +137,7 @@ impl ResourceTable {
     /// Mark `key`'s entry `Ready(value)`, creating it (in `frame`, with no
     /// origin) if absent.
     pub fn resolve(&mut self, key: u64, value: Value, frame: u64) {
-        let id = self.get_or_create_loading(key, None, frame);
+        let id = self.entry_for(key, None, frame);
         self.revision += 1;
         self.entries[id.0 as usize].state = ResourceState::Ready(value);
     }
@@ -124,9 +145,29 @@ impl ResourceTable {
     /// Mark `key`'s entry `Errored(error)`, creating it (in `frame`, with no
     /// origin) if absent.
     pub fn reject(&mut self, key: u64, error: Value, frame: u64) {
-        let id = self.get_or_create_loading(key, None, frame);
+        let id = self.entry_for(key, None, frame);
         self.revision += 1;
         self.entries[id.0 as usize].state = ResourceState::Errored(error);
+    }
+
+    /// The keys the script asked for in `frame` or later and was answered
+    /// `Loading` — the requests a batch host still has to resolve. In the
+    /// order their entries were created, each key once however many calls
+    /// asked for it. A key the host has answered since (a native returned
+    /// its value, or [`push_failed`](crate::native_fn::PetalCxt::push_failed)
+    /// marked it errored, or [`resolve`](Self::resolve) /
+    /// [`reject`](Self::reject) landed it) is not listed.
+    ///
+    /// With a host that advances the frame before each run
+    /// ([`crate::env::Env::advance_frame`]), `unanswered_since(frame)` read
+    /// after a run is that run's requests; an empty answer means the run
+    /// asked for nothing it didn't get — the run settled.
+    pub fn unanswered_since(&self, frame: u64) -> Vec<u64> {
+        self.entries
+            .iter()
+            .filter(|e| matches!(e.state, ResourceState::Loading) && e.last_requested >= frame)
+            .map(|e| e.key)
+            .collect()
     }
 
     /// No resource has been created, so no `Value::Pending` can exist in

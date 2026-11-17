@@ -83,6 +83,7 @@ pub mod propose_edit;
 pub mod provenance;
 pub mod record;
 pub mod record_template;
+pub mod resource_provider;
 pub mod resource_table;
 pub mod named_calls;
 pub mod suggest;

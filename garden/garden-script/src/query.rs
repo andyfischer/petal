@@ -10,7 +10,8 @@
 //! Petal's `pending-values` design notes intend.
 //!
 //! This module is the language-side glue: the `query`/`invalidate` natives and
-//! the [`QueryProvider`] trait a host implements. The **cache/fetch policy** it
+//! the [`DynQueryProvider`] a host implements (core's
+//! [`ResourceProvider`], keyed by [`QueryKey`]). The **cache/fetch policy** it
 //! used to carry has graduated into the upstream `petal-query` crate
 //! (`../core-libs/petal-query`) — the same path `host_data` took into `petal-ui`.
 //! Garden's pipe-backed provider (`garden-app/src/script_client.rs`) now wraps a
@@ -21,7 +22,7 @@
 //!
 //! ## Contract
 //!
-//! A [`QueryProvider`] (host-owned, attached to the [`PanelHost`](crate::PanelHost)
+//! A [`DynQueryProvider`] (host-owned, attached to the [`PanelHost`](crate::PanelHost)
 //! for the duration of each frame) answers `query(kind, arg)` with a
 //! [`QueryState`]:
 //!
@@ -49,50 +50,51 @@
 //! noted rather than worked around while this lives outside `petal-query`.)
 
 use std::cell::RefCell;
-use std::hash::{Hash, Hasher};
 
 use petal::record::RecordMap;
+use petal::resource_table::hash_key;
 use petal::native_fn::{InputClasses, NativeEffects, PetalCxt};
 use petal::value::Value;
 
+pub use petal::resource_provider::{ResourceAnswer, ResourceProvider};
 pub use petal_ui::host_data::HostData;
 
-/// The state of one keyed resource, as reported by a [`QueryProvider`] for the
-/// current frame. Mirrors React Query / Elm `RemoteData`.
-#[derive(Clone, Debug, PartialEq)]
-pub enum QueryState {
-    /// The fetch is in flight (or has not started). → a loading `Value::Pending`.
-    Loading,
-    /// The fetch resolved to this value tree. → the value itself.
-    Ready(HostData),
-    /// The fetch failed with this message. → an errored `Value::Pending`.
-    Errored(String),
+/// What a query is named by: the `(kind, arg)` pair of `query(kind, arg)`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct QueryKey {
+    pub kind: String,
+    pub arg: String,
 }
 
+impl QueryKey {
+    pub fn new(kind: impl Into<String>, arg: impl Into<String>) -> QueryKey {
+        QueryKey { kind: kind.into(), arg: arg.into() }
+    }
+}
+
+/// The state of one query, as its provider reports it for the current frame:
+/// core's [`ResourceAnswer`] over [`HostData`].
+pub type QueryState = ResourceAnswer<HostData>;
+
 /// A host-side async data source behind the `query(kind, arg)` /
-/// `invalidate(kind, arg)` natives. Attached to a [`PanelHost`](crate::PanelHost)
-/// via [`set_query_provider`](crate::PanelHost::set_query_provider); the host
+/// `invalidate(kind, arg)` natives: core's [`ResourceProvider`] keyed by
+/// [`QueryKey`] and answering [`HostData`]. Attached to a
+/// [`PanelHost`](crate::PanelHost) via
+/// [`set_query_provider`](crate::PanelHost::set_query_provider); the host
 /// installs it into this thread's channel around each `env.run`.
 ///
 /// Both methods are called synchronously inside the frame, so implementations
 /// must answer from a cache / non-blocking poll of their background work rather
-/// than performing the fetch inline.
-pub trait QueryProvider {
-    /// Report the current [`QueryState`] for `(kind, arg)`, starting the fetch
-    /// (as a deduped side effect) on the first request for a key.
-    fn query(&mut self, kind: &str, arg: &str) -> QueryState;
-
-    /// Drop any cached entry for `(kind, arg)` so the next [`query`](Self::query)
-    /// refetches. A no-arg refresh invalidates every key it cares about.
-    fn invalidate(&mut self, kind: &str, arg: &str);
-}
+/// than performing the fetch inline; [`answer`](ResourceProvider::answer) starts
+/// the fetch (as a deduped side effect) on the first request for a key.
+pub type DynQueryProvider = dyn ResourceProvider<Key = QueryKey, Value = HostData>;
 
 thread_local! {
     /// The query provider of the run currently in progress on this thread. A host
     /// installs its provider here for the duration of `env.run` via
     /// [`swap_query_provider`]; the natives read it. `None` → every `query`
     /// answers `Loading` (a script degrades to a permanent spinner, never a crash).
-    static QUERY_PROVIDER: RefCell<Option<Box<dyn QueryProvider>>> =
+    static QUERY_PROVIDER: RefCell<Option<Box<DynQueryProvider>>> =
         const { RefCell::new(None) };
 }
 
@@ -101,8 +103,8 @@ thread_local! {
 /// [`host_data::swap_data_provider`](petal_ui::host_data::swap_data_provider),
 /// so a panic mid-run leaves the provider in the channel for the host to reclaim.
 pub fn swap_query_provider(
-    provider: Option<Box<dyn QueryProvider>>,
-) -> Option<Box<dyn QueryProvider>> {
+    provider: Option<Box<DynQueryProvider>>,
+) -> Option<Box<DynQueryProvider>> {
     QUERY_PROVIDER.with(|p| std::mem::replace(&mut *p.borrow_mut(), provider))
 }
 
@@ -122,50 +124,23 @@ pub fn register_query(env: &mut petal::env::Env) {
     env.register_native("invalidate", native_invalidate, NativeEffects::EFFECT);
 }
 
-/// Cache/resource key for a `(kind, arg)` pair — a `u64` hash the resource table
-/// is keyed by. Distinct kinds/args never collide (the NUL separator can't
-/// appear in the interned strings).
-fn resource_key(kind: &str, arg: &str) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    kind.hash(&mut hasher);
-    0u8.hash(&mut hasher);
-    arg.hash(&mut hasher);
-    hasher.finish()
-}
-
-/// `query(kind, arg)` — ask the host's [`QueryProvider`] for a resource. Returns
+/// `query(kind, arg)` — ask the host's [`DynQueryProvider`] for a resource. Returns
 /// the resolved value when [`Ready`](QueryState::Ready), or a `Value::Pending`
 /// (loading or errored) otherwise, so the script drives its own loading/error UI
 /// through the pending meta functions. Without a provider it answers a loading
 /// Pending (graceful degradation — never a crash).
 fn native_query(cxt: &mut PetalCxt) -> Result<u32, String> {
-    let kind = cxt.get_string(1)?;
-    let arg = cxt.get_string(2)?;
+    let key = QueryKey::new(cxt.get_string(1)?, cxt.get_string(2)?);
     // The answer lives in the host's cache: tell the frame gate, so the frame
     // re-runs when the pane reports the cache moved (and not otherwise).
     cxt.note_host_read();
     let state = QUERY_PROVIDER
-        .with(|p| {
-            p.borrow_mut()
-                .as_mut()
-                .map(|provider| provider.query(&kind, &arg))
-        })
+        .with(|p| p.borrow_mut().as_mut().map(|provider| provider.answer(&key)))
         .unwrap_or(QueryState::Loading);
-
-    match state {
-        QueryState::Ready(data) => {
-            let value = data_to_value(cxt, &data);
-            cxt.push_value(value);
-        }
-        QueryState::Loading => {
-            // Stamp the resource with the requesting call site + current frame so
-            // the pending-observability tooling can render provenance and age.
-            cxt.push_loading(resource_key(&kind, &arg));
-        }
-        QueryState::Errored(msg) => {
-            cxt.push_failed(resource_key(&kind, &arg), msg);
-        }
-    }
+    // A loading or errored answer is stamped with the requesting call site +
+    // current frame, so the pending-observability tooling can render its
+    // provenance and age.
+    cxt.push_answer(hash_key(&key), state, |cxt, data| data_to_value(cxt, &data));
     Ok(1)
 }
 
@@ -173,8 +148,7 @@ fn native_query(cxt: &mut PetalCxt) -> Result<u32, String> {
 /// cached entry so the next frame's `query` refetches. Returns nil. Without a
 /// provider it is a no-op.
 fn native_invalidate(cxt: &mut PetalCxt) -> Result<u32, String> {
-    let kind = cxt.get_string(1)?;
-    let arg = cxt.get_string(2)?;
+    let key = QueryKey::new(cxt.get_string(1)?, cxt.get_string(2)?);
     // Dropping a cache entry is an effect no replay reproduces. Without this
     // the call leaves the activity counters untouched, so a scope containing
     // it memoizes as a pure function of its arguments and is replayed — and a
@@ -183,7 +157,7 @@ fn native_invalidate(cxt: &mut PetalCxt) -> Result<u32, String> {
     cxt.note_effect();
     QUERY_PROVIDER.with(|p| {
         if let Some(provider) = p.borrow_mut().as_mut() {
-            provider.invalidate(&kind, &arg);
+            provider.invalidate(&key);
         }
     });
     cxt.push_nil();

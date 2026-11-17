@@ -472,6 +472,17 @@ impl ExecutionContext {
             .unwrap_or(&[])
     }
 
+    /// Drop everything a run left for the host: its `print` output and every
+    /// output buffer (with their origins and segment marks). What a settle
+    /// loop does between runs, so the host drains only the last run's.
+    pub fn clear_run_output(&mut self) {
+        self.output.clear();
+        let syms: Vec<SymbolId> = self.output_buffers.keys().chain(self.segments.keys()).copied().collect();
+        for sym in syms {
+            self.clear_output_buffer(sym);
+        }
+    }
+
     /// Clear the buffer bound to `sym` (e.g. at the top of a frame), along with
     /// any origins recorded for it — the two are index-aligned, so clearing one
     /// without the other would misattribute every value that follows.

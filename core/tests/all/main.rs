@@ -79,6 +79,7 @@ mod output_segments;
 mod packages;
 mod parse_hints;
 mod pending_deep;
+mod settle;
 mod profile_sites;
 mod pub_keyword;
 mod qualified_types;

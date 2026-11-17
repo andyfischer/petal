@@ -30,6 +30,7 @@ mod host_io;
 mod observations_json;
 mod reload;
 mod run;
+mod settle;
 pub(crate) mod spec_run;
 mod state_json;
 mod state_storage;

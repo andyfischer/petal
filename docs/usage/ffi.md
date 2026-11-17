@@ -468,6 +468,16 @@ yields the same resource, so the native can return it on every run until the
 answer lands. Both count as an effect, like `resources_mut()`, which remains
 the route for anything else (`resolve`, `pending_for_key`).
 
+A host whose data source answers in
+`petal::resource_provider::ResourceAnswer<T>` (`Loading`, `Ready(T)`,
+`Errored(message)`) — usually by implementing
+`petal::resource_provider::ResourceProvider` (`answer(key)`, `invalidate(key)`),
+the shape Garden's `query(kind, arg)` uses — returns it with
+`cx.push_answer(key, answer, |cx, t| to_value(cx, t))`: the ready value as
+itself, the other two as `push_loading` / `push_failed`. For the batch loop
+that fetches what a run asked for and runs again, see
+[embedding-guide.md](embedding-guide.md#fetching-until-settled-batch-hosts).
+
 The compiled-in builtins (`core/src/builtins/`) go through the same table.
 `map`/`filter`/`reduce`/`forEach` register placeholders and are dispatched
 specially by the VM because they call back into closures; ordinary natives

@@ -79,7 +79,7 @@ pub use panel_trace::{
     DragCandidate, DragFilter, DragHandle, DragOutcome, DragOutcomeV2, DragProperty, DragSelector, DragStart,
     DrawOrigin, DrawTrace, LivePreview, SourceRewrite, TracedArg, v2_draggable,
 };
-pub use query::{HostData, QueryProvider, QueryState};
+pub use query::{DynQueryProvider, HostData, QueryKey, QueryState, ResourceAnswer, ResourceProvider};
 pub use theme::Theme;
 
 /// The goal-based source-editing vocabulary, re-exported for callers that

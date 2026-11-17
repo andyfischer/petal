@@ -1812,6 +1812,34 @@ impl<'a> PetalCxt<'a> {
         id
     }
 
+    /// Return a host's [`ResourceAnswer`](crate::resource_provider::ResourceAnswer)
+    /// for the resource `key`: a ready value as itself (made Petal by `ready`),
+    /// a loading or errored one as a pending value
+    /// ([`push_loading`](Self::push_loading) / [`push_failed`](Self::push_failed)).
+    /// The body of a native over a
+    /// [`ResourceProvider`](crate::resource_provider::ResourceProvider):
+    /// `let a = provider.answer(&url); cx.push_answer(hash_key(&url), a, to_value)`.
+    pub fn push_answer<T>(
+        &mut self,
+        key: u64,
+        answer: crate::resource_provider::ResourceAnswer<T>,
+        ready: impl FnOnce(&mut Self, T) -> Value,
+    ) {
+        use crate::resource_provider::ResourceAnswer;
+        match answer {
+            ResourceAnswer::Ready(data) => {
+                let value = ready(self, data);
+                self.results.push(value);
+            }
+            ResourceAnswer::Loading => {
+                self.push_loading(key);
+            }
+            ResourceAnswer::Errored(message) => {
+                self.push_failed(key, message);
+            }
+        }
+    }
+
     /// Where this call is written: the file, line and column of the call
     /// expression. `None` when the call has no source position (a program
     /// loaded from IR, a call the host made itself).

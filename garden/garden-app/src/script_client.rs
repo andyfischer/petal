@@ -5,7 +5,7 @@
 //! [`PanelHost`](garden_script::PanelHost), and answers the script's
 //! `query(kind, arg)` calls over the pipe. This module is the bridge: a
 //! [`ProcessQueryProvider`] implements the synchronous, in-frame
-//! [`QueryProvider`] contract by reading a shared cache and **enqueuing** a pipe
+//! [`ResourceProvider`] contract (keyed by [`QueryKey`]) by reading a shared cache and **enqueuing** a pipe
 //! request for any key it needs; the owning [`PanelView`](crate::panel_view)
 //! flushes that queue to the subprocess and feeds the id-correlated query
 //! answers back into the cache on the poll tick.
@@ -30,7 +30,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
-use garden_script::{HostData, QueryProvider, QueryState};
+use garden_script::{HostData, QueryKey, QueryState, ResourceProvider};
 use petal_query::{Cache, CachePolicy, Lookup};
 
 /// The cache + request bookkeeping shared between a [`ProcessQueryProvider`]
@@ -124,7 +124,7 @@ impl SharedQueryState {
     }
 }
 
-/// A [`QueryProvider`] backed by a subprocess over the GPP pipe. `query` never
+/// A query provider ([`ResourceProvider`] over [`QueryKey`]) backed by a subprocess over the GPP pipe. `query` never
 /// blocks: it answers from the shared cache, and on a miss (or a policy-expired
 /// entry) enqueues a request (deduped) and reports [`Loading`](QueryState::Loading);
 /// a stale-but-serveable entry is returned while a background refetch is enqueued.
@@ -139,17 +139,20 @@ impl ProcessQueryProvider {
     }
 }
 
-impl QueryProvider for ProcessQueryProvider {
-    fn query(&mut self, kind: &str, arg: &str) -> QueryState {
+impl ResourceProvider for ProcessQueryProvider {
+    type Key = QueryKey;
+    type Value = HostData;
+
+    fn answer(&mut self, key: &QueryKey) -> QueryState {
         // The script native's arg is a string; on the wire (and in the cache)
         // it is the JSON string value.
-        let arg = serde_json::Value::String(arg.to_string());
-        self.shared.borrow_mut().lookup(kind, &arg)
+        let arg = serde_json::Value::String(key.arg.clone());
+        self.shared.borrow_mut().lookup(&key.kind, &arg)
     }
 
-    fn invalidate(&mut self, kind: &str, arg: &str) {
-        let arg = serde_json::Value::String(arg.to_string());
-        self.shared.borrow_mut().invalidate(kind, &arg);
+    fn invalidate(&mut self, key: &QueryKey) {
+        let arg = serde_json::Value::String(key.arg.clone());
+        self.shared.borrow_mut().invalidate(&key.kind, &arg);
     }
 }
 
@@ -200,13 +203,13 @@ mod tests {
         let mut provider = ProcessQueryProvider::new(shared.clone());
 
         // First query for an unknown key: Loading, and enqueued for the pipe.
-        assert_eq!(provider.query("log", ""), QueryState::Loading);
+        assert_eq!(provider.answer(&QueryKey::new("log", "")), QueryState::Loading);
         // Re-querying the same key every frame does NOT re-enqueue.
-        assert_eq!(provider.query("log", ""), QueryState::Loading);
+        assert_eq!(provider.answer(&QueryKey::new("log", "")), QueryState::Loading);
         let outbox = shared.borrow_mut().take_outbox();
         assert_eq!(outbox, vec![("log".to_string(), key(""))]);
         // After draining, still no duplicate request (it's marked requested).
-        assert_eq!(provider.query("log", ""), QueryState::Loading);
+        assert_eq!(provider.answer(&QueryKey::new("log", "")), QueryState::Loading);
         assert!(shared.borrow_mut().take_outbox().is_empty());
     }
 
@@ -214,7 +217,7 @@ mod tests {
     fn resolve_makes_the_next_query_ready() {
         let shared = new_shared();
         let mut provider = ProcessQueryProvider::new(shared.clone());
-        provider.query("commit", "abc");
+        provider.answer(&QueryKey::new("commit", "abc"));
         shared.borrow_mut().take_outbox();
 
         shared.borrow_mut().resolve(
@@ -225,7 +228,7 @@ mod tests {
             None,
         );
 
-        match provider.query("commit", "abc") {
+        match provider.answer(&QueryKey::new("commit", "abc")) {
             QueryState::Ready(HostData::Record(fields)) => {
                 assert!(fields
                     .iter()
@@ -242,12 +245,12 @@ mod tests {
     fn error_answer_reports_errored() {
         let shared = new_shared();
         let mut provider = ProcessQueryProvider::new(shared.clone());
-        provider.query("log", "");
+        provider.answer(&QueryKey::new("log", ""));
         shared
             .borrow_mut()
             .resolve("log".into(), &key(""), None, Some("no repo".into()), None);
         assert_eq!(
-            provider.query("log", ""),
+            provider.answer(&QueryKey::new("log", "")),
             QueryState::Errored("no repo".into())
         );
     }
@@ -256,17 +259,17 @@ mod tests {
     fn invalidate_forces_a_refetch() {
         let shared = new_shared();
         let mut provider = ProcessQueryProvider::new(shared.clone());
-        provider.query("log", "");
+        provider.answer(&QueryKey::new("log", ""));
         shared.borrow_mut().take_outbox();
         shared
             .borrow_mut()
             .resolve("log".into(), &key(""), Some(json!({})), None, None);
-        assert!(matches!(provider.query("log", ""), QueryState::Ready(_)));
+        assert!(matches!(provider.answer(&QueryKey::new("log", "")), QueryState::Ready(_)));
 
         // Invalidate (as a client push or a script call) drops it; next query
         // re-requests over the pipe.
-        provider.invalidate("log", "");
-        assert_eq!(provider.query("log", ""), QueryState::Loading);
+        provider.invalidate(&QueryKey::new("log", ""));
+        assert_eq!(provider.answer(&QueryKey::new("log", "")), QueryState::Loading);
         assert_eq!(
             shared.borrow_mut().take_outbox(),
             vec![("log".to_string(), key(""))]
@@ -279,15 +282,15 @@ mod tests {
         // wraps to the same JSON string, so the keys meet.
         let shared = new_shared();
         let mut provider = ProcessQueryProvider::new(shared.clone());
-        provider.query("log", "x");
+        provider.answer(&QueryKey::new("log", "x"));
         shared.borrow_mut().take_outbox();
         shared
             .borrow_mut()
             .resolve("log".into(), &key("x"), Some(json!(1)), None, None);
-        assert!(matches!(provider.query("log", "x"), QueryState::Ready(_)));
+        assert!(matches!(provider.answer(&QueryKey::new("log", "x")), QueryState::Ready(_)));
 
         shared.borrow_mut().invalidate("log", &json!("x"));
-        assert_eq!(provider.query("log", "x"), QueryState::Loading);
+        assert_eq!(provider.answer(&QueryKey::new("log", "x")), QueryState::Loading);
     }
 
     #[test]
@@ -297,7 +300,7 @@ mod tests {
         // CachePolicy::no_store carried through resolve().
         let shared = new_shared();
         let mut provider = ProcessQueryProvider::new(shared.clone());
-        provider.query("live", "");
+        provider.answer(&QueryKey::new("live", ""));
         shared.borrow_mut().take_outbox();
         shared.borrow_mut().resolve(
             "live".into(),
@@ -306,7 +309,7 @@ mod tests {
             None,
             Some(CachePolicy::no_store()),
         );
-        assert!(matches!(provider.query("live", ""), QueryState::Ready(_)));
+        assert!(matches!(provider.answer(&QueryKey::new("live", "")), QueryState::Ready(_)));
         // Served AND a refetch was enqueued.
         assert_eq!(
             shared.borrow_mut().take_outbox(),
@@ -321,7 +324,7 @@ mod tests {
         // since the cache reads Instant::now() internally.
         let shared = new_shared();
         let mut provider = ProcessQueryProvider::new(shared.clone());
-        provider.query("now", "");
+        provider.answer(&QueryKey::new("now", ""));
         shared.borrow_mut().take_outbox();
         shared.borrow_mut().resolve(
             "now".into(),
@@ -331,7 +334,7 @@ mod tests {
             Some(CachePolicy::max_age(Duration::from_millis(0))),
         );
         std::thread::sleep(Duration::from_millis(5));
-        assert_eq!(provider.query("now", ""), QueryState::Loading);
+        assert_eq!(provider.answer(&QueryKey::new("now", "")), QueryState::Loading);
         assert_eq!(
             shared.borrow_mut().take_outbox(),
             vec![("now".to_string(), key(""))]
@@ -378,7 +381,7 @@ mod tests {
         // fraction that read back as 0.
         let shared = new_shared();
         let mut provider = ProcessQueryProvider::new(shared.clone());
-        provider.query("hud", "");
+        provider.answer(&QueryKey::new("hud", ""));
         shared.borrow_mut().take_outbox();
         shared.borrow_mut().resolve(
             "hud".into(),
@@ -388,7 +391,7 @@ mod tests {
             None,
         );
 
-        let QueryState::Ready(HostData::Record(fields)) = provider.query("hud", "") else {
+        let QueryState::Ready(HostData::Record(fields)) = provider.answer(&QueryKey::new("hud", "")) else {
             panic!("expected a ready record");
         };
         let Some((_, HostData::List(meters))) = fields.iter().find(|(k, _)| k == "meters") else {

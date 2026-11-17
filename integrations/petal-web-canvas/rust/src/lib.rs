@@ -285,6 +285,23 @@ impl PetalRuntime {
         self.env.invalidate_run(StackKey(stack_id));
     }
 
+    /// The compiled dataflow IR of `source`, without loading or running it:
+    /// the `petal show-ir --json --user-only` view (builtin phantoms, the
+    /// prelude and module bodies filtered out, ids kept). For tools that draw
+    /// a program's dataflow (petal-lang.org's dataflow visualizer).
+    ///
+    /// Returns JSON: `{ok: true, ir}` or `{ok: false, error}`.
+    pub fn dataflow_ir(&self, source: &str) -> String {
+        match self.env.compile_program(ProgramId(u32::MAX - 1), source) {
+            Ok(program) => serde_json::json!({
+                "ok": true,
+                "ir": petal::ir_display::user_only_json(&program),
+            })
+            .to_string(),
+            Err(e) => err_json(&e),
+        }
+    }
+
     pub fn take_output(&mut self) -> String {
         let output = self.env.take_output();
         serde_json::to_string(&output).unwrap_or_else(|_| "[]".to_string())

@@ -189,7 +189,7 @@ print(el)`;
 
     it("takes a keyword as an attribute name, as a record key", () => {
       const code = `let el = <video in={2.0} end={4} />\nprint(el.props)`;
-      expect(runPetal(code)).toBe("{ in: 2.0, end: 4 }");
+      expect(runPetal(code)).toBe(`{ "in": 2.0, "end": 4 }`);
     });
 
     it("reads a bare attribute as true", () => {

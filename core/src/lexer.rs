@@ -524,7 +524,7 @@ pub struct LegacyColor {
 /// diagnostics below and the parser's so the tests can assert one phrase.
 pub(crate) const LITERAL_BRACE_HELP: &str =
     "write `\\{` for a literal brace, or use a raw string: \"\"\"{\"\"\" (a `\"\"\"…\"\"\"` \
-     string keeps braces and backslashes literal — ideal for a regex, \"\"\"\\d{1,2}\"\"\")";
+     string keeps braces and backslashes literal, ideal for a regex: \"\"\"\\d{1,2}\"\"\")";
 
 /// A character the lexer cannot read inside an interpolation hole
 /// (`"^\\{?"`, where the `{` was meant literally). Reported at the brace that

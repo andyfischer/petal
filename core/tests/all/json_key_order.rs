@@ -29,7 +29,7 @@ fn keys(json: &serde_json::Value) -> Vec<&str> {
 #[test]
 fn a_record_keeps_its_written_key_order() {
     let (env, v) = run("{x: 1, y: 2, w: 3, h: 4, nested: {b: 1, a: 2}}");
-    let json = value_to_json(&v, env.heap());
+    let json = value_to_json(&v, env.heap()).unwrap();
     assert_eq!(keys(&json), ["x", "y", "w", "h", "nested"]);
     assert_eq!(keys(&json["nested"]), ["b", "a"]);
 }
@@ -43,7 +43,7 @@ fn json_stringify_keeps_it_too() {
 #[test]
 fn element_props_keep_their_attribute_order() {
     let (env, v) = run(r#"<text stroke="red" drop_shadow={2} align="left" />"#);
-    let json = value_to_json(&v, env.heap());
+    let json = value_to_json(&v, env.heap()).unwrap();
     assert_eq!(keys(&json["props"]), ["stroke", "drop_shadow", "align"]);
 }
 
@@ -53,6 +53,6 @@ fn parsing_keeps_the_order_and_round_trips() {
     let json: serde_json::Value = serde_json::from_str(r#"{"w": 3, "h": 4, "x": 1}"#).unwrap();
     let v = json_to_value(&json, env.heap_mut()).unwrap();
     assert_eq!(value_to_display_string(&v, env.heap()), "{ w: 3, h: 4, x: 1 }");
-    assert_eq!(value_to_json(&v, env.heap()), json);
-    assert_eq!(keys(&value_to_json(&v, env.heap())), ["w", "h", "x"]);
+    assert_eq!(value_to_json(&v, env.heap()).unwrap(), json);
+    assert_eq!(keys(&value_to_json(&v, env.heap()).unwrap()), ["w", "h", "x"]);
 }

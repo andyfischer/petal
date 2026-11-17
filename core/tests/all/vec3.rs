@@ -191,7 +191,7 @@ fn the_collector_keeps_live_vec3s_and_frees_dead_ones() {
     assert!(heap.is_live(live), "a vec3 reachable from a root survives");
     assert!(!heap.is_live(dead), "an unreachable vec3 is reclaimed");
     assert_eq!(
-        value_to_json(&live, &heap),
+        value_to_json(&live, &heap).unwrap(),
         serde_json::json!({ "type": "vec3", "x": 1.0, "y": 2.0, "z": 3.0 })
     );
     // The freed slot is reused, under a new generation: the stale id stays dead.

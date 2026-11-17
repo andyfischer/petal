@@ -54,6 +54,20 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   into the protocol on stdout (they still reach a response's `output` or
   stderr), and its window mode writes them once, to stderr, instead of to
   both; screenshot and record still echo.
+- **Breaking for hosts: `value_to_json` refuses a value that is not fully
+  loaded.** `petal::value::value_to_json` now returns
+  `Result<serde_json::Value, PendingJsonError>`: a `Value::Pending`, on its own
+  or anywhere inside a list, record, map, enum or element, is an `Err` naming
+  it and its path (`.rows[1].date`), where it used to become the string
+  `"<pending N>"` — which a host saving state or writing JSON would store as
+  if it were data. Debug dumps choose a rendering explicitly:
+  `value_to_json_lossy` (the old behaviour) or `value_to_json_ctx` (a
+  structured pending object). Migrate: data you save or send → handle the
+  `Err`; a debug or display dump → `value_to_json_lossy`.
+  `petal::value::find_pending` is the walk on its own. `json_stringify` of a
+  record with a pending field is now that pending value, like
+  `json_stringify` of a pending value, and `petal_ui::drag::take_drops` leaves
+  out a drop whose payload is still loading.
 - **Breaking for hosts: a setting's label is its `@doc`, not the comment
   above it.** `static_value::StaticBinding` loses `comment`, and
   `pb_source_bindings_json` no longer writes `"comment"`; read `doc` (its
@@ -651,6 +665,14 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `..Default::default()` or `setup: None`. Tests that wait for frames
   (`PetalCxt::suspend`) still need the host's own loop.
 
+- **Hosts: a pending policy for natives that need fully loaded arguments.**
+  `NativeClass::EffectfulDeep` (the row `NativeEffects::EMITS_DEEP`) makes a
+  call a no-op returning `nil` when any argument *contains* a pending value
+  at any depth, so `emit({title: t, date: d})` with `d` still loading emits
+  nothing instead of a record with a pending field. Other policies keep the
+  element-by-element rule (a UI still draws a partly loaded record). The walk
+  is skipped while nothing has been fetched. See
+  [docs/usage/ffi.md](docs/usage/ffi.md).
 - **Hosts: `cx.push_loading(key)` and `cx.push_failed(key, message)`** on
   `PetalCxt` return a loading or errored pending value from a native in one
   call, stamped with the call site and frame, instead of the

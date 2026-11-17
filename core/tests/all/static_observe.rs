@@ -48,7 +48,7 @@ fn observed(w: &World) -> String {
         .env
         .observations()
         .iter()
-        .map(|(t, v)| (t.0, petal::value::value_to_json(&v, heap).to_string()))
+        .map(|(t, v)| (t.0, petal::value::value_to_json_lossy(&v, heap).to_string()))
         .collect();
     by_term.sort();
     format!("observed {by_name}\nterms {by_term:?}")
@@ -246,9 +246,9 @@ fn a_recompile_keeps_the_values_and_writes_the_logs_again() {
         // on the way: a log would otherwise hold a second TILES for good.
         for name in ["TILES", "NAMES", "WIDTHS"] {
             let kept = held(&on, name).unwrap();
-            let json = petal::value::value_to_json(&kept, on.env.heap());
+            let json = petal::value::value_to_json_lossy(&kept, on.env.heap());
             let named: Vec<Value> =
-                on.env.observations().iter().map(|(_, v)| v).filter(|v| petal::value::value_to_json(v, on.env.heap()) == json).collect();
+                on.env.observations().iter().map(|(_, v)| v).filter(|v| petal::value::value_to_json_lossy(v, on.env.heap()) == json).collect();
             assert!(!named.is_empty() && named.iter().all(|v| *v == kept), "[{what}] {name}: {named:?} vs {kept:?}");
         }
         for i in 0..3 {

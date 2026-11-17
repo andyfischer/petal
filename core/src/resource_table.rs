@@ -129,6 +129,12 @@ impl ResourceTable {
         self.entries[id.0 as usize].state = ResourceState::Errored(error);
     }
 
+    /// No resource has been created, so no `Value::Pending` can exist in
+    /// this context.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     /// The entry a `PendingId` points at.
     pub fn entry(&self, id: PendingId) -> &ResourceEntry {
         &self.entries[id.0 as usize]

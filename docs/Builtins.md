@@ -4020,8 +4020,11 @@ Encodes a value as JSON text: `nil` → `null`, bools, numbers, strings, lists
 → arrays, records → objects (field order kept). The one-argument form is
 compact; `indent` pretty-prints with that many spaces per level. A class
 instance encodes as its fields; a value with no JSON form (a function)
-encodes as its display string. This is the codec for `panel_store_set` and
-any other string-only channel.
+encodes as its display string. A value that is still loading — or holds one
+anywhere inside it, like a record with a pending field — has no text yet, so
+the result is that pending value rather than a string with a placeholder in
+it. This is the codec for `panel_store_set` and any other string-only
+channel.
 
 **Parameters**
 
@@ -4040,7 +4043,7 @@ json_stringify("q\"uote")                # "q\"uote"
 
 **See also:** [`json_parse`](#json_parse)
 
-*Source: [`core/packages/json/json.ptl:34`](../core/packages/json/json.ptl#L34)*
+*Source: [`core/packages/json/json.ptl:37`](../core/packages/json/json.ptl#L37)*
 
 ### `json_parse`
 
@@ -4073,7 +4076,7 @@ json_parse("not json")             # nil
 
 **See also:** [`json_stringify`](#json_stringify)
 
-*Source: [`core/packages/json/json.ptl:57`](../core/packages/json/json.ptl#L57)*
+*Source: [`core/packages/json/json.ptl:60`](../core/packages/json/json.ptl#L60)*
 
 ## `io`
 

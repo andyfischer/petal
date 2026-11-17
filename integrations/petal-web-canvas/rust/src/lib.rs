@@ -14,7 +14,7 @@ use petal::env::Env;
 use petal::execution_context::EmitSite;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
-use petal::value::value_to_json;
+use petal::value::value_to_json_lossy;
 
 use petal_ui::draw::{
     DrawCommand, DrawOptions, FrameCommand, PixelSnap, clear_draw_commands, reset_canvas_ids,
@@ -926,7 +926,7 @@ impl PetalRuntime {
     fn run_inner(&mut self, stack_id: u32) -> Result<String, String> {
         self.prepare_run();
         let val = self.env.run(StackKey(stack_id))?;
-        let json = value_to_json(&val, self.env.heap());
+        let json = value_to_json_lossy(&val, self.env.heap());
         Ok(json.to_string())
     }
 

@@ -354,7 +354,7 @@ pub fn run(name: &str, host: &mut dyn CliHost, argv: Vec<String>) -> Result<i32,
         let (commands, result, error) = match outcome {
             Ok(()) => (
                 serde_json::to_value(&ui.commands).unwrap(),
-                petal::value::value_to_json(&ui.result, ui.env.heap()),
+                petal::value::value_to_json_lossy(&ui.result, ui.env.heap()),
                 Json::Null,
             ),
             Err(e) => {

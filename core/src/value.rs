@@ -394,36 +394,6 @@ fn element_to_display_string(id: crate::heap::ElementId, heap: &Heap) -> String 
     s
 }
 
-fn element_to_json(
-    id: crate::heap::ElementId,
-    heap: &Heap,
-    ctx: Option<&PendingJsonCtx>,
-) -> serde_json::Value {
-    let tag_id = heap.get_element_tag(id);
-    let tag = heap.get_string(tag_id).to_string();
-    let props_id = heap.get_element_props(id);
-    let children_id = heap.get_element_children(id);
-    let props = heap.get_map(props_id);
-    let children = heap.get_list(children_id);
-
-    let props_obj: serde_json::Map<String, serde_json::Value> = props
-        .iter()
-        .map(|(k, v)| (k.to_string(), value_to_json_ctx(v, heap, ctx)))
-        .collect();
-
-    let children_arr: Vec<serde_json::Value> = children
-        .iter()
-        .map(|child| value_to_json_ctx(child, heap, ctx))
-        .collect();
-
-    serde_json::json!({
-        "type": "element",
-        "tag": tag,
-        "props": props_obj,
-        "children": children_arr
-    })
-}
-
 /// Rendering context for provenance-rich pending values in JSON dumps: the
 /// resource table (state + provenance), the program (origin source text), and
 /// the current frame (age). Threaded through [`value_to_json_ctx`] so a
@@ -480,38 +450,145 @@ pub fn pending_report_json(
     serde_json::Value::Array(entries)
 }
 
-/// Convert a Value to serde_json::Value for JSON serialization, without pending
-/// provenance. A `Value::Pending` renders as its context-free `"<pending N>"`
-/// string; callers that can supply a [`PendingJsonCtx`] should use
-/// [`value_to_json_ctx`] so pending values dump as structured objects.
+/// What a JSON conversion does when it meets a `Value::Pending`.
+#[derive(Clone, Copy)]
+enum PendingJson<'a> {
+    /// Refuse: the conversion fails with a [`PendingJsonError`].
+    Refuse,
+    /// The context-free `"<pending N>"` string.
+    Lossy,
+    /// The structured `{ type:"pending", … }` object.
+    Ctx(&'a PendingJsonCtx<'a>),
+}
+
+/// [`value_to_json`] met a value that is not loaded yet: a `Value::Pending`,
+/// on its own or anywhere inside a list, record, map, enum or element. JSON
+/// has no form for it, and writing a placeholder in its place would save a
+/// value that is not the one the script will have once it loads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingJsonError {
+    /// The first pending value met, in field / element order.
+    pub pending: PendingId,
+    /// Where it sits inside the converted value, as a path from its root
+    /// (`.date`, `[2].title`, `{"k"}`); empty when the value itself is pending.
+    pub path: String,
+}
+
+impl fmt::Display for PendingJsonError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.path.is_empty() {
+            write!(f, "the value is pending (<pending {}>)", self.pending.0)?;
+        } else {
+            write!(
+                f,
+                "the value at `{}` is pending (<pending {}>)",
+                self.path, self.pending.0
+            )?;
+        }
+        f.write_str("; JSON has no form for a value that has not loaded yet")
+    }
+}
+
+impl std::error::Error for PendingJsonError {}
+
+impl PendingJsonError {
+    /// Prepend one path segment on the way out of a container.
+    fn within(mut self, segment: impl fmt::Display) -> Self {
+        self.path = format!("{segment}{}", self.path);
+        self
+    }
+}
+
+/// Convert a Value to serde_json::Value — for data that leaves the process:
+/// a saved state, a file, a host's output. A value that is not fully loaded
+/// is refused: `Err` names the first `Value::Pending` found and where it sits
+/// (a record whose `date` field is still loading fails with path `.date`).
+///
+/// Debug surfaces that want *some* rendering of a pending value choose one
+/// explicitly: [`value_to_json_lossy`] (the bare `"<pending N>"` string) or
+/// [`value_to_json_ctx`] (a structured object with state and provenance).
 ///
 /// Nil→null, Bool→bool, Int/Float→number, String→string, List→array
 /// (recursive), Map→object (recursive), others→string via display.
-pub fn value_to_json(val: &Value, heap: &Heap) -> serde_json::Value {
+pub fn value_to_json(val: &Value, heap: &Heap) -> Result<serde_json::Value, PendingJsonError> {
+    to_json(val, heap, PendingJson::Refuse)
+}
+
+/// [`value_to_json`] for debug dumps: never fails, and a `Value::Pending`
+/// (at any depth) renders as its context-free `"<pending N>"` string. Not for
+/// data anyone will read back — the placeholder is indistinguishable from a
+/// string the script built.
+pub fn value_to_json_lossy(val: &Value, heap: &Heap) -> serde_json::Value {
     value_to_json_ctx(val, heap, None)
 }
 
-/// Like [`value_to_json`], but with an optional [`PendingJsonCtx`] so a
+/// The debug rendering with an optional [`PendingJsonCtx`], so a
 /// `Value::Pending` dumps as the structured `{ type:"pending", … }` object
-/// (state + provenance + age) instead of the bare `"<pending N>"` string. Pass
-/// `None` to match [`value_to_json`] exactly.
+/// (state + provenance + age) instead of the bare `"<pending N>"` string.
+/// `None` is [`value_to_json_lossy`].
 pub fn value_to_json_ctx(
     val: &Value,
     heap: &Heap,
     ctx: Option<&PendingJsonCtx>,
 ) -> serde_json::Value {
+    let mode = match ctx {
+        Some(c) => PendingJson::Ctx(c),
+        None => PendingJson::Lossy,
+    };
+    match to_json(val, heap, mode) {
+        Ok(json) => json,
+        Err(_) => unreachable!("only PendingJson::Refuse fails"),
+    }
+}
+
+/// The first `Value::Pending` inside `val` — `val` itself, or one held
+/// anywhere in its lists, records, maps (keys and values), enum payloads,
+/// elements and cells — or `None` when it is fully loaded. Closures are not
+/// looked into. The walk a host uses to ask "can I save / send this yet?";
+/// [`NativeClass::EffectfulDeep`](crate::native_fn::NativeClass::EffectfulDeep)
+/// natives are guarded by it.
+pub fn find_pending(val: &Value, heap: &Heap) -> Option<PendingId> {
     match val {
+        Value::Pending(id) => Some(*id),
+        Value::List(id) => heap.get_list(*id).iter().find_map(|v| find_pending(v, heap)),
+        Value::Map(id) => heap.get_map(*id).iter().find_map(|(_, v)| find_pending(v, heap)),
+        Value::Dict(id) => heap
+            .get_dict(*id)
+            .iter()
+            .find_map(|(k, v)| find_pending(&k, heap).or_else(|| find_pending(&v, heap))),
+        Value::EnumVariant { data, .. } => {
+            heap.get_list(*data).iter().find_map(|v| find_pending(v, heap))
+        }
+        Value::Element(id) => heap
+            .get_map(heap.get_element_props(*id))
+            .iter()
+            .find_map(|(_, v)| find_pending(v, heap))
+            .or_else(|| {
+                heap.get_list(heap.get_element_children(*id))
+                    .iter()
+                    .find_map(|v| find_pending(v, heap))
+            }),
+        Value::Cell(id) => find_pending(&heap.cell_read(*id), heap),
+        _ => None,
+    }
+}
+
+fn to_json(
+    val: &Value,
+    heap: &Heap,
+    mode: PendingJson,
+) -> Result<serde_json::Value, PendingJsonError> {
+    Ok(match val {
         Value::Nil => serde_json::Value::Null,
         Value::Bool(b) => serde_json::Value::Bool(*b),
         Value::Int(n) => serde_json::json!(*n),
         Value::Float(f) => serde_json::json!(*f),
         Value::String(id) => serde_json::Value::String(heap.get_string(*id).to_string()),
         Value::List(id) => {
-            let elems = heap.get_list(*id);
-            let arr: Vec<serde_json::Value> = elems
-                .iter()
-                .map(|v| value_to_json_ctx(v, heap, ctx))
-                .collect();
+            let mut arr = Vec::new();
+            for (i, v) in heap.get_list(*id).iter().enumerate() {
+                arr.push(to_json(v, heap, mode).map_err(|e| e.within(format_args!("[{i}]")))?);
+            }
             serde_json::Value::Array(arr)
         }
         Value::F64Array(id) => {
@@ -520,26 +597,24 @@ pub fn value_to_json_ctx(
             serde_json::Value::Array(arr)
         }
         Value::Map(id) => {
-            let map = heap.get_map(*id);
-            let obj: serde_json::Map<String, serde_json::Value> = map
-                .iter()
-                .map(|(k, v)| (k.to_string(), value_to_json_ctx(v, heap, ctx)))
-                .collect();
+            let mut obj = serde_json::Map::new();
+            for (k, v) in heap.get_map(*id).iter() {
+                let json = to_json(v, heap, mode).map_err(|e| e.within(format_args!(".{k}")))?;
+                obj.insert(k.to_string(), json);
+            }
             serde_json::Value::Object(obj)
         }
         // Keys are arbitrary values, so not object keys: a tagged list of
         // `[key, value]` pairs, in order. `json_to_value` reads it back.
         Value::Dict(id) => {
-            let entries: Vec<serde_json::Value> = heap
-                .get_dict(*id)
-                .iter()
-                .map(|(k, v)| {
-                    serde_json::Value::Array(vec![
-                        value_to_json_ctx(&k, heap, ctx),
-                        value_to_json_ctx(&v, heap, ctx),
-                    ])
-                })
-                .collect();
+            let mut entries = Vec::new();
+            for (k, v) in heap.get_dict(*id).iter() {
+                let key = to_json(&k, heap, mode)?;
+                let value = to_json(&v, heap, mode).map_err(|e| {
+                    e.within(format_args!("{{{}}}", value_to_debug_string(&k, heap)))
+                })?;
+                entries.push(serde_json::Value::Array(vec![key, value]));
+            }
             serde_json::json!({ "type": "map", "entries": entries })
         }
         Value::Vec2(id) => {
@@ -552,28 +627,61 @@ pub fn value_to_json_ctx(
         }
         Value::EnumVariant { tag, data } => {
             let name = heap.tag_str(*tag).to_string();
-            let fields = heap.get_list(*data);
-            let arr: Vec<serde_json::Value> = fields
-                .iter()
-                .map(|v| value_to_json_ctx(v, heap, ctx))
-                .collect();
+            let mut arr = Vec::new();
+            for (i, v) in heap.get_list(*data).iter().enumerate() {
+                arr.push(to_json(v, heap, mode).map_err(|e| e.within(format_args!(".{i}")))?);
+            }
             serde_json::json!({ "type": "enum", "tag": name, "data": arr })
         }
-        Value::Element(id) => element_to_json(*id, heap, ctx),
+        Value::Element(id) => element_to_json(*id, heap, mode)?,
         // A `state var`'s slot holds the cell, so this is the one place a cell
         // reaches a serialization surface. Report the *contents*: the box is an
         // implementation detail, and someone inspecting `hits` wants `3`.
-        Value::Cell(id) => value_to_json_ctx(&heap.cell_read(*id), heap, ctx),
+        Value::Cell(id) => to_json(&heap.cell_read(*id), heap, mode)?,
         Value::Symbol(id) => serde_json::json!({ "type": "symbol", "id": id.0 }),
-        // A pending value renders richly when a context is available, else falls
-        // back to its context-free string — never `null` or a bare handle.
-        Value::Pending(id) => match ctx {
-            Some(c) => pending_json(*id, c),
-            None => serde_json::Value::String(value_to_display_string(val, heap)),
+        Value::Pending(id) => match mode {
+            PendingJson::Refuse => {
+                return Err(PendingJsonError {
+                    pending: *id,
+                    path: String::new(),
+                });
+            }
+            // A debug rendering: never `null` or a bare handle.
+            PendingJson::Lossy => serde_json::Value::String(value_to_display_string(val, heap)),
+            PendingJson::Ctx(c) => pending_json(*id, c),
         },
         // Closures, native functions → string representation
         other => serde_json::Value::String(value_to_display_string(other, heap)),
+    })
+}
+
+fn element_to_json(
+    id: crate::heap::ElementId,
+    heap: &Heap,
+    mode: PendingJson,
+) -> Result<serde_json::Value, PendingJsonError> {
+    let tag_id = heap.get_element_tag(id);
+    let tag = heap.get_string(tag_id).to_string();
+    let props = heap.get_map(heap.get_element_props(id));
+    let children = heap.get_list(heap.get_element_children(id));
+
+    let mut props_obj = serde_json::Map::new();
+    for (k, v) in props.iter() {
+        let json = to_json(v, heap, mode).map_err(|e| e.within(format_args!(".props.{k}")))?;
+        props_obj.insert(k.to_string(), json);
     }
+    let mut children_arr = Vec::new();
+    for (i, child) in children.iter().enumerate() {
+        children_arr
+            .push(to_json(child, heap, mode).map_err(|e| e.within(format_args!(".children[{i}]")))?);
+    }
+
+    Ok(serde_json::json!({
+        "type": "element",
+        "tag": tag,
+        "props": props_obj,
+        "children": children_arr
+    }))
 }
 
 /// Convert a JSON value to a Petal Value.

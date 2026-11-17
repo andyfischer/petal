@@ -11,7 +11,7 @@ use petal::env::Env;
 use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::program::ProgramId;
 use petal::stack::StackKey;
-use petal::value::{Value, value_to_json};
+use petal::value::{Value, value_to_json_lossy};
 
 // ---------------------------------------------------------------------------
 // Env channel names — element tree (petal-web)
@@ -206,7 +206,7 @@ impl PetalRuntime {
             .env
             .run(StackKey(stack_id))
             .map_err(|e| JsValue::from_str(&e))?;
-        let json = value_to_json(&val, self.env.heap());
+        let json = value_to_json_lossy(&val, self.env.heap());
         Ok(json.to_string())
     }
 

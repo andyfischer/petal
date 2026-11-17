@@ -42,7 +42,13 @@ pub type BoxedNativeFn = Box<dyn Fn(&mut PetalCxt) -> NativeResult>;
 
 /// How a native function behaves when handed a `Value::Pending` argument.
 /// Consulted at the single native-call boundary (see the bytecode VM's
-/// `call_native_or_intrinsic`) only when a Pending arg is actually present.
+/// `call_native_or_intrinsic`) only when a Pending arg is actually present —
+/// or, for [`EffectfulDeep`](Self::EffectfulDeep), held inside an argument.
+///
+/// Every policy but `EffectfulDeep` looks at the arguments themselves only:
+/// lists and records hold pending values element by element, so a native
+/// handed a partly loaded record runs and sees the pending fields (a UI
+/// drawing a row whose `date` is still loading draws the rest of the row).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeClass {
     /// Default. A Pending argument is absorbed: the call returns the leftmost
@@ -51,6 +57,19 @@ pub enum NativeClass {
     /// Side-effecting emitter (`print`, `push_output`, …). A Pending argument
     /// makes the call a no-op returning `Nil` — it emits nothing.
     Effectful,
+    /// [`Effectful`](Self::Effectful) for a native that needs its arguments
+    /// fully loaded: the call is a no-op returning `Nil` when any argument
+    /// *contains* a `Pending` — itself, or anywhere inside its lists,
+    /// records, maps, enum payloads or elements
+    /// ([`crate::value::find_pending`]). For an emitter whose payload leaves
+    /// the run as data (a scraped record, a saved row), where a half-loaded
+    /// record would be a wrong record rather than a partial one.
+    /// [`NativeEffects::EMITS_DEEP`] is the emit row with it.
+    ///
+    /// The walk costs a pass over the arguments on each call, skipped
+    /// outright while the run's resource table is empty (no pending value
+    /// can exist then).
+    EffectfulDeep,
     /// The native inspects Pendings itself and must run normally
     /// (`__pending`/`__resolve`/`__reject`). Never intercepted.
     AllowPending,
@@ -315,6 +334,15 @@ impl NativeEffects {
         emits: true,
         pending: NativeClass::Effectful,
         ..NativeEffects::PURE
+    };
+
+    /// [`EMITS`](Self::EMITS) for an emitter whose arguments must be fully
+    /// loaded: no-ops while any argument *contains* a `Pending`, at any depth
+    /// ([`NativeClass::EffectfulDeep`]). `emit({title: t, date: d})` with `d`
+    /// still loading emits nothing, rather than a record with a pending field.
+    pub const EMITS_DEEP: NativeEffects = NativeEffects {
+        pending: NativeClass::EffectfulDeep,
+        ..NativeEffects::EMITS
     };
 
     /// A **declare** native: pushes a keyed, idempotent declaration into an

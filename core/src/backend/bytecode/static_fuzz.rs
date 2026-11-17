@@ -616,7 +616,7 @@ fn observed(env: &Env, pid: crate::program::ProgramId, sid: crate::stack::StackK
     let mut by_term: Vec<(u32, String)> = env
         .observations()
         .iter()
-        .map(|(t, v)| (t.0, crate::value::value_to_json(&v, env.heap()).to_string()))
+        .map(|(t, v)| (t.0, crate::value::value_to_json_lossy(&v, env.heap()).to_string()))
         .collect();
     by_term.sort();
     format!("observed {by_name} {by_term:?}")

@@ -249,7 +249,7 @@ fn json_round_trips_as_a_map() {
     let mut heap = Heap::new();
     let one = heap.alloc_string("one".into());
     let id = heap.dict_from_pairs([(Value::Int(1), Value::String(one))]).unwrap();
-    let json = value_to_json(&Value::Dict(id), &heap);
+    let json = value_to_json(&Value::Dict(id), &heap).unwrap();
     assert_eq!(json, serde_json::json!({ "type": "map", "entries": [[1, "one"]] }));
     let back = json_to_value(&json, &mut heap).unwrap();
     assert!(petal::value::values_equal(&back, &Value::Dict(id), &heap));

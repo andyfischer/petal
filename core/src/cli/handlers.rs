@@ -457,7 +457,7 @@ fn emit_trace_report(env: &Env, pid: ProgramId) -> serde_json::Value {
             .map(|(i, value)| {
                 let mut entry = serde_json::json!({
                     "index": i,
-                    "value": crate::value::value_to_json(value, env.heap()),
+                    "value": crate::value::value_to_json_lossy(value, env.heap()),
                 });
                 // Origins are index-aligned with values; a run with tracing
                 // off (or an emit with nothing to attribute) reports the value

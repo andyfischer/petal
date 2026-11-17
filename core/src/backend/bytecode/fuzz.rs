@@ -805,7 +805,7 @@ fn run_frames(code: &str, policy: RunPolicy, runs: usize, observe: bool) -> (Vec
             let mut by_term: Vec<(u32, String)> = env
                 .observations()
                 .iter()
-                .map(|(t, v)| (t.0, value::value_to_json(&v, env.heap()).to_string()))
+                .map(|(t, v)| (t.0, value::value_to_json_lossy(&v, env.heap()).to_string()))
                 .collect();
             by_term.sort();
             prints.push(format!("observed {by_name} {by_term:?}"));

@@ -427,8 +427,20 @@ receiver types.
 native treats a `Value::Pending` argument: `Strict` (the default) absorbs and
 returns the pending value, `Effectful` makes the call a no-op that emits
 nothing, and `AllowPending` runs normally. Emitters should be `Effectful`
-(`NativeEffects::EMITS` is). `env.set_native_class(id, ..)` changes it after
-registration.
+(`NativeEffects::EMITS` is). These look at the arguments themselves only: a
+record with a pending field is an ordinary record whose field is pending, so
+an `Effectful` native runs and sees it (a UI row draws while its `date`
+loads). An emitter whose payload leaves the run as data (a scraped record, a
+saved row) wants `EffectfulDeep` instead (`NativeEffects::EMITS_DEEP`), which
+also no-ops while a pending value sits anywhere inside an argument.
+`env.set_native_class(id, ..)` changes it after registration.
+
+**Pending values and JSON.** `petal::value::value_to_json` returns `Err` for
+a value that holds a pending value anywhere inside it, naming it and its path
+(`.rows[1].date`): use it for anything that is saved, sent or read back.
+`value_to_json_lossy` renders a pending value as the string `"<pending N>"`
+and `value_to_json_ctx` as a structured object, for debug dumps.
+`petal::value::find_pending` is the walk on its own.
 
 **Returning a pending value.** A native whose answer is not ready yet (a fetch
 in flight, a request that failed) returns a pending value rather than blocking:

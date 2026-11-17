@@ -581,7 +581,7 @@ fn call_function_reaches_module_fns_by_qualified_name() {
 
     let arg = petal::value::Value::String(env.heap_mut().alloc_string("hi".to_string()));
     let result = env.call_function(sid, "ui::button", &[arg]).unwrap();
-    let rendered = petal::value::value_to_json(&result, env.heap());
+    let rendered = petal::value::value_to_json(&result, env.heap()).unwrap();
     assert_eq!(rendered, serde_json::json!("[hi]"));
 }
 

@@ -64,7 +64,7 @@ fn observed(w: &World) -> String {
         .env
         .observations()
         .iter()
-        .map(|(t, v)| (t.0, petal::value::value_to_json(&v, heap).to_string()))
+        .map(|(t, v)| (t.0, petal::value::value_to_json_lossy(&v, heap).to_string()))
         .collect();
     by_term.sort();
     format!("\nobserved {by_name}\nterms {by_term:?}")

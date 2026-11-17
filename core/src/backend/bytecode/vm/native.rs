@@ -210,7 +210,10 @@ impl<'a> Vm<'a> {
     /// `None` to proceed with the real call.
     ///
     /// Cheap early-out: only a top-level `Pending` *argument* triggers it — a
-    /// pending nested inside a resolved list is left alone (element-wise). This
+    /// pending nested inside a resolved list is left alone (element-wise) —
+    /// except for an `EffectfulDeep` native, which also no-ops on a pending
+    /// held anywhere inside an argument (the walk is skipped while the
+    /// resource table is empty). This
     /// MUST be consulted at every native entry point, because a native can be
     /// invoked three ways that don't share a single call site: the intrinsic
     /// fork below (map/filter/… never reach the leaf), the shared leaf
@@ -223,8 +226,19 @@ impl<'a> Vm<'a> {
         args: &[Value],
         origin: Option<TermId>,
     ) -> Option<Value> {
-        let pending = *args.iter().find(|v| matches!(v, Value::Pending(_)))?;
-        match self.native_fns.get_class(nid) {
+        let class = self.native_fns.get_class(nid);
+        let top = args.iter().find(|v| matches!(v, Value::Pending(_))).copied();
+        let pending = match (top, class) {
+            (Some(p), _) => p,
+            // The deep walk: a pending held inside an argument. No pending
+            // value can exist while the resource table is empty, which is
+            // every run that never fetched anything.
+            (None, crate::native_fn::NativeClass::EffectfulDeep) if !self.resources.is_empty() => {
+                Value::Pending(args.iter().find_map(|v| crate::value::find_pending(v, &self.heap))?)
+            }
+            (None, _) => return None,
+        };
+        match class {
             // Both absorbing outcomes swallow the leftmost Pending — bump its
             // always-on absorbed_count (and log `(origin, id)` when the debug
             // trace is on). AllowPending inspects it instead, so it does not count.
@@ -232,7 +246,8 @@ impl<'a> Vm<'a> {
                 self.note_absorption(pending, origin);
                 Some(pending)
             }
-            crate::native_fn::NativeClass::Effectful => {
+            crate::native_fn::NativeClass::Effectful
+            | crate::native_fn::NativeClass::EffectfulDeep => {
                 self.note_absorption(pending, origin);
                 Some(Value::Nil)
             }

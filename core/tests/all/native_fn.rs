@@ -413,7 +413,7 @@ fn native_push_loading_and_failed() {
               is_loading(b), is_error(b), error_of(b)]\n",
         )
         .unwrap();
-    let json = petal::value::value_to_json(&v, env.heap());
+    let json = petal::value::value_to_json(&v, env.heap()).unwrap();
     assert_eq!(
         json,
         serde_json::json!([true, false, true, false, true, "404 /b"])

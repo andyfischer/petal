@@ -212,7 +212,7 @@ pub fn parse_query_fixtures(json: &serde_json::Value) -> Result<QueryFixtures, S
 fn native_query(cxt: &mut PetalCxt) -> NativeResult {
     let kind = cxt.get_string(1)?;
     let arg = cxt.get_value(2)?;
-    let arg_json = petal::value::value_to_json(&arg, cxt.heap()).to_string();
+    let arg_json = petal::value::value_to_json_lossy(&arg, cxt.heap()).to_string();
     cxt.note_host_read();
 
     let fixture = QUERY_FIXTURES.with(|f| {

@@ -55,7 +55,7 @@ fn observed(ui: &Headless) -> serde_json::Value {
     let by_name = ui.env.get_observations_json(ui.program_id(), ui.stack_id());
     let heap = ui.env.heap_for(ui.stack_id()).expect("the stack's heap");
     let mut by_term: Vec<(u32, serde_json::Value)> =
-        ui.env.observations().iter().map(|(t, v)| (t.0, petal::value::value_to_json(&v, heap))).collect();
+        ui.env.observations().iter().map(|(t, v)| (t.0, petal::value::value_to_json_lossy(&v, heap))).collect();
     by_term.sort_by_key(|(t, _)| *t);
     serde_json::json!({ "names": by_name, "terms": by_term })
 }

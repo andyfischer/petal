@@ -143,8 +143,10 @@ time ([Native functions](ffi.md#native-functions)).
 
 `NativeClass::Strict` (the default `pending` policy) is for pure natives
 (`sqrt(pending)` → `pending`). `Effectful` is for emitters (`print`,
-`push_output`, and your observed calls). `AllowPending` is for natives that
-inspect pendings themselves. See [`NativeEffects`] and [`NativeClass`] in
+`push_output`, and your observed calls). `EffectfulDeep` is for emitters
+whose payload must be fully loaded: it also no-ops on a pending value held
+inside an argument (`NativeEffects::EMITS_DEEP`). `AllowPending` is for
+natives that inspect pendings themselves. See [`NativeEffects`] and [`NativeClass`] in
 [ffi.md](ffi.md).
 
 Declare the row by what the native does to the *host*, not how the call looks

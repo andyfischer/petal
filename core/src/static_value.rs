@@ -51,7 +51,6 @@ use crate::ast::{
     AssignTarget, Expr, ExprKind, JsxChild, Literal, RecordField, Stmt, StmtKind, UnaryOp,
 };
 use crate::cst::parse_source;
-use crate::line_index::line_start;
 use crate::source_map::ENTRY_FILE;
 
 /// A statically-known Petal value: what a config binding holds, and what an
@@ -687,8 +686,7 @@ pub fn static_values(source: &str) -> Result<BTreeMap<String, StaticValue>, Stat
 }
 
 /// One top-level binding, with everything the source says about it: its value
-/// *or* why it has none, the right-hand side as written, and the comment block
-/// above it.
+/// *or* why it has none, the right-hand side as written, and its `@doc`.
 ///
 /// This is what [`static_bindings`] returns. It exists because a host reading a
 /// config file needs more than the readable values: it has to report the
@@ -714,17 +712,12 @@ pub struct StaticBinding {
     /// author's own spelling: `0.020000` and `0.02` are the same `f64`, so
     /// without the text a writer cannot tell them apart.
     pub text: Option<String>,
-    /// The comment block immediately above the binding — the lines' `//`
-    /// markers and one following space stripped, joined with newlines. A blank
-    /// line or any code between the comment and the binding ends the block, so
-    /// a file header does not attach itself to the first binding. `None` when
-    /// there is no such comment.
-    pub comment: Option<String>,
     /// The binding's `@doc(…)` (docs/proposals/doc-annotation.md):
     /// `@doc("Gravity in px/s²") @tunable let gravity = 980.0`. What a
-    /// host labels a setting with; [`comment`](Self::comment) stays for the
-    /// hosts that read it. A later rebinding without a doc (`x = 2`) keeps
-    /// the doc of the declaration. `None` when the binding has none.
+    /// host labels a setting with; a comment above the binding is not read
+    /// (`petal migrate-old-code --only comment-to-doc --settings` turns one
+    /// into a `@doc`). A later rebinding without a doc (`x = 2`) keeps the
+    /// doc of the declaration. `None` when the binding has none.
     pub doc: Option<crate::ast::Doc>,
     /// The binding is a *setting* ([`is_setting`]): written
     /// `let X = tunable(…)`, or with the deprecated `config let`. A host
@@ -916,7 +909,7 @@ fn setting_range(value: &Expr) -> Option<StaticRange> {
 
 /// Every top-level name `source` binds, in source order, each carrying either
 /// its static value or the reason it has none — plus the source text and
-/// leading comment of the binding (see [`StaticBinding`]).
+/// `@doc` of the binding (see [`StaticBinding`]).
 ///
 /// The richer counterpart to [`static_values`]: same parse, same
 /// static-evaluation rules, nothing dropped on the way out. A name bound more
@@ -962,7 +955,6 @@ pub(crate) fn bindings_of(stmts: &[Stmt], chars: &[char]) -> Vec<StaticBinding> 
             name: name.clone(),
             value: Err("an enum declaration".into()),
             text: None,
-            comment: leading_comment(chars, stmt.span.start.offset as usize),
             doc: stmt.doc.as_deref().cloned(),
             is_config: false,
             exported: stmt.exported,
@@ -1055,14 +1047,12 @@ pub(crate) fn bindings_of(stmts: &[Stmt], chars: &[char]) -> Vec<StaticBinding> 
             }
             _ => continue,
         };
-        let comment = leading_comment(chars, stmt.span.start.offset as usize);
         set_binding(
             &mut bindings,
             StaticBinding {
                 name,
                 value,
                 text,
-                comment,
                 doc: stmt.doc.as_deref().cloned(),
                 is_config,
                 exported: stmt.exported,
@@ -1142,35 +1132,6 @@ fn span_text(chars: &[char], span: crate::source_map::SourceSpan) -> String {
     let start = (span.start.offset as usize).min(chars.len());
     let end = (span.end.offset as usize).clamp(start, chars.len());
     chars[start..end].iter().collect()
-}
-
-/// The comment block directly above the statement starting at `offset`: the run
-/// of whole-line `//` comments immediately preceding it, with markers stripped
-/// and lines joined by newlines.
-///
-/// The run stops at the first line that isn't a comment — including a blank one,
-/// so a file header separated by a blank line stays a file header rather than
-/// becoming the first binding's doc comment. A comment trailing code on its own
-/// line (`let a = 1 // note`) is not a whole-line comment and stops the run too.
-fn leading_comment(chars: &[char], offset: usize) -> Option<String> {
-    let mut start = line_start(chars, offset);
-    let mut lines: Vec<String> = Vec::new();
-    while start > 0 {
-        let prev_end = start - 1; // the '\n' ending the previous line
-        let prev_start = line_start(chars, prev_end);
-        let line: String = chars[prev_start..prev_end].iter().collect();
-        let trimmed = line.trim();
-        let Some(body) = crate::trivia::comment_body(trimmed) else {
-            break;
-        };
-        lines.push(body.strip_prefix(' ').unwrap_or(body).to_string());
-        start = prev_start;
-    }
-    if lines.is_empty() {
-        return None;
-    }
-    lines.reverse();
-    Some(lines.join("\n"))
 }
 
 /// The current binding for `name`, or `None` if it isn't bound.
@@ -1727,7 +1688,6 @@ let recent       = [\"a.rs\", \"b.rs\"]
     fn an_enum_is_a_bound_name_that_is_not_itself_a_value() {
         let mode = binding(MODES, "Mode");
         assert_eq!(mode.value, Err("an enum declaration".to_string()));
-        assert_eq!(mode.comment.as_deref(), Some("how the editor is lit"));
         assert!(mode.exported);
         assert_eq!((mode.line, mode.text), (3, None));
         assert!(!static_values(MODES).unwrap().contains_key("Mode"));
@@ -1778,20 +1738,7 @@ let recent       = [\"a.rs\", \"b.rs\"]
     }
 
     #[test]
-    fn static_bindings_reads_the_comment_above_a_binding() {
-        let src = "\
-// How much the hull drags.
-// 0.0 to 1.0
-let drag = 0.02
-";
-        assert_eq!(
-            binding(src, "drag").comment.as_deref(),
-            Some("How much the hull drags.\n0.0 to 1.0")
-        );
-    }
-
-    #[test]
-    fn static_bindings_reads_a_bindings_doc_beside_its_comment() {
+    fn static_bindings_reads_a_bindings_doc_and_not_its_comment() {
         let src = "\
 # A maintainer's note.
 @doc(\"Gravity in px/s² at 1.0 g\", extra: {unit: \"px/s^2\"}) @tunable let gravity = 980.0
@@ -1806,41 +1753,14 @@ let plain = 1
         let doc = gravity.doc.as_ref().expect("gravity's doc");
         assert_eq!(doc.body.as_deref(), Some("Gravity in px/s² at 1.0 g"));
         assert_eq!(doc.extra.len(), 1);
-        // The comment above the annotation is still the comment.
-        assert_eq!(gravity.comment.as_deref(), Some("A maintainer's note."));
+        // The comment above the annotation is a maintainer's: not the doc.
+        assert!(!doc.body.as_deref().unwrap().contains("maintainer"));
         // A rebinding keeps the declaration's doc while taking its value.
         let rebound = binding(&format!("{src}gravity = 990.0\n"), "gravity");
         assert_eq!(rebound.value, Ok(StaticValue::float(990.0)));
         assert_eq!(rebound.doc.as_ref(), Some(doc));
         assert_eq!(binding(src, "Tone").doc.and_then(|d| d.cleaned_body()).as_deref(), Some("The palette."));
         assert_eq!(binding(src, "plain").doc, None);
-    }
-
-    #[test]
-    fn static_bindings_reads_a_hash_comment_above_a_binding() {
-        let src = "# How much the hull drags.\n#\n# 0.0 to 1.0\nlet drag = 0.02 # per frame\n# gap\n\nlet lift = 1\n";
-        assert_eq!(
-            binding(src, "drag").comment.as_deref(),
-            Some("How much the hull drags.\n\n0.0 to 1.0")
-        );
-        assert_eq!(binding(src, "lift").comment, None);
-    }
-
-    #[test]
-    fn a_file_header_is_not_the_first_bindings_comment() {
-        // A blank line ends the comment block, which is what keeps a header
-        // from attaching itself to whatever binding happens to come first.
-        let src = "// movement config\n// generated\n\nlet drag = 0.02\n";
-        assert_eq!(binding(src, "drag").comment, None);
-
-        // And code on the line above ends it too, trailing comment or not.
-        let src = "let a = 1 // note\nlet b = 2\n";
-        assert_eq!(binding(src, "b").comment, None);
-    }
-
-    #[test]
-    fn a_binding_without_a_comment_has_none() {
-        assert_eq!(binding("let a = 1\n", "a").comment, None);
     }
 
     #[test]
@@ -1862,9 +1782,9 @@ let plain = 1
     #[test]
     fn static_bindings_keeps_the_last_binding_at_the_first_position() {
         // Position is where the name first appears (a host regenerating the
-        // file keeps its order); the value, text and comment are the last
+        // file keeps its order); the value, text and doc are the last
         // binding's, since that is what the program ends up with.
-        let src = "let size = 12\nlet other = 1\n// later\nlet size = 14\n";
+        let src = "let size = 12\nlet other = 1\n@doc(\"later\")\nlet size = 14\n";
         let names: Vec<String> = static_bindings(src)
             .unwrap()
             .into_iter()
@@ -1874,17 +1794,17 @@ let plain = 1
         let size = binding(src, "size");
         assert_eq!(size.value, Ok(StaticValue::int(14)));
         assert_eq!(size.text.as_deref(), Some("14"));
-        assert_eq!(size.comment.as_deref(), Some("later"));
+        assert_eq!(size.doc.and_then(|d| d.body).as_deref(), Some("later"));
     }
 
     #[test]
     fn static_bindings_survives_multibyte_source() {
-        // Spans are char offsets, so a multi-byte comment must not shift the
-        // text slice.
-        let src = "// café ☕ setting\nlet size = 14\n";
+        // Spans are char offsets, so a multi-byte comment or doc must not
+        // shift the text slice.
+        let src = "// café ☕ note\n@doc(\"café ☕ setting\")\nlet size = 14\n";
         let size = binding(src, "size");
         assert_eq!(size.text.as_deref(), Some("14"));
-        assert_eq!(size.comment.as_deref(), Some("café ☕ setting"));
+        assert_eq!(size.doc.and_then(|d| d.body).as_deref(), Some("café ☕ setting"));
     }
 
     #[test]

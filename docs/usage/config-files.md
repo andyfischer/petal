@@ -132,7 +132,6 @@ Each `StaticBinding` carries:
 | `name` | the bound name |
 | `value` | `Ok(StaticValue)`, or `Err(reason)` — the same phrase `NotStatic` carries |
 | `text` | the right-hand side **exactly as written** (`None` for a `fn`/`state` declaration) |
-| `comment` | the comment block directly above the binding, `//` markers stripped (`None` if there is none) |
 | `doc` | the binding's [`@doc(…)`](../language-guide.md#documentation), as a `petal::ast::Doc` (`None` if it has none). A later rebinding without a doc keeps it |
 | `is_config` | a [setting](../syntax/settings.md), `let X = tunable(…)` (or the deprecated `config let`): the author declared it a tuning knob |
 | `exported` | written with `pub` |
@@ -147,12 +146,10 @@ binding's value, so a host regenerating the file keeps its ordering.
 one the author typed. `doc` is what the author wrote for readers of a
 settings panel (`@doc("Gravity in px/s²") @tunable let gravity = 980.0`):
 its `summary()` makes a label, and `extra: {…}` carries fields of the host's
-own. `comment` lets a host show the user's own note next to a value in its
-UI. A blank line, or any code, between a comment and a binding ends the
-block, so a file header does not become the first binding's comment.
-Whether `comment` is retired in favour of `doc` is an open question
-([doc-annotation.md](../proposals/doc-annotation.md#open-questions)); for now
-both are filled.
+own. A `#` comment above a binding is a note for whoever edits the file and
+is not reported; a host that used to show it should show the `doc`, and
+`petal migrate-old-code --only comment-to-doc --settings` turns a setting's
+comment into its `@doc`.
 
 ---
 

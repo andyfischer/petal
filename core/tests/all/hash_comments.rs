@@ -163,10 +163,10 @@ fn a_swap_of_children_moves_their_comment_holes_with_them() {
 }
 
 #[test]
-fn a_static_binding_reads_its_hash_comment() {
+fn a_hash_comment_above_a_binding_is_kept_but_is_not_its_doc() {
     let src = "# How far the hull drifts.\nlet DRIFT = 0.02 # per frame\n";
     let bindings = petal::static_value::static_bindings(src).unwrap();
-    assert_eq!(bindings[0].comment.as_deref(), Some("How far the hull drifts."));
+    assert_eq!(bindings[0].doc, None);
     assert_eq!(
         literal_edit::set_path(src, "DRIFT", &StaticValue::float(0.5)).unwrap(),
         "# How far the hull drifts.\nlet DRIFT = 0.5 # per frame\n"

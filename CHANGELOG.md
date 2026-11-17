@@ -12,6 +12,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **Breaking for hosts: a setting's label is its `@doc`, not the comment
+  above it.** `static_value::StaticBinding` loses `comment`, and
+  `pb_source_bindings_json` no longer writes `"comment"`; read `doc` (its
+  `body`, or `summary` for a short label) instead. To keep a file's labels,
+  run `petal migrate-old-code --only comment-to-doc --settings` on it, which
+  turns each setting's comment into its `@doc`. See
+  [docs/usage/config-files.md](docs/usage/config-files.md).
+- **`@doc()` with nothing in it is an error**, as is `@module_doc()` and
+  either one written with no parentheses: "`@doc` with nothing in it
+  documents nothing: give it the text, `@doc("What it is.")`, or remove it".
 - **The API references are generated from the `@doc`s.** `docs/Builtins.md`,
   `core-stdlib/ui/docs/reference.md` and `core-stdlib/bloom/docs/components.md`
   are now written by `npm run reference` (`tools/gen-reference.ts`) from

@@ -161,7 +161,7 @@ impl PbSource {
     }
 
     /// Set the value of the setting `name`: only `v` of `let NAME =
-    /// tunable(v, …)` changes; bounds, options and comment stay as written.
+    /// tunable(v, …)` changes; bounds, options and doc stay as written.
     fn set_setting(&mut self, name: &str, value_json: &str) -> Status {
         let bindings = match static_bindings(&self.text) {
             Ok(b) => b,
@@ -217,9 +217,6 @@ pub fn bindings_json(source: &str) -> Result<String, String> {
         ));
         if let Some(text) = &b.text {
             out.push_str(&format!(",\"text\":{}", string(text)));
-        }
-        if let Some(comment) = &b.comment {
-            out.push_str(&format!(",\"comment\":{}", string(comment)));
         }
         // Its `@doc(…)`, in the shape `petal doc --json` gives a doc.
         if let Some(doc) = &b.doc
@@ -497,7 +494,7 @@ pub extern "C" fn pb_source_error(s: *const PbSource) -> *const c_char {
 mod tests {
     use super::*;
 
-    const SRC: &str = "// The night look.\nexport config let POST = {\n  exposure: 1.45,   // brighter than day\n  tint: :ff2e88,\n  effects: [{effect: \"grain\", amount: 0.3}, {effect: \"crt\"}],\n}\nlet DROPS = 450\nlet DIR = vec3(0.35, -1.0, 0.55)\nfn f() 1 end\n";
+    const SRC: &str = "@doc(\"The night look.\")\nexport config let POST = {\n  exposure: 1.45,   // brighter than day\n  tint: :ff2e88,\n  effects: [{effect: \"grain\", amount: 0.3}, {effect: \"crt\"}],\n}\nlet DROPS = 450\nlet DIR = vec3(0.35, -1.0, 0.55)\nfn f() 1 end\n";
 
     #[test]
     fn bindings_json_describes_every_binding() {
@@ -505,8 +502,11 @@ mod tests {
         let post = &json[0];
         assert_eq!(post["name"], "POST");
         assert_eq!(post["config"], true);
-        assert_eq!(post["line"], 2);
-        assert_eq!(post["comment"], "The night look.");
+        // The statement, its `@doc` included, starts on line 1.
+        assert_eq!(post["line"], 1);
+        assert_eq!(post["doc"]["body"], "The night look.");
+        // A comment above a binding is not reported: `@doc` is the label.
+        assert!(post.get("comment").is_none());
         assert_eq!(post["value"]["rec"]["exposure"], 1.45);
         // A color literal reads as a color, not as the record it lowers to.
         assert_eq!(post["value"]["rec"]["tint"]["color"], "#ff2e88");
@@ -521,11 +521,11 @@ mod tests {
     }
 
     #[test]
-    fn a_documented_binding_has_a_doc_beside_its_comment() {
+    fn a_documented_binding_has_a_doc_and_its_comment_is_not_read() {
         let src = "// note\n@doc(\"Gravity in px/s².\", extra: {unit: \"px\"}) @tunable let G = 980.0\nlet P = 1\n";
         let json: serde_json::Value = serde_json::from_str(&bindings_json(src).unwrap()).unwrap();
         let g = &json[0];
-        assert_eq!(g["comment"], "note");
+        assert!(g.get("comment").is_none());
         assert_eq!(g["doc"]["body"], "Gravity in px/s².");
         assert_eq!(g["doc"]["summary"], "Gravity in px/s².");
         assert_eq!(g["doc"]["extra"], serde_json::json!({"unit": "px"}));
@@ -569,7 +569,7 @@ mod tests {
     fn an_annotated_setting_reports_what_the_call_form_does() {
         // docs/proposals/annotation-syntax.md: `@tunable(…) let X = v` is
         // `let X = tunable(v, …)`, and bounds may be named.
-        let src = "// top speed\n@tunable(min: 3.0, max: 12.0) pub let RUN = 7.0\n\
+        let src = "@doc(\"top speed\")\n@tunable(min: 3.0, max: 12.0) pub let RUN = 7.0\n\
                    @tunable(0, 10, step: 2) let N = 4\n\
                    @tunable(options: [\"title\", \"play\"])\nlet START = \"title\"\n\
                    let CALL = tunable(7.0, min: 3.0, max: 12.0)\n";
@@ -580,7 +580,7 @@ mod tests {
         assert_eq!(run["text"], "7.0");
         assert_eq!(run["config"], true);
         assert_eq!(run["exported"], true);
-        assert_eq!(run["comment"], "top speed");
+        assert_eq!(run["doc"]["body"], "top speed");
         assert_eq!(run["tunable"], serde_json::json!({"min": 3.0, "max": 12.0}));
         assert_eq!(run["tunable"], by("CALL")["tunable"]);
         assert_eq!(by("N")["tunable"], serde_json::json!({"min": 0.0, "max": 10.0, "step": 2.0}));
@@ -612,7 +612,7 @@ mod tests {
         let speed = by("SPEED");
         assert_eq!(speed["tunable"], serde_json::json!({"min": 0.0, "max": 10.0}));
         assert_eq!(speed["range"], speed["tunable"]);
-        assert_eq!(speed["comment"], serde_json::Value::Null);
+        assert!(speed.get("doc").is_none());
         assert_eq!(by("DEBUG")["value"], false);
         assert_eq!(by("DEBUG")["tunable"], serde_json::json!({}));
         let look = by("LOOK");

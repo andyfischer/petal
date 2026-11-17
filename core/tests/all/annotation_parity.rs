@@ -463,7 +463,7 @@ fn host_view(b: &StaticBinding, lines: bool) -> String {
     let is_call = matches!(&b.value, Ok(StaticValue::Call { .. }));
     let text = if is_call { None } else { b.text.clone() };
     format!(
-        "{} value={:?} text={:?} setting={} exported={} range={:?} options={:?} comment={:?} line={}",
+        "{} value={:?} text={:?} setting={} exported={} range={:?} options={:?} doc={:?} line={}",
         b.name,
         b.value,
         text,
@@ -471,8 +471,7 @@ fn host_view(b: &StaticBinding, lines: bool) -> String {
         b.exported,
         b.range,
         b.options,
-        // An own-line annotation sits between a comment and its binding.
-        if lines { b.comment.clone() } else { None },
+        b.doc,
         if lines { b.line } else { 0 },
     )
 }

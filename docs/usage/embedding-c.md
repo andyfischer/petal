@@ -987,9 +987,8 @@ the file:
 ```cpp
 petal::Source src(read_file("games/neon/config.ptl"));
 
-// What the file sets, as JSON: name, whether it is a setting, the comment
-// above it, its @doc (when it has one), the right-hand side as written, and
-// its static value.
+// What the file sets, as JSON: name, whether it is a setting, its @doc
+// (when it has one), the right-hand side as written, and its static value.
 std::optional<std::string> bindings = src.bindings_json();
 
 // Change values where they are written. Nothing else in the file moves.
@@ -1099,7 +1098,7 @@ binding that is not a setting. `"value"` and `"text"` are `v`'s:
   `set_setting`, `set_value` and `set_tunable` accept any value, so a host
   that needs a hard limit checks it.
 - `set_setting(name, json)` (`pb_source_set_setting`) sets a setting by
-  name: only `v` changes, and the bounds, options and comment stay. It fails
+  name: only `v` changes, and the bounds, options and doc stay. It fails
   (`PB_ERR_INVALID_ARG`) on a binding that is not a setting, so a `--set`
   cannot reach into the rest of a script by accident.
 - In the running program, `set_tunable` sets it live (above). The reload

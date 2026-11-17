@@ -1477,7 +1477,7 @@ const char* pb_source_text(const pb_source* s);
 /* Every top-level binding as a JSON array, in source order:
  *
  *   [{"name": "POST", "config": true, "exported": true, "line": 77,
- *     "text": "{exposure: 1.45}", "comment": "The night look.",
+ *     "text": "{exposure: 1.45}", "doc": {"body": "The night look.", ...},
  *     "value": {"rec": {"exposure": 1.45}}},
  *    {"name": "SPEED", "config": true, ..., "text": "4.0", "value": 4.0,
  *     "range": {"min": 0.0, "max": 10.0}},
@@ -1486,8 +1486,9 @@ const char* pb_source_text(const pb_source* s);
  * `tunable`: present for a setting (see Tunables above); `value` and `text`
  * are then those of `v` in `tunable(v, ...)`. `config` and `range`: its
  * deprecated mirrors. `text`: the right-hand side as written.
- * `comment`: the comment block directly above. `doc`: present when the
- * binding has a `@doc(...)`, as `petal doc --json` writes a doc:
+ * `doc`: present when the binding has a `@doc(...)`, as `petal doc --json`
+ * writes a doc (a comment above a binding is not reported; label a setting
+ * with its `@doc`):
  *   {"body": "Gravity in px/s².", "summary": "Gravity in px/s².",
  *    "params": {}, "returns": null, "options": {}, "example": [], "see": [],
  *    "deprecated": null, "hidden": false, "extra": {"unit": "px"}}

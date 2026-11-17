@@ -41,8 +41,10 @@ Deviations from this text:
   now keeps the lines of a `"""` raw string verbatim, since a `@doc`
   example's `# …` lines are string content.
 
-Open questions 1 (settings' `comment` field), 2 (`example:` on
-`@module_doc`) and 4 (doctests) stay open.
+Open question 1 is decided (2026-11-17): settings' `comment` field is
+retired, and `doc` is the only label. And a bare `@doc()` /
+`@module_doc()` (or one with no parentheses) is now an error (see the error
+table under Design). Questions 2 (`example:` on `@module_doc`) and 4 (doctests) stay open.
 
 ## Summary
 
@@ -277,6 +279,7 @@ several do, each describes its own form, and the first is the set's summary. A
 | `@doc` before a non-declaration, or at the end of a file | the existing `ANNOTATION_NEEDS_DECL` error |
 | a non-literal argument | error, pointing at the argument |
 | an unknown field | error with did-you-mean, or the hint to use `extra:` |
+| `@doc()` / `@module_doc()`, or either with no parentheses | error: "`@doc` with nothing in it documents nothing: give it the text, `@doc("What it is.")`, or remove it" |
 | `params: {lo: …}` naming no parameter | lint `doc-params` (warning): "`@doc` describes `lo`, which `clamp` does not take" |
 | `see: ["foo"]` naming nothing reachable | lint `doc-params` (warning) |
 | a `pub` item (or a package root module) with no doc | lint `undocumented-pub`: off by default; on, and failing CI, for `core/`, `core-libs/`, `core-stdlib/` |
@@ -429,9 +432,8 @@ After (proposed):
 ```
 
 **Change:** a settings panel gets a label. `static_bindings` gains a `doc`
-field. Its existing `comment` field stays for now, because C hosts read it
-through `pb_source_bindings_json`. Whether it is retired, in line with
-decision 3, is an [open question](#open-questions).
+field, and its old `comment` field is retired in line with decision 3
+([open question 1](#open-questions), decided).
 
 ### 6. Hot reload
 
@@ -699,10 +701,10 @@ Steps 1–4 are roughly 1.5k lines with tests. Step 5 is mostly content review.
 
 ## Open questions
 
-1. **Settings' `comment` field.** `static_bindings` (and the C bridge's JSON)
-   labels settings with the comment above them. Should it follow decision 3,
-   with `doc` replacing `comment` after a deprecation period, or stay as a
-   separate "author's note" field? Owner.
+1. **Settings' `comment` field.** *Decided 2026-11-17: retired.*
+   `static_bindings` and the C bridge's JSON no longer report the comment
+   above a binding; `doc` is the label, and `petal migrate-old-code --only
+   comment-to-doc --settings` moves a setting's comment into a `@doc`.
 2. **`example:` on `@module_doc`?** A package-level example (a whole small
    program) is useful on the reference's landing page. It would be allowed if
    wanted. Owner.

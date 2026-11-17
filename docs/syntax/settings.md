@@ -216,11 +216,12 @@ has no variable and stays editable. The mechanics are in
 A host reads a file's top-level bindings without running it, with
 `static_value::static_bindings`. Each binding carries `is_config` ("is a
 setting"), next to its value, its text as written, its
-[`@doc`](../language-guide.md#documentation), the comment block above it, its
-line, and a `range` and `options` when it declares them. That is enough to
+[`@doc`](../language-guide.md#documentation), its line, and a `range` and `options` when it declares them. That is enough to
 build a settings panel: one control per setting, labelled with its doc
-(`@doc("Gravity in px/s²") @tunable let gravity = 980.0`) or the author's
-comment. From C the same list is `pb_source_bindings_json`. See
+(`@doc("Gravity in px/s²") @tunable let gravity = 980.0`). A comment above
+a setting is a note for whoever edits the file and is not read;
+`petal migrate-old-code --only comment-to-doc --settings` turns one into a
+`@doc`. From C the same list is `pb_source_bindings_json`. See
 [Reading the whole file](../usage/config-files.md#reading-the-whole-file-including-what-it-cannot-read)
 and [embedding-c.md](../usage/embedding-c.md#editing-source-a-script-as-a-config-file).
 

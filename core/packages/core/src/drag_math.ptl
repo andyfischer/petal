@@ -1,6 +1,6 @@
 @module_doc("""
 Drag math: the numeric half of `ui/drag`'s `between` and `vary`
-([drag guide](../core-libs/petal-ui/docs/drag.md#continuous-drags-between-and-vary)).
+([drag guide](../core-stdlib/ui/docs/drag.md#continuous-drags-between-and-vary)).
 
 The drag engine renders its candidate states in Petal (a native cannot call
 a Petal function) and hands these only numbers. Each reads nothing but its

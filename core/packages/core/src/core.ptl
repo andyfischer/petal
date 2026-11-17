@@ -7,7 +7,7 @@ packages `noise`, `color`, `vec2`, `json`, `io` and `autodiff`). For
 language syntax (variables, control flow, functions, state, pattern
 matching), see the [Language Guide](language-guide.md). The drawing and
 input builtins used by `petal-ui` apps (`draw_rect`, `mouse_x`, ...) are
-covered in the [petal-ui README](../core-libs/petal-ui/README.md); how a
+covered in the [petal-ui README](../core-stdlib/ui/README.md); how a
 browser page runs them is in [usage/embedding-web.md](usage/embedding-web.md).
 
 `import core` binds the qualifier `core` over every builtin the package

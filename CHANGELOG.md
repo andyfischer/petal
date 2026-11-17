@@ -599,7 +599,7 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   test-only `__pending`/`__resolve`/`__reject` are `hidden: true`.
 
 - **The `ui` package documents itself.** Every `pub` item of
-  `core-libs/petal-ui/prelude` (`ui` and its modules, `ui/input` and
+  `core-stdlib/ui/src` (`ui` and its modules, `ui/input` and
   `ui/drag`) has a `@doc`, and every module a `@module_doc`, so `petal doc
   ui` prints the whole reference and `undocumented-pub` and `doc-params`
   report nothing for it. The per-item prose of `docs/reference.md` and of
@@ -633,8 +633,8 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   internal module (`ui/_base`) are listed under the public module that
   re-exports them; hidden items are left out. Its targets are
   `docs/Builtins.md` (`core`, `std` and the domain packages),
-  `core-libs/petal-ui/docs/reference.md` and
-  `core-runtime/bloom/docs/components.md`, at the same paths. All three are
+  `core-stdlib/ui/docs/reference.md` and
+  `core-stdlib/bloom/docs/components.md`, at the same paths. All three are
   still written by hand, because their prose has not moved into `@doc` yet:
   the tool leaves a file without its do-not-edit line alone,
   `--coverage` lists what replacing it would lose, and `--replace` replaces

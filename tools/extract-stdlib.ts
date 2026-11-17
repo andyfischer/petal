@@ -64,7 +64,7 @@ const petalUiInputRs = join(repoRoot, "core-stdlib/ui/native/src/input.rs");
 
 /** `petal doc` targets, repo-relative. */
 const CORE_PACKAGE_DIR = "core/packages/core";
-const UI_PACKAGE_DIR = "core-stdlib/ui/src";
+const UI_PACKAGE_DIR = "core-stdlib/ui";
 const PRELUDE_STD = "core/prelude/std.ptl";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -584,7 +584,7 @@ export function buildManifest(): StdlibManifest {
       "core-stdlib/ui/native/src/input.rs",
       "petal doc --json --private core/packages/core",
       ...BUILTIN_PACKAGES.map((name) => `petal doc --json --private core/packages/${name}`),
-      "petal doc --json --private core-stdlib/ui/src",
+      "petal doc --json --private core-stdlib/ui",
       "petal doc --json core/prelude/std.ptl",
     ],
     categories,

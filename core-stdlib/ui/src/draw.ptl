@@ -20,7 +20,7 @@ them. A host that draws at fractional positions keeps them for circles,
 ellipses, arcs, lines, polylines, triangles and polygons, and by default
 snaps the rect family (rects, outlines, rect gradients, shadows, images,
 canvases, text positions) so that touching rects meet without a seam; see
-`pixel_snap`. drawing.md (core-libs/petal-ui/docs) covers the primitives in
+`pixel_snap`. drawing.md (core-stdlib/ui/docs) covers the primitives in
 depth.
 """, see: ["ui", "pixel_snap"])
 

@@ -67,7 +67,7 @@ describe("stdlib extractor", () => {
     expect(drawRect.every((p) => p.type === "num")).toBe(true);
     expect(byName.get("draw_rect")!.declaration).toMatchObject({
       module: "ui/_base",
-      file: "core-libs/petal-ui/prelude/_base.ptl",
+      file: "core-stdlib/ui/src/_base.ptl",
     });
     // …and the optional alpha it also takes is there, flagged.
     expect(byName.get("draw_rect")!.params.at(-1)).toMatchObject({

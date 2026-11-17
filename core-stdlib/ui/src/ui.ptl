@@ -39,7 +39,7 @@ drags writes `import ui/drag`.
 
 Guides beside this reference: drawing.md (the draw primitives in depth),
 drag.md (declarative dragging) and host-contract.md (what a host has to do),
-in core-libs/petal-ui/docs. Two apps to read:
+in core-stdlib/ui/docs. Two apps to read:
 `garden/examples/panels/gallery.ptl` uses every widget, and
 `examples/ui/layers` is a HUD over a "world" (layers, `pointer_captured`, a
 modal, `cached_layer` with `draw_rects`, flow layout and `ui_measure`). To

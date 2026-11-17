@@ -7,8 +7,8 @@
 // Targets (see TARGETS below):
 //   builtins  docs/Builtins.md                         core, the prelude `std`, and the
 //                                                      domain packages behind an import
-//   ui        core-libs/petal-ui/docs/reference.md     the `ui` package
-//   bloom     core-runtime/bloom/docs/components.md    the `bloom` package
+//   ui        core-stdlib/ui/docs/reference.md     the `ui` package
+//   bloom     core-stdlib/bloom/docs/components.md    the `bloom` package
 //
 // A generated file starts with GENERATED_MARKER. The tool never overwrites a
 // file without it (a hand-written reference) unless asked to with `--replace`:
@@ -83,17 +83,17 @@ export const TARGETS: Target[] = [
   },
   {
     id: "ui",
-    out: "core-libs/petal-ui/docs/reference.md",
+    out: "core-stdlib/ui/docs/reference.md",
     title: "`ui` reference",
     intro: "Every public function of the `ui` package, by module.",
-    sources: [{ target: "core-libs/petal-ui/prelude" }],
+    sources: [{ target: "core-stdlib/ui" }],
   },
   {
     id: "bloom",
-    out: "core-runtime/bloom/docs/components.md",
+    out: "core-stdlib/bloom/docs/components.md",
     title: "`bloom` reference",
     intro: "Every public function of the `bloom` component library, by module.",
-    sources: [{ target: "core-runtime/bloom" }],
+    sources: [{ target: "core-stdlib/bloom" }],
   },
 ];
 

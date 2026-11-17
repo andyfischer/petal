@@ -61,9 +61,10 @@ owner. bloom adds the draw-order Tab ring on top.
 
 `ui`'s own drawn widgets (`ui.button`, `ui.text_field`, `ui.context_menu`,
 …) are deprecated: each call warns `[ui-widget-moved]` with its bloom
-replacement. They click on press where bloom clicks on release, so two
-components of different families stacked on the same pixel would both see
-the same gesture.
+replacement, and they go once the deprecation period ends; the table of
+replacements is in `docs/tasks/ui-refactor.md`. They click on press where
+bloom clicks on release, so two components of different families stacked on
+the same pixel would both see the same gesture.
 
 The runnable tour is `examples/ui/bloom-gallery`.
 """, see: ["theme", "probe", "ease_to", "overlays", "text_layout"])

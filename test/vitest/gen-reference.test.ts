@@ -10,6 +10,7 @@ import {
   GENERATED_MARKER,
   TARGETS,
   coverage,
+  orderSections,
   renderTarget,
   reportsFor,
   slug,
@@ -98,6 +99,16 @@ describe("gen-reference", () => {
     expect(section("Shape")).toContain("enum Shape { circle(r), square(side), dot }");
     expect(section("drawn")).toContain("state drawn: int = 0");
     expect(section("PHI")).toContain("The golden ratio.");
+  });
+
+  it("lists sections in a target's moduleOrder, the rest where `*` is", () => {
+    const names = (xs: Array<{ name: string }>) => xs.map((x) => x.name);
+    const secs = ["p", "p/a", "p/b", "p/c"].map((name) => ({ name }));
+    expect(names(orderSections(secs))).toEqual(["p", "p/a", "p/b", "p/c"]);
+    expect(names(orderSections(secs, ["p/c", "*", "p"]))).toEqual(["p/c", "p/a", "p/b", "p"]);
+    expect(names(orderSections(secs, ["p/b"]))).toEqual(["p/b", "p", "p/a", "p/c"]);
+    const ordered = renderTarget({ ...fixture, moduleOrder: ["doc_pkg/shapes"] }, reports);
+    expect(ordered.indexOf("## `doc_pkg/shapes`")).toBeLessThan(ordered.indexOf("## `doc_pkg`\n"));
   });
 
   it("slugs headings the way GitHub does", () => {

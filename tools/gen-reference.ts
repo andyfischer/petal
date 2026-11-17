@@ -59,6 +59,13 @@ export interface Target {
   /** Shown when the first source's package has no doc. */
   intro: string;
   sources: Source[];
+  /**
+   * The order to list sections in, by section name (`bloom/theme`), for a
+   * page that reads better in a learning order than in module order. The
+   * sections it does not name follow, in module order; a `"*"` entry marks
+   * where they go instead.
+   */
+  moduleOrder?: string[];
 }
 
 export const TARGETS: Target[] = [
@@ -94,6 +101,22 @@ export const TARGETS: Target[] = [
     title: "`bloom` reference",
     intro: "Every public function of the `bloom` component library, by module.",
     sources: [{ target: "core-stdlib/bloom" }],
+    // The foundations first (tokens and painting, motion, interaction), then
+    // the components; the facade's own aliases last.
+    moduleOrder: [
+      "bloom/theme",
+      "bloom/icon",
+      "bloom/motion",
+      "bloom/interact",
+      "bloom/button",
+      "bloom/controls",
+      "bloom/fields",
+      "bloom/menu",
+      "bloom/display",
+      "bloom/panes",
+      "bloom/overlay",
+      "bloom",
+    ],
   },
 ];
 
@@ -274,9 +297,17 @@ function sourceLink(outPath: string, file: string, line?: number): string {
   return `[\`${file}${line ? `:${line}` : ""}\`](${rel}${line ? `#L${line}` : ""})`;
 }
 
+/** `sections` in `order` (see `Target.moduleOrder`); the sort is stable. */
+export function orderSections<S extends { name: string }>(sections: S[], order?: string[]): S[] {
+  if (!order?.length) return sections;
+  const rest = order.includes("*") ? order.indexOf("*") : order.length;
+  const rank = (s: S) => (order.includes(s.name) ? order.indexOf(s.name) : rest);
+  return [...sections].sort((a, b) => rank(a) - rank(b));
+}
+
 /** The whole reference page for `target`, given its `petal doc` reports in source order. */
 export function renderTarget(target: Target, reports: DocReport[]): string {
-  const sections = target.sources.flatMap((source, i) =>
+  const unordered = target.sources.flatMap((source, i) =>
     sectionsOf(reports[i], source).map((s) => ({
       ...s,
       note: s.note ?? source.note,
@@ -284,6 +315,7 @@ export function renderTarget(target: Target, reports: DocReport[]): string {
       pageRoot: i === 0 && !!s.root && !!reports[0].package?.doc,
     })),
   );
+  const sections = orderSections(unordered, target.moduleOrder);
   // Anchors in page order: the title, Contents, then each section and its items.
   const anchors = new Anchors();
   anchors.take(target.title);

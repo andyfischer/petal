@@ -197,8 +197,12 @@ impl Compiler {
             // without colliding with the entry file's names. The scope
             // binding stays bare — in-module references are unqualified.
             self.terms[closure_tid.0 as usize].name = Some(self.qualified_name(name));
+            // The closure is where the declaration is written, even when the
+            // name ends up bound to something else (a set it joins, the cell
+            // a hoisted declaration fills) that the caller places instead.
+            self.source_map.add(closure_tid, decl_span);
             self.record_fn_closure(closure_tid, params.len(), optional);
-            return Some(self.bind_fn_result(name, closure_tid));
+            return Some(self.bind_fn_result(name, closure_tid, decl_span));
         };
 
         // Overloaded function: compile with internal name "name#arity"
@@ -233,8 +237,9 @@ impl Compiler {
                 inputs,
                 Some(self.qualified_name(name)),
             );
+            self.source_map.add(set_tid, decl_span);
             self.record_fn_set(set_tid, members);
-            return Some(self.bind_fn_result(name, set_tid));
+            return Some(self.bind_fn_result(name, set_tid, decl_span));
         }
         None
     }
@@ -245,7 +250,8 @@ impl Compiler {
     /// declaration *writes* it rather than rebinding the name.
     /// Returns the term the name now means — the merged set when this
     /// declaration joined one another module owns, otherwise `value`.
-    fn bind_fn_result(&mut self, name: &str, value: TermId) -> TermId {
+    /// Every term this emits is placed at `decl_span`, the declaration.
+    fn bind_fn_result(&mut self, name: &str, value: TermId, decl_span: SourceSpan) -> TermId {
         // Only a *hoisted* declaration writes a cell, and hoisting happens at
         // module scope only — a nested `fn` binds where it is written. Without
         // the scope test, `binding_is_fn_cell` walks outward past the function
@@ -261,10 +267,17 @@ impl Compiler {
         {
             let display = self.qualified_name(name);
             let value = match self.cell_shadows.get(&cell).copied() {
-                Some(existing) => self.merge_overload_binding(name, existing, value).unwrap_or(value),
+                Some(existing) => match self.merge_overload_binding(name, existing, value) {
+                    Some(merged) => {
+                        self.source_map.add(merged, decl_span);
+                        merged
+                    }
+                    None => value,
+                },
                 None => value,
             };
-            self.emit_term(TermOp::CellWrite, smallvec![cell, value], Some(display));
+            let write = self.emit_term(TermOp::CellWrite, smallvec![cell, value], Some(display));
+            self.source_map.add(write, decl_span);
             self.overload_index.cell_value.insert(cell, value);
             return value;
         }

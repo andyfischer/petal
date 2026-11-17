@@ -397,6 +397,9 @@ pub struct Compiler {
     // for the entry file. Drives state-key qualification and the qualified
     // display names on module-level closures.
     current_module: Option<String>,
+    // The source of the module being compiled, as the lexer indexed it (span
+    // offsets count chars). Read by `loop_header_span` to find a loop's `do`.
+    module_chars: Vec<char>,
     // Module alias → module name, for the file currently being compiled
     // (`import ui` binds "ui"→"ui", `import ui as u` binds "u"→"ui").
     // Cleared at every module boundary — aliases are file-scoped. A module
@@ -652,6 +655,7 @@ impl Compiler {
             first_party_modules: HashSet::new(),
             used_native_terms: HashSet::new(),
             current_module: None,
+            module_chars: Vec::new(),
             error_file: None,
             module_aliases: HashMap::new(),
             module_exports: HashMap::new(),
@@ -1015,6 +1019,7 @@ impl Compiler {
 
         let is_entry = module.name.is_none();
         self.current_module = module.name.clone();
+        self.module_chars = module.source.chars().collect();
         self.moved_widget_warned.clear();
         let in_ui = module
             .name
@@ -2569,6 +2574,9 @@ impl Compiler {
                         let nil = self.constants.intern(ConstantValue::Nil);
                         let nil_tid = self.emit_term(TermOp::Constant(nil), smallvec![], None);
                         let cell = self.emit_term(TermOp::CellNew, smallvec![nil_tid], None);
+                        // Both are the declaration's, placed where it is
+                        // written (and so in its module's file).
+                        self.source_map.add(nil_tid, stmt.span);
                         self.source_map.add(cell, stmt.span);
                         self.own_fn_cells.insert(cell);
                         // What the name meant before (an imported set): the

@@ -1112,4 +1112,131 @@ mod tests {
             }
         }
     }
+
+    const G1_SRC: &str = "import ui
+state angle = 0.9
+var total = 0
+let delta = dt()
+angle += 1.7 * delta
+for k in range(0, 3) do
+  set total = total + k
+end
+for item in [1, 2] do
+  print(item)
+end
+while total < 10 do
+  set total = total + 1
+end
+let x = 3.0
+if x < 1.0 then x = 5.0 end
+draw_circle(x, angle, 4.0)
+fn toggle(label, x, y)
+  label
+end
+";
+
+    /// The entry-file source text of each user term `pred` picks, in term
+    /// order (`None` for a spanless one). Offsets count chars.
+    fn user_span_texts(
+        program: &Program,
+        pred: impl Fn(&crate::program::Term) -> bool,
+    ) -> Vec<Option<String>> {
+        let filter = IrFilter::new(program);
+        program
+            .terms
+            .iter()
+            .filter(|t| pred(t) && !filter.term_is_prelude(t.id))
+            .map(|t| {
+                let span = program.source_map.get(t.id)?;
+                assert_eq!(span.file, ENTRY_FILE);
+                Some(
+                    program
+                        .source
+                        .chars()
+                        .skip(span.start.offset as usize)
+                        .take((span.end.offset - span.start.offset) as usize)
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
+    /// Declarations, writes, rebinding copies, loops, loop variables and a
+    /// function that joins an overload set are placed at the statement as
+    /// written (docs/dev/dataflow-visualizer-gaps.md, G1).
+    /// `G1_SRC` compiled as `petal show-ir` does: check-only, since `ui`
+    /// needs host natives this test `Env` does not register.
+    fn compile_g1() -> Program {
+        let mut env = Env::new();
+        env.set_check_only(true);
+        env.compile_program(ProgramId(0), G1_SRC).expect("G1_SRC compiles")
+    }
+
+    #[test]
+    fn declarations_writes_and_loops_carry_statement_spans() {
+        let program = compile_g1();
+        let texts = |pred: &dyn Fn(&crate::program::Term) -> bool| user_span_texts(&program, pred);
+        let one = |s: &str| vec![Some(s.to_string())];
+        let named = |t: &crate::program::Term, n: &str| t.name.as_deref() == Some(n);
+        assert_eq!(
+            texts(&|t| matches!(t.op, TermOp::StateInit) && named(t, "angle")),
+            one("state angle = 0.9")
+        );
+        assert_eq!(
+            texts(&|t| matches!(t.op, TermOp::CellNew) && named(t, "total")),
+            one("var total = 0")
+        );
+        assert_eq!(
+            texts(&|t| matches!(t.op, TermOp::StateWrite)),
+            one("angle += 1.7 * delta")
+        );
+        // The copies that rebind `angle` and, in the `if` arm, `x` (not the
+        // arm's entry copy of `x`, which no statement wrote).
+        let rebinds: Vec<Option<String>> = texts(&|t| {
+            matches!(t.op, TermOp::Copy)
+                && (named(t, "angle") || named(t, "x"))
+                && t.inputs.len() == 1
+                && !matches!(program.get_term(t.inputs[0]).op, TermOp::Phi)
+        });
+        assert_eq!(
+            rebinds,
+            [Some("angle += 1.7 * delta".to_string()), Some("x = 5.0".to_string())]
+        );
+        assert_eq!(
+            texts(&|t| matches!(t.op, TermOp::NumericForLoop)),
+            one("for k in range(0, 3) do")
+        );
+        assert_eq!(texts(&|t| matches!(t.op, TermOp::ForLoop)), one("for item in [1, 2] do"));
+        assert_eq!(texts(&|t| matches!(t.op, TermOp::WhileLoop)), one("while total < 10 do"));
+        assert_eq!(
+            texts(&|t| matches!(t.op, TermOp::Copy) && named(t, "k")),
+            one("for k in range(0, 3) do")
+        );
+        assert_eq!(
+            texts(&|t| matches!(t.op, TermOp::MakeClosure(_)) && named(t, "toggle")),
+            one("fn toggle(label, x, y)\n  label\nend")
+        );
+    }
+
+    /// An imported module's top-level terms are placed in the module's file,
+    /// so the user-only view holds none of them (G3).
+    #[test]
+    fn user_only_json_drops_imported_module_top_level_terms() {
+        let program = compile_g1();
+        let view = user_only_json(&program);
+        let terms = view["terms"].as_array().unwrap();
+        let spans = view["source_map"]["term_spans"].as_object().unwrap();
+        for t in terms {
+            let name = t["name"].as_str().unwrap_or("");
+            assert!(!name.contains("::") && !name.starts_with('_'), "module term leaked: {t}");
+            // Every root-block term is placed, bar binding phantoms.
+            let phantom = t["op"] == "Copy" && t.get("inputs").is_none() && !name.is_empty();
+            if t["block_id"] == view["root_block"] && !phantom {
+                assert!(spans.contains_key(&t["id"].to_string()), "spanless root term: {t}");
+            }
+        }
+        // The program's own declarations are still there.
+        assert!(terms.iter().any(|t| t["op"] == "StateInit" && t["name"] == "angle"));
+        assert!(terms.iter().any(|t| t["op"] == "CellNew" && t["name"] == "total"));
+    }
 }

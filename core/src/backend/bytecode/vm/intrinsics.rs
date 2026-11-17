@@ -187,50 +187,15 @@ impl<'a> Vm<'a> {
     }
 
     /// Where the declaration a `StateInit` term makes is written, from the
-    /// `state` keyword to the end of its initializer. The term has no span of
-    /// its own, so this is found from the initializer's terms and the source
-    /// before them; `None` for any other term.
+    /// `state` keyword to the end of its initializer: the term's own span,
+    /// which the compiler places at the statement. `None` for any other term,
+    /// and for a `memo` (its statement does not start with `state`).
     fn state_decl_span(&self, term: TermId) -> Option<crate::source_map::SourceSpan> {
-        let program = self.program;
-        let t = program.get_term(term);
-        if !matches!(t.op, crate::program::TermOp::StateInit) {
+        let t = self.program.get_term(term);
+        if !matches!(t.op, crate::program::TermOp::StateInit) || t.is_memo {
             return None;
         }
-        let init = *t.child_blocks.first()?;
-        let mut spans = program
-            .terms
-            .iter()
-            .filter(|t| t.block_id == init)
-            .filter_map(|t| program.source_map.get(t.id))
-            .filter(|s| s.start.line > 0);
-        let first = *spans.next()?;
-        let (start, end) = spans.fold((first.start, first.end), |(lo, hi), s| {
-            (
-                if s.start.offset < lo.offset { s.start } else { lo },
-                if s.end.offset > hi.offset { s.end } else { hi },
-            )
-        });
-        let source = program.source_map.source_for_span(&first).unwrap_or(&program.source);
-        let before = source.get(..start.offset as usize)?;
-        // The keyword is the last `state` token on the line of the `=`: a
-        // whole word, so a name like `last_state` does not match.
-        let eq = before.rfind('=')?;
-        let line_start = before[..eq].rfind('\n').map_or(0, |i| i + 1);
-        let line = &before[line_start..eq];
-        let is_ident = |c: char| c.is_alphanumeric() || c == '_';
-        let keyword = line_start
-            + line
-                .match_indices("state")
-                .map(|(i, _)| i)
-                .filter(|&i| !line[..i].ends_with(is_ident))
-                .filter(|&i| line[i + 5..].starts_with(char::is_whitespace))
-                .last()?;
-        let start = crate::source_map::SourcePosition {
-            line: 1 + before[..keyword].matches('\n').count() as u32,
-            column: 1 + before[line_start..keyword].chars().count() as u32,
-            offset: keyword as u32,
-        };
-        Some(crate::source_map::SourceSpan { start, end, file: first.file })
+        self.program.source_map.get(term).copied().filter(|s| s.start.line > 0)
     }
 
     /// Whether `term` is written in a module the entry file imports without

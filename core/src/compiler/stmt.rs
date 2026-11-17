@@ -74,6 +74,9 @@ impl Compiler {
                     // across function and control-flow boundaries.
                     let cell_tid =
                         self.emit_term(TermOp::CellNew, smallvec![val_tid], Some(name.clone()));
+                    // The cell is the declaration: it is where `var total = 0`
+                    // is written (a reader pointing at the binding lands here).
+                    self.source_map.add(cell_tid, stmt_span);
                     self.scope_bind_var(name.clone(), cell_tid);
                 } else {
                     self.terms[val_tid.0 as usize].name = Some(name.clone());
@@ -266,10 +269,16 @@ impl Compiler {
         self.blocks[body_block.0 as usize].param_names = vec![var.to_string()];
 
         let for_tid = self.emit_term_with_children(op, loop_inputs, None, smallvec![body_block]);
+        // The loop term is its header as written (`for k in range(0, 3) do`),
+        // and so is the loop variable it binds. The expression form
+        // (`let xs = for …`) is re-placed at the whole expression by
+        // `compile_expr`, as every value expression is.
+        let header = self.loop_header_span(span, key.map_or(iter.span, |k| k.span));
+        self.source_map.add(for_tid, header);
         self.terms[for_tid.0 as usize].collect = collect;
         self.blocks[body_block.0 as usize].parent_term_id = Some(for_tid);
 
-        self.compile_loop_body(body_block, body, &phis, Some(var), key, collect);
+        self.compile_loop_body(body_block, body, &phis, Some((var, header)), key, collect);
         for_tid
     }
 
@@ -308,6 +317,8 @@ impl Compiler {
         );
         self.blocks[cond_block.0 as usize].parent_term_id = Some(while_tid);
         self.blocks[body_block.0 as usize].parent_term_id = Some(while_tid);
+        let header = self.loop_header_span(span, condition.span);
+        self.source_map.add(while_tid, header);
 
         // Condition reads carry names via parent_frame walk to the phi's
         // register; nothing carry-specific to set up here.
@@ -319,6 +330,51 @@ impl Compiler {
         // in value position.
         self.compile_loop_body(body_block, body, &phis, None, None, false);
         while_tid
+    }
+
+    /// The header of a loop written at `stmt` (`for k in range(0, 3) do`,
+    /// `while x < 10 do`): from the statement's start through the `do` after
+    /// `last`, the header's last expression (the iterable, a `key` clause, the
+    /// condition). Without a `do` there (a multi-generator `for`'s outer
+    /// loop, `for a in xs, b in ys do`) it ends at `last`; with no usable
+    /// source it is the whole statement.
+    pub(super) fn loop_header_span(&self, stmt: SourceSpan, last: SourceSpan) -> SourceSpan {
+        if last.file != stmt.file
+            || last.end.offset < stmt.start.offset
+            || last.end.offset > stmt.end.offset
+        {
+            return stmt;
+        }
+        let mut end = last.end;
+        // Offsets count chars (the lexer's input is a `Vec<char>`).
+        let chars = &self.module_chars;
+        let mut pos = last.end;
+        let mut i = pos.offset as usize;
+        while let Some(&c) = chars.get(i) {
+            if !c.is_whitespace() {
+                break;
+            }
+            if c == '\n' {
+                pos.line += 1;
+                pos.column = 1;
+            } else {
+                pos.column += 1;
+            }
+            i += 1;
+        }
+        let ident = |c: Option<&char>| c.is_some_and(|c| c.is_alphanumeric() || *c == '_');
+        if chars.get(i) == Some(&'d')
+            && chars.get(i + 1) == Some(&'o')
+            && !ident(chars.get(i + 2))
+            && i + 2 <= stmt.end.offset as usize
+        {
+            end = crate::source_map::SourcePosition {
+                line: pos.line,
+                column: pos.column + 2,
+                offset: (i + 2) as u32,
+            };
+        }
+        SourceSpan { start: stmt.start, end, file: stmt.file }
     }
 
     /// `state name = init`, and `memo(key) name = init` (`is_memo`), which is
@@ -356,6 +412,10 @@ impl Compiler {
             inputs.push(k);
         }
         let state_tid = self.emit_term(TermOp::StateInit, inputs, Some(self.qualified_name(name)));
+        // The declaration is where `state angle = 0.9` is written. It also
+        // places a module's top-level state in the module's file, so an
+        // entry-file view (`IrFilter`) leaves it out.
+        self.source_map.add(state_tid, span);
         self.terms[state_tid.0 as usize].state_key = Some(state_key_const);
         self.terms[state_tid.0 as usize].is_memo = is_memo;
         if !is_memo {
@@ -408,7 +468,8 @@ impl Compiler {
                 // the cell is allocated once and the slot holds it from then
                 // on. Reads and writes go through it, which is what makes
                 // persistence fall out with no `StateWrite` at all.
-                c.emit_term(TermOp::CellNew, smallvec![init_tid], None);
+                let cell = c.emit_term(TermOp::CellNew, smallvec![init_tid], None);
+                c.source_map.add(cell, span);
             }
         });
 
@@ -837,6 +898,9 @@ impl Compiler {
             // `memo`, the one keyed declaration, is never written: the
             // compiler rejects every write to its name.
             let write_tid = self.emit_term(TermOp::StateWrite, smallvec![val_tid], None);
+            if let Some(span) = self.assign_span {
+                self.source_map.add(write_tid, span);
+            }
             self.terms[write_tid.0 as usize].state_key = state_key;
             // A write nested deeper in loops than the declaration still belongs
             // to the declaration's slot: record how many loop levels to pop.
@@ -854,6 +918,11 @@ impl Compiler {
         // bound in an outer block, record the rebind so the enclosing
         // conditional / loop can emit a phi join.
         let assign_tid = self.emit_term(TermOp::Copy, smallvec![val_tid], Some(name.to_string()));
+        // The rebinding is the assignment statement as written (`x = 5.0`,
+        // `angle += …`), as is the `StateWrite` above.
+        if let Some(span) = self.assign_span {
+            self.source_map.add(assign_tid, span);
+        }
         if let Some(key) = state_init_for_copy {
             self.terms[assign_tid.0 as usize].state_key = Some(key);
         }

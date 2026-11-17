@@ -369,7 +369,7 @@ impl Compiler {
         body_block: BlockId,
         body: &[Stmt],
         phis: &[(String, TermId)],
-        loop_var: Option<&str>,
+        loop_var: Option<(&str, SourceSpan)>,
         key: Option<&Expr>,
         collects: bool,
     ) {
@@ -377,8 +377,10 @@ impl Compiler {
         let saved = self.set_block(body_block);
         self.push_scope(false);
 
-        if let Some(name) = loop_var {
+        if let Some((name, span)) = loop_var {
             let var_tid = self.emit_phantom_term(name.to_string());
+            // Placed at the loop header that binds it.
+            self.source_map.add(var_tid, span);
             self.scope_bind(name.to_string(), var_tid);
         }
 

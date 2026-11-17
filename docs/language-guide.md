@@ -717,6 +717,17 @@ them starts an interpolation hole — use a raw string when you want braces to b
 literal. (A string nested *inside* a hole is the one exception: it must close on
 the line it opened on.)
 
+Write a regular expression as a raw string. In a double-quoted string a
+quantifier opens a hole (`"\\d{1,2}"` is a parse error, and `"\\d{4}"`
+silently inserts the number 4), and every backslash has to be doubled. In a raw
+string the pattern reads as it does everywhere else:
+
+```petal
+let date = """^\d{4}-\d{1,2}-\d{1,2}$"""
+```
+
+`petal lint` reports a hole that holds only a number (`quantifier-hole`).
+
 ### String Builtins
 
 ```petal

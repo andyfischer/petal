@@ -520,10 +520,33 @@ pub struct LegacyColor {
     pub respellable: bool,
 }
 
-/// How to write a brace that is not an interpolation hole. Shared by both
-/// diagnostics below so the tests can assert one phrase.
-const LITERAL_BRACE_HELP: &str =
-    "write `\\{` for a literal brace, or use a raw string: \"\"\"{\"\"\"";
+/// How to write a brace that is not an interpolation hole. Shared by the
+/// diagnostics below and the parser's so the tests can assert one phrase.
+pub(crate) const LITERAL_BRACE_HELP: &str =
+    "write `\\{` for a literal brace, or use a raw string: \"\"\"{\"\"\" (a `\"\"\"…\"\"\"` \
+     string keeps braces and backslashes literal — ideal for a regex, \"\"\"\\d{1,2}\"\"\")";
+
+/// A character the lexer cannot read inside an interpolation hole
+/// (`"^\\{?"`, where the `{` was meant literally). Reported at the brace that
+/// opened the hole, which is the character to change, with the original
+/// complaint and its column kept in the message. Any other error, and one
+/// already reported at an enclosing hole's brace, passes through.
+fn hole_lex_error(err: String, brace: SourcePosition) -> String {
+    let item = crate::error::ErrorItem::from_legacy(err.as_str());
+    let Some(span) = item.span else {
+        return err;
+    };
+    if !item.message.starts_with("Unexpected character")
+        || item.message.contains("inside an interpolation hole")
+    {
+        return err;
+    }
+    format!(
+        "{} (column {}) inside an interpolation hole — a `{{` in a double-quoted string opens \
+         an interpolation hole; {} [line {}, column {}]",
+        item.message, span.start.column, LITERAL_BRACE_HELP, brace.line, brace.column
+    )
+}
 
 /// A `{` in a double-quoted string that only ever made sense as a literal
 /// brace — the hole after it lexed to a lone string constant, or to nothing at
@@ -1339,7 +1362,7 @@ impl Lexer {
                         return Err(literal_brace_error(brace));
                     }
                 }
-                braced?;
+                braced.map_err(|e| hole_lex_error(e, brace))?;
                 // `"{}"` — a hole with nothing in it. It used to lex to no
                 // tokens at all, so the parser took the *next* literal part as
                 // the hole's expression: `"{} items"` printed " items" with no

@@ -1670,3 +1670,43 @@ print(total([1, 2]))
 ",
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// quantifier-hole
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn a_hole_holding_only_a_number_is_reported_as_a_lost_regex_quantifier() {
+    let src = "let year = \"^\\\\d{4}$\"\nprint(year)\n";
+    let out = lint_outcome(src);
+    let found: Vec<_> = out
+        .findings
+        .iter()
+        .filter(|f| f.rule == petal::lint::QUANTIFIER_HOLE)
+        .collect();
+    assert_eq!(found.len(), 1, "{:?}", out.findings);
+    let f = found[0];
+    // At the `{`.
+    assert_eq!((f.line, f.column), (1, 17), "{}", f.message);
+    assert!(f.message.contains("inserts the number 4"), "{}", f.message);
+    assert!(f.message.contains(r#""""^\d{4}$""""#), "{}", f.message);
+    assert!(!f.fixable);
+    assert_eq!(out.output, src, "report only");
+}
+
+#[test]
+fn an_expression_hole_or_a_spaced_number_is_not_a_quantifier() {
+    for src in [
+        "let n = 3\nprint(\"{n} items\")\n",
+        "print(\"{ 4 }\")\n",
+        "print(\"\\{4}\")\n",
+        "print(\"\"\"\\d{4}\"\"\")\n",
+    ] {
+        let out = lint_outcome(src);
+        assert!(
+            !out.findings.iter().any(|f| f.rule == petal::lint::QUANTIFIER_HOLE),
+            "{src:?}: {:?}",
+            out.findings
+        );
+    }
+}

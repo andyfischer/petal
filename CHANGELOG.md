@@ -12,6 +12,17 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **A `{` that opens an unintended interpolation hole is reported at the
+  brace.** `"\\d{1,2}"` reported "Expected string part in interpolation, got
+  Comma" at the comma; it is now reported at the `{`, names the failing token
+  and its column, and — when the hole reads as a regex quantifier (`{1,2}`,
+  `{2,}`, `{,3}`) — says so and spells the pattern as a raw string,
+  `"""\d{1,2}"""`. A character the lexer cannot read inside a hole
+  (`"^\\{?"`: "Unexpected character '?'") is reported at the brace too. The
+  literal-brace help now mentions that a raw string keeps braces and
+  backslashes literal. New default lint rule **`quantifier-hole`** (report
+  only): a hole holding only a number, `"\\d{4}"`, which parses and inserts
+  the number 4. See [docs/language-guide.md](docs/language-guide.md#raw-triple-quoted-strings).
 - **A keyword used as a name says it is reserved.** `let when = 3` reported
   only "Expected an identifier, got `when`"; it now adds that `when` is a
   reserved word (it starts a `match` arm) and suggests a rename (`at`,

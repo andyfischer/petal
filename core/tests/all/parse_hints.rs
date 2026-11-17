@@ -173,3 +173,43 @@ fn a_keyword_out_of_place_is_not_told_to_rename_itself() {
 fn a_keyword_stays_usable_as_a_record_field() {
     parses("let r = {when: 1, end: 2}\nprint(r.when + r.end)");
 }
+
+#[test]
+fn a_regex_quantifier_in_a_string_is_reported_at_its_brace() {
+    // `"\\d{1,2}"`: the comma is where parsing fails; the brace is what to change.
+    let err = parse_err(r#"let p = "\\d{1,2}""#);
+    assert!(err.contains("Expected string part in interpolation, got Comma (column 15)"), "{err}");
+    assert!(err.contains("`{1,2}` looks like a regex quantifier"), "{err}");
+    assert!(err.contains(r#""""\d{1,2}""""#), "{err}");
+    assert!(err.ends_with("[line 1, column 13]"), "{err}");
+
+    // `{2,}`, `{,3}`, and one followed by more pattern.
+    let err = parse_err(r#"let p = "\\s{2,}""#);
+    assert!(err.contains("`{2,}` looks like a regex quantifier"), "{err}");
+    let err = parse_err(r#"let p = "a{,3}""#);
+    assert!(err.contains("`{,3}` looks like a regex quantifier"), "{err}");
+    assert!(err.ends_with("[line 1, column 11]"), "{err}");
+    let err = parse_err(r#"let p = "(\\d{1,2})/(\\d{1,2})?""#);
+    assert!(err.contains(r#""""(\d{1,2})/(\d{1,2})?""""#), "{err}");
+}
+
+#[test]
+fn a_hole_that_is_not_a_quantifier_is_still_reported_at_its_brace() {
+    // JSON in a string: no quantifier, the general help — raw strings included.
+    let err = parse_err(r#"print("{\"a\": 1}")"#);
+    assert!(err.ends_with("[line 1, column 8]"), "{err}");
+    assert!(err.contains("ideal for a regex"), "{err}");
+    assert!(!err.contains("quantifier"), "{err}");
+    // A spaced pair is not a quantifier.
+    let err = parse_err(r#"let p = "a{1, 2}""#);
+    assert!(!err.contains("looks like a regex quantifier"), "{err}");
+}
+
+#[test]
+fn an_unreadable_character_in_a_hole_is_reported_at_its_brace() {
+    // `"^\\{?"`: the `\\` is a backslash, so the `{` opens a hole.
+    let err = parse_err(r#"let p = "^\\{?""#);
+    assert!(err.contains("Unexpected character '?' (column 14) inside an interpolation hole"), "{err}");
+    assert!(err.contains("write `\\{` for a literal brace"), "{err}");
+    assert!(err.ends_with("[line 1, column 13]"), "{err}");
+}

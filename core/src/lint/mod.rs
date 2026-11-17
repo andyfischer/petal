@@ -92,6 +92,7 @@ mod dm_hints;
 mod docs;
 mod field_set;
 mod never_replays;
+mod quantifier_hole;
 mod repeat;
 mod state_const;
 mod to_match;
@@ -110,6 +111,7 @@ use dm_hints::plan_hint_reports;
 use const_of_literal::plan_const_of_literal_reports;
 use field_set::plan_field_set_fixes;
 use never_replays::plan_never_replays_reports;
+use quantifier_hole::plan_quantifier_hole_reports;
 use typed::{plan_int_division, plan_neg_zero_fixes};
 use repeat::plan_repeat_fixes;
 use state_const::plan_state_fixes;
@@ -158,6 +160,7 @@ pub const PREFER_ANY: &str = "prefer-any";
 pub const DEAD_ALIAS: &str = "dead-alias";
 pub const SHADOWS_BUILTIN: &str = "shadows-builtin";
 pub const REIMPLEMENTS_BUILTIN: &str = "reimplements-builtin";
+pub const QUANTIFIER_HOLE: &str = "quantifier-hole";
 pub const INT_DIVISION: &str = "int-division";
 pub const DM_HINT_NOT_LITERAL: &str = crate::dm::hints::NOT_LITERAL;
 pub const DM_HINT_BOUNDS: &str = crate::dm::hints::BOUNDS;
@@ -255,6 +258,13 @@ pub const RULES: &[RuleInfo] = &[
     RuleInfo {
         name: REIMPLEMENTS_BUILTIN,
         summary: "a `fn` that only forwards its arguments to a builtin",
+        opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: QUANTIFIER_HOLE,
+        summary: "`\"\\\\d{4}\"`: a hole holding only a number is a regex quantifier that lost its \
+                  braces; write the pattern as a raw string, `\"\"\"\\d{4}\"\"\"`",
         opt_in: false,
         fixes: Fixes::None,
     },
@@ -767,6 +777,7 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         p.apply(SHADOWS_BUILTIN, plan_shadow_reports(&stmts));
     }
     p.apply(REIMPLEMENTS_BUILTIN, plan_reimplement_reports(&stmts));
+    p.apply(QUANTIFIER_HOLE, plan_quantifier_hole_reports(&stmts, &chars));
     let hints = plan_hint_reports(&stmts, &chars);
     p.apply(DM_HINT_NOT_LITERAL, hints.not_literal);
     p.apply(DM_HINT_BOUNDS, hints.bounds);

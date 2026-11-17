@@ -4234,6 +4234,103 @@ impl Parser {
         }
     }
 
+    /// The hole after the literal part at token `part`, as source text, when
+    /// it reads as a regex quantifier rather than an expression: `{4}`,
+    /// `{1,2}`, `{2,}`, `{,3}` — only integers and one comma, up to the next
+    /// literal part, with no space anywhere (`{1, 2}` is not one).
+    fn hole_quantifier(&self, part: usize) -> Option<String> {
+        let mut inner = Vec::new();
+        let mut i = part + 1;
+        loop {
+            let touches = |a: usize, b: usize| {
+                matches!(
+                    (self.token_spans.get(a), self.token_spans.get(b)),
+                    (Some(x), Some(y)) if x.end.offset == y.start.offset
+                )
+            };
+            if !touches(i - 1, i) {
+                return None;
+            }
+            match self.tokens.get(i)? {
+                Token::Int(n) if *n >= 0 => inner.push(Some(*n)),
+                Token::Comma => inner.push(None),
+                Token::String(_) => break,
+                _ => return None,
+            }
+            i += 1;
+        }
+        let text = |n: &Option<i64>| n.map_or(",".to_string(), |n| n.to_string());
+        match inner.as_slice() {
+            [Some(_)] | [Some(_), None] | [Some(_), None, Some(_)] | [None, Some(_)] => {
+                Some(format!("{{{}}}", inner.iter().map(text).collect::<String>()))
+            }
+            _ => None,
+        }
+    }
+
+    /// The whole interpolated string starting at the `InterpStart` token
+    /// `start`, written as a raw string, when each of its holes is a regex
+    /// quantifier ([`Parser::hole_quantifier`]): `"\\d{1,2}"` →
+    /// `"""\d{1,2}"""`. `None` when some hole is an expression, or the text
+    /// cannot be a raw string.
+    fn as_raw_string(&self, start: usize) -> Option<String> {
+        let mut out = String::new();
+        let mut i = start + 1;
+        loop {
+            match self.tokens.get(i)? {
+                Token::String(s) => {
+                    out.push_str(s);
+                    i += 1;
+                    if matches!(self.tokens.get(i)?, Token::InterpEnd) {
+                        break;
+                    }
+                    out.push_str(&self.hole_quantifier(i - 1)?);
+                    while !matches!(self.tokens.get(i)?, Token::String(_)) {
+                        i += 1;
+                    }
+                }
+                _ => return None,
+            }
+        }
+        if out.contains("\"\"\"") || out.contains('\n') || out.ends_with('"') {
+            return None;
+        }
+        Some(format!("\"\"\"{out}\"\"\""))
+    }
+
+    /// An error inside the interpolation hole whose `{` ends the literal part
+    /// at token `part`, reported at that brace — the character to change —
+    /// with `problem` (which names the original token and column) first.
+    /// When the hole reads as a regex quantifier, it says so and spells the
+    /// pattern as a raw string.
+    fn interp_brace_error(&self, start: usize, part: usize, problem: String) -> String {
+        let help = match self.hole_quantifier(part) {
+            Some(q) => {
+                let raw = self
+                    .as_raw_string(start)
+                    .unwrap_or_else(|| "\"\"\"…\"\"\"".to_string());
+                format!(
+                    "`{q}` looks like a regex quantifier: write the pattern as a raw string, \
+                     {raw}, where braces and backslashes are literal (or write `\\{{` for a \
+                     literal brace)"
+                )
+            }
+            None => crate::lexer::LITERAL_BRACE_HELP.to_string(),
+        };
+        let msg = format!(
+            "{problem} — a `{{` in a double-quoted string opens an interpolation hole; {help}"
+        );
+        // The part's span runs through its closing `{`.
+        match self.token_spans.get(part) {
+            Some(span) if span.end.line > 0 && span.end.column > 1 => format!(
+                "{msg} [line {}, column {}]",
+                span.end.line,
+                span.end.column - 1
+            ),
+            _ => self.error_at_current(msg),
+        }
+    }
+
     fn parse_string_interp(&mut self) -> Result<Expr, String> {
         let start = self.pos;
         // Kind depends on whether any holes appear, so wrap retroactively.
@@ -4241,6 +4338,9 @@ impl Parser {
         self.advance(); // consume InterpStart
         let mut parts: Vec<String> = Vec::new();
         let mut exprs: Vec<Expr> = Vec::new();
+        // The literal part (a `Token::String`) whose last character is the
+        // `{` of the hole being read.
+        let mut hole_part = start;
 
         loop {
             match self.peek().clone() {
@@ -4273,13 +4373,14 @@ impl Parser {
                 other => {
                     // The hole closed after one expression and something
                     // else followed — almost always a literal brace
-                    // (`"{\"a\": 1}"`, JSON in a string) read as a hole.
-                    return Err(self.error_at_current(format!(
-                        "Expected string part in interpolation, got {:?} — a `{{` in a \
-                         double-quoted string opens an interpolation hole; write `\\{{` \
-                         for a literal brace",
-                        other
-                    )));
+                    // (`"{\"a\": 1}"`, JSON in a string, or a regex's
+                    // `\\d{1,2}`) read as a hole. Reported at that brace.
+                    let problem = format!(
+                        "Expected string part in interpolation, got {:?} (column {})",
+                        other,
+                        self.current_span().start.column
+                    );
+                    return Err(self.interp_brace_error(start, hole_part, problem));
                 }
             }
 
@@ -4288,8 +4389,23 @@ impl Parser {
                 break;
             }
 
+            // The literal part just consumed ends with this hole's `{`.
+            hole_part = self.pos - 1;
             self.interp_holes += 1;
-            let expr = self.parse_expr()?;
+            let expr = match self.parse_expr() {
+                Ok(expr) => expr,
+                // `"a{,3}"`: a regex quantifier is not an expression. Any
+                // other mistake inside a hole is reported where it is.
+                Err(e) if self.hole_quantifier(hole_part).is_some() => {
+                    let item = crate::error::ErrorItem::from_legacy(e.as_str());
+                    let problem = match item.span {
+                        Some(span) => format!("{} (column {})", item.message, span.start.column),
+                        None => item.message,
+                    };
+                    return Err(self.interp_brace_error(start, hole_part, problem));
+                }
+                Err(e) => return Err(e),
+            };
             self.interp_holes -= 1;
             exprs.push(expr);
         }

@@ -1014,6 +1014,9 @@ DESCRIPTION
               a function of a package the file imports whole
        reimplements-builtin (report only)
               a fn that only forwards its arguments to a builtin
+       quantifier-hole (report only)
+              \"\\\\d{4}\": a hole holding only a number, a regex quantifier
+              that lost its braces; write the pattern as a raw string
        dm-hint-not-literal (report only)
               tunable(e) on a computed e, which marks nothing for direct
               manipulation; on a string, bool, record or list it points to

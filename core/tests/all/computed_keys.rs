@@ -75,7 +75,7 @@ fn a_key_that_is_not_a_string_is_refused_by_name() {
             "{e}"
         );
     }
-    assert_eq!(run("print({[str(5)]: 1})").unwrap(), "{ 5: 1 }");
+    assert_eq!(run("print({[str(5)]: 1})").unwrap(), "{ \"5\": 1 }");
 }
 
 /// `petal lint` has nothing to say about a record built with one, or about
@@ -104,4 +104,17 @@ fn the_internal_builtin_is_only_the_forms() {
     let e = run("print(__record_of(1))").expect_err("arity");
     assert!(e.contains("__record_of"), "{e}");
     assert_eq!(run("print(__record_of(\"a\", 1))").unwrap(), "{ a: 1 }");
+}
+
+/// A key that is not an identifier prints quoted and escaped like a string
+/// literal, so the printed record is unambiguous; identifier keys stay bare.
+#[test]
+fn a_key_that_is_not_an_identifier_prints_quoted() {
+    assert_eq!(
+        run("let k = \"X-Req\"\nprint({[k]: 1, ok: true})").unwrap(),
+        "{ \"X-Req\": 1, ok: true }"
+    );
+    assert_eq!(run("print({[\"if\"]: 1})").unwrap(), "{ \"if\": 1 }");
+    assert_eq!(run("print({[\"a b\"]: [{[\"c.d\"]: \"e\"}]})").unwrap(), "{ \"a b\": [{ \"c.d\": \"e\" }] }");
+    assert_eq!(run("print({[\"q\\\"\"]: 1})").unwrap(), "{ \"q\\\"\": 1 }");
 }

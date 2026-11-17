@@ -35,6 +35,14 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `when_`). Likewise `end` (closes a block, `end_time`) and every other
   keyword, wherever a name is declared (`let`/`var`/`state`, `fn` names and
   parameters, `for` variables). Keywords are still usable as record fields.
+- **Breaking (printed output): a record key that is not an identifier
+  prints quoted.** `print({[k]: 1})` with `k = "X-Req"` now shows
+  `{ "X-Req": 1 }` instead of `{ X-Req: 1 }`; a key that is a keyword, has
+  a space or punctuation, starts with a digit or is empty is quoted and
+  escaped like a string literal. Identifier keys stay bare, so most output
+  is unchanged. A test or host that matches printed records with such keys
+  updates its expected text. (Record literals still take only identifier
+  or `[computed]` keys.)
 - **Breaking for hosts: an `Env` no longer echoes `print` to stdout by
   default.** Prints are still collected for `take_output`; only the write to
   the process's stdout is off, so an embedder's stdout carries only what it

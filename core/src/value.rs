@@ -204,7 +204,7 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
             let map = heap.get_map(*id);
             let parts: Vec<String> = map
                 .iter()
-                .map(|(k, v)| format!("{}: {}", k, value_to_debug_string(v, heap)))
+                .map(|(k, v)| format!("{}: {}", display_key(k), value_to_debug_string(v, heap)))
                 .collect();
             format!("{{ {} }}", parts.join(", "))
         }
@@ -269,6 +269,18 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
         // need the resource table + program). Provenance-rich rendering lives in
         // `pending_to_display` / `value_to_json_ctx`.
         Value::Pending(id) => format!("<pending {}>", id.0),
+    }
+}
+
+/// A record key as printed: bare when it is an identifier (and not a
+/// keyword), else quoted and escaped like a string literal, so
+/// `{[k]: 1}` with `k = "X-Req"` prints `{ "X-Req": 1 }` rather than the
+/// unreadable `{ X-Req: 1 }`.
+pub fn display_key(key: &str) -> std::borrow::Cow<'_, str> {
+    if crate::static_value::is_identifier(key) {
+        std::borrow::Cow::Borrowed(key)
+    } else {
+        std::borrow::Cow::Owned(crate::static_value::render_string_literal(key))
     }
 }
 
@@ -1135,5 +1147,32 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn display_key_quotes_only_non_identifiers() {
+        assert_eq!(display_key("name"), "name");
+        assert_eq!(display_key("_x1"), "_x1");
+        assert_eq!(display_key("X-Req"), "\"X-Req\"");
+        assert_eq!(display_key("a b"), "\"a b\"");
+        assert_eq!(display_key(""), "\"\"");
+        assert_eq!(display_key("1st"), "\"1st\"");
+        // A keyword is not a bare key.
+        assert_eq!(display_key("if"), "\"if\"");
+        // Escaped like a string literal.
+        assert_eq!(display_key("say \"hi\"\n{x}"), "\"say \\\"hi\\\"\\n\\{x}\"");
+    }
+
+    #[test]
+    fn record_display_quotes_non_identifier_keys() {
+        let mut heap = Heap::new();
+        let mut m = crate::heap::RecordMap::default();
+        m.insert("X-Req".to_string(), Value::Int(1));
+        m.insert("ok".to_string(), Value::Bool(true));
+        let rec = Value::Map(heap.alloc_map(m));
+        assert_eq!(value_to_display_string(&rec, &heap), "{ \"X-Req\": 1, ok: true }");
+        assert_eq!(value_to_debug_string(&rec, &heap), "{ \"X-Req\": 1, ok: true }");
+        let list = Value::List(heap.alloc_list(vec![rec]));
+        assert_eq!(value_to_display_string(&list, &heap), "[{ \"X-Req\": 1, ok: true }]");
     }
 }

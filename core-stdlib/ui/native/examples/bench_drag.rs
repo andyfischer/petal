@@ -74,7 +74,6 @@ fn main() {
     let mut best = vec![f64::INFINITY; frames];
     for _ in 0..runs {
         let mut ui = petal_ui_headless::harness::Headless::with_size(&src, 1280, 850).expect("compile");
-        ui.env.set_echo(false);
         let mut policy = ui.policy();
         policy.gate = false;
         ui.set_policy(policy);

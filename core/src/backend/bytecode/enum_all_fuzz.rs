@@ -582,7 +582,6 @@ const FRAMES: usize = 3;
 fn run_frames(code: &str, policy: RunPolicy, observe: bool, check: bool) -> (Outcome, Vec<String>) {
     let mut env = Env::new();
     env.set_policy(policy);
-    env.set_echo(false);
     env.set_static_check(check);
     if observe {
         env.observations_mut().enable();

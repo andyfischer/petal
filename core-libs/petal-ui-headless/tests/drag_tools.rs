@@ -34,9 +34,7 @@ if d.dropped then items = d.drop end
 
 fn ui(body: &str) -> Headless {
     let src = format!("import ui\nimport ui/drag\n{body}");
-    let mut h = Headless::new(&src).unwrap_or_else(|e| panic!("compile failed: {e}"));
-    h.env.set_echo(false);
-    h
+    Headless::new(&src).unwrap_or_else(|e| panic!("compile failed: {e}"))
 }
 
 fn frame(h: &mut Headless) {

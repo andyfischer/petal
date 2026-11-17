@@ -75,7 +75,6 @@ fn x_of(env: &Env, opts: Value) -> f64 {
 
 fn run(label: &str, ids: Ids, props: usize, frames: usize, moving: bool, memo: bool) {
     let mut env = Env::new();
-    env.set_echo(false);
     let mut policy = RunPolicy::FAST;
     policy.memo = memo;
     policy.gate = false;
@@ -181,7 +180,6 @@ for e in (if frame % 2 == 0 then A else B end){key} do ent(e) end
 
 fn run_reorder(label: &str, ents: usize, frames: usize, keyed: bool, memo: bool) {
     let mut env = Env::new();
-    env.set_echo(false);
     let mut policy = RunPolicy::FAST;
     policy.memo = memo;
     policy.gate = false;

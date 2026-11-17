@@ -24,7 +24,6 @@ const WHITE: &str = "{r: 255, g: 255, b: 255, a: 255}";
 
 fn ui(src: &str) -> Headless {
     let mut ui = Headless::with_ui(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
-    ui.env.set_echo(false);
     // Every frame runs: the memo is what is under test, not the gate.
     ui.set_policy(RunPolicy::REPLAY);
     ui
@@ -306,7 +305,6 @@ fn drive_with(
     let size = (800, 600);
     let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    ui.env.set_echo(false);
     match drain {
         Drain::Flat => {}
         Drain::SegmentedFlat => {

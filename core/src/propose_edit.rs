@@ -830,7 +830,6 @@ pub fn propose_with_natives(
     register: &mut dyn FnMut(&mut Env),
 ) -> Result<Json, CliDmError> {
     let mut env = Env::new();
-    env.set_echo(false);
     register(&mut env);
     for dir in include_dirs {
         env.add_module_path(dir.clone());

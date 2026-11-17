@@ -26,7 +26,6 @@ fn main() {
     let source = std::fs::read_to_string(&entry).expect("entry file");
 
     let mut env = Env::new();
-    env.set_echo(false);
     env.set_check_only(true);
     let pid = env
         .load_program_diag(&source, Some(&entry))

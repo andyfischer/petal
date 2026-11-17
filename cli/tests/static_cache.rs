@@ -26,7 +26,6 @@ fn world_with(src: &str, policy: RunPolicy, setup: impl FnOnce(&mut Env)) -> Wor
     let mut env = Env::new();
     setup(&mut env);
     env.set_policy(policy);
-    env.set_echo(false);
     let pid = env.load_program(src).unwrap_or_else(|e| panic!("compile: {e}"));
     let sid = env.create_stack(pid).unwrap();
     World { env, pid, sid }
@@ -809,7 +808,6 @@ fn the_static_only_build_can_keep_its_values() {
                assert(len(WIDE) == 20)\n";
     let spent = |keeps: bool| {
         let mut env = Env::new();
-        env.set_echo(false);
         env.set_check_only(true);
         env.set_policy(RunPolicy::FAST);
         env.set_static_audit(StaticAuditMode::StaticOnly);
@@ -903,7 +901,6 @@ fn the_example_corpus_prints_the_same_with_the_cache_on_and_off() {
         let load = |policy: RunPolicy| {
             let mut env = Env::new();
             env.set_policy(policy);
-            env.set_echo(false);
             env.set_seed(1);
             let pid = env.load_program(&src).ok()?;
             let sid = env.create_stack(pid).ok()?;

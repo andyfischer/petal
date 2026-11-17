@@ -3655,8 +3655,9 @@ mod seed_tests {
 }
 
 /// [`Env::set_echo`] — the embedder-level switch for whether `print` also
-/// reaches the process's stdout. A headless driver that reports prints itself
-/// turns it off so its own output channel stays clean.
+/// reaches the process's stdout. Off by default, so an embedder that reports
+/// prints itself keeps its own output channel clean without asking; `petal
+/// run` turns it on.
 mod echo_tests {
     use super::super::*;
 
@@ -3667,12 +3668,9 @@ mod echo_tests {
     #[test]
     fn set_echo_reaches_every_context_and_output_is_collected_either_way() {
         let mut env = Env::new();
-        assert!(ctx_echo(&env).iter().all(|&e| e), "echoing by default");
+        assert!(ctx_echo(&env).iter().all(|&e| !e), "silent by default");
 
-        env.set_echo(false);
-        assert!(ctx_echo(&env).iter().all(|&e| !e), "every context silenced");
-
-        // Silencing the echo does not silence the buffer: take_output still
+        // A silent echo does not silence the buffer: take_output still
         // returns what the program printed.
         let pid = env.load_program("print(\"hi\")\n").unwrap();
         let sid = env.create_stack(pid).unwrap();
@@ -3680,7 +3678,23 @@ mod echo_tests {
         assert_eq!(env.take_output(), vec!["hi".to_string()]);
 
         env.set_echo(true);
-        assert!(ctx_echo(&env).iter().all(|&e| e), "and it turns back on");
+        assert!(ctx_echo(&env).iter().all(|&e| e), "every context echoing");
+
+        env.set_echo(false);
+        assert!(ctx_echo(&env).iter().all(|&e| !e), "and it turns back off");
+    }
+
+    /// A fork made after `set_echo(true)` echoes too: the setting is the
+    /// host's, not something a later context resets.
+    #[test]
+    fn a_fork_of_an_echoing_env_echoes() {
+        let mut env = Env::new();
+        env.set_echo(true);
+        let pid = env.load_program("print(1)\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.fork_execution(sid).unwrap();
+        assert!(env.contexts.len() > 1, "the fork has its own context");
+        assert!(ctx_echo(&env).iter().all(|&e| e));
     }
 }
 

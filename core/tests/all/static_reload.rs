@@ -28,7 +28,6 @@ type Modules<'a> = &'a [(&'a str, &'a str)];
 fn world(entry: &str, modules: Modules, policy: RunPolicy, follow: bool) -> World {
     let mut env = Env::new();
     env.set_policy(policy);
-    env.set_echo(false);
     env.set_static_follow(follow);
     for (name, source) in modules {
         env.register_module(name, source);

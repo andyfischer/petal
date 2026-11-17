@@ -25,7 +25,6 @@ struct T {
 fn load(src: &str) -> (Env, ProgramId, StackKey) {
     let mut env = Env::new();
     env.set_seed(7);
-    env.set_echo(false);
     let pid = env.load_program(src).expect("compiles");
     let sid = env.create_stack(pid).expect("stack");
     (env, pid, sid)

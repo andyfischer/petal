@@ -201,7 +201,6 @@ fn nested_today(src: &str) -> String {
 
 fn run_out(src: &str) -> Vec<String> {
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env.load_program(src).unwrap_or_else(|e| panic!("{e}\n{src}"));
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap_or_else(|e| panic!("{e}\n{src}"));
@@ -210,13 +209,11 @@ fn run_out(src: &str) -> Vec<String> {
 
 fn compiles(src: &str) -> bool {
     let mut env = Env::new();
-    env.set_echo(false);
     env.load_program(src).is_ok()
 }
 
 fn deprecation_warnings(src: &str) -> Vec<String> {
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env.load_program(src).expect("compiles");
     env.get_program(pid)
         .unwrap()
@@ -453,7 +450,6 @@ fn the_registry_lists_old_imports_last_as_a_batch_migration() {
 #[test]
 fn an_at_rebind_is_a_parse_error_that_names_the_tool() {
     let mut env = Env::new();
-    env.set_echo(false);
     let err = format!("{}", env.load_program("let a = [1]\nappend(@a, 2)\n").unwrap_err());
     assert!(err.contains("`@a` is not an expression"), "{err}");
     assert!(err.contains("Write `a = f(a)` instead of `f(@a)`"), "{err}");
@@ -568,7 +564,6 @@ fn a_declaration_annotation_is_not_a_rebind() {
 #[test]
 fn a_hash_colour_is_an_error_that_names_the_tool_and_the_new_spelling() {
     let mut env = Env::new();
-    env.set_echo(false);
     let err = format!("{}", env.load_program("let a = #f80\nlet b = :fff\nprint(a.r + b.r)\n").unwrap_err());
     assert!(err.contains("`#f80` is no longer a color literal; write `:f80`"), "{err}");
     assert!(err.contains("petal migrate-old-code") && err.contains("[colour-literals]"), "{err}");
@@ -716,7 +711,6 @@ fn glsl_in_a_raw_string_keeps_its_comments_and_directives() {
 #[test]
 fn a_nested_else_if_is_a_stray_end_error_that_names_the_tool() {
     let mut env = Env::new();
-    env.set_echo(false);
     for (src, at) in [
         ("let a = 1\nlet x = if a > 1 then 1 else if a > 0 then 2 else 3 end end\nprint(x)\n", "[line 2, column 57]"),
         ("let a = 1\nif a > 1 then\n  print(1)\nelse if a > 0 then\n  print(2)\nend\nend\n", "[line 7, column 1]"),

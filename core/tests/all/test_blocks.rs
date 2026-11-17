@@ -13,9 +13,7 @@ use petal::program::ProgramId;
 use petal::stack::StackKey;
 
 fn quiet() -> Env {
-    let mut env = Env::new();
-    env.set_echo(false);
-    env
+    Env::new()
 }
 
 fn loaded_in(mut env: Env, src: &str) -> (Env, ProgramId, StackKey) {

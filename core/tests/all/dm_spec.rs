@@ -175,7 +175,6 @@ fn live_stack_untouched() {
     let twin_prints = twin.take_output();
 
     let (mut env, pid, sid) = load(LIVE_SRC);
-    env.set_echo(false);
     env.run(sid).unwrap();
     env.take_output();
     let _ = live_nums(&mut env, "out");

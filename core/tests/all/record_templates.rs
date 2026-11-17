@@ -77,7 +77,6 @@ struct World {
 
 fn world(src: &str, mode: Mode) -> World {
     let mut env = Env::new();
-    env.set_echo(false);
     let mut policy = RunPolicy::FAST;
     policy.gate = false;
     policy.memo = mode == Mode::Memo;

@@ -579,7 +579,6 @@ struct Driven {
 fn drive(texts: &[String; 3], policy: RunPolicy, check: bool) -> Driven {
     let mut env = Env::new();
     env.set_policy(policy);
-    env.set_echo(false);
     env.set_static_check(check);
     let mut out = Driven {
         transcript: Vec::new(),

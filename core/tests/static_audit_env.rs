@@ -21,7 +21,6 @@ fn the_environment_variable_turns_the_audit_on_for_every_env() {
     unsafe { std::env::set_var("PETAL_STATIC_AUDIT", "watch") };
     let mut env = Env::new();
     assert_eq!(env.static_audit_mode(), StaticAuditMode::Watch);
-    env.set_echo(false);
     // Claims to be constant, and prints.
     env.register_native("prints", prints, NativeEffects::CONST);
     env.run_source("native fn prints()\nlet TABLE = [prints(), 2]\nlen(TABLE)\n").unwrap();

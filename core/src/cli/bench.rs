@@ -217,8 +217,8 @@ fn run_variant(
     let one_run = |v: &mut Variant| -> Result<(u64, u64, u64), String> {
         let mut env = make_env(include_dirs);
         env.set_policy(policy);
-        // The script's prints would otherwise repeat once per run.
-        env.set_echo(false);
+        // `make_env` leaves echo off, as it must here: the script's prints
+        // would otherwise repeat once per run.
         env.set_heap_stats(true);
         if let Some(seed) = opts.seed {
             env.set_seed(seed);

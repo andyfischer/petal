@@ -18,7 +18,6 @@ use petal::value::Value;
 
 fn load_at(src: &str, path: &std::path::Path) -> (Env, ProgramId, StackKey) {
     let mut env = Env::new();
-    env.set_echo(false);
     env.enable_element_trace(true);
     let pid = env.load_program_at(src, path).expect("compiles");
     let sid = env.create_stack(pid).expect("stack");

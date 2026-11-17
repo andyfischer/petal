@@ -1441,7 +1441,6 @@ mod tests {
         crate::draw::register_canvas(&mut env);
         crate::register_prelude(&mut env);
         crate::provide_interface(&mut env);
-        env.set_echo(false);
         let pid = env.load_program(src).unwrap();
         let stack = env.create_stack(pid).unwrap();
         frame(&mut env, stack);

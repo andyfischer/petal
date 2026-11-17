@@ -35,7 +35,6 @@ fn open_observed(
 ) -> Headless {
     let mut ui = petal_ui_corpus::panel(app, SIZE.0, SIZE.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    ui.env.set_echo(false);
     ui.env.set_seed(seed);
     ui.set_policy(policy);
     ui.env.set_static_follow(follow);

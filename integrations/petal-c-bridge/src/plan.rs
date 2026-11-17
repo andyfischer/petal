@@ -645,7 +645,6 @@ mod tests {
 
     fn env() -> Env {
         let mut env = Env::new();
-        env.set_echo(false);
         env.register_native("put", put, NativeEffects::EMITS);
         env
     }

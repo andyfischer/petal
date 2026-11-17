@@ -60,7 +60,6 @@ fn err_has(src: &str, needles: &[&str]) {
 
 fn run(src: &str) -> Vec<String> {
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env.load_program(src).unwrap_or_else(|e| panic!("{e}\n{src}"));
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap_or_else(|e| panic!("{e}\n{src}"));

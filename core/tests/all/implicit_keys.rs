@@ -82,7 +82,6 @@ struct World {
 /// probe; `near(v)` a pointer probe that reads its key.
 fn world(src: &str, mode: Mode) -> World {
     let mut env = Env::new();
-    env.set_echo(false);
     let mut policy = RunPolicy::FAST;
     policy.memo = mode != Mode::Off;
     policy.gate = false;

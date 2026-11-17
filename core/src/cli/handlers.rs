@@ -61,6 +61,9 @@ pub(super) fn handle_run(
     // and prints the frame pending report after the run.
     let trace_pending = trace_pending || std::env::var("PETAL_TRACE_PENDING").is_ok();
     let mut env = make_env(include_dirs);
+    // `petal run` is the one host whose stdout is the program's: prints go
+    // there as they happen (an embedder's `Env` collects them instead).
+    env.set_echo(true);
     // Seed before the first run so the whole session replays; the flag wins
     // over PETAL_SEED (which `Env::new` already applied).
     if let Some(seed) = seed {
@@ -381,6 +384,8 @@ pub(super) fn handle_pending_report(
     include_dirs: &[PathBuf],
 ) {
     let mut env = make_env(include_dirs);
+    // The program's prints come out ahead of the report, as under `petal run`.
+    env.set_echo(true);
     let pid = load_checked_or_die(&mut env, json, false, source, source_input);
     let sid = stack_or_die(&mut env, json, pid);
     // Record absorptions too, so a caller inspecting the report sees per-frame
@@ -634,6 +639,8 @@ pub(super) fn handle_propose_edit(
         v2: _,
     } = opts;
     let mut env = make_env(include_dirs);
+    // The program's prints come out ahead of the proposals, as under `petal run`.
+    env.set_echo(true);
     env.enable_emit_trace(true);
     // The per-term trace supplies the values the arithmetic solver inverts
     // against; without it only statically-known siblings can be used.
@@ -852,9 +859,9 @@ fn handle_propose_edit_v2(
     // `state` carrying (as `run --runs N` does), so a goal can address a
     // value that lives in state. The checkpoint is the stack ready to run
     // frame N + 1, whose speculative runs see the state frozen as frame N
-    // left it. The script's prints are not echoed: stdout is the report.
+    // left it. The script's prints are not echoed (`make_env` leaves echo
+    // off): stdout is the report.
     if opts.frames > 0 {
-        env.set_echo(false);
         for frame in 0..opts.frames {
             let ran = if frame == 0 { env.run(sid) } else { env.reset_stack(sid).and_then(|()| env.run(sid)) };
             if let Err(e) = ran {
@@ -899,6 +906,8 @@ pub(super) fn handle_explain(
     include_dirs: &[PathBuf],
 ) {
     let mut env = make_env(include_dirs);
+    // The program's prints come out ahead of the explanation, as under `petal run`.
+    env.set_echo(true);
     env.trace_mut().enable();
     let pid = match load_into(&mut env, source, source_input) {
         Ok(pid) => pid,

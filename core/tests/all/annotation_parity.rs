@@ -837,7 +837,6 @@ fn a_one_line_setting_with_named_bounds_runs_and_is_listed() {
                let KINDS = {sedan: {mass: 1200.0}}\n\
                print(RUN, KICK, START, KINDS.sedan.mass)\n";
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env.load_program(src).expect("loads");
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).expect("runs");

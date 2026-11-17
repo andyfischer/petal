@@ -579,7 +579,6 @@ fn layered_widgets_are_still_replayed_by_the_memo() {
                      for i in range(0, 5) do row(i) end\n\
                      clip_pop()\n\
                      ui_layer(prev)\n");
-    ui.env.set_echo(false);
     ui.set_policy(petal::policy::RunPolicy::REPLAY);
     ui.mouse_move(50, 30); // row 1
     ui.frame().unwrap();

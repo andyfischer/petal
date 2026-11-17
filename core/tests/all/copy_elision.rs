@@ -569,7 +569,6 @@ fn a_branch_that_rebinds_the_accumulator_to_another_value_is_not_in_place() {
         for policy in ["baseline", "fast-static", "fast", "replay"] {
             let mut env = Env::new();
             env.set_policy(RunPolicy::parse(policy).unwrap());
-            env.set_echo(false);
             let pid = env.load_program(code).expect("load");
             let sid = env.create_stack(pid).expect("stack");
             for run in 0..2 {

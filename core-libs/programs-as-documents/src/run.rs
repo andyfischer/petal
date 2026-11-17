@@ -105,7 +105,6 @@ impl Runner {
     pub fn prepare(&self, source: &str) -> Result<(Env, ProgramId, StackKey), String> {
         let mut env = Env::new();
         (self.setup)(&mut env)?;
-        env.set_echo(false);
         env.enable_element_trace(true);
         let program = env.load_program_at(source, &self.path)?;
         let stack = env.create_stack(program)?;
@@ -159,7 +158,6 @@ impl Runner {
     pub fn probe(&self, source: &str) -> Result<Vec<StaticValue>, String> {
         let mut env = Env::new();
         (self.setup)(&mut env)?;
-        env.set_echo(false);
         env.register_native_boxed(
             PROBE,
             |cx| {

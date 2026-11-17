@@ -998,7 +998,6 @@ end
     let probe = "print(f(1), f(1.0), f(2.5), f(3.0), f(4), f(\"1\"), f(nil))\n";
     let run = |body: &str| {
         let mut env = petal::env::Env::new();
-        env.set_echo(false);
         env.run_source(&format!("{body}{probe}")).unwrap();
         env.take_output()
     };

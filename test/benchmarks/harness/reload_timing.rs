@@ -54,7 +54,6 @@ fn main() {
     let edits_entry = petal::module::canonical_path(&edited) == petal::module::canonical_path(&entry);
 
     let mut env = Env::new();
-    env.set_echo(false);
     // Nothing is run, so the program is compiled without linking: a game
     // whose package requires a host interface this binary lacks still loads.
     env.set_check_only(true);

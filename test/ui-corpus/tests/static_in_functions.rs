@@ -47,7 +47,6 @@ fn drive(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, frames:
     let size = (800, 600);
     let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    ui.env.set_echo(false);
     ui.env.set_seed(seed);
     ui.env.set_heap_stats(true);
     ui.set_policy(policy);
@@ -124,7 +123,6 @@ fn frames_of(
     let size = (800, 600);
     let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    ui.env.set_echo(false);
     ui.env.set_seed(1);
     ui.env.set_static_check(check);
     ui.set_policy(policy);
@@ -210,7 +208,6 @@ fn cost(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, frames: 
     let size = (800, 600);
     let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    ui.env.set_echo(false);
     ui.env.set_seed(seed);
     ui.env.set_heap_stats(true);
     ui.set_policy(policy);

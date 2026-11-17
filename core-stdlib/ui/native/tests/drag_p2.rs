@@ -12,9 +12,7 @@ use serde_json::{Value, json};
 
 fn ui(body: &str) -> Headless {
     let src = format!("import ui\nimport ui/drag\n{body}");
-    let mut h = Headless::new(&src).unwrap_or_else(|e| panic!("compile failed: {e}"));
-    h.env.set_echo(false);
-    h
+    Headless::new(&src).unwrap_or_else(|e| panic!("compile failed: {e}"))
 }
 
 fn frame(h: &mut Headless) {
@@ -246,7 +244,6 @@ if d.cancelled then why = d.reason end
         )
     };
     let mut h = Headless::new(&src("2")).unwrap();
-    h.env.set_echo(false);
     press_and_move(&mut h, 110, 110, &[(120, 110), (150, 110), (150, 110)]);
     assert!((num(&state(&h, "shown")) - 140.0).abs() < 0.6);
     // The view now moves the knob 4 px per unit: the drag goes on, and the
@@ -277,7 +274,6 @@ fn run_example(name: &str) -> Vec<(Value, Vec<Value>)> {
         size[1].as_i64().unwrap() as i32,
     )
     .unwrap();
-    h.env.set_echo(false);
     let events = scenario["events"].as_array().unwrap();
     let mut out = Vec::new();
     for f in 0..scenario["frames"].as_u64().unwrap() {

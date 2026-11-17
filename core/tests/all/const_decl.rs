@@ -20,9 +20,7 @@ use petal::source_map::ENTRY_FILE;
 use petal::static_classify::{ConstCheck, DeclClass, DeclKind};
 
 fn quiet() -> Env {
-    let mut env = Env::new();
-    env.set_echo(false);
-    env
+    Env::new()
 }
 
 /// Run `src` and return what it printed.

@@ -55,7 +55,6 @@ fn run_frame(w: &mut World) -> String {
 fn world(entry: &str, modules: &[(&str, &str)], policy: RunPolicy) -> World {
     let mut env = Env::new();
     env.set_policy(policy);
-    env.set_echo(false);
     for (name, source) in modules {
         env.register_module(name, source);
     }
@@ -917,7 +916,6 @@ fn a_config_file_on_disk_is_patched_and_a_missing_one_falls_back() {
     std::fs::write(&config, "pub let SPEED = tunable(2)\n").unwrap();
 
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env.load_program_at(entry, &main).unwrap();
     let sid = env.create_stack(pid).unwrap();
     let mut w = World { env, pid, sid };
@@ -1101,7 +1099,6 @@ fn setting_a_value_in_a_module_finds_its_file() {
     std::fs::write(&main, entry).unwrap();
     std::fs::write(&config, "pub let LOOK = tunable({fog: 0.5})\n").unwrap();
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env.load_program_at(entry, &main).unwrap();
     let sid = env.create_stack(pid).unwrap();
     let mut w = World { env, pid, sid };
@@ -1397,7 +1394,6 @@ fn a_program_is_classified_once_however_many_ask() {
             let before = count();
             let mut env = Env::new();
             env.set_policy(RunPolicy::FAST);
-            env.set_echo(false);
             if audit {
                 env.set_static_audit(StaticAuditMode::Watch);
             }
@@ -1462,7 +1458,6 @@ fn a_kept_classification_is_only_served_for_the_natives_it_was_made_with() {
     };
     let mut a = Env::new();
     a.set_policy(RunPolicy::FAST);
-    a.set_echo(false);
     a.register_native("host_two", two, NativeEffects::PURE);
     let pid = a.load_program(src).unwrap();
     let sid = a.create_stack(pid).unwrap();
@@ -1471,7 +1466,6 @@ fn a_kept_classification_is_only_served_for_the_natives_it_was_made_with() {
     // Another `Env`, with as many registrations, where the native is constant.
     let mut b = Env::new();
     b.set_policy(RunPolicy::FAST);
-    b.set_echo(false);
     b.register_native("host_two", two, NativeEffects::CONST);
     let program = a.get_program(pid).unwrap();
     assert_eq!(b.static_report(program).get("T").unwrap().class, petal::static_classify::DeclClass::Static);
@@ -1548,7 +1542,6 @@ fn retune(source: &str) -> Option<String> {
 fn sweep_one(path: &std::path::Path, old: &str, new: &str) -> Option<ReloadOutcome> {
     let load = || {
         let mut env = Env::new();
-        env.set_echo(false);
         let pid = env.load_program_at(old, path).ok()?;
         let sid = env.create_stack(pid).ok()?;
         Some(World { env, pid, sid })

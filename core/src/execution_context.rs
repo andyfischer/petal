@@ -44,7 +44,9 @@ pub struct ExecutionContext {
     pub binding_revisions: HashMap<SymbolId, u64>,
     pub counters: HashMap<SymbolId, u64>,
     /// When true, `print` echoes to real stdout (the sole stdout path for
-    /// `petal run`, which never drains `output`). Inherited by [`fork`](Self::fork)
+    /// `petal run`, which never drains `output`). Off by default: an embedder
+    /// collects prints with `take_output` and decides where they go, so its
+    /// stdout stays its own; the `petal` CLI turns it on. Inherited by [`fork`](Self::fork)
     /// like every other setting — a caller that wants a silent execution (e.g.
     /// speculative execution, which discards its results) turns it off with
     /// [`set_echo`](Self::set_echo).
@@ -195,7 +197,7 @@ impl ExecutionContext {
             bindings: HashMap::new(),
             binding_revisions: HashMap::new(),
             counters: HashMap::new(),
-            echo: true,
+            echo: false,
             rng_state: crate::builtins::initial_seed(),
             noise_seed: 0,
             resources: ResourceTable::new(),
@@ -567,12 +569,12 @@ mod tests {
         assert_eq!(child.rng_state, 0xDEAD_BEEF);
     }
 
-    /// `new()` matches the pre-refactor process-global defaults: echo on,
-    /// noise seed zero.
+    /// `new()` is an embedder's context: echo off (prints are collected, not
+    /// written to the host's stdout), noise seed zero.
     #[test]
-    fn new_defaults_preserve_primary_run_behavior() {
+    fn new_defaults_are_an_embedders() {
         let ctx = ExecutionContext::new();
-        assert!(ctx.echo);
+        assert!(!ctx.echo);
         assert_eq!(ctx.noise_seed, 0);
     }
 
@@ -581,6 +583,7 @@ mod tests {
     #[test]
     fn fork_inherits_echo_setting() {
         let mut parent = ExecutionContext::new();
+        parent.set_echo(true);
         assert!(parent.fork().echo, "an echoing context forks as echoing");
 
         parent.set_echo(false);

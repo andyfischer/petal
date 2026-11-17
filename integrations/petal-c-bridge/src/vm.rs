@@ -204,9 +204,9 @@ impl Vm {
     /// A VM with the petal-ui natives and the `ui` package registered; a
     /// script reaches them with `import ui`.
     pub fn new() -> Vm {
+        // Echo is off (an `Env`'s default): scripts print through
+        // take_output, and the host decides where it goes.
         let mut env = Env::new();
-        // Scripts print through take_output; the host decides where it goes.
-        env.set_echo(false);
         petal_ui::register_all(&mut env);
         Vm {
             env,

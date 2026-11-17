@@ -14,7 +14,6 @@ use petal::value::Value;
 
 fn env_with(modules: &[(&str, &str)]) -> Env {
     let mut env = Env::new();
-    env.set_echo(false);
     for (name, source) in modules {
         env.register_module(name, source);
     }

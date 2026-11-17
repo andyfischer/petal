@@ -10,7 +10,6 @@ use petal::stack::StackKey;
 fn load(src: &str) -> (Env, StackKey) {
     let mut env = Env::new();
     env.set_seed(7);
-    env.set_echo(false);
     let pid = env.load_program(src).expect("compiles");
     let sid = env.create_stack(pid).expect("stack");
     (env, sid)

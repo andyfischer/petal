@@ -17,7 +17,6 @@ use petal::stack::StackKey;
 
 fn run(src: &str) -> Vec<String> {
     let mut env = Env::new();
-    env.set_echo(false);
     env.run_source(src)
         .unwrap_or_else(|e| panic!("run failed: {e}\n{src}"));
     env.take_output()
@@ -191,7 +190,6 @@ fn glsl_root() -> PathBuf {
 fn world(entry: &str, policy: RunPolicy) -> World {
     let mut env = Env::new();
     env.set_policy(policy);
-    env.set_echo(false);
     env.add_package(glsl_root()).expect("the glsl package loads");
     env.profile_mut().set_enabled(true);
     let pid = env.load_program(entry).unwrap_or_else(|e| panic!("{e}\n{entry}"));

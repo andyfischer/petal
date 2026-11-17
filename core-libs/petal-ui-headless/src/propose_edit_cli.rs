@@ -156,7 +156,6 @@ pub fn run(name: &str, host: &mut dyn CliHost, argv: Vec<String>) -> Result<i32,
     let mut ui = Headless::from_file_with_setup(&args.app, args.size.0, args.size.1, &args.module_paths, |env| {
         host.setup(env)
     })?;
-    ui.env.set_echo(false);
     ui.set_seed(seed);
     if let Some(path) = &args.host_data {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;

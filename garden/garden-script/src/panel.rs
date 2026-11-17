@@ -5983,7 +5983,6 @@ mod static_value_tests {
         host.store = Some(crate::panel_store::PanelStore::at_path(dir.path().join("store.json")));
         host.set_frame_gating(false);
         host.set_dimensions(800, 600);
-        host.core.env.set_echo(false);
         host.core.env.set_seed(7);
         // Two hosts must read the same `time()`: frame by frame, from zero.
         host.use_virtual_clock_from(0.0);

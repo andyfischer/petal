@@ -32,7 +32,6 @@ fn audit(
     let size = (800, 600);
     let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    ui.env.set_echo(false);
     ui.env.set_seed(seed);
     // Every frame runs and nothing replays, so every call is made and seen.
     ui.set_policy(RunPolicy::EXPLAIN);
@@ -111,7 +110,6 @@ fn first_frame_statics(
     let size = (800, 600);
     let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    ui.env.set_echo(false);
     ui.env.set_seed(1);
     ui.set_policy(RunPolicy::EXPLAIN);
     ui.env.observations_mut().enable();

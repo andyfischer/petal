@@ -42,7 +42,6 @@ struct World {
 
 fn load(file: &Path, source: &str, follow: bool) -> World {
     let mut env = Env::new();
-    env.set_echo(false);
     env.set_check_only(true);
     env.set_policy(RunPolicy::FAST.with_static_cache(true));
     env.set_static_audit(StaticAuditMode::StaticOnly);

@@ -83,7 +83,8 @@ for i in range(0, 3) do
   ([direct manipulation](../features/direct-manipulation.md#tracing-live-code-from-the-cli-and-mcp)).
 
 `print` is a separate channel: the host collects its lines with
-`take_output`, and `petal run` writes them to stdout.
+`take_output`, and `petal run` writes them to stdout. An `Env` does not
+write them to stdout itself unless the host asks with `set_echo(true)`.
 
 ## In a module
 

@@ -803,6 +803,9 @@ pub fn run_screenshot<H: Host>(
     host: &mut H,
 ) -> Result<(), String> {
     let mut env = Env::new();
+    // No protocol owns stdout here, so the script's prints go to the
+    // terminal as they happen (an `Env` collects them silently by default).
+    env.set_echo(true);
     host.register(&mut env);
     let current = load_initial(&mut env, source_path, &config, host)?;
 
@@ -847,6 +850,9 @@ pub fn run_record<H: Host>(
     std::fs::create_dir_all(out_dir).map_err(|e| e.to_string())?;
 
     let mut env = Env::new();
+    // No protocol owns stdout here, so the script's prints go to the
+    // terminal as they happen (an `Env` collects them silently by default).
+    env.set_echo(true);
     host.register(&mut env);
     let current = load_initial(&mut env, source_path, &config, host)?;
 

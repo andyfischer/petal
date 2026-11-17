@@ -89,7 +89,6 @@ struct Run {
 
 fn setup(src: &str, hints: bool) -> Run {
     let mut env = Env::new();
-    env.set_echo(false);
     let mut policy = RunPolicy::FAST;
     policy.gate = false;
     // `NOSTATIC=1`: no static-value cache (as under observation), so

@@ -35,6 +35,17 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `when_`). Likewise `end` (closes a block, `end_time`) and every other
   keyword, wherever a name is declared (`let`/`var`/`state`, `fn` names and
   parameters, `for` variables). Keywords are still usable as record fields.
+- **Breaking for hosts: an `Env` no longer echoes `print` to stdout by
+  default.** Prints are still collected for `take_output`; only the write to
+  the process's stdout is off, so an embedder's stdout carries only what it
+  writes itself. Migration: a host that wants a script's prints on its
+  stdout as they happen calls `env.set_echo(true)` after `Env::new()`, and
+  a `set_echo(false)` right after `Env::new()` can go. `petal run` (and
+  `pending-report`, `propose-edit`, `explain`) turn echo on, so CLI output is
+  unchanged. `petal-sdl`'s agent and headless modes no longer write prints
+  into the protocol on stdout (they still reach a response's `output` or
+  stderr), and its window mode writes them once, to stderr, instead of to
+  both; screenshot and record still echo.
 - **Breaking for hosts: a setting's label is its `@doc`, not the comment
   above it.** `static_value::StaticBinding` loses `comment`, and
   `pb_source_bindings_json` no longer writes `"comment"`; read `doc` (its

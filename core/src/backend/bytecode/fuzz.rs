@@ -784,7 +784,6 @@ type FrameResult = Result<(String, Vec<String>), String>;
 fn run_frames(code: &str, policy: RunPolicy, runs: usize, observe: bool) -> (Vec<FrameResult>, u64) {
     let mut env = Env::new();
     env.set_policy(policy);
-    env.set_echo(false);
     if observe {
         env.observations_mut().enable();
     }

@@ -31,7 +31,6 @@ fn main() {
     for file in files {
         let source = std::fs::read_to_string(&file).expect("script file");
         let mut env = Env::new();
-        env.set_echo(false);
         let pid = env
             .load_program_diag(&source, Some(&file))
             .unwrap_or_else(|e| panic!("{e}"));

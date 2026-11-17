@@ -1079,7 +1079,6 @@ fn run_mode(name: &'static str, source: &str, emit: bool, memo: bool, host: Host
     MODE.with(|m| *m.borrow_mut() = host);
     let vmseg = matches!(host, HostMode::EmitVmSeg | HostMode::EmitVmSegTmpl);
     let mut env = Env::new();
-    env.set_echo(false);
     let mut policy = RunPolicy::FAST;
     policy.memo = memo;
     policy.gate = false;

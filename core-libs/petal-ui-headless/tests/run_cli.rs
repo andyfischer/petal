@@ -165,8 +165,8 @@ fn prints_are_captured_per_frame() {
     assert_eq!(recs[2]["prints"], serde_json::json!(["tick 3"]));
 }
 
-/// `print` must not echo to the process's stdout: the driver turns echoing off
-/// (`Env::set_echo(false)`), so a printing app's trace on stdout is still
+/// `print` must not echo to the process's stdout: the driver leaves echoing off
+/// (an `Env`'s default), so a printing app's trace on stdout is still
 /// nothing but JSONL — one parseable object per line, no interleaved text.
 #[test]
 fn printing_app_leaves_stdout_clean_jsonl() {

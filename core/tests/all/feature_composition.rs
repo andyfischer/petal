@@ -26,7 +26,6 @@ end
 
 fn env() -> Env {
     let mut env = Env::new();
-    env.set_echo(false);
     env.register_module("level", LEVEL);
     env
 }

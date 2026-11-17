@@ -30,7 +30,6 @@ fn world_with(src: &str, policy: RunPolicy, setup: impl FnOnce(&mut Env)) -> Wor
     let mut env = Env::new();
     setup(&mut env);
     env.set_policy(policy);
-    env.set_echo(false);
     let pid = env.load_program(src).unwrap_or_else(|e| panic!("compile: {e}\n{src}"));
     let sid = env.create_stack(pid).unwrap();
     World { env, pid, sid }

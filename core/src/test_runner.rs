@@ -211,8 +211,8 @@ fn make_env(include_dirs: &[PathBuf]) -> Result<Env, String> {
     if std::env::var_os("PETAL_POLICY").is_none() {
         env.set_policy(env.policy().with_memo(false).with_static_cache(false));
     }
-    // What a test prints is collected and shown with its result.
-    env.set_echo(false);
+    // What a test prints is collected and shown with its result (echo is
+    // off, as for any embedder).
     Ok(env)
 }
 

@@ -36,7 +36,6 @@ struct Frame {
 
 fn measure(file: &Path, source: &str, cache: bool, frames: usize) -> (Vec<Frame>, String) {
     let mut env = Env::new();
-    env.set_echo(false);
     env.set_check_only(true);
     env.set_heap_stats(true);
     env.set_policy(RunPolicy::FAST.with_static_cache(cache));

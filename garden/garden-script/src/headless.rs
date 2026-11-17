@@ -496,7 +496,6 @@ mod tests {
         let mut env = Env::new();
         petal_ui::register_all(&mut env);
         register_panel_stubs(&mut env);
-        env.set_echo(false);
         env.run_source("import garden\nlet p = palette()\nprint(p.accent.r, p.accent.g, p.accent.b)\n")
             .expect("runs");
         let (_, [r, g, b, _]) = FALLBACK_PALETTE.iter().find(|(k, _)| *k == "accent").unwrap();

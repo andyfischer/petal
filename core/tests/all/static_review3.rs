@@ -40,7 +40,6 @@ fn world(src: &str, policy: RunPolicy, setup: &dyn Fn(&mut Env)) -> World {
     let mut env = Env::new();
     setup(&mut env);
     env.set_policy(policy);
-    env.set_echo(false);
     let pid = env.load_program(src).unwrap_or_else(|e| panic!("compile: {e}\n{src}"));
     let sid = env.create_stack(pid).unwrap();
     World { env, pid, sid }
@@ -635,7 +634,6 @@ fn a_patch_through_one_stack_reaches_the_constants_of_the_others() {
                     env.observations_mut().enable();
                 }
                 env.set_policy(policy);
-                env.set_echo(false);
                 let pid = env.load_program(&v0).unwrap();
                 let a = env.create_stack(pid).unwrap();
                 let b = env.create_stack(pid).unwrap();

@@ -18,7 +18,6 @@ fn without() -> RunPolicy {
 
 fn try_run(src: &str, policy: RunPolicy) -> Result<Vec<String>, String> {
     let mut env = Env::new();
-    env.set_echo(false);
     env.set_policy(policy);
     let pid = env.load_program(src)?;
     let sid = env.create_stack(pid).unwrap();
@@ -49,7 +48,6 @@ fn run_err(src: &str) -> String {
 /// The bytecode a run of `src` executes under `policy`, disassembled.
 fn bytecode(src: &str, policy: RunPolicy) -> String {
     let mut env = Env::new();
-    env.set_echo(false);
     env.set_policy(policy);
     let pid = env.load_program(src).unwrap_or_else(|e| panic!("{e}\n{src}"));
     env.bytecode_text(pid).unwrap()
@@ -199,7 +197,6 @@ fn a_host_native_registered_over_the_name_is_what_gets_called() {
     let src = "print(float(3), int(2.5))\n";
     for policy in [RunPolicy::FAST, without()] {
         let mut env = Env::new();
-        env.set_echo(false);
         env.set_policy(policy);
         env.register_native("float", native_host_float, NativeEffects::PURE);
         let pid = env.load_program(src).unwrap();
@@ -499,7 +496,6 @@ print(s)
 ";
     let profile = |policy: RunPolicy| {
         let mut env = Env::new();
-        env.set_echo(false);
         env.set_policy(policy);
         env.profile_mut().set_enabled(true);
         let pid = env.load_program(src).unwrap();
@@ -535,7 +531,6 @@ print(s)
 ";
     let audited = |policy: RunPolicy| {
         let mut env = Env::new();
-        env.set_echo(false);
         env.set_policy(policy);
         env.set_effect_audit(true);
         let pid = env.load_program(src).unwrap();
@@ -567,7 +562,6 @@ print(get n, score([1, 2, 3, get n]), len(str(get n)), type(get n))
 ";
     let frames = |policy: RunPolicy| {
         let mut env = Env::new();
-        env.set_echo(false);
         env.set_policy(policy);
         let pid = env.load_program(src).unwrap();
         let sid = env.create_stack(pid).unwrap();

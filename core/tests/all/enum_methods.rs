@@ -15,7 +15,6 @@ use petal::value::Value;
 
 fn env_with(modules: &[(&str, &str)]) -> Env {
     let mut env = Env::new();
-    env.set_echo(false);
     for (name, source) in modules {
         env.register_module(name, source);
     }
@@ -301,7 +300,6 @@ fn a_method_on_an_imported_enum_is_refused() {
 /// Run `v1`, transfer onto `v2`, run again, and return the second run's output.
 fn after_reload(v1: &str, v2: &str) -> Result<Vec<String>, String> {
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env.load_program(v1).expect("v1 compiles");
     let sid = env.create_stack(pid).expect("v1 stack");
     env.run(sid).expect("v1 runs");

@@ -21,9 +21,7 @@ use petal_ui::host_data::fixture_provider;
 use petal_ui_headless::scenario::Scenario;
 
 fn ui(src: &str) -> Headless {
-    let mut ui = Headless::with_ui(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
-    ui.env.set_echo(false);
-    ui
+    Headless::with_ui(src).unwrap_or_else(|e| panic!("compile failed: {e}"))
 }
 
 /// Run `n` quiet frames and return how many of them ran the script.
@@ -291,7 +289,6 @@ fn drive(app: &Path, includes: &[PathBuf], gate: bool, seed: u64, frames: usize)
     let size = (800, 600);
     let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    ui.env.set_echo(false);
     ui.env.set_seed(seed);
     // `fast` against `replay`: the same run with and without the gate.
     ui.set_policy(if gate { RunPolicy::FAST } else { RunPolicy::REPLAY });
@@ -380,7 +377,6 @@ fn a_quiet_corpus_idles_unless_it_reads_the_clock() {
     let settled = par_corpus(|app, includes| {
         let mut ui = petal_ui_corpus::panel(app, 800, 600, includes)
             .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-        ui.env.set_echo(false);
         ui.env.set_seed(1);
         for _ in 0..90 {
             let _ = ui.frame();

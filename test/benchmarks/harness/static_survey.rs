@@ -36,7 +36,6 @@ fn main() {
             continue;
         };
         let mut env = Env::new();
-        env.set_echo(false);
         env.set_check_only(true);
         let Ok(pid) = env.load_program_diag(&source, Some(file)) else {
             failed += 1;

@@ -601,7 +601,6 @@ fn misplaced_const_annotations_are_errors() {
 #[test]
 fn const_annotation_runs_as_its_argument() {
     let mut env = Env::new();
-    env.set_echo(false);
     let src = "let X = const([1, 2, 3])\nlet N = const(len(X) * 2)\nprint(N, X)\n";
     let pid = env.load_program(src).expect("loads");
     let sid = env.create_stack(pid).unwrap();

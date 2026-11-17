@@ -304,14 +304,12 @@ fn interpolation_escapes_and_raw_strings_are_text() {
 fn fn_info_reports_the_fn_keyword_past_the_doc() {
     let src = "@doc(\"\"\"\nTwice.\n\"\"\")\nfn twice(x)\n  x * 2\nend\nprint(fn_info(twice).line, fn_info(twice).column)\n";
     let mut env = petal::env::Env::new();
-    env.set_echo(false);
     env.run_source(src).expect("runs");
     assert_eq!(env.take_output(), ["4 1"]);
 }
 
 fn run_output(src: &str) -> Vec<String> {
     let mut env = petal::env::Env::new();
-    env.set_echo(false);
     env.run_source(src).unwrap_or_else(|e| panic!("run failed: {e}\n{src}"));
     env.take_output()
 }

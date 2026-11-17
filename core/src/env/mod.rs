@@ -608,10 +608,12 @@ impl Env {
     /// this env (see [`ExecutionContext::echo`]).
     ///
     /// Prints always accumulate in the context's output buffer; `echo` only
-    /// controls whether they *also* go to the process's real stdout. An
-    /// embedder that reports prints itself — a headless driver writing a
-    /// machine-readable trace, say — wants it off, so its stdout carries
-    /// nothing but the trace.
+    /// controls whether they *also* go to the process's real stdout. It is
+    /// off by default: an embedder drains prints with
+    /// [`take_output`](Self::take_output) and decides where they go, so its
+    /// stdout carries only what it writes there itself. A host that wants a
+    /// script's prints on its terminal as they happen — `petal run` — turns
+    /// it on.
     ///
     /// Like [`set_seed`](Self::set_seed), apply it before the first run;
     /// contexts created later (forks) inherit the setting from their parent.

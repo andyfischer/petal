@@ -513,7 +513,6 @@ fn ufcs_on_non_handle_receiver_still_works() {
 /// bound as `h`.
 fn gated_env(class: HandleClass, source: &str) -> (Env, petal::stack::StackKey) {
     let mut env = Env::new();
-    env.set_echo(false);
     env.set_static_cache(false);
     let class_id = env.register_handle_class(class);
     let pid = env.load_program(source).unwrap();

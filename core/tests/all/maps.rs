@@ -302,7 +302,6 @@ fn a_hot_reload_keeps_a_map_in_state() {
     let old = "state var m = Map()\nset m[[len(get m)]] = true\n";
     let new = "state var m = Map()\nset m[[len(get m)]] = true\nprint(keys(get m))\n";
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env.load_program(old).unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();

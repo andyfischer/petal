@@ -11,9 +11,7 @@ use serde_json::{Value, json};
 
 fn ui(body: &str) -> Headless {
     let src = format!("import ui\nimport ui/drag\n{body}");
-    let mut h = Headless::new(&src).unwrap_or_else(|e| panic!("compile failed: {e}"));
-    h.env.set_echo(false);
-    h
+    Headless::new(&src).unwrap_or_else(|e| panic!("compile failed: {e}"))
 }
 
 fn frame(h: &mut Headless) {
@@ -388,7 +386,6 @@ if d.active then target = d.target end
 if d.dropped then items = d.drop end
 "#;
     let mut h = Headless::new(v1).unwrap();
-    h.env.set_echo(false);
     press_and_move(&mut h, 100, 60, &[(104, 70), (100, 160)]);
     // Element top at 140: slot 2 with 50 px rows.
     assert_eq!(state(&h, "target"), json!(3));
@@ -421,7 +418,6 @@ fn run_example_at(rel: &str) -> Vec<Value> {
         size[1].as_i64().unwrap() as i32,
     )
     .unwrap();
-    h.env.set_echo(false);
     let frames = scenario["frames"].as_u64().unwrap();
     let events = scenario["events"].as_array().unwrap();
     let mut states = Vec::new();

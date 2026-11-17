@@ -12,7 +12,6 @@ use petal::policy::RunPolicy;
 
 fn try_run(src: &str, policy: RunPolicy) -> Result<Vec<String>, String> {
     let mut env = Env::new();
-    env.set_echo(false);
     env.set_policy(policy);
     let pid = env.load_program(src)?;
     let sid = env.create_stack(pid).unwrap();
@@ -35,7 +34,6 @@ fn run(src: &str) -> Vec<String> {
 #[track_caller]
 fn compile_err(src: &str) -> String {
     let mut env = Env::new();
-    env.set_echo(false);
     match env.load_program(src) {
         Ok(_) => panic!("expected a compile error, but this compiled:\n{src}"),
         Err(e) => e,
@@ -56,7 +54,6 @@ fn run_err(src: &str) -> String {
 #[track_caller]
 fn warnings(src: &str) -> Vec<String> {
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env
         .load_program(src)
         .unwrap_or_else(|e| panic!("{src}\n-- failed to compile: {e}"));
@@ -67,7 +64,6 @@ fn warnings(src: &str) -> Vec<String> {
 /// The program's bytecode, as `petal show-bytecode` prints it.
 fn bytecode(src: &str) -> String {
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env.load_program(src).unwrap();
     env.bytecode_text(pid).unwrap()
 }
@@ -783,7 +779,6 @@ print(f(Use.green), g(\"park\"))
 #[test]
 fn exhaustiveness_sees_through_a_module() {
     let mut env = Env::new();
-    env.set_echo(false);
     env.register_module("shapes", "pub enum Shape\n  dot,\n  line(len),\nend\n");
     let err = env
         .load_program("import shapes\nfn f(s)\n  match s\n    when shapes.Shape.dot -> 0\n  end\nend\n")

@@ -32,7 +32,6 @@ struct World {
 fn world(src: &str, policy: RunPolicy) -> World {
     let mut env = Env::new();
     env.set_policy(policy);
-    env.set_echo(false);
     env.set_static_debounce(None);
     env.observations_mut().enable();
     let pid = env.load_program(src).unwrap_or_else(|e| panic!("compile: {e}\n{src}"));

@@ -284,9 +284,9 @@ pub fn run(name: &str, host: &mut dyn CliHost, argv: Vec<String>) -> Result<i32,
         ui.core().env.diagnostics_text(ui.core().program_id())
     );
 
-    // Prints belong in the trace's `prints` field and nowhere else: echoing
-    // them to stdout as well would interleave them with the JSONL.
-    ui.env.set_echo(false);
+    // Prints belong in the trace's `prints` field and nowhere else, so echo
+    // stays off (an `Env`'s default): echoing them to stdout as well would
+    // interleave them with the JSONL.
     let mut policy = args.policy.unwrap_or_else(|| ui.policy());
     if args.no_gate {
         policy.gate = false;

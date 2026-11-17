@@ -58,7 +58,6 @@ enum Row {
 
 fn world(src: &str, memo: bool, notes: Notes, row: Row) -> World {
     let mut env = Env::new();
-    env.set_echo(false);
     let mut policy = RunPolicy::FAST;
     policy.memo = memo;
     policy.gate = false;

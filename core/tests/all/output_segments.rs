@@ -72,7 +72,6 @@ struct World {
 
 fn world(src: &str, memo: bool, drain: Drain) -> World {
     let mut env = Env::new();
-    env.set_echo(false);
     let mut policy = RunPolicy::FAST;
     policy.memo = memo;
     policy.gate = false;
@@ -452,7 +451,6 @@ fn a_scope_emitting_into_a_segmented_and_a_flat_buffer() {
                row(1)\nrow(n / 2)\nput2(\"end\")\n";
     let run = |memo: bool, seg: bool| -> Vec<(Vec<String>, Vec<String>)> {
         let mut env = Env::new();
-        env.set_echo(false);
         let mut policy = RunPolicy::FAST;
         policy.memo = memo;
         policy.gate = false;
@@ -521,7 +519,6 @@ put("end")
 "#;
     let run = |memo: bool, seg: bool| -> Vec<(bool, Vec<String>)> {
         let mut env = Env::new();
-        env.set_echo(false);
         let mut policy = RunPolicy::FAST;
         policy.memo = memo;
         policy.gate = false;

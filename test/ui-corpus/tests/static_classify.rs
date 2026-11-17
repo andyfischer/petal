@@ -46,7 +46,6 @@ fn drive(app: &Path, includes: &[PathBuf], seed: u64, frames: usize) -> Outcome 
     let size = (800, 600);
     let mut ui = petal_ui_corpus::panel(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    ui.env.set_echo(false);
     ui.env.set_seed(seed);
     // Every frame runs and nothing replays: each frame binds every top-level
     // name afresh, which is the thing being compared.

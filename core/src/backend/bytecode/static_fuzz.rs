@@ -627,7 +627,6 @@ fn observed(env: &Env, pid: crate::program::ProgramId, sid: crate::stack::StackK
 fn drive_observed(texts: &[String; 3], policy: RunPolicy, observe: bool) -> Driven {
     let mut env = Env::new();
     env.set_policy(policy);
-    env.set_echo(false);
     if observe {
         env.observations_mut().enable();
     }

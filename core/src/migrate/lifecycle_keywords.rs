@@ -632,7 +632,6 @@ mod tests {
     fn the_compiler_warns_about_both_keywords() {
         let src = "const N = 4\nconfig let SPEED = 2.5\n// petal-lint-ignore config-let-deprecated\nconfig let QUIET = 1\npub config let G = tunable(9.8, 0, 20)\nlet OK = tunable(1)\nlet K = const(2)\nprint(N + SPEED + QUIET + G + OK + K)\n";
         let mut env = crate::env::Env::new();
-        env.set_echo(false);
         let pid = env.load_program(src).expect("load");
         let found: Vec<(u32, String)> = env
             .get_program(pid)

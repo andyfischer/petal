@@ -114,9 +114,9 @@ One object per line, one line per frame, frames numbered from 0:
 Object keys are emitted in sorted order, which is what makes two traces
 byte-comparable with `cmp`.
 
-`print` output appears *only* here. The driver calls `Env::set_echo(false)`
-before the first frame, so a script's prints do not also go to the process's
-stdout — a trace written to stdout is nothing but JSONL, even for a chatty app.
+`print` output appears *only* here. The driver leaves `Env` echo off (the
+default for an embedder; only the `petal` CLI turns it on), so a script's
+prints do not also go to the process's stdout — a trace written to stdout is nothing but JSONL, even for a chatty app.
 
 ## Scenario files
 

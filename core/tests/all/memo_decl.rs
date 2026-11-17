@@ -19,7 +19,6 @@ struct World {
 
 fn world(src: &str) -> World {
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env
         .load_program(src)
         .unwrap_or_else(|e| panic!("load: {e}"));
@@ -190,7 +189,6 @@ fn a_value_holding_a_pending_value_is_not_cached() {
 #[test]
 fn a_value_holding_a_var_cell_is_refused() {
     let mut env = Env::new();
-    env.set_echo(false);
     let src = "fn make()\n  var n = 0\n  fn()\n    set n = (get n) + 1\n    get n\n  end\nend\n\
                fn counter(k)\n  memo(k) c = make()\n  c\nend\n\
                print(counter(1)(), counter(1)())\n";

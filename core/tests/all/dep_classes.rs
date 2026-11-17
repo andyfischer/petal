@@ -84,7 +84,6 @@ fn push(c: &mut PetalCxt, buffer: &str) -> NativeResult {
 
 fn world(src: &str, mode: Mode) -> World {
     let mut env = Env::new();
-    env.set_echo(false);
     let mut policy = RunPolicy::FAST;
     policy.memo = mode != Mode::Off;
     policy.gate = false;
@@ -360,7 +359,6 @@ fn a_query_stays_valid_while_its_class_revision_holds() {
 #[test]
 fn the_gate_reruns_a_frame_once_a_read_class_changes() {
     let mut env = Env::new();
-    env.set_echo(false);
     let mut policy = RunPolicy::FAST;
     policy.gate = true;
     env.set_policy(policy);
@@ -468,7 +466,6 @@ sometimes(1)
 early(1)
 "#;
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env.load_program(src).unwrap();
     let program = env.get_program(pid).unwrap();
     let analysis = env.static_analysis(program);
@@ -510,7 +507,6 @@ note(1)
 keep(1)
 "#;
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env.load_program(src).unwrap();
     let program = env.get_program(pid).unwrap();
     let findings = env.replay_findings(program, false);
@@ -532,7 +528,6 @@ fn a_finding_outside_the_entry_file_names_its_file_and_line() {
     std::fs::write(&main, entry).unwrap();
     std::fs::write(dir.join("helpers.ptl"), "// helpers\n\npub fn shout(x)\n  print(x)\nend\n").unwrap();
     let mut env = Env::new();
-    env.set_echo(false);
     let pid = env.load_program_at(entry, &main).unwrap();
     let program = env.get_program(pid).unwrap();
     let report = env.dep_classes_report(program, true);

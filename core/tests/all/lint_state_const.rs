@@ -201,7 +201,6 @@ fn the_rewrite_is_a_const_the_compiler_accepts() {
     ] {
         let out = lint(src);
         let mut env = petal::env::Env::new();
-        env.set_echo(false);
         let pid = env.load_program(&out.output).unwrap_or_else(|e| panic!("{src}\n-- {e}"));
         let errors: Vec<_> = env
             .get_program(pid)
@@ -230,7 +229,6 @@ print(SQUARES, TOTAL, frames)
     assert!(out.output.contains("state frames = 0"), "{}", out.output);
     let run = |text: &str| {
         let mut env = petal::env::Env::new();
-        env.set_echo(false);
         let pid = env.load_program(text).unwrap();
         let sid = env.create_stack(pid).unwrap();
         env.run(sid).unwrap();

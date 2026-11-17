@@ -130,3 +130,46 @@ fn an_import_still_ends_at_a_semicolon_or_a_line_break() {
     parses("import \"./my-mod\" as my_mod\n");
     parses("import ./a as q");
 }
+
+#[test]
+fn a_keyword_used_as_a_name_says_it_is_reserved_and_suggests_a_rename() {
+    let err = parse_err("let when = 3");
+    assert!(err.contains("Expected an identifier, got `when`"), "{err}");
+    assert!(err.contains("`when` is a reserved word (it starts a `match` arm)"), "{err}");
+    assert!(err.contains("`at` or `when_`"), "{err}");
+    assert!(err.contains("[line 1, column 5]"), "{err}");
+
+    let err = parse_err("var end = 1");
+    assert!(err.contains("`end` is a reserved word (it closes a block)"), "{err}");
+    assert!(err.contains("`end_time`"), "{err}");
+
+    // Every place a name is declared shares the path.
+    for src in [
+        "fn f(end)\n  1\nend",
+        "for when in [1] do\nend",
+        "fn when()\n  1\nend",
+        "let f = fn(a, when) -> a",
+        "state when = 1",
+    ] {
+        let err = parse_err(src);
+        assert!(err.contains("is a reserved word"), "{src:?}: {err}");
+    }
+
+    // Any other keyword gets the generic rename.
+    let err = parse_err("let then = 3");
+    assert!(err.contains("`then` is a reserved word, so"), "{err}");
+    assert!(err.contains("`then_`"), "{err}");
+}
+
+#[test]
+fn a_keyword_out_of_place_is_not_told_to_rename_itself() {
+    // `in` here is the loop's own keyword with the variable missing.
+    let err = parse_err("for in [1] do\nend");
+    assert!(err.contains("Expected an identifier, got `in`"), "{err}");
+    assert!(!err.contains("reserved word"), "{err}");
+}
+
+#[test]
+fn a_keyword_stays_usable_as_a_record_field() {
+    parses("let r = {when: 1, end: 2}\nprint(r.when + r.end)");
+}

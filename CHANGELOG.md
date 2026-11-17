@@ -12,6 +12,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **A keyword used as a name says it is reserved.** `let when = 3` reported
+  only "Expected an identifier, got `when`"; it now adds that `when` is a
+  reserved word (it starts a `match` arm) and suggests a rename (`at`,
+  `when_`). Likewise `end` (closes a block, `end_time`) and every other
+  keyword, wherever a name is declared (`let`/`var`/`state`, `fn` names and
+  parameters, `for` variables). Keywords are still usable as record fields.
 - **Breaking for hosts: a setting's label is its `@doc`, not the comment
   above it.** `static_value::StaticBinding` loses `comment`, and
   `pb_source_bindings_json` no longer writes `"comment"`; read `doc` (its

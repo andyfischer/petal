@@ -3072,11 +3072,51 @@ impl Parser {
         let pos = self.pos;
         match self.advance() {
             Token::Ident(name) => Ok(name),
-            other => Err(self.error_at(
-                pos,
-                format!("Expected an identifier, got {}", token_desc(&other)),
-            )),
+            other => {
+                let mut msg = format!("Expected an identifier, got {}", token_desc(&other));
+                if let Some(note) = self.reserved_word_note(&other) {
+                    msg.push_str(" — ");
+                    msg.push_str(&note);
+                }
+                Err(self.error_at(pos, msg))
+            }
         }
+    }
+
+    /// When `tok` (just consumed by [`Parser::expect_ident`]) is a keyword in
+    /// the place of a name — `let when = …`, `fn f(end)`, `for when in …` —
+    /// say that the word is reserved and suggest a rename. Only when the token
+    /// after it is one a name is followed by, so a keyword that is merely in
+    /// the wrong place (`for in xs`) is not told to rename itself.
+    fn reserved_word_note(&self, tok: &Token) -> Option<String> {
+        let kw = crate::lexer::keyword_text(tok)?;
+        if !matches!(
+            self.peek(),
+            Token::Assign
+                | Token::Comma
+                | Token::RParen
+                | Token::RBracket
+                | Token::RBrace
+                | Token::Colon
+                | Token::LParen
+                | Token::In
+                | Token::Newline
+                | Token::Eof
+        ) {
+            return None;
+        }
+        let (role, examples) = match kw {
+            "when" => (" (it starts a `match` arm)", "`at` or `when_`".to_string()),
+            "end" => (" (it closes a block)", "`end_time` or `end_`".to_string()),
+            "in" => (" (it is the `in` of a `for` loop)", "`inside` or `in_`".to_string()),
+            "match" => (" (it starts a `match`)", "`found` or `match_`".to_string()),
+            "state" => (" (it declares a state)", "`current` or `state_`".to_string()),
+            _ => ("", format!("`{kw}_`")),
+        };
+        Some(format!(
+            "`{kw}` is a reserved word{role}, so it cannot be used as a name; rename it, \
+             e.g. {examples} (as a record field it is fine: `r.{kw}`, `{{{kw}: …}}`)"
+        ))
     }
 
     /// Read a type name in type position (after `:` or `->`). Accepts a plain

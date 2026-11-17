@@ -1273,6 +1273,7 @@ else:
 | `import color` (with `color.ptl` beside the file) | `import ./color` | a package is *also* called that (the bundled `color`), and the file takes a name from it that the package does not export, or writes `: *` — it was written for the sibling. When every name it takes is the package's the line is left alone; when it takes nothing by name, a note says both exist |
 | `import rng` (found through `-I shared`) | `import ../shared/rng` | the same `-I` is passed here |
 | `import m: *`, `pub import m: *` | `import m`, `pub import m` | always |
+| `import ./../lib/x`, `import "./a/../b"` | `import ../lib/x`, `import "./b"` | always: a `.` or `..` past the start of a relative path is a parse error, so this one is made on the tokens before the file is parsed (`fix-imports` only: `migrate-old-code` needs the file to parse) |
 | `import m: a` … `m.b` | adds `import m` | the file reaches through `m.`, which a selective import no longer binds |
 | `import creative` | *(deleted)* | always: `lerp`, `map_range`, `distance`, `mag`, `smoothstep` and `choose` are declared by `core` now |
 | *(nothing)* | adds `import kit` | a bare name nothing in the file provides is exported by exactly one available package |

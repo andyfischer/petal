@@ -469,6 +469,12 @@ DESCRIPTION
               used to be found through -I <dir> becomes the relative path to
               it ('import ../shared/rng').
 
+       A '.' or '..' past the start of a relative path is collapsed.
+              'import ./../lib/x' -> 'import ../lib/x', 'import ./a/../b'
+              -> 'import ./b'. The parser rejects the first spelling, so
+              this one is made before the file is parsed ('fix-imports'
+              only: 'migrate-old-code' needs the file to parse).
+
        'import m: *' becomes 'import m'.
               A plain import binds every export of the module; the star form
               no longer exists. 'pub import m: *' becomes 'pub import m'.
@@ -1015,8 +1021,9 @@ DESCRIPTION
        reimplements-builtin (report only)
               a fn that only forwards its arguments to a builtin
        quantifier-hole (report only)
-              \"\\\\d{4}\": a hole holding only a number, a regex quantifier
-              that lost its braces; write the pattern as a raw string
+              an interpolation hole holding only a number: a regex
+              quantifier that lost its braces, the number inserted in their
+              place; write the pattern as a raw string
        dm-hint-not-literal (report only)
               tunable(e) on a computed e, which marks nothing for direct
               manipulation; on a string, bool, record or list it points to

@@ -1,7 +1,10 @@
 //! `petal fix-imports` — rewrite a file's imports for the current module
 //! system (docs/module-system.md).
 //!
-//! Four rewrites, each safe to run again on its own output:
+//! Four rewrites, each safe to run again on its own output (and a fifth,
+//! made first: a relative path with a `.` or `..` past its start, which the
+//! parser rejects, is collapsed — `import ./../lib/x` → `import ../lib/x`;
+//! it works on tokens, since the file does not parse until it is done):
 //!
 //! 1. **A sibling file imported by a bare name becomes a relative import.**
 //!    `import level` used to find `level.ptl` beside the importing file; a
@@ -108,6 +111,14 @@ impl ImportFixer {
     /// (`None` for text with no path, where only rewrite 2 applies). `Err`
     /// when the text does not parse.
     pub fn rewrite_import_lines(&self, source: &str, file: Option<&Path>) -> Result<Fixed, String> {
+        // Rewrite 0, before the parse it would fail: `./../lib/x` → `../lib/x`.
+        let (collapsed, collapsed_changes) = collapse_relative_import_paths(source);
+        let mut fixed = self.rewrite_parsed_import_lines(&collapsed, file)?;
+        fixed.changes.splice(0..0, collapsed_changes);
+        Ok(fixed)
+    }
+
+    fn rewrite_parsed_import_lines(&self, source: &str, file: Option<&Path>) -> Result<Fixed, String> {
         let (_, stmts) = crate::cst::parse_source(source, ENTRY_FILE)?;
         let chars: Vec<char> = source.chars().collect();
         // (start, end, replacement) in char offsets, in source order.
@@ -897,6 +908,54 @@ fn statement_removal(chars: &[char], stmt: &Stmt) -> (usize, usize, String) {
     (start, end, String::new())
 }
 
+/// Every import path in `source` with a `.` or `..` past its start, which
+/// the parser rejects, collapsed into the form it accepts (`import
+/// ./../lib/x` → `import ../lib/x`, quoted paths too), with one change line
+/// each. Works on tokens, since the text does not parse until it is done.
+/// Returns `source` unchanged when it does not lex or needs nothing.
+fn collapse_relative_import_paths(source: &str) -> (String, Vec<String>) {
+    use crate::lexer::{Lexer, Token};
+    let mut lexer = Lexer::new(source);
+    if lexer.tokenize().is_err() {
+        return (source.to_string(), Vec::new());
+    }
+    let (tokens, spans) = (&lexer.tokens, &lexer.token_spans);
+    let mut edits = Vec::new();
+    let mut changes = Vec::new();
+    for (i, tok) in tokens.iter().enumerate() {
+        if !matches!(tok, Token::Import) {
+            continue;
+        }
+        let at = i + 1;
+        let (path, end, quoted) = match tokens.get(at) {
+            Some(Token::String(p)) => (p.clone(), at + 1, true),
+            _ => match crate::parse::bare_import_path_text(tokens, at) {
+                Some((p, end)) => (p, end, false),
+                None => continue,
+            },
+        };
+        let Some(collapsed) = crate::ast::normalized_relative_import(&path) else {
+            continue;
+        };
+        let (start, stop) = (spans[at].start.offset as usize, spans[end - 1].end.offset as usize);
+        let (old, new) = if quoted {
+            (format!("\"{path}\""), format!("\"{collapsed}\""))
+        } else {
+            (path, crate::ast::import_path_source(&collapsed).into_owned())
+        };
+        changes.push(format!(
+            "line {}: `import {old}` -> `import {new}`",
+            spans[i].start.line
+        ));
+        edits.push((start, stop, new));
+    }
+    if edits.is_empty() {
+        return (source.to_string(), changes);
+    }
+    let chars: Vec<char> = source.chars().collect();
+    (apply_edits(&chars, edits), changes)
+}
+
 /// Apply non-overlapping `(start, end, text)` replacements, given in any
 /// order.
 fn apply_edits(chars: &[char], mut edits: Vec<(usize, usize, String)>) -> String {
@@ -1051,6 +1110,32 @@ mod tests {
             "// header\nimport ./level\nimport ./level as l   // why\npub import ./level: a\n\
              import ./ui/hud: b,\n  b\nprint(a)\n"
         );
+    }
+
+    #[test]
+    fn a_dot_segment_past_the_start_of_a_relative_path_is_collapsed() {
+        let fixer = ImportFixer::new(&[]);
+        let fixed = fixer
+            .rewrite_import_lines(
+                "import ./../lib/x\npub import \"./a/../b\" as c\nimport ./ok\nprint(1)\n",
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            fixed.source,
+            "import ../lib/x\npub import \"./b\" as c\nimport ./ok\nprint(1)\n"
+        );
+        assert_eq!(
+            fixed.changes,
+            vec![
+                "line 1: `import ./../lib/x` -> `import ../lib/x`".to_string(),
+                "line 2: `import \"./a/../b\"` -> `import \"./b\"`".to_string(),
+            ]
+        );
+        // Run again, nothing more.
+        let again = fixer.rewrite_import_lines(&fixed.source, None).unwrap();
+        assert_eq!(again.source, fixed.source);
+        assert!(again.changes.is_empty(), "{:?}", again.changes);
     }
 
     #[test]

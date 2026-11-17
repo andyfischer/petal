@@ -213,3 +213,22 @@ fn an_unreadable_character_in_a_hole_is_reported_at_its_brace() {
     assert!(err.contains("write `\\{` for a literal brace"), "{err}");
     assert!(err.ends_with("[line 1, column 13]"), "{err}");
 }
+
+#[test]
+fn a_dot_segment_past_the_start_of_an_import_path_suggests_the_collapsed_path() {
+    let cases = [
+        ("import ./../lib/x\n", "did you mean `../lib/x`?"),
+        ("import ./a/../b\n", "did you mean `./b`?"),
+        ("import ../a/./b as c\n", "did you mean `../a/b`?"),
+        ("import ./a/../../b\n", "did you mean `../b`?"),
+        ("import \"./../lib/x\" as y\n", "did you mean \"../lib/x\"?"),
+    ];
+    for (src, want) in cases {
+        let err = parse_err(src);
+        assert!(err.contains("only allowed at the start") || err.contains("only use '.' and '..' at its start"), "{src:?}: {err}");
+        assert!(err.contains(want), "{src:?}: {err}");
+    }
+    // A package path is not relative: collapsing it would change what it names.
+    let err = parse_err("import a/../b\n");
+    assert!(!err.contains("did you mean"), "{err}");
+}

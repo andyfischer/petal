@@ -12,6 +12,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **`import ./../lib/x` suggests `../lib/x`, and `petal fix-imports`
+  rewrites it.** A `.` or `..` past the start of a relative import path is
+  still rejected, but the error now ends "did you mean `../lib/x`?" (the path
+  collapsed: `./a/../b` → `./b`), quoted paths included. `petal fix-imports`
+  collapses such paths before it parses the file; `migrate-old-code`, which
+  needs the file to parse, does not.
 - **A `{` that opens an unintended interpolation hole is reported at the
   brace.** `"\\d{1,2}"` reported "Expected string part in interpolation, got
   Comma" at the comma; it is now reported at the `{`, names the failing token

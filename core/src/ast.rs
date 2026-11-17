@@ -1158,6 +1158,39 @@ pub fn import_path_segments(module: &str) -> &str {
     rest
 }
 
+/// A relative import path with a `.` or `..` past its start, collapsed into
+/// the spelling the parser accepts: `./../lib/x` → `../lib/x`,
+/// `./a/../b` → `./b`, `../a/./b` → `../a/b`. `None` when the path is not
+/// relative (`a/../b` would turn a package path into something else), has an
+/// empty segment, names no module once collapsed, or is already in the
+/// accepted form. The fix `petal fix-imports` writes, and the parser's
+/// "did you mean".
+pub fn normalized_relative_import(path: &str) -> Option<String> {
+    if !(path.starts_with("./") || path.starts_with("../")) {
+        return None;
+    }
+    let mut ups = 0;
+    let mut names: Vec<&str> = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" => return None,
+            "." => {}
+            ".." => {
+                if names.pop().is_none() {
+                    ups += 1;
+                }
+            }
+            name => names.push(name),
+        }
+    }
+    if names.is_empty() {
+        return None;
+    }
+    let prefix = if ups == 0 { "./".to_string() } else { "../".repeat(ups) };
+    let normalized = format!("{prefix}{}", names.join("/"));
+    (normalized != path).then_some(normalized)
+}
+
 /// How an import path is spelled in source: bare (`import ./ui/hud`) when
 /// every segment is a plain identifier, otherwise as a quoted string
 /// (`import "./my-lib" as my_lib`). The inverse of what the parser accepts.
@@ -1202,9 +1235,12 @@ pub fn quoted_import_path_error(module: &str) -> Option<String> {
             return Some(format!("import path \"{module}\" has an empty segment"));
         }
         if segment == "." || segment == ".." {
+            let suggestion = normalized_relative_import(module)
+                .map(|n| format!(" — did you mean \"{n}\"?"))
+                .unwrap_or_default();
             return Some(format!(
                 "import path \"{module}\" may only use '.' and '..' at its start \
-                 (`./name`, `../name`)"
+                 (`./name`, `../name`){suggestion}"
             ));
         }
         if segment.contains(['\\', ':']) {

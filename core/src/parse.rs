@@ -57,6 +57,32 @@ pub use crate::ast::TEST_KEYWORD;
 /// Exhaustive by construction: every arm is listed, so adding a [`Token`]
 /// variant is a compile error here rather than a mystery message at runtime.
 /// Keywords read best in backticks, punctuation in quotes.
+/// The text of a bare import path whose first token is `tokens[start]` —
+/// segments (`.`, `..`, a name, a keyword) joined by `/` — and the index of
+/// the token after it. Reads `.` and `..` anywhere, which the parser rejects
+/// past the start, so a rejected path can be quoted back and collapsed
+/// ([`crate::ast::normalized_relative_import`]). `None` when no segment starts
+/// there.
+pub(crate) fn bare_import_path_text(tokens: &[Token], start: usize) -> Option<(String, usize)> {
+    let mut path = String::new();
+    let mut i = start;
+    loop {
+        let segment = match tokens.get(i)? {
+            Token::Dot => ".",
+            Token::DotDot => "..",
+            Token::Ident(name) => name.as_str(),
+            tok => crate::lexer::keyword_text(tok)?,
+        };
+        path.push_str(segment);
+        i += 1;
+        if !matches!(tokens.get(i), Some(Token::Slash)) {
+            return Some((path, i));
+        }
+        path.push('/');
+        i += 1;
+    }
+}
+
 pub(crate) fn token_desc(tok: &Token) -> String {
     // A word the reader typed.
     let kw = |s: &str| format!("`{s}`");
@@ -2105,16 +2131,22 @@ impl Parser {
     /// One segment of a module path. Only an identifier is a segment: `.` and
     /// `..` are rejected here rather than at resolution time, so a path can
     /// never climb out of the directory it is resolved against.
-    fn expect_path_segment(&mut self) -> Result<String, String> {
+    ///
+    /// `path_start` is the path's first token: a `.` or `..` further on gets
+    /// the collapsed path as a suggestion (`./../lib/x` → `../lib/x`).
+    fn expect_path_segment(&mut self, path_start: usize) -> Result<String, String> {
         if matches!(
             self.peek(),
             Token::Dot | Token::DotDot | Token::DotDotDot | Token::Slash
         ) {
-            return Err(self.error_at_current(
+            let suggestion = bare_import_path_text(&self.tokens, path_start)
+                .and_then(|(path, _)| crate::ast::normalized_relative_import(&path))
+                .map(|n| format!(" — did you mean `{n}`? (`petal fix-imports` rewrites it)"))
+                .unwrap_or_default();
+            return Err(self.error_at_current(format!(
                 "a module path segment must be an identifier ('.' and '..' are only allowed \
-                 at the start of an import path: `./name`, `../name`)"
-                    .to_string(),
-            ));
+                 at the start of an import path: `./name`, `../name`){suggestion}"
+            )));
         }
         self.expect_ident()
     }
@@ -2282,6 +2314,7 @@ impl Parser {
     /// then identifier segments joined by `/`. Anything without a prefix
     /// starts with a package name. The prefix is kept in the path as written.
     fn parse_bare_import_path(&mut self, module: &mut String) -> Result<(), String> {
+        let path_start = self.pos;
         if matches!(self.peek(), Token::Dot) {
             self.advance(); // consume '.'
             if !matches!(self.peek(), Token::Slash) {
@@ -2303,10 +2336,10 @@ impl Parser {
                 module.push_str("../");
             }
         }
-        module.push_str(&self.expect_path_segment()?);
+        module.push_str(&self.expect_path_segment(path_start)?);
         while matches!(self.peek(), Token::Slash) {
             self.advance(); // consume '/'
-            let segment = self.expect_path_segment()?;
+            let segment = self.expect_path_segment(path_start)?;
             module.push('/');
             module.push_str(&segment);
         }

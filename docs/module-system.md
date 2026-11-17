@@ -167,8 +167,12 @@ wander mid-way:
 
 ```
 Error: a module path segment must be an identifier ('.' and '..' are only allowed at the
-start of an import path: `./name`, `../name`)
+start of an import path: `./name`, `../name`) — did you mean `../lib/x`? (`petal
+fix-imports` rewrites it)
 ```
+
+That is `import ./../lib/x`; the error names the path collapsed, and
+`petal fix-imports` writes it.
 
 #### Quoted paths
 

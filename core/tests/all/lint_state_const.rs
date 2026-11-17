@@ -257,13 +257,14 @@ fn the_rule_is_opt_in() {
     assert!(both.enabled(STATE_AS_CONSTANT) && both.enabled(petal::lint::PREFER_LET));
     let info = petal::lint::RULES.iter().find(|r| r.name == STATE_AS_CONSTANT).unwrap();
     assert!(info.opt_in);
-    // The other opt-in rules are `undocumented-pub`, `never-replays`,
+    // The other opt-in rules are `import-overload-merge`, `undocumented-pub`, `never-replays`,
     // `int-division` and `const-of-literal` (the two lifecycle deprecations run by default
     // since Phase 5).
     let opt_in: Vec<&str> = petal::lint::RULES.iter().filter(|r| r.opt_in).map(|r| r.name).collect();
     assert_eq!(
         opt_in,
         vec![
+            petal::lint::IMPORT_OVERLOAD_MERGE,
             petal::lint::UNDOCUMENTED_PUB,
             petal::lint::NEVER_REPLAYS,
             petal::lint::INT_DIVISION,

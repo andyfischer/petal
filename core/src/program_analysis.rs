@@ -820,6 +820,7 @@ mod tests {
             block_terms: HashMap::new(),
             warnings: Vec::new(),
             layout_deps: Vec::new(),
+            import_overload_merges: Vec::new(),
             class_names: Default::default(),
             enums: Default::default(),
             native_links: Vec::new(),

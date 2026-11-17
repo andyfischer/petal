@@ -202,7 +202,7 @@ impl Compiler {
             // a hoisted declaration fills) that the caller places instead.
             self.source_map.add(closure_tid, decl_span);
             self.record_fn_closure(closure_tid, params.len(), optional);
-            return Some(self.bind_fn_result(name, closure_tid, decl_span));
+            return Some(self.bind_fn_result(name, closure_tid, decl_span, decl_span));
         };
 
         // Overloaded function: compile with internal name "name#arity"
@@ -239,7 +239,14 @@ impl Compiler {
             );
             self.source_map.add(set_tid, decl_span);
             self.record_fn_set(set_tid, members);
-            return Some(self.bind_fn_result(name, set_tid, decl_span));
+            // The set is bound where its last variant is declared; a report
+            // about the name points at the first.
+            let first_span = self
+                .source_map
+                .get(self.overload_variants[name][0])
+                .copied()
+                .unwrap_or(decl_span);
+            return Some(self.bind_fn_result(name, set_tid, decl_span, first_span));
         }
         None
     }
@@ -251,7 +258,16 @@ impl Compiler {
     /// Returns the term the name now means — the merged set when this
     /// declaration joined one another module owns, otherwise `value`.
     /// Every term this emits is placed at `decl_span`, the declaration.
-    fn bind_fn_result(&mut self, name: &str, value: TermId, decl_span: SourceSpan) -> TermId {
+    /// `report_span` is where a report that it joined an imported module's
+    /// set points ([`Self::note_import_merge`]): the first variant of an
+    /// overloaded function, otherwise the declaration.
+    fn bind_fn_result(
+        &mut self,
+        name: &str,
+        value: TermId,
+        decl_span: SourceSpan,
+        report_span: SourceSpan,
+    ) -> TermId {
         // Only a *hoisted* declaration writes a cell, and hoisting happens at
         // module scope only — a nested `fn` binds where it is written. Without
         // the scope test, `binding_is_fn_cell` walks outward past the function
@@ -266,6 +282,7 @@ impl Compiler {
             && let Some(cell) = cell
         {
             let display = self.qualified_name(name);
+            let incoming = value;
             let value = match self.cell_shadows.get(&cell).copied() {
                 Some(existing) => match self.merge_overload_binding(name, existing, value) {
                     Some(merged) => {
@@ -276,6 +293,7 @@ impl Compiler {
                 },
                 None => value,
             };
+            self.note_import_merge(name, report_span, incoming, value);
             let write = self.emit_term(TermOp::CellWrite, smallvec![cell, value], Some(display));
             self.source_map.add(write, decl_span);
             self.overload_index.cell_value.insert(cell, value);
@@ -293,8 +311,66 @@ impl Compiler {
         let bound = existing
             .and_then(|existing| self.merge_overload_binding(name, existing, value))
             .unwrap_or(value);
+        self.note_import_merge(name, report_span, value, bound);
         self.scope_bind(name.to_string(), bound);
         bound
+    }
+
+    /// When the entry file's declaration `incoming` of `name` was merged into
+    /// `bound` with variants a plainly imported module declared, record it
+    /// for the `import-overload-merge` lint. A call then dispatches by its
+    /// argument count between the file's function and the module's, so a
+    /// later arity added to the module changes what the file's calls reach.
+    /// A host prelude (implicit import) joining arities is by design and is
+    /// not recorded, nor is a merge inside any module but the entry file.
+    fn note_import_merge(&mut self, name: &str, decl_span: SourceSpan, incoming: TermId, bound: TermId) {
+        if bound == incoming || self.current_module.is_some() {
+            return;
+        }
+        let Some(members) = self.overload_index.members.get(&bound) else {
+            return;
+        };
+        let own: HashSet<TermId> = match self.overload_index.members.get(&incoming) {
+            Some(own) => own.iter().copied().collect(),
+            None => std::iter::once(incoming).collect(),
+        };
+        // The surviving variants another module declared, by the plain
+        // import of this file that reaches that module (itself, or a facade
+        // that re-exports it).
+        let mut by_import: Vec<(String, String, Vec<usize>)> = Vec::new();
+        for member in members.iter().filter(|m| !own.contains(m)) {
+            let Some(Some(declared_in)) = self.overload_index.module.get(member) else {
+                continue;
+            };
+            let Some(arity) = self.overload_index.arity.get(member).copied() else {
+                continue;
+            };
+            let Some((module, qualifier)) = self
+                .plain_imports
+                .iter()
+                .find(|(m, _)| {
+                    m == declared_in
+                        || self.import_closure.get(m).is_some_and(|reach| reach.contains(declared_in))
+                })
+                .cloned()
+            else {
+                continue;
+            };
+            match by_import.iter_mut().find(|(m, _, _)| *m == module) {
+                Some((_, _, arities)) => arities.push(arity),
+                None => by_import.push((module, qualifier, vec![arity])),
+            }
+        }
+        for (module, qualifier, mut imported_arities) in by_import {
+            imported_arities.sort_unstable();
+            self.import_overload_merges.push(crate::program::ImportOverloadMerge {
+                name: name.to_string(),
+                span: decl_span,
+                module,
+                qualifier,
+                imported_arities,
+            });
+        }
     }
 
     /// `class Name` compiles to a constructor function taking one parameter per

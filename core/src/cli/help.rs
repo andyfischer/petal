@@ -1042,6 +1042,11 @@ DESCRIPTION
               a / b on two ints, truncated, then used as a float. Opt-in
               because a row or column index scaled by a float is the same
               shape. A literal 1 / 2 is a compile-check warning instead
+       import-overload-merge (opt-in, report only)
+              a top-level fn merged by argument count with a function of
+              the same name a plain import offers: which one a call runs
+              depends on how many arguments it passes. Opt-in because a
+              game's modules share names like draw and update on purpose
        const-of-literal (opt-in, report only)
               a const on literal data, where it checks nothing a reader
               cannot see

@@ -436,6 +436,12 @@ pub struct Compiler {
     // (a builtin, an export spelled like its module, nothing). While the name
     // still means that, the file has not shadowed the qualifier.
     pub(super) alias_floor: HashMap<String, Option<TermId>>,
+    // The plain imports (`import m`, `import m as q`) of the file being
+    // compiled, as `(module, qualifier)` in import order. Cleared per module.
+    pub(super) plain_imports: Vec<(String, String)>,
+    // The entry file's top-level `fn`s that joined an imported module's
+    // overload set (see `Program::import_overload_merges`).
+    pub(super) import_overload_merges: Vec<crate::program::ImportOverloadMerge>,
 }
 
 /// A function name several plain imports offer with disjoint parameter
@@ -662,6 +668,8 @@ impl Compiler {
             reexported_names: HashSet::new(),
             explicit_aliases: HashSet::new(),
             import_closure: HashMap::new(),
+            plain_imports: Vec::new(),
+            import_overload_merges: Vec::new(),
             ambiguous_imports: HashMap::new(),
             merged_imports: HashMap::new(),
             prelude_shadows: HashMap::new(),
@@ -907,6 +915,7 @@ impl Compiler {
             block_terms,
             warnings: self.warnings,
             layout_deps: self.layout_deps,
+            import_overload_merges: self.import_overload_merges,
             class_names: self
                 .classes
                 .iter()
@@ -1053,6 +1062,7 @@ impl Compiler {
         self.merged_imports.clear();
         self.prelude_shadows.clear();
         self.alias_floor.clear();
+        self.plain_imports.clear();
         self.alias_written.clear();
         for diag in native_errors
             .into_iter()
@@ -1329,6 +1339,7 @@ impl Compiler {
             self.explicit_aliases.insert(alias.clone());
             self.alias_written
                 .insert(alias.clone(), import.written.clone());
+            self.plain_imports.push((m.clone(), alias.clone()));
             qualifier_of.entry(m.clone()).or_insert(alias);
             written_of
                 .entry(m.clone())

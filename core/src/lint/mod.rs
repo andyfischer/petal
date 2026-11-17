@@ -7,7 +7,7 @@
 //! otherwise ([`Fixes`], [`Finding::fixable`]). The rules, in the order they
 //! run (the list below predates the Moses debrief's rules, which are
 //! described where they are written: [`field_set`], [`typed`],
-//! [`any_filter`], [`dead_alias`], [`builtin_names`]):
+//! [`any_filter`], [`dead_alias`], [`builtin_names`], [`import_overload`]):
 //!
 //! 1. **`prefer-let`** ([`var_to_let`]) — a `var` that no nested function
 //!    mentions is a `let` in disguise: `var` → `let`, `set x` → `x`, `get x`
@@ -91,6 +91,7 @@ mod const_of_literal;
 mod dm_hints;
 mod docs;
 mod field_set;
+mod import_overload;
 mod never_replays;
 mod quantifier_hole;
 mod repeat;
@@ -110,6 +111,7 @@ use vary_sensitivity::plan_sensitivity_fixes;
 use dm_hints::plan_hint_reports;
 use const_of_literal::plan_const_of_literal_reports;
 use field_set::plan_field_set_fixes;
+use import_overload::plan_import_overload_reports;
 use never_replays::plan_never_replays_reports;
 use quantifier_hole::plan_quantifier_hole_reports;
 use typed::{plan_int_division, plan_neg_zero_fixes};
@@ -160,6 +162,7 @@ pub const PREFER_ANY: &str = "prefer-any";
 pub const DEAD_ALIAS: &str = "dead-alias";
 pub const SHADOWS_BUILTIN: &str = "shadows-builtin";
 pub const REIMPLEMENTS_BUILTIN: &str = "reimplements-builtin";
+pub const IMPORT_OVERLOAD_MERGE: &str = "import-overload-merge";
 pub const QUANTIFIER_HOLE: &str = "quantifier-hole";
 pub const INT_DIVISION: &str = "int-division";
 pub const DM_HINT_NOT_LITERAL: &str = crate::dm::hints::NOT_LITERAL;
@@ -259,6 +262,14 @@ pub const RULES: &[RuleInfo] = &[
         name: REIMPLEMENTS_BUILTIN,
         summary: "a `fn` that only forwards its arguments to a builtin",
         opt_in: false,
+        fixes: Fixes::None,
+    },
+    RuleInfo {
+        name: IMPORT_OVERLOAD_MERGE,
+        summary: "a top-level `fn` merged by argument count with an imported module's \
+                  function of the same name, so which one a call runs depends on its \
+                  argument count",
+        opt_in: true,
         fixes: Fixes::None,
     },
     RuleInfo {
@@ -777,6 +788,11 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         p.apply(SHADOWS_BUILTIN, plan_shadow_reports(&stmts));
     }
     p.apply(REIMPLEMENTS_BUILTIN, plan_reimplement_reports(&stmts));
+    // Compiles the file, so it is skipped outright when filtered out, and
+    // when the file imports nothing for a declaration to merge with.
+    if opts.rules.enabled(IMPORT_OVERLOAD_MERGE) && has_plain_import(&stmts) {
+        p.apply(IMPORT_OVERLOAD_MERGE, plan_import_overload_reports(&p.text, opts));
+    }
     p.apply(QUANTIFIER_HOLE, plan_quantifier_hole_reports(&stmts, &chars));
     let hints = plan_hint_reports(&stmts, &chars);
     p.apply(DM_HINT_NOT_LITERAL, hints.not_literal);
@@ -952,6 +968,14 @@ const MAX_ALIAS_ROUNDS: usize = 16;
 pub(crate) fn reparse(source: &str) -> Result<(Vec<char>, Vec<crate::ast::Stmt>), String> {
     let (_tree, stmts, _by_end) = crate::rewrite::parse_ast_or_by_end(source)?;
     Ok((source.chars().collect(), stmts))
+}
+
+/// Whether the file has a top-level `import m` / `import m as q` (the only
+/// imports a declaration can merge with).
+fn has_plain_import(stmts: &[crate::ast::Stmt]) -> bool {
+    stmts
+        .iter()
+        .any(|s| matches!(&s.kind, crate::ast::StmtKind::Import(decl) if decl.names.is_none()))
 }
 
 /// The number of `var` declarations (not `state var`) anywhere in `stmts`.

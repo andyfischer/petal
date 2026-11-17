@@ -643,6 +643,26 @@ pub struct TestDecl {
     pub function: String,
 }
 
+/// A top-level `fn` of the entry file whose name an explicitly imported
+/// module also exports as a function, where the two were joined into one
+/// overload set by arity instead of the file's declaration shadowing the
+/// import (`Compiler::merge_overload_binding`). A call with one of
+/// `imported_arities` arguments dispatches to the module's function.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportOverloadMerge {
+    /// The function's name, as declared.
+    pub name: String,
+    /// The declaration (the first variant's, for an overloaded name).
+    pub span: crate::source_map::SourceSpan,
+    /// The module the file imports the colliding function through, as the
+    /// import names it (`ui`).
+    pub module: String,
+    /// What the file writes to reach that module (`ui`, or an `as` alias).
+    pub qualifier: String,
+    /// The argument counts that still go to the module's function.
+    pub imported_arities: Vec<usize>,
+}
+
 /// A compiled program ready for execution.
 #[derive(Serialize, Deserialize)]
 pub struct Program {
@@ -688,6 +708,12 @@ pub struct Program {
     /// compile-time artifact and not part of the portable IR.
     #[serde(skip)]
     pub layout_deps: Vec<crate::diagnostic::LayoutDep>,
+    /// The entry file's top-level `fn` declarations that joined an overload
+    /// set an imported module offers under the same name, rather than
+    /// replacing it (read by the `import-overload-merge` lint). Compile-time
+    /// only, like `warnings`.
+    #[serde(skip)]
+    pub import_overload_merges: Vec<ImportOverloadMerge>,
     /// Every class name this program declares, built-ins included.
     ///
     /// The class *table* is compile-time only, but the VM needs one question

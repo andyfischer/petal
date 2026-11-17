@@ -813,14 +813,24 @@ pub fn user_only_json(program: &Program) -> serde_json::Value {
                 .is_some_and(|b| !filter.block_is_prelude(BlockId(b as u32)))
         });
     }
-    // Constants: an id-keyed object so filtering can't shift ids.
+    // Constants: an id-keyed object so filtering can't shift ids. A float
+    // reads as a number here (`{"Float": 1.7}`), not as the bit pattern the
+    // interchange format carries.
     if let Some(constants) = obj.get_mut("constants") {
         if let Some(Value::Array(values)) = constants.get_mut("values") {
             let kept: serde_json::Map<String, Value> = values
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| const_visible[*i])
-                .map(|(i, val)| (i.to_string(), val.clone()))
+                .map(|(i, val)| {
+                    let val = match program.constants.values().get(i) {
+                        Some(ConstantValue::Float(bits)) => {
+                            serde_json::json!({ "Float": readable_float(f64::from_bits(*bits)) })
+                        }
+                        _ => val.clone(),
+                    };
+                    (i.to_string(), val)
+                })
                 .collect();
             constants["values"] = Value::Object(kept);
         }
@@ -835,6 +845,125 @@ pub fn user_only_json(program: &Program) -> serde_json::Value {
     }
 
     v
+}
+
+/// A float as a JSON number, or — for what JSON has no number for — the
+/// string `"NaN"`, `"inf"` or `"-inf"`.
+fn readable_float(f: f64) -> serde_json::Value {
+    if f.is_nan() {
+        "NaN".into()
+    } else if f.is_infinite() {
+        if f > 0.0 { "inf".into() } else { "-inf".into() }
+    } else {
+        serde_json::Number::from_f64(f).map_or(serde_json::Value::Null, serde_json::Value::Number)
+    }
+}
+
+/// The `natives` table that goes alongside the user-only view (`petal
+/// show-ir --json --user-only`, petal-web-canvas's `dataflow_ir`): every
+/// native the entry file's code can reach, by name, with its effect row as
+/// this `Env` registers it ([`NativeEffects::to_json`]) plus:
+///
+/// - `direct`: the entry file's own code names it — a `BuiltinCall` of it,
+///   or the native used as a value (`map(xs, sin)`). `false` when it is
+///   reached only through a module or prelude function the program calls
+///   (`sum` reaches `reduce`), or through a module-level value it reads.
+/// - `registered`: `false` for a name a `BuiltinCall` calls that this `Env`
+///   has no native for (a `native fn` whose host is not present); such a
+///   row carries no flags.
+///
+/// Reach is a walk over the term graph from every entry-file term: the
+/// inputs of each term (dataflow, and the captures a `MakeClosure` takes),
+/// the child blocks of control terms, and the body of every function a
+/// reached `MakeClosure` makes. It over-approximates — a module function
+/// whose closure is reached counts as called — and does not follow method
+/// dispatch by name.
+///
+/// [`NativeEffects::to_json`]: crate::native_fn::NativeEffects::to_json
+pub fn natives_json(env: &crate::env::Env, program: &Program) -> serde_json::Value {
+    let filter = IrFilter::new(program);
+    let root_phantom =
+        |t: &Term| t.block_id == program.root_block && is_phantom(program, t);
+    let body_of: HashMap<FunctionId, BlockId> =
+        program.functions.iter().map(|f| (f.id, f.body_block)).collect();
+
+    let n = program.terms.len();
+    // Visited as reached from entry-file code directly, and at all.
+    let mut seen_direct = vec![false; n];
+    let mut seen_any = vec![false; n];
+    let mut stack: Vec<(TermId, bool)> = program
+        .terms
+        .iter()
+        .filter(|t| !filter.term_is_prelude(t.id) && !root_phantom(t))
+        .map(|t| (t.id, true))
+        .collect();
+    // name -> reached directly
+    let mut found: std::collections::BTreeMap<String, bool> = Default::default();
+
+    let push_block = |stack: &mut Vec<(TermId, bool)>, b: BlockId| {
+        if let Some(block) = program.blocks.get(b.0 as usize) {
+            stack.extend(block.terms.iter().map(|t| (*t, false)));
+        }
+    };
+
+    while let Some((id, direct)) = stack.pop() {
+        let i = id.0 as usize;
+        if i >= n || (direct && seen_direct[i]) || (!direct && seen_any[i]) {
+            continue;
+        }
+        seen_any[i] = true;
+        seen_direct[i] |= direct;
+        let term = &program.terms[i];
+
+        let native = match &term.op {
+            TermOp::BuiltinCall(c) => program.get_string_constant(*c).map(str::to_string),
+            _ if root_phantom(term) => term
+                .name
+                .as_deref()
+                .filter(|name| env.has_native(name))
+                .map(str::to_string),
+            _ => None,
+        };
+        if let Some(name) = native {
+            *found.entry(name).or_insert(false) |= direct;
+        }
+
+        // A root-block phantom an entry-file term reads is still "direct":
+        // that is the native used as a value.
+        for input in &term.inputs {
+            let d = direct
+                && program
+                    .terms
+                    .get(input.0 as usize)
+                    .is_some_and(|t| root_phantom(t));
+            stack.push((*input, d));
+        }
+        for b in &term.child_blocks {
+            push_block(&mut stack, *b);
+        }
+        if let TermOp::MakeClosure(fid) = term.op
+            && let Some(body) = body_of.get(&fid)
+        {
+            push_block(&mut stack, *body);
+        }
+    }
+
+    let table: serde_json::Map<String, serde_json::Value> = found
+        .into_iter()
+        .map(|(name, direct)| {
+            let mut row = match env.native_effects_of_name(&name) {
+                Some(effects) => {
+                    let mut row = effects.to_json();
+                    row["registered"] = true.into();
+                    row
+                }
+                None => serde_json::json!({ "registered": false }),
+            };
+            row["direct"] = direct.into();
+            (name, row)
+        })
+        .collect();
+    serde_json::Value::Object(table)
 }
 
 // ---------------------------------------------------------------------------
@@ -1238,5 +1367,75 @@ end
         // The program's own declarations are still there.
         assert!(terms.iter().any(|t| t["op"] == "StateInit" && t["name"] == "angle"));
         assert!(terms.iter().any(|t| t["op"] == "CellNew" && t["name"] == "total"));
+    }
+
+    #[test]
+    fn user_only_json_floats_are_readable() {
+        let program = compile("let a = 1.7\nlet b = -0.25\nprint(a + b)");
+        let view = user_only_json(&program);
+        let floats: Vec<f64> = view["constants"]["values"]
+            .as_object()
+            .unwrap()
+            .values()
+            .filter_map(|v| v.get("Float"))
+            .map(|f| f.as_f64().expect("a number, not bits"))
+            .collect();
+        assert!(floats.contains(&1.7) && floats.contains(&-0.25), "{floats:?}");
+        // The interchange format is untouched: still the bit pattern.
+        let full = serde_json::to_value(&program).unwrap();
+        assert!(
+            full["constants"]["values"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|v| v.get("Float").and_then(|f| f.as_u64()) == Some(1.7f64.to_bits()))
+        );
+    }
+
+    #[test]
+    fn readable_float_names_what_json_cannot_hold() {
+        assert_eq!(readable_float(f64::NAN), "NaN");
+        assert_eq!(readable_float(f64::INFINITY), "inf");
+        assert_eq!(readable_float(f64::NEG_INFINITY), "-inf");
+        assert_eq!(readable_float(2.5), 2.5);
+    }
+
+    #[test]
+    fn natives_json_lists_reached_natives_with_their_rows() {
+        let env = Env::new();
+        let program = env
+            .compile_program(
+                ProgramId(0),
+                "let r = random()\nprint(sum([1, 2, 3]))\nlet ys = map([1.5], sin)\n",
+            )
+            .unwrap();
+        let natives = natives_json(&env, &program);
+        let random = &natives["random"];
+        assert_eq!(random["reads"], serde_json::json!(["rng"]), "{natives}");
+        assert_eq!(random["kind"], "read");
+        assert_eq!(random["direct"], true);
+        assert_eq!(random["registered"], true);
+        assert_eq!(natives["print"]["effect"], true);
+        assert_eq!(natives["print"]["kind"], "effect");
+        // Used as a value, not called: still the program's own reference.
+        assert_eq!(natives["sin"]["direct"], true, "{natives}");
+        assert_eq!(natives["sin"]["constant"], true);
+        assert_eq!(natives["map"]["direct"], true);
+        // `sum` is a prelude function; the native it calls is reached, not
+        // named by the program.
+        assert_eq!(natives["reduce"]["direct"], false, "{natives}");
+        // Nothing the program cannot reach.
+        assert!(natives.get("draw_circle").is_none() && natives.get("cos").is_none());
+    }
+
+    #[test]
+    fn natives_json_follows_user_functions() {
+        let env = Env::new();
+        let program = env
+            .compile_program(ProgramId(0), "fn roll()\n  random_int(1, 6)\nend\nprint(roll())\n")
+            .unwrap();
+        let natives = natives_json(&env, &program);
+        assert_eq!(natives["random_int"]["direct"], true, "{natives}");
+        assert_eq!(natives["random_int"]["reads"], serde_json::json!(["rng"]));
     }
 }

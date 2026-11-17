@@ -290,12 +290,21 @@ impl PetalRuntime {
     /// prelude and module bodies filtered out, ids kept). For tools that draw
     /// a program's dataflow (petal-lang.org's dataflow visualizer).
     ///
-    /// Returns JSON: `{ok: true, ir}` or `{ok: false, error}`.
+    /// Returns JSON: `{ok: true, ir, natives, diagnostics}` or `{ok: false,
+    /// error}`. `natives` is every native the program reaches, by name, with
+    /// its effect row as this runtime registers it
+    /// ([`petal::ir_display::natives_json`]): what tells `mouse_x()` (reads
+    /// `pointer`) from `sin()` (constant). `diagnostics` is the compile's
+    /// findings, e.g. an unknown function, as
+    /// [`petal::diagnostic::Diagnostic::to_json`] writes them: a program
+    /// with an error there compiles but fails when the line runs.
     pub fn dataflow_ir(&self, source: &str) -> String {
         match self.env.compile_program(ProgramId(u32::MAX - 1), source) {
             Ok(program) => serde_json::json!({
                 "ok": true,
                 "ir": petal::ir_display::user_only_json(&program),
+                "natives": petal::ir_display::natives_json(&self.env, &program),
+                "diagnostics": petal::diagnostic::program_diagnostics_json(&program),
             })
             .to_string(),
             Err(e) => err_json(&e),
@@ -1329,5 +1338,52 @@ mod tests {
         assert_eq!(json(&rt.edit_live(10.0, 0.0))["ok"], true);
         rt.reload_in_place(&SKETCH.replace("let y = 80", "let y = 90")).unwrap();
         assert_eq!(json(&rt.edit_finish(10.0, 0.0))["ok"], false);
+    }
+
+    /// `dataflow_ir` classifies the natives the program reaches by their
+    /// rows here: the canvas's input natives read their class, a math
+    /// builtin is constant, a draw emits.
+    #[test]
+    fn dataflow_ir_carries_the_natives_rows() {
+        let rt = PetalRuntime::new();
+        let src = "import ui\nlet delta = dt()\nlet mx = mouse_x()\nlet s = sin(1.7)\ndraw_circle(mx, 80, 20, 200, 100, 50)\n";
+        let out = json(&rt.dataflow_ir(src));
+        assert_eq!(out["ok"], true, "{out}");
+        let natives = &out["natives"];
+        assert_eq!(natives["mouse_x"]["reads"], serde_json::json!(["pointer"]), "{natives}");
+        assert_eq!(natives["mouse_x"]["direct"], true, "{natives}");
+        assert_eq!(natives["dt"]["reads"], serde_json::json!(["clock"]), "{natives}");
+        assert_eq!(natives["sin"]["constant"], true, "{natives}");
+        // `draw_circle` is a ui function; the native it pushes through is
+        // reached, and it emits.
+        assert!(
+            natives
+                .as_object()
+                .unwrap()
+                .values()
+                .any(|row| row["emits"] == true && row["direct"] == false),
+            "{natives}"
+        );
+        assert_eq!(out["diagnostics"], serde_json::json!([]), "{out}");
+        // A float constant reads as a number in the view.
+        let consts = out["ir"]["constants"]["values"].as_object().unwrap();
+        assert!(consts.values().any(|v| v["Float"] == 1.7), "{consts:?}");
+    }
+
+    /// An unknown name compiles (it fails when its line runs), and
+    /// `dataflow_ir` says so.
+    #[test]
+    fn dataflow_ir_reports_an_unknown_function() {
+        let rt = PetalRuntime::new();
+        let out = json(&rt.dataflow_ir("let delta = dt()\n"));
+        assert_eq!(out["ok"], true, "{out}");
+        let diags = out["diagnostics"].as_array().unwrap();
+        let d = diags
+            .iter()
+            .find(|d| d["message"].as_str().is_some_and(|m| m.contains("dt")))
+            .unwrap_or_else(|| panic!("no diagnostic for `dt`: {out}"));
+        assert_eq!(d["severity"], "error");
+        assert_eq!((d["line"].clone(), d["column"].clone()), (1.into(), 13.into()), "{d}");
+        assert!(d["end_column"].as_u64().unwrap() > 13, "{d}");
     }
 }

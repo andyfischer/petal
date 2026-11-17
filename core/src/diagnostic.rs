@@ -123,6 +123,30 @@ impl Diagnostic {
             None => &self.message,
         }
     }
+
+    /// The JSON object a tool reads for this diagnostic: `message`,
+    /// `severity` (`"warning"` or `"error"`), `line`/`column` where it starts
+    /// and `end_line`/`end_column` where it ends (1-based, as written), and
+    /// `file` (`null` for the entry file, else the module's display name).
+    /// One shape for every host that hands diagnostics to a tool: `petal
+    /// lint --json`, petal-web-canvas's `dataflow_ir`.
+    pub fn to_json(&self, program: &crate::program::Program) -> serde_json::Value {
+        serde_json::json!({
+            "message": self.message,
+            "severity": self.severity.label(),
+            "line": self.span.start.line,
+            "column": self.span.start.column,
+            "end_line": self.span.end.line,
+            "end_column": self.span.end.column,
+            "file": program.source_map.file_name_for_span(&self.span),
+        })
+    }
+}
+
+/// [`Diagnostic::to_json`] of every one of `program`'s diagnostics (its
+/// `warnings`, which hold errors too), as a JSON array in order.
+pub fn program_diagnostics_json(program: &crate::program::Program) -> serde_json::Value {
+    serde_json::Value::Array(program.warnings.iter().map(|d| d.to_json(program)).collect())
 }
 
 impl Diagnostic {
@@ -244,4 +268,30 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
         }
     }
     row[b.len()]
+}
+
+#[cfg(test)]
+mod json_tests {
+    use crate::env::Env;
+    use crate::program::ProgramId;
+
+    #[test]
+    fn program_diagnostics_json_carries_the_span() {
+        let program = Env::new()
+            .compile_program(ProgramId(0), "let a = 1\nlet delta = nope()\n")
+            .unwrap();
+        let json = super::program_diagnostics_json(&program);
+        let d = json
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["message"].as_str().is_some_and(|m| m.contains("nope")))
+            .unwrap_or_else(|| panic!("no unknown-function diagnostic: {json}"));
+        assert_eq!(d["severity"], "error");
+        assert_eq!(d["line"], 2);
+        assert_eq!(d["column"], 13);
+        assert_eq!(d["end_line"], 2);
+        assert!(d["end_column"].as_u64().unwrap() > 13, "{d}");
+        assert_eq!(d["file"], serde_json::Value::Null);
+    }
 }

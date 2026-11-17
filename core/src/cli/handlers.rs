@@ -1011,23 +1011,10 @@ fn diagnostics_text(program: &Program) -> String {
 
 /// Build the JSON array of a program's diagnostics: one object per diagnostic
 /// with `message`, `severity` (`"warning"` or `"error"`), `line`, `column`,
-/// and `file` (null for the entry file).
+/// `end_line`, `end_column` and `file` (null for the entry file); see
+/// [`crate::diagnostic::Diagnostic::to_json`].
 fn warnings_json(program: &Program) -> serde_json::Value {
-    let items: Vec<serde_json::Value> = program
-        .warnings
-        .iter()
-        .map(|d| {
-            let file = program.source_map.file_name_for_span(&d.span);
-            serde_json::json!({
-                "message": d.message,
-                "severity": d.severity.label(),
-                "line": d.span.start.line,
-                "column": d.span.start.column,
-                "file": file,
-            })
-        })
-        .collect();
-    serde_json::Value::Array(items)
+    crate::diagnostic::program_diagnostics_json(program)
 }
 
 /// What the compile check of one program found: `petal lint`'s first stage.
@@ -1346,12 +1333,16 @@ pub(super) fn handle_show_ir(
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
-    let program = compile_source(source, source_input, include_dirs);
+    let (env, program) = compile_source_with_env(source, source_input, include_dirs);
     if json {
         if user_only {
             // Filtered debugging view — see `ir_display::user_only_json`.
-            // NOT the `run --ir` interchange format.
-            print_json(&crate::ir_display::user_only_json(&program));
+            // NOT the `run --ir` interchange format. The natives the program
+            // reaches, with their effect rows as this `Env` registers them,
+            // ride along as a top-level `natives` key.
+            let mut view = crate::ir_display::user_only_json(&program);
+            view["natives"] = crate::ir_display::natives_json(&env, &program);
+            print_json(&view);
         } else {
             print_json(&program);
         }
@@ -2262,6 +2253,16 @@ fn compile_source(
     input: &SourceInput,
     include_dirs: &[PathBuf],
 ) -> crate::program::Program {
+    compile_source_with_env(source, input, include_dirs).1
+}
+
+/// [`compile_source`], keeping the `Env` it compiled in: for a view that
+/// also reports what that `Env` registers (the natives table).
+fn compile_source_with_env(
+    source: &str,
+    input: &SourceInput,
+    include_dirs: &[PathBuf],
+) -> (Env, crate::program::Program) {
     let mut env = make_env(include_dirs);
     // Static tools read the compiled program and never run it.
     env.set_check_only(true);
@@ -2270,7 +2271,7 @@ fn compile_source(
         None => env.compile_program(ProgramId(0), source),
     };
     match result {
-        Ok(program) => program,
+        Ok(program) => (env, program),
         Err(e) => die_plain(&e),
     }
 }

@@ -1552,7 +1552,9 @@ OPTIONS
 
        --user-only
               With --json: emit a filtered debugging view, with phantoms,
-              prelude content and prelude-only constants removed. Not
+              prelude content and prelude-only constants removed, float
+              constants as numbers, and a top-level 'natives' table (the
+              effect row of each native the program reaches). Not
               loadable by 'run --ir'. Requires --json, and is mutually
               exclusive with --all.
 

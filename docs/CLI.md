@@ -2912,8 +2912,28 @@ by them. Ids are preserved as-is (nothing is renumbered), which is why
 (`{"0": {"Int": 2}, "6": {"String": "print"}}`) instead of an array;
 `source_map.term_spans` and `match_arms` are filtered to the kept terms. The
 param/capture/self binding phantoms of user blocks are kept so no kept term
-references a missing id. This is a debugging **view**, not an interchange
-format — it is **not loadable** by `run --ir`.
+references a missing id. A float constant reads as a number
+(`{"Float": 1.7}`, or the string `"NaN"`, `"inf"` or `"-inf"`) rather than the
+bit pattern the interchange format carries. One key is added at the top
+level: `natives`, every native the entry file's code can reach (directly, or
+through a module or prelude function it uses), by name, with its effect row
+as the CLI registers it:
+
+```json
+"natives": {
+  "random": {"kind": "read", "reads": ["rng"], "emits": false, "effect": false,
+             "declares": false, "command": false, "probe": false,
+             "constant": false, "ticks": false, "contained": false,
+             "registered": true, "direct": true}
+}
+```
+
+`reads` lists input classes (`pointer`, `keyboard`, `clock`, `viewport`,
+`host_data`, `resources`, `rng`, `bindings`, `physics`, `net`, `camera`);
+`direct` is false for a native reached only through a module function;
+`registered: false` (and no flags) marks a called native no host here
+provides. This is a debugging **view**, not an interchange format — it is
+**not loadable** by `run --ir`.
 
 #### Program JSON Schema
 

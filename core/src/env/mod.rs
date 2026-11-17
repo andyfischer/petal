@@ -2177,6 +2177,12 @@ impl Env {
         self.native_fns.effects(id)
     }
 
+    /// [`native_effects`](Self::native_effects) by name. `None` when no
+    /// native of that name is registered here.
+    pub fn native_effects_of_name(&self, name: &str) -> Option<NativeEffects> {
+        self.native_fns.lookup_name(name).map(|id| self.native_fns.effects(id))
+    }
+
     /// Whether a call to this native can be part of a static value
     /// ([`NativeConstness`](crate::native_fn::NativeConstness)): `Const` only
     /// for a native registered with

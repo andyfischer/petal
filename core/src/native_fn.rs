@@ -505,6 +505,34 @@ impl NativeEffects {
             && !self.command
             && !self.declares
     }
+
+    /// This row as readable JSON, for a tool that classifies calls (the
+    /// dataflow view's `natives` table): `kind` ([`NativeKind::as_str`]),
+    /// `reads` (the input classes, lowercase, in bit order: `"pointer"`,
+    /// `"clock"`, `"host_data"` …), and one boolean per flag: `emits`,
+    /// `effect`, `declares`, `command`, `probe`, `ticks`, `contained`, and
+    /// `constant` — the answer of [`is_const`](Self::is_const), not the raw
+    /// field.
+    pub fn to_json(&self) -> serde_json::Value {
+        let reads: Vec<String> = self
+            .reads
+            .names()
+            .into_iter()
+            .map(|n| n.to_ascii_lowercase())
+            .collect();
+        serde_json::json!({
+            "kind": self.kind().as_str(),
+            "reads": reads,
+            "emits": self.emits,
+            "effect": self.effect,
+            "declares": self.declares,
+            "command": self.command,
+            "probe": self.probe,
+            "constant": self.is_const(),
+            "ticks": self.ticks,
+            "contained": self.contained,
+        })
+    }
 }
 
 /// What a native row amounts to, for a report: the four kinds of engine

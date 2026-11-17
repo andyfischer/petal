@@ -627,6 +627,21 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   split. Replaces the `keys(group_by(xs, fn(x) -> x))` workaround, which
   also turned every value into a string. A program's own `unique` or
   `unique_by` still wins over the builtin (not breaking).
+- **A host runs its scripts' tests through `petal test`'s runner.**
+  `test_runner::Options::setup` (set with `Options::with_setup(|env| …)`)
+  prepares each `Env` the runner makes — registering the host's natives and
+  packages — after the runner's own setup (`-I` paths, inline import dir,
+  install-on-demand, the no-memo test policy), so the host's settings win.
+  `run_paths`/`run_source` then report, filter and time out as `petal test`
+  does, and the new `test_runner::print_report(files, json, show_output)`
+  prints the CLI's report and returns whether the run passed;
+  `test_runner::make_env(&opts)` is public. A host's test command is about
+  ten lines (see the `test_runner` module docs and docs/testing.md). The
+  "needs native fns this host does not register" error from `petal test` now
+  names the hook. **Breaking (minor):** `Options` has a new field and no
+  longer derives `Debug` (it implements it by hand); a struct literal needs
+  `..Default::default()` or `setup: None`. Tests that wait for frames
+  (`PetalCxt::suspend`) still need the host's own loop.
 
 - **Programs as documents: a tidy write-out.** `concretize_with(runner,
   run, node, &ConcretizeOptions { tidy: true })` (and

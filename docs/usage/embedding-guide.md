@@ -451,6 +451,10 @@ host can run frames before resuming it, which is how a test waits for
 something that takes time. Expectations that fail outside a test are read
 with `Env::take_expect_failures(stack)`. The loop, the result types and the
 limits are in [testing.md](../testing.md#running-tests-from-a-host).
+A Rust host that has no frames to run gets `petal test`'s whole runner —
+report, `--filter`, timeouts — by passing a setup that registers its natives
+(`petal::test_runner::Options::with_setup`; testing.md, "A host's `test`
+command").
 
 ### Showing what `petal lint` would say
 

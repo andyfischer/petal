@@ -263,7 +263,7 @@ test \"fine\" do expect(true) end
     for (src, want) in [
         ("test \"a\" do\n  let = 1\nend\n", "Expected"),
         ("test \"a\" do\n  expect(nope)\nend\n", "nope"),
-        ("import ui\ntest \"a\" do\n  expect(screen_width() > 0)\nend\n", "host's own test runner"),
+        ("import ui\ntest \"a\" do\n  expect(screen_width() > 0)\nend\n", "Options::with_setup"),
     ] {
         let report = runner::run_source("bad.ptl", None, src, &Options::default());
         let err = report.error.clone().unwrap_or_else(|| panic!("{src}: {report:?}"));

@@ -1753,17 +1753,13 @@ pub(super) fn handle_test(opts: &super::TestArgs, include_dirs: &[PathBuf]) {
             None => Some(std::time::Duration::from_secs(60)),
         },
         list: opts.list,
+        setup: None,
     };
     let files = match opts.inline.as_deref() {
         Some(code) => vec![runner::run_source("<inline>", None, code, &run_opts)],
         None => runner::run_paths(&opts.paths, &run_opts),
     };
-    if opts.json {
-        print_json(&runner::to_json(&files));
-    } else {
-        print!("{}", runner::render(&files, opts.show_output));
-    }
-    if !runner::Summary::of(&files).ok() {
+    if !runner::print_report(&files, opts.json, opts.show_output) {
         process::exit(1);
     }
 }

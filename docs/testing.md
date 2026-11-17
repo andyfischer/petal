@@ -179,12 +179,57 @@ when no tests were found.
 
 **Files that need a host.** A file that imports a host's interface (`ui`, a
 game engine's package) calls natives the `petal` command does not have, so it
-is reported as a file that could not be run. Its tests are run by that host.
-Keeping logic in modules that import no host is what makes it testable from
-the command line; `examples/games/physics-playground/physics.ptl` is one, and
-carries its own tests.
+is reported as a file that could not be run. Its tests are run by that host
+(below). Keeping logic in modules that import no host is what makes it
+testable from the command line; `examples/games/physics-playground/physics.ptl`
+is one, and carries its own tests.
 
 ## Running tests from a host
+
+### A host's `test` command
+
+A Rust host whose scripts import its natives builds its test command on the
+runner behind `petal test`, and keeps its report, filter and time limit. It
+hands the runner a setup that registers its natives on each `Env` the runner
+makes:
+
+```rust
+use petal::test_runner::{self as runner, Options};
+
+let opts = Options {
+    filter,                                   // --filter
+    timeout: Some(Duration::from_secs(60)),   // --timeout
+    ..Options::default()
+}
+.with_setup(|env| {
+    my_host::register(env);                   // natives + interface packages
+    Ok(())
+});
+let files = runner::run_paths(&paths, &opts); // files and directories
+let ok = runner::print_report(&files, json, show_output);
+std::process::exit(if ok { 0 } else { 1 });
+```
+
+The setup runs once per file, **after** the runner's own: the `-I`
+directories (`Options::include_dirs`), the working directory for inline
+`import ./x`, git dependencies installed on demand, and the test policy (no
+memo records or kept static values, unless `PETAL_POLICY` is set). Anything
+the host sets therefore wins. An `Err` from the setup, or a package that will
+not load, is reported as the file's error. Each test still gets its own stack
+in that `Env`, so host state the natives keep outside the `Env` (captures, a
+thread-local) is shared by a file's tests unless the host resets it.
+
+What a test prints is collected for the report whether or not the setup
+turns echo on. `runner::run_source(name, path, source, &opts)` runs one
+file's source, `runner::render` and `runner::to_json` give the report as
+text or JSON without printing it, and `runner::make_env(&opts)` is the `Env`
+a file's tests run in.
+
+A test that waits for frames (`PetalCxt::suspend`, below) is an error under
+this runner, which has no frames to run; a host with a frame loop drives
+such tests itself.
+
+### Driving tests by hand
 
 An embedder runs the same blocks with its own natives registered. A C or C++
 host has all of this through the bridge (`pb_vm_tests_json`,

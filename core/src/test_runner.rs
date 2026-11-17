@@ -11,18 +11,45 @@
 //! (so its functions, `var`s and `state` exist, with their initial values),
 //! then the test body. Nothing one test writes is seen by another. A file
 //! that cannot be loaded or linked here — it needs a host's natives — is
-//! reported as a file error; such tests are run by the host
-//! ([`crate::env::Env::test_begin`]).
+//! reported as a file error.
+//!
+//! A host whose scripts import its own natives runs them here too: it hands
+//! the runner a [`Setup`] ([`Options::with_setup`]) that registers its
+//! packages and natives on each `Env` the runner makes, and keeps the
+//! reporting, filters and time limits of `petal test`:
+//!
+//! ```no_run
+//! use petal::test_runner::{self as runner, Options};
+//! # fn register_my_natives(_: &mut petal::env::Env) {}
+//! let opts = Options::default().with_setup(|env| {
+//!     register_my_natives(env);
+//!     Ok(())
+//! });
+//! let paths: Vec<String> = std::env::args().skip(1).collect();
+//! let files = runner::run_paths(&paths, &opts);
+//! let ok = runner::print_report(&files, false, false);
+//! std::process::exit(if ok { 0 } else { 1 });
+//! ```
+//!
+//! A test that waits for frames ([`crate::env::Env::test_begin`],
+//! `PetalCxt::suspend`) still needs the host's own frame loop.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::env::{Env, RunOutcome, TestStep};
 use crate::expect::ExpectFailure;
 use crate::program::ProgramId;
 
+/// A host's preparation of each `Env` the runner makes: registering its
+/// natives and packages, adding module paths, changing the policy. It runs
+/// once per file, after the runner's own setup, so what it sets wins; an
+/// error is reported as the file's error.
+pub type Setup = Arc<dyn Fn(&mut Env) -> Result<(), String> + Send + Sync>;
+
 /// What `petal test` was asked to do.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Options {
     /// Package search directories (`-I`).
     pub include_dirs: Vec<PathBuf>,
@@ -33,6 +60,33 @@ pub struct Options {
     pub timeout: Option<Duration>,
     /// Find the tests and report them without running anything.
     pub list: bool,
+    /// The host's setup of each `Env`, run after the runner's own (see
+    /// [`make_env`]). `None` for `petal test`, which has only the core
+    /// builtins.
+    pub setup: Option<Setup>,
+}
+
+impl Options {
+    /// These options with `setup` as the host's [`Setup`].
+    pub fn with_setup(
+        mut self,
+        setup: impl Fn(&mut Env) -> Result<(), String> + Send + Sync + 'static,
+    ) -> Options {
+        self.setup = Some(Arc::new(setup));
+        self
+    }
+}
+
+impl std::fmt::Debug for Options {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Options")
+            .field("include_dirs", &self.include_dirs)
+            .field("filter", &self.filter)
+            .field("timeout", &self.timeout)
+            .field("list", &self.list)
+            .field("setup", &self.setup.as_ref().map(|_| "<host setup>"))
+            .finish()
+    }
 }
 
 /// How one test ended.
@@ -195,29 +249,50 @@ pub fn expand_paths(paths: &[String]) -> (Vec<PathBuf>, Vec<String>) {
     (files, missing)
 }
 
-/// An `Env` set up as `petal run` sets one up, for a program that runs once.
-fn make_env(include_dirs: &[PathBuf]) -> Result<Env, String> {
+/// The `Env` one file's tests run in, made in this order:
+///
+/// 1. As `petal run` makes one: the `-I` directories
+///    ([`Options::include_dirs`]), the working directory for inline
+///    `import ./x`, git dependencies installed on demand (unless
+///    `PETAL_OFFLINE` is set).
+/// 2. The test policy: no memo records and no kept static values (each
+///    test's stack runs the file once, so they would never be used again),
+///    unless `PETAL_POLICY` is set.
+/// 3. The host's [`Options::setup`], so it can add to or override any of
+///    the above, and register the natives and packages its scripts import.
+/// 4. A package that will not load — from `-I` or the host — is the file's
+///    error.
+///
+/// What a test prints is collected and shown with its result, whether or
+/// not echo is on.
+pub fn make_env(opts: &Options) -> Result<Env, String> {
     let mut env = Env::new();
-    for dir in include_dirs {
+    for dir in &opts.include_dirs {
         env.add_module_path(dir.clone());
     }
     env.set_inline_import_dir(std::env::current_dir().ok());
     env.set_install_on_demand(std::env::var_os("PETAL_OFFLINE").is_none());
-    if let Some(err) = env.package_errors().first() {
-        return Err(err.to_string());
-    }
-    // Each test's stack runs the file once: a memo record or a kept static
-    // value would never be used again.
     if std::env::var_os("PETAL_POLICY").is_none() {
         env.set_policy(env.policy().with_memo(false).with_static_cache(false));
     }
-    // What a test prints is collected and shown with its result (echo is
-    // off, as for any embedder).
+    if let Some(setup) = &opts.setup {
+        setup(&mut env).map_err(|e| format!("the host's test setup failed: {e}"))?;
+    }
+    if let Some(err) = env.package_errors().first() {
+        return Err(err.to_string());
+    }
     Ok(env)
 }
 
 /// Load `source` as the entry program of `env`, checked and linked.
-fn load(env: &mut Env, source: &str, path: Option<&Path>) -> Result<ProgramId, String> {
+/// `hosted` is whether a host's [`Setup`] prepared `env`, which changes what
+/// a missing native means.
+fn load(
+    env: &mut Env,
+    source: &str,
+    path: Option<&Path>,
+    hosted: bool,
+) -> Result<ProgramId, String> {
     let was_check_only = env.is_check_only();
     env.set_check_only(true);
     let loaded = env.load_program_diag(source, path);
@@ -231,10 +306,18 @@ fn load(env: &mut Env, source: &str, path: Option<&Path>) -> Result<ProgramId, S
         return Err(env.error_diagnostics_text(pid).trim_end().to_string());
     }
     env.link(pid).map_err(|e| {
-        format!(
-            "{e}\n(the file needs a host this command does not provide; run its tests with \
-             the host's own test runner)"
-        )
+        if hosted {
+            format!(
+                "{e}\n(the host's test setup (`test_runner::Options::setup`) does not \
+                 register them)"
+            )
+        } else {
+            format!(
+                "{e}\n(the file needs a host's natives, which `petal test` does not have; run \
+                 its tests with that host's test command. A host builds one on \
+                 `petal::test_runner` with `Options::with_setup` registering its natives.)"
+            )
+        }
     })?;
     Ok(pid)
 }
@@ -249,14 +332,14 @@ pub fn run_source(file: &str, path: Option<&Path>, source: &str, opts: &Options)
         top_level: Vec::new(),
         tests: Vec::new(),
     };
-    let mut env = match make_env(&opts.include_dirs) {
+    let mut env = match make_env(opts) {
         Ok(env) => env,
         Err(e) => {
             report.error = Some(e);
             return report;
         }
     };
-    let pid = match load(&mut env, source, path) {
+    let pid = match load(&mut env, source, path, opts.setup.is_some()) {
         Ok(pid) => pid,
         Err(e) => {
             report.error = Some(e);
@@ -568,6 +651,21 @@ fn count(n: usize, what: &str) -> String {
     } else {
         format!("{n} {what}s")
     }
+}
+
+/// Print the report to stdout as `petal test` does — [`render`], or
+/// [`to_json`] when `json` — and return whether the run passed
+/// ([`Summary::ok`]); `petal test` exits 1 when it did not.
+pub fn print_report(files: &[FileReport], json: bool, show_output: bool) -> bool {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&to_json(files)).expect("a JSON value serializes")
+        );
+    } else {
+        print!("{}", render(files, show_output));
+    }
+    Summary::of(files).ok()
 }
 
 /// The report as one JSON document (`petal test --json`).

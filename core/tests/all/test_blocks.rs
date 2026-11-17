@@ -613,3 +613,113 @@ fn lint_fixes_inside_a_test_body_and_keeps_the_block() {
         assert!(!f.message.contains("__test_"), "{f:?}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// A host's tests through the `petal test` runner (`test_runner::Options::setup`)
+// ---------------------------------------------------------------------------
+
+fn host_double(cxt: &mut petal::native_fn::PetalCxt) -> petal::native_fn::NativeResult {
+    let v = cxt.get_int(1)? * 2;
+    cxt.push_int(v);
+    Ok(1)
+}
+
+/// What a host's setup does: its natives and the package declaring them.
+fn register_scrape(env: &mut Env) -> Result<(), String> {
+    env.register_native("double", host_double, NativeEffects::PURE);
+    env.register_package("scrape", [("scrape", "pub native fn double(x: int) -> int\n")])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+const HOSTED_SRC: &str = "\
+import scrape
+fn quad(x) double(double(x)) end
+test \"doubles\" do
+  print(\"checking\")
+  expect_eq(double(2), 4)
+end
+test \"quads\" do
+  expect_eq(quad(3), 12)
+end
+test \"wrong\" do
+  expect_eq(double(1), 3)
+end
+";
+
+#[test]
+fn a_hosts_setup_lets_the_runner_run_tests_that_need_its_natives() {
+    use petal::test_runner::{self as runner, Options, Status, Summary};
+
+    // Without the host: the file cannot be run, and the error says how a
+    // host runs it.
+    let report = runner::run_source("job.ptl", None, HOSTED_SRC, &Options::default());
+    let err = report.error.as_deref().expect("needs the host");
+    assert!(err.contains("cannot find module 'scrape'"), "{err}");
+    let src = "native fn double(x: int) -> int\ntest \"a\" do\n  expect_eq(double(2), 4)\nend\n";
+    let report = runner::run_source("job.ptl", None, src, &Options::default());
+    let err = report.error.as_deref().expect("needs the host");
+    assert!(err.contains("needs a native fn this host does not register: double"), "{err}");
+    assert!(err.contains("Options::with_setup"), "{err}");
+    let hosted = Options::default().with_setup(register_scrape);
+    assert!(Summary::of(&[runner::run_source("job.ptl", None, src, &hosted)]).ok());
+
+    // With it: run, reported, filtered, as `petal test` would.
+    let opts = Options::default().with_setup(register_scrape);
+    let report = runner::run_source("job.ptl", None, HOSTED_SRC, &opts);
+    assert_eq!(report.error, None);
+    let statuses: Vec<_> = report.tests.iter().map(|t| (t.name.as_str(), t.status)).collect();
+    assert_eq!(
+        statuses,
+        [("doubles", Status::Passed), ("quads", Status::Passed), ("wrong", Status::Failed)]
+    );
+    assert_eq!(report.tests[0].output, ["checking"]);
+    let text = runner::render(std::slice::from_ref(&report), false);
+    assert!(text.contains("  ok    doubles\n") && text.contains("  FAIL  wrong\n"), "{text}");
+    assert!(text.contains("3 tests: 2 passed, 1 failed"), "{text}");
+
+    let filtered = Options { filter: Some("quad".into()), ..opts.clone() };
+    let report = runner::run_source("job.ptl", None, HOSTED_SRC, &filtered);
+    assert_eq!(report.tests.len(), 1);
+    assert!(Summary::of(&[report]).ok());
+}
+
+#[test]
+fn a_hosts_setup_runs_after_the_runners_own_and_its_errors_are_the_files() {
+    use petal::test_runner::{self as runner, Options};
+
+    // The runner's test policy is in place when the host's setup runs, so
+    // the host sees (and may override) it.
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let seen_in = seen.clone();
+    let opts = Options::default().with_setup(move |env| {
+        *seen_in.lock().unwrap() = Some(env.policy().memo);
+        // A host that echoes its prints still gets them in the report.
+        env.set_echo(true);
+        register_scrape(env)
+    });
+    let report = runner::run_source("job.ptl", None, HOSTED_SRC, &opts);
+    assert_eq!(report.tests[0].output, ["checking"]);
+    if std::env::var_os("PETAL_POLICY").is_none() {
+        assert_eq!(*seen.lock().unwrap(), Some(false));
+    }
+
+    // A setup that registers the package but not its native: named as the
+    // host's omission.
+    let opts = Options::default().with_setup(|env| {
+        env.register_package("scrape", [("scrape", "pub native fn double(x: int) -> int\n")])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    });
+    let err = runner::run_source("job.ptl", None, HOSTED_SRC, &opts).error.unwrap();
+    assert!(err.contains("test setup") && err.contains("does not register"), "{err}");
+
+    // A setup that fails: the file's error.
+    let opts = Options::default().with_setup(|_| Err("no credentials".into()));
+    let report = runner::run_source("job.ptl", None, HOSTED_SRC, &opts);
+    assert_eq!(
+        report.error.as_deref(),
+        Some("the host's test setup failed: no credentials")
+    );
+    assert!(report.failed());
+}

@@ -2424,7 +2424,7 @@ TEST(reload_from_source) {
 
 TEST(source_reads_bindings_and_edits_by_path) {
     const std::string text =
-        "// The look.\n"
+        "@doc(\"The look.\")\n"
         "config let POST = {\n"
         "  exposure: 1.45,   // brighter than day\n"
         "  effects: [{effect: \"grain\", amount: 0.3}],\n"
@@ -2434,7 +2434,8 @@ TEST(source_reads_bindings_and_edits_by_path) {
     const std::optional<std::string> json = src.bindings_json();
     REQUIRE(json.has_value());
     CHECK_CONTAINS(*json, "\"name\":\"POST\",\"config\":true");
-    CHECK_CONTAINS(*json, "\"comment\":\"The look.\"");
+    CHECK_CONTAINS(*json, "\"doc\":{\"body\":\"The look.\"");
+    CHECK(json->find("\"comment\"") == std::string::npos);
     CHECK_CONTAINS(*json, "\"exposure\":1.45");
     CHECK_EQ(src.expr("TINT").value_or(""), std::string(":ff2e88"));
     CHECK_EQ(src.expr("POST.effects[0].amount").value_or(""), std::string("0.3"));
@@ -2442,7 +2443,7 @@ TEST(source_reads_bindings_and_edits_by_path) {
     CHECK(src.set("POST.exposure", "1.2"));
     CHECK(src.set("POST.effects[0].amount", "0.55"));
     CHECK(src.set("TINT", "#29d9ff"));
-    CHECK_EQ(src.text(), std::string("// The look.\n"
+    CHECK_EQ(src.text(), std::string("@doc(\"The look.\")\n"
                                      "config let POST = {\n"
                                      "  exposure: 1.2,   // brighter than day\n"
                                      "  effects: [{effect: \"grain\", amount: 0.55}],\n"

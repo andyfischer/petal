@@ -197,7 +197,7 @@ print(cos(angle) * radius)
 
 Both return their value unchanged. A
 `rigid(...)` value doesn't pass changes through to anything upstream of it.
-See [Builtins.md](../Builtins.md#direct-manipulation-hints).
+See [Builtins.md](../Builtins.md#coredm).
 
 Where `tunable` is written decides its job. As the whole initializer of a
 top-level `let` it declares a setting of any type that hosts list and set;

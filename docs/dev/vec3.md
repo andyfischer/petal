@@ -3,7 +3,7 @@
 `vec3(x, y, z)` is a native 3D vector parallel to `vec2`: the same operators
 (`+ - * /`, unary `-`, `==`), fields `.x .y .z`, and the shared vector builtins
 (`mag`, `distance`, `normalize`, `dot`, `limit`, `lerp`) plus `cross`. The
-script-facing contract is in [Builtins.md](../Builtins.md#vectors-2d-and-3d)
+script-facing contract is in [Builtins.md](../Builtins.md#vec2)
 and [language-guide.md](../language-guide.md#vectors). This note records the
 one design decision that is not visible from there: the representation.
 

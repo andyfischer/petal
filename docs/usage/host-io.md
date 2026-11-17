@@ -93,7 +93,7 @@ for i in range(0, 3) do
 
 ## See also
 
-- [Builtins: Host I/O](../Builtins.md#host-io), the signatures.
+- [Builtins: Host I/O](../Builtins.md#io), the signatures.
 - [The frame contract](../game-engine-features/frame-contract.md), what a
   host does around each run.
 - [Module system: host interface packages](../module-system.md#host-interface-packages),

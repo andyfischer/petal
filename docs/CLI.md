@@ -767,7 +767,7 @@ a module `state` rebound below it, a call to a declaration further down the
 file that could not be hoisted (the rules are in
 [syntax/declaration-order.md](syntax/declaration-order.md#when-a-fn-is-not-hoisted)), and a key name written as a literal that is
 not one (`key_pressed("enter")`, which is always false: `did you mean
-"return"?`; the names are in [the `ui` reference](../core-stdlib/ui/docs/reference.md#input)).
+"return"?`; the names are in [the `ui` reference](../core-stdlib/ui/docs/reference.md#key_down)).
 
 #### Error phases
 
@@ -844,7 +844,7 @@ finding a `fixable` field. `petal lint --rules` lists them.
 | `dead-alias` | `let a = v` in a function, where `v` is a parameter or a local of that function that is not written from there on (nor in a loop around the alias, nor by any nested function) and `a` is only read | delete the `let` and read `v` (`get v` for a `var` read from a nested function). Reported only, when the `let` shares its line |
 | `shadows-builtin` | a `fn` with the name of a core builtin, a standard-prelude function, or a function of a bundled package the file imports whole, taking an argument count the existing one takes. Every call in the file reaches the new one | none (callers may be in other files) |
 | `reimplements-builtin` | a `fn` whose whole body calls one builtin with its own parameters in order, or is `if r == nil then d else field(r, k, d) end` (`field` already answers the fallback for `nil`) | none |
-| `dm-hint-not-literal` | `tunable(e)` where `e` is computed (`tunable(a + b)`): the hint marks a literal or a name bound to one, so this marks nothing. On a string, bool, record or list the message says so and points to a setting ([Builtins](Builtins.md#direct-manipulation-hints)) | none: wrap the literal itself (`tunable(a) + b`), or declare a non-number setting, `let X = tunable(v)` at the top level |
+| `dm-hint-not-literal` | `tunable(e)` where `e` is computed (`tunable(a + b)`): the hint marks a literal or a name bound to one, so this marks nothing. On a string, bool, record or list the message says so and points to a setting ([Builtins](Builtins.md#coredm)) | none: wrap the literal itself (`tunable(a) + b`), or declare a non-number setting, `let X = tunable(v)` at the top level |
 | `dm-hint-bounds` | a `tunable` bound (`min`, `max`, `step`) that is not a number literal, or a `min` above the `max` | none |
 | `dm-hint-state-init` | `state x = tunable(…)`: a running program keeps its state across a reload, so a drag cannot move a state's initial value | none: declare the start value as a setting, `let START = tunable(…)`, and initialise the state from it |
 | `config-not-data` | a setting, `let X = tunable(e)` (or the deprecated `config let X = e`), where `e` needs evaluating (`level.SPAWN`, `2 * W`): hosts read a setting without running the program ([settings.md](syntax/settings.md#what-a-setting-can-hold)), so they see none | none: write the value as data, or make it a plain `let` |
@@ -1465,7 +1465,7 @@ app.ptl:266:3  fn sort_tasks
 
 | Rule | What it notices |
 |---|---|
-| `hand-written-sort` | A loop that inserts each element into place by rebuilding the list, where [`sort(list, compare)` or `sort_by(list, key)`](Builtins.md#sortlist-compare) is one call |
+| `hand-written-sort` | A loop that inserts each element into place by rebuilding the list, where [`sort(list, compare)` or `sort_by(list, key)`](Builtins.md#sort) is one call |
 
 In `--json`, advice is an item with `"kind": "advice"`, a `rule`, a `message`,
 and an `edits` list that is always empty.
@@ -2443,7 +2443,7 @@ Declaring knobs in the source as settings (`let X = tunable(…)`) narrows v1
 proposals without flags: settings are treated as configurable and every other
 binding as static. v2 reads settings, `tunable(x, min, max, step)` and
 `rigid(x)`
-(see [Builtins.md](Builtins.md#direct-manipulation-hints)).
+(see [Builtins.md](Builtins.md#coredm)).
 
 ### Dump format conventions
 

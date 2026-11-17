@@ -29,7 +29,7 @@ The showcase and usage reference is
 [`examples/ui/bloom-gallery`](../../examples/ui/bloom-gallery/); the API
 reference is the `@doc` on each export: `petal doc bloom` (or
 `petal doc --brief bloom`) prints it. [docs/components.md](docs/components.md)
-is the older hand-written page.
+is the API reference generated from those `@doc`s (`npm run reference`).
 
 ## How it sits on `ui`
 

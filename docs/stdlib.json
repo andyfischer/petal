@@ -13707,7 +13707,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 19
+        "line": 32
       },
       "doc": {
         "body": "The pointer's x, in logical pixels.",
@@ -13742,7 +13742,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 21
+        "line": 34
       },
       "doc": {
         "body": "The pointer's y, in logical pixels.",
@@ -13787,7 +13787,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 27
+        "line": 40
       },
       "doc": {
         "body": "Raw: whether the pointer is inside `rect`. It looks at the pointer and the\nrect and nothing else; `interact` and `ui_hot` are the layered tests, which\nknow what is drawn on top, modal dialogs and clipping.",
@@ -13825,7 +13825,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 29
+        "line": 42
       },
       "doc": {
         "body": "Relative pointer motion this frame, in x; also while the pointer is grabbed.",
@@ -13859,7 +13859,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 31
+        "line": 44
       },
       "doc": {
         "body": "Relative pointer motion this frame, in y; also while the pointer is grabbed.",
@@ -13903,7 +13903,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 33
+        "line": 46
       },
       "doc": {
         "body": "Whether mouse `button` is held. Button 0 is the left button.",
@@ -13948,7 +13948,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 37
+        "line": 50
       },
       "doc": {
         "body": "Whether mouse `button` went down this frame. Button 0 is the left button.",
@@ -13994,7 +13994,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 39
+        "line": 52
       },
       "doc": {
         "body": "Whether mouse `button` came up this frame. Button 0 is the left button.",
@@ -14026,7 +14026,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 41
+        "line": 54
       },
       "doc": {
         "body": "Horizontal wheel motion this frame.",
@@ -14058,7 +14058,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 43
+        "line": 56
       },
       "doc": {
         "body": "Vertical wheel motion this frame.",
@@ -14100,7 +14100,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 60
+        "line": 73
       },
       "doc": {
         "body": "Whether `key` is held.\n\nA key is named for the key, not for what it types: `\"a\"`–`\"z\"`,\n`\"0\"`–`\"9\"`, `\"space\"`, `\"return\"`, `\"escape\"`, `\"tab\"`, `\"backspace\"`,\n`\"up\"`/`\"down\"`/`\"left\"`/`\"right\"`, `\"pageup\"`, `\"pagedown\"`, `\"home\"`,\n`\"end\"`, `\"delete\"`, `\"insert\"`, `\"shift\"`, `\"ctrl\"`, `\"alt\"`, `\"cmd\"`,\n`\"f1\"`–`\"f12\"`, `\"minus\"`, `\"equals\"`, `\"comma\"`, `\"period\"`, `\"slash\"`,\n`\"backslash\"`, `\"semicolon\"`, `\"quote\"`, `\"backquote\"`, `\"leftbracket\"`,\n`\"rightbracket\"` (the list is `petal::keys::KEY_NAMES`). Enter is\n`\"return\"`; `+` is `\"equals\"` with `mod_shift()`. Any other name is never\ndown, so `petal lint` warns about one written as a literal and names the\nlikely key (`key_pressed(\"enter\")`: did you mean `\"return\"`?). The keypad\nhas no names of its own: keypad Enter is `\"return\"`, and its digits and\n`-` `.` `/` `=` are the main-row keys.",
@@ -14148,7 +14148,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 66
+        "line": 79
       },
       "doc": {
         "body": "Whether `key` went down this frame (see `key_down` for the key names). For\nan app's commands, `shortcut` is usually better: it stays quiet while a text\nfield has the keyboard.",
@@ -14194,7 +14194,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 68
+        "line": 81
       },
       "doc": {
         "body": "Whether `key` came up this frame (see `key_down` for the key names).",
@@ -14228,7 +14228,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 70
+        "line": 83
       },
       "doc": {
         "body": "Whether a Shift key is held.",
@@ -14260,7 +14260,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 72
+        "line": 85
       },
       "doc": {
         "body": "Whether a Ctrl key is held.",
@@ -14292,7 +14292,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 74
+        "line": 87
       },
       "doc": {
         "body": "Whether an Alt (Option) key is held.",
@@ -14324,7 +14324,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 76
+        "line": 89
       },
       "doc": {
         "body": "Whether a Cmd key is held.",
@@ -14356,7 +14356,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 81
+        "line": 94
       },
       "doc": {
         "body": "Whether the left button is held and the pointer has moved 3 px or more\nsince the press.",
@@ -14391,7 +14391,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 83
+        "line": 96
       },
       "doc": {
         "body": "Where the press of the drag in progress landed, in x.",
@@ -14425,7 +14425,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 85
+        "line": 98
       },
       "doc": {
         "body": "Where the press of the drag in progress landed, in y.",
@@ -14459,7 +14459,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 89
+        "line": 102
       },
       "doc": {
         "body": "1, 2, 3… on the frame of a press: how many presses in a row this one is.",
@@ -14493,7 +14493,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 94
+        "line": 107
       },
       "doc": {
         "body": "The text typed this frame, as the OS composed it. Use it for typing, and\n`key_pressed` for commands.",
@@ -14527,7 +14527,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 102
+        "line": 115
       },
       "doc": {
         "body": "Lock and hide the pointer (a first-person camera). `mouse_dx`/`mouse_dy` still report motion.",
@@ -14561,7 +14561,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 104
+        "line": 117
       },
       "doc": {
         "body": "Give back a pointer that `grab_mouse` took.",
@@ -14595,7 +14595,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 109
+        "line": 122
       },
       "doc": {
         "body": "Seconds since the last frame.",
@@ -14627,7 +14627,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 111
+        "line": 124
       },
       "doc": {
         "body": "Seconds on a monotonic clock.",
@@ -14661,7 +14661,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 113
+        "line": 126
       },
       "doc": {
         "body": "Frames so far. Reading it makes a script run every frame.",
@@ -14693,7 +14693,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 115
+        "line": 128
       },
       "doc": {
         "body": "The drawable's width, in logical pixels.",
@@ -14725,7 +14725,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 117
+        "line": 130
       },
       "doc": {
         "body": "The drawable's height, in logical pixels.",
@@ -14757,7 +14757,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 119
+        "line": 132
       },
       "doc": {
         "body": "The version of the petal-ui interface the host provides (1).",
@@ -14799,7 +14799,7 @@
       "declaration": {
         "module": "ui/input",
         "file": "core-stdlib/ui/src/input.ptl",
-        "line": 100
+        "line": 113
       },
       "doc": {
         "body": "Whether the host switched on its debug overlay `name`. `\"drag\"` is\n`ui/drag`'s debugger (F8 in petal-sdl, Cmd/Ctrl+Shift+G in Garden,\n`--ui-debug drag` in `petal-ui-run`). False on a host without one.",

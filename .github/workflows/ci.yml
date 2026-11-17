@@ -126,10 +126,10 @@ jobs:
           git diff --exit-code docs/stdlib.json \
             || { echo "::error::docs/stdlib.json is stale — run 'npm run stdlib:json' and commit the result"; exit 1; }
 
-      # The generated references (docs/Builtins.md, the ui and bloom
-      # references) against the sources' @doc. A reference still written by
-      # hand is reported and skipped until it is replaced.
-      - name: Check generated API references are current
+      # docs/Builtins.md and the ui and bloom references are generated from
+      # the sources' @doc / @module_doc (tools/gen-reference.ts, through the
+      # petal debug binary built above). Edit the @doc, then `npm run reference`.
+      - name: Check the generated API references are up to date
         run: |
           npm run -s reference:check \
             || { echo "::error::a generated reference is stale — run 'npm run reference' and commit the result"; exit 1; }

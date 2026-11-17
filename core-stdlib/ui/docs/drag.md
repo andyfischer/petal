@@ -11,7 +11,7 @@ It is Petal's version of Dragology (Horowitz, Blinn and Heer, *Declarative
 Dragging*, UIST '26). The design and its phases are in
 [docs/proposals/declarative-dragging.md](../../../docs/proposals/declarative-dragging.md).
 The one-line index of every name is in
-[reference.md](reference.md#declarative-dragging-uidrag).
+[reference.md](reference.md#uidrag).
 
 This page is written for people and for coding agents. If you are an agent
 asked to "make this draggable", read [The rules](#the-rules) first.

@@ -464,7 +464,7 @@ over every slot, plus freeing the garbage; and the more live data there is,
 the more garbage is allowed to pile up before the next one. A big rooted table
 therefore makes every pause longer twice over.
 
-`freeze(v)` ([Builtins.md](../Builtins.md#frozen-data)) moves a value into a
+`freeze(v)` ([Builtins.md](../Builtins.md#freeze)) moves a value into a
 frozen generation, and a collection then does no work for it at all:
 
 - the marker stops at a frozen object;

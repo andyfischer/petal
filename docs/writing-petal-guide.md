@@ -952,7 +952,7 @@ print(pick(0, 6), pick(1, 6), pick(2, 6))   # 1 2 1
 ```
 
 `hash01` is the same hash as a float in `[0, 1)`, and `hash_str(text)` hashes
-an id or a name. See [Builtins.md](Builtins.md#hash_inta-b-c-d--hash01a-b-c-d).
+an id or a name. See [Builtins.md](Builtins.md#hash_int).
 
 ### Before you write a helper
 

@@ -358,6 +358,11 @@ print(limit(9, 0, 5), GRAVITY)
 - `petal doc <package|module|file>` prints a module's or package's `pub`
   items with their signatures and docs (`--brief` for an index, `--json` for
   tools); see [CLI.md](CLI.md) (`doc`).
+- The API references, [Builtins.md](Builtins.md), `ui`'s
+  [reference.md](../core-stdlib/ui/docs/reference.md) and bloom's
+  [components.md](../core-stdlib/bloom/docs/components.md), are generated
+  from these docs by `npm run reference`. To change one, edit the `@doc` or
+  `@module_doc` and regenerate; CI fails when a page is stale.
 - An editor shows the doc when hovering a name and beside each completion
   (`petal lsp`), for the builtins too. A program reads a function's doc with
   [`fn_info(f).doc`](features/function-introspection.md), and a host reads a
@@ -623,7 +628,7 @@ print(p == vec3(1.0, 2.0, 3.0))   # true
 ```
 
 `mag`, `distance`, `normalize`, `dot`, `limit` and `lerp` take either kind;
-`cross` is 3D and `rotate` 2D. See [Builtins.md](Builtins.md#vectors-2d-and-3d).
+`cross` is 3D and `rotate` 2D. See [Builtins.md](Builtins.md#vec2).
 A `vec2` is stored inline, while a `vec3` is a small immutable heap object —
 three f64s do not fit in a value slot — so it costs an allocation to make but
 otherwise behaves as a plain value. The one visible difference: a zero `vec2`
@@ -1043,7 +1048,7 @@ call holds:
   (...) must be a list (arguments by position) or a record (arguments by
   parameter name), got int`).
 
-Together with [`fn_info`](Builtins.md#fn_infof), which reports a function's
+Together with [`fn_info`](Builtins.md#fn_info), which reports a function's
 parameters as data, this makes a table of functions callable from data — a
 command bus, or the tools an agent may call — with each one declared once:
 
@@ -1291,8 +1296,8 @@ A key must be a number or a string, and `petal lint` reports any other key
 ahead of time when it can see what the key function returns. A comparator is
 called about `n log n` times where a key function is called `n` times, so
 prefer `sort_by` when a key will do. See
-[`sort_by`](Builtins.md#sort_bylist-key-descending) and
-[`sort`](Builtins.md#sortlist-compare) in the Builtins Reference.
+[`sort_by`](Builtins.md#sort_by) and
+[`sort`](Builtins.md#sort) in the Builtins Reference.
 
 ## Records
 
@@ -2245,7 +2250,7 @@ this program``. In an imported module the declaration is that module's own
 type and only hides the built-in there, which warns too (``hides the built-in
 `Rect` in this module``). Its fields are
 `x`, `y`, `w`, `h`, and it carries the geometry that layout code otherwise
-rewrites by hand. See [Builtins.md](Builtins.md#built-in-classes) for the
+rewrites by hand. See [Builtins.md](Builtins.md#coreclasses) for the
 methods.
 
 ```petal

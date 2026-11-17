@@ -10,7 +10,7 @@ which is how a script shows a spinner or an error.
 
 This page is the script's side. The design record, with the prior art and
 what was rejected, is [dev/pending-values-plan.md](../dev/pending-values-plan.md);
-the signatures are in [Builtins](../Builtins.md#pending-values).
+the signatures are in [Builtins](../Builtins.md#corepending).
 
 ## Where pending values come from
 

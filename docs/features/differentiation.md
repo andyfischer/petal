@@ -25,7 +25,7 @@ a measured derivative comes with a verdict on how far to trust it
 This is the same machinery [direct manipulation](direct-manipulation.md)
 uses to turn a drag into a source edit: the same rules classify each
 measurement, and the same Gauss-Newton step moves the inputs. The signatures
-are in [Builtins.md](../Builtins.md#automatic-differentiation).
+are in [Builtins.md](../Builtins.md#autodiff).
 
 - [The functions](#the-functions)
 - [`deriv`](#deriv)
@@ -314,7 +314,7 @@ The answer is now a close approximation, not the exact derivative; check
 
 ## See also
 
-- [Builtins.md, Automatic Differentiation](../Builtins.md#automatic-differentiation):
+- [Builtins.md, Automatic Differentiation](../Builtins.md#autodiff):
   the signatures.
 - [`speculate`](speculate.md): what a probe puts back.
 - [Direct manipulation](direct-manipulation.md): the same solver, editing

@@ -12,6 +12,15 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **The API references are generated from the `@doc`s.** `docs/Builtins.md`,
+  `core-stdlib/ui/docs/reference.md` and `core-stdlib/bloom/docs/components.md`
+  are now written by `npm run reference` (`tools/gen-reference.ts`) from
+  `petal doc --json`, with sections in a reading order and `ui`'s grouped by
+  topic (`@module_doc(extra: {groups: …})`). Edit the `@doc` or `@module_doc`
+  in the source, not the page, then regenerate; CI fails when a page is stale
+  (`npm run reference:check`). Many anchors changed (a section is now named
+  after its module, an item after itself: `Builtins.md#coredm`, `#sort_by`);
+  the links in this repo are updated.
 - **`petal-ui` moved into `core-stdlib/ui`**, the first native package
   there: the `ui` package's modules are in `core-stdlib/ui/src` (was
   `core-libs/petal-ui/prelude`), its manifest is `core-stdlib/ui/petal.toml`,
@@ -1714,7 +1723,7 @@ way, for code written against an earlier checkout.
   to 0.24 ms, and a collection with nothing to free from 2.1 ms to 0.009 ms:
   the sweep skips frozen slots through a bit index instead of reading them. Freezing is one-way (a frozen value is never freed), a value holding
   a function or a `var` cell is refused, and an update of a frozen value
-  copies. See [docs/Builtins.md](docs/Builtins.md#frozen-data).
+  copies. See [docs/Builtins.md](docs/Builtins.md#freeze).
 - Static values: a top-level value that depends on no dynamic data (a
   literal table, a table built from one by constant builtins or by
   functions that read no `state`, input or clock) is built on the first run
@@ -1902,7 +1911,7 @@ way, for code written against an earlier checkout.
   target within a range, and `rigid` keeps a literal from moving and stops
   feedback through the call. Lints `dm-hint-not-literal`, `dm-hint-bounds`
   and `dm-hint-state-init` report misuse
-  ([Builtins.md](docs/Builtins.md#direct-manipulation-hints)).
+  ([Builtins.md](docs/Builtins.md#coredm)).
 - `expect(condition, message?)`, `expect_eq(actual, expected, message?)` and
   `expect_near(actual, expected, tolerance, message?)` check something and,
   when it does not hold, record the failure (file, line, column, both values)

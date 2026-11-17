@@ -3,7 +3,7 @@
 A **setting** is a top-level binding that tools and hosts are meant to edit:
 a speed, a size, a colour, a table of options. It is a `let` whose whole
 initializer is a call of the builtin
-[`tunable`](../Builtins.md#direct-manipulation-hints):
+[`tunable`](../Builtins.md#coredm):
 
 ```petal
 let SPEED = tunable(4.0)
@@ -167,7 +167,7 @@ of them, and a host can offer them as a dropdown.
 
 The bounds are numbers written as literals (`dm-hint-bounds` reports one that
 is not, a `min` above the `max`, and bounds on a value that is not a number).
-The rules are in [Builtins, `tunable`](../Builtins.md#direct-manipulation-hints).
+The rules are in [Builtins, `tunable`](../Builtins.md#coredm).
 
 Keep a setting to one declaration and do not assign it again. A top-level
 `margin = 50` after the declaration is legal, but the value a host reads is

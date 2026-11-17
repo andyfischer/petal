@@ -5,18 +5,9 @@
 //! read as internal. See docs/dev/pending-values-plan.md (roadmap step 1) — real
 //! fetchers arrive with `petal-query`.
 
-use std::hash::{Hash, Hasher};
-
 use crate::native_fn::PetalCxt;
-use crate::resource_table::ResourceState;
+use crate::resource_table::{hash_key, ResourceState};
 use crate::value::Value;
-
-/// Hash a string cache key to the `u64` the resource table is keyed by.
-fn hash_key(key: &str) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    key.hash(&mut hasher);
-    hasher.finish()
-}
 
 /// `__pending(key)` — fetch a resource by string key. If its entry is already
 /// `Ready`, return the real value (models a resource that landed between
@@ -36,14 +27,9 @@ pub(super) fn native_pending(state: &mut PetalCxt) -> Result<u32, String> {
         state.push_value(v);
         return Ok(1);
     }
-    // Stamp the resource with the requesting call site and current frame so the
+    // Stamped with the requesting call site and current frame so the
     // observability tooling can render its provenance and age.
-    let origin = state.origin();
-    let frame = state.frame();
-    let id = state
-        .resources_mut()
-        .get_or_create_loading(key, origin, frame);
-    state.push_value(Value::Pending(id));
+    state.push_loading(key);
     Ok(1)
 }
 

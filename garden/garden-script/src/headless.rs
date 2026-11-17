@@ -231,13 +231,7 @@ fn native_query(cxt: &mut PetalCxt) -> NativeResult {
     kind.hash(&mut hasher);
     0u8.hash(&mut hasher);
     arg_json.hash(&mut hasher);
-    let key = hasher.finish();
-    let origin = cxt.origin();
-    let frame = cxt.frame();
-    let id = cxt
-        .resources_mut()
-        .get_or_create_loading(key, origin, frame);
-    cxt.push_value(Value::Pending(id));
+    cxt.push_loading(hasher.finish());
     Ok(1)
 }
 

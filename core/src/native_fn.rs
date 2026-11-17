@@ -1754,6 +1754,36 @@ impl<'a> PetalCxt<'a> {
         self.frame
     }
 
+    /// Return a loading pending value for the resource `key`: find or create
+    /// its entry (stamped with this call's [`origin`](Self::origin) and
+    /// [`frame`](Self::frame)) and push `Value::Pending(id)`. The same key
+    /// yields the same id every time, so a native may call this on every run
+    /// while the host's fetch is in flight. Returns the id. For a string (or
+    /// any hashable) key, [`crate::resource_table::hash_key`] makes the `u64`.
+    pub fn push_loading(&mut self, key: u64) -> crate::value::PendingId {
+        let (origin, frame) = (self.origin, self.frame);
+        let id = self.resources_mut().get_or_create_loading(key, origin, frame);
+        self.results.push(Value::Pending(id));
+        id
+    }
+
+    /// Return an errored pending value for the resource `key`: as
+    /// [`push_loading`](Self::push_loading), and mark the entry errored with
+    /// `message` as a string (what the script's `error_of` returns). Returns
+    /// the id.
+    pub fn push_failed(
+        &mut self,
+        key: u64,
+        message: impl Into<String>,
+    ) -> crate::value::PendingId {
+        let (origin, frame) = (self.origin, self.frame);
+        let id = self.resources_mut().get_or_create_loading(key, origin, frame);
+        let err = Value::String(self.heap.alloc_string(message.into()));
+        self.resources_mut().reject(key, err, frame);
+        self.results.push(Value::Pending(id));
+        id
+    }
+
     /// Where this call is written: the file, line and column of the call
     /// expression. `None` when the call has no source position (a program
     /// loaded from IR, a call the host made itself).

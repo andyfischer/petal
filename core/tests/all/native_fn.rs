@@ -379,3 +379,43 @@ fn a_const_native_runs_like_any_other() {
         assert!(result.is_ok(), "{row:?}: {:?}", result.err());
     }
 }
+
+// --- Pending values from a native: `push_loading` / `push_failed` ---
+
+fn petal_fetch_loading(state: &mut PetalCxt) -> NativeResult {
+    let url = state.get_string(1)?;
+    state.push_loading(petal::resource_table::hash_key(&url));
+    Ok(1)
+}
+
+fn petal_fetch_failed(state: &mut PetalCxt) -> NativeResult {
+    let url = state.get_string(1)?;
+    state.push_failed(petal::resource_table::hash_key(&url), format!("404 {url}"));
+    Ok(1)
+}
+
+/// `push_loading` returns a loading pending value (deduped by key, so two
+/// calls with the same key share one resource) and `push_failed` an errored
+/// one whose `error_of` is the message.
+#[test]
+fn native_push_loading_and_failed() {
+    let mut env = Env::new();
+    env.register_native("fetch_loading", petal_fetch_loading, NativeEffects::EFFECT);
+    env.register_native("fetch_failed", petal_fetch_failed, NativeEffects::EFFECT);
+    let v = env
+        .run_source(
+            "native fn fetch_loading(url)\n\
+             native fn fetch_failed(url)\n\
+             let a = fetch_loading(\"/a\")\n\
+             let a2 = fetch_loading(\"/a\")\n\
+             let b = fetch_failed(\"/b\")\n\
+             [is_loading(a), is_error(a), resource_key(a) == resource_key(a2), \
+              is_loading(b), is_error(b), error_of(b)]\n",
+        )
+        .unwrap();
+    let json = petal::value::value_to_json(&v, env.heap());
+    assert_eq!(
+        json,
+        serde_json::json!([true, false, true, false, true, "404 /b"])
+    );
+}

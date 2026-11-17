@@ -8,9 +8,19 @@
 //! the rest of that context. See docs/dev/pending-values-plan.md.
 
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use crate::program::TermId;
 use crate::value::{PendingId, Value};
+
+/// Hash a cache key (a URL string, a `(kind, arg)` tuple, …) to the `u64` the
+/// table is keyed by. Stable within one process, which is all the table needs:
+/// keys are never persisted.
+pub fn hash_key<K: Hash + ?Sized>(key: &K) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hasher);
+    hasher.finish()
+}
 
 /// The resolution state of one resource. Modelled on React Query / Elm
 /// `RemoteData`: a resource starts `Loading`, then lands as `Ready` or `Errored`.

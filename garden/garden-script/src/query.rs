@@ -160,24 +160,10 @@ fn native_query(cxt: &mut PetalCxt) -> Result<u32, String> {
         QueryState::Loading => {
             // Stamp the resource with the requesting call site + current frame so
             // the pending-observability tooling can render provenance and age.
-            let key = resource_key(&kind, &arg);
-            let origin = cxt.origin();
-            let frame = cxt.frame();
-            let id = cxt
-                .resources_mut()
-                .get_or_create_loading(key, origin, frame);
-            cxt.push_value(Value::Pending(id));
+            cxt.push_loading(resource_key(&kind, &arg));
         }
         QueryState::Errored(msg) => {
-            let key = resource_key(&kind, &arg);
-            let origin = cxt.origin();
-            let frame = cxt.frame();
-            let id = cxt
-                .resources_mut()
-                .get_or_create_loading(key, origin, frame);
-            let err = Value::String(cxt.heap_mut().alloc_string(msg));
-            cxt.resources_mut().reject(key, err, frame);
-            cxt.push_value(Value::Pending(id));
+            cxt.push_failed(resource_key(&kind, &arg), msg);
         }
     }
     Ok(1)

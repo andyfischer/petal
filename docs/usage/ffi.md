@@ -430,6 +430,32 @@ nothing, and `AllowPending` runs normally. Emitters should be `Effectful`
 (`NativeEffects::EMITS` is). `env.set_native_class(id, ..)` changes it after
 registration.
 
+**Returning a pending value.** A native whose answer is not ready yet (a fetch
+in flight, a request that failed) returns a pending value rather than blocking:
+
+```rust
+use petal::resource_table::hash_key;
+
+fn fetch(cx: &mut PetalCxt) -> NativeResult {
+    let url = cx.get_string(1)?;
+    match my_cache_lookup(&url) {
+        Some(Ok(body)) => cx.push_string(body),
+        Some(Err(msg)) => { cx.push_failed(hash_key(&url), msg); }
+        None => { cx.push_loading(hash_key(&url)); }
+    }
+    Ok(1)
+}
+```
+
+`cx.push_loading(key)` pushes a loading `Value::Pending` for the resource
+`key` (a `u64`; `hash_key` hashes a string or any `Hash` value to one), stamped
+with the call site and current frame for the pending tooling.
+`cx.push_failed(key, message)` does the same and marks the resource errored
+with `message`, which the script reads with `error_of`. The same key always
+yields the same resource, so the native can return it on every run until the
+answer lands. Both count as an effect, like `resources_mut()`, which remains
+the route for anything else (`resolve`, `pending_for_key`).
+
 The compiled-in builtins (`core/src/builtins/`) go through the same table.
 `map`/`filter`/`reduce`/`forEach` register placeholders and are dispatched
 specially by the VM because they call back into closures; ordinary natives

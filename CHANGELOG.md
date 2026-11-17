@@ -651,6 +651,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   `..Default::default()` or `setup: None`. Tests that wait for frames
   (`PetalCxt::suspend`) still need the host's own loop.
 
+- **Hosts: `cx.push_loading(key)` and `cx.push_failed(key, message)`** on
+  `PetalCxt` return a loading or errored pending value from a native in one
+  call, stamped with the call site and frame, instead of the
+  `origin`/`frame`/`get_or_create_loading`/`reject`/`push_value` sequence.
+  `petal::resource_table::hash_key` turns a string (or any `Hash` value) into
+  the `u64` key. See [docs/usage/ffi.md](docs/usage/ffi.md).
 - **Programs as documents: a tidy write-out.** `concretize_with(runner,
   run, node, &ConcretizeOptions { tidy: true })` (and
   `ResolveOptions::concretize_tidy` for step 5) writes the output as a

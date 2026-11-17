@@ -32,13 +32,15 @@ syn keyword petalBoolean     true false
 syn keyword petalConstant    nil
 
 " ---- Function declarations ----
-syn match petalFunction "\<fn\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
+" Lookbehinds, because a match starting at `fn` would lose to the keyword and
+" never highlight the name.
+syn match petalFunction "\%(\<fn\s\+\)\@<=[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
 " `enum Name` and `class Name` name a type; `fn Rect.method(...)` names the
 " class it extends.
-syn match petalType     "\<enum\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
-syn match petalType     "\<class\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
-syn match petalType     "\<fn\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*\ze\." contains=NONE
-syn match petalFunction "\<fn\>\s\+[a-zA-Z_][a-zA-Z0-9_?]*\.\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
+syn match petalType     "\%(\<enum\s\+\)\@<=[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
+syn match petalType     "\%(\<class\s\+\)\@<=[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
+syn match petalType     "\%(\<fn\s\+\)\@<=[a-zA-Z_][a-zA-Z0-9_?]*\ze\." contains=NONE
+syn match petalFunction "\%(\<fn\s\+[a-zA-Z_][a-zA-Z0-9_?]*\.\)\@<=[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
 
 " ---- Type annotations ----
 " `: type` on a let/var/state binding or a parameter, `-> type` on a named fn.
@@ -47,8 +49,9 @@ syn match petalFunction "\<fn\>\s\+[a-zA-Z_][a-zA-Z0-9_?]*\.\zs[a-zA-Z_][a-zA-Z0
 " A named call argument (`f(kind: list)`) reads like an annotation here and can
 " still light up its value if that value happens to be a type name — the same
 " harmless overlap a record key has, and not separable with a `syn match`.
+" A trailing `?` (`int?`) is a nullable type and is part of the name.
 " `nil` and `enum` stay Constant/Keyword — syn keyword outranks syn match.
-syn match petalType "\%(:\|->\)\s*\zs\%(any\|nil\|bool\|int\|float\|num\|string\|str\|list\|record\|map\|function\|enum\|vec2\|vec3\|f64_array\|element\|symbol\|handle\|pending\)\>\ze\s*(\@!"
+syn match petalType "\%(:\|->\)\s*\zs\%(any\|nil\|bool\|int\|float\|num\|string\|str\|list\|record\|map\|function\|enum\|vec2\|vec3\|f64_array\|element\|symbol\|handle\|pending\)?\=\>\ze\s*(\@!"
 
 " ---- Numbers ----
 syn match petalFloat  "\<\d\+\.\d\+\>"

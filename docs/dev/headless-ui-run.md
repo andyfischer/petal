@@ -7,7 +7,7 @@ frames, feeds it a scripted input scenario, and writes one JSON line per frame.
 
 It comes in two builds of one CLI (`petal_ui_headless::run_cli`):
 
-- `petal-ui-run` (crate `core-libs/petal-ui-headless`) registers petal-ui's
+- `petal-ui-run` (crate `core-sdk/petal-ui-headless`) registers petal-ui's
   natives and nothing else. A script that does `import garden` does not load
   under it.
 - `garden-panel-run` (crate `garden/garden-panel-run`) adds Garden's panel
@@ -35,8 +35,8 @@ petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
 
 `garden-panel-run` takes the same flags plus `[--query-fixtures q.json]`.
 
-Build `petal-ui-run` with `cd core-libs/petal-ui-headless && cargo build`
-(it lands at `core-libs/petal-ui-headless/target/debug/petal-ui-run`), and
+Build `petal-ui-run` with `cd core-sdk/petal-ui-headless && cargo build`
+(it lands at `core-sdk/petal-ui-headless/target/debug/petal-ui-run`), and
 `garden-panel-run` with `cd garden && cargo build -p garden-panel-run`
 (`garden/target/debug/garden-panel-run`).
 
@@ -231,7 +231,7 @@ same events on every platform, and a failing run is replayable from
 `(app, --seed, monkey seed)` alone.
 
 The generator is `Scenario::monkey(seed, frames, size)` in
-`core-libs/petal-ui-headless/src/scenario.rs`; `Scenario::to_json` writes a generated scenario back
+`core-sdk/petal-ui-headless/src/scenario.rs`; `Scenario::to_json` writes a generated scenario back
 out in the format above, for a repro bundle.
 
 ## Determinism

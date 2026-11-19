@@ -52,7 +52,7 @@ know.
    (`server-monitoring/app.ptl:84-86`, `spacing: 1.4`) and `tx_right`
    (`:75-77`).
 
-Corpus counts (2026-10-23, `.ptl` under examples, garden, core-libs, the
+Corpus counts (2026-10-23, `.ptl` under examples, garden, core-sdk, the
 prelude, `~/worlds-fair/ui/ptl`, `~/petal-creative` and `~/cheesecake/games`):
 
 - `config let` appears in 177 files. Authors already mark knobs when they can.
@@ -114,9 +114,9 @@ inside functions or calls, and `rigid` to forbid.**
 
 ### Names
 
-Checked across the ecosystem (sample-apps, garden, examples, core-libs, the
+Checked across the ecosystem (sample-apps, garden, examples, core-sdk, the
 prelude, `~/worlds-fair/ui/ptl`, `~/petal-creative`, `~/cheesecake/games`;
-Rust native registrations in core, core-libs, garden and integrations):
+Rust native registrations in core, core-sdk, garden and integrations):
 
 | Name | `.ptl` files defining or calling it | Rust registrations | Verdict |
 |---|---|---|---|

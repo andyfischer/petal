@@ -120,7 +120,7 @@ let commands = petal_ui::draw::take_draw_commands(&mut env);
 This crate is only the host contract. Running a script with no renderer
 attached — the `Headless` driver, input scenarios, drag tracing and the
 `petal-ui-run` / `petal-ui-propose-edit` CLIs — is
-[`petal-ui-headless`](../../core-libs/petal-ui-headless) (`core-libs/petal-ui-headless`),
+[`petal-ui-headless`](../../core-sdk/petal-ui-headless) (`core-sdk/petal-ui-headless`),
 which depends on this crate. A host links none of it.
 
 To make the widgets paint in the host's own colors, publish a palette once at
@@ -164,7 +164,7 @@ the host side in [docs/host-contract.md](docs/host-contract.md).
 ## Running scripts headlessly
 
 ```
-cd core-libs/petal-ui-headless
+cd core-sdk/petal-ui-headless
 cargo run --bin petal-ui-run -- app.ptl --frames 60 --scenario monkey:1 --seed 1
 ```
 

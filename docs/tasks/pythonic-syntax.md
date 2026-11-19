@@ -179,7 +179,7 @@ includes its vendored copy of Petal.
 | worlds-fair/ui/ptl | 20 | 4,217 | 366 | 0 | 169 | 1,156 | 24 | 27 |
 
 **Indentation is already almost uniformly structural.** `petal fmt --check`
-over `examples core-libs core-stdlib garden test` reports 31 of 402 files
+over `examples core-sdk core-stdlib garden test` reports 31 of 402 files
 needing formatting, and some of those differences are spacing rather than
 indentation. fmt derives indentation from block structure (`fmt/reindent.rs`,
 `INDENT = 2`). So about 92% of the repo's files already have exactly the

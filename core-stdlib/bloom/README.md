@@ -134,7 +134,7 @@ that draws every component
 Headlessly, without Garden:
 
 ```bash
-cd core-libs/petal-ui-headless && cargo run --bin petal-ui-run -- \
+cd core-sdk/petal-ui-headless && cargo run --bin petal-ui-run -- \
     ../../examples/ui/bloom-gallery/app.ptl --frames 120 --scenario monkey:7
 ```
 

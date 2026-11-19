@@ -27,11 +27,11 @@ license = "MIT"
 garden-core = { path = "garden-core" }
 garden-render = { path = "garden-render" }
 garden-script = { path = "garden-script" }
-gpp = { path = "../core-libs/gpp" }
+gpp = { path = "../core-sdk/gpp" }
 petal = { path = "../core", default-features = false }
 petal-ui = { path = "../core-stdlib/ui/native" }
-petal-ui-headless = { path = "../core-libs/petal-ui-headless" }
-petal-query = { path = "../core-libs/petal-query" }
+petal-ui-headless = { path = "../core-sdk/petal-ui-headless" }
+petal-query = { path = "../core-sdk/petal-query" }
 
 # A Petal panel re-runs its whole script every frame, so the interpreter is on
 # the frame budget in a way an ordinary dependency is not: an unoptimized

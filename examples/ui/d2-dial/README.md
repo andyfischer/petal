@@ -8,7 +8,7 @@ centre goes under the pointer, measuring how the knob moves with the angle by
 rendering the view once more with the angle nudged (a forward difference).
 
 ```
-cd core-libs/petal-ui-headless
+cd core-sdk/petal-ui-headless
 cargo run --bin petal-ui-run -- ../../examples/ui/d2-dial/app.ptl \
   --scenario ../../examples/ui/d2-dial/scenarios/drag.json
 ```

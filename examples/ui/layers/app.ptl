@@ -23,7 +23,7 @@
 #
 # Run it headlessly, and list what a test could click by name:
 #
-#   cd core-libs/petal-ui-headless && cargo run --bin petal-ui-run -- \
+#   cd core-sdk/petal-ui-headless && cargo run --bin petal-ui-run -- \
 #       ../../examples/ui/layers/app.ptl --frames 3 --targets
 
 import ui

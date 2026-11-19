@@ -39,7 +39,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REPOS: [string, string][] = [
   ['core', 'core/src'],
   ['petal-ui', 'core-stdlib/ui/native/src'],
-  ['petal-query', 'core-libs/petal-query/src'],
+  ['petal-query', 'core-sdk/petal-query/src'],
   ['garden', 'garden'],
   ['integrations', 'integrations'],
 ];

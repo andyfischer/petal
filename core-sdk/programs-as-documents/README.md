@@ -139,7 +139,7 @@ The crate builds into petal core's target directory (`.cargo/config.toml`),
 so it shares the petal build with core.
 
 ```bash
-cd core-libs/programs-as-documents
+cd core-sdk/programs-as-documents
 cargo test
 ```
 

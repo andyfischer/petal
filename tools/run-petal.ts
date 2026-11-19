@@ -4,7 +4,7 @@
 // calling cli/target/debug/petal directly — it keeps the binary in sync
 // with source while avoiding a full `cargo build` on every call. The binary
 // is the `cli/` crate, built from `core/` (the language) and
-// `core-libs/petal-pkgman` (the package manager); a change to any of them
+// `core-sdk/petal-pkgman` (the package manager); a change to any of them
 // rebuilds it.
 
 import { spawnSync } from 'node:child_process';
@@ -19,7 +19,7 @@ const srcDirs = [
     join(rustDir, 'src'),
     join(repoRoot, 'core', 'src'),
     join(repoRoot, 'core', 'Cargo.toml'),
-    join(repoRoot, 'core-libs', 'petal-pkgman', 'src'),
+    join(repoRoot, 'core-sdk', 'petal-pkgman', 'src'),
 ];
 const cargoToml = join(rustDir, 'Cargo.toml');
 const cargoLock = join(rustDir, 'Cargo.lock');

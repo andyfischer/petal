@@ -18,7 +18,7 @@ serde_json = "1"
 # integration tests and examples: they link the same `petal-ui` library the
 # headless crate does. (Unit tests under `src/` cannot use it — they build a
 # second copy of this crate — so nothing there does.)
-petal-ui-headless = { path = "../../../core-libs/petal-ui-headless" }
+petal-ui-headless = { path = "../../../core-sdk/petal-ui-headless" }
 # The tests import bloom and text_layout, which `petal` bundles only with
 # these features; a dev-dependency does not reach crates that use petal-ui.
 petal = { path = "../../../core", default-features = false, features = ["libraries"] }

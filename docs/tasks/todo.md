@@ -205,7 +205,7 @@ serving brotli gets the transfer under 1 MB.
   - the `petal-sdl` crate and binary rename waits on downstream references.
 - **Headless UI from the CLI:** `petal run` refuses `ui` scripts. Today the
   answer is `petal-sdl --headless --frames N`, or `petal-ui-run` from
-  core-libs. A one-command way to report draw counts and frame times is still
+  core-sdk. A one-command way to report draw counts and frame times is still
   missing.
 - **Measurement and text:**
   - kerned measurement needs a `FontSource` hook for a whole run's width.

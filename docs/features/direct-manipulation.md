@@ -461,7 +461,7 @@ the program has run a while (a score in `state`, an enemy that spawns on frame
 same command with its natives registered:
 
 ```
-$ cd core-libs/petal-ui-headless
+$ cd core-sdk/petal-ui-headless
 $ cargo run --bin petal-ui-propose-edit -- hud.ptl --trace-emits
 $ cargo run --bin petal-ui-propose-edit -- hud.ptl \
     --channel draw_commands --emit 2 --native-arg 2 --to 42 --deny bar_h

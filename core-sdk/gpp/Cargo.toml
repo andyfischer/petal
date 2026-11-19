@@ -8,7 +8,7 @@ repository = "https://github.com/andyfischer/petal"
 
 # The single wire definition of the Garden Pane Protocol. Deliberately
 # dependency-slim (serde only) so both the garden host and any client library
-# (petal-query) can link it without a cycle. It lives in core-libs, not
+# (petal-query) can link it without a cycle. It lives in core-sdk, not
 # garden/, so core libraries never depend on an app crate.
 [dependencies]
 serde = { version = "1", features = ["derive"] }

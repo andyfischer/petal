@@ -51,7 +51,7 @@ it (macOS has no `timeout`):
 
 ```bash
 cargo test --manifest-path core/Cargo.toml
-cargo test --manifest-path core-libs/petal-pkgman/Cargo.toml
+cargo test --manifest-path core-sdk/petal-pkgman/Cargo.toml
 cargo test --manifest-path cli/Cargo.toml
 perl -e 'alarm shift; exec @ARGV' 1800 npx vitest run
 npm run scan-secrets          # the history becomes more visible after a release

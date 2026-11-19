@@ -99,7 +99,7 @@ const PETAL_CORPUS: &[&str] = &[
     "core/packages",
     "test",
     "integrations",
-    "core-libs",
+    "core-sdk",
 ];
 
 /// Phase 3's guard: nothing in the Petal corpus declares `const X = e` or

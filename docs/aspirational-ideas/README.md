@@ -15,7 +15,7 @@ CLI and dev docs), move any runnable example into
   resolving edits by outcome against programs of many shapes, a schema for
   editable documents, and saved state in a JSON file beside the script.
   Part 1 and the write path are built: the
-  [`programs-as-documents`](../../core-libs/programs-as-documents/) crate,
+  [`programs-as-documents`](../../core-sdk/programs-as-documents/) crate,
   documented in [features/programs-as-documents.md](../features/programs-as-documents.md),
   and used by petal-images. The schema (part 2) and saved state are not.
 

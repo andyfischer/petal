@@ -24,7 +24,7 @@ widget in depth. The widgets are written in Petal, in `src/widgets.ptl`
 The worked example showing all of it is `garden/examples/panels/gallery.ptl`:
 
 ```
-cd core-libs/petal-ui-headless && cargo run --bin petal-ui-run -- \
+cd core-sdk/petal-ui-headless && cargo run --bin petal-ui-run -- \
     ../../garden/examples/panels/gallery.ptl --frames 60
 ```
 

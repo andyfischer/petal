@@ -256,8 +256,8 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 |-----------|-------------|
 | [`core/`](core/) | The core language implementation: lexer, parser, compiler, IR, bytecode VM |
 | [`cli/`](cli/) | The `petal` command-line tool |
-| [`core-libs/`](core-libs/) | Standard native libraries for a few tasks including UI, asynchronous data, and package management |
-| [`core-stdlib/`](core-stdlib/README.md) | Standard libraries written in Petal |
+| [`core-stdlib/`](core-stdlib/README.md) | Standard Petal packages that scripts `import`: the `ui` interface, the `bloom` widgets, text layout, regex. A native package keeps its Rust crate in `native/` |
+| [`core-sdk/`](core-sdk/README.md) | Rust crates for building programs around Petal: the pane protocol and its async data client, the headless UI runner, programs-as-documents, and the package manager. Scripts can't import them; hosts and tools link them |
 | [`integrations/`](integrations/) | A few native hosts for using Petal in real programs, including: SDL desktop, web HTML, web canvas, and the C bridge |
 | [`garden/`](garden/README.md) | Text editor and IDE built with and for Petal |
 | [`examples/`](examples/README.md) | Collection of runnable examples |

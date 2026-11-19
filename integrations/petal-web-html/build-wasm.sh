@@ -19,7 +19,7 @@ cp -r pkg ../pkg
 # it can tell which one it has.
 {
   echo "commit=$(git rev-parse HEAD)"
-  if [ -n "$(git status --porcelain -- "$REPO_ROOT/core" "$REPO_ROOT/core-libs" "$REPO_ROOT/integrations")" ]; then
+  if [ -n "$(git status --porcelain -- "$REPO_ROOT/core" "$REPO_ROOT/core-sdk" "$REPO_ROOT/integrations")" ]; then
     echo "dirty=true"
   else
     echo "dirty=false"

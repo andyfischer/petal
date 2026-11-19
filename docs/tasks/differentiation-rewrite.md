@@ -151,7 +151,7 @@ handle one more value kind.
   - Garden drag mode (`garden/garden-script/src/panel/dm.rs`).
   - `petal propose-edit`, and MCP `ProposeEdit` / `TraceEmits`.
   - `pb_vm_propose_edit` in the C bridge (`integrations/petal-c-bridge/src/vm.rs:1094-1119`).
-  - `petal-ui-propose-edit` in `core-libs/petal-ui-headless`.
+  - `petal-ui-propose-edit` in `core-sdk/petal-ui-headless`.
 - **`drag_solve_step`** (`core/src/builtins/drag_math.rs:249-262`): one
   Gauss-Newton step exposed to Petal. `ui/drag`'s `vary` uses it. A native
   cannot call a Petal closure (`drag_math.rs:2-4`), so the re-runs happen in

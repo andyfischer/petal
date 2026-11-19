@@ -1,5 +1,5 @@
 // The package manager: git dependencies, petal.lock, vendor/, bundles
-// (core-libs/petal-pkgman, core/src/cli/pm.rs, cli/src/pm.rs, docs/module-system.md#the-package-manager).
+// (core-sdk/petal-pkgman, core/src/cli/pm.rs, cli/src/pm.rs, docs/module-system.md#the-package-manager).
 //
 // Nothing here touches the network: every "remote" is a git repository built
 // in a temp directory and named by path or file:// url, and every command

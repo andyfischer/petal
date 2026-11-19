@@ -1,5 +1,5 @@
 //! End-to-end tests for `garden-panel-run`: the generic `petal-ui-run` CLI
-//! (tested in `core-libs/petal-ui-headless/tests/run_cli.rs`) with Garden's
+//! (tested in `core-sdk/petal-ui-headless/tests/run_cli.rs`) with Garden's
 //! panel stubs, so the examples, most of which `import garden` through their
 //! `layout.ptl`, run headlessly.
 //!

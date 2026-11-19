@@ -2,7 +2,7 @@
 
 Status: 2026-11-10. The reorganization this tracked is done: `ui.ptl` is
 split into modules behind an unchanged facade (R1), the headless tooling is
-`core-libs/petal-ui-headless` and Garden's panel stubs are
+`core-sdk/petal-ui-headless` and Garden's panel stubs are
 `garden_script::headless` (R2), and the core-feature tests are
 `test/ui-corpus/` (R3). See `docs/skills/project-organization.md` for where
 things live now and `docs/dev/performance.md` ("Text wrap: native vs Petal")

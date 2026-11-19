@@ -6,7 +6,7 @@
 //! **git** dependency of a package on disk does: its location comes from
 //! `petal.lock` and the package cache, and with install-on-demand it may have
 //! to be fetched first. That lives in the `petal-pkgman` crate
-//! (`core-libs/petal-pkgman`), which the `petal` CLI links and registers with
+//! (`core-sdk/petal-pkgman`), which the `petal` CLI links and registers with
 //! [`register`]. Embedders — the browser runtimes, the SDL and C hosts — do
 //! not link it; for them a git dependency is an error that says to bundle or
 //! vendor the package instead.

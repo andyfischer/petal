@@ -24,12 +24,12 @@ This proposes:
    and (in debug builds) verifies that every `native fn` is bound.
 3. **A uniform directory layout** for `core-stdlib/<pkg>/`: `petal.toml`,
    Petal modules in `src/`, and an optional `native/` Rust crate.
-4. **Moving `core-libs/petal-ui` to `core-stdlib/ui`** (crate in
+4. **Moving `core-sdk/petal-ui` to `core-stdlib/ui`** (crate in
    `core-stdlib/ui/native`), with the bundled kind `ui` generalised to
    `native`.
 
 **Recommendation: adopt, but move only `petal-ui`.** The other five
-`core-libs` crates (`gpp`, `petal-query`, `petal-pkgman`,
+`core-sdk` crates (`gpp`, `petal-query`, `petal-pkgman`,
 `petal-ui-headless`, `programs-as-documents`) expose nothing to Petal scripts:
 no `petal.toml`, no `.ptl`, no package natives. They are Rust infrastructure,
 and filing them under a standard library of importable packages would
@@ -45,7 +45,7 @@ registers the natives:
 | Package | Declarations | Natives registered by |
 |---|---|---|
 | `core`, `noise`, `color`, `vec2`, `json`, `io` | `core/packages/*` | the `petal` crate itself, in every `Env` |
-| `ui` | `core-libs/petal-ui/prelude` | `petal-ui` (the only first-party host-linked one) |
+| `ui` | `core-sdk/petal-ui/prelude` | `petal-ui` (the only first-party host-linked one) |
 | `sdl` | `integrations/petal-desktop-sdl/packages/sdl` | petal-sdl |
 | `web` | `integrations/petal-web-html/packages/web` | petal-web-html |
 | `garden`, `garden_config` | `garden/garden-script/packages/*` | garden-script |
@@ -75,11 +75,11 @@ The same sequence (`register_prelude` + `provide_interface`, or
 `integrations/petal-web-canvas/rust/src/lib.rs:158`,
 `garden/garden-script/src/panel.rs:2991`,
 `examples/custom-apps/petal-fps/src/host.rs:64` (which forgets
-`provides_package`) and `core-libs/petal-ui/src/lib.rs:206-246`.
+`provides_package`) and `core-sdk/petal-ui/src/lib.rs:206-246`.
 petal-creative wrote its own helper for it
 (`creative-core/src/script.rs:42`, `register_package`). The drift test
 `verify_interface` is opt-in and only `petal-ui`'s own tests run it
-(`core-libs/petal-ui/tests/host_natives.rs:32`).
+(`core-sdk/petal-ui/tests/host_natives.rs:32`).
 
 Listing the files is manual too. `petal-ui` keeps a hand-written 13-module
 array (`package_modules()`, `lib.rs:186`) whose `.ptl` text it reads back from
@@ -113,7 +113,7 @@ directory.
 ### The split makes the source tree read wrong
 
 `ui` is a Petal package, yet its source lives at
-`core-libs/petal-ui/prelude/`, inside a crate, in a directory whose other
+`core-sdk/petal-ui/prelude/`, inside a crate, in a directory whose other
 members are protocol and tooling crates. `bloom`, which is built on it, sits in
 `core-stdlib/`. `docs/skills/project-organization.md` has to explain that
 split in two decision-tree steps (5 and 6).
@@ -129,7 +129,7 @@ core-stdlib/
     src/*.ptl
   ui/               # native: Petal half + Rust half
     petal.toml      # name = "ui", modules = "src", [native]
-    src/*.ptl       # was core-libs/petal-ui/prelude/*.ptl
+    src/*.ptl       # was core-sdk/petal-ui/prelude/*.ptl
     native/         # the crate `petal-ui`: Cargo.toml, src/*.rs, tests/, examples/
     docs/  README.md
 ```
@@ -268,7 +268,7 @@ is exactly the one `petal-fps/src/host.rs:64` has today.
 **2. The `ui` manifest**
 
 ```toml
-# before: core-libs/petal-ui/prelude/petal.toml
+# before: core-sdk/petal-ui/prelude/petal.toml
 [package]
 name = "ui"
 version = "0.2.0"
@@ -348,7 +348,7 @@ No effect on provenance, explain, slicing, time travel, `speculate` or
 - Adds: `[native]` parsing (`package.rs`, about 60 lines), `NativePackage` +
   `Env::register_native_package` (about 80), and later a `petal-build` crate (mostly moved
   from `build.rs`).
-- Move cost: 247 references to `core-libs/petal-ui` across 119 files in this
+- Move cost: 247 references to `core-sdk/petal-ui` across 119 files in this
   repo, mechanical, plus the `../../core` relative paths inside the crate's
   own `Cargo.toml`, which gain one `../`.
 
@@ -391,7 +391,7 @@ No effect on provenance, explain, slicing, time travel, `speculate` or
   cheapest version and fixes the tree's reading. It leaves the special
   cases, and `core-stdlib/ui` would be the only package whose layout differs.
   This is a reasonable first step, and phase 1 below is exactly that.
-- **Move all of `core-libs` into `core-stdlib`.** Rejected: five of six crates
+- **Move all of `core-sdk` into `core-stdlib`.** Rejected: five of six crates
   are not packages, and "stdlib" would then mean "anything first-party".
 - **Dynamic loading of native packages (cdylib).** Out of scope. There is no
   stable Rust ABI, and wasm hosts cannot use it.
@@ -400,7 +400,7 @@ No effect on provenance, explain, slicing, time travel, `speculate` or
 
 ## Implementation sketch
 
-1. **Move** `core-libs/petal-ui` to `core-stdlib/ui`: `prelude/` → `src/`,
+1. **Move** `core-sdk/petal-ui` to `core-stdlib/ui`: `prelude/` → `src/`,
    crate → `native/`, `modules = "src"`. Update `core/Cargo.toml`, the Cargo
    path dependencies and the docs. The test is the whole suite unchanged,
    plus `npm run lint:docs`.
@@ -425,7 +425,7 @@ document.
 
 Recorded 2026-11-16 by the maintainer:
 
-- **The other five `core-libs` crates stay where they are.** `core-libs/`
+- **The other five `core-sdk` crates stay where they are.** `core-sdk/`
   keeps the first-party Rust crates that are not Petal packages: `gpp`,
   `petal-query`, `petal-pkgman`, `petal-ui-headless`,
   `programs-as-documents`.

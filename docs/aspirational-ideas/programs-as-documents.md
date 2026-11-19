@@ -4,7 +4,7 @@ Status (2026-11-15): **part 1 and the write path are implemented**; part 2
 (a schema for documents) and the saved-state file are not. The user-facing
 page is [features/programs-as-documents.md](../features/programs-as-documents.md).
 
-- **The crate.** [`core-libs/programs-as-documents`](../../core-libs/programs-as-documents/)
+- **The crate.** [`core-sdk/programs-as-documents`](../../core-sdk/programs-as-documents/)
   (optional; it uses only petal's public API, and the wasm builds leave it
   out) has the editing session, runs with an output source map, field
   intents resolved by the whole ladder below (steps 1 to 6), reference
@@ -524,12 +524,12 @@ petal-creative it is the rule.
 
 | Need | For | Today |
 |---|---|---|
-| Output source map (site, call path, field provenance, fan-out) for element values | part 1, steps 1 to 3; stable ids | done: element tracing in core, `OutputMap` in `core-libs/programs-as-documents` (steps 1 to 6 of the ladder resolve there) |
+| Output source map (site, call path, field provenance, fan-out) for element values | part 1, steps 1 to 3; stable ids | done: element tracing in core, `OutputMap` in `core-sdk/programs-as-documents` (steps 1 to 6 of the ladder resolve there) |
 | `editable_literal(source, name)` with reasons | schema levels | done: `programs_as_documents::editable_literal` |
 | Goals that write expressions and named arguments | reference edits; tokens | done: `StaticExpr` and the `_expr` goals in core, `Intent::SetFieldExpr` in the crate; petal-design's inspector, tokens and overrides use them |
 | Goals into element children | structure edits | done in Petal: [edit paths](../features/edit-paths.md) and path goals; petal-creative still uses `edit_in_place` lift-and-splice |
-| Structural intents by outcome (reorder, move, insert, remove, duplicate) | structure edits | done: `resolve_structure` in `core-libs/programs-as-documents` (list literals, element children, data lists read by `map`/`for`, concatenation segments) |
-| Copy and paste with free-variable analysis | copy and paste | done: `copy` / `paste` in `core-libs/programs-as-documents` |
+| Structural intents by outcome (reorder, move, insert, remove, duplicate) | structure edits | done: `resolve_structure` in `core-sdk/programs-as-documents` (list literals, element children, data lists read by `map`/`for`, concatenation segments) |
+| Copy and paste with free-variable analysis | copy and paste | done: `copy` / `paste` in `core-sdk/programs-as-documents` |
 | `StaticValue::from_value` | concretize ("write out as source") | done in core |
 | An `entry` scope selector for direct manipulation | step 4 | done: `ParamSelector::EntryFile` (`entry-file`) |
 | Direct-manipulation goals on an element's props | step 4 | done: `Observable::Element { term, occurrence, path }` (no probe native), `ObsValue::Element` |

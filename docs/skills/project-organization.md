@@ -92,9 +92,9 @@ Lower layers must never depend on higher ones ([Layering](#layering-rules)).
 | 0 | `core/src/builtins/` + `core/packages/<name>/` | Natives registered in every `Env`. The `.rs` file implements them; the package declares them. `core` is always in scope; the domain packages (`vec2`, `color`, `noise`, `json`, …) need an `import`. | Rust + `.ptl` decls |
 | 0 | `core/prelude/std.ptl` | Pure-Petal helpers implicitly imported everywhere. Must cost nothing when unused. | Petal |
 | 0 | `core/src/cli/`, `lsp/`, `fmt/`, `lint/` | The `petal` command-line tool and the developer tooling every Petal user runs. `cli`, `lsp` and `fix_imports` are behind the default-on `tooling` cargo feature, which embedders turn off. | Rust |
-| 0 | `cli/`, `core-libs/petal-pkgman/` | The `petal` binary, and the package manager only it links (git dependencies, `petal.lock`, `vendor/`, bundles). Embedders do not carry either. | Rust |
+| 0 | `cli/`, `core-sdk/petal-pkgman/` | The `petal` binary, and the package manager only it links (git dependencies, `petal.lock`, `vendor/`, bundles). Embedders do not carry either. | Rust |
 | 1 | `core-stdlib/<package>/` | **Packages**: a `petal.toml`, Petal modules in `src/` and, for a native package, the Rust crate that registers its natives in `native/` (`ui`: the crate `petal-ui` in `core-stdlib/ui/native`). Pure-Petal packages (`bloom`, `text_layout`, `glsl`) have no Rust and no build step. A native crate depends only on `core`. Bundled into the binary only if they meet the bundling bar below. See [docs/proposals/native-packages.md](../proposals/native-packages.md). | Petal (+ Rust in `native/`) |
-| 2 | `core-libs/<crate>/` | First-party Rust crates that are **not** Petal packages: a wire protocol and its client (`gpp`, `petal-query`), the package manager only the `petal` binary links (`petal-pkgman`, layer 0 above), `petal-ui-headless`, which runs a `ui` script with no renderer (the test driver and the `petal-ui-run` CLI), and `programs-as-documents`. | Rust |
+| 2 | `core-sdk/<crate>/` | First-party Rust crates that are **not** Petal packages: a wire protocol and its client (`gpp`, `petal-query`), the package manager only the `petal` binary links (`petal-pkgman`, layer 0 above), `petal-ui-headless`, which runs a `ui` script with no renderer (the test driver and the `petal-ui-run` CLI), and `programs-as-documents`. | Rust |
 | 3 | `integrations/<host>/` | Hosts: the programs and libraries that embed Petal on one platform (SDL desktop, browser canvas, browser DOM, C/C++). Host-specific natives and that host's interface package live here, inside the host. | Rust/TS/C |
 | 4 | `garden/` | The Petal IDE. It is an application, kept here as the reference editor and the heaviest user of the embedding API. New code goes in Garden only if it is about the editor. `garden/gpp-apps/` holds only the GPP clients Garden ships as built-in commands, its test fixture and the `screens-demo` worked example. | Rust |
 | 5 | `examples/` | Small, runnable programs that teach the language or a host. `examples/console/` is a golden-tested corpus; do not add to it casually. See `examples/AUTHORING.md`. | Petal (Rust only in `custom-apps/`) |
@@ -132,7 +132,7 @@ Work through these in order and stop at the first "yes".
 4. **Is it part of the `petal` command or developer tooling every user runs**
    (a subcommand, formatter rule, lint, LSP feature, package command)?
    → `core/src/cli/`, `lint/`, `fmt/`, `lsp/`; a package command in
-   `core-libs/petal-pkgman` (run from `cli/src/pm.rs`). Put the logic in a
+   `core-sdk/petal-pkgman` (run from `cli/src/pm.rs`). Put the logic in a
    library module the CLI calls, not in `cli/handlers.rs`, so Garden and the
    LSP can reuse it. `cli`, `lsp` and `fix_imports` only exist with the
    `tooling` feature, so anything an embedder calls (as the C bridge calls
@@ -144,7 +144,7 @@ Work through these in order and stop at the first "yes".
    the `native fn` declarations in `src/`, the Rust crate that registers
    them in `native/`, depending only on `core` (as `core-stdlib/ui` is). If
    only Rust code uses it (a wire protocol and its client), it is a crate in
-   `core-libs/`, and the protocol definition lives there too, not inside one
+   `core-sdk/`, and the protocol definition lives there too, not inside one
    client of it.
 
 6. **Is it a reusable library written in Petal** over `core` or a
@@ -201,7 +201,7 @@ examples/, garden/ (apps)
         ↓
 integrations/ (hosts)
         ↓
-core-libs/ (Rust crates that are not packages: gpp, petal-query, petal-pkgman, …)
+core-sdk/ (Rust crates that are not packages: gpp, petal-query, petal-pkgman, …)
         ↓
 core-stdlib/ (packages: pure Petal, or Petal + a native/ crate)
         ↓
@@ -212,11 +212,11 @@ core/ (language + CLI)
   nor its tests name any specific host.
 - `core-stdlib/` packages depend on `core` and other `core-stdlib` packages
   (a host interface via `[requires]`, as bloom requires `ui`). A `native/`
-  crate depends on `core` only; it may take `core-libs` crates as
+  crate depends on `core` only; it may take `core-sdk` crates as
   dev-dependencies for its tests (`petal-ui` tests through
   `petal-ui-headless`).
-- `core-libs/` depends on `core/`, `core-stdlib/` native crates and other
-  `core-libs/` crates only. **Never on `garden/` or `integrations/`.**
+- `core-sdk/` depends on `core/`, `core-stdlib/` native crates and other
+  `core-sdk/` crates only. **Never on `garden/` or `integrations/`.**
 - `integrations/` never depend on `garden/` or on `examples/`.
 - `examples/` and `garden/` may depend on anything below them.
 - `tools/` may depend on anything, but nothing may depend on `tools/`.
@@ -250,8 +250,8 @@ The 2026-11-04 audit also found the GPP crate in `garden/`, the
 element-tree wasm host in `core`, the CLI, LSP and package manager compiled
 into every embedder, and two repo tools that belonged with examples. Those
 were fixed on 2026-11-05 (the package manager by moving it to
-`core-libs/petal-pkgman`, the rest of the tooling by the `tooling` feature).
-`petal-ui`'s headless tooling moved to `core-libs/petal-ui-headless` on
+`core-sdk/petal-pkgman`, the rest of the tooling by the `tooling` feature).
+`petal-ui`'s headless tooling moved to `core-sdk/petal-ui-headless` on
 2026-11-08, and Garden's panel stubs into `garden-script`
 (`garden_script::headless`), with `garden/garden-panel-run` as the Garden
 build of its CLIs.
@@ -262,13 +262,13 @@ ships (`directory-browser`, `git-viewers`, `garden-diff`, `sqlite-browser`,
 `main-menu`), its test fixture (`gpp-test-app`) or the protocol's worked
 example (`screens-demo`).
 
-A 2026-11-08 review of `core-libs/` ([docs/tasks/ui-refactor.md](../tasks/ui-refactor.md))
+A 2026-11-08 review of `core-sdk/` ([docs/tasks/ui-refactor.md](../tasks/ui-refactor.md))
 found `gpp`, `petal-query` and `petal-pkgman` correctly placed (the
-`core-libs/` definition above was widened to cover `petal-pkgman`). In
+`core-sdk/` definition above was widened to cover `petal-pkgman`). In
 `petal-ui` it split the 5,600-line `ui.ptl` into modules behind an unchanged
 facade, and moved the tests of core features (static cache, frame gate, memo,
 effect audit, DM) to `test/ui-corpus/`, and moved the headless tooling to
-`core-libs/petal-ui-headless` and Garden's panel stubs into `garden-script`.
+`core-sdk/petal-ui-headless` and Garden's panel stubs into `garden-script`.
 On 2026-11-09 the owner decided that bloom owns the widgets: `ui` ends at
 primitives plus interaction (`ui/interaction`), and its drawn widgets in
 `ui/widgets` are deprecated, each with a bloom replacement. **New widgets go

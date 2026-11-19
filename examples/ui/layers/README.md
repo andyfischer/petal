@@ -14,7 +14,7 @@ dialog.
 - `tooltip` drawn mid-frame on its own layer.
 
 ```
-cd core-libs/petal-ui-headless
+cd core-sdk/petal-ui-headless
 cargo run --bin petal-ui-run -- ../../examples/ui/layers/app.ptl --frames 3 --targets
 ```
 

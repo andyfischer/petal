@@ -541,7 +541,7 @@ petal.lock in /work/game — run `petal install`
 server never fetch. They read `petal.lock` and open the vendored or cached
 tree, and report an uninstalled dependency with the error above.
 
-The package manager is the `petal-pkgman` crate (`core-libs/petal-pkgman`),
+The package manager is the `petal-pkgman` crate (`core-sdk/petal-pkgman`),
 which the `petal` binary links and the `petal` library does not, so a
 runtime embedded in another program (a wasm page, the SDL or C host) does
 not carry it. Such a host resolves path dependencies and `vendor/<name>`

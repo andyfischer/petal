@@ -13,7 +13,7 @@
 //! the [`DynQueryProvider`] a host implements (core's
 //! [`ResourceProvider`], keyed by [`QueryKey`]). The **cache/fetch policy** it
 //! used to carry has graduated into the upstream `petal-query` crate
-//! (`../core-libs/petal-query`) — the same path `host_data` took into `petal-ui`.
+//! (`../core-sdk/petal-query`) — the same path `host_data` took into `petal-ui`.
 //! Garden's pipe-backed provider (`garden-app/src/script_client.rs`) now wraps a
 //! `petal_query::Cache`, which honors the `petal_query::CachePolicy` each answer
 //! carries (fresh / stale-while-revalidate / expired). What remains here is only

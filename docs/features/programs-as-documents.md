@@ -9,11 +9,11 @@ and formatting. The script can use variables, helpers and loops; the edit
 lands wherever the value really comes from, and the application checks it by
 running the edited script again before anything is written.
 
-- **Crate:** [`core-libs/programs-as-documents`](../../core-libs/programs-as-documents/)
+- **Crate:** [`core-sdk/programs-as-documents`](../../core-sdk/programs-as-documents/)
   (package `programs-as-documents`, `use programs_as_documents::…`). It
   depends on `petal` with `default-features = false` and uses only its public
   API, so an embedder that does not edit documents (the wasm builds) leaves
-  it out. Its [README](../../core-libs/programs-as-documents/README.md) has
+  it out. Its [README](../../core-sdk/programs-as-documents/README.md) has
   the full API table.
 - **In core:** element-origin tracing (below), `StaticValue::from_value`,
   direct-manipulation goals on elements (`Observable::Element`), the
@@ -27,7 +27,7 @@ running the edited script again before anything is written.
   split) and petal-social-media (slides and their layers: options, text,
   structure, writing a helper's slide out with `concretize_with` and
   `tidy`).
-- **Tests:** `core-libs/programs-as-documents/tests/` (`cargo test` in that
+- **Tests:** `core-sdk/programs-as-documents/tests/` (`cargo test` in that
   directory); the core hook in `core/tests/all/` (element tracing) and the
   DM tests.
 - **Design:** [programs-as-documents.md](../aspirational-ideas/programs-as-documents.md)

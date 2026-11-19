@@ -77,7 +77,7 @@ The cause is runtime identity:
 ## Motivation: the corpus
 
 The corpus is 880 `.ptl` files: this repo's `examples/`, `garden/`,
-`core-libs/`, `core-stdlib/` and `test/`, plus `~/cheesecake/games`,
+`core-sdk/`, `core-stdlib/` and `test/`, plus `~/cheesecake/games`,
 `~/petal-creative` and `~/worlds-fair/ui/ptl`.
 - 681 files import something, and 382 import a relative module.
 

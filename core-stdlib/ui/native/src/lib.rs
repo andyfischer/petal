@@ -46,7 +46,7 @@
 //! The headless tooling built on this contract — the `Headless` test driver,
 //! input scenarios, drag tracing and the `petal-ui-run` /
 //! `petal-ui-propose-edit` CLIs — is the separate `petal-ui-headless` crate
-//! (`core-libs/petal-ui-headless`), so a host links none of it.
+//! (`core-sdk/petal-ui-headless`), so a host links none of it.
 //!
 //! The standard owns *semantics* (what `key_pressed` means, what a drag is);
 //! the host keeps *policy* (which keys it reserves, when a script ticks,

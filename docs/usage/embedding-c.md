@@ -47,7 +47,7 @@ target_link_libraries(my_engine PRIVATE petal::bridge)
 
 Cargo runs on every build (it is incremental, so an up-to-date build costs a
 fraction of a second) with `CARGO_TARGET_DIR=<build>/cargo-target`. The crate
-depends on the in-repo `core/`, `core-stdlib/ui/` and `core-libs/petal-query/` crates by path,
+depends on the in-repo `core/`, `core-stdlib/ui/` and `core-sdk/petal-query/` crates by path,
 so a host that adds this directory always builds against the Petal checkout
 it lives in.
 
@@ -786,7 +786,7 @@ is what a scenario's `{"at": N, "click_target": "End turn"}` resolves against.
 ### Input scenarios (replay)
 
 A scenario is petal-ui's declarative input script
-(`core-libs/petal-ui-headless/src/scenario.rs`): JSON listing input events keyed by frame, plus
+(`core-sdk/petal-ui-headless/src/scenario.rs`): JSON listing input events keyed by frame, plus
 an optional window size and frame count. It is the format `petal-ui-run` and
 `tools/verify.ts` use, so a repro recorded there replays in a C++ host, and
 a C++ host's headless tests can be written as data:

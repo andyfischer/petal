@@ -44,7 +44,7 @@ classes only (write a function that takes the variant, `fn name(v: Ty, …)`)
 ```
 
 **Corpus count.** I scanned every `.ptl` file in `examples/`, `garden/`,
-`core-libs/`, `core-stdlib/`, `test/`, `~/cheesecake/games`,
+`core-sdk/`, `core-stdlib/`, `test/`, `~/cheesecake/games`,
 `~/petal-creative` and `~/worlds-fair/ui/ptl`. The scanning script is in the
 session scratchpad. 19 files declare 28 enums. 17 free functions take an enum
 as their first parameter, either annotated with it or matching on it:

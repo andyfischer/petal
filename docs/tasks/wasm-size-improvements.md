@@ -150,7 +150,7 @@ per-module breakdown, run `twiggy top -n 100000 --format csv` and sum
   Did item 1 (−170 KB of `.rodata`) and item 4 (draw commands binary, −13 KB
   of code). Together: 3.93 → 3.75 MB raw, 1.37 → 1.31 MB gzip, 985 → 932 KB
   brotli.
-- 2026-11-05: moved `pkgman` into its own crate, `core-libs/petal-pkgman`,
+- 2026-11-05: moved `pkgman` into its own crate, `core-sdk/petal-pkgman`,
   linked only by the CLI (#23).
 - 2026-11-08: removed the finished items (1, 4, `pkgman` half of 3) from
   this doc. Remaining items keep their numbers.

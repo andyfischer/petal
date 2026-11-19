@@ -282,7 +282,7 @@ several do, each describes its own form, and the first is the set's summary. A
 | `@doc()` / `@module_doc()`, or either with no parentheses | error: "`@doc` with nothing in it documents nothing: give it the text, `@doc("What it is.")`, or remove it" |
 | `params: {lo: …}` naming no parameter | lint `doc-params` (warning): "`@doc` describes `lo`, which `clamp` does not take" |
 | `see: ["foo"]` naming nothing reachable | lint `doc-params` (warning) |
-| a `pub` item (or a package root module) with no doc | lint `undocumented-pub`: off by default; on, and failing CI, for `core/`, `core-libs/`, `core-stdlib/` |
+| a `pub` item (or a package root module) with no doc | lint `undocumented-pub`: off by default; on, and failing CI, for `core/`, `core-sdk/`, `core-stdlib/` |
 | a call to a `deprecated` item | lint `deprecated` (warning), with the doc's replacement text |
 
 ## Before and after

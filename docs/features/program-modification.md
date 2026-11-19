@@ -106,7 +106,7 @@ that emitted the value. See
 [v2 plan](../dev/direct-manipulation-v2-plan.md). See the
 [README](../../README.md#goals) for the project goals.
 
-### Editing a script through its output (`core-libs/programs-as-documents`)
+### Editing a script through its output (`core-sdk/programs-as-documents`)
 
 For an application whose saved document is a Petal script. The application
 states each edit against the script's *output* ("layer `logo` has `x = 300`",

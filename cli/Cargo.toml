@@ -17,7 +17,7 @@ path = "src/main.rs"
 # `libraries`: the `petal` command resolves every bundled library (bloom,
 # text_layout, glsl) with no search path.
 petal = { path = "../core", features = ["libraries"] }
-petal-pkgman = { path = "../core-libs/petal-pkgman" }
+petal-pkgman = { path = "../core-sdk/petal-pkgman" }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]

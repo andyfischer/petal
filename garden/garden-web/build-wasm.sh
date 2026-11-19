@@ -9,7 +9,7 @@ wasm-pack build --target web --out-dir pkg
 rm -f pkg/.gitignore pkg/package.json pkg/README.md
 {
   echo "commit=$(git rev-parse HEAD)"
-  if [ -n "$(git status --porcelain -- "$REPO_ROOT/core" "$REPO_ROOT/core-libs" "$REPO_ROOT/garden/garden-script" "$REPO_ROOT/garden/garden-web")" ]; then
+  if [ -n "$(git status --porcelain -- "$REPO_ROOT/core" "$REPO_ROOT/core-sdk" "$REPO_ROOT/garden/garden-script" "$REPO_ROOT/garden/garden-web")" ]; then
     echo "dirty=true"
   else
     echo "dirty=false"

@@ -12,6 +12,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **`core-libs/` is renamed `core-sdk/`.** It holds the Rust crates that
+  hosts and tools link alongside `petal`: `gpp`, `petal-query`,
+  `petal-ui-headless`, `programs-as-documents` and `petal-pkgman`. Scripts
+  can't import any of them. A Cargo path dependency on
+  `core-libs/<crate>` becomes `core-sdk/<crate>`. The new
+  `core-sdk/README.md` explains how this directory differs from
+  `core-stdlib/`.
 - **Declarations, writes, rebinds and loop headers have source spans.** In
   the IR, `StateInit` (`state`, `state var`, `memo`), `CellNew` (`var`),
   `StateWrite`, `CellWrite` and the `Copy` an assignment rebinds now cover

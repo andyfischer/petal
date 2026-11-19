@@ -56,5 +56,5 @@ prove: ## Run the Kani proofs of the core numeric semantics (needs cargo-kani)
 clean: ## Remove Rust build artifacts
 	cd core && cargo clean
 	cd cli && cargo clean
-	cd core-libs/petal-pkgman && cargo clean
+	cd core-sdk/petal-pkgman && cargo clean
 	cd test/ui-corpus && cargo clean

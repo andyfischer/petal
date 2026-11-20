@@ -34,11 +34,17 @@ and in everything it calls, is allowed and persists per element across runs.
 |---|---|---|
 | `map` | once per element, in order | per element |
 | `forEach` | once per element, in order | per element |
-| `reduce` | once per element, in order | per element |
-| `any`, `all`, `find` | once per element until decided | per element; elements past the deciding one are not reached, as with `break` in a `for` |
 | `sort_by` | the key function once per element, before sorting (`intrinsics.rs:417`) | per element |
+| `reduce` | once per element, in order | still an error; second round |
+| `any`, `all`, `find` | once per element until decided | still an error; second round |
+| `filter` | once per element, in order | still an error; second round |
 | `sort` with a comparator | once per **comparison**, data-dependent order | **still an error** |
-| `filter` | once per element, in order | **still an error, for now** |
+
+**First round: `map`, `forEach` and `sort_by`'s key.** That covers the case
+this plan exists for (widgets drawn from `map`) and every std helper but
+`count`. `reduce`, `any`, `all`, `find` and `filter` keep today's error until
+the first round has shipped; each one is the same change to one more
+intrinsic.
 
 Every std helper built on `map` follows automatically: `min_by`, `max_by`,
 `top_k`, `group_by`, `unique_by` and `flat_map` (`core/prelude/std.ptl`).
@@ -48,15 +54,10 @@ The comparator form of `sort` keeps today's error and message, because a
 comparison has no element of its own and a merge sort's comparisons change
 with the data.
 
-**`filter` is out of scope for this round.** It calls its predicate once per
-element in order, so the same mechanism would work, and adding it later is
-one more intrinsic passing the element part. It keeps today's error until
-then.
-
-Short-circuiting (`any`, `all`, `find`) behaves like a loop that breaks early.
-The untouched-slot sweep at the end of a run drops the slots of elements that
-were not reached, as it does for loop iterations a `break` skipped. This goes
-in the docs, not around them.
+In the second round, short-circuiting (`any`, `all`, `find`) behaves like a
+loop that breaks early. The untouched-slot sweep at the end of a run drops
+the slots of elements that were not reached, as it does for loop iterations a
+`break` skipped. This goes in the docs, not around them.
 
 ### Keys
 
@@ -136,25 +137,34 @@ the same path, which is why the old rule shared one slot. Today
    callee's `LoopPush`/`LoopPop` are balanced, which the compiler guarantees.
    The existing `call_closure_sync` becomes `call_closure_sync_at(.., None)`
    for the host path (`Env::call_function`), which keeps its rule.
-2. **The intrinsics pass it.** `builtin_map`,
-   `builtin_reduce`, `builtin_for_each`, `predicate_holds` (any/all/find) and
+2. **The intrinsics pass it.** `builtin_map`, `builtin_for_each` and
    `builtin_sort_by`'s key pass `Some(Index(i))`, or `Some(Key(h))` when
    `key:` was given. `builtin_sort_cmp` / `merge_sort_by` and `builtin_filter`
    pass `None` and stay under the callback record.
-3. **The callback record only for comparators.** `callback_intrinsic`
-   (`vm/native.rs`) lists which builtins set `Stack::callback`. It shrinks to
-   `sort` with a comparator and `filter`, plus the `key:` function's own
-   call. The hint in `state_in_callback` stops suggesting `for` over `map`
-   and names `map` as the per-element form for `filter`'s case.
+3. **The callback record for the rest.** `callback_intrinsic`
+   (`vm/native.rs:341`) lists which builtins set `Stack::callback` around
+   their whole run (`native.rs:308`). It gains a per-element flag. `map`,
+   `forEach` and `sort_by` leave the record **as it was**, rather than
+   replacing it or clearing it, so a `map` running inside a `sort`
+   comparator or a `filter` predicate still errors: that outer callback has
+   no element part, so the inner `map`'s slots would be shared across the
+   outer calls. `reduce`, `any`, `all`, `find`, `filter` and comparator
+   `sort` keep setting it, and so does the `key:` function's call. The hint
+   in `state_in_callback` names `map` as the per-element form.
+   `call_key_here` (`frame.rs:321`) already returns `None` under the record
+   and otherwise keys by the full path, so native call keys become
+   per-element with no change.
 4. **Keys.** `map` and friends take `key:` through their `native fn`
    declarations in `core/packages/core/src/collections.ptl` (named-argument
    binding already exists, `bind_native_args`). One helper,
    `Vm::element_keys(name, elements, key) -> Vec<u64>`, resolves both forms:
    a string reads each element's field on the heap (records by field, maps by
    key) with no Petal call; a callable goes through `call_closure_sync_at(..,
-   None)` under the callback record. Either way the helper computes all
-   keys first and checks them for duplicates with the keyed loop's hash and
-   error helper, then runs the callbacks. Computing keys first means a
+   None)` under the callback record. Either way it hashes with
+   `dict::key_hash`, as `Inst::LoopKey` does (`dispatch.rs:154`), records the
+   label in `Stack::loop_key_labels` for state dumps, and checks for
+   duplicates with the keyed loop's wording. It computes all keys first, then
+   runs the callbacks. Computing keys first means a
    duplicate is reported before any element's state is touched.
 5. **The fast path.** `vm/fast.rs` has its own `set_loop_idx`
    (`fast.rs:534`). Check whether a frame pushed by `call_closure_sync` can
@@ -168,6 +178,63 @@ the same path, which is why the old rule shared one slot. Today
 7. **Call memo.** `calls.rs:732` builds a memo scope's path from the callee
    frame's. A memoized function called from a `map` callback must see the
    element part, or two elements would share a memo entry. Test it.
+
+### Rust callers
+
+When Rust calls Petal, it can say which state the call runs under and manage
+that state. The case: a native widget (a table, a tree view, a virtualized
+list) drives a Petal callback per row, and each row's `state` and
+`stable_id()` must persist per row, follow the row when rows reorder, and go
+away when the row is deleted.
+
+Today `Env::call_function(stack, name, args)` (`env/run.rs:453`) keys the
+call's state under a root path made from the function's name
+(state-call-paths.md §2.5), so every call shares one set of slots.
+
+**A state scope type.** A public, opaque `StatePart` in `crate::stack`,
+built only through constructors, so hosts never touch the hashing:
+
+```rust
+StatePart::index(i: usize)              // like a `for` iteration
+StatePart::key(env: &Env, v: Value)     // like `for … key v`; errors if v is unhashable
+StatePart::named(s: &str)               // a host-chosen name ("row:42")
+```
+
+**Calling under a scope.**
+
+```rust
+// state under [host root of `name`, ...parts]
+env.call_function_at(stack, name, args, &[StatePart::key(&env, row_id)?])?;
+// the same, for a closure value the host holds (a callback it was handed)
+env.call_closure_at(stack, callable, args, &[StatePart::index(i)])?;
+```
+
+Both go through `call_closure_sync_at`, which pushes the parts after the
+frame's `Call` part, as the intrinsics do. A duplicate within one host
+"pass" is the host's business. The host can ask for the same checking with
+`env.begin_keyed(stack)`, which returns a guard whose `call_at` refuses a
+repeated key, with the loop's wording.
+
+**Managing the state.**
+
+```rust
+env.state_under(stack, name, &parts) -> Vec<(String, Value)>   // read, for inspectors and tests
+env.clear_state_under(stack, name, &parts)                      // a row was deleted: drop its slots now
+env.keep_state_under(stack, name, &live: &[Vec<StatePart>])     // drop every scope under `name` not in `live`
+```
+
+`keep_state_under` is the host's version of the untouched-slot sweep. A
+host-driven call isn't part of a script run, so the run-end sweep can't tell
+a row that is gone from one that just wasn't drawn this time. The host says
+which rows are live, the way a keyed loop does implicitly.
+
+**From a native function.** Natives can't call back into Petal today: only
+the VM's intrinsics drive closures (state-in-callbacks.md, "Which
+builtins"). A native that takes a callback (`table(rows, fn(row) …)`) would
+need `PetalCxt::call_at(callable, args, part)`, which runs the closure on the
+current stack under the caller's path plus `part`. That is the larger piece
+of work, since it lets natives re-enter the VM. It is listed as a separate
+step below, and the `Env` API above doesn't wait for it.
 
 ### Compile-time pass
 
@@ -203,14 +270,18 @@ New, in `core/tests/all/state_call_paths.rs` or a new `state_in_map.rs`:
 - `speculate` over a stateful `map` restores every element's slot.
 - Hot reload (`transfer_state`) keeps per-element slots, since they match on
   the declaration's base key.
-- `sort(xs, cmp)` with a stateful `cmp`, and `filter` / `count` with a
-  stateful predicate, still error.
+- `sort(xs, cmp)` with a stateful `cmp`, and `filter` / `count` / `reduce`
+  / `any` / `all` / `find` with a stateful callback, still error, and so
+  does a stateful `map` inside a `sort` comparator or a `filter` predicate.
+- Host: `call_function_at` with two keys keeps two sets of slots across
+  calls; `clear_state_under` drops one; `keep_state_under` drops the
+  others; `StatePart::key` refuses a function value.
 
 Changed:
 
-- `state_call_paths.rs` tests that pin the error for `map`/`reduce`/
-  `forEach`/`any` become tests of the per-element behaviour. The ones for
-  `filter` and `count` stay.
+- `state_call_paths.rs` tests that pin the error for `map` and `forEach`
+  become tests of the per-element behaviour. The ones for `filter`,
+  `count`, `reduce` and `any` stay.
 - `integrations/petal-c-bridge` (`src/vm.rs:3011`, `tests/bridge_tests.cpp:891`):
   check that the fixture still means what it says.
 - `core/src/backend/bytecode/static_fn_fuzz.rs:366,502`: the generator stops
@@ -241,29 +312,39 @@ call, and only keyed calls pay it.
 1. `call_closure_sync_at` and the element part for `map` only. Turn the
    pinned-error test for `map` into the per-element test, and confirm the
    fast-path, memo and speculation tests.
-2. The other element-wise builtins and the std helpers.
-3. `key:` on `map` and `forEach`, with duplicate detection.
-4. Shrink the callback record and the lint pass to comparators.
+2. `forEach` and `sort_by`'s key; the std helpers built on `map`.
+3. `key:` on `map` and `forEach` (field name or function), with duplicate
+   detection.
+4. The per-element flag on the callback record, and the lint pass narrowed
+   to match.
 5. Docs, CHANGELOG, the status note on the proposal.
-6. `key:` on the remaining builtins, if step 3 left any.
-7. Then the downstream work this unblocks: `interact`'s implicit
-   `stable_id()` identity, and bloom's `probe` on `interact`.
+6. The `Env` host API: `StatePart`, `call_function_at`, `call_closure_at`,
+   `state_under`, `clear_state_under`, `keep_state_under`.
+7. The downstream work this unblocks: `interact`'s implicit `stable_id()`
+   identity, and bloom's `probe` on `interact`.
+8. Second round: `reduce`, `any`, `all`, `find` and `filter` (so `count`),
+   and `key:` on them if wanted.
+9. `PetalCxt::call_at`, for natives that take a callback.
 
 ## Decided
 
 - 2026-11-20: `key:` takes a field name or a function, like lodash's
   iteratee shorthand. No dotted paths for now.
+- 2026-11-20: the first round is `map`, `forEach` and `sort_by`'s key.
+  `reduce`, `any`, `all`, `find` and `filter` come after it ships.
+- 2026-11-20: Rust callers can choose the state a call runs under and
+  manage it ("Rust callers" above).
 
 ## Open questions
 
-1. **`key:` on `reduce`/`any`/`all`/`find`/`sort_by`.** These are
-   rarely stateful, so `key:` on them may never be asked for. It could ship
-   on `map` and `forEach` only, and be added elsewhere on request.
+1. **`key:` on `sort_by`** (first round) and on the second-round builtins.
+   These are rarely stateful, so `key:` on them may never be asked for.
 2. **A stored closure run later** (bloom's `defer_paint`, command
    registries) keys its state under the path of the code that runs it, not
    the code that made it. This plan doesn't change that.
-3. **Host callbacks** (`Env::call_function`, the C bridge) keep the host
-   call-site rule. Should a host be able to pass an element part, for a
-   native that drives a Petal callback per item (a table widget in Rust)?
-   Not needed yet. `call_closure_sync_at` would make it a small addition to
-   the host API.
+3. **The C bridge** (`integrations/petal-c-bridge`) would want the same host
+   API. Its scope type would be an opaque handle built from an index, a
+   string or a Petal value. Is it needed in the first host round?
+4. **`StatePart::named` vs `key`.** A host could build every scope with
+   `key(Value::string(..))`. `named` saves an allocation and reads better in
+   state dumps. Keep both, or only `key`?

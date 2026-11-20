@@ -1518,6 +1518,22 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- **Bare text in an element inside a `{…}` hole.** An element nested in a
+  hole lexes its children as element content, as it does at the top level
+  or in a `fn` body. `{pb("Go", <text>G</text>)}`,
+  `{for x in xs do <text>Item {x}</text> end}` and an element in an
+  attribute hole (`k={<b>text</b>}`) parse. Before, the text was lexed as
+  code and failed with `Unexpected token in JSX children` (or
+  `Unexpected character` for text starting with a non-ASCII character).
+
+- **A line break after `(` or after a record field's `:`.** Line breaks
+  inside brackets are free, as
+  [Line continuation](docs/syntax/line-continuation.md) says: a grouping
+  paren's expression and a record field's value (also `[key]: value`) may
+  start on the next line. `let a = (⏎  <text>hi</text>⏎)` and
+  `{x:⏎  1}` were parse errors. `let a =` followed by a line break is still
+  one.
+
 - **Programs as documents: a package's text and a tidied float child.**
   `SetText` on a `<text>` written in a package with child elements (or not
   an element literal) is `Refused` as another file's again, not left

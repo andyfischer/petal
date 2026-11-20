@@ -100,4 +100,11 @@ column like any other. Indented further, as a continuation would be, it is an
   Neither a trailing `.` nor a leading `.x` continues, so break a long chain
   with `|>` or bind the intermediate value.
 - `=` — the right-hand side of a `let` or an assignment starts on the same
-  line as the `=`.
+  line as the `=`. To start it on the next line, open a `(` on the `=` line:
+
+  ```petal
+  let greeting = (
+    <text>hello</text>
+  )
+  print(greeting) # <text>hello</text>
+  ```

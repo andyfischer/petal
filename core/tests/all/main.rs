@@ -9,6 +9,7 @@
 
 mod annotation_parity;
 mod autodiff;
+mod bracket_line_breaks;
 mod camera_class;
 mod comment_to_doc;
 mod candidate_state;

@@ -3790,6 +3790,9 @@ impl Parser {
             Token::LParen => {
                 self.ev_open(SyntaxKind::ParenExpr);
                 self.advance();
+                // Line breaks inside `( )` are free (docs/syntax/line-continuation.md),
+                // so the expression may start on the line after the `(`.
+                self.skip_newlines();
                 let expr = self.parse_expr()?;
                 // A block with no `end` leaves the closer on a later line.
                 self.skip_newlines();
@@ -3866,6 +3869,7 @@ impl Parser {
                 let key = self.parse_expr()?;
                 self.expect(&Token::RBracket)?;
                 self.expect(&Token::Colon)?;
+                self.skip_newlines();
                 let value = self.parse_expr()?;
                 fields.push(crate::ast::computed_record_field(key, value));
             } else {
@@ -3885,6 +3889,9 @@ impl Parser {
                     ));
                 }
                 self.expect(&Token::Colon)?;
+                // A field's value may start on the line after its `:`, as
+                // a list element may after a `,`.
+                self.skip_newlines();
                 let value = self.parse_expr()?;
                 fields.push(RecordField::Named(key, value));
             }

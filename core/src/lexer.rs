@@ -1550,6 +1550,14 @@ impl Lexer {
     ) -> Result<(), String> {
         let mut depth = 1;
         while self.pos < self.input.len() && depth > 0 {
+            // An element opened inside the hole (`{f(<b>text</b>)}`) puts
+            // content mode on top once its open tag ends: its children are
+            // text and nested holes, lexed as in any other element, until
+            // its close tag pops back to the hole.
+            if *self.current_mode() == LexerMode::JsxContent {
+                self.tokenize_jsx_content()?;
+                continue;
+            }
             self.skip_whitespace_no_newline();
             if self.pos >= self.input.len() {
                 break;
@@ -1696,7 +1704,13 @@ impl Lexer {
                     let start = self.current_pos();
                     self.advance_char();
                     self.push_token(Token::LBrace, start);
-                    self.tokenize_braced_expr(true, true)?;
+                    // The hole is code, not content: lex it in Normal mode so
+                    // an element nested in it gets its own content mode on
+                    // top (see `tokenize_braced_expr_inner`).
+                    self.mode_stack.push(LexerMode::Normal);
+                    let result = self.tokenize_braced_expr(true, true);
+                    self.mode_stack.pop();
+                    result?;
                     return Ok(());
                 }
                 _ => {

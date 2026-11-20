@@ -460,6 +460,20 @@ impl PetalRuntime {
             .event(InputEvent::Modifiers(Modifiers { shift, ctrl, alt, cmd }));
     }
 
+    /// Put the system clipboard's text where `clipboard_get()` reads it. The
+    /// browser only hands it over in a `paste` event, which follows the
+    /// cmd+V keydown, so call this from there: the frame after sees both.
+    pub fn set_clipboard(&mut self, text: &str) {
+        petal_ui::clipboard::set_clipboard_text(text);
+    }
+
+    /// What the script put on the clipboard with `clipboard_set` during the
+    /// last run (the last write wins), for the host to copy to the system
+    /// clipboard; `undefined` when it wrote nothing. Call after each run.
+    pub fn take_clipboard(&mut self) -> Option<String> {
+        petal_ui::clipboard::flush_clipboard(&mut self.env)
+    }
+
     /// Typed text for the current frame (read by the script's `text_input()`).
     pub fn type_text(&mut self, text: &str) {
         self.input.type_text(text);

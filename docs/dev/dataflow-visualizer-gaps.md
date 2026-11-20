@@ -1,17 +1,20 @@
 # Dataflow visualizer: gaps in what the compiler exposes
 
-petal-lang.org has an experimental visualizer that draws any Petal script as
-a dataflow diagram (`/home-page-proposals/#dataflow`; code in
-`~/biz/petal-lang.org/frontend/src/proposals/dataflow/`). It compiles in the
-page with the real compiler through `PetalRuntime::dataflow_ir(source)`
-(petal-web-canvas, which returns the `petal show-ir --json --user-only` view),
-then folds the IR into one node per binding in TypeScript (`extract.ts`) and
-lays it out with ELK.
+The dataflow visualizer draws any Petal script as a dataflow diagram. It is
+written in Petal, as the package
+[`core-stdlib/ptl_dataflow`](../../core-stdlib/ptl_dataflow/), and
+petal-lang.org hosts it (`/home-page-proposals/#dataflow`). The host compiles
+with the real compiler through `PetalRuntime::dataflow_ir(source)`
+(petal-web-canvas, which returns the `petal show-ir --json --user-only`
+view). `ptl_dataflow/extract` folds the IR into one node per binding, and
+`ptl_dataflow/layout` lays it out. Until 2026-11-19 the fold was TypeScript
+(`extract.ts` on the site, which the sections below refer to), and the layout
+was ELK.
 
 The fold works on every `.ptl` on the site, but it has to guess in places,
 because the IR is built to execute, not to be read back as source structure.
 This page lists those places, most important first, with what upstream could
-add. The tag (G1…) is the one the comments in `extract.ts` cite.
+add. The tag (G1…) is the one the comments in `ptl_dataflow/extract` cite.
 
 What the visualizer draws, for reference: one node per `let`, `state`,
 `var`, parameter and loop variable; host inputs (`mouse_x()`, `dt()`) as

@@ -39,8 +39,8 @@ let HEADER_STYLE = {font: "mono", size: 12}
 
 let NODE_GAP = 16
 let DUMMY_GAP = 7
-let LAYER_GAP = 42
-let CHANNEL = 7
+let LAYER_GAP = 36
+let CHANNEL = 5
 
 @doc("""
 Whether node `n` shows its source text under its label. A host input or a
@@ -270,23 +270,6 @@ fn _layout_level(items, links, pads)
       for j in range(0, len(L)) do
         pos[L[j]] = float(j)
 
-  # ── x: one column per layer, with room between for the edge channels ──
-  let colw = fill(nl, 0.0)
-  for i in range(0, total) do
-    colw[layer[i]] = max(colw[layer[i]], ws[i])
-  let gapn = fill(nl, 0)
-  for c in chains do
-    for j in range(0, len(c) - 1) do
-      gapn[layer[c[j]]] += 1
-  let colx = fill(nl, 0.0)
-  let x = 0.0
-  for li in range(0, nl) do
-    colx[li] = x
-    let g = clamp(18 + CHANNEL * gapn[li], LAYER_GAP, 150)
-    x = x + colw[li] + g
-  let xs = for i in range(0, total) do
-    colx[layer[i]] + (colw[layer[i]] - ws[i]) / 2.0
-
   # ── y: stack, then pull each layer toward its neighbours ──
   let ys = fill(total, 0.0)
   for L in layers do
@@ -305,6 +288,24 @@ fn _layout_level(items, links, pads)
       let tops = _place_layer(L, hs, dummy, want)
       for j in range(0, len(L)) do
         ys[L[j]] = tops[j]
+
+  # ── x: one column per layer, with room between for the edge channels ──
+  let colw = fill(nl, 0.0)
+  for i in range(0, total) do
+    colw[layer[i]] = max(colw[layer[i]], ws[i])
+  # Only a hop that changes height needs a lane of its own.
+  let gapn = fill(nl, 0)
+  for c in chains do
+    for j in range(0, len(c) - 1) do
+      if abs((ys[c[j]] + hs[c[j]] / 2.0) - (ys[c[j + 1]] + hs[c[j + 1]] / 2.0)) > 1 then gapn[layer[c[j]]] += 1 end
+  let colx = fill(nl, 0.0)
+  let x = 0.0
+  for li in range(0, nl) do
+    colx[li] = x
+    let g = clamp(16 + CHANNEL * gapn[li], LAYER_GAP, 96)
+    x = x + colw[li] + g
+  let xs = for i in range(0, total) do
+    colx[layer[i]] + (colw[layer[i]] - ws[i]) / 2.0
 
   # Normalize to the content origin.
   let miny = 0.0

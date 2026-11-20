@@ -1,3 +1,8 @@
+---
+name: clean-permissions
+description: Analyze Claude Code permission settings (.claude/settings.json, settings.local.json, ~/.claude/settings.json) and suggest cleanups — stale, redundant, deprecated-syntax, one-off, missing and mis-scoped rules. Use when the user says /clean-permissions or asks to clean up permission settings.
+---
+
 # Skill: Clean Permissions
 
 Analyze Claude Code permission settings and suggest cleanups to reduce clutter and future prompts.

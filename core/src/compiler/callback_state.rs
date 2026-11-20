@@ -1,11 +1,12 @@
 //! Report `state` that a higher-order builtin's callback is sure to reach.
 //!
-//! A `state` or `state var` declaration executed while a callback of `map`,
-//! `filter`, `reduce`, `forEach`, `sort_by`, `sort` (with a comparator),
-//! `any`, `all` or `find` is running is a runtime error
-//! (docs/proposals/state-in-callbacks.md): the callback is a step of a
-//! computation over a list, not a place in the program, so its state would
-//! have no slot of its own. That error is authoritative. This pass reports,
+//! A `state` or `state var` declaration executed while a callback of
+//! `filter`, `reduce`, `sort` (with a comparator), `any`, `all` or `find`, or
+//! the `key:` function of `map` or `forEach`, is running is a runtime error
+//! (docs/proposals/state-in-callbacks.md): the callback has no element part
+//! on its path, so its state would have no slot of its own. That error is
+//! authoritative. (A callback of `map`, `forEach` and `sort_by` runs under an
+//! element part and keeps its state per element: docs/tasks/state-in-map.md.) This pass reports,
 //! with error severity, the cases provable without running anything, so
 //! `petal lint` fails on them, `petal run` refuses to start and the language
 //! server shows them:
@@ -47,19 +48,23 @@ use crate::source_map::SourceSpan;
 /// The rule id the error carries.
 pub(crate) const RULE: &str = "state-in-callback";
 
-/// The builtins that run a Petal callback, and the argument that is the
-/// callback (the receiver counts as argument 0 in the method form).
+/// The builtins that run a Petal callback with no element part on its path,
+/// and the argument that is the callback (the receiver counts as argument 0
+/// in the method form). `map`, `forEach` and `sort_by` are absent: their
+/// callbacks keep state per element.
 const CALLBACK_BUILTINS: &[(&str, usize)] = &[
-    ("map", 1),
     ("filter", 1),
     ("reduce", 2),
-    ("forEach", 1),
-    ("sort_by", 1),
     ("sort", 1),
     ("any", 1),
     ("all", 1),
     ("find", 1),
 ];
+
+/// The per-element builtins whose `key:` argument, when it is a function,
+/// runs with no element part (it computes the element's part), and the
+/// position `key:` binds to.
+const KEY_BUILTINS: &[(&str, usize)] = &[("map", 2), ("forEach", 2)];
 
 /// What the compiler knows about a `state` declaration that the IR does not
 /// carry: where it is written, and how.
@@ -377,9 +382,31 @@ impl<'a> Pass<'a> {
     fn sites(&self, term: &Term) -> Vec<Site> {
         let positional = term.arg_names.iter().all(Option::is_none);
         let builtin = |name: &str| CALLBACK_BUILTINS.iter().find(|(b, _)| *b == name).copied();
+        let key_builtin = |name: &str| KEY_BUILTINS.iter().find(|(b, _)| *b == name).copied();
+        // The `key:` argument of a per-element builtin call: by name, or by
+        // its position when nothing is named.
+        let key_arg = |index: usize| -> Option<TermId> {
+            let named = term.arg_names.iter().position(|n| {
+                n.and_then(|c| self.p.get_string_constant(c)) == Some("key")
+            });
+            match named {
+                Some(i) => term.inputs.get(i).copied(),
+                None if positional => term.inputs.get(index).copied(),
+                None => None,
+            }
+        };
         match &term.op {
             TermOp::BuiltinCall(c) => {
-                let Some((name, index)) = self.p.get_string_constant(*c).and_then(builtin) else {
+                let Some(called) = self.p.get_string_constant(*c) else {
+                    return Vec::new();
+                };
+                if let Some((name, index)) = key_builtin(called) {
+                    return key_arg(index)
+                        .map(|arg| Site { term: term.id, arg, called: name.to_string(), builtin: name })
+                        .into_iter()
+                        .collect();
+                }
+                let Some((name, index)) = builtin(called) else {
                     return Vec::new();
                 };
                 match term.inputs.get(index) {
@@ -399,7 +426,7 @@ impl<'a> Pass<'a> {
                 let Some(method) = self.p.get_string_constant(*name) else {
                     return Vec::new();
                 };
-                let Some((name, index)) = builtin(method) else {
+                let Some((name, index)) = builtin(method).or_else(|| key_builtin(method)) else {
                     return Vec::new();
                 };
                 if !positional
@@ -594,10 +621,10 @@ fn constant_of(p: &Program, mut t: TermId) -> Option<crate::constant_table::Cons
 }
 
 /// The runtime error's help, on one line.
-const HELP: &str = "State needs a fixed place in the program, and a callback has none. For a \
-     value per element that persists across runs, use a loop: `for x in xs do f(x)` (add \
-     `key …` to follow items). For a value carried from one element to the next, use reduce's \
-     accumulator.";
+const HELP: &str = "State needs a fixed place in the program, and this callback has none. For a \
+     value per element that persists across runs, use `map` or a loop: `map(xs, f)` (add \
+     `key: \"id\"` to follow items) or `for x in xs do f(x)` (add `key …`). For a value carried \
+     from one element to the next, use reduce's accumulator.";
 
 /// A function's name as its source spells it: no module qualifier, no
 /// overload suffix.

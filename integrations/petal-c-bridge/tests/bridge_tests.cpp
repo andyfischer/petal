@@ -1064,13 +1064,13 @@ TEST(implicit_keys_reach_keyed_emitters_and_callbacks) {
     };
     const auto first = frame();
     REQUIRE(first.size() == 6);
-    // Three loop iterations and a top-level call: four keys, all different;
-    // the forEach callback's calls have none.
-    for (size_t i = 0; i < 4; ++i) {
+    // Three loop iterations, a top-level call and the forEach callback's two
+    // elements (each runs under its own element part): six keys, all
+    // different.
+    for (size_t i = 0; i < 6; ++i) {
         REQUIRE(first[i].has_value());
         for (size_t j = 0; j < i; ++j) CHECK(*first[i] != *first[j]);
     }
-    CHECK(!first[4].has_value() && !first[5].has_value());
     REQUIRE(lights.size() == 2 && lights[0] && lights[1]);
     CHECK(*lights[0] != *lights[1]);
     REQUIRE(kicks.size() == 2 && kicks[0] && kicks[1]);

@@ -12,9 +12,10 @@ use crate::handle::HandleVal;
 use crate::native_fn::{CallKeySource, PetalCxt};
 use crate::stack::BuiltinCallback;
 
-/// Runs one higher-order builtin: its arguments, and the call site its
-/// callbacks' frames are pushed with.
-type CallbackDriver<'a> = fn(&mut Vm<'a>, &[Value], u64) -> Result<Value, String>;
+/// Runs one higher-order builtin: its arguments, the call site its
+/// callbacks' frames are pushed with, and the callback record for a callback
+/// that must not declare `state` (a `key:` function of a per-element one).
+type CallbackDriver<'a> = fn(&mut Vm<'a>, &[Value], u64, BuiltinCallback) -> Result<Value, String>;
 
 impl<'a> Vm<'a> {
     /// The call chain reaching a native: its own call site, then the return
@@ -303,17 +304,28 @@ impl<'a> Vm<'a> {
                 self.builtin_speculate_place(args)
             };
         }
-        if let Some((builtin, drive)) = callback {
+        if let Some((builtin, drive, per_element)) = callback {
+            let record = BuiltinCallback {
+                builtin,
+                call: origin,
+                frames: self.stack.vm_frames.len(),
+            };
+            let site = self.site_of(origin);
+            // A per-element builtin (`map`, `forEach`, `sort_by`'s key) gives
+            // each call an element part on its path, so `state` in it is kept
+            // per element, and it leaves the record as it found it: under an
+            // outer callback with no element part (a `filter` predicate, a
+            // `sort` comparator) its slots would still be shared across the
+            // outer calls, so `state` there stays an error.
+            if per_element {
+                return drive(self, args, site, record);
+            }
             // Every callback the builtin drives runs under this record, which
             // makes a `state` declaration in it an error (see `state_in_callback`).
             // It is restored on every return, an error included, so a failed
             // callback leaves nothing behind for the next call or run.
-            let outer = self.stack.callback.replace(BuiltinCallback {
-                builtin,
-                call: origin,
-                frames: self.stack.vm_frames.len(),
-            });
-            let result = drive(self, args, self.site_of(origin));
+            let outer = self.stack.callback.replace(record);
+            let result = drive(self, args, site, record);
             self.stack.callback = outer;
             return result;
         }
@@ -331,37 +343,39 @@ impl<'a> Vm<'a> {
     }
 
     /// The higher-order builtin `nid` is, if it is one: the name an error
-    /// shows for it and the driver that runs it. These are the natives that
-    /// call back into Petal, and every one must be listed here, so that its
-    /// callbacks run under [`Stack::callback`].
+    /// shows for it, the driver that runs it, and whether it runs its
+    /// callback once per element under an element part (see
+    /// `call_native_or_intrinsic`). These are the natives that call back
+    /// into Petal, and every one must be listed here; the ones that are not
+    /// per element run their callbacks under [`Stack::callback`].
     ///
     /// A driver pushes its callbacks' frames with the builtin's own call site
-    /// as their path part, as every `call_closure_sync` caller must, though
-    /// no `state` can be declared under it.
+    /// as their `Call` part, as every `call_closure_sync` caller must, and a
+    /// per-element one adds the element's part after it.
     fn callback_intrinsic(
         &self,
         nid: NativeFnId,
         sort_with_cmp: bool,
-    ) -> Option<(&'static str, CallbackDriver<'a>)> {
+    ) -> Option<(&'static str, CallbackDriver<'a>, bool)> {
         let nf = self.native_fns;
-        let driver: (&'static str, CallbackDriver<'a>) = if nf.intrinsic_map == Some(nid) {
-            ("map", Self::builtin_map)
+        let driver: (&'static str, CallbackDriver<'a>, bool) = if nf.intrinsic_map == Some(nid) {
+            ("map", Self::builtin_map, true)
         } else if nf.intrinsic_filter == Some(nid) {
-            ("filter", Self::builtin_filter)
+            ("filter", Self::builtin_filter, false)
         } else if nf.intrinsic_reduce == Some(nid) {
-            ("reduce", Self::builtin_reduce)
+            ("reduce", Self::builtin_reduce, false)
         } else if nf.intrinsic_for_each == Some(nid) {
-            ("forEach", Self::builtin_for_each)
+            ("forEach", Self::builtin_for_each, true)
         } else if nf.intrinsic_sort_by == Some(nid) {
-            ("sort_by", Self::builtin_sort_by)
+            ("sort_by", Self::builtin_sort_by, true)
         } else if nf.intrinsic_any == Some(nid) {
-            ("any", Self::builtin_any)
+            ("any", Self::builtin_any, false)
         } else if nf.intrinsic_all == Some(nid) {
-            ("all", Self::builtin_all)
+            ("all", Self::builtin_all, false)
         } else if nf.intrinsic_find == Some(nid) {
-            ("find", Self::builtin_find)
+            ("find", Self::builtin_find, false)
         } else if sort_with_cmp {
-            ("sort", Self::builtin_sort_cmp)
+            ("sort", Self::builtin_sort_cmp, false)
         } else {
             return None;
         };

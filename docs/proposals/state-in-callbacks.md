@@ -3,13 +3,15 @@
 Status: implemented, 23 October 2026: the VM rule and its error in 41b0b961,
 the `petal lint` pass in 4cf32b48, native `any`/`all`/`find` in be2609c2.
 The user docs are
-[inline-state.md, State is not allowed in callbacks](../features/inline-state.md#state-is-not-allowed-in-callbacks)
+[inline-state.md, Callbacks of `map` and friends](../features/inline-state.md#callbacks-of-map-and-friends)
 and the runtime design is [state-call-paths.md §3.3](../dev/state-call-paths.md#33-vm).
 Where the implementation differs from the text below, a note says so.
 
-Being revisited, 20 November 2026: per-element slots for `map` and the other
-element-wise builtins are planned in
-[docs/tasks/state-in-map.md](../tasks/state-in-map.md).
+Superseded in part, 20 November 2026: callbacks of `map`, `forEach` and
+`sort_by`'s key now keep `state` per element instead of erroring
+([docs/tasks/state-in-map.md](../tasks/state-in-map.md)). The rule below
+still holds for `filter`, `reduce`, `any`, `all`, `find` and a `sort`
+comparator.
 
 Decided by the language owner, 23 October 2026: `any`/`all`/`find` become
 native and error like `count` (question 1); the provable cases are reported by

@@ -207,32 +207,50 @@ copy; it is designed but not built (§4).
 - `Vm::state_key` is: a memo's key ⇒ `[Memo(h)]`; else the frame's own path,
   minus `path_pop` innermost parts. There is no walk of the frame stack; the
   composition happened incrementally at push time.
-- **`state` in a higher-order builtin's callback is an error.** A callback
-  of `map`, `filter`, `reduce`, `forEach`, `sort_by`, `sort` with a
-  comparator, `any`, `all` or `find` runs once per element (or comparison)
+- **Element parts on callback frames.** `map`, `forEach` and `sort_by`'s
+  key function run their callback once per element, in element order, and
+  push each call's frame with `Vm::call_closure_sync_at(func, args, site,
+  &[part])`: after the frame's `Call(site)` (the builtin's call) it adds
+  `Index(i)`, or `Key(h)` when `key:` is given, so the callback's path is
+  `[…, Call(site), Index(i)]` and its `state` is kept per element exactly as
+  in a `for` iteration. The callee's own loops push and pop above that part;
+  `pop_loop_idx` only pops what a balanced `LoopPop` pushed, and the fast
+  path's `set_loop_idx` only rewrites an active loop's part, so the element
+  part stays for the whole call. A memo scope opened by a call from the
+  callback builds its path from the callback frame's, so it sees the element
+  part too, and so do native call keys (`call_key_here`).
+  `key:` is resolved first, for every element, by `Vm::element_parts`
+  (`vm/intrinsics.rs`): a string reads the field off each record or `Map`
+  with no Petal call; a function is called under the callback record (so it
+  may not declare `state`). Each key is hashed with `dict::key_hash`, as
+  `Inst::LoopKey` hashes it, labelled in `Stack::loop_key_labels`, and
+  checked for duplicates before any callback runs.
+- **`state` in the other builtins' callbacks is an error.** A callback of
+  `filter`, `reduce`, `sort` with a comparator, `any`, `all` or `find` runs
   with no path part per element, so its `state` would be one slot shared by
-  every element: a hidden accumulator. Instead, `Vm::call_native_or_intrinsic`
-  sets `Stack::callback` (a `BuiltinCallback`: the builtin's name, its call
-  term and the live frame count) around each driver listed in
-  `callback_intrinsic` (`vm/native.rs`), saving the outer value and
-  restoring it on every return, an error included, so nesting needs no
-  separate depth count. `StateInit`, `StateRead` and non-`memo`
-  `StateWrite` (`vm/dispatch.rs`) fail while it is set, through
-  `Vm::state_in_callback` (`vm/intrinsics.rs`). That builds the error at the
-  declaration, with a note at the builtin's call, or at the user's call into
-  an implicitly imported prelude when the builtin is called from one
-  (`count` → `filter`). `memo` is exempt (keyed by value), and so are
-  top-level `state` reads and `set` on a top-level cell, which reach a
-  callback as captures and cells, not as state instructions. The host path
-  (`Env::call_function`) never sets the record (§2.5), and neither does a
-  callback called by Petal code (petal-ui's `body()` closures): its call is a
-  callsite like any other. Any new native that drives a Petal callback must
-  be listed in `callback_intrinsic`. The drivers still pass the builtin's
-  `call_site` to `call_closure_sync`, which the host path shares, but no
-  `state` is ever keyed under it. `Index` parts come from `for`/`while`
-  only. `petal lint` reports the provable cases at compile time
-  (`compiler/callback_state.rs`, rule `state-in-callback`). Decision record:
-  [proposals/state-in-callbacks.md](../proposals/state-in-callbacks.md).
+  every call: a hidden accumulator. `Vm::call_native_or_intrinsic` sets
+  `Stack::callback` (a `BuiltinCallback`: the builtin's name, its call term
+  and the live frame count) around each of these drivers (the ones
+  `callback_intrinsic` in `vm/native.rs` lists as not per element), saving
+  the outer value and restoring it on every return, an error included, so
+  nesting needs no separate depth count. The per-element builtins leave the
+  record **as they found it**: a `map` inside a `filter` predicate still
+  errors, because the outer callback has no element part and the inner
+  `map`'s slots would be shared across the outer calls. `StateInit`,
+  `StateRead` and non-`memo` `StateWrite` (`vm/dispatch.rs`) fail while the
+  record is set, through `Vm::state_in_callback` (`vm/intrinsics.rs`). That
+  builds the error at the declaration, with a note at the builtin's call, or
+  at the user's call into an implicitly imported prelude when the builtin is
+  called from one (`count` → `filter`). `memo` is exempt (keyed by value),
+  and so are top-level `state` reads and `set` on a top-level cell, which
+  reach a callback as captures and cells, not as state instructions. The host
+  path (`Env::call_function`) never sets the record (§2.5), and neither does
+  a callback called by Petal code (petal-ui's `body()` closures): its call is
+  a callsite like any other. Any new native that drives a Petal callback must
+  be listed in `callback_intrinsic`. `petal lint` reports the provable cases
+  at compile time (`compiler/callback_state.rs`, rule `state-in-callback`).
+  Decision records: [proposals/state-in-callbacks.md](../proposals/state-in-callbacks.md)
+  and [tasks/state-in-map.md](../tasks/state-in-map.md).
 
 ### 3.3a Sweep and skipped sections
 

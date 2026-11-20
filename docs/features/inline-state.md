@@ -15,7 +15,7 @@ able to preserve that state across a live code modification.
   - [Keyed loops](#keyed-loops)
 - [Removed: `state(key)`](#removed-statekey)
 - [Sharing on purpose](#sharing-on-purpose)
-- [State is not allowed in callbacks](#state-is-not-allowed-in-callbacks)
+- [Callbacks of `map` and friends](#callbacks-of-map-and-friends)
 - [`state var`](#state-var)
 - [Reading and writing from other functions](#reading-and-writing-from-other-functions)
 - [How long a slot lives](#how-long-a-slot-lives)
@@ -184,29 +184,75 @@ an initializer that calls anything, including a pure helper such as
 `measure(text)`. Those sites are reported for a hand edit, and the author
 chooses among the four.
 
-## State is not allowed in callbacks
+## Callbacks of `map` and friends
 
-`map`, `filter`, `reduce`, `forEach`, `sort_by`, `sort` with a comparator,
-`any`, `all` and `find` call your function once per element (or once per
-comparison). A callback of theirs is a step in a computation over a list, not
-a place in the program, so a `state` in it would have no slot of its own.
-Declaring `state` or `state var` while one of these callbacks runs is
-therefore an error. That covers the callback's body, every function it calls,
-and loops inside them. The std helpers built on them (`count`, `min_by`,
-`max_by`, `top_k`, `group_by`, `flat_map`) are covered too.
+`map`, `forEach` and `sort_by` (its key function) call your function once per
+element, in element order. Each call gets its own place, the way an iteration
+of a `for` loop does: `state` in the callback, and in everything it calls, is
+kept per element across runs.
 
 ```petal
 fn seen(x)
   state n = 0
   n += 1
   n
-print(map([10, 20, 30], seen))
+print(map([10, 20, 30], seen))   # [1, 1, 1], then [2, 2, 2] on the next run
+```
+
+`map(xs, f)` keeps exactly the slots `for x in xs do f(x)` would. The std
+helpers built on `map` (`min_by`, `max_by`, `top_k`, `group_by`, `unique_by`,
+`flat_map`) follow, so widget rows built with `map` work, and `stable_id()`
+gives one id per element.
+
+### Keys
+
+By default an element's slots belong to its **position**, as in an unkeyed
+`for`: if the list reorders, the slots stay put and the items move. Give
+`key:` to make them follow the item:
+
+```petal
+let rows = map(tasks, row, key: "id")                 # a field name
+let rows = map(tasks, row, key: fn(t) t.owner.id)     # or a function
+let rows = for t in tasks key t.id do row(t)          # the same slots as key: "id"
+```
+
+- A string names a field: element `x`'s key is `x[name]`, on a record or a
+  `Map`. A missing field is an error naming the element's index. `"a.b"` is
+  the field named `a.b`; use the function form for a nested key.
+- A function of the element returns the key. It runs once per element before
+  any callback, and may not declare `state` itself.
+- Anything else is an error: ``map(): `key:` must be a field name (a string)
+  or a function of the element``.
+- Keys are hashed as `for … key` hashes them, so a keyed `map` and a keyed
+  `for` over the same items build slots of the same shape.
+- Two elements with the same key are an error (`Duplicate map key …`),
+  reported before any callback runs: they would share their `state`.
+
+`forEach` takes `key:` the same way. When the list shrinks, the slots of the
+elements that are gone are swept at the end of the run, as a loop's are.
+
+### Callbacks that still can't declare `state`
+
+`filter` (and so `count`), `reduce`, `any`, `all`, `find`, and a comparator
+passed to `sort` don't give their callback a place of its own yet; a
+comparator never will, since a comparison has no element and a merge sort's
+comparisons change with the data. Declaring `state` or `state var` while one
+of these callbacks runs is an error. That covers the callback's body, every
+function it calls, loops inside them, and a `map` inside them (its slots would
+still be shared across the outer calls).
+
+```petal
+fn seen(x)
+  state n = 0
+  n += 1
+  n > 1
+print(filter([10, 20, 30], seen))
 ```
 
 `petal lint` can prove this one, so the program does not start:
 
 ```
-error: `state n` cannot be used inside a callback of `map`: `map` runs `seen` on line 6, once per element. State needs a fixed place in the program, and a callback has none. For a value per element that persists across runs, use a loop: `for x in xs do f(x)` (add `key …` to follow items). For a value carried from one element to the next, use reduce's accumulator. [state-in-callback]
+error: `state n` cannot be used inside a callback of `filter`: `filter` runs `seen` on line 6, once per element. State needs a fixed place in the program, and this callback has none. For a value per element that persists across runs, use `map` or a loop: `map(xs, f)` (add `key: "id"` to follow items) or `for x in xs do f(x)` (add `key …`). For a value carried from one element to the next, use reduce's accumulator. [state-in-callback]
  --> [line 2, column 5]
   |
 2 |     state n = 0
@@ -214,57 +260,24 @@ error: `state n` cannot be used inside a callback of `map`: `map` runs `seen` on
 1 error found by check; the program was not run
 ```
 
-The compile check only reports what it can prove. A callback that arrives through a
-parameter or a `var`, or `state` the callback reaches only on some paths
-(under an `if`, a `match` or a loop, or after an early `return`), is caught
-when it runs instead:
-
-```petal
-fn seen(x)
-  state n = 0
-  n += 1
-  n
-fn apply_all(xs, f) map(xs, fn(x) f(x) end) end
-print(apply_all([10, 20, 30], seen))
-```
-
-```
-Error: `state n` cannot be used inside a callback of `map` [line 2, column 5]
-  |
-2 |     state n = 0
-  |     ^^^^^^^^^^^
-note: `map` runs the callback here, once per element, at line 6, column 21
-  |
-6 | fn apply_all(xs, f) map(xs, fn(x) f(x) end) end
-  |                     -----------------------
-help: state needs a fixed place in the program, and a callback has none.
-      For a value per element that persists across runs, use a loop:
-          for x in xs do f(x)   (add `key …` to follow items)
-      For a value carried from one element to the next, use reduce's accumulator.
-```
-
-When the builtin is called from a std helper such as `count`, the note points
-at your call of the helper, not into the prelude.
+The compile check only reports what it can prove. A callback that arrives
+through a parameter or a `var`, or `state` the callback reaches only on some
+paths (under an `if`, a `match` or a loop, or after an early `return`), is
+caught when it runs instead, with a note at the builtin call (or at your call
+of a std helper such as `count`, not into the prelude) and the same help.
 
 There are two fixes, depending on what the state was for:
 
 ```petal
-fn seen(x)
-  state n = 0
-  n += 1
-  n
-
-# a value per element that persists across runs: a loop
-print(for x in [10, 20, 30] do seen(x) end)   # [1, 1, 1] on the first run
+# a value per element that persists across runs: map, or a loop
+print(map([10, 20, 30], seen))                # [false, false, false], then all true
+print(for x in [10, 20, 30] do seen(x) end)   # the same
 
 # a value carried from one element to the next: reduce's accumulator
 print(reduce([10, 20, 30], [], fn(acc, x) append(acc, len(acc) + 1) end))   # [1, 2, 3]
 ```
 
-A `for` gives each iteration its own slots. Give it a [`key`](#loops) when
-the slots belong to the item rather than its position.
-
-What stays allowed in a callback:
+What stays allowed in any callback:
 
 - reading top-level `state`, and `set` on a top-level `state var`: that slot
   is shared on purpose, and declared where everyone can see it;
@@ -283,21 +296,10 @@ fn over(x)
   set total += x   # a top-level cell, shared on purpose
   x > limit        # a top-level state read
 print(filter([1, 2, 3, 4], over), get total)   # [3, 4] 10
-
-fn label(x)
-  memo(x) s = "item " ++ str(x)
-  s
-print(map([1, 2], label))   # ["item 1", "item 2"]
-
-fn framed(body) "[" ++ body() ++ "]" end
-fn clicks()
-  state n = 0
-  n += 1
-  str(n)
-print(framed(clicks))   # [1]
 ```
 
-The design and its measurements are in
+The plan is [tasks/state-in-map.md](../tasks/state-in-map.md); the earlier
+design and its measurements are in
 [proposals/state-in-callbacks.md](../proposals/state-in-callbacks.md).
 
 ## `state var`
@@ -363,6 +365,10 @@ A function that the host calls directly starts a path of its own. Repeated
 host calls of one function share slots with each other, but not with calls of
 that function made inside the program. To share a value across both, use a
 top-level `state var`.
+
+A host can also choose a place for a call's state (one per row of a native
+table, keyed by the row's id) and drop it when the row goes away:
+[ffi.md, Retained state](../usage/ffi.md#retained-state).
 
 ## See also
 

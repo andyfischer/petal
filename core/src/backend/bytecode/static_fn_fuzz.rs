@@ -114,12 +114,6 @@ struct Gen {
     /// Functions written so far, by name: each takes two ints and returns
     /// a list of at least three ints.
     functions: Vec<String>,
-    /// The functions that declare `state`, themselves or through a call: a
-    /// builtin's callback may not run one, so the calls loop over them instead.
-    stateful: HashSet<String>,
-    /// Whether the body being written declares `state` or calls a function
-    /// that does.
-    body_stateful: bool,
     next_id: usize,
     literals: usize,
     edit: Edit,
@@ -192,7 +186,6 @@ impl Gen {
             8 if !self.functions.is_empty() => {
                 // A call of an earlier function on constants, or not.
                 let f = self.functions[self.rng.below(self.functions.len() as u64) as usize].clone();
-                self.body_stateful |= self.stateful.contains(&f);
                 format!("{f}({}, {})[{}]", self.int(0), self.int(0), self.rng.below(3))
             }
             _ => {
@@ -229,7 +222,6 @@ impl Gen {
             },
             9 if !self.functions.is_empty() => {
                 let f = self.functions[self.rng.below(self.functions.len() as u64) as usize].clone();
-                self.body_stateful |= self.stateful.contains(&f);
                 format!("{f}({}, {})", self.int(0), self.int(0))
             }
             _ => match self.pick(Kind::Ints) {
@@ -373,7 +365,6 @@ impl Gen {
                 let name = self.fresh("s");
                 emit!(self, "state {name} = {}", self.lit());
                 emit!(self, "{name} = ({name} + 1) % 97");
-                self.body_stateful = true;
                 self.local(&name, Kind::Int);
             }
         }
@@ -391,7 +382,6 @@ impl Gen {
     fn function(&mut self) {
         let name = self.fresh("f");
         emit!(self, "fn {name}(p, q)");
-        self.body_stateful = false;
         self.indent = 1;
         self.locals = vec![
             Name { name: "p".into(), kind: Kind::Int },
@@ -426,9 +416,6 @@ impl Gen {
         self.indent = 0;
         self.line("end");
         self.locals.clear();
-        if self.body_stateful {
-            self.stateful.insert(name.clone());
-        }
         self.functions.push(name);
     }
 
@@ -512,9 +499,7 @@ impl Gen {
                     let s = self.fresh("st");
                     emit!(self, "state {s} = {f}({a}, {b})\n{s}[0] = ({s}[0] + n) % 97\nprint(\"{s}\", {s}, {f}({a}, {b}))");
                 }
-                4 if self.stateful.contains(&f) => {
-                    emit!(self, "print(\"map\", for i in [1, 2, 3] do {f}(i, n % 3)[0] end)")
-                }
+                // A stateful `f` keeps its state per element (state-in-map).
                 4 => emit!(self, "print(\"map\", map([1, 2, 3], fn(i) {f}(i, n % 3)[0] end))"),
                 _ => {}
             }
@@ -539,8 +524,6 @@ fn versions(seed: u64) -> [String; 3] {
             globals: Vec::new(),
             locals: Vec::new(),
             functions: Vec::new(),
-            stateful: HashSet::new(),
-            body_stateful: false,
             next_id: 0,
             literals: 0,
             edit,

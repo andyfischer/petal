@@ -292,22 +292,13 @@ fn every_call_path_gets_its_own_key_frame_after_frame() {
     for f in &frames[1..] {
         assert_eq!(&keys_by_value(f), &first, "the keys are the same every frame");
     }
-    // A callback of a higher-order builtin has none: every element runs on
-    // one path, as for `state`, which is an error there.
-    for v in [
-        "\"each 1\"",
-        "\"each 2\"",
-        "\"mapped 5\"",
-        "\"mapped 6\"",
-        "\"nested 7 8\"",
-    ] {
-        assert_eq!(first[v], "nokey", "{v}");
-    }
-    // Every other call has one, and no two share it: two call sites of one
-    // helper, loop iterations, recursion depths, two calls at top level,
-    // `while` iterations.
+    // A callback of `map` or `forEach` runs under an element part, as for
+    // `state`, so each element's call has a key of its own too. Every call
+    // has one, and no two share it: two call sites of one helper, loop
+    // iterations, recursion depths, two calls at top level, `while`
+    // iterations, and callback elements.
     let keyed: Vec<&String> = first.values().filter(|k| *k != "nokey").collect();
-    assert_eq!(keyed.len(), 3 + 2 + 4 + 2 + 2, "{first:?}");
+    assert_eq!(keyed.len(), 3 + 2 + 4 + 2 + 2 + 2 + 2 + 1, "{first:?}");
     let distinct: HashSet<&&String> = keyed.iter().collect();
     assert_eq!(distinct.len(), keyed.len(), "keys collide: {first:?}");
 }

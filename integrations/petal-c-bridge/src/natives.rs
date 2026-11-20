@@ -315,7 +315,8 @@ pub fn register_emitter(env: &mut Env, name: &str, buffer: SymbolId, tag: &str) 
 ///
 /// With [`FX_KEYED`] the pushed payload starts with the call's implicit key
 /// ([`PetalCxt::call_key`]) as an int, or nil where the call has none (in a
-/// `map`/`forEach` callback), followed by the call's arguments.
+/// callback with no element part: a `filter` predicate, a `sort`
+/// comparator), followed by the call's arguments.
 pub fn register_emitter_fx(
     env: &mut Env,
     name: &str,

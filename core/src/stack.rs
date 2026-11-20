@@ -38,6 +38,115 @@ pub enum PathPart {
     Memo(u64),
 }
 
+/// One part of the path a host chooses for a call's state
+/// ([`Env::call_function_at`](crate::env::Env::call_function_at)): an
+/// iteration index, or a key, hashed exactly as Petal hashes the same value in
+/// `for … key`. Opaque: hosts build it only through its constructors, and
+/// never touch the hashing.
+///
+/// ```
+/// use petal::stack::StatePart;
+/// assert_eq!(StatePart::key("row:42"), StatePart::key(String::from("row:42")));
+/// assert_ne!(StatePart::index(3), StatePart::key(3));
+/// ```
+#[derive(Debug, Clone)]
+pub struct StatePart {
+    pub(crate) part: PathPart,
+    /// The key as a state dump shows it (`"row:42"`), recorded in
+    /// [`Stack::loop_key_labels`] when the part is used.
+    pub(crate) label: Option<String>,
+}
+
+impl PartialEq for StatePart {
+    fn eq(&self, other: &Self) -> bool {
+        self.part == other.part
+    }
+}
+impl Eq for StatePart {}
+impl std::hash::Hash for StatePart {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        self.part.hash(h);
+    }
+}
+
+/// A plain Rust value [`StatePart::key`] accepts: an integer, a string or a
+/// bool. Each hashes as the equal Petal value does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyInput {
+    Int(i64),
+    Str(String),
+    Bool(bool),
+}
+
+macro_rules! key_input_from_int {
+    ($($t:ty),*) => {$(
+        impl From<$t> for KeyInput {
+            fn from(v: $t) -> Self {
+                KeyInput::Int(v as i64)
+            }
+        }
+    )*};
+}
+// `u64` and `usize` wrap past `i64::MAX`, as a Petal int would.
+key_input_from_int!(i8, i16, i32, i64, u8, u16, u32, u64, usize, isize);
+
+impl From<&str> for KeyInput {
+    fn from(v: &str) -> Self {
+        KeyInput::Str(v.to_string())
+    }
+}
+impl From<String> for KeyInput {
+    fn from(v: String) -> Self {
+        KeyInput::Str(v)
+    }
+}
+impl From<&String> for KeyInput {
+    fn from(v: &String) -> Self {
+        KeyInput::Str(v.clone())
+    }
+}
+impl From<bool> for KeyInput {
+    fn from(v: bool) -> Self {
+        KeyInput::Bool(v)
+    }
+}
+
+impl StatePart {
+    /// A position, the part iteration `i` of a `for` builds.
+    pub fn index(i: usize) -> StatePart {
+        StatePart { part: PathPart::Index(i), label: None }
+    }
+
+    /// The part `for … key k` builds for a key equal to `k`: `key(42)` is
+    /// the part of `key 42`, `key("row:42")` that of `key "row:42"`.
+    pub fn key(k: impl Into<KeyInput>) -> StatePart {
+        use crate::value::{ScalarKey, hash_scalar_key};
+        let (h, label) = match k.into() {
+            KeyInput::Int(i) => (hash_scalar_key(ScalarKey::Int(i)), i.to_string()),
+            KeyInput::Str(s) => (hash_scalar_key(ScalarKey::Str(&s)), format!("\"{s}\"")),
+            KeyInput::Bool(b) => (hash_scalar_key(ScalarKey::Bool(b)), b.to_string()),
+        };
+        StatePart { part: PathPart::Key(h), label: Some(label) }
+    }
+
+    /// The part for any Petal value `v` (a record's id the host got from
+    /// Petal), hashed as `for … key` hashes it. A function, a pending value
+    /// or NaN can't be a key, as in a keyed loop.
+    pub fn key_value(env: &crate::env::Env, v: Value) -> Result<StatePart, String> {
+        let heap = env.heap();
+        let h = crate::dict::key_hash(v, heap).map_err(|e| e.replace("as a map key", "as a state key"))?;
+        Ok(StatePart {
+            part: PathPart::Key(h),
+            label: Some(crate::value::value_to_debug_string(&v, heap)),
+        })
+    }
+
+    /// The path part this is.
+    pub fn path_part(&self) -> PathPart {
+        self.part
+    }
+}
+
 impl RuntimeStateKey {
     /// Whether this slot is a `memo(key)` cache entry rather than state.
     pub fn is_memo(&self) -> bool {
@@ -340,6 +449,12 @@ pub struct Stack {
     /// Warnings a run raised and the host has not taken yet
     /// ([`Env::take_runtime_warnings`](crate::env::Env::take_runtime_warnings)).
     pub runtime_warnings: Vec<String>,
+    /// The root `Call` parts of the host scopes a host manages itself
+    /// ([`Env::call_function_at`](crate::env::Env::call_function_at) and
+    /// friends): slots under them are not swept at the end of a run, since a
+    /// host-driven call is not part of one; the host drops them with
+    /// `clear_state_under` / `keep_state_under`.
+    pub host_roots: HashSet<u64>,
 }
 
 /// How many [`Stack::loop_key_labels`] the sweep lets accumulate before it
@@ -426,6 +541,7 @@ impl Stack {
             speculation_spare: None,
             speculate_warned: HashSet::new(),
             runtime_warnings: Vec::new(),
+            host_roots: HashSet::new(),
         }
     }
 
@@ -625,8 +741,11 @@ impl Stack {
     /// removed. Called once per top-level run after the program completes.
     pub fn sweep_untouched_state(&mut self) -> usize {
         let before = self.state.len();
-        self.state
-            .retain(|key, _| self.touched_state_keys.contains(key));
+        let host_roots = &self.host_roots;
+        self.state.retain(|key, _| {
+            self.touched_state_keys.contains(key)
+                || matches!(key.path.first(), Some(PathPart::Call(r)) if host_roots.contains(r))
+        });
         if self.loop_key_labels.len() > LOOP_KEY_LABELS_PRUNE_AT {
             let live: HashSet<u64> = self
                 .state

@@ -43,11 +43,13 @@ call back into script code. A builtin may itself be the function:
 `map(words, upper)`, `map(rows, len)`, `sort_by(names, lower)`,
 `reduce(xs, 0, max)`.
 
-A callback of any of these may not declare `state`: it runs once per element
-and has no place in the program to keep a slot at. Reaching a `state` or
-`state var` declaration from one is an error, and `petal lint` reports it
-when it can prove it. A loop or `reduce`'s accumulator is the fix
-([State is not allowed in callbacks](features/inline-state.md#state-is-not-allowed-in-callbacks)).
+A callback of `map`, `forEach` or `sort_by` keeps its `state` per element,
+as a `for` iteration does: by position, or by `key:` (a field name or a
+function of the element) so it follows the item. A callback of `filter`,
+`reduce`, `any`, `all`, `find` or a `sort` comparator may not declare
+`state`: reaching a `state` or `state var` declaration from one is an error,
+and `petal lint` reports it when it can prove it
+([Callbacks of `map` and friends](features/inline-state.md#callbacks-of-map-and-friends)).
 
 ### Typed numeric arrays
 
@@ -776,13 +778,19 @@ pub native fn Map(pairs: list) -> map
 
 @doc("""
 Applies a function to each element and returns a new list.
+
+`state` in `f` (or in anything it calls) is kept per element across runs,
+as in `for x in list do f(x)`: by the element's position, or with `key:` by
+a key of the element, so it follows the item when the list reorders.
 """,
+  params: {list: "The list to map over.", f: "`fn(x)`, returning the new element.", key: """Optional: a field name (`"id"`) or a function of the element (`fn(x) x.id`) giving each element's key for its `state`. Keys must be distinct."""},
   example: """
     map([1, 2, 3], fn(x) -> x * 2)         # [2, 4, 6]
     map(["a", "b"], fn(s) -> s ++ "!")     # ["a!", "b!"]
+    map(tasks, row, key: "id")             # row's state follows each task
   """,
   see: ["filter", "reduce", "flat_map"])
-pub native fn map(list, f)
+pub native fn map(list, f, key?)
 
 @doc("""
 Returns a new list containing only elements where the function returns
@@ -809,13 +817,15 @@ pub native fn reduce(list, initial, f)
 @doc("""
 Runs a function once for each element and returns `nil`. Use when you
 want the side effects (logging, drawing, mutations) but don't need a
-new list.
+new list. `state` in `f` is kept per element, as in `map`, and `key:` works
+the same way.
 """,
+  params: {list: "The list to walk.", f: "`fn(x)`, run for its effects.", key: """Optional: a field name or a function of the element giving each element's key for its `state`, as in `map`."""},
   example: """
     forEach([1, 2, 3], fn(x) -> print(x))
   """,
   see: ["map"])
-pub native fn forEach(list, f)
+pub native fn forEach(list, f, key?)
 
 @doc("""
 Sorts by a key read off each element. `key(element)` is called once per

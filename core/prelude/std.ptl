@@ -335,8 +335,9 @@ loses its id, and gets a new one if it runs again.
 
 The id is drawn from `unique_id` the first time the place runs and kept in
 a `state`, so it never collides with another place's, and survives a hot
-reload. Like any `state`, it cannot be asked for inside a callback of `map`,
-`filter` and the like: use a `for` loop.
+reload. Inside a `map` or `forEach` callback it is one id per element (give
+`key:` to make it follow the item); like any `state`, it cannot be asked for
+inside a callback of `filter`, `reduce` or a `sort` comparator.
 """,
   example: """
     fn row(label)
@@ -345,6 +346,7 @@ reload. Like any `state`, it cannot be asked for inside a callback of `map`,
 
     for t in tasks key t.id do
       row(t.title)
+    let rows = map(tasks, fn(t) row(t.title), key: "id")   # the same ids
   """,
   see: ["unique_id"])
 pub fn stable_id() -> int

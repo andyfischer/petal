@@ -772,14 +772,14 @@ fn seen_then(call: &str) -> String {
 
 #[test]
 fn state_in_a_callback_of_each_builtin_is_an_error() {
-    // A callback runs once per element (or comparison) with no place of its
-    // own, so a slot in it would be one value threaded through every element.
+    // A callback of these runs with no element part on its path (a
+    // comparison has no element of its own; the rest are not per element
+    // yet), so a slot in it would be one value threaded through every call.
+    // `map`, `forEach` and `sort_by` give each element its own slot
+    // (state_in_map.rs).
     for (builtin, call) in [
-        ("map", "map([1, 2, 3], seen)"),
         ("filter", "filter([1, 2, 3], seen)"),
         ("reduce", "reduce([1, 2, 3], 0, fn(acc, x) acc + seen(x) end)"),
-        ("forEach", "forEach([1, 2, 3], seen)"),
-        ("sort_by", "sort_by([3, 1, 2], seen)"),
         ("sort", "sort([3, 1, 2], fn(a, b) seen(a) - seen(b) end)"),
         ("any", "any([1, 2, 3], seen)"),
         ("all", "all([1, 2, 3], seen)"),
@@ -797,18 +797,19 @@ fn state_in_a_callback_of_each_builtin_is_an_error() {
 
 #[test]
 fn the_error_points_at_the_declaration_and_the_builtin_call() {
-    let err = run_err(&seen_then("print(map([10, 20, 30], seen))"));
+    let err = run_err(&seen_then("print(filter([10, 20, 30], seen))"));
     assert!(err.contains("2 |   state n = 0\n  |   ^^^^^^^^^^^"), "{err}");
     assert!(
         err.contains(
-            "note: `map` runs the callback here, once per element, at line 6, column 7\n\
+            "note: `filter` runs the callback here, once per element, at line 6, column 7\n\
              \x20 |\n\
-             6 | print(map([10, 20, 30], seen))\n\
-             \x20 |       -----------------------"
+             6 | print(filter([10, 20, 30], seen))\n\
+             \x20 |       --------------------------"
         ),
         "{err}"
     );
     assert!(err.contains("help: "), "{err}");
+    assert!(err.contains("map(xs, f) "), "{err}");
     assert!(err.contains("for x in xs do f(x) "), "{err}");
     assert!(err.contains("reduce's accumulator"), "{err}");
 }
@@ -829,16 +830,15 @@ fn a_builtin_called_by_the_prelude_points_at_the_users_call() {
 
 #[test]
 fn a_stateful_predicate_fails_the_same_through_every_std_helper() {
-    // `any`/`all`/`find` are native and `count`/`min_by`/`group_by` call one,
-    // so none of them lets a stateful predicate through. Each error notes the
-    // user's call, not a line in std.ptl.
+    // `any`/`all`/`find` are native and `count` calls `filter`, so none of
+    // them lets a stateful predicate through. Each error notes the user's
+    // call, not a line in std.ptl. (`min_by` and `group_by` call `map`, which
+    // keeps state per element: state_in_map.rs.)
     for (call, note) in [
         ("any([1, 2, 3], seen)", "`any` runs the callback here"),
         ("all([1, 2, 3], seen)", "`all` runs the callback here"),
         ("find([1, 2, 3], seen)", "`find` runs the callback here"),
         ("count([1, 2, 3], seen)", "`count` runs the callback through `filter` here"),
-        ("min_by([1, 2, 3], seen)", "`min_by` runs the callback through `map` here"),
-        ("group_by([1, 2, 3], seen)", "`group_by` runs the callback through `map` here"),
     ] {
         let err = run_err(&seen_then(&format!("print({call})")));
         assert!(err.contains("2 |   state n = 0"), "{call}: {err}");
@@ -902,11 +902,11 @@ fn widget(x)
   last_state
 end
 let r = {f: widget}
-print(map([1], fn(x) r.f(x) end))
+print(filter([1], fn(x) r.f(x) end))
 ");
     assert!(
         err.starts_with(
-            "`state last_state` cannot be used inside a callback of `map` [line 2, column 3]"
+            "`state last_state` cannot be used inside a callback of `filter` [line 2, column 3]"
         ),
         "{err}"
     );
@@ -916,14 +916,14 @@ print(map([1], fn(x) r.f(x) end))
 fn state_reached_from_a_callback_in_any_form_is_an_error() {
     let cases = [
         // A lambda literal declaring it.
-        "map([1, 2], fn(x)\n  state n = 0\n  n + x\nend)",
+        "filter([1, 2], fn(x)\n  state n = 0\n  n + x > 0\nend)",
         // Through a helper the callback calls.
-        "fn helper(x)\n  seen(x)\nend\nmap([1, 2], fn(x) helper(x) end)",
+        "fn helper(x)\n  seen(x)\nend\nfilter([1, 2], fn(x) helper(x) > 0 end)",
         // In a `for` loop inside the callback: its iterations are still the
         // callback's.
-        "map([1, 2], fn(x)\n  for y in [x] do seen(y) end\nend)",
+        "filter([1, 2], fn(x)\n  for y in [x] do seen(y) end\n  true\nend)",
         // A `state var` is caught at its declaration too.
-        "fn tally(x)\n  state var t = 0\n  set t += x\n  get t\nend\nmap([1, 2], tally)",
+        "fn tally(x)\n  state var t = 0\n  set t += x\n  get t\nend\nfilter([1, 2], tally)",
         // A nested builtin: the innermost one is named.
         "map([1, 2], fn(x) filter([x], seen) end)",
     ];
@@ -931,8 +931,8 @@ fn state_reached_from_a_callback_in_any_form_is_an_error() {
         let err = run_err(&seen_then(src));
         assert!(err.contains("cannot be used inside a callback of"), "{src}\n{err}");
     }
-    let err = run_err(&seen_then("fn tally(x)\n  state var t = 0\n  get t\nend\nmap([1, 2], tally)"));
-    assert!(err.starts_with("`state var t` cannot be used inside a callback of `map`"), "{err}");
+    let err = run_err(&seen_then("fn tally(x)\n  state var t = 0\n  get t\nend\nfilter([1, 2], tally)"));
+    assert!(err.starts_with("`state var t` cannot be used inside a callback of `filter`"), "{err}");
     let err = run_err(&seen_then("map([1, 2], fn(x) filter([x], seen) end)"));
     assert!(err.contains("callback of `filter`"), "{err}");
 }

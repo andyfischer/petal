@@ -57,7 +57,7 @@ Entry points, all on `Env` (`core/src/env/`):
 | Modules and packages | `register_module`, `add_package`, `register_package`, `add_module_path` (a directory of packages), `set_inline_import_dir`, `set_install_on_demand`, `override_file_source`, `packages`, `project_of`, `project_dependencies`, `resolve_import`, `package_errors`, `verify_interface` (see [Modules and packages](#modules-and-packages)) |
 | Host interfaces | `provides(name, version)`, `provides_package(name)`, `provided_interfaces`, `check_requires(&program)` |
 | Programs | `load_program`, `load_program_at`, `load_program_diag`, `compile_program`, `compile_program_at`, `compile_program_diag`, `load_program_ir` |
-| Execution | `create_stack`, `run`, `run_bounded`, `reset_stack`, `call_function`, `call_function_diag`, `has_function` |
+| Execution | `create_stack`, `run`, `run_bounded`, `reset_stack`, `call_function`, `call_function_diag`, `call_function_at`, `call_closure_at`, `has_function` |
 | Host→script data | `intern_symbol`, `set_binding`, `clear_binding` |
 | Script→host data | `take_output_buffer`, `output_buffer`, `take_output` (print lines); for a buffer whose replayed scopes should arrive as one reference each, `set_output_segmented` and `take_output_segments` (`petal::output_segments`) |
 | Id allocation | `reset_counter`, `next_counter` |
@@ -701,6 +701,40 @@ runs with no caller frame, so it starts a path derived from the function's
 qualified name. Repeated host calls of the same function share slots with each
 other, but not with in-program calls of that function. To share a value across
 both, put it in a top-level `state var` and read it with `get`.
+
+**Choosing the state a host call runs under.** A native widget that drives a
+Petal callback per row (a table, a tree view, a virtualized list) wants each
+row's `state` and `stable_id()` to persist per row, follow the row when rows
+reorder, and go away when the row is deleted. `Env::call_function_at` runs a
+function under `[host root of name, ...parts]`, and `Env::call_closure_at`
+does the same for a function value the host holds, under a scope name the
+host picks:
+
+```rust
+use petal::stack::StatePart;
+
+// Parts: a position, or a key hashed exactly as Petal's `for … key` hashes
+// the equal value (`StatePart::key(42)` is the part `key 42` builds).
+env.call_function_at(stack, "row", &[row_value], &[StatePart::key(row_id)])?;
+env.call_closure_at(stack, "table:rows", callback, &[row_value], &[StatePart::index(i)])?;
+let part = StatePart::key_value(&env, id_from_petal)?;   // any Petal value; errors on a function, NaN …
+
+// Managing it: the run-end sweep leaves these scopes alone, so the host
+// says which rows are gone.
+env.state_under(stack, "row", &[StatePart::key(row_id)]);     // [(decl name, value)]
+env.clear_state_under(stack, "row", &[StatePart::key(row_id)]); // a row was deleted
+env.keep_state_under(stack, "row", &live_rows);                 // drop every row not in `live_rows`
+
+// The same calls, refusing a repeated key in one pass, as a keyed loop does.
+let mut pass = env.begin_keyed(stack);
+pass.call_at("row", &[row_value], &[StatePart::key(row_id)])?;
+```
+
+Once a scope has been called with `call_function_at` or `call_closure_at`,
+its slots are the host's to drop; plain `call_function` slots under other
+names are still swept when a run does not touch them. State belongs to the
+call site, never to the closure value: one callback run under two scopes has
+two sets of slots ([state-in-map.md](../tasks/state-in-map.md#decided)).
 
 ## Hot reload
 

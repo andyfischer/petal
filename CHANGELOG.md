@@ -12,6 +12,21 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **`state` in a `map`, `forEach` or `sort_by` callback is kept per
+  element.** It used to be an error. Each call of the callback now gets its
+  own slots, as an iteration of `for x in xs do f(x)` does, so widgets and
+  `stable_id()` work in rows built with `map`, and so do the std helpers
+  built on it (`min_by`, `max_by`, `top_k`, `group_by`, `unique_by`,
+  `flat_map`). The new `key:` argument of `map` and `forEach` makes the slots
+  follow the item when the list reorders: a field name (`key: "id"`) or a
+  function of the element (`key: fn(t) t.id`); duplicate keys are an error.
+  `state` in a callback of `filter`, `count`, `reduce`, `any`, `all`, `find`
+  or a `sort` comparator is still an error, and so is a stateful `map`
+  inside one of those. Native call keys inside these callbacks are now per
+  element too
+  ([Callbacks of `map` and friends](docs/features/inline-state.md#callbacks-of-map-and-friends),
+  [plan](docs/tasks/state-in-map.md)).
+
 - **A value may start on the line after `=`.** When `=` (or `op=`) ends a
   line, the value may start on the next line of code, indented further than
   the statement: `let header =⏎  <text>Settings</text>`. This holds for
@@ -661,6 +676,16 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
     `petal migrate-old-code` from working.
 
 ### Added
+
+- **Hosts choose the state a call runs under.** `Env::call_function_at`
+  and `Env::call_closure_at` run a function under host-chosen path parts
+  (`StatePart::index`, `StatePart::key` for Rust integers, strings and
+  bools, hashed as Petal hashes the equal value, and `StatePart::key_value`
+  for a Petal value), so a native table can give each row its own `state`
+  and `stable_id()`. `state_under`, `clear_state_under` and
+  `keep_state_under` read and drop those slots, which the run-end sweep
+  leaves to the host; `begin_keyed` refuses a repeated key in one pass
+  ([ffi.md, Retained state](docs/usage/ffi.md#retained-state)).
 
 - **`unique_id()` and `stable_id()`.** `unique_id()` is a new global builtin
   that returns a fresh int each call (1, 2, 3, …) from a counter the VM keeps.

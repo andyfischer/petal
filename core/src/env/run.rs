@@ -8,7 +8,7 @@ use super::*;
 
 use crate::backend::StepResult;
 use crate::backend::bytecode::Vm;
-use crate::stack::StackStatus;
+use crate::stack::{PathPart, StackStatus, StatePart};
 
 impl Env {
     /// Run one step of execution, dispatching to the active backend. Both
@@ -492,17 +492,189 @@ impl Env {
         args: &[Value],
         arg_names: &[Option<&str>],
     ) -> Result<Value, crate::error::CallError> {
+        let callable = self.host_function(stack_id, name)?;
+        self.call_host(stack_id, callable, args, arg_names, host_call_site(name), &[])
+    }
+
+    /// The top-level function `name` of a stack, as a host call finds it.
+    fn host_function(&self, stack_id: StackKey, name: &str) -> Result<Value, crate::error::CallError> {
+        use crate::error::CallError;
+        let stack = self.stacks.get(&stack_id).ok_or(CallError::StackNotFound)?;
+        stack.functions.get(name).copied().ok_or_else(|| CallError::FunctionNotFound {
+            name: name.to_string(),
+        })
+    }
+
+    /// [`call_function`](Self::call_function) with its state under `parts`:
+    /// the call's `state` (and that of everything it calls) is keyed under
+    /// `[host root of name, ...parts]`, so a host driving a function once per
+    /// row (a native table, a tree view) gives each row its own slots,
+    /// following the row when rows reorder if the parts are keys:
+    ///
+    /// ```
+    /// # use petal::{env::Env, stack::StatePart, value::Value};
+    /// let mut env = Env::new();
+    /// let pid = env.load_program("fn row(x)\n  state n = 0\n  n += 1\n  n\nend").unwrap();
+    /// let sid = env.create_stack(pid).unwrap();
+    /// env.run(sid).unwrap();
+    /// let a = [StatePart::key("row:1")];
+    /// let b = [StatePart::key("row:2")];
+    /// assert_eq!(env.call_function_at(sid, "row", &[Value::Nil], &a).unwrap(), Value::Int(1));
+    /// assert_eq!(env.call_function_at(sid, "row", &[Value::Nil], &a).unwrap(), Value::Int(2));
+    /// assert_eq!(env.call_function_at(sid, "row", &[Value::Nil], &b).unwrap(), Value::Int(1));
+    /// ```
+    ///
+    /// Slots under a name called this way are the host's to manage: the
+    /// run-end sweep leaves them alone (a host-driven call is not part of a
+    /// run, so a row not drawn this run is not a row that is gone). Drop them
+    /// with [`clear_state_under`](Self::clear_state_under) and
+    /// [`keep_state_under`](Self::keep_state_under); read them with
+    /// [`state_under`](Self::state_under). Two calls with equal parts share
+    /// their slots; [`begin_keyed`](Self::begin_keyed) refuses that.
+    pub fn call_function_at(
+        &mut self,
+        stack_id: StackKey,
+        name: &str,
+        args: &[Value],
+        parts: &[StatePart],
+    ) -> Result<Value, String> {
+        let callable = self.host_function(stack_id, name)?;
+        self.call_host_at(stack_id, name, callable, args, parts)
+    }
+
+    /// [`call_function_at`](Self::call_function_at) for a function value the
+    /// host holds (a callback it was handed). `scope` names the host scope
+    /// its state lives under, as the function's name does for
+    /// `call_function_at`: pass the same `scope` to
+    /// [`state_under`](Self::state_under) and friends. A `scope` equal to a
+    /// top-level function's name shares that function's host root.
+    pub fn call_closure_at(
+        &mut self,
+        stack_id: StackKey,
+        scope: &str,
+        callable: Value,
+        args: &[Value],
+        parts: &[StatePart],
+    ) -> Result<Value, String> {
+        self.call_host_at(stack_id, scope, callable, args, parts)
+    }
+
+    fn call_host_at(
+        &mut self,
+        stack_id: StackKey,
+        scope: &str,
+        callable: Value,
+        args: &[Value],
+        parts: &[StatePart],
+    ) -> Result<Value, String> {
+        let root = host_call_site(scope);
+        let stack = self.stacks.get_mut(&stack_id).ok_or("Stack not found")?;
+        stack.host_roots.insert(root);
+        for p in parts {
+            if let (PathPart::Key(h), Some(label)) = (p.part, &p.label) {
+                stack.loop_key_labels.entry(h).or_insert_with(|| label.clone());
+            }
+        }
+        let path: smallvec::SmallVec<[PathPart; 4]> = parts.iter().map(|p| p.part).collect();
+        self.call_host(stack_id, callable, args, &[], root, &path)
+            .map_err(String::from)
+    }
+
+    /// The `state` slots under host scope `scope` (a function name given to
+    /// [`call_function_at`](Self::call_function_at), or a `scope` given to
+    /// [`call_closure_at`](Self::call_closure_at)) and `parts`, for
+    /// inspectors and tests: each slot's declaration name (`n`, or `?` for
+    /// one the program no longer declares) and value, a `state var`'s cell
+    /// read through. Slots of nested calls and loops under that place are
+    /// listed too, under their own declaration's name. Sorted by name.
+    pub fn state_under(&self, stack_id: StackKey, scope: &str, parts: &[StatePart]) -> Vec<(String, Value)> {
+        let Some(stack) = self.stacks.get(&stack_id) else {
+            return Vec::new();
+        };
+        let names = self.state_key_names(stack.program_id);
+        let prefix = host_prefix(scope, parts);
+        let mut out: Vec<(String, Value)> = stack
+            .state
+            .iter()
+            .filter(|(k, _)| k.path.starts_with(&prefix))
+            .map(|(k, v)| {
+                let name = names.get(&k.base).cloned().unwrap_or_else(|| "?".to_string());
+                let v = match *v {
+                    Value::Cell(c) => self.heap().cell_read(c),
+                    v => v,
+                };
+                (name, v)
+            })
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
+    }
+
+    /// Drop every `state` slot under host scope `scope` and `parts` now (a
+    /// row was deleted), rather than waiting for
+    /// [`keep_state_under`](Self::keep_state_under). Returns how many were
+    /// dropped.
+    pub fn clear_state_under(&mut self, stack_id: StackKey, scope: &str, parts: &[StatePart]) -> usize {
+        let prefix = host_prefix(scope, parts);
+        let Some(stack) = self.stacks.get_mut(&stack_id) else {
+            return 0;
+        };
+        let before = stack.state.len();
+        stack.state.retain(|k, _| !k.path.starts_with(&prefix));
+        let dropped = before - stack.state.len();
+        if dropped > 0 {
+            self.invalidate_run(stack_id);
+        }
+        dropped
+    }
+
+    /// The host's version of the run-end sweep for host scope `scope`: drop
+    /// every slot under it whose parts do not start with one of `live`. A
+    /// host-driven call is not part of a run, so only the host knows which
+    /// rows are gone; it says which are live, as a keyed loop does
+    /// implicitly. Returns how many slots were dropped.
+    pub fn keep_state_under(&mut self, stack_id: StackKey, scope: &str, live: &[Vec<StatePart>]) -> usize {
+        let root = PathPart::Call(host_call_site(scope));
+        let live: Vec<Vec<PathPart>> =
+            live.iter().map(|ps| ps.iter().map(|p| p.part).collect()).collect();
+        let Some(stack) = self.stacks.get_mut(&stack_id) else {
+            return 0;
+        };
+        let before = stack.state.len();
+        stack.state.retain(|k, _| match k.path.split_first() {
+            Some((first, rest)) if *first == root => live.iter().any(|l| rest.starts_with(l)),
+            _ => true,
+        });
+        let dropped = before - stack.state.len();
+        if dropped > 0 {
+            self.invalidate_run(stack_id);
+        }
+        dropped
+    }
+
+    /// Start a host "pass" (one drawing of a table's rows, say) whose
+    /// [`KeyedPass::call_at`] refuses a second call with the same scope and
+    /// parts, with a keyed loop's wording: the two would share their state.
+    pub fn begin_keyed(&mut self, stack_id: StackKey) -> KeyedPass<'_> {
+        KeyedPass { env: self, stack_id, seen: std::collections::HashSet::new() }
+    }
+
+    /// Run `callable` from the host on `stack_id`, under the path
+    /// `[Call(site), ...parts]`.
+    fn call_host(
+        &mut self,
+        stack_id: StackKey,
+        callable: Value,
+        args: &[Value],
+        arg_names: &[Option<&str>],
+        site: u64,
+        parts: &[PathPart],
+    ) -> Result<Value, crate::error::CallError> {
         use crate::error::CallError;
         let stack = self
             .stacks
             .get(&stack_id)
             .ok_or(CallError::StackNotFound)?;
-        let callable = stack.functions.get(name).copied().ok_or_else(|| {
-            CallError::FunctionNotFound {
-                name: name.to_string(),
-            }
-        })?;
-
         let ck = stack.context;
         let pid = stack.program_id;
         self.ensure_bytecode(pid).map_err(CallError::Runtime)?;
@@ -553,7 +725,7 @@ impl Env {
             &mut self.static_audit,
             None,
         )
-        .call_closure_sync_named(callable, args, arg_names, host_call_site(name));
+        .call_closure_sync_named_at(callable, args, arg_names, site, parts);
         if result.is_err()
             && let Some(stack) = self.stacks.get_mut(&stack_id)
         {
@@ -653,6 +825,61 @@ pub struct FunctionParam {
 /// identifier) keeps it disjoint from every compiled callsite id.
 pub(super) fn host_call_site(name: &str) -> u64 {
     crate::compiler::Compiler::hash_state_name(&format!("host {name}"))
+}
+
+/// The path a host call under `scope` and `parts` runs on.
+fn host_prefix(scope: &str, parts: &[StatePart]) -> Vec<PathPart> {
+    std::iter::once(PathPart::Call(host_call_site(scope)))
+        .chain(parts.iter().map(|p| p.part))
+        .collect()
+}
+
+/// A host pass of [`Env::call_function_at`] calls that refuses a repeated
+/// place: see [`Env::begin_keyed`].
+pub struct KeyedPass<'e> {
+    env: &'e mut Env,
+    stack_id: StackKey,
+    seen: std::collections::HashSet<Vec<PathPart>>,
+}
+
+impl KeyedPass<'_> {
+    /// [`Env::call_function_at`], refusing parts this pass already called
+    /// `name` under.
+    pub fn call_at(&mut self, name: &str, args: &[Value], parts: &[StatePart]) -> Result<Value, String> {
+        if !self.seen.insert(host_prefix(name, parts)) {
+            let shown: Vec<String> = parts
+                .iter()
+                .map(|p| match (&p.label, p.part) {
+                    (Some(l), _) => l.clone(),
+                    (None, PathPart::Index(i)) => format!("#{i}"),
+                    (None, other) => format!("{other:?}"),
+                })
+                .collect();
+            return Err(format!(
+                "Duplicate host key {}: two calls of `{name}` in one keyed pass have the same \
+                 key, so they would share their `state`",
+                shown.join(", ")
+            ));
+        }
+        self.env.call_function_at(self.stack_id, name, args, parts)
+    }
+
+    /// [`Env::call_closure_at`], refusing a repeated scope and parts.
+    pub fn call_closure_at(
+        &mut self,
+        scope: &str,
+        callable: Value,
+        args: &[Value],
+        parts: &[StatePart],
+    ) -> Result<Value, String> {
+        if !self.seen.insert(host_prefix(scope, parts)) {
+            return Err(format!(
+                "Duplicate host key: two calls under `{scope}` in one keyed pass have the same \
+                 key, so they would share their `state`"
+            ));
+        }
+        self.env.call_closure_at(self.stack_id, scope, callable, args, parts)
+    }
 }
 
 /// Bundle `Env`'s runtime borrows into a [`Vm`] for one dispatch. The borrows

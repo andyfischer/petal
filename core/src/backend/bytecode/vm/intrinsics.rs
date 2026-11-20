@@ -8,6 +8,7 @@
 use super::*;
 
 use crate::backend::calls;
+use crate::stack::{BuiltinCallback, PathPart};
 
 impl<'a> Vm<'a> {
     /// Call a closure synchronously: push its frame, step until it pops, and
@@ -28,19 +29,37 @@ impl<'a> Vm<'a> {
         call_args: &[Value],
         site: u64,
     ) -> Result<Value, String> {
-        self.call_closure_sync_named(callable, call_args, &[], site)
+        self.call_closure_sync_at(callable, call_args, site, &[])
     }
 
-    /// [`call_closure_sync`](Self::call_closure_sync) with some arguments
-    /// given by parameter name: `arg_names` is parallel to `call_args`
-    /// (`None` = positional), or empty. Only a host call names any
-    /// (`Env::call_function_named`).
-    pub(crate) fn call_closure_sync_named(
+    /// [`call_closure_sync`](Self::call_closure_sync) with `parts` added to
+    /// the callee frame's path after its `Call(site)` part: an element part
+    /// (`Index(i)` or `Key(h)`) when a builtin runs the callback once per
+    /// element (`map`, `forEach`, `sort_by`'s key), so `state` in it is kept
+    /// per element as in a loop iteration; or a host's chosen parts
+    /// (`Env::call_function_at`). The callee's own loops push and pop their
+    /// parts above these, so they stay for the whole call.
+    pub(crate) fn call_closure_sync_at(
+        &mut self,
+        callable: Value,
+        call_args: &[Value],
+        site: u64,
+        parts: &[PathPart],
+    ) -> Result<Value, String> {
+        self.call_closure_sync_named_at(callable, call_args, &[], site, parts)
+    }
+
+    /// [`call_closure_sync_at`](Self::call_closure_sync_at) with some
+    /// arguments given by parameter name: `arg_names` is parallel to
+    /// `call_args` (`None` = positional), or empty. Only a host call names
+    /// any (`Env::call_function_named`).
+    pub(crate) fn call_closure_sync_named_at(
         &mut self,
         callable: Value,
         call_args: &[Value],
         arg_names: &[Option<&str>],
         site: u64,
+        parts: &[PathPart],
     ) -> Result<Value, String> {
         // Unlike an ordinary call, this one nests a step loop on the native
         // stack, so a callback that recurses through `map` would overflow the
@@ -63,7 +82,7 @@ impl<'a> Vm<'a> {
             ));
         }
         self.stack.sync_depth += 1;
-        let result = self.call_closure_sync_nested(callable, call_args, arg_names, site);
+        let result = self.call_closure_sync_nested(callable, call_args, arg_names, site, parts);
         self.stack.sync_depth -= 1;
         result
     }
@@ -85,6 +104,7 @@ impl<'a> Vm<'a> {
         call_args: &[Value],
         arg_names: &[Option<&str>],
         site: u64,
+        parts: &[PathPart],
     ) -> Result<Value, String> {
         // A builtin handed over as the callback (`map(xs, len)`,
         // `sort_by(words, lower)`): there is no frame to push, the native is
@@ -116,6 +136,11 @@ impl<'a> Vm<'a> {
             self.push_closure_frame(cid, call_args, &Default::default(), None, None, site, super::calls::CallMemo::OFF)?;
         } else {
             self.push_named_frame(cid, call_args, arg_names, site)?;
+        }
+        if !parts.is_empty() {
+            // After the frame's `Call(site)`, below any loop the callee runs:
+            // `pop_loop_idx` pops only what a balanced `LoopPop` pushed.
+            self.stack.vm_frames[target_depth].path.extend_from_slice(parts);
         }
         self.stack.last_pop_result = None;
 
@@ -176,8 +201,9 @@ impl<'a> Vm<'a> {
             None => format!("`{}` runs the callback", cb.builtin),
         };
         let related = call.map(|t| (t, format!("{runs} here, once per {per}")));
-        let help = "state needs a fixed place in the program, and a callback has none.\n\
-             For a value per element that persists across runs, use a loop:\n\
+        let help = "state needs a fixed place in the program, and this callback has none.\n\
+             For a value per element that persists across runs, use `map` or a loop:\n\
+             \x20   map(xs, f)            (add `key: \"id\"` to follow items)\n\
              \x20   for x in xs do f(x)   (add `key …` to follow items)\n\
              For a value carried from one element to the next, use reduce's accumulator."
             .to_string();
@@ -212,22 +238,124 @@ impl<'a> Vm<'a> {
             .any(|i| imports.files.get(&i.module) == Some(&span.file.0))
     }
 
-    pub(super) fn builtin_map(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
-        let [list, func] = args else {
-            return Err("map() expects 2 arguments (list, function)".into());
+    /// `map(list, f)` / `map(list, f, key: k)`. `f` runs once per element
+    /// under an element part on its path (`Index(i)`, or `Key(h)` with
+    /// `key:`), so `state` in it is kept per element, as in
+    /// `for x in list do f(x)` (docs/tasks/state-in-map.md).
+    pub(super) fn builtin_map(
+        &mut self,
+        args: &[Value],
+        site: u64,
+        record: BuiltinCallback,
+    ) -> Result<Value, String> {
+        let (list, func, key) = match args {
+            [list, func] => (list, func, None),
+            [list, func, key] => (list, func, Some(*key)),
+            _ => return Err("map() expects 2 arguments (list, function), and an optional `key:`".into()),
         };
         let Value::List(list_id) = *list else {
             return Err("map() expects a list as first argument".into());
         };
         let elements = self.heap.get_list(list_id).to_vec();
+        let parts = self.element_parts("map", &elements, key, site, record)?;
         let mut results = Vec::with_capacity(elements.len());
-        for elem in elements {
-            results.push(self.call_closure_sync(*func, &[elem], site)?);
+        for (elem, part) in elements.into_iter().zip(parts) {
+            results.push(self.call_closure_sync_at(*func, &[elem], site, &[part])?);
         }
         Ok(Value::List(self.heap.alloc_list(results)))
     }
 
-    pub(super) fn builtin_filter(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
+    /// The path part each element's callback runs under: its index, or with
+    /// `key:` the hash of its key, as `for … key` hashes it. A `key:` is a
+    /// field name (a string: element `x`'s key is `x[name]`, read without
+    /// calling into Petal) or a function of the element (called once per
+    /// element, before any callback, under the callback record, so it may
+    /// not declare `state`). Every key is computed before any callback runs,
+    /// so a duplicate is reported before any element's state is touched.
+    pub(super) fn element_parts(
+        &mut self,
+        name: &'static str,
+        elements: &[Value],
+        key: Option<Value>,
+        site: u64,
+        record: BuiltinCallback,
+    ) -> Result<Vec<PathPart>, String> {
+        let Some(key) = key else {
+            return Ok((0..elements.len()).map(PathPart::Index).collect());
+        };
+        let mut parts = Vec::with_capacity(elements.len());
+        let mut seen = super::frame::LoopKeys::default();
+        for (i, &elem) in elements.iter().enumerate() {
+            let kv = match key {
+                Value::String(field) => self.key_field(name, i, elem, field)?,
+                Value::Closure(_) | Value::NativeFunction(_) | Value::OverloadSet(_) => {
+                    let outer = self.stack.callback.replace(record);
+                    let kv = self.call_closure_sync(key, &[elem], site);
+                    self.stack.callback = outer;
+                    kv?
+                }
+                _ => {
+                    return Err(format!(
+                        "{name}(): `key:` must be a field name (a string) or a function of the element, got {}",
+                        key.type_name()
+                    ));
+                }
+            };
+            let h = crate::dict::key_hash(kv, self.heap)
+                .map_err(|e| e.replace("as a map key", &format!("as a {name}() key")))?;
+            let heap = &*self.heap;
+            if !seen.insert(h) {
+                return Err(format!(
+                    "Duplicate {name} key {}: two elements of one `{name}` call have the \
+                     same key, so they would share their `state`",
+                    crate::value::value_to_debug_string(&kv, heap)
+                ));
+            }
+            self.stack
+                .loop_key_labels
+                .entry(h)
+                .or_insert_with(|| crate::value::value_to_debug_string(&kv, heap));
+            parts.push(PathPart::Key(h));
+        }
+        Ok(parts)
+    }
+
+    /// Element `i`'s field `field`, for a `key:` given as a field name: a
+    /// record's field or a map's entry. A missing field is an error, as
+    /// reading one is anywhere else.
+    fn key_field(
+        &self,
+        name: &str,
+        i: usize,
+        elem: Value,
+        field: crate::heap::StringId,
+    ) -> Result<Value, String> {
+        let fname = self.heap.get_string(field);
+        let found = match elem {
+            Value::Map(id) => self.heap.get_map(id).get(fname).copied(),
+            Value::Dict(id) => {
+                let k = Value::String(field);
+                let h = crate::dict::key_hash(k, self.heap)?;
+                let entries = self.heap.get_dict(id);
+                entries.find(h, &k, self.heap).map(|pos| entries.entry_at(pos).1)
+            }
+            other => {
+                return Err(format!(
+                    "{name}(): `key: \"{fname}\"` reads a field, but element {i} is a {} \
+                     (use `key: fn(x) …` to key it some other way)",
+                    other.type_name()
+                ));
+            }
+        };
+        found.ok_or_else(|| format!("{name}(): element {i} has no field '{fname}' (its `key:`)"))
+    }
+
+    pub(super) fn builtin_filter(
+        &mut self,
+        args: &[Value],
+        site: u64,
+        _record: BuiltinCallback,
+    ) -> Result<Value, String> {
         let [list, func] = args else {
             return Err("filter() expects 2 arguments (list, function)".into());
         };
@@ -248,7 +376,12 @@ impl<'a> Vm<'a> {
     /// `any(list, pred)`: true at the first element `pred` holds for, false
     /// when none does (and so for the empty list). `pred` is not called on
     /// the elements after the deciding one.
-    pub(super) fn builtin_any(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
+    pub(super) fn builtin_any(
+        &mut self,
+        args: &[Value],
+        site: u64,
+        _record: BuiltinCallback,
+    ) -> Result<Value, String> {
         let (elements, func) = self.predicate_args("any", args)?;
         for elem in elements {
             if self.predicate_holds(func, elem, site)? == Some(true) {
@@ -260,7 +393,12 @@ impl<'a> Vm<'a> {
 
     /// `all(list, pred)`: false at the first element `pred` does not hold
     /// for, true when it holds for every one (vacuously, for the empty list).
-    pub(super) fn builtin_all(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
+    pub(super) fn builtin_all(
+        &mut self,
+        args: &[Value],
+        site: u64,
+        _record: BuiltinCallback,
+    ) -> Result<Value, String> {
         let (elements, func) = self.predicate_args("all", args)?;
         for elem in elements {
             if self.predicate_holds(func, elem, site)? == Some(false) {
@@ -271,7 +409,12 @@ impl<'a> Vm<'a> {
     }
 
     /// `find(list, pred)`: the first element `pred` holds for, or nil.
-    pub(super) fn builtin_find(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
+    pub(super) fn builtin_find(
+        &mut self,
+        args: &[Value],
+        site: u64,
+        _record: BuiltinCallback,
+    ) -> Result<Value, String> {
         let (elements, func) = self.predicate_args("find", args)?;
         for elem in elements {
             if self.predicate_holds(func, elem, site)? == Some(true) {
@@ -321,7 +464,12 @@ impl<'a> Vm<'a> {
         Ok((elements, *func))
     }
 
-    pub(super) fn builtin_reduce(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
+    pub(super) fn builtin_reduce(
+        &mut self,
+        args: &[Value],
+        site: u64,
+        _record: BuiltinCallback,
+    ) -> Result<Value, String> {
         let [list, initial, func] = args else {
             return Err("reduce() expects 3 arguments (list, initial, function)".into());
         };
@@ -402,7 +550,12 @@ impl<'a> Vm<'a> {
 
     /// `sort(list, cmp)` — the comparator form of `sort`. The one-argument
     /// `sort(list)` never reaches here; see the dispatcher in `vm::native`.
-    pub(super) fn builtin_sort_cmp(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
+    pub(super) fn builtin_sort_cmp(
+        &mut self,
+        args: &[Value],
+        site: u64,
+        _record: BuiltinCallback,
+    ) -> Result<Value, String> {
         let [list, func] = args else {
             return Err("sort() expects 1 or 2 arguments (list, comparator)".into());
         };
@@ -429,7 +582,12 @@ impl<'a> Vm<'a> {
     /// stable — elements with equal keys keep their original order either way,
     /// which is what makes sorting a table by one column and then another
     /// produce the composed ordering.
-    pub(super) fn builtin_sort_by(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
+    pub(super) fn builtin_sort_by(
+        &mut self,
+        args: &[Value],
+        site: u64,
+        _record: BuiltinCallback,
+    ) -> Result<Value, String> {
         let (list, func, dir) = match args {
             [list, func] => (list, func, Value::Bool(false)),
             [list, func, dir] => (list, func, *dir),
@@ -462,8 +620,10 @@ impl<'a> Vm<'a> {
 
         let elements = self.heap.get_list(list_id).to_vec();
         let mut keyed: Vec<(crate::builtins::SortKey, Value)> = Vec::with_capacity(elements.len());
-        for elem in elements {
-            let key = self.call_closure_sync(*func, &[elem], site)?;
+        // The key function runs once per element, before any comparison, so
+        // it gets the element's index as its part, as a `map` callback does.
+        for (i, elem) in elements.into_iter().enumerate() {
+            let key = self.call_closure_sync_at(*func, &[elem], site, &[PathPart::Index(i)])?;
             // Only numbers and strings have an order. Any other key used to
             // rank as "equal to everything", which returned the list unsorted
             // without a word — `sort_by(rows, fn(r) -> [r.a, r.b])` being the
@@ -498,16 +658,30 @@ impl<'a> Vm<'a> {
         Ok(Value::List(self.heap.alloc_list(sorted)))
     }
 
-    pub(super) fn builtin_for_each(&mut self, args: &[Value], site: u64) -> Result<Value, String> {
-        let [list, func] = args else {
-            return Err("forEach() expects 2 arguments (list, function)".into());
+    /// `forEach(list, f)` / `forEach(list, f, key: k)`: as
+    /// [`builtin_map`](Self::builtin_map), keeping no results.
+    pub(super) fn builtin_for_each(
+        &mut self,
+        args: &[Value],
+        site: u64,
+        record: BuiltinCallback,
+    ) -> Result<Value, String> {
+        let (list, func, key) = match args {
+            [list, func] => (list, func, None),
+            [list, func, key] => (list, func, Some(*key)),
+            _ => {
+                return Err(
+                    "forEach() expects 2 arguments (list, function), and an optional `key:`".into(),
+                );
+            }
         };
         let Value::List(list_id) = *list else {
             return Err("forEach() expects a list as first argument".into());
         };
         let elements = self.heap.get_list(list_id).to_vec();
-        for elem in elements {
-            self.call_closure_sync(*func, &[elem], site)?;
+        let parts = self.element_parts("forEach", &elements, key, site, record)?;
+        for (elem, part) in elements.into_iter().zip(parts) {
+            self.call_closure_sync_at(*func, &[elem], site, &[part])?;
         }
         Ok(Value::Nil)
     }

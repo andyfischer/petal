@@ -52,14 +52,18 @@ end
 #[test]
 fn a_named_function_passed_to_each_builtin_is_reported() {
     for (call, builtin) in [
-        ("map([1, 2], seen)", "map"),
+        ("filter([1, 2], seen)", "filter"),
         ("filter([1, 2], seen)", "filter"),
         ("reduce([1, 2], 0, seen2)", "reduce"),
-        ("forEach([1, 2], seen)", "forEach"),
-        ("sort_by([1, 2], seen)", "sort_by"),
         ("sort([1, 2], seen2)", "sort"),
-        ("[1, 2].map(seen)", "map"),
+        ("[1, 2].filter(seen)", "filter"),
         ("[1, 2].reduce(0, seen2)", "reduce"),
+        ("any([1, 2], seen)", "any"),
+        // The `key:` function of a per-element builtin computes the
+        // element's part, so it runs with none.
+        ("map([1, 2], fn(x) x end, key: seen)", "map"),
+        ("forEach([1, 2], fn(x) x end, key: seen)", "forEach"),
+        ("[1, 2].map(fn(x) x end, seen)", "map"),
     ] {
         let src = format!("{SEEN}fn seen2(a, b)\n    state m = 0\n    m\nend\nprint({call})\n");
         let d = one(&src);
@@ -74,20 +78,41 @@ fn a_named_function_passed_to_each_builtin_is_reported() {
 }
 
 #[test]
+fn a_per_element_builtins_callback_is_not_reported() {
+    // `map`, `forEach` and `sort_by` keep a callback's state per element
+    // (docs/tasks/state-in-map.md), and so do the std helpers built on `map`.
+    for call in [
+        "map([1, 2], seen)",
+        "[1, 2].map(seen)",
+        "forEach([1, 2], seen)",
+        "sort_by([1, 2], seen)",
+        "map([{id: 1}], seen, key: \"id\")",
+        "map([1, 2], seen, key: fn(x) x end)",
+        "min_by([1, 2], seen)",
+        "max_by([1, 2], seen)",
+        "group_by([1, 2], seen)",
+        "flat_map([1, 2], fn(x) [seen(x)] end)",
+    ] {
+        none(&format!("{SEEN}print({call})\n"));
+    }
+}
+
+#[test]
 fn the_error_is_at_the_declaration_and_cites_the_call() {
-    let src = format!("{SEEN}print(map([10, 20, 30], seen))\n");
+    let src = format!("{SEEN}print(filter([10, 20, 30], seen))\n");
     let d = one(&src);
     assert_eq!((d.span.start.line, d.span.start.column), (2, 5));
     assert_eq!(d.span.end.line, 2);
     assert!(
         d.message.starts_with(
-            "`state n` cannot be used inside a callback of `map`: `map` runs `seen` on line 6, once per element."
+            "`state n` cannot be used inside a callback of `filter`: `filter` runs `seen` on line 6, once per element."
         ),
         "{}",
         d.message
     );
     for help in [
-        "use a loop: `for x in xs do f(x)`",
+        "use `map` or a loop: `map(xs, f)`",
+        "`for x in xs do f(x)`",
         "reduce's accumulator",
     ] {
         assert!(d.message.contains(help), "{}", d.message);
@@ -104,15 +129,15 @@ fn a_stateful_comparator_is_reported_but_sort_without_one_is_not() {
 
 #[test]
 fn a_named_argument_is_the_callback_too() {
-    one(&format!("{SEEN}print(map([1], f: seen))\n"));
+    one(&format!("{SEEN}print(filter([1], pred: seen))\n"));
 }
 
 #[test]
 fn a_lambda_that_declares_state_is_reported() {
-    let d = one("print(map([1, 2], fn(x)\n    state n = 0\n    n + x\nend))\n");
+    let d = one("print(filter([1, 2], fn(x)\n    state n = 0\n    n + x\nend))\n");
     assert!(
         d.message
-            .contains("`map` runs the callback on line 1, once per element."),
+            .contains("`filter` runs the callback on line 1, once per element."),
         "{}",
         d.message
     );
@@ -133,11 +158,11 @@ fn a_lambda_that_calls_a_stateful_helper_is_reported() {
 #[test]
 fn state_reached_through_named_calls_is_reported() {
     let d = one(&format!(
-        "{SEEN}fn middle(x) seen(x) end\nfn outer(x) middle(x) end\nprint(map([1], outer))\n"
+        "{SEEN}fn middle(x) seen(x) end\nfn outer(x) middle(x) end\nprint(filter([1], outer))\n"
     ));
     assert!(
         d.message
-            .contains("`map` runs `outer` on line 8, once per element, which reaches it through `middle` → `seen`."),
+            .contains("`filter` runs `outer` on line 8, once per element, which reaches it through `middle` → `seen`."),
         "{}",
         d.message
     );
@@ -146,9 +171,9 @@ fn state_reached_through_named_calls_is_reported() {
 #[test]
 fn a_function_declared_after_its_use_is_followed() {
     // Its name is read through the hoisting cell.
-    one(&format!("fn use_it() map([1], seen) end\n{SEEN}"));
+    one(&format!("fn use_it() filter([1], seen) end\n{SEEN}"));
     one(&format!(
-        "fn use_it() map([1], fn(x) seen(x) end) end\n{SEEN}"
+        "fn use_it() filter([1], fn(x) seen(x) end) end\n{SEEN}"
     ));
 }
 
@@ -156,17 +181,17 @@ fn a_function_declared_after_its_use_is_followed() {
 fn nested_lambdas_and_functions_are_followed() {
     // A local lambda called by the callback.
     one(
-        "print(map([1], fn(x)\n    let g = fn()\n        state k = 0\n        k\n    end\n    g()\nend))\n",
+        "print(filter([1], fn(x)\n    let g = fn()\n        state k = 0\n        k\n    end\n    g()\nend))\n",
     );
     // A nested `fn` passed by name.
     one(
-        "fn rows(xs)\n    fn row(x)\n        state k = 0\n        k\n    end\n    map(xs, row)\nend\nprint(rows([1]))\n",
+        "fn rows(xs)\n    fn row(x)\n        state k = 0\n        k\n    end\n    filter(xs, row)\nend\nprint(rows([1]))\n",
     );
-    // A `map` inside a callback: the inner callback is the one reported.
+    // A `filter` inside a callback: the inner callback is the one reported.
     let d = one(&format!(
-        "{SEEN}print(map([[1]], fn(xs) map(xs, seen) end))\n"
+        "{SEEN}print(filter([[1]], fn(xs) filter(xs, seen) end))\n"
     ));
-    assert!(d.message.contains("`map` runs `seen`"), "{}", d.message);
+    assert!(d.message.contains("`filter` runs `seen`"), "{}", d.message);
 }
 
 #[test]
@@ -181,22 +206,22 @@ fn state_the_callback_reaches_only_sometimes_is_not_reported() {
         "    x > 100 && seen(x)\n",
         "    if x < 100 then return x end\n    seen(x)\n",
     ] {
-        none(&format!("{SEEN}fn row(x)\n{body}end\nprint(map([1, 2], row))\n"));
+        none(&format!("{SEEN}fn row(x)\n{body}end\nprint(filter([1, 2], row))\n"));
     }
     // A function that hands its parameter to a builtin only sometimes.
     none(&format!(
-        "{SEEN}fn each(xs, f) if len(xs) > 9 then map(xs, f) end end\nprint(each([1], seen))\n"
+        "{SEEN}fn each(xs, f) if len(xs) > 9 then filter(xs, f) end end\nprint(each([1], seen))\n"
     ));
     // What runs before the branch is still sure.
     one(&format!(
-        "{SEEN}fn row(x)\n    seen(x)\n    if x < 100 then return x end\n    x\nend\nprint(map([1, 2], row))\n"
+        "{SEEN}fn row(x)\n    seen(x)\n    if x < 100 then return x end\n    x\nend\nprint(filter([1, 2], row))\n"
     ));
 }
 
 #[test]
 fn state_var_is_reported() {
     let d =
-        one("fn tally(x)\n    state var n = 0\n    set n += x\n    n\nend\nforEach([1], tally)\n");
+        one("fn tally(x)\n    state var n = 0\n    set n += x\n    n\nend\nfilter([1], tally)\n");
     assert!(
         d.message.starts_with("`state var n` cannot be used"),
         "{}",
@@ -208,10 +233,6 @@ fn state_var_is_reported() {
 fn the_std_helpers_that_go_through_a_builtin_are_reported_at_the_users_line() {
     for (call, called, builtin) in [
         ("count([1, 2], seen)", "count", "filter"),
-        ("min_by([1, 2], seen)", "min_by", "map"),
-        ("max_by([1, 2], seen)", "max_by", "map"),
-        ("group_by([1, 2], seen)", "group_by", "map"),
-        ("flat_map([1, 2], fn(x) [seen(x)] end)", "flat_map", "map"),
     ] {
         let d = one(&format!("{SEEN}print({call})\n"));
         assert!(
@@ -228,28 +249,29 @@ fn the_std_helpers_that_go_through_a_builtin_are_reported_at_the_users_line() {
 #[test]
 fn a_callback_through_an_optional_parameter_is_left_to_the_runtime() {
     // `top_k`'s `key` defaults to nil, so the name is a join of the argument
-    // and the default by the time it reaches `map`.
+    // and the default by the time it reaches `map` (which would not report it
+    // anyway now: `map` keeps a callback's state per element).
     none(&format!("{SEEN}print(top_k([1, 2], 1, seen))\n"));
 }
 
 #[test]
 fn a_users_function_that_hands_its_parameter_to_a_builtin_is_followed() {
     one(&format!(
-        "{SEEN}fn each(xs, f) map(xs, f) end\nprint(each([1], seen))\n"
+        "{SEEN}fn each(xs, f) filter(xs, f) end\nprint(each([1], seen))\n"
     ));
     one(&format!(
-        "{SEEN}fn each(xs, f) map(xs, f) end\nfn each2(xs, g) each(xs, g) end\nprint(each2([1], seen))\n"
+        "{SEEN}fn each(xs, f) filter(xs, f) end\nfn each2(xs, g) each(xs, g) end\nprint(each2([1], seen))\n"
     ));
 }
 
 #[test]
 fn memo_is_not_state_here() {
-    none("print(map([1, 2], fn(x)\n    memo(x) sq = x * x\n    sq\nend))\n");
+    none("print(filter([1, 2], fn(x)\n    memo(x) sq = x * x\n    sq\nend))\n");
 }
 
 #[test]
 fn top_level_state_used_from_a_callback_is_not_reported() {
-    none("state total = 0\nprint(map([1, 2], fn(x) x + total end))\n");
+    none("state total = 0\nprint(filter([1, 2], fn(x) x + total end))\n");
     none("state var score = 0\nforEach([1, 2], fn(x) set score += x end)\nprint(score)\n");
 }
 
@@ -257,25 +279,25 @@ fn top_level_state_used_from_a_callback_is_not_reported() {
 fn a_callback_that_arrives_through_a_parameter_or_var_is_not_reported() {
     // The builtin's callback is a parameter nothing stateful is passed to.
     none(&format!(
-        "{SEEN}fn each(xs, f) map(xs, f) end\nprint(each([1], fn(x) x end))\nprint(seen(1))\n"
+        "{SEEN}fn each(xs, f) filter(xs, f) end\nprint(each([1], fn(x) x end))\nprint(seen(1))\n"
     ));
     // A stateful function called through a parameter of a user function.
     none(&format!(
-        "{SEEN}fn apply(f, x) f(x) end\nprint(map([1], fn(x) apply(seen, x) end))\n"
+        "{SEEN}fn apply(f, x) f(x) end\nprint(filter([1], fn(x) apply(seen, x) end))\n"
     ));
     // Through a `var`.
-    none(&format!("{SEEN}var f = seen\nprint(map([1], f))\n"));
+    none(&format!("{SEEN}var f = seen\nprint(filter([1], f))\n"));
 }
 
 #[test]
 fn a_function_the_callback_only_builds_is_not_reported() {
-    none("print(map([1], fn(x)\n    fn()\n        state k = 0\n        k\n    end\nend))\n");
+    none("print(filter([1], fn(x)\n    fn()\n        state k = 0\n        k\n    end\nend))\n");
 }
 
 #[test]
 fn a_shadowed_builtin_is_not_reported() {
     none(&format!(
-        "{SEEN}fn map(xs, f) f(xs[0]) end\nprint(map([1], seen))\n"
+        "{SEEN}fn filter(xs, f) f(xs[0]) end\nprint(filter([1], seen))\n"
     ));
     none(&format!(
         "{SEEN}let filter = fn(xs, f) xs end\nprint(filter([1], seen))\n"
@@ -289,15 +311,15 @@ fn a_shadowed_builtin_is_not_reported() {
 fn the_method_form_is_not_reported_when_something_else_can_take_the_call() {
     // A record field of the name is called first.
     none(&format!(
-        "{SEEN}let box = {{map: fn(f) f(1) end}}\nprint(box.map(seen))\nprint([1].map(seen))\n"
+        "{SEEN}let box = {{filter: fn(f) f(1) end}}\nprint(box.filter(seen))\nprint([1].filter(seen))\n"
     ));
     // Also when it is written by index.
     none(&format!(
-        "{SEEN}let r = {{a: 1}}\nr[\"map\"] = fn(f) f(1) end\nprint(r.map(seen))\n"
+        "{SEEN}let r = {{a: 1}}\nr[\"filter\"] = fn(f) f(1) end\nprint(r.filter(seen))\n"
     ));
     // So is a user method.
     none(&format!(
-        "{SEEN}class Bag\n    items\nend\nfn Bag.map(f) map(self.items, fn(x) x end) end\nprint([1].map(seen))\n"
+        "{SEEN}class Bag\n    items\nend\nfn Bag.filter(f) filter(self.items, fn(x) x end) end\nprint([1].filter(seen))\n"
     ));
 }
 
@@ -308,16 +330,16 @@ fn state_in_another_module_is_reported_at_the_callback() {
         "lib",
         "pub fn widget(x)\n    state hovered = false\n    hovered\nend\n",
     );
-    let found = findings_in(&mut env, "import lib\nprint(map([1, 2], lib.widget))\n");
+    let found = findings_in(&mut env, "import lib\nprint(filter([1, 2], lib.widget))\n");
     let [d] = found.as_slice() else {
         panic!("{found:?}")
     };
     assert!(d.is_error());
     assert_eq!(d.span.file, petal::source_map::ENTRY_FILE);
-    assert_eq!((d.span.start.line, d.span.start.column), (2, 19));
+    assert_eq!((d.span.start.line, d.span.start.column), (2, 22));
     assert!(
         d.message.starts_with(
-            "`state hovered` cannot be used inside a callback of `map` (declared in lib): `map` runs `widget` here, once per element."
+            "`state hovered` cannot be used inside a callback of `filter` (declared in lib): `filter` runs `widget` here, once per element."
         ),
         "{}",
         d.message
@@ -329,7 +351,7 @@ fn it_fails_the_check() {
     let mut env = Env::new();
     env.set_check_only(true);
     let pid = env
-        .load_program(&format!("{SEEN}print(map([1], seen))\n"))
+        .load_program(&format!("{SEEN}print(filter([1], seen))\n"))
         .unwrap();
     let report = env.check_program(pid);
     assert!(!report.passed());
@@ -341,7 +363,7 @@ fn the_lsp_shows_it() {
     use petal::lsp::document::analyze;
     use petal::lsp::lsp_types::DiagnosticSeverity;
 
-    let analysis = analyze(&format!("{SEEN}print(map([1], seen))\n"));
+    let analysis = analyze(&format!("{SEEN}print(filter([1], seen))\n"));
     let [d] = analysis.diagnostics.as_slice() else {
         panic!("one diagnostic: {:?}", analysis.diagnostics);
     };

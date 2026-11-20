@@ -1,6 +1,24 @@
 # `state` inside `map` and the other element-wise builtins
 
-Status: plan, 2026-11-20. Not started.
+Status: steps 1–6 shipped 2026-11-20 (`map`, `forEach`, `sort_by`'s key;
+`key:` on `map` and `forEach`; the narrowed callback record and lint; docs;
+the `Env` host API). Steps 7–9 are open.
+
+Notes from the implementation:
+
+- `key:` is not on `sort_by`: its second parameter is already named `key`
+  (the key function), so open question 1 stays open.
+- `call_closure_at` takes a `scope` name (`call_closure_at(stack, scope,
+  callable, args, parts)`): a closure has no name to make the host root
+  from, and the management calls (`state_under`, …) need one to address it.
+- `StatePart::key_value(&env, v)` takes the `Env` for its heap; labels are
+  recorded in `Stack::loop_key_labels` when the part is used, since the
+  constructors have no stack.
+- A host scope called through `call_function_at` / `call_closure_at` is
+  exempt from the run-end sweep (`Stack::host_roots`); plain
+  `call_function` slots are still swept when a run does not touch them.
+- The fast path needed no change: `set_loop_idx` only rewrites an active
+  loop's part, which is always above the element part.
 
 Today `state` inside a builtin's callback is a runtime error
 ([state-in-callbacks.md](../proposals/state-in-callbacks.md)). Under this

@@ -819,23 +819,55 @@ pub fn holds_pending(val: &Value, heap: &Heap) -> bool {
     }
 }
 
+/// A number, a string or a bool, as [`hash_value`] hashes the Petal value
+/// of it: what a host's `StatePart::key` builds with no heap at hand.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScalarKey<'a> {
+    Int(i64),
+    Str(&'a str),
+    Bool(bool),
+}
+
+/// [`hash_value`] of the value `key` stands for, computed without a heap.
+pub fn hash_scalar_key(key: ScalarKey<'_>) -> u64 {
+    use std::hash::Hasher;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    match key {
+        ScalarKey::Int(i) => hash_num_into(Num::Int(i), &mut h),
+        ScalarKey::Str(s) => hash_str_into(s, &mut h),
+        ScalarKey::Bool(b) => hash_bool_into(b, &mut h),
+    }
+    h.finish()
+}
+
+fn hash_num_into(n: Num, h: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    2u8.hash(h);
+    numeric::num_key(n).hash(h);
+}
+
+fn hash_str_into(s: &str, h: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    4u8.hash(h);
+    s.hash(h);
+}
+
+fn hash_bool_into(b: bool, h: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    1u8.hash(h);
+    b.hash(h);
+}
+
 fn hash_into(val: &Value, heap: &Heap, h: &mut impl std::hash::Hasher) {
     use std::hash::{Hash, Hasher};
     if let Some(n) = as_num(val, heap) {
-        2u8.hash(h);
-        numeric::num_key(n).hash(h);
+        hash_num_into(n, h);
         return;
     }
     match val {
         Value::Nil => 0u8.hash(h),
-        Value::Bool(b) => {
-            1u8.hash(h);
-            b.hash(h);
-        }
-        Value::String(id) => {
-            4u8.hash(h);
-            heap.get_string(*id).hash(h);
-        }
+        Value::Bool(b) => hash_bool_into(*b, h),
+        Value::String(id) => hash_str_into(heap.get_string(*id), h),
         Value::List(id) => {
             5u8.hash(h);
             let elems = heap.get_list(*id);

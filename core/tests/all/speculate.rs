@@ -145,6 +145,19 @@ SPEC
 set doc.meetings[0].start = (get doc).meetings[0].start + 10
 print(get doc)",
     ),
+    (
+        "state in map callbacks, keyed and by index",
+        "fn row(x)
+  state n = 0
+  n += x
+  n
+end
+fn view(xs)
+  [map(xs, row, key: fn(x) x end), map(xs, row)]
+end
+SPEC
+print(view([1, 2, 3]))",
+    ),
 ];
 
 /// The calls each program's `SPEC` becomes, by program index.
@@ -156,6 +169,7 @@ const CALLS: &[&str] = &[
     "let r = speculate(noisy, 4)",
     "let r = speculate(panel, 100)",
     "let r = speculate(move, 1, 7)\nlet r2 = speculate(move, 0, 3)",
+    "let r = speculate(view, [3, 4])",
 ];
 
 #[test]

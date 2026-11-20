@@ -419,10 +419,12 @@ forEach([0, 1, 2, 3, 4], fn(j) push_output(s, j * r) end)
     let mut paths: Vec<u64> = looped.iter().map(|e| e.key.path_hash).collect();
     paths.dedup();
     assert_eq!(paths.len(), 5, "one loop path per iteration");
-    // A callback has no loop path: its emits are told apart by occurrence.
+    // A `forEach` callback runs under an element part, as a loop iteration
+    // does: its emits differ by their loop path too.
     let cb = &base[5..];
-    let occ: Vec<u32> = cb.iter().map(|e| e.key.occurrence).collect();
-    assert_eq!(occ, vec![0, 1, 2, 3, 4]);
+    let mut cb_paths: Vec<u64> = cb.iter().map(|e| e.key.path_hash).collect();
+    cb_paths.dedup();
+    assert_eq!(cb_paths.len(), 5, "one element path per callback call");
 
     let p = run(&mut session, &mut env, Overrides::one(r, OverrideValue::Int(6)));
     let keys = |es: &[EmitRecord]| es.iter().map(|e| e.key).collect::<Vec<_>>();

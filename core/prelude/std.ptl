@@ -323,3 +323,30 @@ pub fn list_and(xs, word = "and")
     str(xs[0])
   else
     join(slice(xs, 0, n - 1), ", ") ++ " {word} " ++ str(xs[n - 1])
+
+# ── Identity ───────────────────────────────────────────────────────────────
+
+@doc("""
+An id for the place it is called from, the same on every run. Each call
+site gets its own, each call path through a function gets its own (two
+calls to a helper that asks for one get two), and each iteration of a loop
+gets its own (by index, or by the loop's `key`). A place that stops running
+loses its id, and gets a new one if it runs again.
+
+The id is drawn from `unique_id` the first time the place runs and kept in
+a `state`, so it never collides with another place's, and survives a hot
+reload. Like any `state`, it cannot be asked for inside a callback of `map`,
+`filter` and the like: use a `for` loop.
+""",
+  example: """
+    fn row(label)
+      let id = stable_id()   # one per row, kept across frames
+      print("{id}: {label}")
+
+    for t in tasks key t.id do
+      row(t.title)
+  """,
+  see: ["unique_id"])
+pub fn stable_id() -> int
+  state id = unique_id()
+  id

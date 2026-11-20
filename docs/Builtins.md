@@ -133,7 +133,7 @@ and `false` when it did not.
 
 Source: [`core/packages/core/src/basics.ptl`](../core/packages/core/src/basics.ptl)
 
-[`print`](#print) · [`str`](#str) · [`type`](#type) · [`assert`](#assert) · [`assert_eq`](#assert_eq) · [`expect`](#expect) · [`expect_eq`](#expect_eq) · [`expect_near`](#expect_near)
+[`print`](#print) · [`str`](#str) · [`type`](#type) · [`assert`](#assert) · [`assert_eq`](#assert_eq) · [`expect`](#expect) · [`expect_eq`](#expect_eq) · [`expect_near`](#expect_near) · [`unique_id`](#unique_id)
 
 ### `print`
 
@@ -329,6 +329,28 @@ expect_near(sin(pi()), 0.0, 0.000001, "sin of pi")
 **See also:** [`expect`](#expect), [`expect_eq`](#expect_eq)
 
 *Source: [`core/packages/core/src/basics.ptl:145`](../core/packages/core/src/basics.ptl#L145)*
+
+### `unique_id`
+
+```petal no-check
+unique_id() -> int
+```
+
+A new id each call: an int from a counter the VM keeps, from 1 and never
+repeating for the life of the program (across runs and hot reloads, not
+across a restart). For an id that stays put from run to run, keep one in a
+`state`, which is what `stable_id` does.
+
+**Example**
+
+```petal
+unique_id()   # 1
+unique_id()   # 2
+```
+
+**See also:** [`stable_id`](#stable_id)
+
+*Source: [`core/packages/core/src/basics.ptl:158`](../core/packages/core/src/basics.ptl#L158)*
 
 ## `core/math`
 
@@ -3389,7 +3411,7 @@ tolerates the missing field, or `field` / `has_field` by name.
 
 Source: [`core/prelude/std.ptl`](../core/prelude/std.ptl)
 
-[`first`](#first) · [`is_empty`](#is_empty) · [`sum`](#sum) · [`product`](#product) · [`mean`](#mean) · [`minimum`](#minimum) · [`maximum`](#maximum) · [`count`](#count) · [`min_by`](#min_by) · [`max_by`](#max_by) · [`top_k`](#top_k) · [`group_by`](#group_by) · [`unique_by`](#unique_by) · [`flat_map`](#flat_map) · [`take`](#take) · [`drop`](#drop) · [`has_field`](#has_field) · [`field`](#field) · [`clamp01`](#clamp01) · [`plural`](#plural) · [`list_and`](#list_and)
+[`first`](#first) · [`is_empty`](#is_empty) · [`sum`](#sum) · [`product`](#product) · [`mean`](#mean) · [`minimum`](#minimum) · [`maximum`](#maximum) · [`count`](#count) · [`min_by`](#min_by) · [`max_by`](#max_by) · [`top_k`](#top_k) · [`group_by`](#group_by) · [`unique_by`](#unique_by) · [`flat_map`](#flat_map) · [`take`](#take) · [`drop`](#drop) · [`has_field`](#has_field) · [`field`](#field) · [`clamp01`](#clamp01) · [`plural`](#plural) · [`list_and`](#list_and) · [`stable_id`](#stable_id)
 
 ### `first`
 
@@ -3815,6 +3837,38 @@ list_and([1, 2, 3], "or")               # 1, 2 or 3
 **See also:** [`join`](#join), [`plural`](#plural)
 
 *Source: [`core/prelude/std.ptl:318`](../core/prelude/std.ptl#L318)*
+
+### `stable_id`
+
+```petal no-check
+stable_id() -> int
+```
+
+An id for the place it is called from, the same on every run. Each call
+site gets its own, each call path through a function gets its own (two
+calls to a helper that asks for one get two), and each iteration of a loop
+gets its own (by index, or by the loop's `key`). A place that stops running
+loses its id, and gets a new one if it runs again.
+
+The id is drawn from `unique_id` the first time the place runs and kept in
+a `state`, so it never collides with another place's, and survives a hot
+reload. Like any `state`, it cannot be asked for inside a callback of `map`,
+`filter` and the like: use a `for` loop.
+
+**Example**
+
+```petal
+fn row(label)
+  let id = stable_id()   # one per row, kept across frames
+  print("{id}: {label}")
+
+for t in tasks key t.id do
+  row(t.title)
+```
+
+**See also:** [`unique_id`](#unique_id)
+
+*Source: [`core/prelude/std.ptl:350`](../core/prelude/std.ptl#L350)*
 
 ## `core/classes`
 

@@ -96,6 +96,7 @@ mod sorting;
 mod source_preservation;
 mod speculate;
 mod spread_args;
+mod stable_id;
 mod state_call_paths;
 mod state_decl_ids;
 mod state_in_callback_check;

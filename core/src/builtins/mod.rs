@@ -690,6 +690,12 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("unique", collections::native_unique, NativeEffects::CONST);
     table.register("unique_by_keys", collections::native_unique_by_keys, NativeEffects::CONST);
 
+    // A fresh id from the VM's counter each call (`stable_id` in the std
+    // prelude keeps one in a `state`). An effect, so no memo, static value or
+    // skipped run reuses an answer; contained, since a speculative run's
+    // draws are restored with its fork. Append-only.
+    table.register("unique_id", io::native_unique_id, NativeEffects::EFFECT.contained());
+
     // The trivial builtins the VM retires inline (`Inst::Intrinsic`), by the
     // ids they were just given.
     for op in crate::backend::bytecode::isa::IntrinsicOp::ALL {
@@ -770,6 +776,7 @@ mod effect_tests {
         assert!(row("binding").probe && row("binding").reads.contains(InputClasses::BINDINGS));
         assert!(row("random").reads.contains(InputClasses::RNG) && !row("random").effect);
         assert!(row("noise_seed").effect);
+        assert!(row("unique_id").effect);
         assert!(row("or_else").reads.contains(InputClasses::RESOURCES));
         assert!(row("__pending").effect);
         assert_eq!(row("sqrt"), NativeEffects::CONST);
@@ -958,6 +965,7 @@ mod effect_tests {
             "print",
             "push_output",
             "noise_seed",
+            "unique_id",
             "is_loading",
             // A handle's liveness is host data (docs/game-engine-features/handles.md).
             "is_valid",

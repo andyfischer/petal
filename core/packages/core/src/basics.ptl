@@ -143,3 +143,16 @@ near anything.
   """,
   see: ["expect", "expect_eq"])
 pub native fn expect_near(actual: num, expected: num, tolerance: num, message?) -> bool
+
+@doc("""
+A new id each call: an int from a counter the VM keeps, from 1 and never
+repeating for the life of the program (across runs and hot reloads, not
+across a restart). For an id that stays put from run to run, keep one in a
+`state`, which is what `stable_id` does.
+""",
+  example: """
+    unique_id()   # 1
+    unique_id()   # 2
+  """,
+  see: ["stable_id"])
+pub native fn unique_id() -> int

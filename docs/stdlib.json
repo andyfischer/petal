@@ -785,7 +785,7 @@
       },
       "source": {
         "file": "core/src/builtins/io.rs",
-        "line": 29
+        "line": 44
       }
     },
     {
@@ -3493,7 +3493,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       }
     },
     {
@@ -3549,7 +3549,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -3617,7 +3617,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -3672,7 +3672,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -3728,7 +3728,7 @@
       },
       "source": {
         "file": "core/src/builtins/io.rs",
-        "line": 75
+        "line": 90
       }
     },
     {
@@ -3783,7 +3783,7 @@
       },
       "source": {
         "file": "core/src/builtins/io.rs",
-        "line": 252
+        "line": 267
       }
     },
     {
@@ -5285,7 +5285,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -6586,7 +6586,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -6631,7 +6631,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -6782,7 +6782,7 @@
       },
       "source": {
         "file": "core/src/builtins/io.rs",
-        "line": 141
+        "line": 156
       }
     },
     {
@@ -6848,7 +6848,7 @@
       },
       "source": {
         "file": "core/src/builtins/io.rs",
-        "line": 164
+        "line": 179
       }
     },
     {
@@ -6921,7 +6921,7 @@
       },
       "source": {
         "file": "core/src/builtins/io.rs",
-        "line": 195
+        "line": 210
       }
     },
     {
@@ -7699,7 +7699,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -7755,7 +7755,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -7812,7 +7812,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -8159,7 +8159,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -8194,7 +8194,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -8247,7 +8247,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -8781,7 +8781,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 721
+        "line": 727
       },
       "aliasOf": "map"
     },
@@ -8886,6 +8886,42 @@
       "source": {
         "file": "core/src/builtins/collections.rs",
         "line": 1369
+      }
+    },
+    {
+      "name": "unique_id",
+      "category": "io",
+      "group": "core",
+      "arity": 0,
+      "variadic": false,
+      "params": [],
+      "signatures": [
+        []
+      ],
+      "declaration": {
+        "module": "core/basics",
+        "file": "core/packages/core/src/basics.ptl",
+        "line": 158
+      },
+      "doc": {
+        "body": "A new id each call: an int from a counter the VM keeps, from 1 and never\nrepeating for the life of the program (across runs and hot reloads, not\nacross a restart). For an id that stays put from run to run, keep one in a\n`state`, which is what `stable_id` does.",
+        "summary": "A new id each call: an int from a counter the VM keeps, from 1 and never repeating for the life of the program (across runs and hot reloads, not across a restart).",
+        "params": {},
+        "returns": null,
+        "options": {},
+        "example": [
+          "unique_id()   # 1\nunique_id()   # 2"
+        ],
+        "see": [
+          "stable_id"
+        ],
+        "deprecated": null,
+        "hidden": false,
+        "extra": {}
+      },
+      "source": {
+        "file": "core/src/builtins/io.rs",
+        "line": 35
       }
     },
     {
@@ -10080,6 +10116,42 @@
       "source": {
         "file": "core/prelude/std.ptl",
         "line": 318
+      }
+    },
+    {
+      "name": "stable_id",
+      "category": "std",
+      "group": "prelude",
+      "arity": 0,
+      "variadic": false,
+      "params": [],
+      "signatures": [
+        []
+      ],
+      "declaration": {
+        "module": "std",
+        "file": "core/prelude/std.ptl",
+        "line": 350
+      },
+      "doc": {
+        "body": "An id for the place it is called from, the same on every run. Each call\nsite gets its own, each call path through a function gets its own (two\ncalls to a helper that asks for one get two), and each iteration of a loop\ngets its own (by index, or by the loop's `key`). A place that stops running\nloses its id, and gets a new one if it runs again.\n\nThe id is drawn from `unique_id` the first time the place runs and kept in\na `state`, so it never collides with another place's, and survives a hot\nreload. Like any `state`, it cannot be asked for inside a callback of `map`,\n`filter` and the like: use a `for` loop.",
+        "summary": "An id for the place it is called from, the same on every run.",
+        "params": {},
+        "returns": null,
+        "options": {},
+        "example": [
+          "fn row(label)\n  let id = stable_id()   # one per row, kept across frames\n  print(\"{id}: {label}\")\n\nfor t in tasks key t.id do\n  row(t.title)"
+        ],
+        "see": [
+          "unique_id"
+        ],
+        "deprecated": null,
+        "hidden": false,
+        "extra": {}
+      },
+      "source": {
+        "file": "core/prelude/std.ptl",
+        "line": 350
       }
     },
     {

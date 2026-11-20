@@ -26,6 +26,21 @@ pub(super) fn native_str(state: &mut PetalCxt) -> Result<u32, String> {
     Ok(1)
 }
 
+/// The VM counter `unique_id` draws from. It lives in the execution context
+/// (`ExecutionContext::counters`), so it survives runs, `reset_stack` and a
+/// hot reload's state transfer (all on the same context), and a speculative
+/// run's draws are rolled back with the fork.
+pub const UNIQUE_ID_COUNTER: &str = "__unique_id";
+
+pub(super) fn native_unique_id(state: &mut PetalCxt) -> Result<u32, String> {
+    super::require_args(state, 0, "unique_id")?;
+    let sym = state.intern_symbol(UNIQUE_ID_COUNTER);
+    // From 1: 0 stays free for "no id".
+    let id = state.next_counter(sym) + 1;
+    state.push_int(id as i64);
+    Ok(1)
+}
+
 pub(super) fn native_type(state: &mut PetalCxt) -> Result<u32, String> {
     super::require_args(state, 1, "type")?;
     let v = state.get_value(1)?;

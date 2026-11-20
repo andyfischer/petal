@@ -662,6 +662,15 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **`unique_id()` and `stable_id()`.** `unique_id()` is a new global builtin
+  that returns a fresh int each call (1, 2, 3, …) from a counter the VM keeps.
+  The counter survives runs and hot reloads, and a speculative run's draws are
+  rolled back. `stable_id()`, in the std prelude, is an id for the place it is
+  called from. Each call site, call path and loop iteration (by index, or by
+  the loop's `key`) gets its own, and it stays the same on every run. It is
+  `state id = unique_id()`, so it follows the same rules as `state`. A program
+  that declares either name shadows it, as with any builtin.
+
 - **A `natives` table for the dataflow view.** `petal show-ir --json
   --user-only` has a new top-level `natives` key, and petal-web-canvas's
   `dataflow_ir(source)` returns `{ok, ir, natives, diagnostics}`. `natives`

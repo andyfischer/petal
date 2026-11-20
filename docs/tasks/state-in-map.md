@@ -195,10 +195,25 @@ call's state under a root path made from the function's name
 built only through constructors, so hosts never touch the hashing:
 
 ```rust
-StatePart::index(i: usize)              // like a `for` iteration
-StatePart::key(env: &Env, v: Value)     // like `for … key v`; errors if v is unhashable
-StatePart::named(s: &str)               // a host-chosen name ("row:42")
+StatePart::index(3)                     // a position, like a `for` iteration
+StatePart::key(42)                      // the part `for … key 42` makes
+StatePart::key("row:42")                // the part `for … key "row:42"` makes
+StatePart::key_value(&env, v)?          // any Petal value; errors if it can't be a key
 ```
+
+- `key` takes `impl Into<KeyInput>`, implemented for the integer types,
+  `&str`, `String` and `bool`. It can't fail and needs no `Env`: strings and
+  numbers hash by content alone (`value::hash_into`, `value.rs:822`: a type
+  tag, then the bytes or `num_key`), so `KeyInput` reproduces that hash in
+  Rust. A test pins `StatePart::key("x")` and `StatePart::key(7)` to the
+  parts Petal's `for … key "x"` / `key 7` build.
+- `key_value` is for a value the host got from Petal (a record's id). It
+  goes through `dict::key_hash`, so a function, a pending value or NaN is
+  refused as a keyed loop refuses it.
+- Both record the key's label in `Stack::loop_key_labels`, so state dumps
+  show `"row:42"` the same way whichever constructor made it.
+- `index(3)` and `key(3)` are different parts, as `for x in xs` and
+  `for x in xs key 3` are.
 
 **Calling under a scope.**
 
@@ -334,6 +349,12 @@ call, and only keyed calls pay it.
   `reduce`, `any`, `all`, `find` and `filter` come after it ships.
 - 2026-11-20: Rust callers can choose the state a call runs under and
   manage it ("Rust callers" above).
+- 2026-11-20: `StatePart` has `index`, `key` (plain Rust values, hashed as
+  Petal hashes the same value) and `key_value` (a Petal value). No separate
+  `named`: `key("row:42")` is that. A host key and a Petal key with equal
+  values are the same part. The hash is Rust's `DefaultHasher`, which, as
+  for every keyed loop, isn't guaranteed stable across Rust versions; that
+  matters only if state snapshots are ever saved to disk.
 - 2026-11-20: **state belongs to the call site, never to the lambda.** A
   closure's `state` is keyed by the path of the code that runs it (the call
   sites, loop iterations and element parts on the stack at the call), not by
@@ -353,6 +374,3 @@ call, and only keyed calls pay it.
 2. **The C bridge** (`integrations/petal-c-bridge`) would want the same host
    API. Its scope type would be an opaque handle built from an index, a
    string or a Petal value. Is it needed in the first host round?
-3. **`StatePart::named` vs `key`.** A host could build every scope with
-   `key(Value::string(..))`. `named` saves an allocation and reads better in
-   state dumps. Keep both, or only `key`?

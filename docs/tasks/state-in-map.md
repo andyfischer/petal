@@ -67,15 +67,29 @@ remedy applies, a key:
 
 ```petal
 # per item, following the item when the list reorders
-let rows = map(tasks, fn(t) row(t), key: fn(t) t.id)
+let rows = map(tasks, row, key: "id")                 # a field name
+let rows = map(tasks, row, key: fn(t) t.owner.id)     # or a function
 
 # today's equivalent
 let rows = for t in tasks key t.id do row(t)
 ```
 
-- `key:` is a named argument taking a function of the element. It is called
-  once per element before the callback, outside any per-element part. The key
-  function itself may not declare `state` (the same error as today).
+`key:` is a named argument that takes either form, as lodash's iteratee
+shorthand does (`_.keyBy(xs, "id")` or `_.keyBy(xs, x => x.id)`):
+
+- **A string** names a field: the key of element `x` is `x[name]`, read
+  without calling into Petal. It works on records and maps. A missing field
+  is an error naming the element's index and the field, as reading a
+  missing field is anywhere else in Petal (no `?? nil` fallback, since a key
+  that is silently `nil` for several elements shows up later as a duplicate
+  instead). Only a single field name, not a dotted path: `"a.b"` is the field
+  named `a.b`. A nested key takes the function form.
+- **A function** of the element returns the key. It is called once per
+  element before the callback, outside any per-element part, and may not
+  declare `state` (the same error as today).
+- **Anything else** (a number, a list, `nil`) is an error:
+  ``map(): `key:` must be a field name (a string) or a function of the element``.
+  A string is never callable, so the two forms can't be confused.
 - The key value is hashed exactly as `for … key` hashes it, and the part is
   `PathPart::Key(h)`, so a `map` and a `for` over the same items with the same
   key build slots of the same shape.
@@ -134,7 +148,11 @@ the same path, which is why the old rule shared one slot. Today
    and names `map` as the per-element form for `filter`'s case.
 4. **Keys.** `map` and friends take `key:` through their `native fn`
    declarations in `core/packages/core/src/collections.ptl` (named-argument
-   binding already exists, `bind_native_args`). The intrinsic computes all
+   binding already exists, `bind_native_args`). One helper,
+   `Vm::element_keys(name, elements, key) -> Vec<u64>`, resolves both forms:
+   a string reads each element's field on the heap (records by field, maps by
+   key) with no Petal call; a callable goes through `call_closure_sync_at(..,
+   None)` under the callback record. Either way the helper computes all
    keys first and checks them for duplicates with the keyed loop's hash and
    error helper, then runs the callbacks. Computing keys first means a
    duplicate is reported before any element's state is touched.
@@ -164,8 +182,13 @@ New, in `core/tests/all/state_call_paths.rs` or a new `state_in_map.rs`:
 
 - `map(xs, f)` with a stateful `f`: each element keeps its own value across
   three runs, and the values equal those of `for x in xs do f(x)`.
-- `key:`: a reorder between runs keeps each item's value. A new item gets
-  fresh state, and a removed item's slot is swept.
+- `key:`: a reorder between runs keeps each item's value, with `key: "id"`
+  and with `key: fn(t) t.id`, and the two forms build the same slots (and
+  the same slots as `for t in xs key t.id`). A new item gets fresh state,
+  and a removed item's slot is swept.
+- `key: "id"` on a list of maps (`Dict`), and on records; a missing field
+  errors with the element's index; `key: 3` and `key: nil` error with the
+  "field name or function" message.
 - Duplicate keys raise the error before any callback runs.
 - `reduce`, `forEach`, `sort_by`'s key and the std helpers (`group_by`,
   `flat_map`, `min_by`): one slot per element.
@@ -226,19 +249,20 @@ call, and only keyed calls pay it.
 7. Then the downstream work this unblocks: `interact`'s implicit
    `stable_id()` identity, and bloom's `probe` on `interact`.
 
+## Decided
+
+- 2026-11-20: `key:` takes a field name or a function, like lodash's
+  iteratee shorthand. No dotted paths for now.
+
 ## Open questions
 
-1. **`key:` as a function or also a field name?** `key: "id"` is shorter for
-   the common case and is not ambiguous, since a string is never callable.
-   The proposal is a function only at first; add the string form if call
-   sites want it.
-2. **`key:` on `reduce`/`any`/`all`/`find`/`sort_by`.** These are
+1. **`key:` on `reduce`/`any`/`all`/`find`/`sort_by`.** These are
    rarely stateful, so `key:` on them may never be asked for. It could ship
    on `map` and `forEach` only, and be added elsewhere on request.
-3. **A stored closure run later** (bloom's `defer_paint`, command
+2. **A stored closure run later** (bloom's `defer_paint`, command
    registries) keys its state under the path of the code that runs it, not
    the code that made it. This plan doesn't change that.
-4. **Host callbacks** (`Env::call_function`, the C bridge) keep the host
+3. **Host callbacks** (`Env::call_function`, the C bridge) keep the host
    call-site rule. Should a host be able to pass an element part, for a
    native that drives a Petal callback per item (a table widget in Rust)?
    Not needed yet. `call_closure_sync_at` would make it a small addition to

@@ -539,7 +539,9 @@ pub fn dataflow_viewer(r, source, compiled, opts = {})
     let sy = scroll_y()
     let sx = scroll_x()
     if sy != 0 || sx != 0 then
-      if mod_cmd() || mod_ctrl() then
+      # A host that sends modifiers as plain keys (petal-web-canvas) leaves
+      # `mod_*` false, so the keys count too.
+      if mod_cmd() || mod_ctrl() || key_down("ctrl") || key_down("cmd") then
         view = zoom_at(exp(-sy * 0.12), mx - dia.x, my - dia.y)
       else
         view = {...view, x: view.x - sx * 24, y: view.y - sy * 24}

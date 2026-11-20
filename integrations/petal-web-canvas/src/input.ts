@@ -17,18 +17,27 @@ export class InputTracker {
     this.runtime = runtime;
   }
 
+  /** Every key and pointer event carries the modifier chord; send it along
+   *  so `mod_shift()` etc. see what is held. */
+  private mods(e: MouseEvent | KeyboardEvent): void {
+    this.runtime?.set_modifiers(e.shiftKey, e.ctrlKey, e.altKey, e.metaKey);
+  }
+
   attach(canvas: HTMLCanvasElement): void {
     canvas.addEventListener("mousemove", (e) => {
+      this.mods(e);
       this.runtime?.set_mouse_position(e.offsetX, e.offsetY);
     });
 
     canvas.addEventListener("mousedown", (e) => {
+      this.mods(e);
       this.runtime?.set_mouse_button(e.button, true);
     });
 
     // Listen on window for mouseup so a drag that releases off-canvas still
     // clears the button (and its edge is still delivered).
     window.addEventListener("mouseup", (e) => {
+      this.mods(e);
       this.runtime?.set_mouse_button(e.button, false);
     });
 
@@ -36,6 +45,7 @@ export class InputTracker {
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
     canvas.addEventListener("wheel", (e) => {
+      this.mods(e);
       // Wheel deltas are in pixels; petal-ui scroll is in lines (~40px/line).
       this.runtime?.scroll(-e.deltaX / 40, -e.deltaY / 40);
       e.preventDefault();
@@ -43,6 +53,7 @@ export class InputTracker {
 
     // Use window for keyboard so the canvas doesn't need focus tricks.
     window.addEventListener("keydown", (e) => {
+      this.mods(e);
       const name = mapKey(e.key, e.code);
       if (name !== null) this.runtime?.set_key_state(name, true);
       // Feed printable characters as typed text for text_input().
@@ -50,6 +61,7 @@ export class InputTracker {
     });
 
     window.addEventListener("keyup", (e) => {
+      this.mods(e);
       const name = mapKey(e.key, e.code);
       if (name !== null) this.runtime?.set_key_state(name, false);
     });

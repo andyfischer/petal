@@ -27,7 +27,8 @@ use petal_ui::edit_mode::{
     EditSession, GoalTarget, SessionOptions, SourceRewrite, describe_call, hit_test,
 };
 use petal_ui::input::{
-    InputEvent, InputState, bind_dimensions, bind_frame_info, bind_input, bind_time, buttons,
+    InputEvent, InputState, Modifiers, bind_dimensions, bind_frame_info, bind_input, bind_time,
+    buttons,
 };
 
 /// Map a DOM `MouseEvent.button` (0 = left, 1 = middle, 2 = right) onto the
@@ -448,6 +449,15 @@ impl PetalRuntime {
         } else {
             InputEvent::KeyUp { key }
         });
+    }
+
+    /// The modifier chord held right now (a DOM event's `shiftKey`, `ctrlKey`,
+    /// `altKey`, `metaKey`), read by `mod_shift()` / `mod_ctrl()` /
+    /// `mod_alt()` / `mod_cmd()`. Level state: send it with every key and
+    /// pointer event; it holds until the next call.
+    pub fn set_modifiers(&mut self, shift: bool, ctrl: bool, alt: bool, cmd: bool) {
+        self.input
+            .event(InputEvent::Modifiers(Modifiers { shift, ctrl, alt, cmd }));
     }
 
     /// Typed text for the current frame (read by the script's `text_input()`).

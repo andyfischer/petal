@@ -14,6 +14,16 @@ With Petal, the running program is something that can be inspected and
 modified. Authors can modify the output instead of the source code,
 and the runtime helps connect the dots to turn their action into a code change.
 
+## Goals
+
+At a high level, the project's goals are:
+
+ - Easy to use, batteries-included for creative applications.
+ - Supports live coding.
+ - Supports coding by direct manipulation and other outcome-based coding.
+ - High introspection and debuggability.
+ - Pragmatic instead of principled.
+
 ## Language design decisions
 
 ### Pure functional semantics

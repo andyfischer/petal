@@ -1,0 +1,774 @@
+@module_doc("""
+An interactive dataflow viewer: a program's source on the left (editable,
+highlighted) and its dataflow diagram on the right, linked.
+
+Hover a node and everything it is computed from lights rose, everything it
+feeds blue, in the diagram and in the code at once. Hover a line of code and
+the nodes it defines light up. Click a node to pin it; click the background
+to unpin. Fold a function or loop into one box with the button on its header
+(click the box to unfold). Drag to pan, scroll to pan, ⌘/ctrl + scroll to
+zoom.
+
+The viewer does not compile: that takes the host's compiler. The caller
+holds the source, hands the viewer the latest compile it has, and compiles
+again whenever the source the viewer returns differs from it:
+
+```petal ignore
+state source = START
+state compiled = nil        # the host writes {source, result}
+let v = dataflow_viewer(rect(0, 0, screen_width(), screen_height()), source, compiled)
+source = v.source
+if compiled?.source != source then
+  request_compile(source)   # however the host is asked
+```
+""", see: ["dataflow_viewer", "ptl_dataflow/extract.dataflow_graph", "ptl_dataflow/layout.layout_graph"])
+
+import ui
+import ./extract
+import ./layout
+
+# ── look ───────────────────────────────────────────────────────────────────
+
+let BAR_BG = :1d1b15
+let TERM_BG = :14130f
+let TERM_LINE = :2c2920
+let TERM_INK = :e9e2cf
+let TERM_DIM = :9b927c
+let CTRL_BG = :2a271e
+let CTRL_LINE = :4a4434
+let POLLEN = :e0a93b
+let PAPER = :fbf9f4
+let DOT = :e6dfcf
+let SURFACE = :fffdf8
+let INK = :18140f
+let INK_2 = :4a4236
+let INK_3 = :7c715d
+let RULE = :d8cdb4
+let UP = :c2185b
+let DOWN = :2b5ea8
+let FOCUS_LINE = :c2185b
+
+# Per node kind: fill, stroke, text, detail, corner radius, dashed, legend name.
+fn _kind_style(kind)
+  match kind
+    when "input" -> {fill: :2f6b4f, stroke: :1f4d38, text: :f4efe4, detail: :cfe3d6, rx: 14, dash: false, name: "host input"}
+    when "let" -> {fill: :fffdf8, stroke: :4a4236, text: :18140f, detail: :7c715d, rx: 5, dash: false, name: "let"}
+    when "const" -> {fill: :f0ece2, stroke: :a99c7e, text: :4a4236, detail: :8a7f69, rx: 5, dash: true, name: "constant"}
+    when "state" -> {fill: :fcefd0, stroke: :b9862a, text: :5a3e08, detail: :8f6a22, rx: 5, dash: false, name: "state"}
+    when "var" -> {fill: :e3ecf8, stroke: :2b5ea8, text: :173a6e, detail: :4d6f9e, rx: 5, dash: false, name: "var"}
+    when "param" -> {fill: :ffffff, stroke: :2b5ea8, text: :2b5ea8, detail: :2b5ea8, rx: 12, dash: false, name: "parameter"}
+    when "effect" -> {fill: :fbe3ec, stroke: :c2185b, text: :8e1248, detail: :a8506f, rx: 5, dash: false, name: "effect"}
+    when "call" -> {fill: :fffdf8, stroke: :c2185b, text: :8e1248, detail: :a8506f, rx: 5, dash: true, name: "call"}
+    when "return" -> {fill: :2a251c, stroke: :18140f, text: :faf8f3, detail: :cfc6b4, rx: 5, dash: false, name: "return"}
+    when _ -> {fill: :fffdf8, stroke: :18140f, text: :18140f, detail: :7c715d, rx: 8, dash: false, name: "folded fn"}
+
+fn _edge_style(kind)
+  match kind
+    when "control" -> {c: :c4952f, w: 1.2, dash: [5, 4]}
+    when "call" -> {c: :c2185b, w: 1.2, dash: [2, 3]}
+    when _ -> {c: :8f846d, w: 1.25, dash: []}
+
+let LEGEND = ["input", "let", "const", "state", "var", "param", "effect", "return"]
+
+# Syntax colours, as the site's highlighter uses them.
+fn _token_color(cls)
+  match cls
+    when "comment" -> :6f6750
+    when "string" -> :9bd17a
+    when "num" -> :e0a93b
+    when "kw" -> :ff6b9d
+    when "lit" -> :e0a93b
+    when "type" -> :7ec8e3
+    when "fn" -> :c9b6ff
+    when "op" -> :c99a6a
+    when _ -> :e9e2cf
+
+let KEYWORDS = const([
+  "fn", "let", "state", "if", "then", "else", "end", "for", "in", "do", "while",
+  "match", "when", "enum", "return", "break", "continue", "var", "set", "get",
+  "import", "pub", "native", "const", "class", "memo", "key", "test", "as",
+])
+let LITERALS = const(["true", "false", "nil"])
+
+let MIN_FIT = 0.72
+let BAR_H = 36
+let LEGEND_H = 30
+let ERR_H = 26
+let GUTTER = 38
+let CODE_SIZE = 12.5
+
+fn _mono(size, color)
+  {font: "mono", size: size, color: color}
+
+fn _ui(size, color)
+  {font: "ui", size: size, color: color}
+
+# ── the code pane ──────────────────────────────────────────────────────────
+
+fn _is_word(c)
+  let o = ord(c)
+  (o >= 97 && o <= 122) || (o >= 65 && o <= 90) || (o >= 48 && o <= 57) || c == "_"
+
+fn _is_digit(c)
+  let o = ord(c)
+  o >= 48 && o <= 57
+
+# Tokens of `src` as `{s, e, cls}` (code-point offsets), enough to colour
+# it: comments, strings (`"""` raw strings across lines too), numbers,
+# keywords, literals, calls, types and operators.
+fn _tokenize(src)
+  let cs = chars(src)
+  let n = len(cs)
+  let out = []
+  let i = 0
+  while i < n do
+    let c = cs[i]
+    if c == " " || c == "\n" || c == "\t" then
+      i += 1
+      continue
+    if c == "#" then
+      let j = i
+      while j < n && cs[j] != "\n" do
+        j += 1
+      out = append(out, {s: i, e: j, cls: "comment"})
+      i = j
+      continue
+    if c == "\"" then
+      let raw = i + 2 < n && cs[i + 1] == "\"" && cs[i + 2] == "\""
+      let j = i + (if raw then 3 else 1 end)
+      while j < n do
+        if raw then
+          if j + 2 < n && cs[j] == "\"" && cs[j + 1] == "\"" && cs[j + 2] == "\"" then
+            j += 3
+            break
+          j += 1
+        else
+          if cs[j] == "\\" then
+            j += 2
+            continue
+          if cs[j] == "\"" || cs[j] == "\n" then
+            j += 1
+            break
+          j += 1
+      out = append(out, {s: i, e: min(j, n), cls: "string"})
+      i = min(j, n)
+      continue
+    if _is_digit(c) then
+      let j = i
+      while j < n && (_is_word(cs[j]) || cs[j] == ".") do
+        j += 1
+      out = append(out, {s: i, e: j, cls: "num"})
+      i = j
+      continue
+    if _is_word(c) then
+      let j = i
+      while j < n && _is_word(cs[j]) do
+        j += 1
+      let w = join(slice(cs, i, j), "")
+      let k = j
+      while k < n && cs[k] == " " do
+        k += 1
+      let cls = if contains(KEYWORDS, w) then "kw"
+      else if contains(LITERALS, w) then "lit"
+      else if k < n && cs[k] == "(" then "fn"
+      else if ord(c) >= 65 && ord(c) <= 90 then "type"
+      else "plain" end
+      out = append(out, {s: i, e: j, cls: cls})
+      i = j
+      continue
+    if c == ":" && i + 1 < n && _is_word(cs[i + 1]) && (i == 0 || !_is_word(cs[i - 1])) then
+      # A colour literal, `:ff0000`.
+      let j = i + 1
+      while j < n && _is_word(cs[j]) do
+        j += 1
+      out = append(out, {s: i, e: j, cls: "num"})
+      i = j
+      continue
+    out = append(out, {s: i, e: i + 1, cls: if contains(["(", ")", "[", "]", "\{", "}", ","], c) then "plain" else "op" end})
+    i += 1
+  out
+
+# Per wrapped row, the coloured runs to draw: `{x0, text, cls}` with `x0` in
+# characters from the row start.
+fn _row_runs(src, rows)
+  let toks = _tokenize(src)
+  let cs = chars(src)
+  let ti = 0
+  for row in rows do
+    while ti < len(toks) && toks[ti].e <= row.start do
+      ti += 1
+    let runs = []
+    let at = row.start
+    let k = ti
+    while k < len(toks) && toks[k].s < row.end do
+      let t = toks[k]
+      let a = max(t.s, row.start)
+      let b = min(t.e, row.end)
+      if a > at then runs = append(runs, {x0: at - row.start, text: join(slice(cs, at, a), ""), cls: "plain"}) end
+      if b > a then runs = append(runs, {x0: a - row.start, text: join(slice(cs, a, b), ""), cls: t.cls}) end
+      at = max(at, b)
+      k += 1
+    if at < row.end then runs = append(runs, {x0: at - row.start, text: join(slice(cs, at, row.end), ""), cls: "plain"}) end
+    runs
+
+# The 1-based source line of each wrapped row, and whether the row starts it.
+fn _row_lines(src, rows)
+  let cs = chars(src)
+  let line = 1
+  let at = 0
+  for row in rows do
+    while at < row.start && at < len(cs) do
+      if cs[at] == "\n" then line += 1 end
+      at += 1
+    {line: line, first: row.start == 0 || (row.start <= len(cs) && cs[row.start - 1] == "\n")}
+
+# ── drawing helpers ────────────────────────────────────────────────────────
+
+fn _hit(r, x, y)
+  x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
+
+# An orthogonal polyline with its corners rounded to radius `rr`.
+fn _rounded(pts, rr)
+  if len(pts) < 3 then return pts end
+  let out = [pts[0]]
+  for i in range(1, len(pts) - 1) do
+    let p = pts[i - 1]
+    let c = pts[i]
+    let q = pts[i + 1]
+    let d1 = hypot(c[0] - p[0], c[1] - p[1])
+    let d2 = hypot(q[0] - c[0], q[1] - c[1])
+    if d1 < 0.01 || d2 < 0.01 then continue end
+    let r = min(rr, min(d1 / 2.0, d2 / 2.0))
+    let a = [c[0] + (p[0] - c[0]) / d1 * r, c[1] + (p[1] - c[1]) / d1 * r]
+    let b = [c[0] + (q[0] - c[0]) / d2 * r, c[1] + (q[1] - c[1]) / d2 * r]
+    # The quadratic a → c → b, in four steps.
+    for s in range(0, 5) do
+      let t = s / 4.0
+      let u = 1.0 - t
+      out = append(out, [u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]])
+  append(out, last(pts))
+
+# A polyline drawn dashed: `dash` is [on, off] in pixels ([] = solid).
+fn _stroke(pts, dash, c, a, w) -> nil
+  if len(pts) < 2 then return nil end
+  if len(dash) == 0 then
+    draw_polyline(pts, c, a, w)
+    return nil
+  let on = dash[0]
+  let period = dash[0] + dash[1]
+  let phase = 0.0
+  for i in range(0, len(pts) - 1) do
+    let p = pts[i]
+    let q = pts[i + 1]
+    let d = hypot(q[0] - p[0], q[1] - p[1])
+    if d < 0.001 then continue end
+    let s = 0.0
+    while s < d do
+      let pos = (phase + s) % period
+      # The epsilon keeps a `pos` a rounding error short of `on` from
+      # stepping by nothing forever.
+      if pos < on - 0.001 then
+        let e = min(d, s + on - pos)
+        draw_line(p[0] + (q[0] - p[0]) * s / d, p[1] + (q[1] - p[1]) * s / d, p[0] + (q[0] - p[0]) * e / d, p[1] + (q[1] - p[1]) * e / d, c, a, w)
+        s = e
+      else
+        s += max(0.001, period - pos)
+    phase = (phase + d) % period
+  nil
+
+fn _rect_pts(x, y, w, h)
+  [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]]
+
+fn _arrow(pts, c, a, size) -> nil
+  if len(pts) < 2 then return nil end
+  let q = last(pts)
+  let p = pts[len(pts) - 2]
+  let d = hypot(q[0] - p[0], q[1] - p[1])
+  if d < 0.001 then return nil end
+  let ux = (q[0] - p[0]) / d
+  let uy = (q[1] - p[1]) / d
+  fill_triangle(q[0], q[1], q[0] - ux * size - uy * size * 0.45, q[1] - uy * size + ux * size * 0.45, q[0] - ux * size + uy * size * 0.45, q[1] - uy * size - ux * size * 0.45, c, a)
+  nil
+
+# A toolbar button; returns whether it was clicked.
+fn _button(label, x, y, h, on = false)
+  let ts = _mono(12, TERM_INK)
+  let w = text_width(label, ts) + 18
+  let r = rect(x, y, w, h)
+  let hot = _hit(r, mouse_x(), mouse_y())
+  draw_rect_rounded(r, 4, if on then CTRL_BG else if hot then CTRL_BG else BAR_BG end)
+  draw_rect_rounded_outline(r, 4, if hot then POLLEN else if on then CTRL_LINE else CTRL_LINE end, 255, 1)
+  draw_text(label, x + 9, y + (h - 12) / 2 - 1, ts)
+  {w: w, clicked: hot && mouse_pressed(0)}
+
+# ── the viewer ─────────────────────────────────────────────────────────────
+
+# Which nodes are lit for a focus: the seeds, everything upstream of them and
+# everything downstream.
+fn _lit(shown, seeds)
+  if len(seeds) == 0 then return nil end
+  let ins = Map()
+  let outs = Map()
+  for e in shown.edges do
+    ins[e.to] = append(ins[e.to] ?? [], e.from)
+    outs[e.from] = append(outs[e.from] ?? [], e.to)
+  let seed = Map()
+  for s in seeds do
+    seed[s] = true
+  let walk = fn(adj)
+    let seen = Map()
+    let q = seeds
+    while len(q) > 0 do
+      let id = last(q)
+      q = drop_last(q)
+      for nx in adj[id] ?? [] do
+        if seen[nx] == nil && seed[nx] == nil then
+          seen[nx] = true
+          q = append(q, nx)
+    seen
+  {focus: seed, up: walk(ins), down: walk(outs)}
+
+# The source lines a node covers (at most 40 past each span's first).
+fn _lines_of(nd, line_starts)
+  let out = []
+  for sp in nd.spans do
+    let e = max(sp.start, sp.end - 1)
+    let b = sp.line
+    while b < len(line_starts) && line_starts[b] <= e do
+      b += 1
+    for l in range(sp.line, min(b, sp.line + 40) + 1) do
+      out = append(out, l)
+  out
+
+@doc("""
+Draws the viewer in `r` and handles its input. `source` is the program text
+the caller holds; `compiled` is the latest compile of it the host made,
+`{source, result}`, where `result` is what petal-web-canvas's
+`dataflow_ir(source)` returns (`{ok, ir, natives, diagnostics}` or `{ok:
+false, error}`), or nil before the first one.
+
+Returns `{source, tab}`: the source after this frame's edits (store it, and
+compile it when it differs from `compiled.source`), and the index of the tab
+clicked this frame (nil if none).
+""",
+  options: {
+    tabs: "Names for a row of tabs at the top left (a sample per tab).",
+    tab: "The selected tab.",
+    edited: "Mark the selected tab as edited.",
+    fold_above: "Fold every function when the graph has more nodes than this (110).",
+    pin: "A node label to pin when the tab changes, so a sample opens with its point made.",
+  },
+  see: ["ptl_dataflow/extract.dataflow_graph", "ptl_dataflow/layout.layout_graph"])
+pub fn dataflow_viewer(r, source, compiled, opts = {})
+  let tabs = opts?.tabs ?? []
+  let tab = opts?.tab ?? 0
+  let fold_above = opts?.fold_above ?? 110
+
+  state g_src = nil
+  state graph = nil
+  state err = nil
+  state notes = []
+  state folded = []
+  state lay_key = nil
+  state shown = nil
+  state lay = nil
+  state view = {k: 1.0, x: 0.0, y: 0.0}
+  state fit_pending = true
+  state pinned = nil
+  state drag = nil
+  state last_tab = -1
+  state fresh = true
+  state last_count = 0
+  state pin_label = nil
+
+  let mx = mouse_x()
+  let my = mouse_y()
+
+  if tab != last_tab then
+    last_tab = tab
+    fresh = true
+    fit_pending = true
+    pinned = nil
+    pin_label = opts?.pin
+
+  # ── compile results → graph ──
+  if compiled != nil && compiled.source != g_src then
+    g_src = compiled.source
+    let res = compiled.result
+    if res.ok then
+      graph = dataflow_graph(res.ir, res?.natives, compiled.source)
+      err = nil
+      notes = map(filter(res?.diagnostics ?? [], fn(d) -> d?.severity == "error"), fn(d) -> "line {d.line}: {d.message}")
+      let n = len(graph.nodes)
+      let grew = (last_count <= fold_above) != (n <= fold_above)
+      last_count = n
+      if fresh || grew then
+        fresh = false
+        fit_pending = true
+        folded = if n > fold_above then map(filter(graph.clusters, fn(c) -> c.kind != "loop"), fn(c) -> c.label) else [] end
+      if pin_label != nil then
+        let hit = find(graph.nodes, fn(x) -> x.label == pin_label)
+        pin_label = nil
+        if hit != nil then pinned = {kind: "node", id: hit.id} end
+    else
+      err = res?.error ?? "compile failed"
+
+  # ── fold → layout (by label, so a fold survives edits) ──
+  if graph != nil then
+    let key = [g_src, folded]
+    if key != lay_key then
+      lay_key = key
+      let ids = map(filter(graph.clusters, fn(c) -> contains(folded, c.label)), fn(c) -> c.id)
+      shown = collapse(graph, ids)
+      lay = layout_graph(shown)
+
+  # ── frame ──
+  let bar = rect(r.x, r.y, r.w, BAR_H)
+  let bottom = LEGEND_H + (if err != nil || len(notes) > 0 then ERR_H else 0 end)
+  let body = rect(r.x, r.y + BAR_H, r.w, r.h - BAR_H - bottom)
+  let code_w = clamp(r.w * 0.36, 240, 460)
+  let code_r = rect(body.x, body.y, code_w, body.h)
+  let dia = rect(body.x + code_w, body.y, body.w - code_w, body.h)
+
+  let fit = fn()
+    if lay == nil then return view end
+    let W = dia.w
+    let H = dia.h
+    let whole = min(1.1, min((W - 24) / max(1, lay.w), (H - 40) / max(1, lay.h)))
+    # Below MIN_FIT text is unreadable: start readable at the left and pan.
+    let k = max(whole, min(MIN_FIT, 1.1))
+    let x = if whole >= MIN_FIT then (W - lay.w * k) / 2 else 12.0 end
+    let p = if pinned?.kind == "node" then find(lay.nodes, fn(n) -> n.node.id == pinned.id) else nil end
+    if whole < MIN_FIT && p != nil then
+      x = min(12, max(W - lay.w * k - 12, W * 0.6 - (p.x + p.w / 2) * k))
+    {k: k, x: x, y: max(8, (H - lay.h * k) / 2 - 14)}
+  let show_all = fn()
+    if lay == nil then return view end
+    let k = max(0.08, min(1.1, min((dia.w - 24) / max(1, lay.w), (dia.h - 40) / max(1, lay.h))))
+    {k: k, x: (dia.w - lay.w * k) / 2, y: max(8, (dia.h - lay.h * k) / 2 - 14)}
+  let zoom_at = fn(f, px, py)
+    let k = clamp(view.k * f, 0.08, 3.0)
+    {k: k, x: px - (px - view.x) * k / view.k, y: py - (py - view.y) * k / view.k}
+  if lay != nil && fit_pending then
+    fit_pending = false
+    view = fit()
+
+  # ── toolbar ──
+  draw_rect(bar, BAR_BG)
+  draw_line(bar.x, bar.y + bar.h - 0.5, bar.x + bar.w, bar.y + bar.h - 0.5, TERM_LINE, 255, 1)
+  let clicked_tab = nil
+  let tx = bar.x + 10
+  for i in range(0, len(tabs)) do
+    let name = tabs[i] ++ (if i == tab && (opts?.edited ?? false) then " •" else "" end)
+    let b = _button(name, tx, bar.y + 6, bar.h - 12, i == tab)
+    if b.clicked then clicked_tab = i end
+    tx += b.w + 6
+  let bx = bar.x + bar.w - 10
+  let right_buttons = [["fit", "fit"], ["all", "all"], ["+", "in"], ["−", "out"], ["unfold", "unfold"], ["fold all", "fold"]]
+  let action = nil
+  for rb in right_buttons do
+    let w = text_width(rb[0], _mono(12, TERM_INK)) + 18
+    bx -= w
+    if _button(rb[0], bx, bar.y + 6, bar.h - 12).clicked then action = rb[1] end
+    bx -= 6
+  if shown != nil then
+    let stats = "{len(shown.nodes)} nodes · {len(shown.edges)} edges" ++ (if len(graph.nodes) != len(shown.nodes) then " ({len(graph.nodes)} unfolded)" else "" end)
+    let sw = text_width(stats, _mono(11.5, TERM_DIM))
+    if bx - sw - 12 > tx then draw_text(stats, bx - sw - 10, bar.y + (bar.h - 12) / 2, _mono(11.5, TERM_DIM)) end
+  match action
+    when "fold" -> if graph != nil then folded = map(graph.clusters, fn(c) -> c.label) end
+    when "unfold" -> folded = []
+    when "in" -> view = zoom_at(1.25, dia.w / 2, dia.h / 2)
+    when "out" -> view = zoom_at(1 / 1.25, dia.w / 2, dia.h / 2)
+    when "all" -> view = show_all()
+    when "fit" -> view = fit()
+    when _ -> nil
+
+  # ── focus: what is lit ──
+  let lines = split(source, "\n")
+  let line_starts = [0]
+  let acc = 0
+  for l in drop_last(lines) do
+    acc += len(l) + 1
+    line_starts = append(line_starts, acc)
+
+  # The code pane edits first, so its rows are this frame's.
+  let ts = _mono(CODE_SIZE, TERM_INK)
+  let text_r = rect(code_r.x + GUTTER, code_r.y, code_r.w - GUTTER, code_r.h)
+  let ed = text_area_update("ptl_dataflow/code", text_r, source, {font: "mono", size: CODE_SIZE, inset: 10, line_gap: 5})
+  let new_source = ed.text
+  memo([ed.text, text_r.w]) row_lines = _row_lines(ed.text, ed.rows)
+  memo([ed.text, text_r.w]) runs = _row_runs(ed.text, ed.rows)
+
+  # Hover: a node in the diagram, or a line in the code.
+  let hover = nil
+  let hover_box = nil
+  let ox = dia.x + view.x
+  let oy = dia.y + view.y
+  let k = view.k
+  if lay != nil && _hit(dia, mx, my) && drag == nil then
+    for p in lay.nodes do
+      if _hit(rect(ox + p.x * k, oy + p.y * k, p.w * k, p.h * k), mx, my) then
+        hover = {kind: "node", id: p.node.id}
+    for c in lay.clusters do
+      if _hit(rect(ox + (c.x + c.w - 26) * k, oy + (c.y + 6) * k, 18 * k, 18 * k), mx, my) then
+        hover_box = c.cluster.label
+  if _hit(text_r, mx, my) then
+    let row = int(floor((my - text_r.y - 10 + ed.scroll) / ed.line_h))
+    if row >= 0 && row < len(row_lines) then hover = {kind: "line", line: row_lines[row].line} end
+  let focus = hover ?? pinned
+  let lit = nil
+  if shown != nil && focus != nil then
+    let seeds = if focus.kind == "node" then [focus.id] else
+      map(filter(shown.nodes, fn(n) -> contains(_lines_of(n, line_starts), focus.line)), fn(n) -> n.id)
+    end
+    lit = _lit(shown, seeds)
+  # Line tints: focus, upstream, downstream.
+  let tint = Map()
+  if lit != nil then
+    for n in shown.nodes do
+      let cls = if lit.focus[n.id] != nil then "focus" else if lit.up[n.id] != nil then "up" else if lit.down[n.id] != nil then "down" else nil end
+      if cls == nil then continue end
+      for l in _lines_of(n, line_starts) do
+        let prev = tint[l]
+        if prev == nil || (prev != "focus" && cls == "focus") || (prev == "down" && cls == "up") then tint[l] = cls end
+  if focus?.kind == "line" then tint[focus.line] = "focus" end
+
+  # ── diagram input ──
+  if _hit(dia, mx, my) then
+    let sy = scroll_y()
+    let sx = scroll_x()
+    if sy != 0 || sx != 0 then
+      if mod_cmd() || mod_ctrl() then
+        view = zoom_at(exp(-sy * 0.12), mx - dia.x, my - dia.y)
+      else
+        view = {...view, x: view.x - sx * 24, y: view.y - sy * 24}
+    if mouse_pressed(0) then
+      if hover_box != nil then
+        folded = if contains(folded, hover_box) then filter(folded, fn(f) -> f != hover_box) else append(folded, hover_box) end
+      else if hover?.kind == "node" then
+        let nd = find(shown.nodes, fn(n) -> n.id == hover.id)
+        if nd?.kind == "fn" then
+          folded = filter(folded, fn(f) -> f != nd.label)
+        else
+          pinned = if pinned?.kind == "node" && pinned.id == hover.id then nil else hover end
+      else
+        drag = {x: mx, y: my, vx: view.x, vy: view.y, moved: false}
+  if drag != nil then
+    if mouse_down(0) then
+      let dx = mx - drag.x
+      let dy = my - drag.y
+      if drag.moved || hypot(dx, dy) >= 4 then
+        drag = {...drag, moved: true}
+        view = {...view, x: drag.vx + dx, y: drag.vy + dy}
+    else
+      # A click on the background (not a drag) unpins.
+      if !drag.moved then pinned = nil end
+      drag = nil
+
+  # ── draw: code ──
+  draw_rect(code_r, TERM_BG)
+  clip_push(code_r)
+  let cw = text_advance("M", ts)
+  let top = text_r.y + 10 - ed.scroll
+  let lh = ed.line_h
+  let has = has_focus("ptl_dataflow/code")
+  let first_row = max(0, int(floor((code_r.y - top) / lh)))
+  let last_row = min(len(ed.rows) - 1, int(ceil((code_r.y + code_r.h - top) / lh)))
+  for i in range(first_row, last_row + 1) do
+    let y = top + i * lh
+    let rl = row_lines[i]
+    let t = tint[rl.line]
+    if t != nil then
+      let c = if t == "focus" then FOCUS_LINE else if t == "up" then UP else :7ec8e3 end
+      let a = if t == "focus" then 82 else 33 end
+      draw_rect(code_r.x, y - 2, code_r.w, lh, c, a)
+    if rl.first then
+      let num = str(rl.line)
+      let ncol = if t == "focus" then :ff9cc0 else :57503f end
+      draw_text(num, code_r.x + GUTTER - 8 - text_width(num, _mono(11, ncol)), y + 1, _mono(11, ncol))
+    # Selection.
+    let row = ed.rows[i]
+    let s0 = max(ed.sel_start, row.start)
+    let s1 = min(ed.sel_end, row.end)
+    if has && s1 > s0 then
+      draw_rect(text_r.x + 10 + (s0 - row.start) * cw, y - 1, (s1 - s0) * cw, lh - 2, UP, 90)
+    for run in runs[i] do
+      draw_text(run.text, text_r.x + 10 + run.x0 * cw, y, _mono(CODE_SIZE, _token_color(run.cls)))
+    if has && ed.caret >= row.start && ed.caret <= row.end && (ed.caret < row.end || i == len(ed.rows) - 1 || ed.rows[i + 1].start > ed.caret) then
+      if int(time() * 2) % 2 == 0 || ed.changed then
+        let cx = text_r.x + 10 + (ed.caret - row.start) * cw
+        draw_rect(cx, y - 1, 1.5, lh - 2, POLLEN)
+  clip_pop()
+  draw_line(code_r.x + code_r.w - 0.5, code_r.y, code_r.x + code_r.w - 0.5, code_r.y + code_r.h, TERM_LINE, 255, 1)
+
+  # ── draw: diagram ──
+  draw_rect(dia, PAPER)
+  clip_push(dia)
+  # The dot grid, in diagram space so it pans with the drawing.
+  let step = 18 * k
+  if step >= 6 then
+    let gx0 = dia.x + (view.x % step + step) % step
+    let gy0 = dia.y + (view.y % step + step) % step
+    let gx = gx0
+    while gx < dia.x + dia.w do
+      let gy = gy0
+      while gy < dia.y + dia.h do
+        draw_rect(gx - 0.6, gy - 0.6, 1.2, 1.2, DOT)
+        gy += step
+      gx += step
+  if lay != nil then
+    let stale = err != nil
+    let fade = if stale then 0.45 else 1.0 end
+    let X = fn(x) -> ox + x * k
+    let Y = fn(y) -> oy + y * k
+    let al = fn(a) -> int(a * fade)
+    # Boxes.
+    for c in lay.clusters do
+      let loop = c.cluster.kind == "loop"
+      let x0 = X(c.x)
+      let y0 = Y(c.y)
+      let w = c.w * k
+      let h = c.h * k
+      if loop then
+        draw_rect_rounded(x0, y0, w, h, 10 * k, DOWN, al(9))
+        _stroke(_rounded(_rect_pts(x0, y0, w, h), 10 * k), [6 * k, 4 * k], :6f8fc0, al(255), 1.2)
+      else
+        draw_rect_rounded(x0, y0, w, h, 10 * k, SURFACE, al(235))
+        draw_rect_rounded(x0, y0, w, CLUSTER_HEADER * k, 10 * k, :f0ece2, al(255))
+        draw_rect(x0, y0 + (CLUSTER_HEADER - 10) * k, w, 10 * k, :f0ece2, al(255))
+        draw_rect_rounded_outline(x0, y0, w, h, 10 * k, :b6a785, al(255), 1.4)
+      if 12 * k >= 5 then
+        let label = c.cluster.label
+        let kw = if loop then split(label, " ")[0] else "fn" end
+        let rest = slice(label, len(kw), len(label))
+        let hs = 12 * k
+        let lx = x0 + 12 * k
+        let ly = y0 + 9 * k
+        draw_text(kw, lx, ly, {font: "mono", size: hs, color: if loop then DOWN else UP end, weight: 700})
+        let lx2 = lx + text_advance(kw, {font: "mono", size: hs, weight: 700})
+        draw_text(rest, lx2, ly, {font: "mono", size: hs, color: if loop then :2b4f86 else INK end, weight: 700})
+        if loop then draw_text("  ↻ each", lx2 + text_advance(rest, {font: "mono", size: hs, weight: 700}), ly, _mono(hs, :6f8fc0)) end
+      # The fold button.
+      let fb = rect(X(c.x + c.w - 26), Y(c.y + 6), 18 * k, 18 * k)
+      let hot = hover_box == c.cluster.label
+      draw_rect_rounded(fb, 4 * k, if hot then :f0ece2 else SURFACE end, al(255))
+      draw_rect_rounded_outline(fb, 4 * k, if hot then INK_2 else :b6a785 end, al(255), 1)
+      draw_line(fb.x + 5 * k, fb.y + 9 * k, fb.x + 13 * k, fb.y + 9 * k, INK_2, al(255), 1.6)
+    # Edges.
+    for e in lay.edges do
+      let st = _edge_style(e.kind)
+      let col = st.c
+      let w = st.w
+      let a = 255
+      if lit != nil then
+        let isup = (lit.up[e.from] != nil || lit.focus[e.from] != nil) && (lit.up[e.to] != nil || lit.focus[e.to] != nil)
+        let isdown = (lit.down[e.from] != nil || lit.focus[e.from] != nil) && (lit.down[e.to] != nil || lit.focus[e.to] != nil)
+        if isup then
+          col = UP
+          w = 2.2
+        else if isdown then
+          col = DOWN
+          w = 2.2
+        else
+          a = 31
+      let pts = _rounded(map(e.points, fn(p) -> [X(p[0]), Y(p[1])]), 7 * k)
+      _stroke(pts, map(st.dash, fn(d) -> d * max(k, 0.5)), col, al(a), max(0.8, w * min(k, 1.4)))
+      _arrow(pts, col, al(a), 7 * min(max(k, 0.6), 1.4))
+    # Nodes.
+    for p in lay.nodes do
+      let n = p.node
+      let s = _kind_style(n.kind)
+      let isf = lit != nil && lit.focus[n.id] != nil
+      let isu = lit != nil && lit.up[n.id] != nil
+      let isd = lit != nil && lit.down[n.id] != nil
+      let dim = lit != nil && !isf && !isu && !isd
+      let na = if dim then al(46) else al(255) end
+      let x0 = X(p.x)
+      let y0 = Y(p.y)
+      let w = p.w * k
+      let h = p.h * k
+      let rx = min(s.rx, p.h / 2) * k
+      if isf || isu || isd then
+        draw_rect_rounded_outline(x0 - 3.5 * k, y0 - 3.5 * k, w + 7 * k, h + 7 * k, rx + 3 * k, if isf then INK else if isu then UP else DOWN end, if isf then 230 else 140 end, if isf then 2 else 1.5 end)
+      if n.kind == "fn" then
+        draw_rect_rounded(x0 + 4 * k, y0 + 4 * k, w, h, rx, :e6dfcf, na)
+        draw_rect_rounded_outline(x0 + 4 * k, y0 + 4 * k, w, h, rx, :b6a785, na, 1)
+      draw_rect_rounded(x0, y0, w, h, rx, s.fill, na)
+      if s.dash then
+        _stroke(_rounded(_rect_pts(x0, y0, w, h), rx), [4 * k, 3 * k], s.stroke, na, 1.3)
+      else
+        draw_rect_rounded_outline(x0, y0, w, h, rx, s.stroke, na, if n.kind == "fn" then 1.6 else 1.3 end)
+      if n.kind == "state" then draw_rect_rounded(x0, y0, 4 * k, h, 2 * k, s.stroke, na) end
+      let detail = show_detail(n)
+      let lsz = 12.5 * k
+      if lsz >= 4.5 then
+        let tx0 = x0 + (if n.kind == "state" then 14 else 12 end) * k
+        let ty = if detail then y0 + 8 * k else y0 + (h - lsz) / 2 - 1 * k end
+        let label = if n.kind == "return" then "↩ " ++ n.label else n.label end
+        draw_text(label, tx0, ty, {font: "mono", size: lsz, color: s.text, weight: 600, a: na})
+        if (n.kind == "state" || n.kind == "var") && n.feedback then
+          draw_text("↻", x0 + w - 18 * k, ty, {font: "mono", size: lsz, color: s.stroke, weight: 700, a: na})
+        if detail then
+          draw_text(n.detail, tx0, y0 + 25 * k, {font: "mono", size: 11 * k, color: s.detail, a: na})
+    # The hovered node's tooltip.
+    if hover?.kind == "node" && drag == nil then
+      let p = find(lay.nodes, fn(q) -> q.node.id == hover.id)
+      if p != nil then
+        let n = p.node
+        let lines2 = ["{_kind_style(n.kind).name}: {n.label}"] ++ (if n.detail != nil then [n.detail] else [] end) ++ (if n.kind == "fn" then ["(click to unfold)"] else [] end)
+        let tts = _mono(11, INK)
+        let tw = maximum(map(lines2, fn(l) -> text_width(l, tts))) + 16
+        let th = len(lines2) * 15 + 10
+        let tx1 = min(mx + 14, dia.x + dia.w - tw - 6)
+        let ty1 = min(my + 16, dia.y + dia.h - th - 6)
+        draw_rect_rounded(tx1, ty1, tw, th, 4, SURFACE)
+        draw_rect_rounded_outline(tx1, ty1, tw, th, 4, RULE, 255, 1)
+        for i in range(0, len(lines2)) do
+          draw_text(lines2[i], tx1 + 8, ty1 + 6 + i * 15, _mono(11, if i == 0 then INK else INK_3 end))
+  else
+    let msg = if err != nil then "" else "compiling…" end
+    draw_text(msg, dia.x + 14, dia.y + 12, _ui(11, INK_3))
+  # The hint.
+  let hint = "hover: where it comes from · what it feeds · click to pin · drag to pan · ⌘/ctrl + scroll to zoom"
+  let hts = _ui(11, INK_3)
+  let hw = text_width(hint, hts) + 14
+  if hw < dia.w - 16 then
+    draw_rect_rounded(dia.x + dia.w - hw - 8, dia.y + dia.h - 28, hw, 20, 4, SURFACE, 225)
+    draw_rect_rounded_outline(dia.x + dia.w - hw - 8, dia.y + dia.h - 28, hw, 20, 4, RULE, 255, 1)
+    draw_text(hint, dia.x + dia.w - hw - 1, dia.y + dia.h - 24, hts)
+  clip_pop()
+
+  # ── error and legend ──
+  let ly0 = body.y + body.h
+  if err != nil || len(notes) > 0 then
+    draw_rect(r.x, ly0, r.w, ERR_H, :3a1520)
+    draw_line(r.x, ly0 + 0.5, r.x + r.w, ly0 + 0.5, :5a2030, 255, 1)
+    let msg = err ?? join(notes, " · ")
+    draw_text(text_ellipsize(_one_line_msg(msg), _mono(12, :ffb3c8), r.w - 28), r.x + 14, ly0 + 7, _mono(12, :ffb3c8))
+    ly0 += ERR_H
+  draw_rect(r.x, ly0, r.w, LEGEND_H, SURFACE)
+  draw_line(r.x, ly0 + 0.5, r.x + r.w, ly0 + 0.5, RULE, 255, 1)
+  let lx = r.x + 14
+  let lts = _ui(11.5, INK_2)
+  let lyc = ly0 + LEGEND_H / 2
+  for kind in LEGEND do
+    let s = _kind_style(kind)
+    let rr = if kind == "input" || kind == "param" then 6 else 3 end
+    draw_rect_rounded(lx, lyc - 6, 18, 12, rr, s.fill)
+    if s.dash then _stroke(_rounded(_rect_pts(lx, lyc - 6, 18, 12), rr), [3, 2], s.stroke, 255, 1) else draw_rect_rounded_outline(lx, lyc - 6, 18, 12, rr, s.stroke, 255, 1) end
+    draw_text(s.name, lx + 24, lyc - 7, lts)
+    lx += 24 + text_width(s.name, lts) + 16
+  _stroke([[lx, lyc], [lx + 24, lyc]], [5, 4], :c4952f, 255, 1.4)
+  draw_text("only when (condition)", lx + 30, lyc - 7, lts)
+  lx += 30 + text_width("only when (condition)", lts) + 16
+  _stroke([[lx, lyc], [lx + 24, lyc]], [2, 3], :c2185b, 255, 1.4)
+  draw_text("calls", lx + 30, lyc - 7, lts)
+  lx += 30 + text_width("calls", lts) + 16
+  draw_text("↻", lx, lyc - 7, {font: "ui", size: 11.5, color: :b9862a, weight: 700})
+  draw_text("carries to the next frame", lx + 14, lyc - 7, lts)
+
+  {source: new_source, tab: clicked_tab}
+
+fn _one_line_msg(s)
+  join(filter(split(s, "\n"), fn(l) -> trim(l) != ""), " · ")

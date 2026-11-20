@@ -1,0 +1,626 @@
+@module_doc("""
+Lays a dataflow graph out left to right, in layers, with functions and loops
+drawn as boxes that hold their own nodes.
+
+`layout_graph(g)` takes the graph `dataflow_graph` builds (or `collapse`
+folds) and returns absolute coordinates for every node, box and edge:
+
+```petal ignore
+let l = layout_graph(g)
+for p in l.nodes do
+  draw_rect(p.x, p.y, p.w, p.h, :fffdf8)
+for e in l.edges do
+  draw_polyline(e.points, :8f846d)
+```
+
+Each box is laid out on its own, inside out, and then placed in its parent as
+one big node. An edge that crosses a box's border passes through a port on
+that border (on the right where it leaves, on the left where it enters), so
+it is routed inside the box and outside it separately and the two halves
+meet. Within one level the steps are the classic layered ones: break cycles,
+assign layers (host inputs first, top-level effects last), add a waypoint
+wherever an edge skips a layer, order each layer by barycenters, place each
+layer by isotonic regression toward its neighbours, and route every edge
+orthogonally through a channel of its own between two layers.
+""", see: ["ptl_dataflow/extract", "ptl_dataflow/view"])
+
+import ui
+
+# The header strip of a box, which holds its label and fold button.
+pub let CLUSTER_HEADER = 30
+let PAD_TOP = 40
+let PAD_SIDE = 14
+let PAD_BOTTOM = 14
+let ROOT_PAD = 16
+
+let LABEL_STYLE = {font: "mono", size: 12.5}
+let DETAIL_STYLE = {font: "mono", size: 11}
+let HEADER_STYLE = {font: "mono", size: 12}
+
+let NODE_GAP = 16
+let DUMMY_GAP = 7
+let LAYER_GAP = 42
+let CHANNEL = 7
+
+@doc("""
+Whether node `n` shows its source text under its label. A host input or a
+parameter never does, and neither does a node whose detail says nothing the
+label does not.
+""")
+pub fn show_detail(n) -> bool
+  if n.detail == nil || n.detail == "" then return false end
+  if n.kind == "input" || n.kind == "param" then return false end
+  true
+
+@doc("The width and height node `n` is drawn at: its label, and its detail when `show_detail` says so.")
+pub fn node_size(n)
+  let extra = if n.kind == "state" || n.kind == "var" then 22 else 0 end
+  let label = if n.kind == "return" then "↩ " ++ n.label else n.label end
+  let lw = text_width(label, LABEL_STYLE) + extra
+  let detail = show_detail(n)
+  let dw = if detail then text_width(n.detail, DETAIL_STYLE) else 0 end
+  let w = max(lw, dw) + 24
+  let least = if n.kind == "param" then 34 else 52 end
+  {w: ceil(max(w, least)), h: if detail then 44 else 28 end}
+
+# ── one level ──────────────────────────────────────────────────────────────
+
+# Pool-adjacent-violators: the nondecreasing sequence closest to `t` in the
+# least-squares sense. Placing a layer is this problem once each node's
+# wanted top is shifted by the room the nodes above it take.
+fn _isotonic(t)
+  let vals = []
+  let cnts = []
+  for x in t do
+    vals = append(vals, x)
+    cnts = append(cnts, 1)
+    while len(vals) > 1 && vals[len(vals) - 2] > vals[len(vals) - 1] do
+      let k = len(vals)
+      let c = cnts[k - 2] + cnts[k - 1]
+      let v = (vals[k - 2] * cnts[k - 2] + vals[k - 1] * cnts[k - 1]) / c
+      vals = append(drop_last(drop_last(vals)), v)
+      cnts = append(drop_last(drop_last(cnts)), c)
+  let out = []
+  for i in range(0, len(vals)) do
+    for j in range(0, cnts[i]) do
+      out = append(out, vals[i])
+  out
+
+fn _gap_between(da, db)
+  if da && db then DUMMY_GAP else if da || db then 10 else NODE_GAP end
+
+# Places one layer: `order` top to bottom, `want` the wanted center of each
+# (by position in `order`), keeping the order and the gaps.
+fn _place_layer(order, hs, dummy, want)
+  let offs = []
+  let acc = 0.0
+  for i in range(0, len(order)) do
+    let v = order[i]
+    if i > 0 then
+      acc += hs[order[i - 1]] + _gap_between(dummy[order[i - 1]], dummy[v])
+    offs = append(offs, acc)
+  let t = for i in range(0, len(order)) do
+    want[i] - hs[order[i]] / 2.0 - offs[i]
+  let fit = _isotonic(t)
+  for i in range(0, len(order)) do
+    fit[i] + offs[i]
+
+# Lays out one container. `items` are `{id, w, h, rank, port}`: `rank` is
+# "first", "last" or nil, `port` is "in", "out" or nil (a port has no size).
+# `links` are `{key, from, to, from_dy, to_dy}`: `from_dy` / `to_dy` is where
+# on the item's side the edge attaches, from its top (nil: the middle).
+# `pads` is `{l, t, r, b, min_w, min_h}` around the content.
+#
+# Returns `{pos, w, h, routes}`: `pos` maps an item id to its `{x, y}` from
+# the box's top-left, `routes` maps a link key to its points from there.
+fn _layout_level(items, links, pads)
+  let n = len(items)
+  let idx = Map()
+  let ws = []
+  let hs = []
+  let dummy = []
+  let ids = []
+  for i in range(0, n) do
+    idx[items[i].id] = i
+    ws = append(ws, items[i].w)
+    hs = append(hs, items[i].h)
+    dummy = append(dummy, false)
+    ids = append(ids, items[i].id)
+
+  # Links as index pairs; a link to an item this level does not hold is dropped.
+  let es = []
+  for l in links do
+    let a = idx[l.from]
+    let b = idx[l.to]
+    if a == nil || b == nil || a == b then continue end
+    es = append(es, {link: l, a: a, b: b})
+
+  # ── break cycles: a depth-first walk in model order reverses back edges ──
+  let succ = fill(n, [])
+  for k in range(0, len(es)) do
+    succ[es[k].a] = append(succ[es[k].a], k)
+  let color = fill(n, 0)
+  let reversed = fill(len(es), false)
+  for root in range(0, n) do
+    if color[root] != 0 then continue end
+    # An explicit stack of [vertex, next out-edge] keeps deep graphs safe.
+    let stack = [[root, 0]]
+    color[root] = 1
+    while len(stack) > 0 do
+      let top = last(stack)
+      let v = top[0]
+      let k = top[1]
+      if k >= len(succ[v]) then
+        color[v] = 2
+        stack = drop_last(stack)
+        continue
+      stack[len(stack) - 1] = [v, k + 1]
+      let ek = succ[v][k]
+      let w = es[ek].b
+      if color[w] == 1 then
+        reversed[ek] = true
+      else if color[w] == 0 then
+        color[w] = 1
+        stack = append(stack, [w, 0])
+
+  # Oriented edges (u before v).
+  let preds = fill(n, [])
+  let succs = fill(n, [])
+  let indeg = fill(n, 0)
+  for k in range(0, len(es)) do
+    let u = if reversed[k] then es[k].b else es[k].a end
+    let v = if reversed[k] then es[k].a else es[k].b end
+    preds[v] = append(preds[v], u)
+    succs[u] = append(succs[u], v)
+    indeg[v] += 1
+
+  # ── layers: longest path from the sources ──
+  let layer = fill(n, 0)
+  let queue = for i in range(0, n) do
+    if indeg[i] > 0 then continue end
+    i
+  let qi = 0
+  while qi < len(queue) do
+    let u = queue[qi]
+    qi += 1
+    for v in succs[u] do
+      layer[v] = max(layer[v], layer[u] + 1)
+      indeg[v] -= 1
+      if indeg[v] == 0 then queue = append(queue, v) end
+  # A source that is not an input sits just before what reads it, not at the
+  # far left with the inputs.
+  for i in range(0, n) do
+    if len(preds[i]) == 0 && len(succs[i]) > 0 && items[i].rank != "first" then
+      let m = minimum(map(succs[i], fn(v) -> layer[v]))
+      layer[i] = max(layer[i], m - 1)
+  # Inputs and entry ports first; outputs and exit ports last.
+  let has_first = any(items, fn(it) -> it.rank == "first")
+  if has_first then
+    for i in range(0, n) do
+      if items[i].rank != "first" && layer[i] == 0 then
+        # Shift everything that is not first right by one, once.
+        layer = for j in range(0, n) do
+          if items[j].rank == "first" then 0 else layer[j] + 1 end
+        break
+    for i in range(0, n) do
+      if items[i].rank == "first" then layer[i] = 0 end
+  let top_layer = 0
+  for i in range(0, n) do
+    if items[i].rank != "last" then top_layer = max(top_layer, layer[i]) end
+  for i in range(0, n) do
+    if items[i].rank == "last" then
+      layer[i] = top_layer + 1
+  # A "last" item with an edge to another (an effect that feeds an exit
+  # port) pushes the port one further.
+  for i in range(0, n) do
+    if items[i].port == "out" then
+      for u in preds[i] do
+        if layer[u] >= layer[i] then layer[i] = layer[u] + 1 end
+
+  # ── waypoints: a dummy per layer an edge skips ──
+  let chains = []
+  for k in range(0, len(es)) do
+    let u = if reversed[k] then es[k].b else es[k].a end
+    let v = if reversed[k] then es[k].a else es[k].b end
+    let chain = [u]
+    let l = layer[u] + 1
+    while l < layer[v] do
+      let d = len(ws)
+      ws = append(ws, 0)
+      hs = append(hs, 2)
+      dummy = append(dummy, true)
+      layer = append(layer, l)
+      ids = append(ids, "~{k}:{l}")
+      chain = append(chain, d)
+      l += 1
+    chains = append(chains, append(chain, v))
+  let total = len(ws)
+  let nl = 0
+  for i in range(0, total) do
+    nl = max(nl, layer[i] + 1)
+
+  # Neighbours along chains, for ordering and placement.
+  let up = fill(total, [])
+  let down = fill(total, [])
+  for c in chains do
+    for j in range(0, len(c) - 1) do
+      down[c[j]] = append(down[c[j]], c[j + 1])
+      up[c[j + 1]] = append(up[c[j + 1]], c[j])
+
+  # ── order: model order, then barycenter sweeps ──
+  let layers = fill(nl, [])
+  for i in range(0, total) do
+    layers[layer[i]] = append(layers[layer[i]], i)
+  let pos = fill(total, 0.0)
+  for L in layers do
+    for j in range(0, len(L)) do
+      pos[L[j]] = float(j)
+  for sweep in range(0, 8) do
+    let downward = sweep % 2 == 0
+    let seq = if downward then range(1, nl) else range(nl - 2, -1, -1) end
+    for li in seq do
+      let L = layers[li]
+      let keyed = for v in L do
+        let nb = if downward then up[v] else down[v] end
+        let b = if len(nb) == 0 then pos[v] else mean(map(nb, fn(u) -> pos[u])) end
+        {v: v, b: b, p: pos[v]}
+      let sorted = sort(keyed, fn(a, c) -> if a.b == c.b then a.p - c.p else a.b - c.b end)
+      L = map(sorted, fn(r) -> r.v)
+      layers[li] = L
+      for j in range(0, len(L)) do
+        pos[L[j]] = float(j)
+
+  # ── x: one column per layer, with room between for the edge channels ──
+  let colw = fill(nl, 0.0)
+  for i in range(0, total) do
+    colw[layer[i]] = max(colw[layer[i]], ws[i])
+  let gapn = fill(nl, 0)
+  for c in chains do
+    for j in range(0, len(c) - 1) do
+      gapn[layer[c[j]]] += 1
+  let colx = fill(nl, 0.0)
+  let x = 0.0
+  for li in range(0, nl) do
+    colx[li] = x
+    let g = clamp(18 + CHANNEL * gapn[li], LAYER_GAP, 150)
+    x = x + colw[li] + g
+  let xs = for i in range(0, total) do
+    colx[layer[i]] + (colw[layer[i]] - ws[i]) / 2.0
+
+  # ── y: stack, then pull each layer toward its neighbours ──
+  let ys = fill(total, 0.0)
+  for L in layers do
+    let acc = 0.0
+    for j in range(0, len(L)) do
+      if j > 0 then acc += hs[L[j - 1]] + _gap_between(dummy[L[j - 1]], dummy[L[j]]) end
+      ys[L[j]] = acc
+  for pass in range(0, 12) do
+    let mode = pass % 3
+    let seq = if mode == 1 then range(nl - 1, -1, -1) else range(0, nl) end
+    for li in seq do
+      let L = layers[li]
+      let want = for v in L do
+        let nb = if mode == 0 then up[v] else if mode == 1 then down[v] else up[v] ++ down[v] end
+        if len(nb) == 0 then ys[v] + hs[v] / 2.0 else mean(map(nb, fn(u) -> ys[u] + hs[u] / 2.0)) end
+      let tops = _place_layer(L, hs, dummy, want)
+      for j in range(0, len(L)) do
+        ys[L[j]] = tops[j]
+
+  # Normalize to the content origin.
+  let miny = 0.0
+  let maxy = 0.0
+  let maxx = 0.0
+  if total > 0 then
+    miny = minimum(ys)
+    maxy = maximum(for i in range(0, total) do ys[i] + hs[i] end)
+    maxx = maximum(for i in range(0, total) do xs[i] + ws[i] end)
+  let content_h = maxy - miny
+  let box_w = max(maxx + pads.l + pads.r, pads.min_w)
+  let box_h = max(content_h + pads.t + pads.b, pads.min_h)
+  # Center short content vertically in a box held taller by its minimum.
+  let oy = pads.t + (box_h - pads.t - pads.b - content_h) / 2.0 - miny
+  let ox = pads.l
+  let px = for i in range(0, total) do xs[i] + ox
+  let py = for i in range(0, total) do ys[i] + oy
+
+  # ── routes ──
+  # The point an edge leaves `i` from (side "r") or reaches it at ("l").
+  let attach = fn(i, side, dy)
+    if i < n && items[i].port == "in" then
+      [0.0, py[i]]
+    else if i < n && items[i].port == "out" then
+      [box_w, py[i]]
+    else if dummy[i] then
+      [px[i] + ws[i] / 2.0, py[i] + 1]
+    else
+      let yy = if dy != nil then py[i] + dy else py[i] + hs[i] / 2.0 end
+      if side == "r" then [px[i] + ws[i], yy] else [px[i], yy]
+  # Channels: the vertical part of each hop sits in its own lane of the gap.
+  let hops = []
+  for k in range(0, len(chains)) do
+    let c = chains[k]
+    let l = es[k].link
+    for j in range(0, len(c) - 1) do
+      let a = c[j]
+      let b = c[j + 1]
+      let pa = if j == 0 then attach(a, "r", if reversed[k] then l.to_dy else l.from_dy end) else attach(a, "r", nil) end
+      let pb = if j == len(c) - 2 then attach(b, "l", if reversed[k] then l.from_dy else l.to_dy end) else attach(b, "l", nil) end
+      hops = append(hops, {k: k, j: j, gap: layer[a], a: pa, b: pb})
+  let lane = Map()
+  for li in range(0, nl) do
+    let inside = filter(hops, fn(h) -> h.gap == li && abs(h.a[1] - h.b[1]) > 0.5)
+    # Edges heading down take the lanes from the right, edges heading up from
+    # the left, so a fan out of one node does not cross itself.
+    let ordered = sort_by(inside, fn(h) -> if h.b[1] > h.a[1] then -h.a[1] * 1000 - h.b[1] else h.a[1] * 1000 - h.b[1] end)
+    let cnt = len(ordered)
+    let left = colx[li] + colw[li] + ox
+    let right = if li + 1 < nl then colx[li + 1] + ox else left + LAYER_GAP end
+    for q in range(0, cnt) do
+      let h = ordered[q]
+      lane["{h.k}:{h.j}"] = left + (right - left) * (q + 1) / (cnt + 1)
+  let routes = Map()
+  for k in range(0, len(chains)) do
+    let pts = []
+    for h in hops do
+      if h.k != k then continue end
+      let lx = lane["{h.k}:{h.j}"]
+      if lx == nil then
+        pts ++= [h.a, h.b]
+      else
+        pts ++= [h.a, [lx, h.a[1]], [lx, h.b[1]], h.b]
+    if reversed[k] then pts = reverse(pts) end
+    routes[es[k].link.key] = pts
+
+  let place = Map()
+  for i in range(0, n) do
+    place[ids[i]] = {x: px[i], y: py[i]}
+  {pos: place, w: box_w, h: box_h, routes: routes}
+
+# ── the whole graph ────────────────────────────────────────────────────────
+
+@doc("""
+Lays out a dataflow graph: `{nodes, clusters, edges}` as `dataflow_graph`
+returns it. The result is `{nodes, clusters, edges, w, h}` in absolute
+coordinates from (0, 0):
+
+- `nodes`: `{node, x, y, w, h}`, one per graph node;
+- `clusters`: `{cluster, x, y, w, h, depth}`, outer boxes before inner ones;
+- `edges`: `{id, from, to, kind, points}`, `points` a list of `[x, y]`
+  corners from the source's right side to the target's left side.
+
+An edge between a box and something inside it (a recursive call) is left
+out: it has no sensible route.
+""", see: ["ptl_dataflow/extract.dataflow_graph", "collapse"])
+pub fn layout_graph(g)
+  let parent = Map()
+  let cl_by = Map()
+  for c in g.clusters do
+    parent[c.id] = c.parent ?? "root"
+    cl_by[c.id] = c
+  let order = Map()
+  for i in range(0, len(g.nodes)) do
+    let nd = g.nodes[i]
+    parent[nd.id] = nd.cluster ?? "root"
+    order[nd.id] = i
+  # A box sits where its first node does in model order.
+  for i in range(0, len(g.nodes)) do
+    let c = g.nodes[i].cluster
+    while c != nil do
+      if order[c] == nil then order[c] = i end
+      c = cl_by[c]?.parent
+  for c in g.clusters do
+    if order[c.id] == nil then order[c.id] = len(g.nodes) end
+
+  # The chain of containers above an id, innermost first, ending at "root".
+  let chain_of = fn(id)
+    let out = []
+    let cur = parent[id]
+    while cur != nil do
+      out = append(out, cur)
+      cur = if cur == "root" then nil else parent[cur] end
+    out
+
+  # Items per container.
+  let kids = Map()
+  kids["root"] = []
+  for c in g.clusters do
+    kids[c.id] = []
+  for c in g.clusters do
+    kids[parent[c.id]] = append(kids[parent[c.id]] ?? [], c.id)
+  for nd in g.nodes do
+    kids[parent[nd.id]] = append(kids[parent[nd.id]] ?? [], nd.id)
+
+  # Split every edge into one link per container it passes through.
+  let links = Map()
+  for k in keys(kids) do
+    links[k] = []
+  let ports = Map()
+  for k in keys(kids) do
+    ports[k] = []
+  let kept = []
+  let known = Map()
+  for nd in g.nodes do
+    known[nd.id] = true
+  for c in g.clusters do
+    known[c.id] = true
+  for e in g.edges do
+    if known[e.from] == nil || known[e.to] == nil then continue end
+    let ca = chain_of(e.from)
+    let cb = chain_of(e.to)
+    if contains(ca, e.to) || contains(cb, e.from) then continue end
+    let lca = find(ca, fn(x) -> contains(cb, x)) ?? "root"
+    let pieces = []
+    # Up from the source: leave each box through an exit port.
+    let cur = e.from
+    for box in ca do
+      if box == lca then break end
+      let port = "out:{e.id}:{box}"
+      ports[box] = append(ports[box], {id: port, w: 0, h: 0, rank: "last", port: "out"})
+      links[box] = append(links[box], {key: "{e.id}@{box}", from: cur, to: port, from_dy: nil, to_dy: nil})
+      pieces = append(pieces, box)
+      cur = box
+    let src_item = cur
+    # Down to the target: enter each box through an entry port.
+    let down = []
+    cur = e.to
+    for box in cb do
+      if box == lca then break end
+      let port = "in:{e.id}:{box}"
+      ports[box] = append(ports[box], {id: port, w: 0, h: 0, rank: "first", port: "in"})
+      links[box] = append(links[box], {key: "{e.id}@{box}", from: port, to: cur, from_dy: nil, to_dy: nil})
+      down = append(down, box)
+      cur = box
+    let dst_item = cur
+    links[lca] = append(links[lca], {key: "{e.id}@{lca}", from: src_item, to: dst_item, from_dy: nil, to_dy: nil, src_box: src_item != e.from, dst_box: dst_item != e.to, eid: e.id})
+    kept = append(kept, {edge: e, up: pieces, lca: lca, down: reverse(down)})
+
+  # Boxes deepest first.
+  let depth = Map()
+  for c in g.clusters do
+    depth[c.id] = len(chain_of(c.id)) - 1
+  let boxes = sort_by(g.clusters, fn(c) -> depth[c.id], "desc")
+  let node_by = Map()
+  for nd in g.nodes do
+    node_by[nd.id] = nd
+
+  # Results per box, read by the closures below as they fill in.
+  var done = Map()
+  let item_of = fn(id)
+    let nd = node_by[id]
+    if nd != nil then
+      let sz = node_size(nd)
+      let rank = if nd.kind == "input" then "first" else if nd.kind == "effect" && nd.cluster == nil then "last" else nil end
+      {id: id, w: sz.w, h: sz.h, rank: rank, port: nil}
+    else
+      let r = get done[id]
+      {id: id, w: r.w, h: r.h, rank: nil, port: nil}
+  # Where a box's own port for an edge sits, from the box's top.
+  let port_dy = fn(box, port)
+    let r = get done[box]
+    if r == nil then return nil end
+    let p = r.pos[port]
+    if p == nil then nil else p.y end
+
+  let lay = fn(cid, pads)
+    let ids = sort_by(kids[cid] ?? [], fn(x) -> order[x] ?? 0)
+    let items = map(ids, item_of) ++ (ports[cid] ?? [])
+    let ls = for l in links[cid] ?? [] do
+      let fdy = if l?.src_box ?? false then port_dy(l.from, "out:{l.eid}:{l.from}") else nil end
+      let tdy = if l?.dst_box ?? false then port_dy(l.to, "in:{l.eid}:{l.to}") else nil end
+      {...l, from_dy: fdy, to_dy: tdy}
+    _layout_level(items, ls, pads)
+
+  for c in boxes do
+    let kw = if c.kind == "loop" then 8 else 0 end
+    let min_w = ceil(text_width(c.label, HEADER_STYLE) + kw * 7.2 + 48)
+    let r = lay(c.id, {l: PAD_SIDE, t: PAD_TOP, r: PAD_SIDE, b: PAD_BOTTOM, min_w: min_w, min_h: 60})
+    set done[c.id] = r
+  let root = lay("root", {l: ROOT_PAD, t: ROOT_PAD, r: ROOT_PAD, b: ROOT_PAD, min_w: 0, min_h: 0})
+  set done["root"] = root
+
+  # Absolute origins, outside in.
+  let origin = Map()
+  origin["root"] = [0.0, 0.0]
+  let placed_nodes = []
+  let placed_boxes = []
+  let todo = ["root"]
+  let ti = 0
+  while ti < len(todo) do
+    let cid = todo[ti]
+    ti += 1
+    let o = origin[cid]
+    let r = done[cid]
+    for id in kids[cid] ?? [] do
+      let p = r.pos[id]
+      let ax = o[0] + p.x
+      let ay = o[1] + p.y
+      let nd = node_by[id]
+      if nd != nil then
+        let sz = node_size(nd)
+        placed_nodes = append(placed_nodes, {node: nd, x: ax, y: ay, w: sz.w, h: sz.h})
+      else
+        let inner = done[id]
+        origin[id] = [ax, ay]
+        placed_boxes = append(placed_boxes, {cluster: cl_by[id], x: ax, y: ay, w: inner.w, h: inner.h, depth: depth[id]})
+        todo = append(todo, id)
+
+  let shift = fn(pts, o) -> map(pts, fn(p) -> [p[0] + o[0], p[1] + o[1]])
+  let placed_edges = for k in kept do
+    let e = k.edge
+    let pts = []
+    for box in k.up do
+      pts ++= shift(done[box].routes["{e.id}@{box}"] ?? [], origin[box])
+    pts ++= shift(done[k.lca].routes["{e.id}@{k.lca}"] ?? [], origin[k.lca])
+    for box in k.down do
+      pts ++= shift(done[box].routes["{e.id}@{box}"] ?? [], origin[box])
+    # Drop repeated corners where two halves meet.
+    let clean = []
+    for p in pts do
+      if len(clean) > 0 then
+        let q = last(clean)
+        if abs(q[0] - p[0]) < 0.01 && abs(q[1] - p[1]) < 0.01 then continue end
+      clean = append(clean, p)
+    {id: e.id, from: e.from, to: e.to, kind: e.kind, points: clean}
+
+  {nodes: placed_nodes, clusters: placed_boxes, edges: placed_edges, w: root.w, h: root.h}
+
+@doc("""
+Folds every box in `folded` (a list of cluster ids), and everything inside
+it, into one node of kind `"fn"`. Edges into or out of a folded box attach
+to its node; edges that end up inside one node are dropped.
+""", see: ["layout_graph"])
+pub fn collapse(g, folded)
+  if len(folded) == 0 then return g end
+  let fset = Map()
+  for f in folded do
+    fset[f] = true
+  let cl_by = Map()
+  for c in g.clusters do
+    cl_by[c.id] = c
+  # The outermost folded box at or above `cid`.
+  let fold_of = fn(cid)
+    let hit = nil
+    let c = cid
+    while c != nil do
+      if fset[c] != nil then hit = c end
+      c = cl_by[c]?.parent
+    hit
+  let rep = Map()
+  let nodes = []
+  let inner = Map()
+  for nd in g.nodes do
+    let f = fold_of(nd.cluster)
+    if f != nil then
+      rep[nd.id] = "f:{f}"
+      inner[f] = (inner[f] ?? []) ++ [nd]
+    else
+      nodes = append(nodes, nd)
+  let clusters = []
+  for c in g.clusters do
+    let f = fold_of(c.id)
+    if f == nil then
+      clusters = append(clusters, c)
+      continue
+    rep[c.id] = "f:{f}"
+    if f == c.id then
+      let ins = inner[f] ?? []
+      let spans = flat_map(ins, fn(x) -> x.spans)
+      nodes = append(nodes, {
+        id: "f:{c.id}", kind: "fn", label: c.label, detail: "{len(ins)} nodes",
+        spans: (if c.span != nil then [c.span] else [] end) ++ spans,
+        cluster: c.parent, feedback: false, folds: c.id,
+      })
+  let seen = Map()
+  let edges = []
+  for e in g.edges do
+    let from = rep[e.from] ?? e.from
+    let to = rep[e.to] ?? e.to
+    if from == to then continue end
+    let key = "{from}->{to}"
+    let prev = seen[key]
+    if prev != nil then
+      if edges[prev].kind != "data" && e.kind == "data" then edges[prev] = {...edges[prev], kind: "data"} end
+      continue
+    seen[key] = len(edges)
+    edges = append(edges, {...e, id: e.id ++ "~", from: from, to: to})
+  {nodes: nodes, clusters: clusters, edges: edges}

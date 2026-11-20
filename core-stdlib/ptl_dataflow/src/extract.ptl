@@ -1,0 +1,653 @@
+@module_doc("""
+Folds a program's compiled IR into a source-level dataflow graph.
+
+The input is the user-only view of the IR (`petal show-ir --json --user-only`,
+or `dataflow_ir(source)` in petal-web-canvas, decoded). That IR has one term
+per value: every `+`, every copy of a variable, every constant. A reader
+thinks in *bindings*, so this keeps one node per thing a reader named or
+would point at:
+
+| kind | what |
+|---|---|
+| `input` | a host read (`mouse_x()`, `dt()`, `screen_width()`) |
+| `let` | a `let` binding |
+| `const` | a `let` that depends on nothing |
+| `state` | a `state` declaration: its init plus every assignment to it |
+| `var` | a `var` cell: its init plus every `set` |
+| `param` | a function parameter or a loop variable |
+| `effect` | a call whose result nobody uses (`draw_circle(…)`) |
+| `call` | the same, of a function of the program's own |
+| `return` | a function's result |
+
+and one *cluster* per function body and loop body. An edge runs from a value
+to every node computed from it; everything between two nodes (arithmetic,
+pure builtins, constants, copies) is folded into the edge, and the node shows
+the source text it came from.
+
+What the fold still has to guess, because the IR does not say, is in
+docs/dev/dataflow-visualizer-gaps.md (the G tags in the comments).
+""", see: ["dataflow_graph"])
+
+# Host reads, for a runtime whose `natives` table does not say (a native this
+# Env does not register, as under the plain CLI). Where the table has a row,
+# its `reads` decides.
+let HOST_INPUTS = const([
+  "mouse_x", "mouse_y", "mouse_down", "mouse_pressed", "mouse_released",
+  "mouse_wheel", "scroll_x", "scroll_y", "key_down", "key_pressed",
+  "key_released", "text_input", "dt", "time", "frame_count", "screen_width",
+  "screen_height", "random",
+])
+
+let CALL_OPS = const(["Call", "BuiltinCall", "MethodCall"])
+let LOOP_OPS = const(["ForLoop", "NumericForLoop", "WhileLoop"])
+
+fn _op(t) -> string
+  if type(t.op) == "string" then t.op else keys(t.op)[0] end
+
+fn _arg(t)
+  if type(t.op) == "string" then nil else values(t.op)[0] end
+
+fn _ins(t)
+  t?.inputs ?? []
+
+fn _kids(t)
+  t?.child_blocks ?? []
+
+# Input `k` of term `t`, or nil.
+fn _in(t, k)
+  let ins = _ins(t)
+  if k < len(ins) then ins[k] else nil end
+
+# Whitespace runs to one space, trimmed, cut to `most` characters with an
+# ellipsis.
+fn _one_line(text, most = 38)
+  let words = filter(split(join(split(join(split(text, "\t"), " "), "\n"), " "), " "), fn(w) -> w != "")
+  let flat = join(words, " ")
+  if len(flat) > most then slice(flat, 0, most - 1) ++ "…" else flat end
+
+# Drops a trailing ` # comment` (outside a string, as far as a quote count
+# can tell).
+fn _strip_comment(s)
+  let quotes = 0
+  for i in range(0, len(s)) do
+    let c = s[i]
+    if c == "\"" then quotes += 1 end
+    if c == "#" && quotes % 2 == 0 && (i == 0 || s[i - 1] == " ") then
+      return trim(slice(s, 0, i))
+  trim(s)
+
+# The text after a statement's assignment `=` (or `+=`, `-=` …): `let x =
+# sin(t) * 2` gives `sin(t) * 2`. Nil when the line has none.
+fn _after_assign(line)
+  for i in range(0, len(line)) do
+    if line[i] != "=" then continue end
+    let prev = if i > 0 then line[i - 1] else "" end
+    let next = if i + 1 < len(line) then line[i + 1] else "" end
+    if next == "=" || prev == "=" || prev == "!" || prev == "<" || prev == ">" then continue end
+    let rest = _strip_comment(slice(line, i + 1, len(line)))
+    if rest == "" then return nil end
+    # `let dishes = [` continues on the next lines: show the opener.
+    if rest == "[" then return "[…]" end
+    if rest == "\{" then return "\{…}" end
+    if rest == "(" then return "(…)" end
+    return _one_line(rest)
+  nil
+
+# ── the context every helper reads ─────────────────────────────────────────
+
+fn _context(ir, natives, source)
+  let T = Map()
+  for t in ir.terms do
+    T[t.id] = t
+  let B = Map()
+  for b in ir.blocks do
+    B[b.id] = b
+  let spans = Map()
+  let raw = ir?.source_map?.term_spans ?? {}
+  for k in keys(raw) do
+    let v = raw[k]
+    # [line, col, start, end_line, end_col, end]; offsets in code points,
+    # which is what Petal strings index by.
+    spans[parse_int(k)] = {line: v[0], col: v[1], start: v[2], end: v[5]}
+  let line_starts = [0]
+  let lines = split(source, "\n")
+  let acc = 0
+  for l in drop_last(lines) do
+    acc += len(l) + 1
+    line_starts = append(line_starts, acc)
+  let consumers = Map()
+  for t in ir.terms do
+    for i in _ins(t) do
+      consumers[i] = append(consumers[i] ?? [], t.id)
+  let fn_by_body = Map()
+  let fn_by_id = Map()
+  for f in ir?.functions ?? [] do
+    fn_by_body[f.body_block] = f
+    fn_by_id[f.id] = f
+  let closure_of_fn = Map()
+  for t in ir.terms do
+    if _op(t) == "MakeClosure" then closure_of_fn[_arg(t)] = t end
+  {T: T, B: B, spans: spans, source: source, lines: lines, line_starts: line_starts,
+   consumers: consumers, fn_by_body: fn_by_body, fn_by_id: fn_by_id,
+   closure_of_fn: closure_of_fn, consts: ir?.constants?.values ?? {},
+   natives: natives ?? {}, root: ir.root_block}
+
+fn _const_string(cx, id)
+  let v = field(cx.consts, str(id), nil)
+  if type(v) == "record" && has_field(v, "String") then v.String else nil end
+
+fn _text(cx, s)
+  slice(cx.source, s.start, s.end)
+
+# The whole source line a span starts on.
+fn _line_of(cx, s)
+  let i = s.line - 1
+  let start = cx.line_starts[i]
+  {line: s.line, col: 1, start: start, end: start + len(cx.lines[i])}
+
+# Whether native `name` reads the host (an input node).
+fn _is_input(cx, name)
+  let row = field(cx.natives, name, nil)
+  if row != nil && row?.reads != nil then
+    return len(row.reads) > 0
+  contains(HOST_INPUTS, name)
+
+# The term that opens block `bid`: its parent term, or the MakeClosure of the
+# function it is the body of.
+fn _opener(cx, bid)
+  let b = cx.B[bid]
+  if b?.parent_term_id != nil then return cx.T[b.parent_term_id] end
+  let f = cx.fn_by_body[bid]
+  if f != nil then cx.closure_of_fn[f.id] else nil end
+
+# The cluster (function or loop body) that holds block `bid`; nil = top level.
+fn _cluster_of(cx, bid)
+  if bid == cx.root then return nil end
+  let o = _opener(cx, bid)
+  if o == nil then return nil end
+  if cx.fn_by_body[bid] != nil || contains(LOOP_OPS, _op(o)) then
+    "c{bid}"
+  else
+    _cluster_of(cx, o.block_id)
+
+# The body block of the function that holds `bid` (or the root): names are
+# scoped by it.
+fn _fn_block(cx, bid)
+  let cur = bid
+  for guard in range(0, 1000) do
+    if cur == cx.root || cx.fn_by_body[cur] != nil then return cur end
+    let o = _opener(cx, cur)
+    if o == nil then return cur end
+    cur = o.block_id
+  cur
+
+fn _loop_vars(cx, bid)
+  filter(cx.B[bid]?.param_names ?? [], fn(n) -> !contains(n, "#"))
+
+# A loop's header as written, `for k in range(0, len(trail))`, and its span.
+fn _loop_header(cx, opener, bid)
+  let s = cx.spans[opener.id]
+  if s != nil then
+    let text = _text(cx, s)
+    # The span runs through `do`; drop it.
+    let t = trim(text)
+    if ends_with(t, " do") then t = trim(slice(t, 0, len(t) - 3)) end
+    return {label: _one_line(t, 46), span: s}
+  let vars = join(_loop_vars(cx, bid), ", ")
+  {label: if _op(opener) == "WhileLoop" then "while …" else "for {vars} in …" end, span: nil}
+
+# ── the fold ───────────────────────────────────────────────────────────────
+
+@doc("""
+The dataflow graph of a compiled program: `{nodes, clusters, edges}`.
+
+`ir` is the user-only IR view as a decoded record (`dataflow_ir(source).ir`),
+`natives` its `natives` table (nil is fine: a hand-kept list of host reads
+stands in), `source` the program's text. Each node is `{id, kind, label,
+detail, spans, cluster, feedback}`: `spans` are `{line, col, start, end}`
+(1-based line and column, `start`/`end` code-point offsets into `source`),
+`cluster` the id of the box that holds it (nil: top level), `feedback` true
+for a `state` or `var` read where it is assigned (a value carried forward).
+Each cluster is `{id, kind, label, parent, span}` with `kind` `"fn"`,
+`"lambda"` or `"loop"`. Each edge is `{id, from, to, kind}` with `kind`
+`"data"`, `"control"` (the condition of the branch it happens in) or
+`"call"`.
+""",
+  example: """
+    let out = dataflow_ir(source)
+    let g = dataflow_graph(out.ir, out.natives, source)
+    print(len(g.nodes), "nodes")
+  """,
+  see: ["ptl_dataflow/layout.layout_graph", "ptl_dataflow/layout.collapse"])
+pub fn dataflow_graph(ir, natives, source)
+  let cx = _context(ir, natives, source)
+  let T = cx.T
+  let B = cx.B
+  let spans = cx.spans
+
+  # Every block of the program's own code: the root, what hangs under its
+  # terms, and the bodies of its closures.
+  let blocks = []
+  let seen = Map()
+  let todo = [cx.root]
+  while len(todo) > 0 do
+    let bid = last(todo)
+    todo = drop_last(todo)
+    if seen[bid] != nil then continue end
+    seen[bid] = true
+    blocks = append(blocks, bid)
+    let more = []
+    for tid in B[bid]?.terms ?? [] do
+      let t = T[tid]
+      if t == nil then continue end
+      more ++= _kids(t)
+      if _op(t) == "MakeClosure" then
+        let f = cx.fn_by_id[_arg(t)]
+        if f != nil then more = append(more, f.body_block) end
+    todo ++= reverse(more)
+
+  # ── clusters ──
+  let clusters = []
+  for bid in blocks do
+    if bid == cx.root then continue end
+    let o = _opener(cx, bid)
+    if o == nil then continue end
+    let f = cx.fn_by_body[bid]
+    let parent = _cluster_of(cx, o.block_id)
+    if f != nil then
+      let params = join(f?.params ?? [], ", ")
+      let named = o?.name ?? f?.name
+      clusters = append(clusters, {
+        id: "c{bid}", kind: if named != nil then "fn" else "lambda" end,
+        label: if named != nil then "fn {named}({params})" else "fn({params})" end,
+        parent: parent, span: spans[o.id],
+      })
+    else if contains(LOOP_OPS, _op(o)) then
+      let h = _loop_header(cx, o, bid)
+      clusters = append(clusters, {id: "c{bid}", kind: "loop", label: h.label, parent: parent, span: h.span})
+
+  # ── nodes ──
+  let nodes = Map()          # node id → node
+  let node_of = Map()        # term id → node id
+  let sources = Map()        # node id → the terms whose inputs feed it
+  let decl = Map()           # "fnblock:name" → node id
+  let state_by_key = Map()   # state key → node id
+  let cell_node = Map()      # CellNew term id → node id
+
+  # Pass 1: state and var declarations.
+  for bid in blocks do
+    let cluster = _cluster_of(cx, bid)
+    let scope = _fn_block(cx, bid)
+    for tid in B[bid]?.terms ?? [] do
+      let t = T[tid]
+      if t == nil || t?.name == nil then continue end
+      let op = _op(t)
+      if op != "StateInit" && op != "CellNew" then continue end
+      let s = spans[tid]
+      let sp = if s != nil then [_line_of(cx, s)] else [] end
+      let detail = if s != nil then _after_assign(_text(cx, _line_of(cx, s))) else nil end
+      if op == "StateInit" then
+        let id = "s{tid}"
+        state_by_key[t?.state_key ?? t.name] = id
+        decl["{scope}:{t.name}"] = id
+        node_of[tid] = id
+        nodes[id] = {id: id, kind: "state", label: t.name, detail: detail, spans: sp, cluster: cluster, feedback: false}
+        # The init block's result is what it starts from.
+        let init = []
+        for cb in _kids(t) do
+          let ts = B[cb]?.terms ?? []
+          if len(ts) > 0 then init = append(init, last(ts)) end
+        sources[id] = init
+      else
+        let id = "v{tid}"
+        cell_node[tid] = id
+        decl["{scope}:{t.name}"] = id
+        node_of[tid] = id
+        nodes[id] = {id: id, kind: "var", label: t.name, detail: detail, spans: sp, cluster: cluster, feedback: false}
+        sources[id] = _ins(t)
+
+  # Parameters, loop variables and captures are phantoms: in no block's
+  # `terms`, found by block id.
+  let phantoms = Map()
+  for t in ir.terms do
+    if _op(t) == "Copy" && len(_ins(t)) == 0 && t?.name != nil then
+      phantoms[t.block_id] = append(phantoms[t.block_id] ?? [], t)
+  let capture = Map()        # capture phantom → the outer term it captures
+  for bid in blocks do
+    let block = B[bid]
+    let cluster = _cluster_of(cx, bid)
+    let f = cx.fn_by_body[bid]
+    let closure = if f != nil then cx.closure_of_fn[f.id] else nil end
+    let o = _opener(cx, bid)
+    for ph in phantoms[bid] ?? [] do
+      let name = ph.name
+      let cap = if f != nil then index_of(f?.capture_names ?? [], name) else -1 end
+      if cap >= 0 && closure != nil then
+        let outer = _in(closure, cap)
+        if outer != nil then capture[ph.id] = outer end
+        continue
+      if contains(block?.param_names ?? [], name) && !contains(name, "#") then
+        let id = "p{ph.id}"
+        node_of[ph.id] = id
+        let is_loop = o != nil && contains(LOOP_OPS, _op(o))
+        let sp = if o != nil && spans[o.id] != nil then [spans[o.id]] else [] end
+        nodes[id] = {id: id, kind: "param", label: name, detail: nil, spans: sp, cluster: cluster, feedback: false}
+        sources[id] = if is_loop then _ins(o) else [] end
+
+  # What a call calls. `Call`'s input 0 is the callee value: name it by the
+  # source it was written as.
+  let callee_name = fn(t)
+    let op = _op(t)
+    if op == "BuiltinCall" then return _const_string(cx, _arg(t)) end
+    if op == "MethodCall" then return _const_string(cx, _arg(t)?.name) end
+    let c = _in(t, 0)
+    if c == nil then return nil end
+    if spans[c] != nil then return _text(cx, spans[c]) end
+    T[c]?.name
+  # The cluster of the program's own function a call reaches, if it does
+  # (following copies, captures and the user's half of an overload set; G6, G7).
+  let user_fn = fn(t)
+    if _op(t) != "Call" then return nil end
+    let c = _in(t, 0)
+    for g in range(0, 50) do
+      if c == nil then return nil end
+      if capture[c] != nil then
+        c = capture[c]
+        continue
+      let ct = T[c]
+      if ct == nil then return nil end
+      let op = _op(ct)
+      if op == "MakeClosure" then
+        let f = cx.fn_by_id[_arg(ct)]
+        return if f != nil then "c{f.body_block}" else nil end
+      if op == "Copy" && len(_ins(ct)) == 1 then
+        c = _ins(ct)[0]
+        continue
+      if op == "MakeOverloadSet" then
+        c = find(_ins(ct), fn(i) -> _op(T[i] ?? {op: "x"}) == "MakeClosure")
+        continue
+      return nil
+    nil
+
+  # Call sites of each function of the program's own.
+  let call_sites = Map()
+  for bid in blocks do
+    for tid in B[bid]?.terms ?? [] do
+      let t = T[tid]
+      if t == nil || _op(t) != "Call" then continue end
+      let c = user_fn(t)
+      if c != nil then call_sites[c] = append(call_sites[c] ?? [], t) end
+  # Whether any call of the function uses its result (if none does, its last
+  # call is an effect, not a return; G4). One never called directly (a
+  # callback) returns.
+  let result_used = fn(cluster)
+    if cluster == nil then return false end
+    let sites = call_sites[cluster]
+    if sites == nil then return true end
+    any(sites, fn(t) -> t?.name != nil || len(cx.consumers[t.id] ?? []) > 0)
+
+  # Pass 2: lets, inputs, writes, effects, returns.
+  let host_input = Map()     # term id → input node id
+  let assigned = Map()       # let node ids assigned again
+  let resolve_cell = fn(tid)
+    let cur = tid
+    for g in range(0, 50) do
+      if cur == nil then return nil end
+      if cell_node[cur] != nil then return cur end
+      if capture[cur] != nil then
+        cur = capture[cur]
+        continue
+      let ct = T[cur]
+      if ct != nil && _op(ct) == "Copy" && len(_ins(ct)) == 1 then
+        cur = _ins(ct)[0]
+        continue
+      return nil
+    nil
+  for bid in blocks do
+    let cluster = _cluster_of(cx, bid)
+    let scope = _fn_block(cx, bid)
+    let terms = filter(map(B[bid]?.terms ?? [], fn(i) -> T[i]), fn(t) -> t != nil)
+    let is_body = cx.fn_by_body[bid] != nil
+    let o = _opener(cx, bid)
+    let value_arm = o != nil && !contains(LOOP_OPS, _op(o)) && !is_body && _op(o) != "StateInit"
+    for idx in range(0, len(terms)) do
+      let t = terms[idx]
+      let op = _op(t)
+      let s = spans[t.id]
+      if op == "BuiltinCall" then
+        let name = _const_string(cx, _arg(t))
+        if name != nil && _is_input(cx, name) then
+          let id = "in:{name}"
+          let prev = nodes[id] ?? {id: id, kind: "input", label: "{name}()", detail: nil, spans: [], cluster: nil, feedback: false}
+          nodes[id] = {...prev, spans: prev.spans ++ (if s != nil then [s] else [] end)}
+          if sources[id] == nil then sources[id] = [] end
+          host_input[t.id] = id
+          if t?.name == nil then
+            node_of[t.id] = id
+            continue
+      if op == "StateWrite" then
+        let id = state_by_key[t?.state_key ?? -1]
+        if id != nil then
+          sources[id] = append(sources[id], t.id)
+          if s != nil then nodes[id] = {...nodes[id], spans: nodes[id].spans ++ [_line_of(cx, s)]} end
+        continue
+      if op == "CellWrite" then
+        let cell = resolve_cell(_in(t, 0))
+        let id = if cell != nil then cell_node[cell] else nil end
+        if id != nil then
+          sources[id] ++= slice(_ins(t), 1, len(_ins(t)))
+          if s != nil then nodes[id] = {...nodes[id], spans: nodes[id].spans ++ [_line_of(cx, s)]} end
+        continue
+      if t?.name != nil && node_of[t.id] == nil then
+        # A rebinding: the copy after `x = …` / `x += …`, or the Phi that
+        # merges one out of a branch, stands for the declaration. For a
+        # `let` assigned again, the value joins what it is computed from.
+        let d = decl["{scope}:{t.name}"]
+        if d != nil && (op == "Phi" || op == "Copy") then
+          node_of[t.id] = d
+          if op == "Copy" && starts_with(d, "n") then
+            sources[d] ++= _ins(t)
+            if s != nil then nodes[d] = {...nodes[d], spans: nodes[d].spans ++ [_line_of(cx, s)]} end
+            assigned[d] = true
+          continue
+        if op == "MakeClosure" || op == "MakeOverloadSet" then continue end
+        let id = "n{t.id}"
+        node_of[t.id] = id
+        decl["{scope}:{t.name}"] = id
+        let ls = if s != nil then _line_of(cx, s) else nil end
+        let detail = if ls != nil then _after_assign(_text(cx, ls)) ?? _one_line(_text(cx, s)) else nil end
+        nodes[id] = {id: id, kind: "let", label: t.name, detail: detail, spans: if ls != nil then [ls] else [] end, cluster: cluster, feedback: false}
+        sources[id] = [t.id]
+        continue
+      # Unnamed: a statement whose value nobody reads.
+      let used = any(cx.consumers[t.id] ?? [], fn(c) -> _op(T[c] ?? {op: "x"}) != "Phi")
+      let is_last = idx == len(terms) - 1
+      let returns = is_last && ((is_body && result_used(cluster)) || value_arm)
+      if contains(CALL_OPS, op) && !used && !returns then
+        let id = "e{t.id}"
+        node_of[t.id] = id
+        let target = user_fn(t)
+        nodes[id] = {
+          id: id, kind: if target != nil then "call" else "effect" end,
+          label: callee_name(t) ?? "call",
+          detail: if s != nil then _one_line(_text(cx, s), 44) else nil end,
+          spans: if s != nil then [s] else [] end, cluster: cluster, feedback: false,
+        }
+        sources[id] = [t.id]
+        continue
+      if is_last && is_body && result_used(cluster) && !used then
+        let id = "r{t.id}"
+        node_of[t.id] = id
+        nodes[id] = {
+          id: id, kind: "return",
+          label: if contains(CALL_OPS, op) then callee_name(t) ?? "result" else "result" end,
+          detail: if s != nil then _one_line(_text(cx, s), 44) else nil end,
+          spans: if s != nil then [s] else [] end, cluster: cluster, feedback: false,
+        }
+        sources[id] = [t.id]
+
+  # ── edges ──
+  # The node a term stands for, following captures and reads of cells and
+  # state; nil for an intermediate value.
+  let node_for = fn(tid)
+    let cur = tid
+    for g in range(0, 50) do
+      if cur == nil then return nil end
+      let nd = node_of[cur]
+      if nd != nil then return nd end
+      if capture[cur] != nil then
+        cur = capture[cur]
+        continue
+      let ct = T[cur]
+      if ct == nil then return nil end
+      let op = _op(ct)
+      if op == "CellRead" then
+        let c = resolve_cell(_in(ct, 0))
+        return if c != nil then cell_node[c] else nil end
+      if op == "StateRead" then return state_by_key[ct?.state_key ?? -1] end
+      return nil
+    nil
+
+  # Walk back from a node's defining terms through intermediate values to
+  # the nodes it depends on. `ret:<cluster>` stands for a function's result.
+  let upstream = fn(start, self)
+    let out = []
+    let seen_t = Map()
+    let work = []
+    # The defining terms themselves are not dependencies; their inputs are.
+    for s in start do
+      let nd = node_for(s)
+      if nd != nil && nd != self then
+        out = append(out, nd)
+        continue
+      seen_t[s] = true
+      work = append(work, {t: s, start: true})
+    while len(work) > 0 do
+      let item = last(work)
+      work = drop_last(work)
+      let tid = item.t
+      if !item.start then
+        if seen_t[tid] != nil then continue end
+        seen_t[tid] = true
+        let nd = node_for(tid)
+        if nd != nil then
+          out = append(out, nd)
+          continue
+      let t = T[tid]
+      if t == nil then continue end
+      let op = _op(t)
+      let hi = host_input[t.id]
+      if hi != nil && hi != self then out = append(out, hi) end
+      if op == "MakeClosure" then
+        # A function passed as a value (`map(xs, fn(v) v * 2)`): what it
+        # returns flows into whatever calls it (G8).
+        let f = cx.fn_by_id[_arg(t)]
+        if f != nil && !item.start then out = append(out, "ret:c{f.body_block}") end
+        continue
+      let ins = _ins(t)
+      for k in range(0, len(ins)) do
+        if op == "Call" && k == 0 then continue end
+        work = append(work, {t: ins[k], start: false})
+      # An `if` / `match` / `for` used as a value: its arms' results flow in.
+      if op != "StateInit" then
+        for cb in _kids(t) do
+          let ts = B[cb]?.terms ?? []
+          if len(ts) > 0 then work = append(work, {t: last(ts), start: false}) end
+      # A call of the program's own function: its result flows from the
+      # function's return (not for a statement call: nothing flows back).
+      let uc = user_fn(t)
+      if uc != nil && !(item.start && starts_with(self, "e")) then out = append(out, "ret:{uc}") end
+    out
+
+  # The conditions of the branches block `bid` sits in.
+  let control_deps = fn(bid)
+    let out = []
+    let cur = bid
+    for g in range(0, 200) do
+      let o = _opener(cx, cur)
+      if o == nil || cx.fn_by_body[cur] != nil then break end
+      let op = _op(o)
+      if op == "Branch" || op == "Match" || op == "And" || op == "Or" || op == "WhileLoop" then
+        out ++= upstream(_ins(o), "")
+      cur = o.block_id
+    out
+
+  var edges = Map()          # "from->to" → edge
+  var feedback = Map()       # node ids carried forward
+  let add_edge = fn(from, to, kind)
+    if from == to then
+      if kind != "call" then set feedback[to] = true end
+      return nil
+    let key = "{from}->{to}"
+    let prev = get edges[key]
+    if prev != nil then
+      if prev.kind == "control" && kind == "data" then set edges[key] = {...prev, kind: "data"} end
+      return nil
+    set edges[key] = {id: "ed{len(get edges)}", from: from, to: to, kind: kind}
+    nil
+
+  let return_of = Map()
+  for nd in values(nodes) do
+    if nd.kind == "return" && nd.cluster != nil then return_of[nd.cluster] = nd.id end
+
+  for id in keys(sources) do
+    let nd = nodes[id]
+    if nd == nil then continue end
+    let defs = sources[id]
+    for dep in upstream(defs, id) do
+      if starts_with(dep, "ret:") then
+        let c = slice(dep, 4, len(dep))
+        let r = return_of[c]
+        if r != nil && nodes[r].cluster != nd.cluster then
+          add_edge(r, id, "data")
+        else
+          add_edge(c, id, "call")
+        continue
+      add_edge(dep, id, "data")
+    # A statement-level call of the program's own function points at it.
+    if nd.kind == "call" then
+      let c = user_fn(T[defs[0]])
+      if c != nil then add_edge(id, c, "call") end
+    # Control dependencies of what happens conditionally.
+    if nd.kind == "effect" || nd.kind == "call" || nd.kind == "state" || nd.kind == "var" || (nd.kind == "let" && assigned[id] != nil) then
+      for def in defs do
+        let t = T[def]
+        if t == nil then continue end
+        for d in control_deps(t.block_id) do
+          add_edge(d, id, "control")
+
+  # Arguments flow into the parameters they bind, by position (G6).
+  for c in keys(call_sites) do
+    let bid = parse_int(slice(c, 1, len(c)))
+    let f = cx.fn_by_body[bid]
+    if f == nil then continue end
+    let params = f?.params ?? []
+    for site in call_sites[c] do
+      let args = slice(_ins(site), 1, len(_ins(site)))
+      for k in range(0, len(args)) do
+        if k >= len(params) then break end
+        let ph = find(phantoms[bid] ?? [], fn(p) -> p.name == params[k])
+        let pn = if ph != nil then node_of[ph.id] else nil end
+        if pn == nil then continue end
+        for d in upstream([args[k]], "") do
+          if !starts_with(d, "ret:") then add_edge(d, pn, "data") end
+
+  let all_edges = values(get edges)
+  let carried = get feedback
+  let has_in = Map()
+  let has_out = Map()
+  for e in all_edges do
+    has_in[e.to] = true
+    has_out[e.from] = true
+  # Lets that depend on nothing are constants; inputs nobody reads go.
+  let out_nodes = []
+  for nd in values(nodes) do
+    if nd.kind == "input" && has_out[nd.id] == nil then continue end
+    let kind = if nd.kind == "let" && has_in[nd.id] == nil then "const" else nd.kind end
+    out_nodes = append(out_nodes, {...nd, kind: kind, feedback: carried[nd.id] != nil && (nd.kind == "state" || nd.kind == "var")})
+  let ids = Map()
+  for nd in out_nodes do
+    ids[nd.id] = true
+  for c in clusters do
+    ids[c.id] = true
+  {nodes: out_nodes, clusters: clusters, edges: filter(all_edges, fn(e) -> ids[e.from] != nil && ids[e.to] != nil)}

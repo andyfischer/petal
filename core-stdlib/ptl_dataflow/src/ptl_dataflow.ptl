@@ -1,0 +1,25 @@
+@module_doc("""
+A Petal program drawn as its dataflow diagram, written entirely in Petal.
+
+Three modules, re-exported here:
+
+- `ptl_dataflow/extract`: `dataflow_graph(ir, natives, source)` folds the
+  compiler's user-only IR into one node per binding;
+- `ptl_dataflow/layout`: `layout_graph(g)` lays that out left to right, with
+  functions and loops as boxes, and `collapse(g, ids)` folds boxes;
+- `ptl_dataflow/view`: `dataflow_viewer(r, source, compiled)` is the
+  interactive viewer (code and diagram, linked).
+
+```petal ignore
+import ptl_dataflow
+let g = dataflow_graph(out.ir, out.natives, source)
+let l = layout_graph(g)
+```
+
+The IR comes from the host: `dataflow_ir(source)` in petal-web-canvas, or
+`petal show-ir --json --user-only`.
+""", see: ["ptl_dataflow/extract", "ptl_dataflow/layout", "ptl_dataflow/view"])
+
+pub import ptl_dataflow/extract
+pub import ptl_dataflow/layout
+pub import ptl_dataflow/view

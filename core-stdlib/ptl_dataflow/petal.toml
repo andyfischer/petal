@@ -1,0 +1,15 @@
+# ptl_dataflow — a Petal program drawn as its dataflow diagram, written
+# entirely in Petal: the fold from compiled IR to one node per binding, a
+# layered layout, and an interactive viewer.
+#
+# Not bundled (it is experimental; see docs/skills/project-organization.md,
+# "The bundling bar"). A host registers it (`register_package`), or a
+# project names it as a path dependency.
+[package]
+name = "ptl_dataflow"
+version = "0.1.0"
+description = "A Petal program drawn as its dataflow diagram, written entirely in Petal."
+modules = "src"
+
+[requires]
+ui = ">=0.1"

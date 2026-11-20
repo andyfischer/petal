@@ -2,27 +2,19 @@
 
 Petal is a programming language for creative coding.
 
-It's an experimental
-project that supports new ways of editing code, including: live coding,
+Petal is an experimental language
+project that supports new ways of editing code. This includes live coding,
 coding by direct manipulation, programs as documents, immediate-mode support,
 and more.
 
-Most languages treat a running program as a black box. In comparison, a running Petal program
-is a living thing that can be poked, inspected, tested and manipulated.
+Most programming languages act like a black box at runtime. The author
+writes code, compiles it, runs it, observes the result, then goes back
+to modify the code, based on an assumed understanding of how it works.
+With Petal, the running program is something that can be inspected and
+modified. Authors can modify the output instead of the source code,
+and the runtime helps connect the dots to turn their action into a code change.
 
-## Goals
-
-At a high level, the project's goals are:
-
- - Easy to use, batteries-included for creative applications.
- - Supports live coding.
- - Supports coding by direct manipulation and other outcome-based coding.
- - High introspection and debuggability.
- - Pragmatic instead of principled.
-
-## Foundational language decisions
-
-To achieve those goals, the language design has a few core decisions:
+## Language design decisions
 
 ### Pure functional semantics
 
@@ -58,52 +50,31 @@ of interesting editing flows, listed in more detail below.
  - React Hooks ([useState](https://overreacted.io/why-do-hooks-rely-on-call-order/))
  - Jetpack Compose's [positional memoization](https://newsletter.jorgecastillo.dev/p/positional-memoization-in-jetpack)
 
-## Major features
-
-Building on those core design choices, here are some of the end-to-end features that the
-language enables:
-
 ### Immediate-mode coding
 
-Immediate-mode is a term coined in game development for writing UIs (also called IMGUI). In this
-approach, the source code looks like a series of imperative function calls, but behind the
-scenes, those calls produce a retained structure that is automatically managed. So instead
-of the author thinking about creating and deleting a tree object to manage a GUI, the
-author just writes calls, and the runtime figures out what structures to create and destroy
-based on that.
+Immediate-mode is a style of coding where the program is a series of procedural function
+calls that have an implicit effect of creating a retained data structure. The term was originally
+coined in game development as an easy way to create GUIs.
 
-Petal has really good support for immediate-mode, supported by the `state` keyword (which enables
-nested calls to have preserved data and stored handles), and also by the smart runtime which
-helps reconcile calls and automatically do diff detection.
+Petal highly embraces and supports immediate-mode style. The `state` language keyword (mentioned above)
+helps immediate-mode by giving an easy way to declare persisted state.
 
 #### References and research
 
  - Casey Muratori, [*Immediate-Mode Graphical User Interfaces*](https://caseymuratori.com/blog_0001) (2005), the talk that named IMGUI
  - [Dear ImGui](https://github.com/ocornut/imgui), the most widely used immediate-mode UI library
 
-### State management
+### Live code editing
 
-This section has a few features that are all related to state management. The runtime understands
-which program values should be persisted (with the `state` keyword). With that ability,
-we can build features that transfer state across programs, or freeze and rewind state, or duplicate
-state into multiple runs.
+Also called hot reloading, this is a feature where a change to the source code is immediately
+visible in the running program.
 
-#### Live code editing
+Petal has great support for live editing, also thanks to the `state` keyword. When the program
+is modified live, the Petal runtime will extract all the `state` values from the old code,
+and then migrate them into the new code. The use of immediate-mode coding style also helps
+Petal programs to be easier to live edit.
 
-With live code editing, you can modify a program and see the update appear immediately as it's running.
-
-This works thanks to `state` declarations.
-When a code change is
-detected, the runtime will extract existing state values, compile the new code, and then
-insert the preserved state into the new program (in a best-effort way). As long as there
-aren't any drastic structural code changes, this approach works well at preserving the
-user's existing session across a code change.
-
-Immediate-mode coding is also helpful for supporting live coding, since programs don't
-need to worry about the lifecycle of initializing or tearing down resources. They
-just declare what should happen and the runtime takes care of the resources.
-
-##### References and research
+#### References and research
 
  - Tanimoto, *VIVA: A Visual Language for Image Processing* (1990), the source of the "levels of liveness"
  - Bret Victor, [*Learnable Programming*](https://worrydream.com/LearnableProgramming/) (2012)
@@ -111,25 +82,25 @@ just declare what should happen and the runtime takes care of the resources.
  - Rein, Ramson, Lincke, Hirschfeld and Pape, [*Exploratory and Live, Programming and Coding*](https://arxiv.org/abs/1807.08578) (The Art, Science, and Engineering of Programming, 2019), a survey of liveness across the research
  - [React Fast Refresh](https://reactnative.dev/docs/fast-refresh)
 
-#### Time travel debugging
+### Time travel debugging
 
 With time-travel debugging, the runtime can take snapshots of old program states, and these can be
-restored and replayed later. This is also thanks to `state` declarations and immediate-mode coding.
+restored and replayed later. This feature is also thanks to `state` declarations and
+the pure-functional semantics.
 
-##### References and research
+#### References and research
 
  - Bil Lewis, [*Debugging Backwards in Time*](https://arxiv.org/abs/cs/0310016) (2003)
  - Elm's [time-traveling debugger](https://elm-lang.org/news/time-travel-made-easy) (2014)
  - Dan Abramov, [*Live React: Hot Reloading with Time Travel*](https://www.youtube.com/watch?v=xsSnOQynTHs) (2015)
 
-#### Speculative execution
+### Speculative execution
 
-This feature is enabled by the same state management.
 With speculative execution, we can safely re-run the same program, maybe with slight variations,
-to explore or predict something. The system knows how to freeze and duplicate state,
+to explore or predict something. The Petal runtime knows how to freeze and duplicate state,
 so the speculative runs are each isolated.
 
-##### References and research
+#### References and research
 
  - Warth, Ohshima, Kaehler and Kay, [*Worlds: Controlling the Scope of Side Effects*](https://tinlizzie.org/VPRIPapers/tr2011001_final_worlds.pdf) (ECOOP 2011)
  - Harris, Marlow, Peyton Jones and Herlihy, *Composable Memory Transactions* (PPoPP 2005), whose undo-log approach Petal's speculative execution resembles

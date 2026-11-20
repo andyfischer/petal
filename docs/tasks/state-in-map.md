@@ -334,17 +334,25 @@ call, and only keyed calls pay it.
   `reduce`, `any`, `all`, `find` and `filter` come after it ships.
 - 2026-11-20: Rust callers can choose the state a call runs under and
   manage it ("Rust callers" above).
+- 2026-11-20: **state belongs to the call site, never to the lambda.** A
+  closure's `state` is keyed by the path of the code that runs it (the call
+  sites, loop iterations and element parts on the stack at the call), not by
+  the closure value or where it was created. So one lambda run from two
+  places has two sets of slots, and a closure stored and run later (bloom's
+  `defer_paint`, a command registry) keeps its state where it is run. Two
+  different lambdas run from the same place (a `map` whose callback is
+  chosen at runtime) get separate slots too, because the slot key includes
+  the `state` declaration's own id. Nothing in this plan attaches state to a
+  closure value, and nothing should: a closure is recreated each run, so
+  identity-keyed state would be lost or would leak.
 
 ## Open questions
 
 1. **`key:` on `sort_by`** (first round) and on the second-round builtins.
    These are rarely stateful, so `key:` on them may never be asked for.
-2. **A stored closure run later** (bloom's `defer_paint`, command
-   registries) keys its state under the path of the code that runs it, not
-   the code that made it. This plan doesn't change that.
-3. **The C bridge** (`integrations/petal-c-bridge`) would want the same host
+2. **The C bridge** (`integrations/petal-c-bridge`) would want the same host
    API. Its scope type would be an opaque handle built from an index, a
    string or a Petal value. Is it needed in the first host round?
-4. **`StatePart::named` vs `key`.** A host could build every scope with
+3. **`StatePart::named` vs `key`.** A host could build every scope with
    `key(Value::string(..))`. `named` saves an allocation and reads better in
    state dumps. Keep both, or only `key`?

@@ -350,8 +350,7 @@ mitigation (§3.2) is not built.
   ones when a single callsite ordinal shifted. Worth revisiting if the
   accepted loss (deleting the first of two `f()` calls hands the survivor the
   first one's state) causes pain in the Garden live-editing workflow.
-- **Per-element keying for intrinsic closures** (§3.3): resolved on
-  23 October 2026, rejected. `filter` and `sort` call a callback a
-  data-dependent number of times in a data-dependent order, so "per element"
-  is ill-defined, and there is no key form. `state` in such a callback is an
-  error instead ([proposals/state-in-callbacks.md](../proposals/state-in-callbacks.md)).
+- **Per-element keying for intrinsic closures** (§3.3): planned in
+  [tasks/state-in-map.md](../tasks/state-in-map.md). Until it lands, `state`
+  in such a callback is an error
+  ([proposals/state-in-callbacks.md](../proposals/state-in-callbacks.md)).

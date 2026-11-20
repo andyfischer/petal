@@ -7,6 +7,10 @@ The user docs are
 and the runtime design is [state-call-paths.md §3.3](../dev/state-call-paths.md#33-vm).
 Where the implementation differs from the text below, a note says so.
 
+Being revisited, 20 November 2026: per-element slots for `map` and the other
+element-wise builtins are planned in
+[docs/tasks/state-in-map.md](../tasks/state-in-map.md).
+
 Decided by the language owner, 23 October 2026: `any`/`all`/`find` become
 native and error like `count` (question 1); the provable cases are reported by
 `petal lint` (question 2); `run_state` is deferred (question 3). Question 4,
@@ -416,8 +420,8 @@ buys nothing when there are zero users, so ship the error directly.
   `forEach` is inlined, so the call is positional, like Petal's `for`. Lazy
   lists use `key`.
 - **Lustre and Scade**: `map<<node, N>>` creates one node instance per
-  element, so each element gets its own state. This is the "per-element
-  slots" alternative below. It works there because arrays have a static size.
+  element, so each element gets its own state. This is what
+  [state-in-map.md](../tasks/state-in-map.md) plans for Petal's `map`.
 - **Haskell**: `runState :: State s a -> s -> (a, s)` is the construct in
   question 3.
 
@@ -426,16 +430,9 @@ buys nothing when there are zero users, so ship the error directly.
 1. **Do nothing** (keep the shared slot and its doc). It is harmless because
    nobody uses it, but it remains a documented rule that contradicts what
    `state` means and makes `count` and `any` disagree.
-2. **Per-element slots** (Lustre-style: push an `Index` part per element in
-   `builtin_map`). This makes `map` behave like `for`. It is rejected because
-   it endorses state in callbacks: `filter` and `sort` call the callback a
-   data-dependent number of times in a data-dependent order (merge-sort
-   comparisons), so "per element" is ill-defined for them. There is also no
-   key form. Keyed loops' open question 4 (state-loop-keys, since removed)
-   can be closed with "no".
-3. **Lint or warning only.** It costs the same to build as the error and
+2. **Lint or warning only.** It costs the same to build as the error and
    leaves the rule in place.
-4. **Compile-time error only.** It cannot see callbacks passed through
+3. **Compile-time error only.** It cannot see callbacks passed through
    variables or parameters. It is useful as an addition to the runtime error
    (see "Reported by `petal lint`"), not as a replacement.
 

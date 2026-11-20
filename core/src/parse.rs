@@ -596,6 +596,33 @@ impl Parser {
         }
     }
 
+    /// After the `=` (or `op=`) of a binding or an assignment that ends its
+    /// line: the value may start on the next line of code when that line is
+    /// indented further than the statement's (docs/syntax/line-continuation.md).
+    /// It is one expression, not a block. A next line that is not indented
+    /// further is a new statement, so the value is missing.
+    fn continue_after_assign(&mut self, stmt_start: usize) -> Result<(), String> {
+        if !matches!(self.peek(), Token::Newline | Token::Eof) {
+            return Ok(());
+        }
+        let next = self.next_code();
+        if !matches!(self.token_at(next), Token::Eof)
+            && self.is_first_on_line(next)
+            && self.column_of(next) > self.indent_of(stmt_start)
+        {
+            self.no_tab(next)?;
+            while self.pos < next {
+                self.advance();
+            }
+            return Ok(());
+        }
+        Err(self.error_at_current(
+            "the value after `=` is missing: write it on the same line as the `=`, or on \
+             the next line indented further than this one"
+                .to_string(),
+        ))
+    }
+
     /// The `=` of a declaration is missing (`let x`, `var x`, `state x` with no
     /// initializer). Every declaration form requires one, so name the mistake
     /// instead of the token the generic `expect` stopped on.
@@ -817,8 +844,42 @@ impl Parser {
                  continuation of the line above. To continue the expression, end the line \
                  above with the `-`",
             );
+        } else if self.line_above_continues_an_assign(t) {
+            message.push_str(
+                " — the value after `=` on the line before is one expression; to compute it \
+                 in steps, use a `fn` or a `( )` block",
+            );
         }
         self.error_at(t, message)
+    }
+
+    /// Is the line above `t`'s line the value of a `=` (or `op=`) that ended
+    /// the line before it ([`Parser::continue_after_assign`])?
+    fn line_above_continues_an_assign(&self, t: usize) -> bool {
+        // The last code token before `t`, then the first token of its line.
+        let Some(mut above) = (0..t).rev().find(|&i| !matches!(self.tokens[i], Token::Newline))
+        else {
+            return false;
+        };
+        while above > 0 && !self.is_first_on_line(above) {
+            above -= 1;
+        }
+        (0..above)
+            .rev()
+            .find(|&i| !matches!(self.tokens[i], Token::Newline))
+            .is_some_and(|i| {
+                matches!(
+                    self.tokens[i],
+                    Token::Assign
+                        | Token::PlusAssign
+                        | Token::MinusAssign
+                        | Token::StarAssign
+                        | Token::SlashAssign
+                        | Token::PercentAssign
+                        | Token::ConcatAssign
+                        | Token::CoalesceAssign
+                )
+            })
     }
 
     /// Does this token end the body it is found in, whatever its column? A
@@ -1977,6 +2038,7 @@ impl Parser {
         let name = self.expect_ident()?;
         let ty = self.parse_type_annotation()?;
         self.expect_initializer(keyword.text(), &name)?;
+        self.continue_after_assign(start)?;
         let value = self.parse_expr()?;
         self.ev_close();
         let mut stmt = self.mk_stmt(
@@ -2005,6 +2067,7 @@ impl Parser {
         let target_expr = self.parse_expr()?;
         let (target, value) = if let Some(op) = self.peek_compound_assign_op() {
             self.advance(); // consume the compound operator
+            self.continue_after_assign(start)?;
             let rhs = self.parse_expr()?;
             // `set x += 1` desugars like `x += 1`: the value spans the whole
             // statement, which is what the CST projection reproduces.
@@ -2026,6 +2089,7 @@ impl Parser {
             (expr_to_assign_target(target_expr)?, value)
         } else {
             self.expect_set_value(&target_expr)?;
+            self.continue_after_assign(start)?;
             let value = self.parse_expr()?;
             (expr_to_assign_target(target_expr)?, value)
         };
@@ -2059,6 +2123,7 @@ impl Parser {
         // `state x: int = …` takes the same annotation slot `let`/`var` do.
         let ty = self.parse_type_annotation()?;
         self.expect_initializer(if is_var { "state var" } else { "state" }, &name)?;
+        self.continue_after_assign(start)?;
         let init = self.parse_expr()?;
         self.ev_close();
         let mut stmt = self.mk_stmt(
@@ -2104,6 +2169,7 @@ impl Parser {
         let name = self.expect_ident()?;
         let ty = self.parse_type_annotation()?;
         self.expect_initializer("memo(...)", &name)?;
+        self.continue_after_assign(start)?;
         let init = self.parse_expr()?;
         self.ev_close();
         Ok(self.mk_stmt(StmtKind::Memo { name, ty, key, init }, start))
@@ -2868,12 +2934,14 @@ impl Parser {
 
         if matches!(self.peek(), Token::Assign) {
             self.advance(); // consume '='
+            self.continue_after_assign(start)?;
             let value = self.parse_expr()?;
             let target = expr_to_assign_target(expr)?;
             self.ev_wrap(cp, SyntaxKind::AssignStmt);
             Ok(self.mk_stmt(StmtKind::Assign { target, value }, start))
         } else if let Some(op) = self.peek_compound_assign_op() {
             self.advance(); // consume the compound assignment token
+            self.continue_after_assign(start)?;
             let rhs = self.parse_expr()?;
             // Desugar: target op= rhs  →  target = target op rhs
             let target = expr_to_assign_target(expr.clone())?;

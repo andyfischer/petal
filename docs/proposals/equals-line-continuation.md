@@ -1,6 +1,10 @@
 # Proposal: a value may start on the line after `=`
 
-Status: proposed, 2026-11-19
+Status: **accepted and implemented**, 2026-11-19, with the owner's decisions
+recorded under [Open questions](#open-questions): every form is covered,
+including `set` and assignment; `petal fmt` leaves the layout as written; the
+guide recommends no style. The `show-static` line issue under
+Introspection is left as a follow-up.
 
 ## Summary
 
@@ -188,9 +192,9 @@ set pan = vec2(
   approach(cur: pan.y, target: target.y, rate: follow_rate))
 ```
 
-The guide should keep recommending "open the bracket, element or block on
-the `=` line" as the normal form. The 1,600 bindings in the table above
-already do this, and nothing about them changes.
+The 1,600 bindings in the table above open their bracket, element or block on
+the `=` line, and nothing about them changes. (The owner decided that the
+guide won't recommend either layout; see Open questions.)
 
 **4. An element with a long open tag**, from
 `petal-creative/design/studio/screens.ptl:89`:
@@ -243,9 +247,8 @@ Petal should match what people guess; being different here buys nothing.
   parens or a backslash. Petal's layout rules come from the Python-style
   plan, which is probably how the restriction arrived, and the parens form
   now works as Python's does.
-- The new form is a second way to lay out a binding, so the guide must say
-  which to prefer: keep the opener on the `=` line, and use the next line
-  for a value that has no opener (a bare element, a long expression).
+- The new form is a second way to lay out a binding. (The owner decided the
+  guide won't prefer either one; see Open questions.)
 - Wrong uses give two specific errors (shown above). Both were tested on the
   prototype.
 
@@ -384,14 +387,15 @@ It's about half a day, in that order.
 
 ## Open questions
 
-For the language owner:
+Decided by the language owner, 2026-11-19:
 
-1. Include `set`, plain assignment and compound `op=`, or only declarations
-   (`let`/`var`/`const`/`state`/`memo`)? The prototype includes all of them,
-   for consistency.
-2. Should `petal fmt` pull a short continuation back onto the `=` line when
-   it fits (normalizing to one layout), or leave it as written? I recommend
-   leaving it, as for operator continuations.
-3. Should the guide name the opener-on-the-`=`-line form as the preferred
-   style, and should `petal lint` say anything about the next-line form when
-   the value opens a bracket? I recommend a guide sentence and no lint.
+1. **Which forms?** All of them: declarations, `set`, plain assignment and
+   compound `op=`.
+2. **Formatter?** `petal fmt` leaves a continuation as written. It does not
+   pull a short value back onto the `=` line.
+3. **Style guidance?** None. The guide doesn't prefer one layout over the
+   other, and `petal lint` says nothing about it.
+
+Still open: `show-static` (and anything else that places a declaration by
+its value's term) reports the value's line rather than the `let` line. The
+anchoring predates this change; the new layout is what makes it visible.

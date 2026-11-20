@@ -43,6 +43,7 @@ mod expr_goals;
 mod endless_edits;
 mod enum_methods;
 mod enums;
+mod equals_continuation;
 mod feature_composition;
 mod fn_introspection;
 mod frozen_heap;

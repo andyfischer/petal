@@ -12,6 +12,17 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Changed
 
+- **A value may start on the line after `=`.** When `=` (or `op=`) ends a
+  line, the value may start on the next line of code, indented further than
+  the statement: `let header =⏎  <text>Settings</text>`. This holds for
+  `let`, `var`, `state`, `memo`, `set`, plain and compound assignment. The
+  value is one expression, not a block. A next line that is not indented
+  further is a new statement, so a half-typed `let a =` above existing code
+  is still an error, now ``the value after `=` is missing: …`` instead of
+  `Unexpected token: a line break`. No existing program parses differently
+  ([Line continuation](docs/syntax/line-continuation.md#after-),
+  [proposal](docs/proposals/equals-line-continuation.md)).
+
 - **`core-libs/` is renamed `core-sdk/`.** It holds the Rust crates that
   hosts and tools link alongside `petal`: `gpp`, `petal-query`,
   `petal-ui-headless`, `programs-as-documents` and `petal-pkgman`. Scripts

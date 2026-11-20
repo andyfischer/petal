@@ -1,7 +1,7 @@
 # Line continuation
 
-A statement normally ends at the end of the line. Two things override that, so
-a long expression can be broken across as many lines as it needs. (Inside
+A statement normally ends at the end of the line. Three things override that,
+so a long expression can be broken across as many lines as it needs. (Inside
 `( )`, `[ ]` and `{ }` line breaks are free anyway; see [Commas](commas.md).)
 
 ## An operator at the end of a line
@@ -65,11 +65,51 @@ In a `match`, a line that begins with `|` continues the or-pattern above it
 Blank lines and comment lines between the two halves are fine; the continuation
 rule looks past them.
 
+## After `=`
+
+When `=` ends a line, the value may start on the next line of code, indented
+further than the line the statement starts on. This holds for `let`, `var`,
+`state`, `memo`, `set` and plain assignment, and for the compound forms
+(`+=`, `++=`, …):
+
+```petal
+let greeting =
+  <text>hello</text>
+print(greeting) # <text>hello</text>
+
+var total = 0
+set total +=
+  1 + 2
+print(get total) # 3
+```
+
+The value is one expression, not a block: a second line at its column is an
+"unexpected indent" error. The expression may be a construct with a body of
+its own, such as an `if`, a `match` or a `fn`, laid out as usual:
+
+```petal
+let n = 2
+let size =
+  if n > 1 then
+    "big"
+  else
+    "small"
+print(size) # big
+```
+
+A next line that is *not* indented further is a new statement, so the `=` has
+no value and the error says where to write it. A half-typed `let a =` above
+existing code therefore stays an error instead of taking the next line as its
+value.
+
+Blank lines and comment lines between the `=` and the value are fine.
+
 ## Continuation and indentation
 
 A continuation line is part of the statement it continues, so its indentation
 is not measured as a block's would be ([Indentation and Blocks](indentation.md)):
-indent it however reads best. Two consequences are worth knowing.
+indent it however reads best. (The one rule is the line after `=`, which must
+be indented further than its statement.) Two consequences are worth knowing.
 
 A line that starts with an operator continues the statement above it wherever
 it is indented. After a block closed by its indentation, that statement is the
@@ -99,12 +139,3 @@ column like any other. Indented further, as a continuation would be, it is an
 - `.` — a field access or method call stays on the line of its receiver.
   Neither a trailing `.` nor a leading `.x` continues, so break a long chain
   with `|>` or bind the intermediate value.
-- `=` — the right-hand side of a `let` or an assignment starts on the same
-  line as the `=`. To start it on the next line, open a `(` on the `=` line:
-
-  ```petal
-  let greeting = (
-    <text>hello</text>
-  )
-  print(greeting) # <text>hello</text>
-  ```

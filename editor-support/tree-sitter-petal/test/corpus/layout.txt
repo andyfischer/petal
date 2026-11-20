@@ -1591,3 +1591,35 @@ z
         consequence: (block
           (identifier)))))
   (identifier))
+
+==================
+A value on the line after `=`
+==================
+
+let size =
+  if n > 1 then
+    "big"
+  else
+    "small"
+set t +=
+  1
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (if_expression
+      condition: (binary_expression
+        left: (identifier)
+        right: (integer))
+      consequence: (block
+        (string
+          (string_content)))
+      (else_clause
+        body: (block
+          (string
+            (string_content))))))
+  (set_statement
+    left: (identifier)
+    right: (integer)))

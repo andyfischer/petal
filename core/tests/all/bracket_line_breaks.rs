@@ -24,11 +24,6 @@ fn run(src: &str) -> Vec<String> {
     env.take_output()
 }
 
-#[track_caller]
-fn parse_err(src: &str) -> String {
-    petal::cst::parse_source(src, ENTRY_FILE).expect_err("expected a parse error")
-}
-
 // ---- line breaks inside brackets ------------------------------------------
 
 #[test]
@@ -90,14 +85,6 @@ let r = {[k]:
   5}
 print(r.z)");
     assert_eq!(out, ["5"]);
-}
-
-#[test]
-fn a_let_value_still_starts_on_the_line_of_its_equals() {
-    // docs/syntax/line-continuation.md, "What does not continue". Changing
-    // this is a language change, not a bug fix.
-    let err = parse_err("let a =\n  1\n");
-    assert!(err.contains("line break"), "{err}");
 }
 
 // ---- elements inside `{…}` holes --------------------------------------------

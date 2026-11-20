@@ -1,6 +1,7 @@
 @module_doc("""
 An interactive dataflow viewer: a program's source on the left (editable,
-highlighted) and its dataflow diagram on the right, linked.
+highlighted) and its dataflow diagram on the right, linked. The diagram flows
+left to right, or top to bottom with `dir: "tb"`.
 
 Hover a node and everything it is computed from lights rose, everything it
 feeds blue, in the diagram and in the code at once. Hover a line of code and
@@ -357,12 +358,20 @@ clicked this frame (nil if none).
     edited: "Mark the selected tab as edited.",
     fold_above: "Fold every function when the graph has more nodes than this (110).",
     pin: "A node label to pin when the tab changes, so a sample opens with its point made.",
+    dir: "\"lr\" (the default) lays the diagram out left to right, \"tb\" top to bottom, which suits a narrow diagram pane.",
+    title: "Text for the toolbar's left end when there are no tabs (a file name).",
+    code_w: "The code pane's share of the width (0.36).",
+    details: "Show each node's source text under its label (true). Without it the diagram is more compact; the tooltip still has the text.",
+    min_fit: "The smallest zoom the diagram opens at to fit it whole (0.72); below it, it opens readable at the inputs instead.",
   },
   see: ["ptl_dataflow/extract.dataflow_graph", "ptl_dataflow/layout.layout_graph"])
 pub fn dataflow_viewer(r, source, compiled, opts = {})
   let tabs = opts?.tabs ?? []
   let tab = opts?.tab ?? 0
   let fold_above = opts?.fold_above ?? 110
+  let dir = opts?.dir ?? "lr"
+  let tb = dir == "tb"
+  let min_fit = opts?.min_fit ?? MIN_FIT
 
   state g_src = nil
   state graph = nil
@@ -415,18 +424,20 @@ pub fn dataflow_viewer(r, source, compiled, opts = {})
 
   # ── fold → layout (by label, so a fold survives edits) ──
   if graph != nil then
-    let key = [g_src, folded]
+    let key = [g_src, folded, dir]
     if key != lay_key then
       lay_key = key
       let ids = map(filter(graph.clusters, fn(c) -> contains(folded, c.label)), fn(c) -> c.id)
       shown = collapse(graph, ids)
-      lay = layout_graph(shown)
+      if !(opts?.details ?? true) then
+        shown = {...shown, nodes: map(shown.nodes, fn(n) -> {...n, detail: nil, source_text: n.detail})}
+      lay = layout_graph(shown, {dir: dir})
 
   # ── frame ──
   let bar = rect(r.x, r.y, r.w, BAR_H)
   let bottom = LEGEND_H + (if err != nil || len(notes) > 0 then ERR_H else 0 end)
   let body = rect(r.x, r.y + BAR_H, r.w, r.h - BAR_H - bottom)
-  let code_w = clamp(r.w * 0.36, 240, 460)
+  let code_w = clamp(r.w * (opts?.code_w ?? 0.36), 220, 460)
   let code_r = rect(body.x, body.y, code_w, body.h)
   let dia = rect(body.x + code_w, body.y, body.w - code_w, body.h)
 
@@ -435,13 +446,19 @@ pub fn dataflow_viewer(r, source, compiled, opts = {})
     let W = dia.w
     let H = dia.h
     let whole = min(1.1, min((W - 24) / max(1, lay.w), (H - 40) / max(1, lay.h)))
-    # Below MIN_FIT text is unreadable: start readable at the left and pan.
-    let k = max(whole, min(MIN_FIT, 1.1))
-    let x = if whole >= MIN_FIT then (W - lay.w * k) / 2 else 12.0 end
+    # Below MIN_FIT text is unreadable: start readable where the inputs are
+    # (the left, or the top) and pan.
+    let k = max(whole, min(min_fit, 1.1))
+    let cx = (W - lay.w * k) / 2
+    let cy = max(8, (H - lay.h * k) / 2 - 14)
+    if whole >= min_fit then return {k: k, x: cx, y: cy} end
     let p = if pinned?.kind == "node" then find(lay.nodes, fn(n) -> n.node.id == pinned.id) else nil end
-    if whole < MIN_FIT && p != nil then
-      x = min(12, max(W - lay.w * k - 12, W * 0.6 - (p.x + p.w / 2) * k))
-    {k: k, x: x, y: max(8, (H - lay.h * k) / 2 - 14)}
+    if tb then
+      let x = if lay.w * k <= W - 24 then cx else 12.0 end
+      let y = if p != nil then min(12, max(H - lay.h * k - 40, H * 0.4 - (p.y + p.h / 2) * k)) else 12.0 end
+      return {k: k, x: x, y: y}
+    let x = if p != nil then min(12, max(W - lay.w * k - 12, W * 0.6 - (p.x + p.w / 2) * k)) else 12.0 end
+    {k: k, x: x, y: cy}
   let show_all = fn()
     if lay == nil then return view end
     let k = max(0.08, min(1.1, min((dia.w - 24) / max(1, lay.w), (dia.h - 40) / max(1, lay.h))))
@@ -458,6 +475,9 @@ pub fn dataflow_viewer(r, source, compiled, opts = {})
   draw_line(bar.x, bar.y + bar.h - 0.5, bar.x + bar.w, bar.y + bar.h - 0.5, TERM_LINE, 255, 1)
   let clicked_tab = nil
   let tx = bar.x + 10
+  if len(tabs) == 0 && opts?.title != nil then
+    draw_text(opts.title, tx + 4, bar.y + (bar.h - 12) / 2 - 1, _mono(12, TERM_DIM))
+    tx += text_width(opts.title, _mono(12, TERM_DIM)) + 14
   for i in range(0, len(tabs)) do
     let name = tabs[i] ++ (if i == tab && (opts?.edited ?? false) then " •" else "" end)
     let b = _button(name, tx, bar.y + 6, bar.h - 12, i == tab)
@@ -716,7 +736,8 @@ pub fn dataflow_viewer(r, source, compiled, opts = {})
       let p = find(lay.nodes, fn(q) -> q.node.id == hover.id)
       if p != nil then
         let n = p.node
-        let lines2 = ["{_kind_style(n.kind).name}: {n.label}"] ++ (if n.detail != nil then [n.detail] else [] end) ++ (if n.kind == "fn" then ["(click to unfold)"] else [] end)
+        let text = n?.source_text ?? n.detail
+        let lines2 = ["{_kind_style(n.kind).name}: {n.label}"] ++ (if text != nil then [text] else [] end) ++ (if n.kind == "fn" then ["(click to unfold)"] else [] end)
         let tts = _mono(11, INK)
         let tw = maximum(map(lines2, fn(l) -> text_width(l, tts))) + 16
         let th = len(lines2) * 15 + 10
@@ -752,21 +773,27 @@ pub fn dataflow_viewer(r, source, compiled, opts = {})
   let lx = r.x + 14
   let lts = _ui(11.5, INK_2)
   let lyc = ly0 + LEGEND_H / 2
-  for kind in LEGEND do
+  # Only what the diagram shows, so a small program gets a short legend.
+  let has_kind = fn(kind) -> shown == nil || any(shown.nodes, fn(n) -> n.kind == kind)
+  let has_edge = fn(kind) -> shown == nil || any(shown.edges, fn(e) -> e.kind == kind)
+  for kind in filter(LEGEND, has_kind) do
     let s = _kind_style(kind)
     let rr = if kind == "input" || kind == "param" then 6 else 3 end
     draw_rect_rounded(lx, lyc - 6, 18, 12, rr, s.fill)
     if s.dash then _stroke(_rounded(_rect_pts(lx, lyc - 6, 18, 12), rr), [3, 2], s.stroke, 255, 1) else draw_rect_rounded_outline(lx, lyc - 6, 18, 12, rr, s.stroke, 255, 1) end
     draw_text(s.name, lx + 24, lyc - 7, lts)
     lx += 24 + text_width(s.name, lts) + 16
-  _stroke([[lx, lyc], [lx + 24, lyc]], [5, 4], :c4952f, 255, 1.4)
-  draw_text("only when (condition)", lx + 30, lyc - 7, lts)
-  lx += 30 + text_width("only when (condition)", lts) + 16
-  _stroke([[lx, lyc], [lx + 24, lyc]], [2, 3], :c2185b, 255, 1.4)
-  draw_text("calls", lx + 30, lyc - 7, lts)
-  lx += 30 + text_width("calls", lts) + 16
-  draw_text("↻", lx, lyc - 7, {font: "ui", size: 11.5, color: :b9862a, weight: 700})
-  draw_text("carries to the next frame", lx + 14, lyc - 7, lts)
+  if has_edge("control") then
+    _stroke([[lx, lyc], [lx + 24, lyc]], [5, 4], :c4952f, 255, 1.4)
+    draw_text("only when (condition)", lx + 30, lyc - 7, lts)
+    lx += 30 + text_width("only when (condition)", lts) + 16
+  if has_edge("call") then
+    _stroke([[lx, lyc], [lx + 24, lyc]], [2, 3], :c2185b, 255, 1.4)
+    draw_text("calls", lx + 30, lyc - 7, lts)
+    lx += 30 + text_width("calls", lts) + 16
+  if shown == nil || any(shown.nodes, fn(n) -> n?.feedback ?? false) then
+    draw_text("↻", lx, lyc - 7, {font: "ui", size: 11.5, color: :b9862a, weight: 700})
+    draw_text("carries to the next frame", lx + 14, lyc - 7, lts)
 
   {source: new_source, tab: clicked_tab}
 

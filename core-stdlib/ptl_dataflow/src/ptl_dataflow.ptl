@@ -5,7 +5,7 @@ Three modules, re-exported here:
 
 - `ptl_dataflow/extract`: `dataflow_graph(ir, natives, source)` folds the
   compiler's user-only IR into one node per binding;
-- `ptl_dataflow/layout`: `layout_graph(g)` lays that out left to right, with
+- `ptl_dataflow/layout`: `layout_graph(g)` lays that out left to right (or top to bottom), with
   functions and loops as boxes, and `collapse(g, ids)` folds boxes;
 - `ptl_dataflow/view`: `dataflow_viewer(r, source, compiled)` is the
   interactive viewer (code and diagram, linked).

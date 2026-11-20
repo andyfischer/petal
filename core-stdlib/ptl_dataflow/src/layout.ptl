@@ -1,5 +1,5 @@
 @module_doc("""
-Lays a dataflow graph out left to right, in layers, with functions and loops
+Lays a dataflow graph out in layers, left to right or top to bottom, with functions and loops
 drawn as boxes that hold their own nodes.
 
 `layout_graph(g)` takes the graph `dataflow_graph` builds (or `collapse`
@@ -51,6 +51,11 @@ pub fn show_detail(n) -> bool
   if n.detail == nil || n.detail == "" then return false end
   if n.kind == "input" || n.kind == "param" then return false end
   true
+
+# A node's size in layout space: drawn size, turned for a top-to-bottom layout.
+fn _layout_size(n, tb)
+  let sz = node_size(n)
+  if tb then {w: sz.h, h: sz.w} else sz end
 
 @doc("The width and height node `n` is drawn at: its label, and its detail when `show_detail` says so.")
 pub fn node_size(n)
@@ -387,12 +392,19 @@ coordinates from (0, 0):
 - `nodes`: `{node, x, y, w, h}`, one per graph node;
 - `clusters`: `{cluster, x, y, w, h, depth}`, outer boxes before inner ones;
 - `edges`: `{id, from, to, kind, points}`, `points` a list of `[x, y]`
-  corners from the source's right side to the target's left side.
+  corners from the source's right side to the target's left side (bottom
+  to top when `dir` is "tb").
+
+`opts.dir` is "lr" (the default: layers are columns, inputs on the left) or
+"tb" (layers are rows, inputs at the top). A top-to-bottom layout is the same
+layout turned a quarter: each node's size goes in turned, and every
+coordinate comes out turned back, so the text is never rotated.
 
 An edge between a box and something inside it (a recursive call) is left
 out: it has no sensible route.
 """, see: ["ptl_dataflow/extract.dataflow_graph", "collapse"])
-pub fn layout_graph(g)
+pub fn layout_graph(g, opts = {})
+  let tb = (opts?.dir ?? "lr") == "tb"
   let parent = Map()
   let cl_by = Map()
   for c in g.clusters do
@@ -489,7 +501,7 @@ pub fn layout_graph(g)
   let item_of = fn(id)
     let nd = node_by[id]
     if nd != nil then
-      let sz = node_size(nd)
+      let sz = _layout_size(nd, tb)
       let rank = if nd.kind == "input" then "first" else if nd.kind == "effect" && nd.cluster == nil then "last" else nil end
       {id: id, w: sz.w, h: sz.h, rank: rank, port: nil}
     else
@@ -514,7 +526,10 @@ pub fn layout_graph(g)
   for c in boxes do
     let kw = if c.kind == "loop" then 8 else 0 end
     let min_w = ceil(text_width(c.label, HEADER_STYLE) + kw * 7.2 + 48)
-    let r = lay(c.id, {l: PAD_SIDE, t: PAD_TOP, r: PAD_SIDE, b: PAD_BOTTOM, min_w: min_w, min_h: 60})
+    # Turned, the header strip runs down the left side of layout space.
+    let turned = {l: PAD_TOP, t: PAD_SIDE, r: PAD_BOTTOM, b: PAD_SIDE, min_w: 60, min_h: min_w}
+    let pads = if tb then turned else {l: PAD_SIDE, t: PAD_TOP, r: PAD_SIDE, b: PAD_BOTTOM, min_w: min_w, min_h: 60} end
+    let r = lay(c.id, pads)
     set done[c.id] = r
   let root = lay("root", {l: ROOT_PAD, t: ROOT_PAD, r: ROOT_PAD, b: ROOT_PAD, min_w: 0, min_h: 0})
   set done["root"] = root
@@ -537,7 +552,7 @@ pub fn layout_graph(g)
       let ay = o[1] + p.y
       let nd = node_by[id]
       if nd != nil then
-        let sz = node_size(nd)
+        let sz = _layout_size(nd, tb)
         placed_nodes = append(placed_nodes, {node: nd, x: ax, y: ay, w: sz.w, h: sz.h})
       else
         let inner = done[id]
@@ -563,7 +578,17 @@ pub fn layout_graph(g)
       clean = append(clean, p)
     {id: e.id, from: e.from, to: e.to, kind: e.kind, points: clean}
 
-  {nodes: placed_nodes, clusters: placed_boxes, edges: placed_edges, w: root.w, h: root.h}
+  if !tb then
+    return {nodes: placed_nodes, clusters: placed_boxes, edges: placed_edges, w: root.w, h: root.h}
+  # Turn layout space back: x and y trade places, and so do w and h.
+  let turn = fn(b) -> {...b, x: b.y, y: b.x, w: b.h, h: b.w}
+  {
+    nodes: map(placed_nodes, turn),
+    clusters: map(placed_boxes, turn),
+    edges: map(placed_edges, fn(e) -> {...e, points: map(e.points, fn(p) -> [p[1], p[0]])}),
+    w: root.h,
+    h: root.w,
+  }
 
 @doc("""
 Folds every box in `folded` (a list of cluster ids), and everything inside

@@ -1345,7 +1345,12 @@ impl Lexer {
                 s = String::new();
 
                 let mark = self.tokens.len();
+                // The hole is code even in a quoted attribute
+                // (`id="{n > 1}"`): lex it in Normal mode so its `>` or `/>`
+                // is not taken for the end of the open tag.
+                self.mode_stack.push(LexerMode::Normal);
                 let braced = self.tokenize_braced_expr(false, false);
+                self.mode_stack.pop();
                 if hole_opens_with_quote {
                     // Two shapes give the mistake away: the quote that follows
                     // the brace never closed on this line (nothing was pushed),

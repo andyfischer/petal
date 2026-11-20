@@ -2692,7 +2692,9 @@ let page = <div class="root">
 </div>
 ```
 
-- Attributes are `name={expr}` or `name="literal"`. A bare `name` is
+- Attributes are `name={expr}` or `name="string"`. A quoted value
+  interpolates like any other string, so `id="{key}_box"` is
+  `id={"{key}_box"}`; one with no `{…}` hole is a literal. A bare `name` is
   `name={true}`, as in JSX (`<video muted />`). A name can be a keyword, as a
   record key can (`<video in={2.0} />`).
 - An open tag can put its attributes on separate lines:

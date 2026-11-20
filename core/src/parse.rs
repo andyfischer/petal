@@ -4526,6 +4526,10 @@ impl Parser {
                             self.advance();
                             self.mk_expr(ExprKind::Literal(Literal::String(s)), attr_start)
                         }
+                        // `id="{id}_box"`: a quoted value interpolates as any
+                        // other string does, the same as `id={"{id}_box"}`.
+                        // It is not a literal, so not a static value.
+                        Token::InterpStart => self.parse_string_interp()?,
                         Token::LBrace => {
                             self.advance();
                             let expr = self.parse_expr()?;

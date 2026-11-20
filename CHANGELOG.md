@@ -1518,6 +1518,12 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- **A quoted attribute interpolates.** `id="{id}_box"` is
+  `id={"{id}_box"}`, as `"…{x}…"` is everywhere else; it was
+  `Expected string or {expr} for attribute value, got InterpStart`. A `>` or
+  `/>` in the hole (`k="{n > 1}"`) no longer ends the open tag. A quoted
+  value with no hole is still a literal, and so still a static value.
+
 - **Bare text in an element inside a `{…}` hole.** An element nested in a
   hole lexes its children as element content, as it does at the top level
   or in a `fn` body. `{pb("Go", <text>G</text>)}`,

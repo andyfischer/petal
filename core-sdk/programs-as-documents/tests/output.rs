@@ -51,3 +51,10 @@ fn says_which_output_call_a_script_made() {
     let err = any().evaluate("let x = 1\n").unwrap_err();
     assert_eq!(err, "the script never called demo(a, b) or other(a)");
 }
+
+#[test]
+fn a_probe_runs_with_the_output_call_registered() {
+    let r = runner(OutputSource::Call(DEMO));
+    let src = format!("import demo\ndemo({}(1 + 2), [])\n", programs_as_documents::run::PROBE);
+    assert_eq!(r.probe(&src).unwrap(), vec![petal::static_value::StaticValue::Int(3)]);
+}

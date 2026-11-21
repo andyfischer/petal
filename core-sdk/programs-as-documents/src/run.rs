@@ -167,11 +167,7 @@ impl Runner {
     }
 
     fn prepare_traced(&self, source: &str, trace: bool) -> Result<(Env, ProgramId, StackKey), String> {
-        let mut env = Env::new();
-        (self.setup)(&mut env)?;
-        for c in self.output.calls() {
-            register_output_native(&mut env, c.native);
-        }
+        let mut env = self.fresh_env()?;
         env.enable_element_trace(trace);
         let program = env.load_program_at(source, &self.path)?;
         let stack = env.create_stack(program)?;
@@ -211,6 +207,17 @@ impl Runner {
         let (outputs, output_call) = self.read_outputs(&mut env, result)?;
         let outputs = plain_json(&outputs, &env)?;
         Ok(Evaluated { outputs, output_call, log })
+    }
+
+    /// A fresh env with the host's setup and the output calls' natives:
+    /// every run of a document starts from one.
+    fn fresh_env(&self) -> Result<Env, String> {
+        let mut env = Env::new();
+        (self.setup)(&mut env)?;
+        for c in self.output.calls() {
+            register_output_native(&mut env, c.native);
+        }
+        Ok(env)
     }
 
     /// The run's output values, as [`OutputSource`] says to read them, and
@@ -278,8 +285,7 @@ impl Runner {
     /// document's own; its declaration is appended to the source. Errors
     /// are those of [`run`](Self::run).
     pub fn probe(&self, source: &str) -> Result<Vec<StaticValue>, String> {
-        let mut env = Env::new();
-        (self.setup)(&mut env)?;
+        let mut env = self.fresh_env()?;
         env.register_native_boxed(
             PROBE,
             |cx| {

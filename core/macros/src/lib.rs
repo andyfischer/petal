@@ -2,7 +2,7 @@
 //! Use it through the `petal` crate (`petal::embed_package!`); its docs are
 //! there.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 
 use proc_macro::{Span, TokenStream, TokenTree};
@@ -32,8 +32,9 @@ fn expand(input: TokenStream) -> Result<String, String> {
     let base = if base.is_absolute() {
         base
     } else {
-        // A relative file path is relative to the crate being compiled.
-        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default()).join(base)
+        // A relative file path is relative to where rustc runs: the crate's
+        // directory, or its workspace's root for a crate in a workspace.
+        std::env::current_dir().map_err(|e| format!("embed_package!: no working directory ({e})"))?.join(base)
     };
     let dir = base.join(&rel);
     let dir = dir

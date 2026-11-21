@@ -44,6 +44,7 @@ version = "0.1.0"
 dependencies = [
  "hashbrown",
  "indexmap",
+ "petal-macros",
  "serde",
  "serde_json",
  "slotmap",
@@ -59,6 +60,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "petal-macros"
+version = "0.1.0"
 
 [[package]]
 name = "petal-pkgman"

@@ -2762,11 +2762,16 @@ version = "0.1.0"
 dependencies = [
  "hashbrown 0.16.1",
  "indexmap",
+ "petal-macros",
  "serde",
  "serde_json",
  "slotmap",
  "smallvec",
 ]
+
+[[package]]
+name = "petal-macros"
+version = "0.1.0"
 
 [[package]]
 name = "petal-query"

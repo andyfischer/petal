@@ -26,10 +26,7 @@ sections that source comments cite) was trimmed on 2026-10-23. Read it with
    classifies from nothing"). Reopen it only with a new profile. A further
    5 ms (neon) and 13 ms (Moses) of the cache's lowering overhead has not
    been investigated.
-3. **Ecosystem re-vendors.** Until they re-vendor, worlds-fair (`wf-ui-ffi`,
-   plus `fix-imports`) and the petal-lang.org WASM build (and
-   `snippets/match.ptl`) get neither `const` nor the cache. The five
-   `git.ptl` panels in `~/.garden` need commas.
+3. (Done 2026-11-21: worlds-fair and petal-lang.org are re-vendored.)
 4. **Function-body slots** are not kept through a patched or recompiling
    reload, and not kept under observation. They have no per-value cut and no
    `--static-audit` coverage. After every edit Moses rebuilds each of its

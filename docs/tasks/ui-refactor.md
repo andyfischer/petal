@@ -92,13 +92,6 @@ controls built on `ui.interact` underneath go inert as they did under
 
 ### Left
 
-- [x] **Cheesecake** (2026-11-11): its widget calls are bloom's (cheesecake
-  `7246a93`) and it is re-vendored at `0349c2a3`.
-- [x] **The website** (2026-11-11, petal-lang.org re-vendored at
-  `0349c2a3`). Its DM sample `settings-card.ptl` draws its card, buttons and
-  meter with in-file `draw_*` helpers over `draw_rect_rounded` and
-  `ui_theme()`, because garden-web is built without bloom (`garden-script`
-  turns on `petal/libraries` only for its tests).
 - [ ] **Remove the deprecated widgets** from `ui/widgets` once the
   deprecation period ends, with `moved_widgets.rs`. The vitest fixture
   `test/vitest/fixtures/implicit-imports/late_app.ptl` needs another

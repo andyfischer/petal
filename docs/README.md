@@ -171,11 +171,8 @@ point-in-time status.
 | [DM v2 complexity study](dev/direct-manipulation-v2-study.md) | The examples ladder and what v2 solves on each, with runs and timings |
 | [DM hints: `tunable` / `rigid`](proposals/dm-v2-hints.md) | Identity builtins that tell direct manipulation which literals may move (implemented) |
 | [Annotations as functions](tasks/lifecycle-annotation-functions-refactor.md) | Replacing the `const` and `config` keywords with the builtins `const(…)` and `tunable(…)` (settings half done; `const(…)` planned) |
-| [IR Format Improvements](dev/ir-format-improvements-plan.md) | Audit of the token, AST, IR and bytecode dumps (shipped) |
-| [Experimental: IR-based Editing](dev/experimental-ir-based-editing.md) | An early, unfinished surface for building a program as IR data |
 | [Testbed Challenge](dev/testbed-challenge-plan.md) | The target list of panel apps for the Garden testbed, and which are built |
 | [Input dispatch](proposals/input-dispatch.md) | petal-ui input resolved once per frame as data: one owner per pointer event, key and focus; why the interaction regressions recur (proposed; Phase 0 done) |
-| [Improved automation](plan/improved-automation-ideas.md) | Idea: a scripted automated user, and one automation system under it (not started) |
 | [Aspirational ideas](aspirational-ideas/README.md) | Directions not yet built: design notes and sketches |
 
 ### Open work

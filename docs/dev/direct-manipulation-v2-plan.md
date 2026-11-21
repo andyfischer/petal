@@ -13,7 +13,7 @@ default engine on the CLI and MCP (`--v1` / `engine: "v1"` reach the legacy
 engine), and the hint names `tunable` and `rigid` are accepted. See
 [Status](#9-status) at the end.
 
-The goals are in [docs/tasks/direct-manipulation-v2.md](../tasks/direct-manipulation-v2.md).
+The goals were in `docs/tasks/direct-manipulation-v2.md` (deleted 2026-11-08; `git show c8ebb142^:docs/tasks/direct-manipulation-v2.md`).
 Where this plan and an older doc disagree (the user page
 [features/direct-manipulation.md](../features/direct-manipulation.md), the
 module docs of `direct_manipulation.rs` and `provenance.rs`, the Garden drag

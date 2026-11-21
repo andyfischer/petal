@@ -135,6 +135,6 @@ describes what is there:
 | `Goal::should_set_path` / `should_insert` / `should_append` / `should_remove` / `should_move` | yes |
 | `literal_edit::set_path` / `insert_path` / `append_path` / `remove_path` / `move_path` | yes |
 | `rewrite::find_binding_path` | yes (reads only) |
-| `pb_source_expr` / `_set` / `_set_value` / `_insert` / `_append` / `_remove` / `_move` | yes. Element values have no JSON form yet, so a child is inserted or set whole only from Rust. Attribute edits, removes and moves work. |
+| `pb_source_expr` / `_set` / `_set_value` / `_insert` / `_append` / `_remove` / `_move` | yes. An element value is written in JSON as `{"element": tag, "props": {…}, "children": […]}`. |
 | `Env::set_config_value` | yes |
 | `petal` CLI, MCP tools | no command takes a binding path |

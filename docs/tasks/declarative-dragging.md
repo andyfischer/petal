@@ -36,73 +36,8 @@ authoritative over the Design section where they differ. The user guide is
 | `DragExplain` | `test/vitest/petal-mcp-drag.test.ts` | `npx vitest run test/vitest/petal-mcp-drag.test.ts` |
 | Doc snippets, stdlib manifest | `test/vitest/doc-snippets.test.ts`, `stdlib-extract.test.ts` | `npx vitest run`; `npm run stdlib:json && git diff --exit-code docs/stdlib.json` |
 
-## Final test pass, 2026-11-06
-
-On `main` at 9bb744b1 plus this commit's changes:
-
-| Suite | Result |
-|---|---|
-| core `cargo test --no-fail-fast` | 82 binaries, 2967 passed, 0 failed, 16 ignored |
-| core-stdlib/ui/native `cargo test --no-fail-fast` | 35 binaries, 453 passed, 0 failed, 7 ignored |
-| garden-script `cargo test -p garden-script` | 217 passed, 0 failed, 1 ignored (3 bloom tests failed before fix 2 below, and already failed at 3fe1d922, before D2) |
-| garden-app `cargo test -p garden-app` | 1004 passed, 0 failed |
-| petal-desktop-sdl `cargo test` (`LIBRARY_PATH=/opt/homebrew/lib`) | 82 passed, 0 failed |
-| `npx vitest run` | 79 files, 1793 tests, all pass |
-| `npx tsc --noEmit`, `docs/stdlib.json` sync | clean, current |
-| `./tools/test-examples.ts` | 34 passed, 0 failed |
-| `petal lint` / `petal fmt --check` on the 15 new `.ptl` files | fmt clean; lint: no errors, style hints only (`prefer-let` in three test files, kanban's 8 `+=` hints that the old app had too) |
-| core `cargo clippy --target wasm32-unknown-unknown` (std::time) | clean |
-| wasm builds + `node tools/wasm-smoke.ts --require canvas,html` | every script ok |
-| `make expensive_lint_tests` (lint, fmt and CST sweeps over the repo) | 4 passed |
-| `./tools/verify.ts --plan compiler`, binary A/B of 3fe1d922 (before D2) against now | see below |
-| `./tools/oracle-external.ts` (worlds-fair, release runner, `wf-ui` built into a scratch target dir) | all 12 fragments agree |
-
-**The binary A/B** ran the whole `compiler` corpus (370 files: `examples`,
-`test`, `garden`, `~/.garden`, `~/worlds-fair/ui/ptl`) under the pre-D2
-binaries and the current ones. Every difference is accounted for:
-
-- *compile outcome differs* (9): the seven drag apps and kanban import
-  `ui/drag`, and two test files use the new `for` and `set_in`. Expected.
-- *run-diff* on `examples/console/speculate.ptl` and the speculate benchmark:
-  they call the new builtins. Expected.
-- *run-diff* on `examples/ui/layers`: two widget-animation slots first written
-  inside `ui_measure` are no longer kept, since P1 undoes `ui_measure`'s
-  writes. Draw commands are identical. Expected (P1 semantics).
-- *run-diff* on bloom apps (bloom-gallery, `bloom_smoke`, memory, settings,
-  main-menu): the overload fix below. bloom-gallery's dropdown no longer
-  errors; the others draw identically and only the dump label of a call
-  through bloom's self-forwarding overloads changed (`<expr>#N` for
-  `bloom/button::segmented`); the slot ids, which hot reload matches, did not.
-- *golden mismatch* on 63 apps: the same 63 mismatch with the pre-D2
-  binaries, so `test/ui-golden/index.json` was already stale for them before
-  D2 started. Not re-baselined here (see open issues).
-
-Ecosystem A/B of the same two binaries: `~/petal-creative` and
-`~/biz/petal-lang.org` (120 files) are 38 identical traces, the rest modules
-or not runnable headless; `petal lint` output over `~/petal-creative`,
-`~/cheesecake/games`, `~/worlds-fair/ui/ptl`, `~/biz/petal-lang.org`,
-`examples/` and `garden/` is identical except for the lint bug fixed below.
-
-## Fixes made in the test pass
-
-1. **`shadows-builtin` read `ui/drag` into `import ui`** (3b252556). The lint
-   collected the exports of every file in a bundled package, so after P0 a
-   plain `import ui` plus an app's own `fn place` was reported as shadowing
-   `ui`'s `place` (video-timeline, cheesecake's neon `player.ptl`). It now
-   collects per module: the main file plus the siblings it `pub import`s.
-2. **An overload variant calling its own name reached an import's set**
-   (9bb744b1). Pre-existing (garden-script's bloom tests already failed at
-   3fe1d922) and outside D2, but in the suites this pass runs: bloom's
-   `dropdown(r, label, items)` forwarded to `ui`'s 4-argument `dropdown`. Such
-   a name now goes through a hoisted cell, and the cell's value still merges
-   the imported set. Test: `core/tests/all/modules.rs`
-   `an_overload_calling_its_own_name_reaches_its_own_set_over_an_import`.
-3. **`PRELUDE_LEVEL` 10 → 11** for `ui/drag`, `ui_debug` and the `ui_measure`
-   behaviour change (P0 and P4 both left it for later).
-4. **Four drag goldens re-baselined** (d2-list, d2-hanoi, d2-beads, kanban).
-   They were taken before P2 added `state var _fns` to `ui/drag`. Traces from
-   7e331c52's runner and today's differ only in that slot; the draw commands
-   are identical on all 60 frames.
+The final test pass (2026-11-06) and its fixes, and the ecosystem check, are
+in `git show 5b28d9f5:docs/tasks/declarative-dragging.md`.
 
 ## Open issues
 
@@ -132,35 +67,7 @@ Ranked; the proposal's Implementation notes have the detail.
     (needs a `ShouldMove` goal).
 11. **Keyboard moves during a kanban drag** change the board under the
     session; the drop commits a board built from before the move.
-12. **The ui-golden index is stale for 63 apps** independently of D2 (they
-    mismatch under the pre-D2 binaries too). Someone who knows which change
-    moved them should re-baseline deliberately.
-13. **Not built**: a filter clause and destructuring generators for
+12. **Not built**: a filter clause and destructuring generators for
     multi-generator `for`; the scheduler's interval-graph second view;
     script-visible program generation (the session detects a reload with a
     `memo(0)` token).
-
-## Ecosystem
-
-No external project defines a name that now collides in a way that changes
-behaviour: an app's own declaration wins over `import ui/drag`, and no
-external file imports `ui/drag`. Found and checked:
-
-- `~/cheesecake/games/gta/tests/drive_test.ptl` declares `fn get_in()` (zero
-  arguments). The core `get_in` takes two, so it is an overload and the
-  file's own call still reaches its function; no lint warning.
-- `fn place` in several cheesecake games, `fn between` in moses, `let vary`,
-  `let moves`, `state moves`: none import `ui/drag`, so nothing changes.
-  Cheesecake's neon `player.ptl` got a false `shadows-builtin` warning from
-  the lint bug fixed above; it is gone.
-- `~/petal-creative/petal-design/packages/studio/layers.ptl` declares
-  `fn drop_target`; it does not import `ui/drag`.
-- Multi-generator `for`: no existing file had a comma in a `for` header (the
-  one match, in moonbear, is a comma between two `for` expressions in a list
-  literal, which parses as before).
-
-Needed outside this repo (Cheesecake and worlds-fair have since re-vendored
-and carry D2):
-
-- **petal-lang.org**: rebuild the WASM SDK (`build:sdk`) to pick up the same.
-  A page for `ui/drag` and `speculate` would be new content, not a fix.

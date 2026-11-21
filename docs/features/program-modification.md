@@ -19,8 +19,9 @@ across an edit ([inline-state.md](inline-state.md#state-and-hot-reload)).
 Source can be rewritten through a lossless tree without reformatting.
 
 > A third surface, constructing or transforming a program *as IR data*, exists
-> but is **experimental and unfinished**. See
-> [../dev/experimental-ir-based-editing.md](../dev/experimental-ir-based-editing.md).
+> but is **experimental and unfinished**: `run --ir` loads an emitted program
+> ([ir-as-target.md](../dev/ir-as-target.md)), and there is no in-place IR
+> rewrite API.
 
 ---
 
@@ -246,7 +247,7 @@ See [time-travel.md](time-travel.md).
 | Speculative variant run | yes | (forked) | `fork_execution`, `run_speculative`, `diff_state` ([time-travel.md](time-travel.md)) |
 | Rewind to a checkpoint; replay recorded input through an edit | yes | yes | `restore_execution`; `petal-sdl` timeline (`rewind`, `replay`, `trail`) ([time-travel.md](time-travel.md)) |
 | Sensitivity of an output to an input (finite differences, under `speculate`) | yes | — | `autodiff`'s `deriv` / `jacobian` ([differentiation.md](differentiation.md)) |
-| Construct/transform IR as data | — | experimental | [../dev/experimental-ir-based-editing.md](../dev/experimental-ir-based-editing.md) |
+| Construct/transform IR as data | — | experimental | `run --ir` ([ir-as-target.md](../dev/ir-as-target.md)) |
 
 ---
 

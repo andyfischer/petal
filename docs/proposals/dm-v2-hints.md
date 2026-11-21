@@ -5,8 +5,8 @@ of the plan: the builtins, `core/src/dm/hints.rs`, the three lint rules,
 docs/Builtins.md "Direct-Manipulation Hints"); accepted 24 October 2026,
 when the owner approved the names `tunable` and `rigid` (open question 1).
 Part of Direct Manipulation v2: see the
-[plan](../dev/direct-manipulation-v2-plan.md) (§2.6 and milestone M2) and the
-[task](../tasks/direct-manipulation-v2.md).
+[plan](../dev/direct-manipulation-v2-plan.md) (§2.6 and milestone M2) and the task
+(`git show c8ebb142^:docs/tasks/direct-manipulation-v2.md`).
 
 ## Summary
 

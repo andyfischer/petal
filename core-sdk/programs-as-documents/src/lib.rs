@@ -12,8 +12,12 @@
 //! - [`DocumentSession`]: the source text as the single source of truth,
 //!   with undo and redo, keyed coalescing, gestures, save and
 //!   `poll_disk` ([`session`]).
-//! - [`Runner`] / [`DocumentRun`]: run a source with the host's vocabulary
-//!   registered and element tracing on, and read its result ([`run`]).
+//! - [`Runner`] / [`DocumentRun`]: run a source with the host's packages
+//!   registered and element tracing on, and read its output, usually the
+//!   arguments of the [`OutputCall`] it ends in ([`run`]).
+//!   [`Runner::evaluate`] / [`Evaluated`]: the output alone, untraced, as
+//!   plain JSON, and [`Props`] to read an element's attributes from it
+//!   ([`props`]).
 //! - [`OutputMap`]: for each element of the result, its construction site,
 //!   call path, fan-out, per-field provenance and a stable [`OutputKey`]
 //!   ([`output_map`]).
@@ -45,6 +49,7 @@ pub mod editable;
 pub mod entries;
 pub mod intent;
 pub mod output_map;
+pub mod props;
 pub mod run;
 pub mod scope;
 pub mod session;
@@ -65,7 +70,8 @@ pub use solve::{Solved, solve_field};
 pub use output_map::{
     Field, FieldProvenance, LiteralSource, OutputKey, OutputMap, OutputNode, PathSeg, Site, WithinLiteral,
 };
-pub use run::{DocumentRun, OutputSource, Runner};
+pub use run::{DocumentRun, Evaluated, OutputCall, OutputSource, Runner, register_output_native};
+pub use props::Props;
 pub use session::DocumentSession;
 pub use structure::{
     EntrySource, Parent, Place, SiblingEntry, StructureIntent, StructureOptions, Template, parent_of,

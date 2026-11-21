@@ -11,4 +11,7 @@ name = "programs_as_documents"
 
 [dependencies]
 petal = { path = "../../core", default-features = false }
+# The plain JSON `Runner::evaluate` reads a document's output as. Records
+# keep their field order, as `petal::value::value_to_json` writes them.
+serde_json = { version = "1", features = ["preserve_order"] }
 

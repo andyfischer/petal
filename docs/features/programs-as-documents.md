@@ -36,8 +36,8 @@ running the edited script again before anything is written.
 
 ## A document
 
-A document is any script whose result (its value, or what a vocabulary's
-emit native pushes to an output buffer) holds elements:
+A document is any script whose output (its value, or the arguments of the
+output call it ends in, such as `canvas(doc, layers)`) holds elements:
 
 ```petal
 let gutter = 24
@@ -76,9 +76,11 @@ gesture ─► intent ─► resolve ─► source edit ─► verify ─► com
 
 1. **Run.** `Runner::run(source)` runs the script in a fresh `Env` with the
    host's packages and natives registered (a setup closure) and element
-   tracing on, and reads the result from the return value or from an output
-   buffer (`OutputSource`). The `DocumentRun` holds the result values and an
-   `OutputMap`. A host whose vocabulary also emits an index made from the
+   tracing on, and reads the output from the return value or from the output
+   call the document ends in (`OutputSource::Call`), whose native the runner
+   registers. The `DocumentRun` holds the output values and an
+   `OutputMap`; `Runner::evaluate` reads the output alone, untraced, as plain
+   JSON. A host whose package also outputs an index made from the
    document's elements (petal-design's instance expansions, keyed by each
    instance's path) names it with `Runner::with_derived`: its elements are
    mapped, but verifying an edit does not compare it.

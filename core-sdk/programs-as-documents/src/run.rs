@@ -1,17 +1,25 @@
-//! Running a document with element tracing on.
+//! Running a document: with element tracing on, to edit it, or plainly, to
+//! read its output.
 //!
 //! A host describes how to run its documents once, as a [`Runner`]: the path
 //! the document is loaded as (relative imports resolve from it), a setup
-//! closure that registers the host's vocabulary (packages, natives), and
-//! where the document's result is read from. [`Runner::run`] then runs a
-//! source text in a fresh [`Env`] with element-origin tracing on and returns
-//! a [`DocumentRun`]: the result values and the [`OutputMap`] that ties each
-//! element in them back to the source.
+//! closure that registers the host's packages and natives, and where the
+//! document's output is read from ([`OutputSource`]). Usually that is an
+//! [`OutputCall`]: the call a document ends in to hand its output to the
+//! host (`canvas(doc, layers)`), which the runner registers itself.
+//!
+//! [`Runner::run`] runs a source text in a fresh [`Env`] with element-origin
+//! tracing on and returns a [`DocumentRun`]: the output values and the
+//! [`OutputMap`] that ties each element in them back to the source.
+//! [`Runner::evaluate`] runs it without tracing, for a host that only reads
+//! the output (an export, a command line), and returns it as plain JSON
+//! ([`Evaluated`]).
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use petal::env::Env;
+use petal::native_fn::NativeEffects;
 use petal::program::{Program, ProgramId};
 use petal::stack::StackKey;
 use petal::static_value::StaticValue;
@@ -19,18 +27,70 @@ use petal::value::Value;
 
 use crate::output_map::{OutputKey, OutputMap, OutputNode};
 
-/// Where a run's result is read from.
+/// The call a document ends in to hand its output to the host:
+/// `canvas(doc, layers)`, a function of the host's interface package that
+/// passes its values to the native `native` (`native fn canvas_output(doc,
+/// layers)`). The [`Runner`] registers that native; its arguments are the
+/// document's output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OutputCall {
+    /// The native the call ends in. Its arguments go to the output buffer of
+    /// the same name.
+    pub native: &'static str,
+    /// The call as a document writes it, for the error when it doesn't:
+    /// `"canvas(doc, layers)"`.
+    pub call: &'static str,
+    /// How many values the native is passed.
+    pub arity: usize,
+}
+
+/// Where a run's output is read from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutputSource {
     /// The value the script evaluates to (its last expression).
     ReturnValue,
-    /// The values pushed to the output buffer of symbol `symbol`, the way a
-    /// vocabulary package's emit native hands its document to the host
-    /// (`canvas(doc, layers)` pushing both arguments). With `last: Some(n)`,
-    /// only the last `n` values: the arguments of the last emit call. A run
-    /// that pushed fewer than `n` is an error (the script never made the
-    /// call).
+    /// The arguments of the last call to an [`OutputCall`]'s native. A run
+    /// that never made the call is an error naming it ("the script never
+    /// called canvas(doc, layers)").
+    Call(OutputCall),
+    /// [`Call`](Self::Call) for a host that opens documents of several kinds:
+    /// the output of whichever of these calls the script made, the first
+    /// listed when it made more than one. The run says which
+    /// ([`DocumentRun::output_call`]).
+    AnyCall(Vec<OutputCall>),
+    /// The values pushed to the output buffer of symbol `symbol` by a native
+    /// the host registers itself. With `last: Some(n)`, only the last `n`
+    /// values; a run that pushed fewer is an error.
     Buffer { symbol: String, last: Option<usize> },
+}
+
+impl OutputSource {
+    /// The output calls whose natives the runner registers.
+    fn calls(&self) -> &[OutputCall] {
+        match self {
+            OutputSource::Call(c) => std::slice::from_ref(c),
+            OutputSource::AnyCall(cs) => cs,
+            _ => &[],
+        }
+    }
+}
+
+/// Register `native` as a native that pushes its arguments to the output
+/// buffer of its own name and returns `nil`: what an [`OutputCall`] ends in.
+pub fn register_output_native(env: &mut Env, native: &'static str) {
+    env.register_native_boxed(
+        native,
+        move |cx| {
+            let sym = cx.intern_symbol(native);
+            for i in 1..=cx.arg_count() {
+                let v = cx.get_value(i)?;
+                cx.push_output(sym, v);
+            }
+            cx.push_nil();
+            Ok(1)
+        },
+        NativeEffects::EMITS,
+    );
 }
 
 /// A host's setup for an [`Env`] before a document is loaded into it.
@@ -73,13 +133,13 @@ impl Runner {
         self
     }
 
-    /// Result values `derived` (indexes into the result) are made from the
-    /// others by the host's vocabulary, not written by the document: an
+    /// Output values `derived` (indexes into the output) are made from the
+    /// others by the host's packages, not written by the document: an
     /// index of the elements the others hold, keyed by where they are
     /// (petal-design's instance expansions, keyed by each instance's path).
     /// Their elements are in the output map like any others, but an edit's
     /// rerun does not compare them: a change there is what the edit means
-    /// for the vocabulary, not another output the edit changes.
+    /// for the host's packages, not another output the edit changes.
     pub fn with_derived(mut self, derived: Vec<usize>) -> Runner {
         self.derived = derived;
         self
@@ -103,46 +163,108 @@ impl Runner {
     /// loaded into it, and a stack ready to run it (not yet run): what a run
     /// starts from, and the checkpoint a direct-manipulation solve re-runs.
     pub fn prepare(&self, source: &str) -> Result<(Env, ProgramId, StackKey), String> {
+        self.prepare_traced(source, true)
+    }
+
+    fn prepare_traced(&self, source: &str, trace: bool) -> Result<(Env, ProgramId, StackKey), String> {
         let mut env = Env::new();
         (self.setup)(&mut env)?;
-        env.enable_element_trace(true);
+        for c in self.output.calls() {
+            register_output_native(&mut env, c.native);
+        }
+        env.enable_element_trace(trace);
         let program = env.load_program_at(source, &self.path)?;
         let stack = env.create_stack(program)?;
         Ok((env, program, stack))
     }
 
     /// Run `source` in a fresh env with element tracing on, and map its
-    /// result. Errors are a load (parse, compile) or run failure, or a
-    /// missing emit, as a message for the user.
+    /// output. Errors are a load (parse, compile) or run failure, or a
+    /// missing output call, as a message for the user.
     pub fn run(&self, source: &str) -> Result<DocumentRun, String> {
         let (mut env, program, stack) = self.prepare(source)?;
         let result = env.run(stack)?;
         let log = env.take_output();
-        let outputs = match &self.output {
-            OutputSource::ReturnValue => vec![result],
-            OutputSource::Buffer { symbol, last } => {
-                let sym = env.intern_symbol(symbol);
-                let mut out = env.take_output_buffer(sym);
-                if let Some(n) = *last {
-                    if out.len() < n {
-                        return Err(format!("the script never handed its document to `{symbol}`"));
-                    }
-                    out.drain(..out.len() - n);
-                }
-                out
-            }
-        };
+        let (outputs, output_call) = self.read_outputs(&mut env, result)?;
         let map = OutputMap::build(&env, program, &outputs);
         Ok(DocumentRun {
             env,
             program,
             outputs,
+            output_call,
             derived: self.derived.clone(),
             log,
             map,
             source: source.to_string(),
         })
     }
+
+    /// Run `source` in a fresh env without tracing, and read its output as
+    /// plain JSON (the shape `petal::value::value_to_json` gives): what a
+    /// host that only reads a document (an export, a command line) needs,
+    /// without the cost of mapping it back to the source. Errors are those
+    /// of [`run`](Self::run), and an output value still loading (pending).
+    pub fn evaluate(&self, source: &str) -> Result<Evaluated, String> {
+        let (mut env, _, stack) = self.prepare_traced(source, false)?;
+        let result = env.run(stack)?;
+        let log = env.take_output();
+        let (outputs, output_call) = self.read_outputs(&mut env, result)?;
+        let outputs = plain_json(&outputs, &env)?;
+        Ok(Evaluated { outputs, output_call, log })
+    }
+
+    /// The run's output values, as [`OutputSource`] says to read them, and
+    /// the output call that made them.
+    fn read_outputs(&self, env: &mut Env, result: Value) -> Result<(Vec<Value>, Option<OutputCall>), String> {
+        let last = |env: &mut Env, symbol: &str, n: usize| {
+            let sym = env.intern_symbol(symbol);
+            let mut out = env.take_output_buffer(sym);
+            if out.len() < n {
+                return None;
+            }
+            out.drain(..out.len() - n);
+            Some(out)
+        };
+        match &self.output {
+            OutputSource::ReturnValue => Ok((vec![result], None)),
+            OutputSource::Call(_) | OutputSource::AnyCall(_) => {
+                let calls = self.output.calls();
+                for c in calls {
+                    if let Some(out) = last(env, c.native, c.arity) {
+                        return Ok((out, Some(*c)));
+                    }
+                }
+                let names: Vec<&str> = calls.iter().map(|c| c.call).collect();
+                Err(format!("the script never called {}", names.join(" or ")))
+            }
+            OutputSource::Buffer { symbol, last: None } => {
+                let sym = env.intern_symbol(symbol);
+                Ok((env.take_output_buffer(sym), None))
+            }
+            OutputSource::Buffer { symbol, last: Some(n) } => match last(env, symbol, *n) {
+                Some(out) => Ok((out, None)),
+                None => Err(format!("the script never handed its document to `{symbol}`")),
+            },
+        }
+    }
+}
+
+/// `values` as plain JSON, refusing one still loading.
+fn plain_json(values: &[Value], env: &Env) -> Result<Vec<serde_json::Value>, String> {
+    values.iter().map(|v| petal::value::value_to_json(v, env.heap()).map_err(|e| e.to_string())).collect()
+}
+
+/// A document's output, read without tracing ([`Runner::evaluate`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Evaluated {
+    /// The output values as plain JSON: records are objects, elements
+    /// `{"type": "element", "tag", "props", "children"}` (read them with
+    /// [`crate::props`]).
+    pub outputs: Vec<serde_json::Value>,
+    /// The output call the script made, when the runner reads one.
+    pub output_call: Option<OutputCall>,
+    /// What the script printed.
+    pub log: Vec<String>,
 }
 
 /// The native a probe source calls around an expression, to read the value
@@ -184,8 +306,11 @@ impl Runner {
 pub struct DocumentRun {
     pub env: Env,
     pub program: ProgramId,
-    /// The result values, as [`OutputSource`] says to read them.
+    /// The output values, as [`OutputSource`] says to read them.
     pub outputs: Vec<Value>,
+    /// The output call the script made, when the runner reads one
+    /// ([`OutputSource::Call`], [`OutputSource::AnyCall`]).
+    pub output_call: Option<OutputCall>,
     /// Which of them are derived from the others ([`Runner::with_derived`]).
     pub derived: Vec<usize>,
     /// What the script printed.
@@ -201,7 +326,13 @@ impl DocumentRun {
         self.env.get_program(self.program).expect("a run's program stays loaded")
     }
 
-    /// Each result value as a literal, or `None` for one with no literal
+    /// The output values as plain JSON, as [`Evaluated::outputs`] has them.
+    /// Errors when one is still loading (pending).
+    pub fn plain_outputs(&self) -> Result<Vec<serde_json::Value>, String> {
+        plain_json(&self.outputs, &self.env)
+    }
+
+    /// Each output value as a literal, or `None` for one with no literal
     /// form (a function).
     pub fn static_outputs(&self) -> Vec<Option<StaticValue>> {
         self.outputs.iter().map(|v| StaticValue::from_value(v, self.env.heap())).collect()

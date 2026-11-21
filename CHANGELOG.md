@@ -21,6 +21,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   own `include_str!`
   ([Host interface packages](docs/module-system.md#host-interface-packages)).
 
+- **programs-as-documents reads a document's output call.**
+  `OutputSource::Call(OutputCall { native, call, arity })` reads the
+  arguments of the last call to the native a document ends in
+  (`canvas(doc, layers)` → `native fn canvas_output(doc, layers)`), which the
+  `Runner` now registers itself, and errors with "the script never called
+  canvas(doc, layers)" when it is missing; `AnyCall` takes the first of
+  several the script made and `DocumentRun::output_call` says which.
+  `Runner::evaluate` runs without tracing and returns `Evaluated { outputs,
+  output_call, log }` as plain JSON, and `props::Props` reads an element's
+  attributes from it with defaults
+  ([README](core-sdk/programs-as-documents/README.md#api)).
+
 - **`StaticValue::to_plain_json` and `from_plain_json`.** A literal read from
   the source as the plain JSON `value_to_json` gives the value it evaluates
   to (records as objects, elements as `{type: "element", …}`, colours as

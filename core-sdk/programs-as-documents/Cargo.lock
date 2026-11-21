@@ -50,11 +50,16 @@ version = "0.1.0"
 dependencies = [
  "hashbrown",
  "indexmap",
+ "petal-macros",
  "serde",
  "serde_json",
  "slotmap",
  "smallvec",
 ]
+
+[[package]]
+name = "petal-macros"
+version = "0.1.0"
 
 [[package]]
 name = "proc-macro2"
@@ -70,6 +75,7 @@ name = "programs-as-documents"
 version = "0.1.0"
 dependencies = [
  "petal",
+ "serde_json",
 ]
 
 [[package]]

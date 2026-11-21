@@ -70,14 +70,6 @@ impl Env {
             return map;
         }
         let ctx = self.ctx(ck);
-        // Context for provenance-rich pending rendering: an observed pending
-        // value dumps as a structured `{ type:"pending", … }` object rather
-        // than `"<pending>"`, exactly as `get_state_json` does.
-        let pending_ctx = crate::value::PendingJsonCtx {
-            resources: &ctx.resources,
-            program,
-            frame: ctx.frame(),
-        };
 
         let scopes = FunctionScopes::build(program);
         // Ascending term order makes the tie-break for two terms sharing one
@@ -90,7 +82,7 @@ impl Env {
             };
             map.insert(
                 name,
-                crate::value::value_to_json_ctx(&val, &ctx.heap, Some(&pending_ctx)),
+                crate::value::value_to_json_lossy(&val, &ctx.heap),
             );
         }
         map

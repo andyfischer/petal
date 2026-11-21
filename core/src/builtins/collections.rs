@@ -9,17 +9,6 @@ use crate::value::{self, Value};
 
 use super::require_args;
 
-/// The leftmost `Value::Pending` element of `items`, if any. Aggregates that
-/// must read every element (`sort`, `join`) absorb it and return that Pending —
-/// the whole result is unknown while one element is unresolved. Element-wise
-/// operations (`len`, indexing, `map`) leave Pending elements in place instead.
-fn leftmost_pending_element(items: &[Value]) -> Option<Value> {
-    items
-        .iter()
-        .copied()
-        .find(|v| matches!(v, Value::Pending(_)))
-}
-
 /// Bounds-check a signed index against an f64-array length, returning the
 /// validated `usize` or the standard out-of-bounds error.
 fn checked_f64_index(i: i64, len: usize) -> Result<usize, String> {
@@ -598,15 +587,6 @@ pub(super) fn native_sort(state: &mut PetalCxt) -> Result<u32, String> {
     match state.get_value(1)? {
         Value::List(id) => {
             let items = state.heap().get_list(id).to_vec();
-            // A Pending element has no orderable key; absorb it (element-wise
-            // ops keep it, but sorting needs every key).
-            if let Some(p) = leftmost_pending_element(&items) {
-                if let Value::Pending(id) = p {
-                    state.note_absorbed(id);
-                }
-                state.push_value(p);
-                return Ok(1);
-            }
             // Build sort keys: extract string content and numeric values up front
             // so the sort closure doesn't need heap access.
             let mut keyed: Vec<(SortKey, Value)> = items
@@ -646,15 +626,6 @@ pub(super) fn native_join(state: &mut PetalCxt) -> Result<u32, String> {
     let sep = state.get_value(2)?;
     match (list, sep) {
         (Value::List(list_id), Value::String(sep_id)) => {
-            // A Pending element makes the whole joined string unknown; absorb it.
-            let pending = leftmost_pending_element(state.heap().get_list(list_id));
-            if let Some(p) = pending {
-                if let Value::Pending(id) = p {
-                    state.note_absorbed(id);
-                }
-                state.push_value(p);
-                return Ok(1);
-            }
             let separator = state.heap().get_string(sep_id).to_string();
             let elements = state.heap().get_list(list_id);
             let parts: Vec<String> = elements
@@ -1159,14 +1130,10 @@ pub(super) fn native_fill(state: &mut PetalCxt) -> Result<u32, String> {
 }
 
 /// The numbers of a list or f64_array argument, for the selection builtins.
-/// A `Pending` element is the caller's to absorb: it comes back as `Err(Ok)`.
-fn numbers_of(state: &PetalCxt, index: usize, who: &str) -> Result<Result<Vec<f64>, Value>, String> {
+fn numbers_of(state: &PetalCxt, index: usize, who: &str) -> Result<Vec<f64>, String> {
     match state.get_value(index)? {
         Value::List(id) => {
             let items = state.heap().get_list(id);
-            if let Some(p) = leftmost_pending_element(items) {
-                return Ok(Err(p));
-            }
             let mut out = Vec::with_capacity(items.len());
             for (i, v) in items.iter().enumerate() {
                 match state.heap().num_f64(*v) {
@@ -1179,9 +1146,9 @@ fn numbers_of(state: &PetalCxt, index: usize, who: &str) -> Result<Result<Vec<f6
                     }
                 }
             }
-            Ok(Ok(out))
+            Ok(out)
         }
-        Value::F64Array(id) => Ok(Ok(state.heap().get_f64_array(id).to_vec())),
+        Value::F64Array(id) => Ok(state.heap().get_f64_array(id).to_vec()),
         other => Err(format!(
             "{who}() expects a list of numbers, got {}",
             other.type_name()
@@ -1213,12 +1180,10 @@ fn extreme_index(xs: &[f64], want_less: bool) -> Option<usize> {
 
 fn arg_extreme(state: &mut PetalCxt, who: &str, want_less: bool) -> Result<u32, String> {
     require_args(state, 1, who)?;
-    match numbers_of(state, 1, who)? {
-        Err(pending) => state.push_value(pending),
-        Ok(xs) => match extreme_index(&xs, want_less) {
-            Some(i) => state.push_int(i as i64),
-            None => state.push_nil(),
-        },
+    let xs = numbers_of(state, 1, who)?;
+    match extreme_index(&xs, want_less) {
+        Some(i) => state.push_int(i as i64),
+        None => state.push_nil(),
     }
     Ok(1)
 }
@@ -1249,13 +1214,7 @@ pub(super) fn native_top_indices(state: &mut PetalCxt) -> Result<u32, String> {
             ));
         }
     };
-    let xs = match numbers_of(state, 1, "top_indices")? {
-        Err(pending) => {
-            state.push_value(pending);
-            return Ok(1);
-        }
-        Ok(xs) => xs,
-    };
+    let xs = numbers_of(state, 1, "top_indices")?;
     let k = k.min(xs.len());
     // `best` is kept ordered: larger first, earlier index first among equals,
     // NaN after every number.
@@ -1301,10 +1260,6 @@ pub(super) fn native_group_by_keys(state: &mut PetalCxt) -> Result<u32, String> 
             keys.len()
         ));
     }
-    if let Some(p) = leftmost_pending_element(keys) {
-        state.push_value(p);
-        return Ok(1);
-    }
     let mut groups: indexmap::IndexMap<String, Vec<Value>> = indexmap::IndexMap::new();
     for (item, key) in items.iter().zip(keys) {
         let name = match key {
@@ -1343,8 +1298,7 @@ fn first_occurrences(keys: &[Value], heap: &crate::heap::Heap) -> Vec<usize> {
 }
 
 /// `unique(list)` — the list with each value only at its first occurrence,
-/// by `==`, in list order. Always a new list. A pending element makes the
-/// result that pending value: whether it repeats is not known yet.
+/// by `==`, in list order. Always a new list.
 pub(super) fn native_unique(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "unique")?;
     let list = state.get_value(1)?;
@@ -1352,10 +1306,6 @@ pub(super) fn native_unique(state: &mut PetalCxt) -> Result<u32, String> {
         return Err(format!("unique(list) expects a list, got {}", list.type_name()));
     };
     let items = state.heap().get_list(id);
-    if let Some(p) = leftmost_pending_element(items) {
-        state.push_value(p);
-        return Ok(1);
-    }
     let kept: Vec<Value> =
         first_occurrences(items, state.heap()).into_iter().map(|i| items[i]).collect();
     state.push_list(kept);
@@ -1379,10 +1329,6 @@ pub(super) fn native_unique_by_keys(state: &mut PetalCxt) -> Result<u32, String>
             items.len(),
             keys.len()
         ));
-    }
-    if let Some(p) = leftmost_pending_element(keys) {
-        state.push_value(p);
-        return Ok(1);
     }
     let kept: Vec<Value> =
         first_occurrences(keys, state.heap()).into_iter().map(|i| items[i]).collect();

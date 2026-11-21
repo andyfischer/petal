@@ -34,13 +34,6 @@ impl Env {
         let ctx = self.ctx(ck);
         let heap = &ctx.heap;
         let program = self.get_program(program_id);
-        // Context for provenance-rich pending rendering: a pending state var
-        // dumps as a structured `{ type:"pending", … }` object, not `"<pending>"`.
-        let pending_ctx = program.map(|program| crate::value::PendingJsonCtx {
-            resources: &ctx.resources,
-            program,
-            frame: ctx.frame(),
-        });
         let mut map = serde_json::Map::new();
         let no_labels = HashMap::new();
         let key_labels = self
@@ -78,7 +71,7 @@ impl Env {
             for (name, val) in entries {
                 map.insert(
                     name,
-                    crate::value::value_to_json_ctx(val, heap, pending_ctx.as_ref()),
+                    crate::value::value_to_json_lossy(val, heap),
                 );
             }
         }
@@ -154,7 +147,7 @@ impl Env {
     ///   `set_state_from_json` matches top-level declaration names only. A slot
     ///   a host means to set from the outside belongs at top level (a
     ///   `state var` cell), which is also the model's answer for shared state.
-    /// - Non-serializable values (closures, native fns, handles, `Pending`) that
+    /// - Non-serializable values (closures, native fns, handles) that
     ///   `get_state_json` degraded to a display `String` or a structured `Map`
     ///   round-trip *verbatim* rather than erroring — they are applied as those
     ///   surrogate values, a known silent-corruption limitation, not an error.

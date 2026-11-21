@@ -628,6 +628,50 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Removed
 
+- **Breaking: pending values leave the core language for the `query`
+  package.** Core no longer has `Value::Pending` or absorption: a value the
+  host has not got yet no longer flows through arithmetic, field reads,
+  `for`, `len` and draw calls as "still pending". It is now a **pending
+  answer** from the new bundled package `query` (`core-stdlib/query`, Rust
+  crate `petal-stdlib-query`): `query(kind, arg)`, `invalidate(kind, arg)`,
+  `is_ready`, `is_loading`, `is_error` and `error_of`. A pending answer is an
+  opaque handle, and using it as data is a runtime error; it is truthy like
+  any non-nil value, so test it with `is_ready` before use. `??` is
+  nil-coalescing only. A `state` or `memo` initializer is committed whatever
+  it produces (the "pending initializer is not committed" rule is gone).
+  `value_to_json` never fails now (its error type is `Infallible`) and
+  `json_stringify` of anything stringifies, superseding the unreleased
+  `PendingJsonError` change above. Removed with it: the builtins `__pending`,
+  `__resolve`, `__reject`, `is_pending`, `or_else` and `resource_key`; the
+  `JumpIfPending` opcode; the `petal pending-report` subcommand,
+  `run --trace-pending` / `PETAL_TRACE_PENDING`, the MCP `PendingReport` tool
+  and petal-desktop-sdl's `pending_report` agent command; and for hosts the
+  core resource table (`petal::resource_table`), `petal::resource_provider`,
+  `Env::run_until_settled`, `Env::advance_frame`, `Env::pending_report`,
+  `Env::enable_pending_trace`, `Env::set_native_class` and `NativeClass`,
+  `NativeEffects::with_pending` / `EMITS_DEEP` and the row's `pending`
+  field, `InputClasses::RESOURCES`, `RunReason::ResourcesChanged`,
+  `PetalCxt::push_loading` / `push_failed` / `push_answer` / `resources` /
+  `note_absorbed` / `frame`, and `petal_ui::pending`. The C bridge keeps
+  `PB_PENDING = 11` reserved (never produced) and accepts
+  `PB_FX_PENDING_EFFECTFUL` / `PB_FX_PENDING_ALLOW` as no-ops.
+
+  **Migrate scripts:** `import query` (a Garden panel that does
+  `import garden` already has it: `garden` re-exports `query`), and test an
+  answer with `is_ready` / `is_loading` / `is_error` before reading it.
+  Replace `x ?? fallback` on a pending answer with
+  `if is_ready(x) then x else fallback end`, and `or_else` the same way.
+  `ui`'s `load_state` / `load_poll` keep working. **Migrate hosts:**
+  `ResourceAnswer`, `ResourceProvider`, `Resolution`, `push_answer`,
+  `push_loading`, `push_failed` and `run_until_settled(env, stack,
+  max_runs, resolve)` are in `petal_stdlib_query`, with requests named by
+  strings (`query("user", 7)`) instead of `u64` keys; install a `QueryHost`
+  with `petal_stdlib_query::swap_host` to answer `query`, and register the
+  package with `petal_stdlib_query::register` (petal-ui's `register_prelude`
+  / `register_all` do it). Delete calls to `Env::advance_frame`; drop
+  `with_pending(..)` and `set_native_class` from native registrations
+  ([core-stdlib/query](core-stdlib/query/README.md)).
+
 - **Breaking: `state(key) name = init` is removed.** Absolute keyed state,
   deprecated since 2026-10-22, is now a compile error (2026-11-13). A keyed
   slot ignored the call path, so it was a shared global hidden inside a
@@ -2896,7 +2940,7 @@ package changes below, `petal fix-imports` does the rewriting and
   while `user` was loading. Calling a pending value (`u(x)`, `u(...xs)`, or a
   method no builtin answers, `u.greet()`) now also evaluates to it instead of
   raising `Cannot call pending`
-  ([features/pending-values.md](docs/features/pending-values.md)).
+  (`docs/features/pending-values.md`, since removed).
 - `petal-ui`: a press outside a focused `text_field` clears its focus (the
   `focus` it returns), unless a higher layer took the press; and
   `interact().click` goes only to a rect that was under the press point when

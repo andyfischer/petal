@@ -263,7 +263,7 @@ impl StaticValue {
     /// `<slide>`"). Lists, records, elements and scalars convert; a `var`
     /// cell converts as its contents. `None` when `value` (or anything in
     /// it) has no literal form: a function, a vector, a map, an enum value,
-    /// a symbol, a pending value. A color comes back as the record it is at
+    /// a symbol. A color comes back as the record it is at
     /// run time (`{r, g, b}`), not as a `Color`.
     pub fn from_value(value: &crate::value::Value, heap: &crate::heap::Heap) -> Option<StaticValue> {
         use crate::value::Value;

@@ -211,8 +211,8 @@ serving brotli gets the transfer under 1 MB.
   - loop-body and top-level memo scopes;
   - hot-reload invalidation by body hash
   ([dev/reactive-rendering-plan.md](../dev/reactive-rendering-plan.md)).
-- **Pending values:** move `host_data` onto petal-query (step 5 of
-  [dev/pending-values-plan.md](../dev/pending-values-plan.md)).
+- **Async data:** move `host_data` onto the `query` package and petal-query
+  (`core-stdlib/query`, `core-sdk/petal-query`).
 - **Migrations:** `push`/`pop` (deprecated aliases of `append`/`drop_last`)
   have no migration; a rename rule would need name resolution to avoid a
   user's own `push`.

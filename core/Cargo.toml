@@ -29,7 +29,9 @@ libraries = ["bloom", "text_layout", "glsl"]
 # { dir, kind, feature }`. `dir` is relative to this crate and holds a
 # petal.toml. `kind` is `core` (the always-in-scope builtins), `builtin` (a
 # domain builtin package: natives every Env registers, in scope where
-# imported), `ui` (the petal-ui interface; always embedded) or `library`
+# imported), `ui` (the petal-ui interface; always embedded), `interface`
+# (another interface package whose natives a host links, such as `query`;
+# always embedded, so `petal lint` resolves it) or `library`
 # (embedded only when `feature`, which must be declared above, is on). The
 # build fails if an embedded package's [dependencies] name a bundled package
 # that is left out. A new library is a directory, a line here and a feature.
@@ -41,6 +43,7 @@ vec2 = { dir = "packages/vec2", kind = "builtin" }
 autodiff = { dir = "packages/autodiff", kind = "builtin" }
 json = { dir = "packages/json", kind = "builtin" }
 io = { dir = "packages/io", kind = "builtin" }
+query = { dir = "../core-stdlib/query", kind = "interface" }
 ui = { dir = "../core-stdlib/ui", kind = "ui" }
 bloom = { dir = "../core-stdlib/bloom", kind = "library", feature = "bloom" }
 text_layout = { dir = "../core-stdlib/text-layout", kind = "library", feature = "text_layout" }

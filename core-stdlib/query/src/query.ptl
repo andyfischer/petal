@@ -1,0 +1,84 @@
+@module_doc("""
+Async data for a script that re-runs every frame. `query(kind, arg)` asks the
+host for a value; the answer is the value itself once the host has it, and
+until then a **pending answer**: an opaque value that says the data is still
+loading, or that loading failed. The next frame asks again, so the frame loop
+is the retry loop: no callbacks, no `await`.
+
+A pending answer is not data. Reading a field of it, doing arithmetic on it,
+looping over it or drawing it is an error, so test it first. (It is truthy, like
+every value but `nil` and `false`, so `if rd then` does not test it either;
+`is_ready(rd)` does.)
+
+```petal ignore
+import query
+let user = query("user", id)
+if is_loading(user) then
+  spinner(10, 10)
+else if is_error(user) then
+  draw_text("could not load: {error_of(user)}", 10, 10)
+else
+  draw_text(user.name, 10, 10)
+```
+
+`ui`'s load-state helpers (`load_state`, `load_poll`) wrap the same test in a
+record kept in `state`, for a panel that keeps drawing the last value while
+the next one loads.
+
+**The host owns the data.** This package declares the natives; the Rust crate
+`petal-stdlib-query` (`core-stdlib/query/native`) implements them, and a host
+installs a `QueryHost` that answers each `(kind, arg)` from its own cache.
+Garden answers from the panel's GPP app (the `petal-query` crate's `Cache`).
+A host with no `QueryHost` answers every query as still loading. Answers land
+between frames, never during one.
+""", see: ["query", "is_ready", "is_loading", "is_error", "error_of"])
+
+# Implemented in core-stdlib/query/native/src/lib.rs.
+
+@doc("""
+Ask the host for data. Its answer comes from the host's cache: the value when
+it is there, otherwise a pending answer to test with `is_ready`, `is_loading`,
+`is_error` or `error_of`. The per-frame rerun is the retry loop.
+""", params: {kind: "The query's kind, as the host's provider names it.", arg: "What to ask about; `\"\"` when there is nothing to ask about."},
+  example: """let rd = query("log", "")""", see: ["invalidate", "is_ready"])
+pub native fn query(kind: string, arg)
+
+@doc("""
+Drop a cached answer so the next `query` with the same kind and argument
+asks again: how a panel refreshes.
+""", params: {kind: "The query's kind.", arg: "The query's argument."},
+  example: """invalidate("doc", "")""", see: ["query"])
+pub native fn invalidate(kind: string, arg)
+
+@doc("""
+True for a usable value: anything but a pending answer. A plain value, `nil`
+included, is ready.
+""",
+  example: """
+    is_ready(1)     # true
+  """,
+  see: ["is_loading", "is_error"])
+pub native fn is_ready(value) -> bool
+
+@doc("""
+True when the value is a pending answer whose data is still on its way. False
+for anything else.
+""",
+  see: ["is_ready", "is_error"])
+pub native fn is_loading(value) -> bool
+
+@doc("""
+True when the value is a pending answer whose loading failed. `error_of` says
+why. False for anything else.
+""",
+  see: ["error_of", "is_ready", "is_loading"])
+pub native fn is_error(value) -> bool
+
+@doc("""
+The message of a failed pending answer, or `nil` for anything else.
+""",
+  example: """
+    if is_error(rd) then draw_text(error_of(rd), 10, 10) end
+  """,
+  see: ["is_error"])
+pub native fn error_of(value)

@@ -119,7 +119,7 @@ pub struct FrameStats {
 
 /// A [`RunReason`] as a short stable name: `no_record`, `forced`,
 /// `binding_changed:<name>`, `host_data_changed`, `state_unsettled`,
-/// `rng_consumed`, `resources_changed`.
+/// `rng_consumed`.
 pub fn run_reason_name(env: &Env, reason: &RunReason) -> String {
     match reason {
         RunReason::NoRecord => "no_record".to_string(),
@@ -130,7 +130,6 @@ pub fn run_reason_name(env: &Env, reason: &RunReason) -> String {
         RunReason::HostDataChanged => "host_data_changed".to_string(),
         RunReason::StateUnsettled => "state_unsettled".to_string(),
         RunReason::RngConsumed => "rng_consumed".to_string(),
-        RunReason::ResourcesChanged => "resources_changed".to_string(),
     }
 }
 

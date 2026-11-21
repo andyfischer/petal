@@ -168,9 +168,8 @@ pub fn native_param_slots(decl: &crate::native_decl::NativeDecl, arity: usize) -
 
 /// What one argument position of a builtin accepts, for the call-site check
 /// in [`super::Checker::check_call`]. Every slot also accepts [`Type::Any`]
-/// (nothing is known) and [`Type::Pending`] (the native-call boundary absorbs
-/// a pending argument before the native sees it), so only a statically known,
-/// definitely-wrong type ever warns.
+/// (nothing is known), so only a statically known, definitely-wrong type ever
+/// warns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArgSlot {
     /// Unchecked.
@@ -215,7 +214,7 @@ impl ArgSlot {
         // A `T?` argument is taken as a `T`: phase 1 of nullable types does not
         // track nil (docs/proposals/nullable-types.md).
         let ty = ty.strip_nil();
-        if matches!(ty, Type::Any | Type::Pending) {
+        if matches!(ty, Type::Any) {
             return true;
         }
         match self {
@@ -251,13 +250,11 @@ impl ArgSlot {
 
 /// Whether `sort_by` can order keys of static type `ty`: it compares numbers
 /// and strings and fails at runtime on anything else
-/// (`Vm::builtin_sort_by`). `any` is unknown rather than wrong, and a pending
-/// key makes the result pending instead of failing.
+/// (`Vm::builtin_sort_by`). `any` is unknown rather than wrong.
 pub fn sort_key_type_ok(ty: Type) -> bool {
     matches!(
         ty,
         Type::Any
-            | Type::Pending
             | Type::Int
             | Type::Float
             | Type::Num

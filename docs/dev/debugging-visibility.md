@@ -42,7 +42,6 @@ options.
 | `show-graph` | Graphviz DOT output. |
 | `show-static [--json] [--all]` | Each top-level declaration's static class (static data, function, dynamic), the reason chain for a dynamic one, whether dynamic code reads a static one, and what each depends on. Compiles, never runs. |
 | `run --static-audit` / `run --static-only` | The runtime check of `show-static`: every dynamic input touched while a static term was being evaluated, by declaration, input and call. `--static-only` runs just the static top-level statements (no host needed). |
-| `pending-report [--json]` | Every pending (loading) resource still live after a run. |
 | `propose-edit` | Propose source edits that change an emitted value (the writing half of direct manipulation). |
 | `fmt [--check] [--diff]` | Rewrite files in the canonical layout (whitespace only). |
 | `lint [--fix [--verify]] [--rules]` | Report code that has a better spelling; `--fix` rewrites it. |
@@ -124,7 +123,7 @@ for `Env::observations_mut().enable()` and `Env::get_observations_json`.
 
 `petal-tools` (`tools/petal-mcp.ts`) wraps the CLI above for agents:
 `TestSnippet`, `LintSnippet`, `ExplainTerm`, `ShowStage` (tokens / AST / IR /
-bytecode), `PendingReport`, `TraceEmits`, `ProposeEdit`. The
+bytecode), `TraceEmits`, `ProposeEdit`. The
 tool reference is [mcp-server.md](mcp-server.md).
 
 `petal-diagram` (`examples/custom-apps/diagram-canvas/petal-diagram-mcp.ts`) is a frame-by-frame

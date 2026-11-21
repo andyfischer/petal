@@ -3737,7 +3737,7 @@ if has_focus("search") && shortcut("escape") then focus_request(nil) end
 
 **See also:** [`focus_owner`](#focus_owner), [`focus_request`](#focus_request)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:226`](../src/interaction.ptl#L226)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:228`](../src/interaction.ptl#L228)*
 
 #### `focus_owner`
 
@@ -3749,7 +3749,7 @@ The id that has the keyboard this frame, `""` for nobody.
 
 **See also:** [`has_focus`](#has_focus)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:230`](../src/interaction.ptl#L230)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:232`](../src/interaction.ptl#L232)*
 
 #### `focus_request`
 
@@ -3763,7 +3763,7 @@ The last request in a frame wins.
 
 **See also:** [`has_focus`](#has_focus), [`focus_next`](#focus_next)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:239`](../src/interaction.ptl#L239)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:241`](../src/interaction.ptl#L241)*
 
 #### `focus_next`
 
@@ -3776,7 +3776,7 @@ Move the keyboard to the id after the one that has it, in the ordered ring
 
 **See also:** [`focus_prev`](#focus_prev), [`focus_update`](#focus_update)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:276`](../src/interaction.ptl#L276)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:278`](../src/interaction.ptl#L278)*
 
 #### `focus_prev`
 
@@ -3789,7 +3789,7 @@ Move the keyboard to the id before the one that has it, in the ordered ring
 
 **See also:** [`focus_next`](#focus_next), [`focus_update`](#focus_update)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:287`](../src/interaction.ptl#L287)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:289`](../src/interaction.ptl#L289)*
 
 #### `focus_update`
 
@@ -3808,7 +3808,7 @@ focus_update(["name", "email", "notes"])
 
 **See also:** [`focus_next`](#focus_next)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:299`](../src/interaction.ptl#L299)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:301`](../src/interaction.ptl#L301)*
 
 #### `shortcut`
 
@@ -3835,7 +3835,7 @@ if shortcut("delete", "layers") then delete_selected() end
 
 **See also:** [`has_focus`](#has_focus), [`ui.key_pressed`](#key_pressed)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:257`](../src/interaction.ptl#L257)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:259`](../src/interaction.ptl#L259)*
 
 ### Lists and scrolling
 
@@ -3858,7 +3858,7 @@ files = list_update(files, len(names), 12, list_r, has_focus("files"))
 
 **See also:** [`list_update`](#list_update), [`list_row_rect`](#list_row_rect)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:79`](../src/interaction.ptl#L79)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:81`](../src/interaction.ptl#L81)*
 
 #### `list_update`
 
@@ -3882,7 +3882,7 @@ scrolls freely past it, as native lists do.
 
 **See also:** [`list_state`](#list_state), [`list_row_rect`](#list_row_rect), [`ensure_visible`](#ensure_visible), [`has_focus`](#has_focus)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:134`](../src/interaction.ptl#L134)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:136`](../src/interaction.ptl#L136)*
 
 #### `list_row_rect`
 
@@ -3899,7 +3899,7 @@ Where row `i` of a list is drawn, given the list's scroll: rows are
 
 **See also:** [`list_update`](#list_update)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:89`](../src/interaction.ptl#L89)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:91`](../src/interaction.ptl#L91)*
 
 #### `ensure_visible`
 
@@ -3912,7 +3912,7 @@ The scroll (in rows) that keeps row `selected` inside a window of
 
 **See also:** [`ensure_visible_px`](#ensure_visible_px)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:96`](../src/interaction.ptl#L96)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:98`](../src/interaction.ptl#L98)*
 
 #### `ensure_visible_px`
 
@@ -3936,7 +3936,7 @@ taller than the viewport pins its top.
 
 **See also:** [`ensure_visible`](#ensure_visible)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:113`](../src/interaction.ptl#L113)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:115`](../src/interaction.ptl#L115)*
 
 #### `scroll_update`
 
@@ -3957,7 +3957,7 @@ pointer is over `r`, and PageUp/PageDown page.
 
 **See also:** [`scroll_keys`](#scroll_keys)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:194`](../src/interaction.ptl#L194)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:196`](../src/interaction.ptl#L196)*
 
 #### `scroll_keys`
 
@@ -3981,7 +3981,7 @@ if has_focus("log") then scroll = scroll_keys(scroll, len(lines), 30) end
 
 **See also:** [`scroll_update`](#scroll_update)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1101`](../src/interaction.ptl#L1101)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1103`](../src/interaction.ptl#L1103)*
 
 ### Text editing
 
@@ -4053,7 +4053,7 @@ draw_text(buf, {x: r.x, y: r.y}, MY_STYLE)
 
 **See also:** [`text_area_update`](#text_area_update), [`ui.text_field`](#text_field), [`ui.clipboard_get`](#clipboard_get)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:532`](../src/interaction.ptl#L532)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:534`](../src/interaction.ptl#L534)*
 
 #### `text_area_update`
 
@@ -4103,7 +4103,7 @@ notes = res.text
 
 **See also:** [`text_field_update`](#text_field_update), [`text_area_height`](#text_area_height), [`ui.text_area`](#text_area)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:750`](../src/interaction.ptl#L750)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:752`](../src/interaction.ptl#L752)*
 
 #### `text_area_height`
 
@@ -4131,7 +4131,7 @@ notes = res.text
 
 **See also:** [`text_area_update`](#text_area_update)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:904`](../src/interaction.ptl#L904)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:906`](../src/interaction.ptl#L906)*
 
 ### Popovers and menus
 
@@ -4159,7 +4159,7 @@ keys: `shortcut(chord)` is quiet and `shortcut(chord, id)` answers.
 
 **See also:** [`popover_close`](#popover_close), [`popover_shown`](#popover_shown), [`ui.popover`](#popover)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:923`](../src/interaction.ptl#L923)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:925`](../src/interaction.ptl#L925)*
 
 #### `popover_close`
 
@@ -4171,7 +4171,7 @@ Close popover `id` if it is the open one.
 
 **See also:** [`popover_open`](#popover_open)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:927`](../src/interaction.ptl#L927)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:929`](../src/interaction.ptl#L929)*
 
 #### `popover_shown`
 
@@ -4183,7 +4183,7 @@ Whether `id` is the open popover this frame.
 
 **See also:** [`popover_open`](#popover_open), [`popover_owner`](#popover_owner)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:931`](../src/interaction.ptl#L931)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:933`](../src/interaction.ptl#L933)*
 
 #### `popover_owner`
 
@@ -4195,7 +4195,7 @@ The open popover's id, `""` for none.
 
 **See also:** [`popover_shown`](#popover_shown)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:935`](../src/interaction.ptl#L935)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:937`](../src/interaction.ptl#L937)*
 
 ### Drag and drop
 
@@ -4227,7 +4227,7 @@ if dg.dropped then
 
 **See also:** [`drag_update`](#drag_update), [`insertion_index`](#insertion_index), [`ui/drag`](#uidrag)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:958`](../src/interaction.ptl#L958)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:960`](../src/interaction.ptl#L960)*
 
 #### `drag_update`
 
@@ -4251,7 +4251,7 @@ afterwards.
 
 **See also:** [`drag_state`](#drag_state), [`dragging`](#dragging), [`drag_cancel`](#drag_cancel)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:971`](../src/interaction.ptl#L971)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:973`](../src/interaction.ptl#L973)*
 
 #### `dragging`
 
@@ -4263,7 +4263,7 @@ Whether `item_id` is the item being dragged.
 
 **See also:** [`drag_update`](#drag_update)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1000`](../src/interaction.ptl#L1000)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1002`](../src/interaction.ptl#L1002)*
 
 #### `drag_cancel`
 
@@ -4278,7 +4278,7 @@ under the pointer).
 
 **See also:** [`drag_update`](#drag_update)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:996`](../src/interaction.ptl#L996)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:998`](../src/interaction.ptl#L998)*
 
 #### `insertion_index`
 
@@ -4298,7 +4298,7 @@ insert wants, and the index to draw the drop indicator at.
 
 **See also:** [`insertion_index_x`](#insertion_index_x), [`drag_update`](#drag_update)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1011`](../src/interaction.ptl#L1011)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1013`](../src/interaction.ptl#L1013)*
 
 #### `insertion_index_x`
 
@@ -4313,7 +4313,7 @@ for tab strips and kanban columns.
 
 **See also:** [`insertion_index`](#insertion_index)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1022`](../src/interaction.ptl#L1022)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1024`](../src/interaction.ptl#L1024)*
 
 ### Async loads
 
@@ -4324,8 +4324,8 @@ load_state()
 ```
 
 A fresh load state: one record for the loading, ready and failed lifecycle
-of a value. Keep it in `state` and feed `load_poll` the pending value your
-data channel returns.
+of a value. Keep it in `state` and feed `load_poll` what your data channel
+answers, such as `query`'s pending answer.
 
 **Returns** `{status, key, value, error}`; `status` is `"idle"`, `"loading"`, `"ready"` or `"error"`.
 
@@ -4339,7 +4339,7 @@ if load_ready(ls) then draw_diff(content, ls.value) end
 
 **See also:** [`load_poll`](#load_poll), [`load_ready`](#load_ready), [`ui.draw_load`](#draw_load)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1126`](../src/interaction.ptl#L1126)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1128`](../src/interaction.ptl#L1128)*
 
 #### `load_begin`
 
@@ -4354,7 +4354,7 @@ in `ls.value` while the new one is in flight.
 
 **See also:** [`load_poll`](#load_poll)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1145`](../src/interaction.ptl#L1145)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1147`](../src/interaction.ptl#L1147)*
 
 #### `load_ok`
 
@@ -4368,7 +4368,7 @@ The load succeeded with `value`, set by hand.
 
 **See also:** [`load_fail`](#load_fail)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1149`](../src/interaction.ptl#L1149)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1151`](../src/interaction.ptl#L1151)*
 
 #### `load_fail`
 
@@ -4382,7 +4382,7 @@ The load failed with message `msg`, set by hand.
 
 **See also:** [`load_ok`](#load_ok)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1153`](../src/interaction.ptl#L1153)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1155`](../src/interaction.ptl#L1155)*
 
 #### `load_poll`
 
@@ -4397,13 +4397,13 @@ that keeps painting it.
 **Parameters**
 
 - `key`: What is being loaded; a new key restarts the load.
-- `pv`: A pending value from an async channel (Garden's `query`; read with `is_ready`, `is_error`, `error_of`), or a plain value, ready at once.
+- `pv`: What an async channel answered: a pending answer from `query` (read with `is_ready`, `is_error`, `error_of`), or a plain value, ready at once.
 
 **Returns** The next state.
 
 **See also:** [`load_state`](#load_state)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1164`](../src/interaction.ptl#L1164)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1166`](../src/interaction.ptl#L1166)*
 
 #### `load_loading`
 
@@ -4415,7 +4415,7 @@ Whether the load is in flight.
 
 **See also:** [`load_ready`](#load_ready), [`load_failed`](#load_failed)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1130`](../src/interaction.ptl#L1130)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1132`](../src/interaction.ptl#L1132)*
 
 #### `load_ready`
 
@@ -4427,7 +4427,7 @@ Whether the value has arrived: draw `ls.value`.
 
 **See also:** [`load_loading`](#load_loading)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1134`](../src/interaction.ptl#L1134)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1136`](../src/interaction.ptl#L1136)*
 
 #### `load_failed`
 
@@ -4439,7 +4439,7 @@ Whether the load failed: `ls.error` says why.
 
 **See also:** [`load_loading`](#load_loading)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1138`](../src/interaction.ptl#L1138)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1140`](../src/interaction.ptl#L1140)*
 
 ### Colour text
 
@@ -4459,7 +4459,7 @@ color_to_hex(:3c8cff)   # is "#3c8cff"
 
 **See also:** [`color_from_hex`](#color_from_hex)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1040`](../src/interaction.ptl#L1040)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1042`](../src/interaction.ptl#L1042)*
 
 #### `color_from_hex`
 
@@ -4478,7 +4478,7 @@ color_from_hex("#fc0")   # {r: 255, g: 204, b: 0}
 
 **See also:** [`color_to_hex`](#color_to_hex), [`same_color`](#same_color)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1057`](../src/interaction.ptl#L1057)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1059`](../src/interaction.ptl#L1059)*
 
 #### `same_color`
 
@@ -4491,7 +4491,7 @@ are the same; a nil and a colour are not.
 
 **See also:** [`color_from_hex`](#color_from_hex)
 
-*Source: [`core-stdlib/ui/src/interaction.ptl:1081`](../src/interaction.ptl#L1081)*
+*Source: [`core-stdlib/ui/src/interaction.ptl:1083`](../src/interaction.ptl#L1083)*
 
 ## `ui/widgets`
 

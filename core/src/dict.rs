@@ -125,8 +125,7 @@ impl DictEntries {
 ///
 /// A key is compared by `==`, so it must be something `==` compares by
 /// content and that stays equal to itself: a function compares by identity
-/// and cannot be rebuilt as an equal key, a pending value has no content yet,
-/// and NaN is not `==` to itself, so an entry stored under it could never be
+/// and cannot be rebuilt as an equal key, and NaN is not `==` to itself, so an entry stored under it could never be
 /// found again. Containers are checked to any depth.
 pub fn key_hash(key: Value, heap: &Heap) -> Result<u64, String> {
     if let Some(what) = unhashable_part(key, heap) {
@@ -142,7 +141,6 @@ fn unhashable_part(v: Value, heap: &Heap) -> Option<String> {
         Value::Closure(_) | Value::OverloadSet(_) | Value::NativeFunction(_) => {
             Some("a function".into())
         }
-        Value::Pending(_) => Some("a pending value".into()),
         Value::Cell(_) => Some("a `var` cell".into()),
         Value::Float(f) if f.is_nan() => Some("NaN".into()),
         Value::Vec2(id) if { let (x, y) = heap.get_vec2(id); x.is_nan() || y.is_nan() } => {

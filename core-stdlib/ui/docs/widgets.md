@@ -384,13 +384,13 @@ wider than the budget hard-breaks.
 One record for the loading / ready / failed lifecycle of a value:
 ```
 state ls = load_state()
-ls = load_poll(ls, key, query("diff", sha))   // any pending or plain value
+ls = load_poll(ls, key, query("diff", sha))   // a pending answer or a plain value
 if draw_load(content, ls) then …draw ls.value… end
 ```
 `load_state/loading/ready/failed`, `load_begin(ls, key)`, `load_ok(ls, v)`,
 `load_fail(ls, msg)`. `load_poll` restarts when `key` changes (the stale
-`ls.value` stays readable while the new load is in flight) and absorbs
-pending values via the core `is_ready`/`is_error`/`error_of`. `draw_load`
+`ls.value` stays readable while the new load is in flight) and tests
+pending answers with `query`'s `is_ready`/`is_error`/`error_of`. `draw_load`
 paints spinner/error/idle into `r` and returns true when ready.
 
 ### Context menu / drag & drop

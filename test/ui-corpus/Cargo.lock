@@ -13,6 +13,7 @@ name = "garden-script"
 version = "0.1.0"
 dependencies = [
  "petal",
+ "petal-stdlib-query",
  "petal-ui",
  "serde_json",
 ]
@@ -53,10 +54,22 @@ version = "0.1.0"
 dependencies = [
  "hashbrown",
  "indexmap",
+ "petal-macros",
  "serde",
  "serde_json",
  "slotmap",
  "smallvec",
+]
+
+[[package]]
+name = "petal-macros"
+version = "0.1.0"
+
+[[package]]
+name = "petal-stdlib-query"
+version = "0.1.0"
+dependencies = [
+ "petal",
 ]
 
 [[package]]
@@ -65,6 +78,7 @@ version = "0.1.0"
 dependencies = [
  "indexmap",
  "petal",
+ "petal-stdlib-query",
  "serde",
  "serde_json",
 ]

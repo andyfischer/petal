@@ -109,7 +109,6 @@ Commands:
 | `screenshot` | – | Return the current frame as a base64 PNG, plus draw stats. |
 | `capture_draw_commands` | – | Return all draw commands for the next frame. |
 | `draw_stats` | – | Count triangles, lines, and rects, plus the depth range. |
-| `pending_report` | – | Report every live pending resource. |
 | `pause` / `resume` | – | Stop or start the run loop. |
 
 Example: move the player, shoot, and take a screenshot:

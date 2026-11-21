@@ -13,6 +13,11 @@ default engine on the CLI and MCP (`--v1` / `engine: "v1"` reach the legacy
 engine), and the hint names `tunable` and `rigid` are accepted. See
 [Status](#9-status) at the end.
 
+Since 21 November 2026 core has no pending values and no resource table
+(async data is the `query` package, `core-stdlib/query`): the `RESOURCES`
+input class, the `pending` row facet and `__pending`/`__resolve`/`__reject`
+in §1 and §2 describe the code as it was before.
+
 The goals were in `docs/tasks/direct-manipulation-v2.md` (deleted 2026-11-08; `git show c8ebb142^:docs/tasks/direct-manipulation-v2.md`).
 Where this plan and an older doc disagree (the user page
 [features/direct-manipulation.md](../features/direct-manipulation.md), the

@@ -125,7 +125,7 @@ export interface StdlibFunction {
   import?: string;
   /**
    * Internal builtins the public reference hides: `__`-prefixed names the
-   * runtime uses for tests/plumbing (e.g. `__pending`), not part of the
+   * runtime uses for tests/plumbing (e.g. `__enum_all`), not part of the
    * user-facing standard library.
    */
   internal?: boolean;
@@ -166,7 +166,6 @@ const CATEGORY_TITLES: Record<string, string> = {
   autodiff: "Automatic Differentiation",
   output: "Output & Symbols",
   handle: "Handles",
-  pending: "Async & Query Values",
   hints: "Direct-Manipulation Hints",
   paths: "Nested Paths",
   drag_math: "Drag Math",

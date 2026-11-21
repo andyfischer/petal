@@ -50,7 +50,7 @@ use crate::ppu::{
 pub const VIDEO_CHANNEL: &str = "nes_video";
 
 /// Checks the file exists now; the decode happens host-side at apply time.
-const LOADS_FILE: NativeEffects = NativeEffects::reads(InputClasses::RESOURCES).with_emits();
+const LOADS_FILE: NativeEffects = NativeEffects::reads(InputClasses::HOST_DATA).with_emits();
 /// Emits the command and also updates the in-run map mirror `get_tile`
 /// reads, which a memo replay would skip, so these are effects too.
 const MIRRORED: NativeEffects = NativeEffects::EMITS.with_effect();

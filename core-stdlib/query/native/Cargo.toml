@@ -1,0 +1,15 @@
+[package]
+name = "petal-stdlib-query"
+version = "0.1.0"
+edition = "2024"
+description = "The natives of Petal's `query` package (core-stdlib/query): query, and the readers of a pending answer"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
+
+[dependencies]
+# Embedders build `petal` without its developer tooling; so does this crate,
+# which only registers natives, a handle class and a package.
+petal = { path = "../../../core", default-features = false }
+
+[dev-dependencies]
+serde_json = "1"

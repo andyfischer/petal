@@ -41,8 +41,8 @@ pub enum ObsValue {
     /// An element: its tag's hash, its props in order and its children. A
     /// path's field step reads a prop, an index step a child.
     Element { tag: u64, props: Vec<(String, ObsValue)>, children: Vec<ObsValue> },
-    /// Something with no stable value outside its heap (a closure, a handle,
-    /// a pending resource), or a container cut off by the depth bound.
+    /// Something with no stable value outside its heap (a closure, a handle),
+    /// or a container cut off by the depth bound.
     Opaque,
 }
 
@@ -190,8 +190,7 @@ impl ObsValue {
             | Value::OverloadSet(_)
             | Value::NativeFunction(_)
             | Value::Cell(_)
-            | Value::Handle(_)
-            | Value::Pending(_) => ObsValue::Opaque,
+            | Value::Handle(_) => ObsValue::Opaque,
         }
     }
 

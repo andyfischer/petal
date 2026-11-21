@@ -21,7 +21,7 @@ use std::rc::Rc;
 
 use petal::env::Env;
 use petal::native_fn::{
-    InputClasses, NativeClass, NativeEffects, NativeFnId, NativeResult, PetalCxt,
+    InputClasses, NativeEffects, NativeFnId, NativeResult, PetalCxt,
 };
 use petal::symbol::SymbolId;
 use petal::value::Value;
@@ -38,7 +38,10 @@ pub type PbFreeFn = unsafe extern "C" fn(userdata: *mut c_void);
 pub const FX_PROBE: u32 = 1 << 0;
 pub const FX_EMITS: u32 = 1 << 1;
 pub const FX_EFFECT: u32 = 1 << 2;
+/// `PB_FX_PENDING_EFFECTFUL`: deprecated, no effect (Petal no longer has
+/// pending values). Accepted so existing hosts keep compiling.
 pub const FX_PENDING_EFFECTFUL: u32 = 1 << 3;
+/// `PB_FX_PENDING_ALLOW`: deprecated, no effect, as `FX_PENDING_EFFECTFUL`.
 pub const FX_PENDING_ALLOW: u32 = 1 << 4;
 pub const FX_CONST: u32 = 1 << 5;
 pub const FX_CONTAINED: u32 = 1 << 6;
@@ -63,7 +66,7 @@ pub const FX_EMIT_RESULT: u32 = 1 << 23;
 /// The flags a checked emitter may not take: anything that would make its
 /// call more than an emit (an effect, a command, a probe, a constant).
 pub const FX_NOT_FOR_EMITTERS: u32 =
-    FX_PROBE | FX_EFFECT | FX_CONST | FX_CONTAINED | FX_COMMAND | FX_TICKS | FX_PENDING_ALLOW;
+    FX_PROBE | FX_EFFECT | FX_CONST | FX_CONTAINED | FX_COMMAND | FX_TICKS;
 /// The classes a host may watch with a counter ([`ClassWatch`]): the
 /// revisioned ones and host data in general.
 pub const FX_WATCHABLE: u32 = FX_READS_REVISIONED | FX_READS_HOST_DATA;
@@ -118,19 +121,11 @@ pub type Watches = Rc<RefCell<Vec<ClassWatch>>>;
 /// contradictory combination (`PB_FX_CONST | PB_FX_EFFECT`, or with a read)
 /// is dynamic — [`NativeEffects::is_const`] decides.
 pub fn effects_from_flags(flags: u32) -> NativeEffects {
-    let pending = if flags & FX_PENDING_ALLOW != 0 {
-        NativeClass::AllowPending
-    } else if flags & FX_PENDING_EFFECTFUL != 0 {
-        NativeClass::Effectful
-    } else {
-        NativeClass::Strict
-    };
     NativeEffects {
         reads: classes_from_flags(flags),
         probe: flags & FX_PROBE != 0,
         emits: flags & FX_EMITS != 0 || flags & FX_DECLARE != 0,
         effect: flags & FX_EFFECT != 0,
-        pending,
         constant: flags & FX_CONST != 0,
         contained: flags & FX_CONTAINED != 0,
         no_feedback: flags & FX_NO_FEEDBACK != 0,
@@ -306,7 +301,7 @@ pub fn register_callback(env: &mut Env, callback: HostCallback) -> NativeFnId {
 }
 
 /// Register an emitter: `name(args...)` pushes `tag(args...)` into `buffer`
-/// and returns nil. Declared `Emits` with the Pending-no-op policy.
+/// and returns nil. Declared `Emits`.
 pub fn register_emitter(env: &mut Env, name: &str, buffer: SymbolId, tag: &str) -> NativeFnId {
     register_emitter_fx(env, name, buffer, tag, 0)
 }
@@ -340,7 +335,7 @@ pub fn register_emitter_fx(
             cxt.push_nil();
             Ok(1)
         },
-        effects_from_flags(FX_EMITS | FX_PENDING_EFFECTFUL | (extra & !FX_KEYED)),
+        effects_from_flags(FX_EMITS | (extra & !FX_KEYED)),
     )
 }
 
@@ -353,8 +348,7 @@ pub fn register_emitter_fx(
 ///   nothing when it built nil (the call checked out but has nothing to put).
 ///
 /// With [`FX_KEYED`] the payload starts with the implicit key, as for
-/// [`register_emitter_fx`]. The row is the emitter's (`Emits`, Pending
-/// no-op, `extra` such as `PB_FX_DECLARE` and `PB_FX_READS_*`), so a memo
+/// [`register_emitter_fx`]. The row is the emitter's (`Emits`, `extra` such as `PB_FX_DECLARE` and `PB_FX_READS_*`), so a memo
 /// replay re-emits what the call pushed WITHOUT calling the callback, and a
 /// re-executed child's emits are discarded with it. `extra` must not hold
 /// [`FX_NOT_FOR_EMITTERS`] (the caller checks).
@@ -394,7 +388,7 @@ pub fn register_checked_emitter(
             Ok(1)
         },
         effects_from_flags(
-            FX_EMITS | FX_PENDING_EFFECTFUL | (extra & !(FX_KEYED | FX_EMIT_RESULT)),
+            FX_EMITS | (extra & !(FX_KEYED | FX_EMIT_RESULT)),
         ),
     )
 }

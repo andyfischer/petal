@@ -131,20 +131,6 @@ export class PetalDebugAPI {
     return this.buildResponse({ screenshot: dataUrl });
   }
 
-  pendingReport(): DebugResponse {
-    const runtime = this.hooks.getRuntime();
-    if (!runtime) return this.buildResponse({ pending: [] });
-    try {
-      // The WASM runtime may not yet expose a pending report; fall back to an
-      // empty array so the response shape stays schema-compatible with petal-sdl.
-      const rt = runtime as unknown as { get_pending_report?: () => string };
-      const json = rt.get_pending_report?.() ?? "[]";
-      return this.buildResponse({ pending: JSON.parse(json) });
-    } catch {
-      return this.buildResponse({ pending: [] });
-    }
-  }
-
   isPaused(): boolean {
     return this.hooks.getController().paused;
   }
@@ -164,7 +150,6 @@ export class PetalDebugAPI {
       case "capture_draw_commands": return this.captureDrawCommands();
       case "input": return this.input({ keysDown: cmd.keys_down, mouse: cmd.mouse });
       case "screenshot": return this.screenshot();
-      case "pending_report": return this.pendingReport();
       default: return { ok: false, error: `Unknown command: ${(cmd as any).cmd}` } as any;
     }
   }
@@ -184,7 +169,7 @@ export class PetalDebugAPI {
 // ---------------------------------------------------------------------------
 
 export interface DebugCommand {
-  cmd: "pause" | "resume" | "step" | "state" | "set_state" | "capture_draw_commands" | "input" | "screenshot" | "pending_report";
+  cmd: "pause" | "resume" | "step" | "state" | "set_state" | "capture_draw_commands" | "input" | "screenshot";
   n?: number;
   name?: string;
   value?: any;
@@ -200,7 +185,5 @@ export interface DebugResponse {
   draw_commands?: any[];
   output?: string[];
   screenshot?: string;
-  /** Frame pending report: one entry per live pending resource. */
-  pending?: any[];
   error?: string;
 }

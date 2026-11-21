@@ -85,15 +85,6 @@ fn unique_keeps_every_nan() {
     assert_eq!(out("let n = sqrt(-1.0)\nprint(len(unique([n, n, 1, 1])))"), "3");
 }
 
-/// Whether a pending element repeats is not known yet: the result is the
-/// (leftmost) pending value, as with `group_by_keys`.
-#[test]
-fn unique_of_a_list_holding_a_pending_value_is_pending() {
-    let src = "let p = __pending(\"k\")
-print(is_pending(unique([1, p, 1])), is_pending(unique_by([1, 2], fn(x) -> p)))";
-    assert_eq!(out(src), "true true");
-}
-
 #[test]
 fn interp_wants_a_table_of_pairs() {
     refuses("interp([], 1)", "needs a table with at least one entry");

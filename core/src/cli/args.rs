@@ -219,7 +219,6 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "graph" => parse_graph_args(&args[1..]),
         "propose-edit" => parse_propose_edit_args(&args[1..]),
         "show-graph" => parse_show_graph_args(&args[1..]),
-        "pending-report" => parse_show_args(&args[1..], |json| Command::PendingReport { json }),
         _ => {
             // Shorthand: `petal <file> [flags]` runs the file (same as
             // `petal run <file> [flags]`). Parse the full arg list so flags
@@ -276,7 +275,6 @@ fn parse_run_args(args: &[String]) -> CliArgs {
                     process::exit(1)
                 }))
             }
-            "--trace-pending" => o.trace_pending = true,
             "--record-trace" => {
                 o.record_trace =
                     Some(take(args, i, "Expected path after --record-trace").to_string())

@@ -90,7 +90,6 @@ pub mod host_data;
 pub mod input;
 mod params;
 pub use params::{interface, raw_declarations, script_for};
-pub mod pending;
 pub mod popover;
 pub mod subpixel;
 pub mod tess;
@@ -208,6 +207,9 @@ pub fn package_modules() -> [(&'static str, &'static str); 13] {
 /// The `petal` binary bundles the same source, so `petal lint` resolves
 /// `import ui` with no host; this registration takes precedence over it.
 pub fn register_prelude(env: &mut petal::env::Env) {
+    // `ui/interaction`'s load-state helpers import `query`: register it (its
+    // natives, its handle class and the package) wherever `ui` goes.
+    petal_stdlib_query::register(env);
     env.register_package(
         MODULE_NAME,
         package_modules()
@@ -236,7 +238,7 @@ pub fn provide_interface(env: &mut petal::env::Env) {
 /// The interface packages a host built on [`register_all`] answers for —
 /// what it passes to [`petal::env::Env::verify_interface`], together with
 /// the packages declaring its own natives.
-pub const INTERFACE_PACKAGES: &[&str] = &[MODULE_NAME];
+pub const INTERFACE_PACKAGES: &[&str] = &[MODULE_NAME, petal_stdlib_query::PACKAGE_NAME];
 
 /// Register everything a typical host wants in one call: the input natives,
 /// the draw natives (canvas ops included), and the `ui` package (`import ui`).

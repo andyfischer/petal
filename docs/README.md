@@ -61,7 +61,7 @@ goal-based program manipulation.
 | [Program Modification](features/program-modification.md) | The survey of every way to edit a program from code, in source text and in a running program |
 | [Goal-Based Editing](features/goal-based-editing.md) | The Goal API: source edits described as goals |
 | [Source Preservation](features/source-preservation.md) | How an edit of a literal keeps the file's formatting |
-| [Pending Values](features/pending-values.md) | Values a host has not got yet: how they flow through a script, the inspectors, `state` waiting for one, and the pending report |
+| [Async data: `query`](../core-stdlib/query/README.md) | Values a host has not got yet: the `query` package, pending answers and the `is_ready` family (a library, not part of the core language) |
 | [Provenance](features/provenance.md) | `petal explain` and `petal graph`: why a value is what it is, what it depends on, and what a change would reach |
 | [Direct Manipulation](features/direct-manipulation.md) | Tracing a drawn shape or emitted value back to the call that produced it, then editing that call |
 | [Time Travel](features/time-travel.md) | Forking and replaying an execution, and the petal-sdl timeline: freeze, scrub, rewind, replay through an edit |
@@ -164,7 +164,6 @@ point-in-time status.
 | [Type Declarations](dev/type-declarations-plan.md) | Optional, warning-only type annotations (shipped) |
 | [Formatter and linter](dev/linter-plan.md) | `petal fmt` and `petal lint`: how rules are split between them (shipped) |
 | [Suggestions](dev/suggestions-plan.md) | `petal suggest`: the channel for safe refactors (shipped) |
-| [Pending Values](dev/pending-values-plan.md) | Async pending-value semantics and the petal-query data layer |
 | [Reactive Rendering](dev/reactive-rendering-plan.md) | The incremental-rendering roadmap and the status of each layer (P0, P1 shipped; P2 partly) |
 | [Typography](dev/typography-plan.md) | Fonts, measurement and flow layout (partly shipped) |
 | [Direct Manipulation v2](dev/direct-manipulation-v2-plan.md) | Backpropagating a drag through function calls by speculative re-runs: architecture and milestones (shipped; the default engine) |

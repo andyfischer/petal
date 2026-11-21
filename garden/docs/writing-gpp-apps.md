@@ -138,7 +138,7 @@ A handler returns a `Reply`:
 - `Reply::json(value)`: any `Serialize` value. `Reply::from(result)` maps a
   `Result<T, E>` to a value or an error.
 - `Reply::error(msg)`: a JSON-RPC error; the script sees it through
-  `is_error`, `error_of`, or `??`.
+  `is_error` and `error_of`.
 - `Reply::loading()`: neither. The host keeps the script waiting without
   re-requesting. Use it when a background thread will fill the value in later
   and push an `invalidate`.
@@ -213,7 +213,7 @@ card:
 ```petal
 // WRONG: crashes the frame when the field is null
 if len(data.error) > 0 then … end
-// RIGHT: coalesce first (`??` treats nil and pending as absent)
+// RIGHT: coalesce first (`??` treats nil as absent)
 let err = data.error ?? ""
 if len(err) > 0 then … end
 ```
@@ -278,8 +278,9 @@ record when nothing is); prefer `palette()`.
 with Garden. Return is spelled `"return"`, never `"enter"`.
 
 **Data.** `query(kind, arg)` returns the value when ready, otherwise a pending
-value you inspect with `is_ready`, `is_loading`, `is_error`, `error_of`, or
-`??`. `invalidate(kind, arg)` drops a cached answer so the next `query`
+answer you test with `is_ready`, `is_loading`, `is_error` and `error_of`
+(from the `query` package, which `import garden` re-exports). A pending answer
+is not data: test it before you read it. `invalidate(kind, arg)` drops a cached answer so the next `query`
 re-requests; that is how you refresh. The per-frame rerun is the retry loop.
 
 **Push (script to app).** `emit(event, arg)` sends a fire-and-forget

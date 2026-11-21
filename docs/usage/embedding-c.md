@@ -310,8 +310,8 @@ shows what a dishonest row breaks):
 | `fx::Emits` | pushes into an output buffer. Only [emitters](#emitters-the-command-stream-fast-path) do that (they set it themselves); a callback has no way to push, so a callback that queues work for the host is `fx::Effect` |
 | `fx::Effect` | does something no replay reproduces (mutates host state, plays a sound) |
 | `fx::ReadsHostData` | answers from host state (body transforms, raycasts). The bridge also calls `note_host_read()` for you. |
-| `fx::ReadsPointer/Keyboard/Clock/Viewport/Resources/Rng/Bindings` | other input classes |
-| `fx::PendingEffectful` / `fx::PendingAllow` | how a `Pending` argument is treated (default: absorbed) |
+| `fx::ReadsPointer/Keyboard/Clock/Viewport/Rng/Bindings` | other input classes |
+| `fx::PendingEffectful` / `fx::PendingAllow` | deprecated, no effect: Petal no longer has pending values. Accepted so existing hosts compile |
 | `fx::Const` (`PB_FX_CONST`) | a **constant function**: the same arguments give the same result for as long as the VM lives, reading no host state of any kind. Opt-in; see below |
 
 **`fx::Const` is not `fx::Pure`.** `fx::Pure` is `0`, the default, and says
@@ -365,7 +365,7 @@ for (petal::Value cmd : vm.drain("scene")) {
 }
 ```
 
-Emitters are declared `Emits` with the Pending-no-op policy. Emitting into
+Emitters are declared `Emits`. Emitting into
 petal-ui's own `"draw_commands"` buffer is supported: such commands come back
 from `drain_draw()` as `PB_DRAW_HOST` in their place in the draw order (see
 below) — useful for HUD extensions like sprites.
@@ -1261,8 +1261,8 @@ with `PB_ERR_COMPILE`, phase `link`, before any line runs.
   for a host that changed something a `PB_FX_CONST` native answers from.
   `static_values_json()` (`pb_vm_static_values_json`) returns the counters
   (`slots`, `filled`, `skips`, `skipped_instructions`, `clears`), the values
-  that could not be kept (`rejected`: one holding a function, a `var` cell,
-  a handle or a pending result is rebuilt on every run), and `warnings`, the
+  that could not be kept (`rejected`: one holding a function, a `var` cell
+  or a handle is rebuilt on every run), and `warnings`, the
   same in words and only those no earlier call handed out since the last
   load or reload: log them after a frame and each is said once.
 - `diagnostics_text()` (`pb_vm_diagnostics_text(vm, errors_only)`) returns
@@ -1460,7 +1460,7 @@ What a document does not carry:
 
 | Not saved | What happens |
 |-----------|--------------|
-| A value that is or holds a function, a host handle, a pending result or a UI element | The whole slot is left out. After a load, that `state` starts from its initializer. |
+| A value that is or holds a function, a host handle (a `query` pending answer is one) or a UI element | The whole slot is left out. After a load, that `state` starts from its initializer. |
 | Whether a value was frozen (`freeze()`) | It comes back equal and unfrozen. |
 | Anything that is not `state` | Bindings, output buffers, input, petal-ui's registries and whatever your natives keep are the host's to save. |
 

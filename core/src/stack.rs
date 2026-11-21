@@ -130,8 +130,8 @@ impl StatePart {
     }
 
     /// The part for any Petal value `v` (a record's id the host got from
-    /// Petal), hashed as `for … key` hashes it. A function, a pending value
-    /// or NaN can't be a key, as in a keyed loop.
+    /// Petal), hashed as `for … key` hashes it. A function or NaN can't be a
+    /// key, as in a keyed loop.
     pub fn key_value(env: &crate::env::Env, v: Value) -> Result<StatePart, String> {
         let heap = env.heap();
         let h = crate::dict::key_hash(v, heap).map_err(|e| e.replace("as a map key", "as a state key"))?;
@@ -578,7 +578,6 @@ impl Stack {
         heap: &Heap,
         closures: &ClosureTable,
         rng_state: u64,
-        resources_revision: u64,
     ) {
         if !self.run_deps.state_unsettled()
             && self.cells_at_run_start.iter().any(|(id, before, mutations)| {
@@ -590,7 +589,7 @@ impl Stack {
         }
         self.cells_at_run_start.clear();
         self.run_deps
-            .finish_run(bindings, binding_revisions, heap, rng_state, resources_revision);
+            .finish_run(bindings, binding_revisions, heap, rng_state);
     }
 
     /// Drop everything a run *derived* — the static values, memo records,

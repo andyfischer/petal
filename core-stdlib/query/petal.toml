@@ -1,0 +1,16 @@
+# query — the script side of petal-query: `query(kind, arg)` asks the host
+# for data, and `is_ready` / `is_loading` / `is_error` / `error_of` read an
+# answer that has not arrived yet. Scripts write `import query` (a Garden
+# panel gets it through `import garden`).
+#
+# An interface package: its natives are implemented by the Rust crate in
+# `native/` (`petal-stdlib-query`), which a host links and registers with
+# `petal_stdlib_query::register(&mut env)`; petal-ui's `register_all` does
+# that for every petal-ui host. The petal binary bundles these files
+# (core/Cargo.toml) so `petal lint` resolves `import query` with no host.
+# Where the data comes from is the host's: it installs a `QueryHost`.
+[package]
+name = "query"
+version = "0.1.0"
+description = "Async data for a script that re-runs every frame: query, and the readers of an answer still on its way."
+modules = "src"

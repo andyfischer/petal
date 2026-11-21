@@ -91,11 +91,8 @@ for the command; it is not a variant of any `enum` a script declares). For a sin
 ### 2. Declare what the native does
 
 Registration takes the native's `NativeEffects` row — what it reads, whether
-it emits, whether it has an effect no replay reproduces, and how it treats a
-`Value::Pending` argument. An emitter is `NativeEffects::EMITS`: it pushes
-into an output buffer and is a no-op when handed a `Pending` (loading /
-errored) argument — it emits *nothing* rather than have the pending value
-absorbed as its result:
+it emits, and whether it has an effect no replay reproduces. An emitter is
+`NativeEffects::EMITS`: it pushes into an output buffer:
 
 ```rust
 env.register_native("layout", native_layout, NativeEffects::EMITS);
@@ -140,14 +137,6 @@ interface packages live and how scripts find them).
 `env.declare_native_params(id, "x, y, w, h, color, alpha?")` declares names
 against a native's id directly, for a host that builds its natives at run
 time ([Native functions](ffi.md#native-functions)).
-
-`NativeClass::Strict` (the default `pending` policy) is for pure natives
-(`sqrt(pending)` → `pending`). `Effectful` is for emitters (`print`,
-`push_output`, and your observed calls). `EffectfulDeep` is for emitters
-whose payload must be fully loaded: it also no-ops on a pending value held
-inside an argument (`NativeEffects::EMITS_DEEP`). `AllowPending` is for
-natives that inspect pendings themselves. See [`NativeEffects`] and [`NativeClass`] in
-[ffi.md](ffi.md).
 
 Declare the row by what the native does to the *host*, not how the call looks
 from the script. A memoized helper that calls the native is replayed without
@@ -406,25 +395,27 @@ env.register_native_boxed(
 The captures live as long as the `Env` and are shared by every execution of
 it, forks included; the runtime cannot see into them, so the row must say
 what the closure reads and whether it mutates anything (see
-[ffi.md](ffi.md#native-functions)). Garden's `query.rs` predates boxed natives
-and still uses a scoped-swap `thread_local!` (install the provider around
-`env.run`, reclaim it after), which fits when the provider is owned
+[ffi.md](ffi.md#native-functions)). The `query` package's host
+(`petal_stdlib_query::swap_host`, which Garden's `query.rs` uses) is a
+scoped-swap `thread_local!` instead (install it around `env.run`, reclaim it
+after), which fits when the provider is owned
 elsewhere and only lent for the duration of a run. Prefer bindings/buffers
 whenever the host side is plain data rather than a callback.
 
 ### Fetching until settled (batch hosts)
 
 A script that fetches reads as straight-line code: `fetch(url)` answers the
-page, or a pending value while the host doesn't have it yet, and everything
-computed from a pending value is pending (a `for` over a pending list runs no
-times). A list page followed by its detail pages is simply two fetch rounds.
-A UI host gets the rounds for free — its next frame re-runs the script. A
-batch host (a scraper, a report builder) runs the loop itself, and core has
-it:
+page, or a **pending answer** while the host doesn't have it yet (the handle
+of the [`query`](../../core-stdlib/query/README.md) package). A pending answer
+is not data: a field read, arithmetic or a `for` over one is an error, so the
+script tests it first (`import query`, then `if is_ready(page) then … end`).
+A list page followed by its detail pages is simply two fetch rounds. A UI
+host gets the rounds for free — its next frame re-runs the script. A batch
+host (a scraper, a report builder) runs the loop itself, and the
+`petal-stdlib-query` crate has it:
 
 ```rust
-use petal::resource_provider::{ResourceAnswer, ResourceProvider, Resolution};
-use petal::resource_table::hash_key;
+use petal_stdlib_query::{push_answer, run_until_settled, ResourceAnswer, ResourceProvider, Resolution};
 
 // The host's cache, read by its natives: Key = str (a URL), Value = its page type.
 impl ResourceProvider for Pages {
@@ -435,56 +426,53 @@ impl ResourceProvider for Pages {
     }
 }
 
+petal_stdlib_query::register(&mut env); // the pending-answer class and `import query`
 let p = pages.clone();
 env.register_native_boxed("fetch", move |cx: &mut PetalCxt| {
     let url = cx.get_string(1)?;
-    let key = hash_key(url.as_str());
     cx.note_host_read();
-    let answer = { let mut p = p.borrow_mut(); p.asked.insert(key, url.clone()); p.answer(&url) };
-    cx.push_answer(key, answer, |cx, page| page_to_value(cx, page));
+    let answer = p.borrow_mut().answer(&url);
+    // The URL names the pending answer, and is what the loop hands back.
+    push_answer(cx, &url, answer.map(|page| page_to_value(cx, page)))?;
     Ok(1)
 }, NativeEffects::reads(InputClasses::HOST_DATA));
 
-let report = env.run_until_settled(stack, 12, |_env, keys| {
-    // Every key the run asked for and was answered loading, each once.
+let report = run_until_settled(&mut env, stack, 12, |_env, urls| {
+    // Every name the run was answered loading for, each once.
     // Fetch them however the host likes — in parallel, rate-limited, cached.
-    let urls: Vec<String> = keys.iter().map(|k| pages.borrow().asked[k].clone()).collect();
-    let results = fetch_all(&urls);
+    let results = fetch_all(urls);
     let mut pages = pages.borrow_mut();
-    keys.iter().zip(urls).zip(results).map(|((&key, url), result)| match result {
+    urls.iter().zip(results).map(|(url, result)| match result {
         Ok(page) => {
-            pages.have.insert(url, ResourceAnswer::Ready(page));
-            (key, Resolution::Resolved)
+            pages.have.insert(url.clone(), ResourceAnswer::Ready(page));
+            (url.clone(), Resolution::Resolved)
         }
         Err(e) => {
-            pages.have.insert(url, ResourceAnswer::Errored(e.clone()));
-            (key, Resolution::Errored(e))
+            pages.have.insert(url.clone(), ResourceAnswer::Errored(e.clone()));
+            (url.clone(), Resolution::Errored(e))
         }
     }).collect()
 })?;
 ```
 
-Each run starts the stack from the top in a new frame. After it, the keys the
-run's natives answered loading (`push_loading`, or `push_answer` of
-`Loading`) that the host hasn't been handed before go to the callback, which
-says what became of each. The loop stops after a run that asks for nothing
-new, or after `max_runs`. The `SettleReport` has a `RunReport` per run (index,
-keys requested, resolved, errored, the run's script error), `settled`,
-`unanswered` (keys still loading at the end: the limit came first, or the host
-left them) and the last run's value. Between runs the previous run's `print`
-output and output buffers are dropped, so what the host drains afterwards is
-the last run's; drain inside the callback to keep each run's. A run that fails
-while it still had requests out is retried after they land.
+Each run starts the stack from the top. After it, the names the run's
+natives answered loading (`push_loading`, or `push_answer` of `Loading`) that
+the host hasn't been handed before go to the callback, which says what became
+of each. The loop stops after a run that asks for nothing new, or after
+`max_runs`. The `SettleReport` has a `RunReport` per run (index, names
+requested, resolved, errored, the run's script error), `settled`,
+`unanswered` (names still loading at the end: the limit came first, or the
+host left them) and the last run's value. Between runs the previous run's
+`print` output and output buffers are dropped, so what the host drains
+afterwards is the last run's; drain inside the callback to keep each run's. A
+run that fails while it still had requests out is retried after they land.
 
-The native records which URL each `u64` key stands for (`asked` above): the
-resource table keys by hash, and only the host knows how to fetch. Fetch
-queues, concurrency, retries, budgets and politeness are the host's — core
-only says which keys a run left unanswered
-(`env.unanswered_requests(stack)`, or
-`ResourceTable::unanswered_since(frame)` on `env.resources(stack)`) and
-re-runs. A host that would rather keep its answers in the resource table
-itself can `env.resources_mut(stack)?.resolve(key, value, frame)` in the
-callback and have its native read the table.
+A pending answer is named by a string its native chooses (the URL above;
+`query("user", 7)` for the `query` native), and only the host knows how to
+fetch. Fetch queues, concurrency, retries, budgets and politeness are the
+host's — the loop only says which names a run left unanswered and re-runs. A
+host that writes its own loop reads the same list with
+`petal_stdlib_query::take_asked()`.
 
 ### Hot reload
 

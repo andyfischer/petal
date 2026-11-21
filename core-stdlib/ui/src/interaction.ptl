@@ -60,6 +60,8 @@ import ./input
 import ./_native
 import ./_style
 import ./_frame
+# The readers of a pending answer, for `load_poll` (core-stdlib/query).
+import query: is_ready, is_error, error_of
 import ./draw
 import ./hit
 import ./text
@@ -1113,8 +1115,8 @@ pub fn scroll_keys(offset, total_lines, visible_lines)
 
 @doc("""
 A fresh load state: one record for the loading, ready and failed lifecycle
-of a value. Keep it in `state` and feed `load_poll` the pending value your
-data channel returns.
+of a value. Keep it in `state` and feed `load_poll` what your data channel
+answers, such as `query`'s pending answer.
 """,
   returns: """`{status, key, value, error}`; `status` is `"idle"`, `"loading"`, `"ready"` or `"error"`.""",
   example: """
@@ -1158,7 +1160,7 @@ One poll step: restart when `key` changed, then absorb `pv`. While a new
 load is in flight the stale value stays readable in `ls.value`, for a panel
 that keeps painting it.
 """,
-  params: {key: "What is being loaded; a new key restarts the load.", pv: "A pending value from an async channel (Garden's `query`; read with `is_ready`, `is_error`, `error_of`), or a plain value, ready at once."},
+  params: {key: "What is being loaded; a new key restarts the load.", pv: "What an async channel answered: a pending answer from `query` (read with `is_ready`, `is_error`, `error_of`), or a plain value, ready at once."},
   returns: "The next state.",
   see: ["load_state"])
 pub fn load_poll(ls, key, pv)

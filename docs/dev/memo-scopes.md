@@ -30,7 +30,7 @@ half):
 | A native that read a host binding | a **probe**: the native, its arguments, its answer | calling the native again; an unchanged answer keeps the scope valid even though the binding moved |
 | `state` slots read, initialized, or written | key and value | the slot holds the value that was read (writes seen earlier in the record overlay the live value) |
 | `var` cells read or written, when created outside the scope | cell and value | the cell is live and holds the value that was read |
-| Host data and the resource table consulted | a flag | the host-data / resource revision is what it was |
+| Host data consulted (`query` included) | a flag | the host-data revision is what it was |
 | A `query` read of a revisioned class (`PHYSICS`, `NET`) | the class and its revision | that class's revision is what it was (`Env::note_class_changed` bumps it) |
 | A `command` issued | the native, its arguments and the implicit key it read (`PetalCxt::call_key`) | — (re-issued on replay, in order with the writes, with that key) |
 | Child scopes | path and record serial | the child's own record validates, recursively |
@@ -83,9 +83,8 @@ up: validation re-evaluates a probe with no call term and so no key.
 
 **What is not recorded.** A scope that did something a replay could not
 reproduce is *effectful*, and so is every scope enclosing it: it printed
-(`PetalCxt::print`), advanced a counter, touched the mutable resource table,
-reseeded noise, consumed randomness, called a handle method, returned or
-stored a `Pending`, or let a `var` cell it created escape through its result
+(`PetalCxt::print`), advanced a counter,
+reseeded noise, consumed randomness, called a handle method, or let a `var` cell it created escape through its result
 or a write (a closure over a local `var`, handed out, would be replayed with
 the same box still holding last frame's increments). A scope with more than
 `MAX_SCOPE_DEPS` entries is treated the same way: validating it would cost
@@ -93,16 +92,15 @@ about what running it does.
 
 **How a native is classified.** From the effect row it registered with
 (`Env::register_native` takes one; `NativeEffects` in `core/src/native_fn.rs`):
-`effect` makes the scope effectful, `HOST_DATA` and `RESOURCES` reads become
-the host-data / resource flags, any other read is a probe when the row says
+`effect` makes the scope effectful, a `HOST_DATA` read becomes
+the host-data flag, any other read is a probe when the row says
 the call is re-evaluable. The row is taken at its word — the VM does not
 look at the activity counters around the call — so a row that says less than
 the native does is a silent staleness bug. What checks the rows is the effect
 audit: `petal-ui-run --effect-audit` (and `test/ui-corpus/tests/effect_audit.rs`
 over the corpus) brackets every call with activity snapshots and reports
 each native seen doing a facet its row lacks, and on which facet
-(`core/src/effect_audit.rs`). A `Pending` *result* makes the scope effectful
-whatever the row says. See
+(`core/src/effect_audit.rs`). See
 [Declaring native effects honestly](../usage/ffi.md#declaring-native-effects-honestly).
 
 **What is not worth recording.** A scope that recorded nothing and retired

@@ -56,11 +56,6 @@ const INSTRUMENTED: Record<string, string> = {
   set_noise_seed: 'effect',
   next_counter: 'effect',
   set_counter: 'effect',
-  resources_mut: 'effect',
-  push_loading: 'effect', // delegates to resources_mut()
-  push_failed: 'effect', // delegates to resources_mut()
-  push_answer: 'effect', // delegates to push_loading / push_failed
-  resources: 'resource_read',
   push_output: 'emit',
   emit: 'emit',
   binding: 'binding_read',

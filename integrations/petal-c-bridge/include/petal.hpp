@@ -98,6 +98,7 @@ inline constexpr uint32_t Probe = PB_FX_PROBE;
 // queues work on the host is fx::Effect, not fx::Emits.
 inline constexpr uint32_t Emits = PB_FX_EMITS;
 inline constexpr uint32_t Effect = PB_FX_EFFECT;
+// Deprecated, no effect: Petal no longer has pending values.
 inline constexpr uint32_t PendingEffectful = PB_FX_PENDING_EFFECTFUL;
 inline constexpr uint32_t PendingAllow = PB_FX_PENDING_ALLOW;
 // A constant function of its arguments, reading no host state of any kind.
@@ -113,6 +114,7 @@ inline constexpr uint32_t ReadsKeyboard = PB_FX_READS_KEYBOARD;
 inline constexpr uint32_t ReadsClock = PB_FX_READS_CLOCK;
 inline constexpr uint32_t ReadsViewport = PB_FX_READS_VIEWPORT;
 inline constexpr uint32_t ReadsHostData = PB_FX_READS_HOST_DATA;
+// Deprecated: Petal no longer has a resource-table input.
 inline constexpr uint32_t ReadsResources = PB_FX_READS_RESOURCES;
 inline constexpr uint32_t ReadsRng = PB_FX_READS_RNG;
 inline constexpr uint32_t ReadsBindings = PB_FX_READS_BINDINGS;

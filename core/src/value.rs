@@ -9,18 +9,8 @@ use crate::heap::{
     CellId, DictId, ElementId, EnumTag, F64ArrayId, ListId, MapId, StringId, Vec2Id, Vec3Id,
 };
 use crate::native_fn::NativeFnId;
-use crate::program::{ClosureId, OverloadSetId, Program, TermId};
-use crate::resource_table::{ResourceState, ResourceTable};
+use crate::program::{ClosureId, OverloadSetId};
 use crate::symbol::SymbolId;
-
-/// Opaque index into an [`ExecutionContext`](crate::execution_context)'s resource
-/// table. Kept a thin `Copy` id (like the heap ids) so [`Value`] stays `Copy`;
-/// the resolution state and provenance live in the table entry it points at.
-/// Unlike heap ids it needs no generation: table entries are never removed, so
-/// an index is never reused. Resolved payloads are GC roots.
-/// See docs/dev/pending-values-plan.md.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PendingId(pub u32);
 
 /// Runtime value. All variants are Copy — heap-allocated data is referenced by ID.
 #[derive(Clone, Copy, PartialEq)]
@@ -68,11 +58,6 @@ pub enum Value {
     Symbol(SymbolId),
     /// An opaque reference to a host-owned foreign object. See `crate::handle`.
     Handle(HandleVal),
-    /// An unresolved (pending or errored) resource. A thin id into the owning
-    /// context's resource table, where state/provenance live. Ordinary ops are
-    /// strict in Pending (they absorb and return it); a small non-strict meta set
-    /// inspects it. See docs/dev/pending-values-plan.md.
-    Pending(PendingId),
 }
 
 // A tag byte plus at most 12 bytes of 4-aligned payload, or 8 of 8-aligned:
@@ -105,10 +90,10 @@ impl Value {
     }
 
     /// Whether a value is "present" for the `??` coalescing operator: anything
-    /// other than `Nil` or a `Pending` (loading OR errored). Distinct from
-    /// [`is_truthy`](Value::is_truthy) — `0`, `false`, and `""` are present.
+    /// other than `Nil`. Distinct from [`is_truthy`](Value::is_truthy) — `0`,
+    /// `false`, and `""` are present.
     pub fn is_present(&self) -> bool {
-        !matches!(self, Value::Nil | Value::Pending(_))
+        !matches!(self, Value::Nil)
     }
 
     pub fn type_name(&self) -> &'static str {
@@ -132,7 +117,6 @@ impl Value {
             Value::Vec3(_) => "vec3",
             Value::Symbol(_) => "symbol",
             Value::Handle(_) => "handle",
-            Value::Pending(_) => "pending",
         }
     }
 }
@@ -170,7 +154,6 @@ impl fmt::Debug for Value {
             Value::Vec3(id) => write!(f, "Vec3({:?})", id),
             Value::Symbol(id) => write!(f, "Symbol({})", id.0),
             Value::Handle(h) => write!(f, "{}", h),
-            Value::Pending(id) => write!(f, "Pending({})", id.0),
         }
     }
 }
@@ -265,10 +248,6 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
         }
         Value::Symbol(id) => format!("symbol#{}", id.0),
         Value::Handle(h) => h.to_string(),
-        // Context-free fallback: unambiguous but bare (no state/origin/age, which
-        // need the resource table + program). Provenance-rich rendering lives in
-        // `pending_to_display` / `value_to_json_ctx`.
-        Value::Pending(id) => format!("<pending {}>", id.0),
     }
 }
 
@@ -289,77 +268,6 @@ pub fn value_to_debug_string(val: &Value, heap: &Heap) -> String {
         Value::String(id) => format!("\"{}\"", heap.get_string(*id)),
         other => value_to_display_string(other, heap),
     }
-}
-
-/// Lower-case name of a resource's resolution state — the token debug surfaces
-/// show (`loading` / `errored` / `ready`).
-fn resource_state_name(state: &ResourceState) -> &'static str {
-    match state {
-        ResourceState::Loading => "loading",
-        ResourceState::Errored(_) => "errored",
-        ResourceState::Ready(_) => "ready",
-    }
-}
-
-/// The source-text slice an origin `TermId` points at (e.g. `__pending("k")`),
-/// used to attribute a pending value in debug output. Resolves the term's span
-/// through the program's source map and slices the owning file's source by byte
-/// offset (falling back to `Program::source` for entry-file spans). `None` when
-/// there is no usable span or the slice would be empty / out of bounds.
-fn origin_text(program: &Program, term_id: TermId) -> Option<String> {
-    let span = program.source_map.get(term_id)?;
-    let src = program
-        .source_map
-        .source_for_span(span)
-        .unwrap_or(&program.source);
-    let text = src.get(span.start.offset as usize..span.end.offset as usize)?;
-    if text.is_empty() {
-        None
-    } else {
-        Some(text.to_string())
-    }
-}
-
-/// The `{ line, col, text }` origin object for a pending entry's origin term, or
-/// `null` when the entry has no origin (a resource a native created without a
-/// reachable call site). Shared by the JSON pending rendering here and the
-/// frame pending report.
-fn pending_origin_json(program: &Program, origin: Option<TermId>) -> serde_json::Value {
-    let Some(term_id) = origin else {
-        return serde_json::Value::Null;
-    };
-    let (line, col) = match program.source_map.get(term_id) {
-        Some(s) if s.start.line > 0 => (Some(s.start.line), Some(s.start.column)),
-        _ => (None, None),
-    };
-    serde_json::json!({
-        "line": line,
-        "col": col,
-        "text": origin_text(program, term_id),
-    })
-}
-
-/// Provenance-rich rendering of a pending value for human-facing debug surfaces:
-/// `<pending __pending("k") loading 2f>` — the origin call site's source text,
-/// the resource's resolution state, and its age in frames. Falls back to `?` for
-/// the origin when the entry has no origin term. Unlike the context-free
-/// [`Display`](fmt::Display)/[`Debug`](fmt::Debug) (which can only show the bare
-/// id), this needs the resource table (state + provenance), the program (origin
-/// source text), and the current frame (age).
-pub fn pending_to_display(
-    id: PendingId,
-    resources: &ResourceTable,
-    program: &Program,
-    current_frame: u64,
-) -> String {
-    let entry = resources.entry(id);
-    let origin = entry
-        .origin
-        .and_then(|t| origin_text(program, t))
-        .unwrap_or_else(|| "?".to_string());
-    let state = resource_state_name(&entry.state);
-    let age = entry.age_frames(current_frame);
-    format!("<pending {origin} {state} {age}f>")
 }
 
 fn element_to_display_string(id: crate::heap::ElementId, heap: &Heap) -> String {
@@ -394,191 +302,24 @@ fn element_to_display_string(id: crate::heap::ElementId, heap: &Heap) -> String 
     s
 }
 
-/// Rendering context for provenance-rich pending values in JSON dumps: the
-/// resource table (state + provenance), the program (origin source text), and
-/// the current frame (age). Threaded through [`value_to_json_ctx`] so a
-/// `Value::Pending` — including one nested in a list, map, or element — dumps as
-/// a structured object instead of the context-free `"<pending N>"` fallback.
-pub struct PendingJsonCtx<'a> {
-    pub resources: &'a ResourceTable,
-    pub program: &'a Program,
-    pub frame: u64,
-}
-
-/// The structured JSON object for a pending value:
-/// `{ type:"pending", id, key, state, age_frames, origin }` — the shape debug
-/// surfaces and the frame report consume.
-fn pending_json(id: PendingId, ctx: &PendingJsonCtx) -> serde_json::Value {
-    let entry = ctx.resources.entry(id);
-    serde_json::json!({
-        "type": "pending",
-        "id": id.0,
-        "key": entry.key,
-        "state": resource_state_name(&entry.state),
-        "age_frames": entry.age_frames(ctx.frame),
-        "origin": pending_origin_json(ctx.program, entry.origin),
-    })
-}
-
-/// The frame pending report: a structured summary over **every** live resource
-/// in `resources`, as a JSON array of
-/// `{ id, key, state, age_frames, origin, absorbed_count }` objects (origin is
-/// `{ line, col, text }` or `null`). This is the data the debug-protocol
-/// `pending_report` query, the petal-ui overlay hook, and `--trace-pending`
-/// consume: state + provenance + this-frame absorption count for the whole
-/// table. `current_frame` supplies each entry's age; `program` resolves origin
-/// source text, reusing [`pending_origin_json`] (the same resolution the Chunk-M
-/// per-value rendering uses).
-pub fn pending_report_json(
-    resources: &ResourceTable,
-    program: &Program,
-    current_frame: u64,
-) -> serde_json::Value {
-    let entries: Vec<serde_json::Value> = resources
-        .iter()
-        .map(|(id, entry)| {
-            serde_json::json!({
-                "id": id.0,
-                "key": entry.key,
-                "state": resource_state_name(&entry.state),
-                "age_frames": entry.age_frames(current_frame),
-                "origin": pending_origin_json(program, entry.origin),
-                "absorbed_count": entry.absorbed_count,
-            })
-        })
-        .collect();
-    serde_json::Value::Array(entries)
-}
-
-/// What a JSON conversion does when it meets a `Value::Pending`.
-#[derive(Clone, Copy)]
-enum PendingJson<'a> {
-    /// Refuse: the conversion fails with a [`PendingJsonError`].
-    Refuse,
-    /// The context-free `"<pending N>"` string.
-    Lossy,
-    /// The structured `{ type:"pending", … }` object.
-    Ctx(&'a PendingJsonCtx<'a>),
-}
-
-/// [`value_to_json`] met a value that is not loaded yet: a `Value::Pending`,
-/// on its own or anywhere inside a list, record, map, enum or element. JSON
-/// has no form for it, and writing a placeholder in its place would save a
-/// value that is not the one the script will have once it loads.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PendingJsonError {
-    /// The first pending value met, in field / element order.
-    pub pending: PendingId,
-    /// Where it sits inside the converted value, as a path from its root
-    /// (`.date`, `[2].title`, `{"k"}`); empty when the value itself is pending.
-    pub path: String,
-}
-
-impl fmt::Display for PendingJsonError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.path.is_empty() {
-            write!(f, "the value is pending (<pending {}>)", self.pending.0)?;
-        } else {
-            write!(
-                f,
-                "the value at `{}` is pending (<pending {}>)",
-                self.path, self.pending.0
-            )?;
-        }
-        f.write_str("; JSON has no form for a value that has not loaded yet")
-    }
-}
-
-impl std::error::Error for PendingJsonError {}
-
-impl PendingJsonError {
-    /// Prepend one path segment on the way out of a container.
-    fn within(mut self, segment: impl fmt::Display) -> Self {
-        self.path = format!("{segment}{}", self.path);
-        self
-    }
-}
-
 /// Convert a Value to serde_json::Value — for data that leaves the process:
-/// a saved state, a file, a host's output. A value that is not fully loaded
-/// is refused: `Err` names the first `Value::Pending` found and where it sits
-/// (a record whose `date` field is still loading fails with path `.date`).
-///
-/// Debug surfaces that want *some* rendering of a pending value choose one
-/// explicitly: [`value_to_json_lossy`] (the bare `"<pending N>"` string) or
-/// [`value_to_json_ctx`] (a structured object with state and provenance).
+/// a saved state, a file, a host's output.
 ///
 /// Nil→null, Bool→bool, Int/Float→number, String→string, List→array
-/// (recursive), Map→object (recursive), others→string via display.
-pub fn value_to_json(val: &Value, heap: &Heap) -> Result<serde_json::Value, PendingJsonError> {
-    to_json(val, heap, PendingJson::Refuse)
+/// (recursive), Map→object (recursive), others→string via display. Every
+/// value converts; the `Result` is kept so a caller that handles a failure
+/// (`.ok()`, `.map_err(..)`) needs no change.
+pub fn value_to_json(val: &Value, heap: &Heap) -> Result<serde_json::Value, std::convert::Infallible> {
+    Ok(to_json(val, heap))
 }
 
-/// [`value_to_json`] for debug dumps: never fails, and a `Value::Pending`
-/// (at any depth) renders as its context-free `"<pending N>"` string. Not for
-/// data anyone will read back — the placeholder is indistinguishable from a
-/// string the script built.
+/// [`value_to_json`] without the `Result`, for debug dumps.
 pub fn value_to_json_lossy(val: &Value, heap: &Heap) -> serde_json::Value {
-    value_to_json_ctx(val, heap, None)
+    to_json(val, heap)
 }
 
-/// The debug rendering with an optional [`PendingJsonCtx`], so a
-/// `Value::Pending` dumps as the structured `{ type:"pending", … }` object
-/// (state + provenance + age) instead of the bare `"<pending N>"` string.
-/// `None` is [`value_to_json_lossy`].
-pub fn value_to_json_ctx(
-    val: &Value,
-    heap: &Heap,
-    ctx: Option<&PendingJsonCtx>,
-) -> serde_json::Value {
-    let mode = match ctx {
-        Some(c) => PendingJson::Ctx(c),
-        None => PendingJson::Lossy,
-    };
-    match to_json(val, heap, mode) {
-        Ok(json) => json,
-        Err(_) => unreachable!("only PendingJson::Refuse fails"),
-    }
-}
-
-/// The first `Value::Pending` inside `val` — `val` itself, or one held
-/// anywhere in its lists, records, maps (keys and values), enum payloads,
-/// elements and cells — or `None` when it is fully loaded. Closures are not
-/// looked into. The walk a host uses to ask "can I save / send this yet?";
-/// [`NativeClass::EffectfulDeep`](crate::native_fn::NativeClass::EffectfulDeep)
-/// natives are guarded by it.
-pub fn find_pending(val: &Value, heap: &Heap) -> Option<PendingId> {
+fn to_json(val: &Value, heap: &Heap) -> serde_json::Value {
     match val {
-        Value::Pending(id) => Some(*id),
-        Value::List(id) => heap.get_list(*id).iter().find_map(|v| find_pending(v, heap)),
-        Value::Map(id) => heap.get_map(*id).iter().find_map(|(_, v)| find_pending(v, heap)),
-        Value::Dict(id) => heap
-            .get_dict(*id)
-            .iter()
-            .find_map(|(k, v)| find_pending(&k, heap).or_else(|| find_pending(&v, heap))),
-        Value::EnumVariant { data, .. } => {
-            heap.get_list(*data).iter().find_map(|v| find_pending(v, heap))
-        }
-        Value::Element(id) => heap
-            .get_map(heap.get_element_props(*id))
-            .iter()
-            .find_map(|(_, v)| find_pending(v, heap))
-            .or_else(|| {
-                heap.get_list(heap.get_element_children(*id))
-                    .iter()
-                    .find_map(|v| find_pending(v, heap))
-            }),
-        Value::Cell(id) => find_pending(&heap.cell_read(*id), heap),
-        _ => None,
-    }
-}
-
-fn to_json(
-    val: &Value,
-    heap: &Heap,
-    mode: PendingJson,
-) -> Result<serde_json::Value, PendingJsonError> {
-    Ok(match val {
         Value::Nil => serde_json::Value::Null,
         Value::Bool(b) => serde_json::Value::Bool(*b),
         Value::Int(n) => serde_json::json!(*n),
@@ -586,8 +327,8 @@ fn to_json(
         Value::String(id) => serde_json::Value::String(heap.get_string(*id).to_string()),
         Value::List(id) => {
             let mut arr = Vec::new();
-            for (i, v) in heap.get_list(*id).iter().enumerate() {
-                arr.push(to_json(v, heap, mode).map_err(|e| e.within(format_args!("[{i}]")))?);
+            for v in heap.get_list(*id).iter() {
+                arr.push(to_json(v, heap));
             }
             serde_json::Value::Array(arr)
         }
@@ -599,7 +340,7 @@ fn to_json(
         Value::Map(id) => {
             let mut obj = serde_json::Map::new();
             for (k, v) in heap.get_map(*id).iter() {
-                let json = to_json(v, heap, mode).map_err(|e| e.within(format_args!(".{k}")))?;
+                let json = to_json(v, heap);
                 obj.insert(k.to_string(), json);
             }
             serde_json::Value::Object(obj)
@@ -609,10 +350,8 @@ fn to_json(
         Value::Dict(id) => {
             let mut entries = Vec::new();
             for (k, v) in heap.get_dict(*id).iter() {
-                let key = to_json(&k, heap, mode)?;
-                let value = to_json(&v, heap, mode).map_err(|e| {
-                    e.within(format_args!("{{{}}}", value_to_debug_string(&k, heap)))
-                })?;
+                let key = to_json(&k, heap);
+                let value = to_json(&v, heap);
                 entries.push(serde_json::Value::Array(vec![key, value]));
             }
             serde_json::json!({ "type": "map", "entries": entries })
@@ -628,38 +367,23 @@ fn to_json(
         Value::EnumVariant { tag, data } => {
             let name = heap.tag_str(*tag).to_string();
             let mut arr = Vec::new();
-            for (i, v) in heap.get_list(*data).iter().enumerate() {
-                arr.push(to_json(v, heap, mode).map_err(|e| e.within(format_args!(".{i}")))?);
+            for v in heap.get_list(*data).iter() {
+                arr.push(to_json(v, heap));
             }
             serde_json::json!({ "type": "enum", "tag": name, "data": arr })
         }
-        Value::Element(id) => element_to_json(*id, heap, mode)?,
+        Value::Element(id) => element_to_json(*id, heap),
         // A `state var`'s slot holds the cell, so this is the one place a cell
         // reaches a serialization surface. Report the *contents*: the box is an
         // implementation detail, and someone inspecting `hits` wants `3`.
-        Value::Cell(id) => to_json(&heap.cell_read(*id), heap, mode)?,
+        Value::Cell(id) => to_json(&heap.cell_read(*id), heap),
         Value::Symbol(id) => serde_json::json!({ "type": "symbol", "id": id.0 }),
-        Value::Pending(id) => match mode {
-            PendingJson::Refuse => {
-                return Err(PendingJsonError {
-                    pending: *id,
-                    path: String::new(),
-                });
-            }
-            // A debug rendering: never `null` or a bare handle.
-            PendingJson::Lossy => serde_json::Value::String(value_to_display_string(val, heap)),
-            PendingJson::Ctx(c) => pending_json(*id, c),
-        },
         // Closures, native functions → string representation
         other => serde_json::Value::String(value_to_display_string(other, heap)),
-    })
+    }
 }
 
-fn element_to_json(
-    id: crate::heap::ElementId,
-    heap: &Heap,
-    mode: PendingJson,
-) -> Result<serde_json::Value, PendingJsonError> {
+fn element_to_json(id: crate::heap::ElementId, heap: &Heap) -> serde_json::Value {
     let tag_id = heap.get_element_tag(id);
     let tag = heap.get_string(tag_id).to_string();
     let props = heap.get_map(heap.get_element_props(id));
@@ -667,21 +391,21 @@ fn element_to_json(
 
     let mut props_obj = serde_json::Map::new();
     for (k, v) in props.iter() {
-        let json = to_json(v, heap, mode).map_err(|e| e.within(format_args!(".props.{k}")))?;
+        let json = to_json(v, heap);
         props_obj.insert(k.to_string(), json);
     }
     let mut children_arr = Vec::new();
-    for (i, child) in children.iter().enumerate() {
+    for child in children.iter() {
         children_arr
-            .push(to_json(child, heap, mode).map_err(|e| e.within(format_args!(".children[{i}]")))?);
+            .push(to_json(child, heap));
     }
 
-    Ok(serde_json::json!({
+    serde_json::json!({
         "type": "element",
         "tag": tag,
         "props": props_obj,
         "children": children_arr
-    }))
+    })
 }
 
 /// Convert a JSON value to a Petal Value.
@@ -796,27 +520,6 @@ pub fn hash_value(val: &Value, heap: &Heap) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     hash_into(val, heap, &mut hasher);
     hasher.finish()
-}
-
-/// Whether `val` is or contains (to any depth) a pending value.
-///
-/// A pending value hashes by its id, and one id stays the same while its
-/// resource goes from loading to errored, so a key that holds one does not
-/// pin down what `is_loading` / `is_error` would answer. A `memo(key)` with
-/// such a key is computed and not cached (docs/features/memo.md).
-pub fn holds_pending(val: &Value, heap: &Heap) -> bool {
-    match *val {
-        Value::Pending(_) => true,
-        Value::List(id) => heap.get_list(id).iter().any(|e| holds_pending(e, heap)),
-        Value::Map(id) => heap.get_map(id).values().any(|e| holds_pending(e, heap)),
-        Value::Dict(id) => heap.get_dict(id).all_values().any(|e| holds_pending(&e, heap)),
-        Value::EnumVariant { data, .. } => holds_pending(&Value::List(data), heap),
-        Value::Element(id) => {
-            holds_pending(&Value::Map(heap.get_element_props(id)), heap)
-                || holds_pending(&Value::List(heap.get_element_children(id)), heap)
-        }
-        _ => false,
-    }
 }
 
 /// A number, a string or a bool, as [`hash_value`] hashes the Petal value
@@ -941,7 +644,7 @@ fn hash_into(val: &Value, heap: &Heap, h: &mut impl std::hash::Hasher) {
             hash_into(&Value::Map(heap.get_element_props(*id)), heap, h);
             hash_into(&Value::List(heap.get_element_children(*id)), heap, h);
         }
-        // Identity-compared values (functions, symbols, cells, pendings): the
+        // Identity-compared values (functions, symbols, cells, handles): the
         // debug form is the id, which is exactly what equality compares.
         other => {
             6u8.hash(h);
@@ -960,7 +663,7 @@ fn hash_into(val: &Value, heap: &Heap, h: &mut impl std::hash::Hasher) {
 /// - lists, enum variants and elements compare element-wise; records compare
 ///   by class and by key set and values, ignoring key order; maps compare by
 ///   key set and values, ignoring insertion order;
-/// - functions, symbols, cells, handles and pendings compare by identity.
+/// - functions, symbols, cells and handles compare by identity.
 pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
     if let (Some(x), Some(y)) = (as_num(a, heap), as_num(b, heap)) {
         return numeric::num_eq(x, y);
@@ -1027,10 +730,6 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
         (Value::Vec2(a), Value::Vec2(b)) => heap.get_vec2(*a) == heap.get_vec2(*b),
         (Value::Vec3(a), Value::Vec3(b)) => a == b || heap.get_vec3(*a) == heap.get_vec3(*b),
         (Value::Handle(a), Value::Handle(b)) => a == b,
-        // Two Pendings are equal iff they reference the same resource entry.
-        // (Ordinary `==` on Pending is strict — absorbs — in later chunks; this
-        // structural equality is for tooling/tests.)
-        (Value::Pending(a), Value::Pending(b)) => a == b,
         (Value::Element(a), Value::Element(b)) => {
             let a_tag = heap.get_string(heap.get_element_tag(*a));
             let b_tag = heap.get_string(heap.get_element_tag(*b));

@@ -1312,10 +1312,7 @@ pub fn reset_canvas_ids(env: &mut Env) {
 // ── Script-side: the standard draw natives ───────────────────────────────
 
 /// The row of a draw native: it pushes one command into the `draw_commands`
-/// buffer and nothing else. The `Pending` policy stays `Strict` (a `Pending`
-/// argument is absorbed as the result), which is what every draw native has
-/// always done; a host that wants the no-op behavior sets
-/// `NativeClass::Effectful` on the ids it cares about.
+/// buffer and nothing else.
 pub const DRAW: NativeEffects = NativeEffects::PURE.with_emits();
 
 /// The row of a text measurer: a pure function of its arguments and the

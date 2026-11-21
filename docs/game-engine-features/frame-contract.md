@@ -54,8 +54,8 @@ this frame's: re-present them. The C bridge always runs.
 thread, and must answer at once. A native may not call back into the same VM
 (the C bridge returns `PB_ERR_REENTRANT`), and an ordinary native cannot call
 a Petal closure. A value that will take time to produce is a
-[pending value](../features/pending-values.md), or data the engine binds on a
-later frame.
+pending answer from the [`query`](../../core-stdlib/query/README.md) package,
+or data the engine binds on a later frame.
 
 **Output is drained after the run.** A command pushed into an output buffer
 is the engine's to carry out once the run has finished. The decoded views the

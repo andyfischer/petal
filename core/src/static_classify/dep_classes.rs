@@ -12,7 +12,7 @@
 //!
 //! A [`Deps`] is a bit set. The low bits are the native rows' input classes
 //! ([`InputClasses`]: `POINTER`, `KEYBOARD`, `CLOCK`, `VIEWPORT`,
-//! `HOST_DATA`, `RESOURCES`, `RNG`, `BINDINGS`, `PHYSICS`, `NET`, `CAMERA`); above them
+//! `HOST_DATA`, `RNG`, `BINDINGS`, `PHYSICS`, `NET`, `CAMERA`); above them
 //! are the program's own sources of change and the kinds of output:
 //!
 //! | Bit | Set by |
@@ -202,7 +202,6 @@ pub fn native_deps(row: NativeEffects) -> Deps {
     // revision cannot be checked at validation: the scope is given up.
     let validated = InputClasses(
         InputClasses::HOST_DATA.0
-            | InputClasses::RESOURCES.0
             | InputClasses::RNG.0
             | InputClasses::REVISIONED.0,
     );

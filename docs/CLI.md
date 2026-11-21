@@ -75,7 +75,6 @@ Every command that compiles a program accepts these:
 | `PETAL_POLICY` | The run policy, as `run --policy <name>` does, for every command and every embedder. The flag wins. A value that does not parse is reported on stderr and ignored |
 | `PETAL_OPT` | `off`, `none` or `0` is `PETAL_POLICY=baseline` (what `run --no-opt` does). Read only when `PETAL_POLICY` is not set |
 | `PETAL_DEBUG` | Set to anything: per-term execution events on stderr, as `run --trace` |
-| `PETAL_TRACE_PENDING` | `1` is `run --trace-pending` |
 | `PETAL_STATIC_AUDIT` | `watch` (or `1`) starts every `Env` of the process under the [static audit](#checking-the-answer---static-audit) and prints each finding on stderr |
 | `PETAL_STATIC_CHECK` | `1` makes every `Env` check the static values it keeps for function bodies instead of trusting them: each is rebuilt and compared, and a mismatch is printed on stderr as a `static check` line. See [dev/performance.md](dev/performance.md#static-values) |
 | `PETAL_OPT_STATS` | Set to anything: when a program is lowered, print what the copy-propagation pass changed and the static-value cache's layout on stderr |
@@ -114,7 +113,6 @@ the whole list.
 | `show-graph` | Dataflow graph as Graphviz DOT |
 | `explain` | Run, then show the value chain that produced a term |
 | `graph` | Dataflow walk back or forward from one or more terms |
-| `pending-report` | Run, then report every live pending resource |
 | `propose-edit` | Propose source edits that change an emitted value |
 
 Every command except `lsp`, `fmt`, `migrate-old-code`, `fix-imports`, `apply-change`, `show-graph` and the
@@ -195,9 +193,9 @@ Options:
   --policy replay f.ptl` against `--policy replay-static` is the static-value
   cache on against off, and against `--policy replay-fnstatic` it is the
   cache with and without the values it keeps inside function bodies. A static value the cache could not keep (one that
-  holds a function, a `var` cell, a host handle or a pending result) is
+  holds a function, a `var` cell or a host handle) is
   rebuilt on every run, and `petal run` says which on stderr, once:
-  `warning: const ICONS (app.ptl:12) holds a pending result, which cannot be
+  `warning: const ICONS (app.ptl:12) holds a host handle, which cannot be
   kept between runs, so it is rebuilt on every run`.
 - `--state-storage <file>` — keep `state` between runs in `<file>`. See
   [State between runs](#state-between-runs).
@@ -257,9 +255,9 @@ for are objects tagged `"$petal"`: enum variants, class instances, records
 whose fields are not in sorted order, `vec2`/`vec3`, f64 arrays, and
 non-finite floats.
 
-- **A value that cannot be stored** — a function, a host handle, a pending
-  value, a UI element, or a list or record holding one — is left out with a
-  warning naming the `state`. That declaration starts from its initial value on
+- **A value that cannot be stored** — a function, a host handle (a `query`
+  pending answer is one), a UI element, or a list or record holding one — is
+  left out with a warning naming the `state`. That declaration starts from its initial value on
   the next run.
 - **A file that cannot be used** stops the command before the script runs
   (exit 1, phase `state-storage` under `--json`) and is left as it was: it is
@@ -329,11 +327,6 @@ Tracing and inspection options:
   text form prints them as `native args: [...]`. This is the observing half of
   [`propose-edit`](#propose-edit--propose-source-edits-that-change-an-emitted-value);
   see [features/direct-manipulation.md](features/direct-manipulation.md).
-- `--trace-pending` — record pending absorptions and print the frame pending
-  report to stderr after the run. `PETAL_TRACE_PENDING=1` does the same. For
-  the report as the main output, see
-  [`pending-report`](#pending-report--report-live-pending-resources); for what
-  is being absorbed, [features/pending-values.md](features/pending-values.md).
 - `--profile` — count instructions, builtin calls and collections during the
   run, from its first instruction, and print the report to stderr: the opcode
   and builtin histograms, instructions per function, native time by native
@@ -2097,23 +2090,6 @@ last term bound to it.
 With `--json`, returns
 `{name, term_id, chain: [{term_id, op, name, value, line, column, boundary}, ...], complete, truncated}`.
 
-### `pending-report` — Report live pending resources
-
-```
-petal pending-report [--json] <file.ptl>
-petal pending-report [--json] -e '<code>'
-```
-
-Runs the program, then reports every resource value that is still pending or
-loading at the end: its state, age in frames, absorption count, and origin
-call site. It answers "why is this region blank?"; see
-[features/pending-values.md](features/pending-values.md#why-is-this-region-blank)
-for reading the answer.
-
-Text output is one line per live resource, or `No pending resources.` when
-there are none. With `--json`, it emits the raw report array:
-`[{id, key, state, age_frames, origin, absorbed_count}, ...]`.
-
 ### `propose-edit` — Propose source edits that change an emitted value
 
 ```
@@ -2742,7 +2718,7 @@ Consumers should treat the single key of the `kind` object as the node type
 
 **TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type (omitted when unrecognized)}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (omitted for an unrecognized name, e.g. `{"name": "banana"}`). An absent annotation omits the `ty`/`ret` field entirely. Annotations appear on `Let`, `State`, `Memo`, `Param`, `ClassField`, and `FnDecl.ret`; a class name resolves to a static type too, but only against the compilation's class table, so a `TypeAnn` naming one carries no `resolved` in the AST dump; they are type-checked (warnings only — see [`lint`](#lint--check-programs-without-running-them)) and dropped before codegen, so they never appear in the IR.
 
-**Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"Num"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"Vec3"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Handle"`, `"Pending"`. Appears as the `resolved` field of a **TypeAnn**.
+**Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"Num"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"Vec3"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Handle"`. Appears as the `resolved` field of a **TypeAnn**.
 
 **RecordField**: `{"Named": [string, Expr]}` or `{"Spread": Expr}`.
 
@@ -2933,7 +2909,7 @@ as the CLI registers it:
 ```
 
 `reads` lists input classes (`pointer`, `keyboard`, `clock`, `viewport`,
-`host_data`, `resources`, `rng`, `bindings`, `physics`, `net`, `camera`);
+`host_data`, `rng`, `bindings`, `physics`, `net`, `camera`);
 `direct` is false for a native reached only through a module function;
 `registered: false` (and no flags) marks a called native no host here
 provides. This is a debugging **view**, not an interchange format — it is
@@ -3010,7 +2986,7 @@ legacy documents that carry it (and no block `terms` arrays) still load.
 | Not | `"Not"` | [operand] | none | Logical not |
 | And | `"And"` | [left] | [rhs_block] | Short-circuit; rhs_block evaluates right operand |
 | Or | `"Or"` | [left] | [rhs_block] | Short-circuit; rhs_block evaluates right operand |
-| Coalesce | `"Coalesce"` | [left] | [rhs_block] | `??` — yields the RHS when the left is Nil/Pending |
+| Coalesce | `"Coalesce"` | [left] | [rhs_block] | `??` — yields the RHS when the left is Nil |
 | Concat | `"Concat"` | [left, right] | none | String concatenation (`++`) |
 | Copy | `"Copy"` | [source] or [] | none | Variable reference. No inputs + a `name` = binding phantom (builtin/param/capture/self) — never listed in a block's `terms` array |
 | Phi | `"Phi"` | [init] | none | Pure-dataflow join for names rebound inside child blocks. Sits in the parent block before the control-flow term; child frames overwrite via `Block.phi_outs`. |
@@ -3312,7 +3288,7 @@ called static is being evaluated (however deep the calls it makes) it watches
 everything a static value may not depend on:
 
 - a host binding read (`mouse_x`, `time`, the screen size, a font), a
-  host-data read, a resource read, output, any effect;
+  host-data read, output, any effect;
 - the random stream;
 - `state` being declared, read or written;
 - a call of a native that is not registered as a constant function.

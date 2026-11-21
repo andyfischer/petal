@@ -226,7 +226,7 @@ StatePart::key_value(&env, v)?          // any Petal value; errors if it can't b
   Rust. A test pins `StatePart::key("x")` and `StatePart::key(7)` to the
   parts Petal's `for … key "x"` / `key 7` build.
 - `key_value` is for a value the host got from Petal (a record's id). It
-  goes through `dict::key_hash`, so a function, a pending value or NaN is
+  goes through `dict::key_hash`, so a function, a cell or NaN is
   refused as a keyed loop refuses it.
 - Both record the key's label in `Stack::loop_key_labels`, so state dumps
   show `"row:42"` the same way whichever constructor made it.

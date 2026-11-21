@@ -41,8 +41,8 @@ capture.
 ## What the runtime provides
 
 An execution is a stack (the `state` slots and frames of one running program)
-bound to a context (the heap, closures, host bindings, counters, random
-number state and pending resources). These `Env` methods copy, restore and
+bound to a context (the heap, closures, host bindings, counters and random
+number state). These `Env` methods copy, restore and
 compare executions:
 
 | Method | What it does |
@@ -302,8 +302,7 @@ A fork holds everything inside the execution:
 - the heap: lists, records, strings, class instances, closures;
 - host bindings (input, `time`, `dt`, screen size, anything set with
   `set_binding`);
-- counters, the random number state and the noise seed;
-- the table of pending resources, each in the status it had.
+- counters, the random number state and the noise seed.
 
 It does not hold anything outside it:
 

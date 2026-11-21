@@ -384,7 +384,7 @@ impl<'a> Vm<'a> {
     ) -> Result<Value, String> {
         let (elements, func) = self.predicate_args("any", args)?;
         for elem in elements {
-            if self.predicate_holds(func, elem, site)? == Some(true) {
+            if self.predicate_holds(func, elem, site)? {
                 return Ok(Value::Bool(true));
             }
         }
@@ -401,7 +401,7 @@ impl<'a> Vm<'a> {
     ) -> Result<Value, String> {
         let (elements, func) = self.predicate_args("all", args)?;
         for elem in elements {
-            if self.predicate_holds(func, elem, site)? == Some(false) {
+            if !self.predicate_holds(func, elem, site)? {
                 return Ok(Value::Bool(false));
             }
         }
@@ -417,46 +417,26 @@ impl<'a> Vm<'a> {
     ) -> Result<Value, String> {
         let (elements, func) = self.predicate_args("find", args)?;
         for elem in elements {
-            if self.predicate_holds(func, elem, site)? == Some(true) {
+            if self.predicate_holds(func, elem, site)? {
                 return Ok(elem);
             }
         }
         Ok(Value::Nil)
     }
 
-    /// Whether `pred(elem)` holds, read as `if` reads a condition: `None`
-    /// for a `Pending` result, which takes neither branch, so the element
-    /// decides nothing and the walk moves on (as the Petal versions'
-    /// `if pred(x) then return … end` did).
-    fn predicate_holds(
-        &mut self,
-        pred: Value,
-        elem: Value,
-        site: u64,
-    ) -> Result<Option<bool>, String> {
-        match self.call_closure_sync(pred, &[elem], site)? {
-            Value::Pending(_) => Ok(None),
-            held => Ok(Some(self.heap.truthy(held))),
-        }
+    /// Whether `pred(elem)` holds, read as `if` reads a condition.
+    fn predicate_holds(&mut self, pred: Value, elem: Value, site: u64) -> Result<bool, String> {
+        let held = self.call_closure_sync(pred, &[elem], site)?;
+        Ok(self.heap.truthy(held))
     }
 
     /// The elements and predicate of an `any`/`all`/`find` call. A map is
     /// walked by its keys in insertion order, as `for k in m` walks it.
-    ///
-    /// The three are registered `AllowPending`, so a `Pending` list or
-    /// predicate reaches here: either walks no elements (a `for` over a
-    /// pending list runs no iterations, and a pending predicate's every
-    /// result is pending), and the call returns its empty-list answer rather
-    /// than absorbing, as the Petal versions did.
     fn predicate_args(&self, name: &str, args: &[Value]) -> Result<(Vec<Value>, Value), String> {
         let [list, func] = args else {
             return Err(format!("{name}() expects 2 arguments (list, predicate)"));
         };
-        if matches!(func, Value::Pending(_)) {
-            return Ok((Vec::new(), *func));
-        }
         let elements = match *list {
-            Value::Pending(_) => Vec::new(),
             Value::List(list_id) => self.heap.get_list(list_id).to_vec(),
             Value::Dict(dict_id) => self.heap.get_dict(dict_id).keys().collect(),
             _ => return Err(format!("{name}() expects a list as first argument")),
@@ -628,12 +608,6 @@ impl<'a> Vm<'a> {
             // rank as "equal to everything", which returned the list unsorted
             // without a word — `sort_by(rows, fn(r) -> [r.a, r.b])` being the
             // usual way to get there.
-            // A key that has not arrived yet has no order either, but that is
-            // not a mistake: the whole result is pending on it, the way
-            // `sort(list)` is pending on a pending element.
-            if matches!(key, Value::Pending(_)) {
-                return Ok(key);
-            }
             let key = match crate::builtins::SortKey::of(self.heap, key) {
                 crate::builtins::SortKey::Other => {
                     return Err(format!(

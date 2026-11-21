@@ -446,6 +446,27 @@ pub fn builtin_host_names() -> &'static std::collections::HashSet<String> {
     NAMES.get_or_init(|| builtin_decls().host_names().into_iter().collect())
 }
 
+/// The host names the bundled interface packages
+/// ([`crate::bundled::INTERFACE_PACKAGES`], `query`) declare: natives a host
+/// links a library crate to provide, which its own interface package does
+/// not declare.
+pub fn bundled_interface_host_names() -> &'static std::collections::HashSet<String> {
+    static NAMES: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
+    NAMES.get_or_init(|| {
+        let mut names = std::collections::HashSet::new();
+        for name in crate::bundled::INTERFACE_PACKAGES {
+            let package = crate::bundled::package(name)
+                .unwrap_or_else(|| panic!("the `{name}` package is bundled (core/build.rs)"));
+            for (path, source) in package.sources() {
+                let parsed = NativeDecls::parse(source)
+                    .unwrap_or_else(|e| panic!("bundled package {name}, {path}: {e}"));
+                names.extend(parsed.host_names());
+            }
+        }
+        names
+    })
+}
+
 /// One host native a compiled program needs registered before it can run:
 /// a native some module of the program declares with `native fn` *and* the
 /// program's code refers to — a call or a read anywhere in it, a function

@@ -54,6 +54,8 @@ pub enum Kind {
     Enum = 8,
     Symbol = 9,
     Handle = 10,
+    /// Reserved: was a pending value. Never produced.
+    #[allow(dead_code)]
     Pending = 11,
     Other = 12,
     Vec3 = 13,
@@ -475,7 +477,6 @@ impl ViewArena {
                 node.number = h.class.0 as f64;
                 text = names.handle_class.and_then(|f| f(h.class.0));
             }
-            Value::Pending(_) => node = PbValue::scalar(Kind::Pending),
             ref other => {
                 node = PbValue::scalar(Kind::Other);
                 text = Some(other.type_name().to_string());

@@ -360,14 +360,14 @@ in [hot-reload.md](hot-reload.md#a-slow-table-under-a-drag).
 
 ## Values that cannot be kept
 
-A value that holds a function, a `var` cell, a host handle or a pending
-result is never kept, however it was built. The code that builds it runs on
-every run, which is correct and slow, and the host is told once per load (and
-once more after a reload):
+A value that holds a function, a `var` cell or a host handle (a `query`
+pending answer is one) is never kept, however it was built. The code that
+builds it runs on every run, which is correct and slow, and the host is told
+once per load (and once more after a reload):
 
 ```text
-warning: TABLE (app.ptl:12) holds a pending result, so it is rebuilt on every run
-warning: const TABLE (app.ptl:12) holds a pending result, which cannot be kept between runs, so it is rebuilt on every run
+warning: TABLE (app.ptl:12) holds a host handle, so it is rebuilt on every run
+warning: const TABLE (app.ptl:12) holds a host handle, which cannot be kept between runs, so it is rebuilt on every run
 warning: a constant in lookup (app.ptl:30) holds a host handle, so it is rebuilt on every call
 ```
 
@@ -375,7 +375,7 @@ The second form is for a `const(…)`, whose author asked for a constant. The
 third is for a value inside a function body.
 
 In practice this means a host native that was declared constant and returns
-a handle or a pending result. A script cannot get there by itself: a value
+a handle. A script cannot get there by itself: a value
 that holds a function or reads a `var` is already dynamic, and a `const(…)` of
 one is a compile error.
 

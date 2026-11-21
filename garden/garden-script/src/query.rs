@@ -1,24 +1,22 @@
-//! `query(kind, arg)` — the async, React-Query-style host→script data channel.
+//! Garden's answer to `query(kind, arg)`: the [`QueryHost`] behind the
+//! `query` package (core-stdlib/query) in a panel.
 //!
 //! Where [`host_data`](petal_ui::host_data) answers *synchronously* inside the
 //! frame (so a provider must already hold the value, or return an ambiguous
-//! `nil`), `query` is built on Petal's **pending values**: a fetch that has not
-//! landed yet surfaces in the script as a real [`Value::Pending`], which the
-//! script inspects with the language's meta functions (`is_loading`, `is_error`,
-//! `error_of`, `??`). No `nil`-ambiguity, no manual re-poll bookkeeping — the
-//! panel's per-frame re-run *is* the retry loop, exactly as
-//! Petal's `pending-values` design notes intend.
+//! `nil`), `query` answers from a cache and says when it doesn't have the
+//! value yet: the script gets a *pending answer* it reads with `is_ready`,
+//! `is_loading`, `is_error` and `error_of`. The panel's per-frame re-run is
+//! the retry loop. The natives, the pending answers and their readers are the
+//! `query` package's (`petal_stdlib_query`); a panel script reaches them
+//! through `import garden`, which re-exports `query`.
 //!
-//! This module is the language-side glue: the `query`/`invalidate` natives and
-//! the [`DynQueryProvider`] a host implements (core's
-//! [`ResourceProvider`], keyed by [`QueryKey`]). The **cache/fetch policy** it
-//! used to carry has graduated into the upstream `petal-query` crate
-//! (`../core-sdk/petal-query`) — the same path `host_data` took into `petal-ui`.
-//! Garden's pipe-backed provider (`garden-app/src/script_client.rs`) now wraps a
-//! `petal_query::Cache`, which honors the `petal_query::CachePolicy` each answer
-//! carries (fresh / stale-while-revalidate / expired). What remains here is only
-//! the binding to Petal's pending values, which depends on the resource table and
-//! so stays in-tree.
+//! This module is the binding to Garden's data: the [`DynQueryProvider`] a host
+//! implements (a [`ResourceProvider`] keyed by [`QueryKey`]), the per-thread
+//! channel that holds the current run's provider, and the [`QueryHost`] that
+//! answers from it. The **cache/fetch policy** lives in the `petal-query`
+//! crate (`../core-sdk/petal-query`): Garden's pipe-backed provider
+//! (`garden-app/src/script_client.rs`) wraps a `petal_query::Cache`, which
+//! honors the `petal_query::CachePolicy` each answer carries.
 //!
 //! ## Contract
 //!
@@ -26,37 +24,26 @@
 //! for the duration of each frame) answers `query(kind, arg)` with a
 //! [`QueryState`]:
 //!
-//! - [`Ready`](QueryState::Ready) — the resolved [`HostData`] value tree; the
-//!   native returns it as an ordinary Petal value.
-//! - [`Loading`](QueryState::Loading) — still in flight; the native returns a
-//!   `Value::Pending` (loading) so the script can render a spinner.
-//! - [`Errored`](QueryState::Errored) — the fetch failed; the native returns a
-//!   `Value::Pending` (errored) carrying the message, readable via `error_of`.
+//! - [`Ready`](QueryState::Ready): the resolved [`HostData`] value tree; the
+//!   script gets it as an ordinary Petal value.
+//! - [`Loading`](QueryState::Loading): still in flight; the script gets a
+//!   loading pending answer and can draw a spinner.
+//! - [`Errored`](QueryState::Errored): the fetch failed; the script gets a
+//!   failed pending answer whose `error_of` is the message.
 //!
-//! The provider is called synchronously each frame and **must not block** — it
+//! The provider is called synchronously each frame and **must not block**: it
 //! polls its own background work (threads, channels) and reports the current
 //! state. `invalidate(kind, arg)` drops a cached entry so the next `query` for
-//! that key refetches — the primitive a "refresh" button is built on.
-//!
-//! ## Resource-table lifecycle
-//!
-//! A `Ready` value is returned *directly* from the provider, never routed back
-//! through the resource table, so a resource's table entry stays `Loading` for
-//! the pane's life. That is deliberate: `get_or_create_loading` dedups by key,
-//! so the next `Loading` frame (e.g. after `invalidate`) reuses that same
-//! still-`Loading` entry and the script sees a fresh spinner with no per-key
-//! reset needed. (A key that has *errored* keeps its errored entry across an
-//! invalidate until it next resolves — a minor cosmetic edge on the error path,
-//! noted rather than worked around while this lives outside `petal-query`.)
+//! that key refetches: the primitive a "refresh" button is built on.
 
 use std::cell::RefCell;
 
 use petal::record::RecordMap;
-use petal::resource_table::hash_key;
-use petal::native_fn::{InputClasses, NativeEffects, PetalCxt};
+use petal::native_fn::PetalCxt;
 use petal::value::Value;
+use petal_stdlib_query::QueryHost;
 
-pub use petal::resource_provider::{ResourceAnswer, ResourceProvider};
+pub use petal_stdlib_query::{ResourceAnswer, ResourceProvider};
 pub use petal_ui::host_data::HostData;
 
 /// What a query is named by: the `(kind, arg)` pair of `query(kind, arg)`.
@@ -105,63 +92,61 @@ thread_local! {
 pub fn swap_query_provider(
     provider: Option<Box<DynQueryProvider>>,
 ) -> Option<Box<DynQueryProvider>> {
+    install_host();
     QUERY_PROVIDER.with(|p| std::mem::replace(&mut *p.borrow_mut(), provider))
 }
 
-/// Register the `query(kind, arg)` and `invalidate(kind, arg)` natives. Called
-/// from [`register_panel_natives`](crate::panel) alongside the petal-ui set.
+/// Register the `query` package on a panel's `env` and make Garden's channel
+/// this thread's [`QueryHost`]. Called from
+/// [`register_panel_natives`](crate::panel) alongside the petal-ui set.
 pub fn register_query(env: &mut petal::env::Env) {
-    // `query` answers from the host's cache, a host-data read. Its loading
-    // path also creates a resource — an effect, but one on a call that
-    // answers `Pending`, which the memo treats as effectful whatever the row
-    // says; so the row leaves it out and a scope that queries ready data
-    // stays memoizable (see `petal::effect_audit`).
-    env.register_native(
-        "query",
-        native_query,
-        NativeEffects::reads(InputClasses::HOST_DATA),
-    );
-    env.register_native("invalidate", native_invalidate, NativeEffects::EFFECT);
+    petal_stdlib_query::register(env);
+    install_host();
 }
 
-/// `query(kind, arg)` — ask the host's [`DynQueryProvider`] for a resource. Returns
-/// the resolved value when [`Ready`](QueryState::Ready), or a `Value::Pending`
-/// (loading or errored) otherwise, so the script drives its own loading/error UI
-/// through the pending meta functions. Without a provider it answers a loading
-/// Pending (graceful degradation — never a crash).
-fn native_query(cxt: &mut PetalCxt) -> Result<u32, String> {
-    let key = QueryKey::new(cxt.get_string(1)?, cxt.get_string(2)?);
-    // The answer lives in the host's cache: tell the frame gate, so the frame
-    // re-runs when the pane reports the cache moved (and not otherwise).
-    cxt.note_host_read();
-    let state = QUERY_PROVIDER
-        .with(|p| p.borrow_mut().as_mut().map(|provider| provider.answer(&key)))
-        .unwrap_or(QueryState::Loading);
-    // A loading or errored answer is stamped with the requesting call site +
-    // current frame, so the pending-observability tooling can render its
-    // provenance and age.
-    cxt.push_answer(hash_key(&key), state, |cxt, data| data_to_value(cxt, &data));
-    Ok(1)
+/// Make [`GardenQueryHost`] this thread's [`QueryHost`]. Idempotent; done on
+/// registration and again whenever a run swaps its provider in, so the run's
+/// thread has it whichever thread registered the panel.
+fn install_host() {
+    petal_stdlib_query::swap_host(Some(Box::new(GardenQueryHost)));
 }
 
-/// `invalidate(kind, arg)` — tell the host provider to drop `(kind, arg)`'s
-/// cached entry so the next frame's `query` refetches. Returns nil. Without a
-/// provider it is a no-op.
-fn native_invalidate(cxt: &mut PetalCxt) -> Result<u32, String> {
-    let key = QueryKey::new(cxt.get_string(1)?, cxt.get_string(2)?);
-    // Dropping a cache entry is an effect no replay reproduces. Without this
-    // the call leaves the activity counters untouched, so a scope containing
-    // it memoizes as a pure function of its arguments and is replayed — and a
-    // replayed `invalidate` never runs, which means the pane that asked for
-    // fresh data keeps being served the stale entry, forever.
-    cxt.note_effect();
-    QUERY_PROVIDER.with(|p| {
-        if let Some(provider) = p.borrow_mut().as_mut() {
-            provider.invalidate(&key);
-        }
-    });
-    cxt.push_nil();
-    Ok(1)
+/// The [`QueryHost`] of a Garden panel: answers from the provider in this
+/// thread's channel ([`swap_query_provider`]), and answers loading when there
+/// is none, so a script degrades to a permanent spinner, never a crash.
+struct GardenQueryHost;
+
+impl QueryHost for GardenQueryHost {
+    fn answer(
+        &mut self,
+        cx: &mut PetalCxt,
+        kind: &str,
+        arg: Value,
+    ) -> Result<ResourceAnswer<Value>, String> {
+        let key = QueryKey::new(kind, arg_string(cx, arg)?);
+        let state = QUERY_PROVIDER
+            .with(|p| p.borrow_mut().as_mut().map(|provider| provider.answer(&key)))
+            .unwrap_or(QueryState::Loading);
+        Ok(state.map(|data| data_to_value(cx, &data)))
+    }
+
+    fn invalidate(&mut self, cx: &mut PetalCxt, kind: &str, arg: Value) -> Result<(), String> {
+        let key = QueryKey::new(kind, arg_string(cx, arg)?);
+        QUERY_PROVIDER.with(|p| {
+            if let Some(provider) = p.borrow_mut().as_mut() {
+                provider.invalidate(&key);
+            }
+        });
+        Ok(())
+    }
+}
+
+/// A query's argument as Garden keys it: a string.
+fn arg_string(cx: &PetalCxt, arg: Value) -> Result<String, String> {
+    match arg {
+        Value::String(id) => Ok(cx.heap().get_string(id).to_string()),
+        other => Err(format!("Expected string at arg 2, got {}", other.type_name())),
+    }
 }
 
 /// Convert a [`HostData`] tree into a heap-allocated Petal [`Value`] — the same

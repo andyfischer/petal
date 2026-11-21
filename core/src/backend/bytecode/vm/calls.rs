@@ -231,9 +231,6 @@ impl<'a> Vm<'a> {
             Value::EnumVariant { .. } if args.is_empty() => {
                 self.set_call_result(fi, dst, callable, call_site)
             }
-            // Calling a Pending absorbs: nothing runs and the result is the
-            // Pending itself, as for a strict native given a Pending argument.
-            Value::Pending(_) => self.set_call_result(fi, dst, callable, call_site),
             _ => return Err(format!("Cannot call {}", callable.type_name())),
         }
         Ok(())
@@ -508,12 +505,6 @@ impl<'a> Vm<'a> {
                     None => e,
                 }),
             }
-        } else if let Value::Pending(_) = recv {
-            // A method no builtin answers, called on a Pending receiver (a
-            // record still loading whose field would hold the function):
-            // absorb, as the field read `u.handler` and the builtin methods do.
-            self.set_call_result(fi, dst, recv, call_site);
-            Ok(())
         } else {
             // Name the *class* when the receiver has one: "no method 'nope' on
             // type record" is useless next to "on class Rect".
@@ -1001,9 +992,7 @@ impl<'a> Vm<'a> {
     ///   filled by position, or a required one left out is that binder's
     ///   error.
     ///
-    /// Anything else is an error. A `Pending` spread is absorbed: the call
-    /// does not happen and its value is that pending, as for a native handed
-    /// one.
+    /// Anything else is an error.
     fn do_spread_call(
         &mut self,
         fi: usize,
@@ -1071,17 +1060,8 @@ impl<'a> Vm<'a> {
                         self.set_call_result(fi, dst, callable, call_site);
                         Ok(())
                     }
-                    // A Pending callee absorbs, as in `do_call`.
-                    Value::Pending(_) => {
-                        self.set_call_result(fi, dst, callable, call_site);
-                        Ok(())
-                    }
                     _ => Err(format!("Cannot call {}", callable.type_name())),
                 }
-            }
-            Value::Pending(_) => {
-                self.set_call_result(fi, dst, spread, call_site);
-                Ok(())
             }
             other => Err(not_spreadable(other)),
         }
@@ -1097,9 +1077,8 @@ fn not_spreadable(v: Value) -> String {
     )
 }
 
-/// The positional argument list of a spread call whose spread is a list, an
-/// empty record or a `Pending` (which stays an argument, for the callee's own
-/// pending policy): `args` is the written arguments followed by the value
+/// The positional argument list of a spread call whose spread is a list or an
+/// empty record: `args` is the written arguments followed by the value
 /// spread. `None` when the spread is a record with fields, whose names only
 /// the callee can place.
 fn spread_positional(
@@ -1112,7 +1091,6 @@ fn spread_positional(
         Value::List(id) => full.extend_from_slice(heap.get_list(id)),
         Value::Map(id) if heap.get_map(id).is_empty() => {}
         Value::Map(_) => return None,
-        Value::Pending(_) => full.push(spread),
         other => return Some(Err(not_spreadable(other))),
     }
     Some(Ok(full))

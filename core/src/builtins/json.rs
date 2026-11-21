@@ -12,13 +12,10 @@
 //! round trip flattens a class value to its fields — the same thing a `state`
 //! dump shows. A value with no JSON form (a function, a symbol) stringifies as
 //! its display text rather than failing, since a stringified debug dump is
-//! more useful than an aborted frame. A value that is not fully loaded has no
-//! text yet: `json_stringify` of a record with a pending field is that pending
-//! value, the same as `json_stringify` of a pending value, never a string with
-//! a `"<pending N>"` placeholder in it.
+//! more useful than an aborted frame.
 
 use crate::native_fn::PetalCxt;
-use crate::value::{Value, json_to_value, value_to_json};
+use crate::value::json_to_value;
 
 use super::require_args;
 
@@ -39,14 +36,7 @@ pub(super) fn native_json_stringify(state: &mut PetalCxt) -> Result<u32, String>
         }
     };
     let value = state.get_value(1)?;
-    let json = match value_to_json(&value, state.heap()) {
-        Ok(json) => json,
-        // Not loaded yet: the result is the pending value it waits on.
-        Err(e) => {
-            state.push_value(Value::Pending(e.pending));
-            return Ok(1);
-        }
-    };
+    let json = crate::value::value_to_json_lossy(&value, state.heap());
     let text = if indent > 0 {
         let pad = " ".repeat(indent.clamp(0, 16) as usize);
         let mut buf = Vec::new();

@@ -40,7 +40,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use petal::env::Env;
-use petal::native_fn::{InputClasses, NativeClass, NativeEffects, NativeResult, PetalCxt};
+use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
 
 /// Largest value a script may store, in bytes. Generous for the settings and
@@ -222,9 +222,7 @@ pub(crate) fn swap_store(store: Option<PanelStore>) -> Option<PanelStore> {
 /// Register the two store natives.
 pub(crate) fn register_store(env: &mut Env) {
     // A read answers from the host's store, which the binding table does not
-    // cover; a write is an effect, and with a `Pending` argument the call
-    // must be a no-op rather than being absorbed as its result (a half-loaded
-    // value must never be what gets persisted).
+    // cover; a write is an effect.
     env.register_native(
         "panel_store_get",
         native_store_get,
@@ -233,7 +231,7 @@ pub(crate) fn register_store(env: &mut Env) {
     env.register_native(
         "panel_store_set",
         native_store_set,
-        NativeEffects::EFFECT.with_pending(NativeClass::Effectful),
+        NativeEffects::EFFECT,
     );
 }
 

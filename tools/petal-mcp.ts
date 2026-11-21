@@ -297,19 +297,6 @@ server.registerTool("ProposeEdit", {
   return petalTool(built.args, input.code);
 });
 
-server.registerTool("PendingReport", {
-  title: "Pending Report",
-  description:
-    "Runs Petal code and returns the frame pending report as JSON: an array of " +
-    "every live pending/unresolved resource with its id, key, state " +
-    "(loading|errored|ready), age in frames, origin call site, and how many " +
-    "operations absorbed it this frame. Use it to debug why a region is blank — " +
-    "which resources stayed unresolved and where they came from.",
-  inputSchema: {
-    code: z.string().describe("The Petal source code to run"),
-  },
-}, ({ code }) => petalTool(["pending-report", "--json"], code));
-
 server.registerTool("DragExplain", {
   title: "Explain a ui/drag drag",
   description:

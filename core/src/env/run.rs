@@ -189,7 +189,6 @@ impl Env {
                 &ctx.heap,
                 &ctx.closures,
                 ctx.rng_state,
-                ctx.resources.revision(),
             );
         }
     }
@@ -197,8 +196,7 @@ impl Env {
     /// Whether running `stack_id` now could produce a different result from
     /// its last run — and if so, why. `None` means every binding the last run
     /// read still holds the value it read, the run consumed no randomness,
-    /// consulted no host data the host has since reported changed, left every
-    /// `state` slot as it found it, and no pending resource has moved: running
+    /// consulted no host data the host has since reported changed, and left every `state` slot as it found it: running
     /// again would reproduce the last run's output exactly, so a host may skip
     /// the frame and keep what it drew.
     ///
@@ -219,7 +217,7 @@ impl Env {
         }
         stack
             .run_deps
-            .run_needed(&ctx.bindings, &ctx.binding_revisions, &ctx.heap, ctx.resources.revision())
+            .run_needed(&ctx.bindings, &ctx.binding_revisions, &ctx.heap)
     }
 
     /// [`run_needed_reason`](Self::run_needed_reason) as a plain yes/no.
@@ -904,8 +902,6 @@ pub(super) fn make_vm<'a>(
     spec: Option<&'a mut crate::backend::bytecode::vm::spec::SpecHooks>,
 ) -> Vm<'a> {
     // Read the Copy fields before splitting `ctx`'s fields into disjoint borrows.
-    let frame = ctx.frame();
-    let trace_pending = ctx.trace_pending;
     let trace_emit = ctx.trace_emit;
     // A speculative run that records some element sites' elements needs
     // them numbered as a traced run numbers them.
@@ -956,10 +952,6 @@ pub(super) fn make_vm<'a>(
         counters: &mut ctx.counters,
         rng_state: &mut ctx.rng_state,
         noise_seed: &mut ctx.noise_seed,
-        frame,
-        resources: &mut ctx.resources,
-        trace_pending,
-        absorption_log: &mut ctx.absorption_log,
         echo: ctx.echo,
         trace,
         observations,

@@ -1403,8 +1403,7 @@ impl Heap {
             | Value::Float(_)
             | Value::NativeFunction(_)
             | Value::Symbol(_)
-            | Value::Handle(_)
-            | Value::Pending(_) => true,
+            | Value::Handle(_) => true,
         }
     }
 
@@ -2531,8 +2530,7 @@ impl Heap {
                 | Value::Float(_)
                 | Value::NativeFunction(_)
                 | Value::Symbol(_)
-                | Value::Handle(_)
-                | Value::Pending(_) => {}
+                | Value::Handle(_) => {}
             }
             if error.is_some() {
                 break;
@@ -2670,8 +2668,7 @@ impl Heap {
     /// cache that is rebuilt on every reload needs.
     ///
     /// A value kept across runs must also hold nothing that changes or dies
-    /// with the run: a `var` cell, a function, a host handle or a pending
-    /// result. When `root` reaches one the call fails with its name and
+    /// with the run: a `var` cell, a function or a host handle. When `root` reaches one the call fails with its name and
     /// marks nothing.
     ///
     /// Must not be called while a collection is marking, for the reason
@@ -2697,7 +2694,6 @@ impl Heap {
                 | Value::Closure(_)
                 | Value::OverloadSet(_)
                 | Value::Handle(_)
-                | Value::Pending(_)
         ) {
             return Ok(0);
         }
@@ -2767,7 +2763,6 @@ impl Heap {
                 Value::Cell(_) => error = Some("a `var` cell"),
                 Value::Closure(_) | Value::OverloadSet(_) => error = Some("a function"),
                 Value::Handle(_) => error = Some("a host handle"),
-                Value::Pending(_) => error = Some("a pending result"),
                 Value::Nil
                 | Value::Bool(_)
                 | Value::Int(_)
@@ -2825,7 +2820,6 @@ impl Heap {
                 | Value::NativeFunction(_)
                 | Value::Symbol(_)
                 | Value::Handle(_)
-                | Value::Pending(_)
         ) {
             self.mark_referenced(val);
         }
@@ -2854,16 +2848,14 @@ impl Heap {
             // `gray_closures`) instead of marking them here.
             Value::Closure(id) => self.gray_closures.push(id),
             Value::OverloadSet(id) => self.gray_overload_sets.push(id),
-            // Non-heap values need no marking. `Pending` is an id into the resource
-            // table; its Ready/Errored payloads are rooted separately.
+            // Non-heap values need no marking.
             Value::Nil
             | Value::Bool(_)
             | Value::Int(_)
             | Value::Float(_)
             | Value::NativeFunction(_)
             | Value::Symbol(_)
-            | Value::Handle(_)
-            | Value::Pending(_) => {}
+            | Value::Handle(_) => {}
         }
     }
 
@@ -3768,7 +3760,7 @@ mod tests {
         assert_eq!(heap.list_append_in_place(reused, Value::Int(1)), reused);
     }
 
-    /// A value that holds a cell, a function, a handle or a pending result
+    /// A value that holds a cell, a function or a handle
     /// is not marked at all, not even the part that was walked first.
     #[test]
     fn marking_immutable_is_all_or_nothing() {
@@ -3776,7 +3768,7 @@ mod tests {
         let cell = heap.alloc_cell(Value::Int(1));
         for (bad, what) in [
             (Value::Cell(cell), "a `var` cell"),
-            (Value::Pending(crate::value::PendingId(1)), "a pending result"),
+            (Value::Handle(crate::handle::HandleVal { class: crate::handle::HandleClassId(0), slot: 1, serial: 0 }), "a host handle"),
         ] {
             let good = heap.alloc_list(vec![Value::Int(1)]);
             let holder = heap.alloc_list(vec![bad]);

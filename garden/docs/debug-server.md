@@ -222,7 +222,7 @@ host is built on. The counters are cumulative since the panel's host was
 created, so a hot reload starts them over. Select just them with
 `?select=panes.*.panel.frame_stats`. `last_run_reason` names why the most
 recent frame ran (`no_record`, `forced`, `binding_changed:<name>`,
-`host_data_changed`, `state_unsettled`, `rng_consumed`, `resources_changed`)
+`host_data_changed`, `state_unsettled`, `rng_consumed`)
 and is null when it was skipped — a panel that keeps running while nothing
 moves says which binding keeps changing.
 

@@ -82,9 +82,6 @@ pub struct RunOpts {
     /// `--policy <name>` (or `--no-opt`, which is `baseline`); `None` keeps
     /// the env's own, from `PETAL_POLICY`.
     pub policy: Option<crate::policy::RunPolicy>,
-    /// Turn on the pending absorption trace and print the frame pending
-    /// report to stderr after the run (also enabled by `PETAL_TRACE_PENDING`).
-    pub trace_pending: bool,
     /// Record the last value bound to every named term and dump the lot
     /// after the run — "what is everything right now", including after a
     /// runtime error.
@@ -249,11 +246,6 @@ pub enum Command {
     },
     ShowGraph {
         all: bool,
-    },
-    /// Run the program and emit the frame pending report (a JSON array of every
-    /// live pending resource). The observability counterpart to `run`.
-    PendingReport {
-        json: bool,
     },
     /// Run the program with emit tracing, then answer one or more
     /// manipulation goals — "this argument of the call that produced emit N
@@ -710,9 +702,6 @@ pub fn execute(cli: CliArgs) {
         }
         Command::ProposeEdit(opts) => {
             handlers::handle_propose_edit(&opts, &source, &source_input, &include_dirs);
-        }
-        Command::PendingReport { json } => {
-            handlers::handle_pending_report(json, &source, &source_input, &include_dirs);
         }
         Command::Explain { json, term } => {
             handlers::handle_explain(json, &term, &source, &source_input, &include_dirs);

@@ -1308,6 +1308,7 @@ name = "garden-script"
 version = "0.1.0"
 dependencies = [
  "petal",
+ "petal-stdlib-query",
  "petal-ui",
  "serde_json",
  "tempfile",
@@ -2783,11 +2784,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "petal-stdlib-query"
+version = "0.1.0"
+dependencies = [
+ "petal",
+]
+
+[[package]]
 name = "petal-ui"
 version = "0.1.0"
 dependencies = [
  "indexmap",
  "petal",
+ "petal-stdlib-query",
  "serde",
  "serde_json",
 ]

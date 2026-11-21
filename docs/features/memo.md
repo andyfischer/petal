@@ -32,7 +32,6 @@ else. It is a cache, and Petal treats it as one. It is not state.
 - [How long an entry lives](#how-long-an-entry-lives)
 - [A memo is not state](#a-memo-is-not-state)
 - [Memo and hot reload](#memo-and-hot-reload)
-- [Pending initializers](#pending-initializers)
 - [Choosing between `memo`, `const` and `state`](#choosing-between-memo-const-and-state)
 
 ## Declaring a memo
@@ -146,23 +145,6 @@ The next run recomputes what it asks for. `state` is kept as usual.
 
 A reload that only moved code (whitespace, comments) changes nothing and
 keeps the entries.
-
-## Pending initializers
-
-As with `state`, an initializer that produces a
-[pending value](pending-values.md) is not committed. The entry stays empty,
-reads see the pending value for that run, and the initializer runs again on
-the next run until its value arrives.
-
-A value with a pending value anywhere inside it (`[fetch(url)]`) is not
-committed either. The pending value would stay pending in the cached list
-after its resource resolves, and a hit never recomputes it.
-
-A key that is, or contains, a pending value is not cached either: the
-declaration computes its initializer every time and stores nothing. A pending
-value keeps its identity while its resource goes from loading to errored, so
-an entry made while it was loading (`if is_error(u) then … else … end`) would
-otherwise outlive the error.
 
 ## Choosing between `memo`, `const` and `state`
 

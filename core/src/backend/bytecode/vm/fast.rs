@@ -14,8 +14,7 @@
 //! Anything else stops the run with `ip` still pointing at the instruction,
 //! and the caller hands it to `step_in` unchanged. That covers every
 //! instruction not listed here (calls, returns, allocation, loop setup,
-//! state) and every unusual case of one that is: a `Pending` operand (so
-//! absorption is noted by `exec_inst`), an error (so it is annotated with the
+//! state) and every unusual case of one that is: an error (so it is annotated with the
 //! origin, computed only then), an integer overflow, a register outside the
 //! file. Since the fast arms have no side effects before they commit, running
 //! the instruction again in `step_in` is exact: this loop never changes what a
@@ -210,24 +209,6 @@ impl<'a> Vm<'a> {
                     }
                     continue;
                 }
-                // `if` and `while` test their condition with a JumpIfPending
-                // and then a JumpIfFalse on the same register: take both in
-                // one dispatch, still counted as two instructions.
-                Inst::JumpIfPending { cond, to } => {
-                    let v = get!(cond);
-                    if matches!(v, Value::Pending(_)) {
-                        n += 1;
-                        ip = to as usize;
-                        continue;
-                    }
-                    if let Some(&Inst::JumpIfFalse { cond: c2, to: t2 }) = code.get(ip + 1)
-                        && c2 == cond
-                    {
-                        n += 2;
-                        ip = if heap.truthy(v) { ip + 2 } else { t2 as usize };
-                        continue;
-                    }
-                }
                 Inst::JumpIfFalse { cond, to } => {
                     if !heap.truthy(get!(cond)) {
                         n += 1;
@@ -366,23 +347,14 @@ impl<'a> Vm<'a> {
                 },
                 Inst::Eq { dst, a, b } => {
                     let (x, y) = (get!(a), get!(b));
-                    if is_pending(x) || is_pending(y) {
-                        break StraightStop::Slow;
-                    }
                     put!(dst, ops::eq(x, y, heap));
                 }
                 Inst::Ne { dst, a, b } => {
                     let (x, y) = (get!(a), get!(b));
-                    if is_pending(x) || is_pending(y) {
-                        break StraightStop::Slow;
-                    }
                     put!(dst, ops::ne(x, y, heap));
                 }
                 Inst::Not { dst, a } => {
                     let x = get!(a);
-                    if is_pending(x) {
-                        break StraightStop::Slow;
-                    }
                     put!(dst, Value::Bool(!heap.truthy(x)));
                 }
 
@@ -402,9 +374,6 @@ impl<'a> Vm<'a> {
                     }
                     // A variant's field may be constant data, which a
                     // recording scope notes as a dependency on the slow path.
-                    if is_pending(base) {
-                        break StraightStop::Slow;
-                    }
                     if matches!(base, Value::EnumVariant { .. }) {
                         if !enum_read_noted {
                             break StraightStop::Slow;
@@ -423,9 +392,6 @@ impl<'a> Vm<'a> {
                 }
                 Inst::GetIndex { dst, obj, idx, opt } => {
                     let base = get!(obj);
-                    if is_pending(base) {
-                        break StraightStop::Slow;
-                    }
                     match ops::get_index(heap, base, get!(idx), opt) {
                         Ok(v) => put!(dst, v),
                         Err(_) => break StraightStop::Slow,
@@ -535,24 +501,15 @@ fn set_loop_idx(path: &mut super::frame::LocalPath, idx: usize) {
     super::frame::set_loop_part(path, PathPart::Index(idx));
 }
 
-#[inline(always)]
-fn is_pending(v: Value) -> bool {
-    matches!(v, Value::Pending(_))
-}
-
-/// The general arithmetic for operands the inline arms did not take, when
-/// neither is `Pending` (absorption belongs to `exec_inst`). `None` on an
-/// error, which the general executor then reproduces and annotates.
+/// The general arithmetic for operands the inline arms did not take. `None`
+/// on an error, which the general executor then reproduces and annotates.
 #[inline(always)]
 fn arith(op: TermOp, a: Value, b: Value, heap: &mut Heap) -> Option<Value> {
-    if is_pending(a) || is_pending(b) {
-        return None;
-    }
     ops::arithmetic(&op, a, b, heap).ok()
 }
 
 /// Ordering comparisons, inline for two ints or two floats; otherwise the
-/// general comparison when neither operand is `Pending`. `None` on an error.
+/// the general comparison. `None` on an error.
 #[inline(always)]
 fn compare(op: TermOp, a: Value, b: Value, heap: &Heap) -> Option<Value> {
     let r = match (a, b) {
@@ -568,12 +525,7 @@ fn compare(op: TermOp, a: Value, b: Value, heap: &Heap) -> Option<Value> {
             TermOp::Gt => x > y,
             _ => x >= y,
         },
-        _ => {
-            if is_pending(a) || is_pending(b) {
-                return None;
-            }
-            return ops::comparison(&op, a, b, heap).ok();
-        }
+        _ => return ops::comparison(&op, a, b, heap).ok(),
     };
     Some(Value::Bool(r))
 }
@@ -582,9 +534,8 @@ fn compare(op: TermOp, a: Value, b: Value, heap: &Heap) -> Option<Value> {
 
 /// What a trivial builtin returns for arguments it needs no native for:
 /// numbers (`Int` and `Float` only), a list, a string or a float array for
-/// `len`, and anything but a `Pending` for `type`. `None` is everything else
-/// — a wrong type, a string to convert, an overflow, a
-/// `Pending` — which the general executor runs as the builtin call, so each
+/// `len`, and anything for `type`. `None` is everything else
+/// — a wrong type, a string to convert, an overflow — which the general executor runs as the builtin call, so each
 /// arm here has to agree with its native only where it answers. `b` and `c`
 /// are the second and third arguments where the builtin has them.
 ///
@@ -665,10 +616,7 @@ fn straight_intrinsic(
             Value::Dict(id) => heap.get_dict(id).len(),
             _ => return None,
         } as i64),
-        IntrinsicOp::Type => match a {
-            Value::Pending(_) => return None,
-            _ => Value::String(crate::builtins::type_name_id(heap, a)),
-        },
+        IntrinsicOp::Type => Value::String(crate::builtins::type_name_id(heap, a)),
     })
 }
 
@@ -802,33 +750,30 @@ mod intrinsic_tests {
         }
     }
 
-    /// What the natives have to see: errors, conversions, overflow and
-    /// `Pending`s.
+    /// What the natives have to see: errors, conversions and overflow.
     #[test]
     fn everything_else_is_left_to_the_native() {
         let mut heap = Heap::new();
         let text = Value::String(heap.intern_str("12"));
         let list = Value::List(heap.alloc_list(Vec::new()));
-        let pending = Value::Pending(crate::value::PendingId(0));
         let nil = Value::Nil;
         let one = Value::Int(1);
         use IntrinsicOp::*;
         for op in [Float, Int, Abs, Floor] {
-            for v in [text, list, pending, nil, Value::Bool(true)] {
+            for v in [text, list, nil, Value::Bool(true)] {
                 assert_eq!(straight_intrinsic(&mut heap, op, v, nil, nil), None, "{op:?}");
             }
         }
         assert_eq!(straight_intrinsic(&mut heap, Abs, Value::Int(i64::MIN), nil, nil), None);
-        for v in [text, list, pending, nil] {
+        for v in [text, list, nil] {
             for op in [Min, Max, Clamp] {
                 assert_eq!(straight_intrinsic(&mut heap, op, v, one, one), None, "{op:?}");
                 assert_eq!(straight_intrinsic(&mut heap, op, one, v, one), None, "{op:?}");
             }
             assert_eq!(straight_intrinsic(&mut heap, Clamp, one, one, v), None);
         }
-        for v in [nil, one, pending] {
+        for v in [nil, one] {
             assert_eq!(straight_intrinsic(&mut heap, Len, v, nil, nil), None);
         }
-        assert_eq!(straight_intrinsic(&mut heap, Type, pending, nil, nil), None);
     }
 }

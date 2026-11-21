@@ -90,7 +90,7 @@ The decisions:
   data or the key expression.
 - **Equality is the Map key hash** (`dict::key_hash`, `value::hash_value`,
   consistent with `==`), and the same values are refused: functions, cells,
-  pending values, NaN.
+  NaN.
 - **`for` only.** A `while` has no item; it stays positional. A
   higher-order builtin has no keyed form: `state` in its callback is an error
   (§3.3), and the error points at `for`.

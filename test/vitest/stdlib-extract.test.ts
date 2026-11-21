@@ -111,7 +111,7 @@ describe("stdlib extractor", () => {
       .filter((f) => f.signatures.length === 0)
       .map((f) => f.name)
       .sort();
-    expect(undeclared).toEqual(["__pending", "__reject", "__resolve", "format", "print", "speculate", "speculate_value"]);
+    expect(undeclared).toEqual(["format", "print", "speculate", "speculate_value"]);
   });
 
   it("keeps every argument in order for the point-list and arc natives", () => {
@@ -277,12 +277,10 @@ describe("stdlib extractor", () => {
   });
 
   it("marks __-prefixed builtins internal so the public reference can hide them", () => {
-    expect(byName.get("__pending")!.internal).toBe(true);
-    expect(byName.get("__resolve")!.internal).toBe(true);
-    // Public builtins carry no internal flag.
+    // Public builtins carry no internal flag, and every `__` name carries it.
     expect(byName.get("abs")!.internal).toBeUndefined();
     for (const fn of manifest.functions) {
-      if (fn.internal) expect(fn.name.startsWith("__")).toBe(true);
+      expect(fn.internal === true, fn.name).toBe(fn.name.startsWith("__"));
     }
   });
 

@@ -12,10 +12,9 @@ use crate::closure_table::ClosureTable;
 use crate::heap::{ElementId, Heap};
 use crate::output_segments::{SegChannel, SegChannels, SegmentedFrame, flatten_buffer};
 use crate::program::TermId;
-use crate::resource_table::ResourceTable;
 use crate::stats::{AllocStats, DupStats};
 use crate::symbol::SymbolId;
-use crate::value::{PendingId, Value};
+use crate::value::Value;
 
 /// Key identifying one ExecutionContext within an Env.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -56,30 +55,6 @@ pub struct ExecutionContext {
     pub rng_state: u64,
     /// Per-context Perlin-noise seed, set via the `noise_seed()` builtin.
     pub noise_seed: u64,
-    /// Table of pending/unresolved resources (the home for `Value::Pending`).
-    /// Lives here so it survives `reset_stack` (the cross-frame home for
-    /// between-frame resolution) and forks consistently with the heap.
-    pub resources: ResourceTable,
-    /// Monotonic frame counter, advanced once per host frame via
-    /// [`advance_frame`](Self::advance_frame). Stamped onto every resource at
-    /// creation (`ResourceEntry::frame_started`) so age-in-frames is computable.
-    /// The core lib has no frame loop, so this stays 0 under the CLI and tests
-    /// unless a host advances it.
-    frame: u64,
-    /// Whether the debug-gated absorption log ([`absorption_log`](Self::absorption_log))
-    /// records. Off by default — a host, `--trace-pending`, or the debug protocol
-    /// flips it on via [`enable_pending_trace`](Self::enable_pending_trace). When
-    /// off, absorptions pay only the always-on `absorbed_count`, never a push.
-    pub trace_pending: bool,
-    /// Debug-gated, per-frame absorption log: `(origin call site, absorbed
-    /// resource)` for every absorption in the current frame while
-    /// [`trace_pending`](Self::trace_pending) is on. This is the data a dataflow
-    /// viz paints — the set of spans a given resource flowed through is its
-    /// downstream cone. Off by default (an unbounded per-absorption push is real
-    /// memory pressure in a hot frame). Per-frame: cleared by
-    /// [`reset_frame_absorption`](Self::reset_frame_absorption) at the stack
-    /// reset, unlike the cross-frame [`resources`](Self::resources) table.
-    pub absorption_log: Vec<(Option<TermId>, PendingId)>,
     /// Whether [`emit_origins`](Self::emit_origins) records. Off by default — a
     /// host flips it on with [`enable_emit_trace`](Self::enable_emit_trace) when
     /// it wants to attribute buffered output back to source. When off an emit
@@ -200,10 +175,6 @@ impl ExecutionContext {
             echo: false,
             rng_state: crate::builtins::initial_seed(),
             noise_seed: 0,
-            resources: ResourceTable::new(),
-            frame: 0,
-            trace_pending: false,
-            absorption_log: Vec::new(),
             trace_emit: false,
             emit_origins: HashMap::new(),
             trace_elements: false,
@@ -254,16 +225,7 @@ impl ExecutionContext {
             echo: self.echo,
             rng_state: self.rng_state,
             noise_seed: self.noise_seed,
-            // Snapshot resource state so a fork observes the same resolution
-            // status as its source at fork time, then diverges independently —
-            // exactly how the heap is forked above.
-            resources: self.resources.clone(),
-            frame: self.frame,
-            // A fork inherits the trace setting but starts with an empty log —
-            // its absorptions are its own, captured separately from the source's.
-            trace_pending: self.trace_pending,
-            absorption_log: Vec::new(),
-            // Likewise for emit attribution: the setting is inherited, but the
+            // Emit attribution: the setting is inherited, but the
             // recorded origins belong to whichever context did the emitting —
             // and the fork's output buffers start empty, so its origins must too
             // or the two would be misaligned from the first push.
@@ -278,29 +240,11 @@ impl ExecutionContext {
         }
     }
 
-    /// The current frame number (see [`advance_frame`](Self::advance_frame)).
-    pub fn frame(&self) -> u64 {
-        self.frame
-    }
-
-    /// Advance to the next frame. A host calls this once per rendered frame so
-    /// resource ages (`current_frame - frame_started`) grow over time.
-    pub fn advance_frame(&mut self) {
-        self.frame += 1;
-    }
-
     /// Turn stdout echoing of `print` on or off (see [`echo`](Self::echo)).
     /// Output is always accumulated in [`output`](Self::output) either way, so
     /// turning this off only suppresses the write to the real stdout stream.
     pub fn set_echo(&mut self, on: bool) {
         self.echo = on;
-    }
-
-    /// Turn on the debug-gated absorption log (see
-    /// [`absorption_log`](Self::absorption_log)). Off by default; a host, the
-    /// `--trace-pending` flag, or the debug protocol flips it on.
-    pub fn enable_pending_trace(&mut self) {
-        self.trace_pending = true;
     }
 
     /// Turn call-site attribution of buffered output on or off (see
@@ -340,18 +284,6 @@ impl ExecutionContext {
         let heap = &self.heap;
         self.element_origins
             .retain(|id, _| heap.is_live(Value::Element(*id)));
-    }
-
-    /// Clear the per-frame absorption state at the start of a frame: empty the
-    /// debug [`absorption_log`](Self::absorption_log) and zero every resource's
-    /// `absorbed_count`, so both describe just the frame about to run. The
-    /// [`resources`](Self::resources) entries themselves are cross-frame and
-    /// kept (a resource keeps loading across frames). Called from
-    /// [`Env::reset_stack`](crate::env::Env::reset_stack), the per-frame stack
-    /// reset. The enable flag is not touched — it persists across frames.
-    pub fn reset_frame_absorption(&mut self) {
-        self.absorption_log.clear();
-        self.resources.reset_absorbed_counts();
     }
 
     /// This context's value-duplication statistics, accumulated by its heap's

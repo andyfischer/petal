@@ -71,8 +71,6 @@ for i in range(0, 3) do
 
 - **What is pushed is a value.** Lists and records are immutable, so a later
   change to a binding the script pushed does not reach the host.
-- **A pending value pushes nothing.** `push_output(sym, u)` with a
-  [pending](../features/pending-values.md) `u` is a no-op, like a draw call.
 - **Replay keeps it.** A pushed value is the one kind of output a memoized
   call can replay without running, so a helper that only computes and pushes
   stays cheap on frames where its inputs have not changed

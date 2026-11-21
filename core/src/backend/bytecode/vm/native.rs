@@ -204,58 +204,6 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
-    /// Pending interception (Chunk C). If any argument is a `Pending`, apply the
-    /// native's classification: `Strict` absorbs (return the leftmost `Pending`
-    /// arg, don't call), `Effectful` no-ops (return `Nil`, emit nothing, don't
-    /// call), `AllowPending` proceeds (it inspects the pending itself). Returns
-    /// `None` to proceed with the real call.
-    ///
-    /// Cheap early-out: only a top-level `Pending` *argument* triggers it — a
-    /// pending nested inside a resolved list is left alone (element-wise) —
-    /// except for an `EffectfulDeep` native, which also no-ops on a pending
-    /// held anywhere inside an argument (the walk is skipped while the
-    /// resource table is empty). This
-    /// MUST be consulted at every native entry point, because a native can be
-    /// invoked three ways that don't share a single call site: the intrinsic
-    /// fork below (map/filter/… never reach the leaf), the shared leaf
-    /// [`call_native_fn`](Vm::call_native_fn) (plain + in-place mutating
-    /// builtins), and record-field method calls. Guarding only one path would make absorption
-    /// depend on the in-place optimizer or call syntax.
-    fn intercept_pending(
-        &mut self,
-        nid: NativeFnId,
-        args: &[Value],
-        origin: Option<TermId>,
-    ) -> Option<Value> {
-        let class = self.native_fns.get_class(nid);
-        let top = args.iter().find(|v| matches!(v, Value::Pending(_))).copied();
-        let pending = match (top, class) {
-            (Some(p), _) => p,
-            // The deep walk: a pending held inside an argument. No pending
-            // value can exist while the resource table is empty, which is
-            // every run that never fetched anything.
-            (None, crate::native_fn::NativeClass::EffectfulDeep) if !self.resources.is_empty() => {
-                Value::Pending(args.iter().find_map(|v| crate::value::find_pending(v, &self.heap))?)
-            }
-            (None, _) => return None,
-        };
-        match class {
-            // Both absorbing outcomes swallow the leftmost Pending — bump its
-            // always-on absorbed_count (and log `(origin, id)` when the debug
-            // trace is on). AllowPending inspects it instead, so it does not count.
-            crate::native_fn::NativeClass::Strict => {
-                self.note_absorption(pending, origin);
-                Some(pending)
-            }
-            crate::native_fn::NativeClass::Effectful
-            | crate::native_fn::NativeClass::EffectfulDeep => {
-                self.note_absorption(pending, origin);
-                Some(Value::Nil)
-            }
-            crate::native_fn::NativeClass::AllowPending => None,
-        }
-    }
-
     /// Dispatch a native function, handling the higher-order intrinsics
     /// specially (they call closures synchronously).
     pub(super) fn call_native_or_intrinsic(
@@ -264,12 +212,6 @@ impl<'a> Vm<'a> {
         args: &[Value],
         origin: Option<TermId>,
     ) -> Result<Value, String> {
-        // Intercept before the intrinsic fork: map/filter/reduce/forEach are
-        // dispatched here and never reach the leaf, so a Pending collection base
-        // (e.g. `map(pending, f)`) must be absorbed here.
-        if let Some(v) = self.intercept_pending(nid, args, origin) {
-            return Ok(v);
-        }
         let nf = self.native_fns;
         // `sort` is an intrinsic only in its comparator form: `sort(list)` has
         // no closure to drive and stays an ordinary native, so a one-argument
@@ -456,7 +398,7 @@ impl<'a> Vm<'a> {
     }
 
     /// Build the `PetalCxt` a native call runs against: this `Vm`'s borrows of
-    /// the owning context's heap, output, bindings, resources and flags, plus
+    /// the owning context's heap, output, bindings and flags, plus
     /// this call's `args`, emit `chain`, `origin`, and `in_place` eligibility.
     /// The one place those twenty-odd borrows are threaded together — every
     /// native entry point goes through it, so a new piece of context reaches
@@ -489,11 +431,7 @@ impl<'a> Vm<'a> {
             counters: self.counters,
             rng_state: self.rng_state,
             noise_seed: self.noise_seed,
-            resources: self.resources,
-            trace_pending: self.trace_pending,
-            absorption_log: self.absorption_log,
             origin,
-            frame: self.frame,
             echo: self.echo,
             handle_classes: self.handle_classes,
             results: SmallVec::new(),
@@ -514,7 +452,7 @@ impl<'a> Vm<'a> {
     }
 
     /// Call a non-intrinsic native function via `PetalCxt`. `origin` is the
-    /// requesting call site, stamped onto any resource the native creates.
+    /// requesting call site.
     /// `in_place` lets a mutating builtin (`append`/`set`/…) reuse its container
     /// argument's backing store instead of cloning it; it is set only when
     /// escape analysis proved that container unique + non-escaping (M4).
@@ -528,13 +466,6 @@ impl<'a> Vm<'a> {
         in_place: bool,
         origin: Option<TermId>,
     ) -> Result<Value, String> {
-        // Intercept here so a Pending argument is absorbed/no-op'd regardless of
-        // which path or optimization reached this native (redundant with the
-        // pre-fork check in `call_native_or_intrinsic`, but that check only
-        // returns early; the scan is a cheap no-op when no arg is Pending).
-        if let Some(v) = self.intercept_pending(nid, args, origin) {
-            return Ok(v);
-        }
         // A speculative call (`speculate`, `vm::speculate`) does not make a
         // call whose effect escapes the run.
         if self.speculating() && self.native_fns.effects(nid).is_escaping() {
@@ -607,7 +538,6 @@ impl<'a> Vm<'a> {
                     before,
                     deps.activity(),
                     deps.binding_log(),
-                    matches!(result, Value::Pending(_)),
                 );
             }
             if let Some(ip) = static_site {

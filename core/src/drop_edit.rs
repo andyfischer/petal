@@ -149,7 +149,7 @@ pub fn static_from_json(v: &serde_json::Value) -> Option<StaticValue> {
             if o.get("type").and_then(|t| t.as_str()).is_some()
                 && matches!(
                     o.get("type").and_then(|t| t.as_str()),
-                    Some("map" | "vec2" | "vec3" | "pending" | "handle" | "function")
+                    Some("map" | "vec2" | "vec3" | "handle" | "function")
                 )
             {
                 return None;

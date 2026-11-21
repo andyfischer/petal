@@ -33,7 +33,7 @@ use crate::native_fn::{NativeFnId, NativeFnTable};
 use crate::program::{FunctionId, Program, TermId, base_fn_name};
 use crate::stack::Stack;
 use crate::symbol::{SymbolId, SymbolTable};
-use crate::value::{PendingId, Value};
+use crate::value::Value;
 
 mod calls;
 mod dispatch;
@@ -158,21 +158,6 @@ pub struct Vm<'a> {
     /// so the RNG/noise builtins mutate the owning context's isolated state.
     pub rng_state: &'a mut u64,
     pub noise_seed: &'a mut u64,
-    /// The owning context's resource table, borrowed so the pending-resource
-    /// builtins can create/resolve entries. See [`crate::resource_table`].
-    pub resources: &'a mut crate::resource_table::ResourceTable,
-    /// Whether the debug-gated absorption log records (copied from the owning
-    /// `ExecutionContext`). When set, [`note_absorption`](Vm::note_absorption)
-    /// pushes to [`absorption_log`](Self::absorption_log); when clear, absorptions
-    /// pay only the always-on `absorbed_count`.
-    pub trace_pending: bool,
-    /// The owning context's per-frame absorption log, borrowed so absorptions can
-    /// record `(origin, PendingId)` when `trace_pending` is on. See
-    /// [`crate::execution_context::ExecutionContext::absorption_log`].
-    pub absorption_log: &'a mut Vec<(Option<TermId>, PendingId)>,
-    /// The owning context's current frame, copied from the `ExecutionContext`.
-    /// Stamped onto any resource created during this run (`frame_started`).
-    pub frame: u64,
     /// Whether `print` echoes to real stdout (true for the primary run, false
     /// for speculative forks). Copied from the `ExecutionContext`.
     pub echo: bool,
@@ -301,26 +286,6 @@ impl<'a> Vm<'a> {
         // into dispatch. Every hook's own gate is still checked below, so this
         // only decides whether to look.
         if !self.hooks {
-            // `if` and `while` test their condition with a JumpIfPending and
-            // then a JumpIfFalse on the same register. Falling through the
-            // first always runs the second, so take both in one dispatch —
-            // still counted as two instructions. (With hooks on, each is
-            // stepped on its own so the trace and profile see both.)
-            if let Inst::JumpIfPending { cond, to } = *inst {
-                let v = self.reg(frame_idx, cond);
-                if matches!(v, Value::Pending(_)) {
-                    self.stack.vm_frames[frame_idx].ip = to as usize;
-                    return StepResult::Continue;
-                }
-                if let Some(&Inst::JumpIfFalse { cond: c2, to: t2 }) = func.code.get(ip + 1)
-                    && c2 == cond
-                {
-                    self.stack.insts += 1;
-                    self.stack.vm_frames[frame_idx].ip =
-                        if self.heap.truthy(v) { ip + 2 } else { t2 as usize };
-                    return StepResult::Continue;
-                }
-            }
             let origin = func.origins.get(ip).copied().flatten();
             return match self.exec_inst(frame_idx, inst, origin) {
                 Ok(sr) => sr,
@@ -599,7 +564,6 @@ impl<'a> Vm<'a> {
             Inst::JumpIfFalse { .. }
                 | Inst::JumpIfTrue { .. }
                 | Inst::JumpIfPresent { .. }
-                | Inst::JumpIfPending { .. }
                 | Inst::ForEachNext { .. }
                 | Inst::RangeNext { .. }
                 | Inst::MatchArm { .. }

@@ -10,6 +10,9 @@ petal.workspace = true
 # hit-testing, text metrics). Panel scripts run on it; see docs/architecture.md
 # (Phase 3).
 petal-ui.workspace = true
+# `query(kind, arg)` and the readers of its pending answers: the `query`
+# package (core-stdlib/query). Garden supplies its `QueryHost` (src/query.rs).
+petal-stdlib-query.workspace = true
 # Same major version petal itself uses; needed to construct Petal record
 # (Map) values inside our native fns.
 # The `emit(event, arg)` panel native converts the script's arg value into the

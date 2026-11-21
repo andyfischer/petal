@@ -28,6 +28,16 @@ impl Env {
             .unwrap_or_default()
     }
 
+    /// Drop everything a run of `stack_id` left for the host: its `print`
+    /// output and every output buffer. What a host that re-runs a script to
+    /// completion does between runs, so it reads only the last run's. `Err`
+    /// for an unknown stack.
+    pub fn clear_run_output(&mut self, stack_id: StackKey) -> Result<(), String> {
+        let ck = self.ctx_for(stack_id).ok_or("Stack not found")?;
+        self.ctx_mut(ck).clear_run_output();
+        Ok(())
+    }
+
     // ── Symbols & buffered output (host side) ────────────────────
 
     /// Intern a symbol name, returning its stable id. Idempotent — the host and

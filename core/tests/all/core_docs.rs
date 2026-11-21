@@ -29,7 +29,7 @@ fn every_export_of_the_core_libraries_is_documented() {
     let mut files = vec![root.join("prelude/std.ptl")];
     ptl_files(&root.join("packages"), &mut files);
     files.sort();
-    assert!(files.len() >= 19, "the core libraries went missing: {files:?}");
+    assert!(files.len() >= 18, "the core libraries went missing: {files:?}");
 
     let rules = [UNDOCUMENTED_PUB, DOC_PARAMS, PACKAGE_DESCRIPTION];
     let mut problems = Vec::new();

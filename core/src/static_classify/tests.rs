@@ -1216,7 +1216,6 @@ fn moving_names(env: &mut Env, src: &str, runs: usize) -> std::collections::BTre
     for run in 0..runs {
         // The frame boundary a host makes: execution is reset, state kept.
         env.reset_stack(sid).unwrap();
-        env.advance_frame(sid);
         env.run(sid).unwrap_or_else(|e| panic!("run {run} failed: {e}"));
         for (name, value) in env.get_observations_json(pid, sid) {
             match first.get(&name) {

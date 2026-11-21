@@ -45,7 +45,6 @@ pub(super) fn handle_run(
         profile,
         effect_audit,
         static_audit,
-        trace_pending,
         observe,
         trace_emits,
         seed,
@@ -57,9 +56,6 @@ pub(super) fn handle_run(
             std::env::set_var("PETAL_TRACE", "1");
         }
     }
-    // `--trace-pending` (or PETAL_TRACE_PENDING=1) turns on the absorption log
-    // and prints the frame pending report after the run.
-    let trace_pending = trace_pending || std::env::var("PETAL_TRACE_PENDING").is_ok();
     let mut env = make_env(include_dirs);
     // `petal run` is the one host whose stdout is the program's: prints go
     // there as they happen (an embedder's `Env` collects them instead).
@@ -134,9 +130,6 @@ pub(super) fn handle_run(
         None if opts.runs.is_none() => warn_state_not_stored(&env, pid),
         None => {}
     }
-    if trace_pending {
-        env.enable_pending_trace(sid);
-    }
     // `--trace-emits` also reports each emit's `EmitKey` and the raw native
     // arguments, from a speculative baseline of the fresh stack (it changes
     // nothing): what `propose-edit --v2` addresses. Only for a single run with
@@ -197,14 +190,6 @@ pub(super) fn handle_run(
     if dup_stats {
         eprintln!("{}", env.dup_stats());
         eprintln!("{}", env.alloc_stats());
-    }
-
-    if trace_pending {
-        let report = env.pending_report(pid, sid);
-        eprintln!(
-            "pending report: {}",
-            serde_json::to_string_pretty(&report).unwrap()
-        );
     }
 
     if trace_emits {
@@ -369,68 +354,6 @@ fn print_observations(json: bool, map: &serde_json::Map<String, serde_json::Valu
     println!("Observed values ({}):", entries.len());
     for (name, value) in entries {
         println!("  {:<width$} = {}", name, value, width = width);
-    }
-}
-
-/// Run the program and print the frame pending report — the JSON array of every
-/// live pending resource (`{ id, key, state, age_frames, origin,
-/// absorbed_count }`). This is what the MCP `PendingReport` tool shells out to
-/// and what an agent debugging "why is this region blank" reads. `--json` emits
-/// the raw report array; otherwise a short human-readable listing is printed.
-pub(super) fn handle_pending_report(
-    json: bool,
-    source: &str,
-    source_input: &SourceInput,
-    include_dirs: &[PathBuf],
-) {
-    let mut env = make_env(include_dirs);
-    // The program's prints come out ahead of the report, as under `petal run`.
-    env.set_echo(true);
-    let pid = load_checked_or_die(&mut env, json, false, source, source_input);
-    let sid = stack_or_die(&mut env, json, pid);
-    // Record absorptions too, so a caller inspecting the report sees per-frame
-    // absorption counts populated.
-    env.enable_pending_trace(sid);
-    let run_result = env.run(sid);
-
-    let report = env.pending_report(pid, sid);
-    if json {
-        print_json(&report);
-    } else {
-        print_pending_report_text(&report);
-    }
-
-    if let Err(e) = run_result {
-        die(json, &e, "runtime");
-    }
-}
-
-/// Render the pending report as a short human-readable listing (the non-`--json`
-/// output of `pending-report`): one line per live resource with its state, age,
-/// absorption count, and origin call site.
-fn print_pending_report_text(report: &serde_json::Value) {
-    let entries = report.as_array().map(Vec::as_slice).unwrap_or(&[]);
-    if entries.is_empty() {
-        println!("No pending resources.");
-        return;
-    }
-    println!("Pending resources ({}):", entries.len());
-    for entry in entries {
-        let state = entry.get("state").and_then(|s| s.as_str()).unwrap_or("?");
-        let age = entry
-            .get("age_frames")
-            .and_then(|a| a.as_u64())
-            .unwrap_or(0);
-        let absorbed = entry
-            .get("absorbed_count")
-            .and_then(|a| a.as_u64())
-            .unwrap_or(0);
-        let origin = entry
-            .get("origin")
-            .and_then(|o| o.get("text"))
-            .and_then(|t| t.as_str())
-            .unwrap_or("<unknown origin>");
-        println!("  {state} {age}f  absorbed {absorbed}x  {origin}");
     }
 }
 

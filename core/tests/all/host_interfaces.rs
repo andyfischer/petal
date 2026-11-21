@@ -34,9 +34,9 @@ fn run(env: &mut Env, src: &str) -> Result<Vec<String>, String> {
 // ── Bundled packages ─────────────────────────────────────────────────────
 
 #[test]
-fn the_bundled_set_is_core_the_domain_builtins_ui_and_the_enabled_libraries() {
+fn the_bundled_set_is_core_the_domain_builtins_the_interfaces_and_the_enabled_libraries() {
     let names: Vec<&str> = petal::bundled::BUNDLED_PACKAGES.iter().map(|p| p.name).collect();
-    let mut expected = vec!["core", "noise", "color", "vec2", "autodiff", "json", "io", "ui"];
+    let mut expected = vec!["core", "noise", "color", "vec2", "autodiff", "json", "io", "query", "ui"];
     for (library, on) in [
         ("bloom", cfg!(feature = "bloom")),
         ("text_layout", cfg!(feature = "text_layout")),
@@ -273,6 +273,24 @@ fn verify_interface_reports_both_directions_and_what_it_could_not_read() {
     assert_eq!(env.verify_interface(&["host"]), Ok(()));
     // A bare Env registers only the builtins, which no host answers for.
     assert_eq!(Env::new().verify_interface(&[]), Ok(()));
+}
+
+/// The natives of a bundled interface package (`query`) come from a library
+/// crate a host links beside its own (petal-ui registers `query`), so they
+/// need not be named; naming the package still checks they are registered.
+#[test]
+fn a_bundled_interface_package_need_not_be_named() {
+    let mut env = Env::new();
+    for name in ["query", "invalidate", "is_ready", "is_loading", "is_error", "error_of"] {
+        env.register_native(name, seven, NativeEffects::PURE);
+    }
+    env.register_native("sub", sub, NativeEffects::PURE);
+    env.register_package("host", [("host", "pub native fn sub(a, b)\n")]).unwrap();
+    assert_eq!(env.verify_interface(&["host"]), Ok(()));
+    assert_eq!(env.verify_interface(&["host", "query"]), Ok(()));
+    // Named but not registered is still a mismatch.
+    let mismatch = Env::new().verify_interface(&["query"]).unwrap_err();
+    assert!(mismatch.unregistered.contains(&"is_ready".to_string()), "{mismatch}");
 }
 
 #[test]

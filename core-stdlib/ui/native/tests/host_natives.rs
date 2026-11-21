@@ -12,9 +12,14 @@ use std::collections::BTreeSet;
 use petal::env::Env;
 use petal::native_fn::NativeSignature;
 
-/// The names `register` adds to a bare `Env`, beyond the core builtins.
+/// The names `register` adds to a bare `Env`, beyond the core builtins and
+/// the `query` package.
 fn added_by(register: impl FnOnce(&mut Env)) -> BTreeSet<String> {
-    let core: BTreeSet<String> = Env::new().native_fn_names().into_iter().collect();
+    // Core's natives and the `query` package's (which `ui` registers too,
+    // and which `query` declares, not `ui`).
+    let mut base = Env::new();
+    petal_stdlib_query::register_natives(&mut base);
+    let core: BTreeSet<String> = base.native_fn_names().into_iter().collect();
     let mut env = Env::new();
     register(&mut env);
     env.native_fn_names()

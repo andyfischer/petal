@@ -8,7 +8,7 @@
 //! serialized programs would drift if this list were reordered. Don't
 //! reorder, only append.
 
-use crate::native_fn::{InputClasses, NativeClass, NativeEffects, NativeFnTable, PetalCxt};
+use crate::native_fn::{InputClasses, NativeEffects, NativeFnTable, PetalCxt};
 
 mod classes;
 mod collections;
@@ -27,7 +27,6 @@ mod output;
 mod paths;
 #[cfg(test)]
 mod decls;
-mod pending;
 mod vec2;
 
 pub(crate) use collections::SortKey;
@@ -130,21 +129,13 @@ pub(super) fn require_args(state: &PetalCxt, n: usize, name: &str) -> Result<(),
     Ok(())
 }
 
-/// The row of the pending-inspection builtins (`is_loading`, `or_else`, …):
-/// they read the resource table to answer, and they must see a `Pending`
-/// argument rather than absorb it.
-const INSPECTS_PENDING: NativeEffects =
-    NativeEffects::reads(InputClasses::RESOURCES).with_pending(NativeClass::AllowPending);
-
 /// Register all built-in functions into the native function table.
 /// Must be called once at startup before any programs are loaded.
 ///
 /// Every native is registered with its [`NativeEffects`] row — what it
 /// reads, whether it emits, whether it does something a replay could not
 /// reproduce; registration takes the row, so none can be left out.
-/// The row is the union over every path through the native: the pending
-/// inspectors read the resource table only when handed a `Pending`, and
-/// declare `RESOURCES` regardless. `noise` reads the per-run noise seed,
+/// The row is the union over every path through the native. `noise` reads the per-run noise seed,
 /// which is program state set through `noise_seed`'s effect, not an external
 /// input, so it is pure; the RNG builtins read (and advance) the random
 /// stream, which a memoized scope compares at entry and exit itself. The
@@ -170,7 +161,7 @@ const INSPECTS_PENDING: NativeEffects =
 ///
 /// **Contained effects.** Every builtin with an `effect` touches only the
 /// execution context or the running stack (the print buffer, the noise seed,
-/// the resource table, the expectation log, the method and enum tables, the
+/// the expectation log, the method and enum tables, the
 /// heap's frozen set), so every one is [`contained`](NativeEffects::contained):
 /// a speculative run (`crate::dm::spec`) calls it and discards what it did
 /// with the fork. `core/tests/all/dm_spec.rs` fails when a new effect row is
@@ -181,7 +172,7 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register(
         "print",
         io::native_print,
-        NativeEffects::EFFECT.with_pending(NativeClass::Effectful).contained(),
+        NativeEffects::EFFECT.contained(),
     );
     table.register("range", collections::native_range, NativeEffects::CONST);
     table.register("len", collections::native_len, NativeEffects::CONST);
@@ -374,39 +365,6 @@ pub fn register_builtins(table: &mut NativeFnTable) {
         "is_valid",
         handle::native_is_valid,
         NativeEffects::reads(InputClasses::HOST_DATA),
-    );
-
-    // --- Test-only pending-resource builtins (append-only) ---
-    table.register(
-        "__pending",
-        pending::native_pending,
-        NativeEffects::EFFECT.with_pending(NativeClass::AllowPending).contained(),
-    );
-    table.register(
-        "__resolve",
-        pending::native_resolve,
-        NativeEffects::EFFECT.with_pending(NativeClass::AllowPending).contained(),
-    );
-    table.register(
-        "__reject",
-        pending::native_reject,
-        NativeEffects::EFFECT.with_pending(NativeClass::AllowPending).contained(),
-    );
-
-    // --- Pending meta builtins (Chunk D, append-only) ---
-    // The sanctioned way to inspect pending-ness. Each is `AllowPending` so it
-    // sees the Pending arg instead of absorbing it (Strict here would collapse
-    // inspection into absorption), and reads the resource table to answer.
-    table.register("is_loading", pending::native_is_loading, INSPECTS_PENDING);
-    table.register("is_error", pending::native_is_error, INSPECTS_PENDING);
-    table.register("is_pending", pending::native_is_pending, INSPECTS_PENDING);
-    table.register("is_ready", pending::native_is_ready, INSPECTS_PENDING);
-    table.register("error_of", pending::native_error_of, INSPECTS_PENDING);
-    table.register("or_else", pending::native_or_else, INSPECTS_PENDING);
-    table.register(
-        "resource_key",
-        pending::native_resource_key,
-        INSPECTS_PENDING,
     );
 
     // --- Classes (append-only to preserve phantom term indices) ---
@@ -604,10 +562,8 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // --- Short-circuiting predicate queries (append-only) ---
     // Higher-order like `filter`, so dispatched as VM intrinsics: they call the
     // predicate until one element decides, and their callbacks fall under the
-    // same `state` rule (`vm::native::callback_intrinsic`). Unlike `filter`
-    // they do not absorb a `Pending` list: they answer as for the empty list
-    // (`false`, `true`, nil), as the `for` loops they replaced did.
-    let predicate = NativeEffects::PURE.with_pending(NativeClass::AllowPending);
+    // same `state` rule (`vm::native::callback_intrinsic`).
+    let predicate = NativeEffects::PURE;
     let any_id = table.register("any", native_intrinsic_placeholder, predicate);
     let all_id = table.register("all", native_intrinsic_placeholder, predicate);
     let find_id = table.register("find", native_intrinsic_placeholder, predicate);
@@ -641,16 +597,15 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // The other two are pure: outside a speculative call `speculating()` is
     // always false and `speculate_place` is the identity, and no memo scope
     // records inside one. Append-only, like the rest.
-    let allow = NativeEffects::PURE.with_pending(NativeClass::AllowPending);
     table.intrinsic_speculate = Some(table.register(
         "speculate",
         native_intrinsic_placeholder,
-        NativeEffects::EFFECT.contained().with_pending(NativeClass::AllowPending),
+        NativeEffects::EFFECT.contained(),
     ));
     table.intrinsic_speculating =
         Some(table.register("speculating", native_intrinsic_placeholder, NativeEffects::PURE));
     table.intrinsic_speculate_place =
-        Some(table.register("speculate_place", native_intrinsic_placeholder, allow));
+        Some(table.register("speculate_place", native_intrinsic_placeholder, NativeEffects::PURE));
 
     // Nested reads and replacements with the path as data
     // (`builtins/paths.rs`): `set_in` is the expression form of a path
@@ -681,7 +636,7 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.intrinsic_speculate_value = Some(table.register(
         "speculate_value",
         native_intrinsic_placeholder,
-        NativeEffects::EFFECT.contained().with_pending(NativeClass::AllowPending),
+        NativeEffects::EFFECT.contained(),
     ));
 
     // De-duplication by `==`. `unique_by` is the std prelude's, over
@@ -745,25 +700,6 @@ mod effect_tests {
         );
     }
 
-    /// The `Pending` policy the row carries is the one the call boundary
-    /// consults — `get_class` never disagrees with the declaration.
-    #[test]
-    fn pending_policy_comes_from_the_row() {
-        let mut table = NativeFnTable::new();
-        register_builtins(&mut table);
-        for (name, class) in [
-            ("print", NativeClass::Effectful),
-            ("push_output", NativeClass::Effectful),
-            ("is_loading", NativeClass::AllowPending),
-            ("__resolve", NativeClass::AllowPending),
-            ("sqrt", NativeClass::Strict),
-        ] {
-            let id = table.lookup_name(name).unwrap();
-            assert_eq!(table.get_class(id), class, "{name}");
-            assert_eq!(table.effects(id).pending, class, "{name}");
-        }
-    }
-
     /// Spot-check the rows against what the natives' bodies actually call on
     /// `PetalCxt`, so a row cannot quietly say less than the code does.
     #[test]
@@ -777,8 +713,6 @@ mod effect_tests {
         assert!(row("random").reads.contains(InputClasses::RNG) && !row("random").effect);
         assert!(row("noise_seed").effect);
         assert!(row("unique_id").effect);
-        assert!(row("or_else").reads.contains(InputClasses::RESOURCES));
-        assert!(row("__pending").effect);
         assert_eq!(row("sqrt"), NativeEffects::CONST);
         assert_eq!(row("Rect"), NativeEffects::CONST);
         assert_eq!(row("noise"), NativeEffects::PURE.no_feedback());
@@ -966,7 +900,6 @@ mod effect_tests {
             "push_output",
             "noise_seed",
             "unique_id",
-            "is_loading",
             // A handle's liveness is host data (docs/game-engine-features/handles.md).
             "is_valid",
         ] {

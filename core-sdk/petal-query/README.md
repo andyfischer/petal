@@ -3,8 +3,9 @@
 An async data layer for Petal UI panels, in the style of React Query.
 
 A Petal *panel* draws its whole UI every frame and pulls the data it needs
-with `query(kind, arg)`. The script reads the result as a pending value
-(`is_ready`, `is_loading`, `is_error`, `??`). `petal-query` standardizes both
+with `query(kind, arg)`. The script reads the result as the value or a pending answer
+(`is_ready`, `is_loading`, `is_error`; see the `query` package,
+`core-stdlib/query`). `petal-query` standardizes both
 ends of that channel:
 
 - **Providers** (`Provider`, `Reply`, `CachePolicy`) are the data side. A

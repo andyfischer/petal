@@ -111,7 +111,6 @@ fn native_multiple_registrations() {
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use petal::native_fn::NativeClass;
 use petal::value::Value;
 
 /// A closure's captures travel with the native: here a shared counter the
@@ -194,31 +193,6 @@ fn boxed_native_error_is_a_runtime_error() {
     );
     let err = env.run_source("native fn refuse()\nrefuse()").unwrap_err();
     assert!(err.contains("host says no"), "got: {err}");
-}
-
-/// The row and the Pending policy apply to a boxed native exactly as to a
-/// bare one: `set_native_class(Effectful)` turns a Pending argument into a
-/// no-op without invoking the closure.
-#[test]
-fn boxed_native_respects_its_pending_class() {
-    let mut env = Env::new();
-    let calls = Rc::new(Cell::new(0));
-    let seen = calls.clone();
-    let id = env.register_native_boxed(
-        "emit_it",
-        move |_cxt: &mut PetalCxt| {
-            seen.set(seen.get() + 1);
-            Ok(0)
-        },
-        NativeEffects::EFFECT,
-    );
-    env.set_native_class(id, NativeClass::Effectful);
-    assert_eq!(env.native_effects(id).pending, NativeClass::Effectful);
-    let result = env
-        .run_source("native fn emit_it(x)\nlet p = __pending(\"k\")\nemit_it(p)\nemit_it(1)\n7")
-        .unwrap();
-    assert_eq!(result, Value::Int(7));
-    assert_eq!(calls.get(), 1, "the Pending call must not reach the closure");
 }
 
 /// The effect audit holds a boxed native to its row like any other: one that
@@ -325,7 +299,7 @@ fn a_host_native_is_constant_only_when_it_says_so() {
 /// it changes nothing about how the native is called, memoized or audited.
 #[test]
 fn const_is_pure_plus_one_bit() {
-    use petal::native_fn::{InputClasses, NativeClass};
+    use petal::native_fn::InputClasses;
     assert_eq!(
         NativeEffects {
             constant: false,
@@ -335,8 +309,6 @@ fn const_is_pure_plus_one_bit() {
     );
     assert!(NativeEffects::CONST.is_const());
     assert!(!NativeEffects::PURE.is_const());
-    // The Pending policy is orthogonal.
-    assert!(NativeEffects::CONST.with_pending(NativeClass::AllowPending).is_const());
     // No row built from the other constructors is constant…
     for row in [
         NativeEffects::EFFECT,
@@ -380,42 +352,3 @@ fn a_const_native_runs_like_any_other() {
     }
 }
 
-// --- Pending values from a native: `push_loading` / `push_failed` ---
-
-fn petal_fetch_loading(state: &mut PetalCxt) -> NativeResult {
-    let url = state.get_string(1)?;
-    state.push_loading(petal::resource_table::hash_key(&url));
-    Ok(1)
-}
-
-fn petal_fetch_failed(state: &mut PetalCxt) -> NativeResult {
-    let url = state.get_string(1)?;
-    state.push_failed(petal::resource_table::hash_key(&url), format!("404 {url}"));
-    Ok(1)
-}
-
-/// `push_loading` returns a loading pending value (deduped by key, so two
-/// calls with the same key share one resource) and `push_failed` an errored
-/// one whose `error_of` is the message.
-#[test]
-fn native_push_loading_and_failed() {
-    let mut env = Env::new();
-    env.register_native("fetch_loading", petal_fetch_loading, NativeEffects::EFFECT);
-    env.register_native("fetch_failed", petal_fetch_failed, NativeEffects::EFFECT);
-    let v = env
-        .run_source(
-            "native fn fetch_loading(url)\n\
-             native fn fetch_failed(url)\n\
-             let a = fetch_loading(\"/a\")\n\
-             let a2 = fetch_loading(\"/a\")\n\
-             let b = fetch_failed(\"/b\")\n\
-             [is_loading(a), is_error(a), resource_key(a) == resource_key(a2), \
-              is_loading(b), is_error(b), error_of(b)]\n",
-        )
-        .unwrap();
-    let json = petal::value::value_to_json(&v, env.heap()).unwrap();
-    assert_eq!(
-        json,
-        serde_json::json!([true, false, true, false, true, "404 /b"])
-    );
-}

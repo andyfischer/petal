@@ -34,7 +34,6 @@ ignored, so additions stay backwards-compatible.
   "mouse_delta": { "dx": 3, "dy": -2 },
   "text": "hello" }
 { "cmd": "screenshot" }
-{ "cmd": "pending_report" }
 { "cmd": "draw_stats" }
 ```
 
@@ -48,7 +47,6 @@ ignored, so additions stay backwards-compatible.
 | `capture_draw_commands` | — | Speculative run with no side effects. |
 | `input` | `keys_down?: string[]`, `mouse?: MouseInput`, `mouse_delta?: {dx, dy}`, `text?: string` | Inject input for the next stepped frame. `text` is delivered to `text_input()`; `mouse_delta` to `mouse_dx()`/`mouse_dy()`. |
 | `screenshot` | — | Return the current frame as a PNG data URL. |
-| `pending_report` | — | Every live pending resource, with state, age, and origin. Replies in `pending`. |
 | `draw_stats` | — | Optional per-frame draw statistics, in `stats`. A host that does not implement it replies with an error. |
 
 petal-sdl also keeps a history of recent frames (600 by default; `--history
@@ -132,7 +130,6 @@ agents should use the object form.
   "draw_commands": [ ... ],
   "output": [ "..." ],
   "screenshot": "data:image/png;base64,...",
-  "pending": [ ... ],
   "error": null
 }
 ```
@@ -149,36 +146,11 @@ command. On failure the engine returns `{ ok: false, error: <message> }`.
 | `draw_commands` | DrawCommand[] | `step`, `capture_draw_commands` |
 | `output` | string[] | `step`, `capture_draw_commands`, when stdout was captured |
 | `screenshot` | string (data URL) | `screenshot` |
-| `pending` | PendingEntry[] | `pending_report` |
 | `stats` | object | `draw_stats` |
 | `timeline` | object | every timeline command (petal-sdl) |
 | `site` | object | `track` |
 | `trail` | array | `trail` |
 | `replayed` | int | `replay`; `set_state` while frozen (petal-sdl) |
-
-## PendingEntry
-
-One entry per live pending resource in a `pending_report` response. This is
-the data behind the dev overlay and "why is this region blank" debugging;
-see [pending-values-plan.md](pending-values-plan.md).
-
-```json
-{ "id": 0,
-  "key": 12345,
-  "state": "loading",
-  "age_frames": 12,
-  "origin": { "line": 3, "col": 11, "text": "fetch(\"/api/user/7\")" },
-  "absorbed_count": 4 }
-```
-
-| Field | Type | Meaning |
-|-------|------|---------|
-| `id` | int | Resource-table index (`PendingId`). |
-| `key` | int | Cache key; two fetches of the same key share one entry. |
-| `state` | `"loading" \| "errored" \| "ready"` | Resolution state. |
-| `age_frames` | int | Frames since the resource was first requested. Only advances when the host calls `ExecutionContext::advance_frame()` once per frame, which petal-sdl does and the CLI does not. |
-| `origin` | `{ line, col, text } \| null` | Originating call site; `null` when a native created it with no reachable term. |
-| `absorbed_count` | int | How many ops absorbed this resource **this frame** (reset each frame). |
 
 ## DrawCommand
 

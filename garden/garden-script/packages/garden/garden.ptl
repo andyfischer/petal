@@ -10,6 +10,12 @@ garden/docs/writing-gpp-apps.md (panels whose data comes from a subprocess).
 
 # Implemented in garden-script/src/panel.rs, query.rs and panel_store.rs.
 
+# `query(kind, arg)`, `invalidate(kind, arg)` and the readers of a pending
+# answer (`is_ready`, `is_loading`, `is_error`, `error_of`) are the `query`
+# package's (core-stdlib/query), re-exported so a panel's `import garden`
+# brings them. Garden answers them from the panel's GPP app (query.rs).
+pub import query
+
 # ── Theme ────────────────────────────────────────────────────────────────
 
 @doc("""
@@ -198,20 +204,3 @@ errors).
 """, params: {key: "The key.", value: "A string, or nil to delete."},
   example: """panel_store_set("todos", json_stringify(todos))""", see: ["panel_store_get"])
 pub native fn panel_store_set(key: string, value)
-
-# ── Async queries ────────────────────────────────────────────────────────
-
-@doc("""
-Ask the host for data. The answer comes from its cache: the value when
-ready, otherwise a pending value to inspect with `is_ready`, `is_loading`,
-`is_error`, `error_of` or `??`. The per-frame rerun is the retry loop.
-""", params: {kind: "The query's kind, as the app registers it.", arg: "Any JSON-representable value."},
-  example: """let rd = query("log", "")""", see: ["invalidate"])
-pub native fn query(kind: string, arg)
-
-@doc("""
-Drop a cached answer so the next `query` with the same kind and argument
-asks again: how a panel refreshes.
-""", params: {kind: "The query's kind.", arg: "The query's argument."},
-  example: """invalidate("doc", "")""", see: ["query"])
-pub native fn invalidate(kind: string, arg)

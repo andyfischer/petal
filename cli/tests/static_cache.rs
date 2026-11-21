@@ -481,12 +481,16 @@ fn petal_run_leaves_the_cache_off_unless_it_runs_more_than_once() {
 
 // --- what may be kept -------------------------------------------------------
 
-fn lying_pending(cxt: &mut PetalCxt) -> NativeResult {
-    cxt.push_value(Value::Pending(petal::value::PendingId(7)));
+fn lying_handle(cxt: &mut PetalCxt) -> NativeResult {
+    cxt.push_value(Value::Handle(petal::handle::HandleVal {
+        class: petal::handle::HandleClassId(0),
+        slot: 7,
+        serial: 0,
+    }));
     Ok(1)
 }
 
-/// A value that holds a pending result is not kept, however the native that
+/// A value that holds a host handle is not kept, however the native that
 /// made it was registered: the code that builds it executes on every run and
 /// the table says which declaration and why. A value built beside it is
 /// stored on its own and is kept.
@@ -496,7 +500,7 @@ fn a_value_that_cannot_be_kept_is_rejected_and_reported() {
         "native fn later()\nlet GOOD = [[1, 2], [3, 4]]\nlet BAD = [[1], [later()]]\n{COUNTER}print(n, GOOD, len(BAD[n % 2]))\n"
     );
     let setup = |env: &mut Env| {
-        env.register_native("later", lying_pending, NativeEffects::CONST);
+        env.register_native("later", lying_handle, NativeEffects::CONST);
     };
     let mut on = world_with(&src, RunPolicy::REPLAY, setup);
     let mut off = world_with(&src, RunPolicy::REPLAY.with_static_cache(false), setup);
@@ -507,7 +511,7 @@ fn a_value_that_cannot_be_kept_is_rejected_and_reported() {
     assert_eq!(values.stats.skips, 3, "only `GOOD` is skipped, on each later run");
     assert_eq!(
         values.warnings(),
-        ["BAD (line 3) holds a pending result, so it is rebuilt on every run"]
+        ["BAD (line 3) holds a host handle, so it is rebuilt on every run"]
     );
     let good = values.slots.iter().find(|(i, _)| i.name.as_deref() == Some("GOOD")).unwrap();
     assert!(matches!(good.1, StaticSlotState::Filled(_)), "stored on its own: {:?}", good.1);
@@ -561,7 +565,7 @@ fn a_const_is_classified_once_and_kept() {
     // A native registered after the compile may change what is constant,
     // so the kept analysis is not served to a lowering that follows it.
     let before = petal::static_classify::analyses_run();
-    w.env.register_native("later", lying_pending, NativeEffects::CONST);
+    w.env.register_native("later", lying_handle, NativeEffects::CONST);
     w.env.set_static_cache(false);
     frame(&mut w);
     w.env.set_static_cache(true);
@@ -626,7 +630,7 @@ fn a_const_that_cannot_be_kept_warns_once_per_load() {
         "native fn later()\nlet BAD = const([[1], [later()]])\nlet ALSO = [[2], [later()], [3]]\n{COUNTER}print(n, len(BAD[n % 2]), len(ALSO))\n"
     );
     let setup = |env: &mut Env| {
-        env.register_native("later", lying_pending, NativeEffects::CONST);
+        env.register_native("later", lying_handle, NativeEffects::CONST);
     };
     let mut on = world_with(&src, RunPolicy::REPLAY, setup);
     let mut off = world_with(&src, RunPolicy::REPLAY.with_static_cache(false), setup);
@@ -634,7 +638,7 @@ fn a_const_that_cannot_be_kept_warns_once_per_load() {
     let warnings = on.env.take_static_warnings(on.sid);
     assert!(
         warnings.contains(
-            &"const BAD (line 2) holds a pending result, which cannot be kept between runs, so it is rebuilt on every run"
+            &"const BAD (line 2) holds a host handle, which cannot be kept between runs, so it is rebuilt on every run"
                 .to_string()
         ),
         "{warnings:?}"

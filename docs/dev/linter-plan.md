@@ -217,9 +217,6 @@ that converting *n* chains adds exactly *n* `Match` nodes and removes at
 least *n* `If` nodes, or lint refuses to write. Verified end to end over the
 repo (29 chains across 12 files) plus `~/worlds-fair/ui/ptl`.
 
-Still to revisit: if `==` on a `Pending` becomes strict, the safe-literal set
-needs re-deriving.
-
 ### `prefer-repeat` — the string-building loop
 
 `for i in range(0, n) do out = out ++ s end` → `out ++= repeat(s, n)`. `++`

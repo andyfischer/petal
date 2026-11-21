@@ -98,8 +98,7 @@
 //!    it. This is what holds when a kept table is handed to a function that
 //!    writes its parameter, or an element of it is edited through an alias.
 //!
-//! A kept value holds no function, `var` cell, host handle or pending
-//! result: one that does is not stored, its slots are rejected for the life
+//! A kept value holds no function, `var` cell or host handle: one that does is not stored, its slots are rejected for the life
 //! of the table, and [`StaticSlots::rejected`] says so.
 //!
 //! # Lifetime

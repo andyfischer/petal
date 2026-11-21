@@ -188,7 +188,7 @@ impl Env {
 
     /// The warnings for static values `stack_id` found it could not keep
     /// since the last call (a value holding a function, a `var` cell, a
-    /// handle or a pending result): one line each, as
+    /// handle): one line each, as
     /// [`StaticValues::warnings`] words them. Each is handed out once per
     /// load and once more after a reload, so a host can print what this
     /// returns after every run and say each thing once. The run itself is

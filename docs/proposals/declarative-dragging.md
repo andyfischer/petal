@@ -147,7 +147,7 @@ The three engine calls:
   value and returns it unchanged. `value` is usually a rect; it may be any
   number, vector or colour, which is how `between` interpolates colours.
   Keys are compared like `for … key` keys: by Map-key hash, with functions,
-  cells, pending values and NaN refused
+  cells and NaN refused
   ([state-call-paths.md](../dev/state-call-paths.md#22a)).
 - **`draggable(key, rect, spec_fn)`** registers a hit target, using the
   same registry as `interact` (`ui.ptl:892`) with the usual one-frame lag.
@@ -343,7 +343,7 @@ out of the loop and rebinds `st` (`var.md:449-463`). The proposal:
   on the wanted list (`docs/tasks/moses-debrief.md:79`). It is the honest
   Petal answer to `amb` and deserves its own proposal.
 - **Not `amb`.** Petal deliberately has no continuations or coroutines
-  (`pending-values-plan.md:36-46`). The frame loop is its retry mechanism.
+  The frame loop is its retry mechanism.
   `amb` would be a new control-flow concept for one library.
 
 ### P4: connecting to goal-based editing, DM and tooling
@@ -717,8 +717,10 @@ On the video timeline it is the dominant cost (pair 3).
 **Mitigations, in order:**
 
 1. Spread drag-start speculation over frames. A target that has not been
-   computed yet is a pending value, and pending values already absorb
-   (`pending-values.md`).
+   computed yet is a pending value, and pending values already absorb.
+   (Since 2026-11-21 they do not: pending answers live in the `query`
+   package and must be tested with `is_ready`, so this needs an explicit
+   "not computed yet" check.)
 2. Allow memo replay inside `speculate`, so unchanged keyed subtrees
    (other columns) replay.
 3. `when_far` pruning for `vary`.

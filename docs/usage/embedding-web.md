@@ -188,8 +188,9 @@ frame loop: the page runs the program once, and again on each click, after
 - **Hot reload.** No `reload_program`; load the new source instead.
 - **The C bridge's extras.** No scenarios, no `call`, no saved state beyond
   `get_state_json`.
-- **Fetching.** No pending-value fetcher; `host_data` is the pull channel
-  ([pending values](../features/pending-values.md)).
+- **Fetching.** No `QueryHost` for the
+  [`query`](../../core-stdlib/query/README.md) package; `host_data` is the pull
+  channel.
 - **Natives of your own from JavaScript.** Both runtimes register their
   natives in Rust. A page that needs another native builds its own runtime
   crate the way `petal-web-canvas/rust` does, on [ffi.md](ffi.md).

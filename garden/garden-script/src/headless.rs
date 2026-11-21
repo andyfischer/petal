@@ -12,10 +12,11 @@
 //!   colors.
 //!   `panel_theme()` returns `{}` — exactly what Garden answers with no
 //!   injected theme.
-//! - `query(kind, arg)` answers a loading `Value::Pending` every frame — the
-//!   same graceful degradation Garden's native performs when no provider is
-//!   attached — so a drawer renders its spinner/loading path forever, which is
-//!   deterministic. `invalidate` is a no-op.
+//! - `query(kind, arg)` answers a loading pending answer every frame (the
+//!   same graceful degradation Garden's performs when no provider is
+//!   attached), so a drawer renders its spinner/loading path forever, which is
+//!   deterministic, unless a fixture answers it ([`set_query_fixtures`]).
+//!   `invalidate` is a no-op.
 //! - The push channels (`emit`, `mutate`, `claim_key`, `request_frame` /
 //!   `animating`, the `navigate` family) validate their arguments like
 //!   Garden's natives and then go nowhere.
@@ -39,10 +40,10 @@
 //! byte-identical-trace property `petal-ui-run` is built on survives.
 
 use std::cell::RefCell;
-use std::hash::{Hash, Hasher};
 
 use petal::env::Env;
-use petal::native_fn::{InputClasses, NativeClass, NativeEffects, NativeResult, PetalCxt};
+use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
+use petal_stdlib_query::{QueryHost, ResourceAnswer};
 use petal::value::Value;
 
 use petal_ui::draw;
@@ -74,10 +75,10 @@ pub fn register_panel_stubs(env: &mut Env) {
     const EMITS: NativeEffects = NativeEffects::PURE.with_emits();
     env.register_native("palette", native_palette, NativeEffects::PURE);
     env.register_native("panel_theme", native_panel_theme, NativeEffects::PURE);
-    // The loading path creates a resource, an effect the audit sets aside
-    // because the call answers `Pending` (see `petal::effect_audit`).
-    env.register_native("query", native_query, HOST_READ);
-    env.register_native("invalidate", native_invalidate, NativeEffects::EFFECT);
+    // `query` and `invalidate` are the `query` package's own natives, as in
+    // Garden; what stands in for Garden is the host they answer from.
+    petal_stdlib_query::register(env);
+    petal_stdlib_query::swap_host(Some(Box::new(StubQueryHost)));
     env.register_native("emit", native_emit, NativeEffects::PURE);
     // Garden's `mutate` advances a counter and emits an event: contained.
     // `invalidate` and `panel_store_set` reach Garden's caches and store,
@@ -96,7 +97,7 @@ pub fn register_panel_stubs(env: &mut Env) {
     env.register_native(
         "panel_store_set",
         native_store_set,
-        NativeEffects::EFFECT.with_pending(NativeClass::Effectful),
+        NativeEffects::EFFECT,
     );
     env.register_native("text_view", native_text_view, EMITS);
     env.register_native("edit_view", native_edit_view, EMITS);
@@ -146,7 +147,7 @@ fn native_panel_theme(cxt: &mut PetalCxt) -> NativeResult {
 /// Ready answers for `query(kind, arg)`, keyed by `(kind, arg-as-JSON)`.
 ///
 /// Empty by default, which is the provider-less Garden behavior every existing
-/// caller gets: a loading `Pending`, forever. A host that wants a drawer to
+/// caller gets: a loading pending answer, forever. A host that wants a drawer to
 /// render its *loaded* path — the differential oracle over the Garden and
 /// worlds-fair corpora, chiefly — installs a table with
 /// [`set_query_fixtures`].
@@ -161,9 +162,10 @@ thread_local! {
 /// The answers are fixed for the life of the table: a fixture is a constant
 /// function of `(kind, arg)`, so a drawer sees the same model on every frame
 /// and the run stays deterministic. A `(kind, arg)` with no fixture keeps the
-/// loading `Pending`, so a table is additive — it can only move a drawer from
+/// loading answer, so a table is additive — it can only move a drawer from
 /// its spinner onto its content path, never the other way.
 pub fn set_query_fixtures(fixtures: QueryFixtures) -> QueryFixtures {
+    petal_stdlib_query::swap_host(Some(Box::new(StubQueryHost)));
     QUERY_FIXTURES.with(|f| std::mem::replace(&mut *f.borrow_mut(), fixtures))
 }
 
@@ -196,43 +198,37 @@ pub fn parse_query_fixtures(json: &serde_json::Value) -> Result<QueryFixtures, S
     Ok(table)
 }
 
-/// `query(kind, arg)` — a fixture answer if one is installed for this
-/// `(kind, arg)`, else a loading `Value::Pending`, forever, which is Garden's
-/// own provider-less answer. The resource key hashes the arg's JSON form so any
-/// arg shape (string, record, list) keys stably.
+/// The stub's [`QueryHost`]: a fixture answer if one is installed for this
+/// `(kind, arg)`, else loading, forever, which is Garden's own provider-less
+/// answer. `arg` is matched by its JSON spelling, so any arg shape keys
+/// stably.
 ///
-/// `note_host_read()` is what Garden's real `query`
-/// (`garden-script/src/query.rs`) does for the same reason: the answer comes
+/// The `query` native reports a host read, as Garden's does: the answer comes
 /// from a host-owned cache the binding table does not cover, so the frame gate
 /// must not treat a run that consulted it as a pure function of its bindings.
-/// The stub owes the gate the same declaration — its answers are constant, so
-/// today it only costs a re-run, but a stub that under-declares relative to the
-/// native it stands in for would hide exactly the staleness this corpus exists
-/// to find.
-fn native_query(cxt: &mut PetalCxt) -> NativeResult {
-    let kind = cxt.get_string(1)?;
-    let arg = cxt.get_value(2)?;
-    let arg_json = petal::value::value_to_json_lossy(&arg, cxt.heap()).to_string();
-    cxt.note_host_read();
+/// A stub that under-declares relative to the native it stands in for would
+/// hide exactly the staleness this corpus exists to find.
+struct StubQueryHost;
 
-    let fixture = QUERY_FIXTURES.with(|f| {
-        f.borrow()
-            .iter()
-            .find(|((k, a), _)| *k == kind && *a == arg_json)
-            .map(|(_, v)| v.clone())
-    });
-    if let Some(value) = fixture {
-        let v = petal::value::json_to_value(&value, cxt.heap_mut())?;
-        cxt.push_value(v);
-        return Ok(1);
+impl QueryHost for StubQueryHost {
+    fn answer(
+        &mut self,
+        cx: &mut PetalCxt,
+        kind: &str,
+        arg: Value,
+    ) -> Result<ResourceAnswer<Value>, String> {
+        let arg_json = petal::value::value_to_json_lossy(&arg, cx.heap()).to_string();
+        let fixture = QUERY_FIXTURES.with(|f| {
+            f.borrow()
+                .iter()
+                .find(|((k, a), _)| k == kind && *a == arg_json)
+                .map(|(_, v)| v.clone())
+        });
+        match fixture {
+            Some(value) => Ok(ResourceAnswer::Ready(petal::value::json_to_value(&value, cx.heap_mut())?)),
+            None => Ok(ResourceAnswer::Loading),
+        }
     }
-
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    kind.hash(&mut hasher);
-    0u8.hash(&mut hasher);
-    arg_json.hash(&mut hasher);
-    cxt.push_loading(hasher.finish());
-    Ok(1)
 }
 
 /// `request_frame()` / `animating()`: push the same `animating` marker
@@ -241,15 +237,6 @@ fn native_query(cxt: &mut PetalCxt) -> NativeResult {
 fn native_request_frame(cxt: &mut PetalCxt) -> NativeResult {
     let sym = cxt.intern_symbol("animating");
     cxt.push_output(sym, Value::Int(1));
-    cxt.push_nil();
-    Ok(1)
-}
-
-fn native_invalidate(cxt: &mut PetalCxt) -> NativeResult {
-    let _kind = cxt.get_string(1)?;
-    let _arg = cxt.get_value(2)?;
-    // Garden's drops a cache entry, which no replay reproduces.
-    cxt.note_effect();
     cxt.push_nil();
     Ok(1)
 }

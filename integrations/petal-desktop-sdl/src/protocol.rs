@@ -64,10 +64,6 @@ pub enum Command {
     /// Optional per-frame draw statistics; hosts that don't implement it
     /// respond with an "unsupported" error.
     DrawStats,
-    /// Structured per-frame report of every live pending resource (state, age,
-    /// origin, absorption count) — the observability query behind the dev
-    /// overlay and agent debugging. Replies in the `pending` response field.
-    PendingReport,
 
     // ── Timeline (see `crate::timeline`) ──
     /// Report the recorded history: frame count, cursor, tracked call.
@@ -178,11 +174,6 @@ pub struct Response {
     /// Optional host-defined per-frame statistics (see [`Host::draw_stats`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stats: Option<JsonValue>,
-    /// The frame pending report — an array of live-resource summaries (see
-    /// [`petal_ui::pending::pending_report`]). Present on a `pending_report`
-    /// command.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pending: Option<JsonValue>,
     /// Timeline status (see `Timeline::status_json`); on every timeline command.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeline: Option<JsonValue>,
@@ -213,7 +204,6 @@ impl Response {
             output: None,
             screenshot: None,
             stats: None,
-            pending: None,
             timeline: None,
             site: None,
             trail: None,
@@ -329,9 +319,6 @@ pub fn run_one_frame<H: Host>(
     host.prepare_frame(env);
 
     *frame_count += 1;
-    // Advance the ExecutionContext frame so pending-resource ages grow (see
-    // `env.pending_report` / the `pending_report` command).
-    env.advance_frame(stack_id);
     input.begin_frame(1.0 / 60.0);
     crate::game_loop::handle_debug_keys(input);
     bind_frame_info(env, 1.0 / 60.0, *frame_count);
@@ -521,17 +508,6 @@ pub fn handle_command<H: Host>(
             // dispatches here directly has none.
             send_response(&Response::err("timeline commands need the game loop".to_string()));
         }
-        Command::PendingReport => {
-            // The report is core-lib (the resource table lives on the
-            // ExecutionContext), so — unlike `draw_stats` — it needs no host
-            // method and has no unsupported-host fallback: it reads the live
-            // resource table directly, no speculative frame required.
-            let report = petal_ui::pending::pending_report(env, program_id, stack_id);
-            send_response(&Response {
-                pending: Some(report),
-                ..Response::ok()
-            });
-        }
     }
 }
 
@@ -587,12 +563,6 @@ mod tests {
             } => assert_eq!((d.dx, d.dy), (3, -2)),
             _ => panic!("expected an Input command with a mouse_delta"),
         }
-    }
-
-    #[test]
-    fn pending_report_command_parses() {
-        let cmd: Command = serde_json::from_str(r#"{"cmd":"pending_report"}"#).unwrap();
-        assert!(matches!(cmd, Command::PendingReport));
     }
 
     #[test]

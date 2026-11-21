@@ -40,41 +40,6 @@ pub type NativeFn = fn(&mut PetalCxt) -> NativeResult;
 /// `run_speculative`) calls the same closure and sees the same captures.
 pub type BoxedNativeFn = Box<dyn Fn(&mut PetalCxt) -> NativeResult>;
 
-/// How a native function behaves when handed a `Value::Pending` argument.
-/// Consulted at the single native-call boundary (see the bytecode VM's
-/// `call_native_or_intrinsic`) only when a Pending arg is actually present —
-/// or, for [`EffectfulDeep`](Self::EffectfulDeep), held inside an argument.
-///
-/// Every policy but `EffectfulDeep` looks at the arguments themselves only:
-/// lists and records hold pending values element by element, so a native
-/// handed a partly loaded record runs and sees the pending fields (a UI
-/// drawing a row whose `date` is still loading draws the rest of the row).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NativeClass {
-    /// Default. A Pending argument is absorbed: the call returns the leftmost
-    /// Pending arg without invoking the native (`sqrt(pending) -> pending`).
-    Strict,
-    /// Side-effecting emitter (`print`, `push_output`, …). A Pending argument
-    /// makes the call a no-op returning `Nil` — it emits nothing.
-    Effectful,
-    /// [`Effectful`](Self::Effectful) for a native that needs its arguments
-    /// fully loaded: the call is a no-op returning `Nil` when any argument
-    /// *contains* a `Pending` — itself, or anywhere inside its lists,
-    /// records, maps, enum payloads or elements
-    /// ([`crate::value::find_pending`]). For an emitter whose payload leaves
-    /// the run as data (a scraped record, a saved row), where a half-loaded
-    /// record would be a wrong record rather than a partial one.
-    /// [`NativeEffects::EMITS_DEEP`] is the emit row with it.
-    ///
-    /// The walk costs a pass over the arguments on each call, skipped
-    /// outright while the run's resource table is empty (no pending value
-    /// can exist then).
-    EffectfulDeep,
-    /// The native inspects Pendings itself and must run normally
-    /// (`__pending`/`__resolve`/`__reject`). Never intercepted.
-    AllowPending,
-}
-
 /// The external inputs a native can read, as a bitmask — one bit per class
 /// of host state that changes independently of the others. Declared at the
 /// leaf where the knowledge lives ([`NativeEffects::reads`]) and propagated
@@ -98,9 +63,8 @@ impl InputClasses {
     /// query cache, an editor buffer) — the same thing `note_host_read` says
     /// at runtime ([`PetalCxt::note_host_read`]).
     pub const HOST_DATA: InputClasses = InputClasses(1 << 4);
-    /// The resource table: a `Pending` this native may answer differently
-    /// once the resource resolves.
-    pub const RESOURCES: InputClasses = InputClasses(1 << 5);
+    // Bit 5 was the pending-value resource table, removed with pending
+    // values (the `query` package's answers are a host-data read).
     /// The per-run random stream (which the native also advances).
     pub const RNG: InputClasses = InputClasses(1 << 6);
     /// A host→script binding outside the named classes: one chosen by
@@ -138,13 +102,12 @@ impl InputClasses {
         InputClasses(Self::PHYSICS.0 | Self::NET.0 | Self::CAMERA.0);
 
     /// Every class, by name, in bit order: what a report prints.
-    pub const NAMED: [(InputClasses, &'static str); 11] = [
+    pub const NAMED: [(InputClasses, &'static str); 10] = [
         (Self::POINTER, "POINTER"),
         (Self::KEYBOARD, "KEYBOARD"),
         (Self::CLOCK, "CLOCK"),
         (Self::VIEWPORT, "VIEWPORT"),
         (Self::HOST_DATA, "HOST_DATA"),
-        (Self::RESOURCES, "RESOURCES"),
         (Self::RNG, "RNG"),
         (Self::BINDINGS, "BINDINGS"),
         (Self::PHYSICS, "PHYSICS"),
@@ -193,8 +156,8 @@ impl std::ops::BitOr for InputClasses {
 /// takes the row, so there is no such thing as an undeclared native.
 ///
 /// A declaration is the *union over every path* through the native: a native
-/// that consults the resource table only when handed a `Pending` still
-/// declares [`RESOURCES`](InputClasses::RESOURCES). Under-declaring is the
+/// that reads host data on only one of its paths still declares
+/// [`HOST_DATA`](InputClasses::HOST_DATA). Under-declaring is the
 /// bug this row exists to prevent (a memoized scope that called the native
 /// would replay stale); over-declaring only costs a validation.
 ///
@@ -213,12 +176,9 @@ pub struct NativeEffects {
     /// Pushes into an output buffer (a draw command, an event).
     pub emits: bool,
     /// Does something no replay can reproduce: prints, reseeds noise,
-    /// creates or resolves a resource, advances a counter, reaches through a
+    /// advances a counter, reaches through a
     /// handle into host state, publishes a method.
     pub effect: bool,
-    /// What to do with a `Pending` argument ([`NativeFnTable::set_class`]
-    /// can still change it after registration).
-    pub pending: NativeClass,
     /// The native is a **constant function**: the same arguments give the
     /// same result for the life of the program, on any path through it. It
     /// reads no dynamic input at all — not the tracked classes in `reads`,
@@ -242,7 +202,7 @@ pub struct NativeEffects {
     pub constant: bool,
     /// The [`effect`](Self::effect) stays inside the execution: it lands in
     /// the `ExecutionContext` (the print buffer, the noise seed, a counter,
-    /// an output buffer, the resource table) or in the running stack, which
+    /// an output buffer) or in the running stack, which
     /// a forked execution owns a copy of. A speculative run
     /// (`crate::dm::spec`) calls a contained native as usual, and its
     /// effect is discarded with the fork. An effect that is **not**
@@ -274,7 +234,7 @@ pub struct NativeEffects {
     /// Replay rule: a memoized scope records the call (native and
     /// arguments) and **re-issues** it when the scope is replayed, which is
     /// what running the code again would do. A command call whose arguments
-    /// cannot be fingerprinted (a closure, a cell, a pending value) or that
+    /// cannot be fingerprinted (a closure, a cell) or that
     /// returns something other than nil makes the scope effectful instead.
     /// A scope that issued a command is never re-executed speculatively,
     /// and a re-execution defers its commands rather than issuing them. A
@@ -300,7 +260,6 @@ impl NativeEffects {
         probe: false,
         emits: false,
         effect: false,
-        pending: NativeClass::Strict,
         constant: false,
         contained: false,
         no_feedback: false,
@@ -329,20 +288,10 @@ impl NativeEffects {
         ..NativeEffects::PURE
     };
 
-    /// Pushes into an output buffer, and no-ops on a `Pending` argument.
+    /// Pushes into an output buffer.
     pub const EMITS: NativeEffects = NativeEffects {
         emits: true,
-        pending: NativeClass::Effectful,
         ..NativeEffects::PURE
-    };
-
-    /// [`EMITS`](Self::EMITS) for an emitter whose arguments must be fully
-    /// loaded: no-ops while any argument *contains* a `Pending`, at any depth
-    /// ([`NativeClass::EffectfulDeep`]). `emit({title: t, date: d})` with `d`
-    /// still loading emits nothing, rather than a record with a pending field.
-    pub const EMITS_DEEP: NativeEffects = NativeEffects {
-        pending: NativeClass::EffectfulDeep,
-        ..NativeEffects::EMITS
     };
 
     /// A **declare** native: pushes a keyed, idempotent declaration into an
@@ -390,9 +339,7 @@ impl NativeEffects {
         }
     }
 
-    /// This row pushing into an output buffer, with the `Pending` policy
-    /// left as it is (unlike [`EMITS`](Self::EMITS), which also no-ops on a
-    /// `Pending` argument).
+    /// This row pushing into an output buffer.
     pub const fn with_emits(self) -> NativeEffects {
         NativeEffects {
             emits: true,
@@ -406,11 +353,6 @@ impl NativeEffects {
             effect: true,
             ..self
         }
-    }
-
-    /// This row with the given `Pending`-argument policy.
-    pub const fn with_pending(self, pending: NativeClass) -> NativeEffects {
-        NativeEffects { pending, ..self }
     }
 
     /// This row with its effect [`contained`](Self::contained): whatever it
@@ -866,9 +808,6 @@ pub fn undeclared_named_args(fn_name: &str) -> String {
 struct NativeFnEntry {
     name: String,
     func: NativeImpl,
-    /// The Pending-argument policy: `effects.pending`, kept as its own field
-    /// so the hot `intercept_pending` check is one load.
-    class: NativeClass,
     /// The declared effect row.
     effects: NativeEffects,
     /// The parameter lists this native declares for named arguments; empty
@@ -1052,7 +991,6 @@ impl NativeFnTable {
         self.entries.push(NativeFnEntry {
             name: name.to_string(),
             func,
-            class: effects.pending,
             effects,
             signatures: Vec::new(),
         });
@@ -1065,17 +1003,6 @@ impl NativeFnTable {
         id
     }
 
-    /// Override the Pending-handling class of an already-registered native.
-    /// Registration stays append-only (indices are stable); classification is
-    /// applied afterward by id. The row's `pending` field is updated too, so
-    /// the two never disagree.
-    pub fn set_class(&mut self, id: NativeFnId, class: NativeClass) {
-        self.revision = next_revision();
-        let entry = &mut self.entries[id.0 as usize];
-        entry.class = class;
-        entry.effects.pending = class;
-    }
-
     /// Replace the effect row of an already-registered native: how a host
     /// marks an emitter it registered through a fixed-row path as a
     /// [`declare`](NativeEffects::declares), or a read as one that
@@ -1085,13 +1012,12 @@ impl NativeFnTable {
     pub fn set_effects(&mut self, id: NativeFnId, effects: NativeEffects) {
         self.revision = next_revision();
         let entry = &mut self.entries[id.0 as usize];
-        entry.class = effects.pending;
         entry.effects = effects;
     }
 
     /// Declare a parameter list for an already-registered native, so calls
     /// may pass its arguments by name. Opt-in, and applied by id after
-    /// registration like [`set_class`](Self::set_class): a native that
+    /// registration like [`set_effects`](Self::set_effects): a native that
     /// declares nothing keeps refusing names.
     ///
     /// `spec` is the parameter names in the order the native reads its
@@ -1166,11 +1092,6 @@ impl NativeFnTable {
             Some(id) => self.constness(id),
             None => NativeConstness::Dynamic,
         }
-    }
-
-    /// The Pending-handling class of a native (defaults to `Strict`).
-    pub fn get_class(&self, id: NativeFnId) -> NativeClass {
-        self.entries[id.0 as usize].class
     }
 
     /// Look up a native function by name.
@@ -1265,25 +1186,10 @@ pub struct PetalCxt<'a> {
     pub(crate) rng_state: &'a mut u64,
     /// Per-run Perlin-noise seed, borrowed from the owning `ExecutionContext`.
     pub(crate) noise_seed: &'a mut u64,
-    /// The owning context's resource table, borrowed so the pending-resource
-    /// builtins (`__pending`/`__resolve`/`__reject`) can create/resolve entries.
-    pub(crate) resources: &'a mut crate::resource_table::ResourceTable,
-    /// Whether the debug-gated absorption log records (copied from the owning
-    /// `ExecutionContext`). Gates the push in [`note_absorbed`](Self::note_absorbed).
-    pub(crate) trace_pending: bool,
-    /// The owning context's per-frame absorption log, borrowed so an aggregate
-    /// that absorbs a Pending element (`sort`/`join`) can record `(origin, id)`
-    /// when `trace_pending` is on. See
-    /// [`crate::execution_context::ExecutionContext::absorption_log`].
-    pub(crate) absorption_log:
-        &'a mut Vec<(Option<crate::program::TermId>, crate::value::PendingId)>,
     /// The call site (`TermId`) of the instruction invoking this native, when
-    /// known — stamped onto any resource this call creates for the observability
-    /// tooling. `None` when the caller has no origin term to attribute.
+    /// known: what [`call_location`](Self::call_location) resolves. `None`
+    /// when the caller has no origin term to attribute.
     pub(crate) origin: Option<crate::program::TermId>,
-    /// The owning context's current frame, stamped onto any resource this call
-    /// creates (`ResourceEntry::frame_started`).
-    pub(crate) frame: u64,
     /// Whether `print` echoes to real stdout. False for speculative forks so
     /// their output stays captured in the buffer instead of leaking to stdout.
     pub(crate) echo: bool,
@@ -1433,6 +1339,16 @@ impl<'a> PetalCxt<'a> {
     /// Look up a registered handle class by id (`None` if unregistered).
     pub fn handle_class(&self, id: HandleClassId) -> Option<&HandleClass> {
         self.handle_classes.get(id.0 as usize)
+    }
+
+    /// The id of the registered handle class called `name`, if there is one:
+    /// how a library that registers a class finds it again in whichever
+    /// `Env` its native is running in.
+    pub fn handle_class_id(&self, name: &str) -> Option<HandleClassId> {
+        self.handle_classes
+            .iter()
+            .position(|c| c.name == name)
+            .map(|i| HandleClassId(i as u16))
     }
 
     /// Get a handle argument at 1-indexed position, checked against the
@@ -1700,7 +1616,7 @@ impl<'a> PetalCxt<'a> {
     /// — wrote host state, advanced a counter, printed. A memoized scope
     /// (see [`crate::memo`]) that calls it is never skipped. The `PetalCxt`
     /// operations with an effect of their own (`print`, the counters, the
-    /// mutable resource table, the noise seed) declare it themselves; a
+    /// noise seed) declare it themselves; a
     /// native that reaches host state some other way must call this.
     pub fn note_effect(&mut self) {
         self.run_deps.note_effect();
@@ -1768,104 +1684,6 @@ impl<'a> PetalCxt<'a> {
 
     pub fn heap_mut(&mut self) -> &mut Heap {
         self.heap
-    }
-
-    // --- Pending resources ---
-
-    /// The owning context's resource table (read-only). See
-    /// [`crate::resource_table`].
-    pub fn resources(&mut self) -> &crate::resource_table::ResourceTable {
-        self.run_deps.note_resource_read();
-        self.resources
-    }
-
-    /// The owning context's resource table (mutable) — for creating/resolving
-    /// pending resource entries.
-    pub fn resources_mut(&mut self) -> &mut crate::resource_table::ResourceTable {
-        self.run_deps.note_effect();
-        self.resources
-    }
-
-    /// Record that this native absorbed the resource `id` (an aggregate like
-    /// `sort`/`join` swallowing a Pending element): bump its always-on
-    /// `absorbed_count` and, when the debug-gated log is on, push `(origin, id)`
-    /// to the per-frame absorption log. The counterpart to
-    /// [`Vm::note_absorption`](crate::backend::bytecode::vm) on the native path.
-    pub fn note_absorbed(&mut self, id: crate::value::PendingId) {
-        self.resources.note_absorbed(id);
-        if self.trace_pending {
-            self.absorption_log.push((self.origin, id));
-        }
-    }
-
-    /// The call site of the instruction invoking this native, when known — the
-    /// origin to stamp onto a resource this call creates. See [`origin`](Self::origin).
-    pub fn origin(&self) -> Option<crate::program::TermId> {
-        self.origin
-    }
-
-    /// The owning context's current frame — the `frame_started` to stamp onto a
-    /// resource this call creates.
-    pub fn frame(&self) -> u64 {
-        self.frame
-    }
-
-    /// Return a loading pending value for the resource `key`: find or create
-    /// its entry (stamped with this call's [`origin`](Self::origin) and
-    /// [`frame`](Self::frame)) and push `Value::Pending(id)`. The same key
-    /// yields the same id every time, so a native may call this on every run
-    /// while the host's fetch is in flight. Returns the id. For a string (or
-    /// any hashable) key, [`crate::resource_table::hash_key`] makes the `u64`.
-    pub fn push_loading(&mut self, key: u64) -> crate::value::PendingId {
-        let (origin, frame) = (self.origin, self.frame);
-        let id = self.resources_mut().get_or_create_loading(key, origin, frame);
-        self.results.push(Value::Pending(id));
-        id
-    }
-
-    /// Return an errored pending value for the resource `key`: as
-    /// [`push_loading`](Self::push_loading), and mark the entry errored with
-    /// `message` as a string (what the script's `error_of` returns). Returns
-    /// the id.
-    pub fn push_failed(
-        &mut self,
-        key: u64,
-        message: impl Into<String>,
-    ) -> crate::value::PendingId {
-        let (origin, frame) = (self.origin, self.frame);
-        let id = self.resources_mut().get_or_create_loading(key, origin, frame);
-        let err = Value::String(self.heap.alloc_string(message.into()));
-        self.resources_mut().reject(key, err, frame);
-        self.results.push(Value::Pending(id));
-        id
-    }
-
-    /// Return a host's [`ResourceAnswer`](crate::resource_provider::ResourceAnswer)
-    /// for the resource `key`: a ready value as itself (made Petal by `ready`),
-    /// a loading or errored one as a pending value
-    /// ([`push_loading`](Self::push_loading) / [`push_failed`](Self::push_failed)).
-    /// The body of a native over a
-    /// [`ResourceProvider`](crate::resource_provider::ResourceProvider):
-    /// `let a = provider.answer(&url); cx.push_answer(hash_key(&url), a, to_value)`.
-    pub fn push_answer<T>(
-        &mut self,
-        key: u64,
-        answer: crate::resource_provider::ResourceAnswer<T>,
-        ready: impl FnOnce(&mut Self, T) -> Value,
-    ) {
-        use crate::resource_provider::ResourceAnswer;
-        match answer {
-            ResourceAnswer::Ready(data) => {
-                let value = ready(self, data);
-                self.results.push(value);
-            }
-            ResourceAnswer::Loading => {
-                self.push_loading(key);
-            }
-            ResourceAnswer::Errored(message) => {
-                self.push_failed(key, message);
-            }
-        }
     }
 
     /// Where this call is written: the file, line and column of the call

@@ -134,7 +134,6 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         JumpIfFalse { cond, to } => format!("jump_if_false r{} -> {}", cond, to),
         JumpIfTrue { cond, to } => format!("jump_if_true r{} -> {}", cond, to),
         JumpIfPresent { cond, to } => format!("jump_if_present r{} -> {}", cond, to),
-        JumpIfPending { cond, to } => format!("jump_if_pending r{} -> {}", cond, to),
         ForEachInit { iter, slot } => format!("foreach_init r{} slot{}", iter, slot),
         ForEachNext { slot, var, exit } => {
             format!("foreach_next slot{} -> r{} else -> {}", slot, var, exit)

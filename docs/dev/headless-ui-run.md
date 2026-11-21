@@ -58,7 +58,7 @@ Build `petal-ui-run` with `cd core-sdk/petal-ui-headless && cargo build`
 | `--memo-stats` | off | Report the memo's counters (hits, misses, records, inlined, effectful, re-executions, cutoffs, cold sites, evictions) on stderr. |
 | `--targets` | off | Add a `targets` list to every record: the rects the script registered on that frame, with their ids (see "Clicking a widget by name"). |
 | `--effect-audit` | off | Bracket every native call with activity snapshots and report, on stderr, each native whose observed behavior differs from its declared effect row (`petal::effect_audit`). Exit 3 if a declared native did more than it declared. |
-| `--static-audit` | off | Watch the dynamic inputs (bindings, host data, resources, output, effects, the random stream, `state`, any native not registered constant) on every frame while each top-level term `petal show-static` calls static is evaluated, and report each one touched on stderr with the declaration, the input and the call (`petal::static_audit`). |
+| `--static-audit` | off | Watch the dynamic inputs (bindings, host data, output, effects, the random stream, `state`, any native not registered constant) on every frame while each top-level term `petal show-static` calls static is evaluated, and report each one touched on stderr with the declaration, the input and the call (`petal::static_audit`). |
 | `--drag-trace` | off | Add a `drag` record to every frame: each `ui/drag` drag in flight, explained, and the drops announced that frame (see "Tracing a drag"); a line per drag frame on stderr. `null` on a frame with neither. |
 | `--drag-trace-full` | off | The same, with the spec as built, the base model and each target's drop state. Larger; what the `DragExplain` MCP tool reads. |
 | `--ui-debug <name>` | none | Switch on the host debug overlay `name`, as a host's debug key would (`ui_debug(name)` answers true). `drag` draws `ui/drag`'s `drag_debug` into the trace. Repeatable. |
@@ -296,7 +296,7 @@ package with them, so a drawer's `import garden` resolves and links:
 |---|---|
 | `palette()` | Garden's fallback palette — the same colors a themeless Garden resolves |
 | `panel_theme()` | `{}` |
-| `query(kind, arg)` | a loading pending value, forever — a headless run exercises the drawer's loading/spinner path. `--query-fixtures` supplies ready answers instead |
+| `query(kind, arg)` | a loading pending answer, forever — a headless run exercises the drawer's loading/spinner path. `--query-fixtures` supplies ready answers instead |
 | `invalidate`, `emit`, `claim_key`, `navigate`/`navigate_replace`/`navigate_back`/`navigate_forward`, `panel_store_set` | arguments validated, then dropped |
 | `mutate(name, arg)` | a unique handle (1, 2, …); `mutate_result(handle)` answers nil |
 | `nav_arg()`, `panel_store_get(key)` | nil |

@@ -134,7 +134,7 @@ typedef enum pb_kind {
     PB_SYMBOL = 9,   /* str = symbol name */
     PB_HANDLE = 10,  /* integer = slot, count = serial, number = class index (per VM),
                         str = handle class name */
-    PB_PENDING = 11, /* an unresolved resource */
+    PB_PENDING = 11, /* reserved: was a pending value, which Petal no longer has; never produced */
     PB_OTHER = 12,   /* closure, native fn, element…; str = type name */
     PB_VEC3 = 13,    /* number = x, y = y, z = z */
     PB_DICT = 14     /* a `map` (Map()): items[count] alternate key, value, so
@@ -264,7 +264,7 @@ bool pb_plan_bind(pb_plan* plan, const pb_value* record, const pb_value** out,
  *
  * Values compare by content, exactly: numbers by their bits, strings by
  * bytes, records by keys and values, lists item by item. A value whose
- * contents a view does not carry (PB_OTHER, PB_PENDING) never compares
+ * contents a view does not carry (PB_OTHER) never compares
  * equal. An option that appears or disappears counts as changed. */
 typedef struct pb_snapshot pb_snapshot;
 
@@ -386,6 +386,8 @@ pb_status pb_vm_register_package(pb_vm* vm, const char* name, const char* const*
  * registered in this VM, and every native registered beyond the builtins is
  * declared by one of them. Name every interface package the host answers for
  * in one call (a pb_vm_create VM answers for "ui" plus the host's own).
+ * The natives of "query", the async-data package petal-ui registers, need
+ * not be named.
  * PB_OK when they agree; PB_ERR_NOT_FOUND otherwise, with the differences in the
  * error message and in `*out_report` (optional, valid until the next call;
  * "" on success). */
@@ -432,7 +434,8 @@ pb_status pb_vm_override_file(pb_vm* vm, const char* path, const char* source);
  *   PB_FX_EFFECT    does something no replay reproduces (mutates host state…)
  *   PB_FX_READS_*   input classes it reads. PB_FX_READS_HOST_DATA also makes the
  *                   bridge call note_host_read() on every call.
- *   PB_FX_PENDING_* how a Pending argument is treated (default: strict/absorb).
+ *   PB_FX_PENDING_* no effect: Petal no longer has pending values. Accepted, and
+ *                   ignored, so existing hosts keep compiling.
  *   PB_FX_CONST     a constant function: the same arguments give the same
  *                   result for as long as the VM lives, it reads no host state
  *                   at all (no time, input, viewport, theme, fonts, random,
@@ -495,8 +498,8 @@ enum {
     PB_FX_PROBE = 1u << 0,
     PB_FX_EMITS = 1u << 1,
     PB_FX_EFFECT = 1u << 2,
-    PB_FX_PENDING_EFFECTFUL = 1u << 3, /* a Pending arg makes the call a no-op */
-    PB_FX_PENDING_ALLOW = 1u << 4,     /* the native sees Pending args itself */
+    PB_FX_PENDING_EFFECTFUL = 1u << 3, /* deprecated, no effect */
+    PB_FX_PENDING_ALLOW = 1u << 4,     /* deprecated, no effect */
     PB_FX_CONST = 1u << 5,             /* constant function of its arguments */
     PB_FX_CONTAINED = 1u << 6,         /* the effect stays in the execution */
     PB_FX_NO_FEEDBACK = 1u << 7,       /* no direct-manipulation feedback */
@@ -505,7 +508,7 @@ enum {
     PB_FX_READS_CLOCK = 1u << 10,
     PB_FX_READS_VIEWPORT = 1u << 11,
     PB_FX_READS_HOST_DATA = 1u << 12,
-    PB_FX_READS_RESOURCES = 1u << 13,
+    PB_FX_READS_RESOURCES = 1u << 13, /* deprecated: no such input any more; treated as an unvalidated read */
     PB_FX_READS_RNG = 1u << 14,
     PB_FX_READS_BINDINGS = 1u << 15,
     PB_FX_READS_PHYSICS = 1u << 16, /* the physics world, revised per step */
@@ -538,13 +541,12 @@ pb_status pb_vm_register_native(pb_vm* vm, const char* name, pb_native_fn fn, vo
 
 /* Register an emitter: a native `name(args...)` that returns nil and pushes
  * `tag(args...)` (a PB_ENUM, payload = the call's arguments) into the output
- * buffer `buffer`. `tag` NULL = `name`. Effects are PB_FX_EMITS with the
- * Pending-no-op policy. This is the fast path for command streams: no host
+ * buffer `buffer`. `tag` NULL = `name`. Effects are PB_FX_EMITS. This is the fast path for command streams: no host
  * code runs during the script; drain `buffer` after the run. */
 pb_status pb_vm_register_emitter(pb_vm* vm, const char* name, const char* buffer, const char* tag);
 
-/* pb_vm_register_emitter with extra effect flags on top of PB_FX_EMITS and
- * the Pending-no-op policy: PB_FX_DECLARE for a declaration the host
+/* pb_vm_register_emitter with extra effect flags on top of PB_FX_EMITS:
+ * PB_FX_DECLARE for a declaration the host
  * reconciles (body, point_light). PB_FX_KEYED pushes `tag(key, args...)`,
  * where `key` is the call's implicit key (pb_call_key) as an int, or nil:
  * a declaration the script gave no id can be reconciled by it. Other flags
@@ -568,8 +570,7 @@ pb_status pb_vm_register_emitter_fx(pb_vm* vm, const char* name, const char* buf
  *   - PB_FX_KEYED puts the call's implicit key first in the payload, as for
  *     pb_vm_register_emitter_fx: `tag(key, args...)` or `tag(key, result)`.
  *
- * Its effect row is an emitter's: PB_FX_EMITS with the Pending-no-op policy,
- * plus `effects` (PB_FX_DECLARE; PB_FX_READS_* for what the callback reads,
+ * Its effect row is an emitter's: PB_FX_EMITS, plus `effects` (PB_FX_DECLARE; PB_FX_READS_* for what the callback reads,
  * which it then notes as a callback native does). So a memoized scope that
  * called it is REPLAYED like one that called an emitter: what the call
  * pushed is pushed again (or handed over as one segment) WITHOUT calling the
@@ -579,8 +580,8 @@ pb_status pb_vm_register_emitter_fx(pb_vm* vm, const char* name, const char* buf
  * buffer, and not at all on a replay: whatever it makes on the host (a
  * decoded draw, a cache slot) must be reached through what it pushed, never
  * kept as "the calls of this frame". `effects` may not hold PB_FX_EFFECT,
- * PB_FX_COMMAND, PB_FX_PROBE, PB_FX_CONST, PB_FX_CONTAINED, PB_FX_TICKS or
- * PB_FX_PENDING_ALLOW (PB_ERR_INVALID_ARG): a native that changes host state
+ * PB_FX_COMMAND, PB_FX_PROBE, PB_FX_CONST, PB_FX_CONTAINED or PB_FX_TICKS
+ * (PB_ERR_INVALID_ARG): a native that changes host state
  * is a command or an effect, not an emit. `tag` NULL = `name`; userdata
  * ownership is as for pb_vm_register_native. */
 pb_status pb_vm_register_checked_emitter(pb_vm* vm, const char* name, const char* buffer, const char* tag,
@@ -1611,8 +1612,7 @@ pb_status pb_vm_get_state(pb_vm* vm, const char* name, const pb_value** out);
  * slots of which none belongs to the loaded program.
  *
  * What a document does not carry:
- *   - a value that is or holds a function, a host handle, a pending result
- *     or a UI element: the whole slot is left out of the save, and after a
+ *   - a value that is or holds a function, a host handle or a UI element: the whole slot is left out of the save, and after a
  *     load that state starts from its initial value;
  *   - whether a value was frozen (freeze()): it comes back equal and
  *     unfrozen;

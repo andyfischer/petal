@@ -17,7 +17,7 @@
 //! - **Values round-trip or are not saved.** Anything JSON has no spelling
 //!   for is written as an object tagged `"$petal"` (see [`encode`]); a value
 //!   that cannot be rebuilt in another process — a function, a host handle,
-//!   a pending resource, a UI element — is reported and left out, so its
+//!   a UI element — is reported and left out, so its
 //!   declaration starts from its initial value next run instead of coming
 //!   back as a string.
 //!
@@ -522,7 +522,6 @@ fn encode(val: &Value, heap: &Heap, symbols: &SymbolTable) -> Result<Json, Strin
         }
         Value::Element(_) => return Err("a UI element".to_string()),
         Value::Handle(_) => return Err("a host handle".to_string()),
-        Value::Pending(_) => return Err("a pending value".to_string()),
     })
 }
 

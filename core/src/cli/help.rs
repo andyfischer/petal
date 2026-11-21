@@ -86,10 +86,6 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("explain", "Show the value chain that produced a term"),
             ("graph", "Walk the dataflow graph back or forward from terms"),
             (
-                "pending-report",
-                "Report every live pending resource after a run",
-            ),
-            (
                 "propose-edit",
                 "Propose source edits that change an emitted value",
             ),
@@ -171,7 +167,6 @@ fn page(name: &str) -> Option<&'static str> {
         "show-tokens" => SHOW_TOKENS,
         "graph" => GRAPH,
         "show-graph" => SHOW_GRAPH,
-        "pending-report" => PENDING_REPORT,
         "propose-edit" => PROPOSE_EDIT,
         "lsp" => LSP,
         "packages" => PACKAGES,
@@ -350,10 +345,6 @@ OPTIONS
               the call that produced it, and dump the values with their call
               sites and per-argument edit info after the run.
 
-       --trace-pending
-              Record pending absorptions and print the frame pending report
-              to stderr after the run. PETAL_TRACE_PENDING=1 does the same.
-
        --dup-stats
               Count copy-on-write duplications and heap allocations during
               the run and print them to stderr afterwards.
@@ -437,7 +428,7 @@ OPTIONS
 {COMMON}
 SEE ALSO
        petal help lint, petal help install, petal help show-ir,
-       petal help pending-report, docs/module-system.md
+       docs/module-system.md
 ";
 
 
@@ -1774,27 +1765,6 @@ SEE ALSO
        petal help graph, petal help show-ir
 ";
 
-const PENDING_REPORT: &str = "\
-NAME
-       petal-pending-report - Report every live pending resource after a run
-
-SYNOPSIS
-       petal pending-report [--json] <file>
-
-DESCRIPTION
-       Runs the program, then reports every pending resource still live at
-       the end: its state, age, origin, and how many absorptions it took.
-       The observability counterpart to 'run'.
-
-OPTIONS
-       --json
-              Emit the raw report array, for tooling.
-
-{COMMON}
-SEE ALSO
-       petal help run
-";
-
 const PROPOSE_EDIT: &str = "\
 NAME
        petal-propose-edit - Propose source edits that change an emitted value
@@ -2161,7 +2131,6 @@ mod tests {
         "show-tokens",
         "graph",
         "show-graph",
-        "pending-report",
         "propose-edit",
         "lsp",
         "packages",

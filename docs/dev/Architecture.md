@@ -94,7 +94,7 @@ The main files and directories under `core/src/`, grouped by pipeline stage.
 | `execution_context.rs` | One isolated execution's mutable runtime bundle (heap plus closure/output/host registries) |
 | `env/` | `Env`, which owns programs, stacks, and contexts: `run.rs`, `reload.rs` (hot reload), `fork.rs`, `gc.rs`, `host_io.rs`, `state_json.rs`, `state_storage.rs`, `statics.rs` and `static_follow.rs` (the static-value cache across runs and reloads), `observations_json.rs` |
 | `native_fn.rs`, `builtins/` | Native function FFI (`NativeFnTable`, `PetalCxt`) and the built-in functions, one module per topic |
-| `handle.rs`, `symbol.rs`, `resource_table.rs` | Opaque host-object handles; interned symbols shared with the host; pending (unresolved) resources |
+| `handle.rs`, `symbol.rs` | Opaque host-object handles; interned symbols shared with the host |
 | `trace.rs` | Ring-buffered per-term execution trace |
 | `transfer_state.rs` | Move a stack's state onto a different program, reconciling by `StateKey` (hot reload) |
 | `extract.rs` | Typed accessors for pulling Rust data out of a `Value` |
@@ -309,8 +309,8 @@ The rule for anything that keeps a `Value` past the instruction that produced
 it: **an id held across a collection must either be a GC root (strong: listed
 in `Env::collect_garbage`) or be checked with `is_live` before every
 dereference (weak).** The execution trace buffer is weak (it renders a
-collected value as `<collected>`); stacks, host bindings, output buffers, the
-resource table and observations are strong. Dereferencing a stale id is caught
+collected value as `<collected>`); stacks, host bindings, output buffers and
+observations are strong. Dereferencing a stale id is caught
 only by a `debug_assert!`. `restore_execution` carries the replaced context's
 generation history into the restored heap and closure table, so ids a host read
 before a restore are never reissued after it.
@@ -336,7 +336,6 @@ pub enum Value {
     Vec3(Vec3Id),
     Symbol(SymbolId),
     Handle(HandleVal),
-    Pending(PendingId),
 }
 ```
 
@@ -346,9 +345,10 @@ heap handles aliasing, and the GC handles reclamation.
 A `Handle` is an opaque reference to an object the host owns: a (class, slot,
 serial) triple, where the class indexes the `HandleClass` registry on `Env`
 (`Env::register_handle_class`, `Env::make_handle`) and gives the handle its
-methods. See [Handles](../usage/ffi.md#handles). A `Pending` is an unresolved
-resource: ordinary operations absorb it and return it, and a small set of
-builtins inspect it. See [pending-values-plan.md](pending-values-plan.md).
+methods. See [Handles](../usage/ffi.md#handles). The `query` package's pending
+answer (a value the host has not got yet) is a handle of the class "pending
+answer", not a value kind of its own
+([core-stdlib/query](../../core-stdlib/query/README.md)).
 
 ### Heap & GC
 
@@ -357,7 +357,7 @@ builtins inspect it. See [pending-values-plan.md](pending-values-plan.md).
 plus a per-slot term, and a sweep runs once that reaches a budget the previous
 sweep sized from the live set (`should_collect`). Live values are found by
 walking all live stacks' registers plus the other roots — closure captures,
-host bindings, output buffers, the resource table, observations. Reclaimed
+host bindings, output buffers, observations. Reclaimed
 slots go onto a free list, and reuse advances the slot's generation (see
 [Value](#value)).
 
@@ -418,8 +418,8 @@ describes them.
 - All loaded programs, and the bytecode each was lowered to
 - All live stacks
 - The execution contexts (`ExecutionContext`): each is one isolated
-  execution's heap, closure table, output buffers, host bindings and resource
-  table. A fork (`Env::fork_execution`) gets a context of its own
+  execution's heap, closure table, output buffers and host
+  bindings. A fork (`Env::fork_execution`) gets a context of its own
 - The `NativeFnTable` (builtins plus host-registered natives), the handle
   classes and the symbol table
 - The module registry (in-memory modules, packages, search paths)
@@ -479,7 +479,7 @@ table is cleared on `transfer_state` and refreshed on the next `run`.
 
 Built-ins live in `core/src/builtins/`, one module per topic (`io`, `math`,
 `collections`, `format`, `json`, `creative_coding`, `noise`, `color`, `vec2`
-(vec2 + vec3), `autodiff`, `classes`, `effects`, `handle`, `pending`,
+(vec2 + vec3), `autodiff`, `classes`, `effects`, `handle`,
 `output`). They are registered into the `NativeFnTable` at startup by
 `register_builtins`, each with its `NativeEffects` row.
 

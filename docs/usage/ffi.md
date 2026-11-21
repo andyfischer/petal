@@ -51,7 +51,7 @@ Entry points, all on `Env` (`core/src/env/`):
 
 | Concern | API |
 |---|---|
-| Native functions | `register_native(name, func, effects) -> NativeFnId`, `register_native_boxed(name, closure, effects) -> NativeFnId`, `native_effects`, `set_native_class`, `declare_natives(source)`, `declare_native_params(id, spec)`, `declare_native_params_by_name(name, spec)`, `set_native_signatures(id, sigs)`, `native_signatures(name)` |
+| Native functions | `register_native(name, func, effects) -> NativeFnId`, `register_native_boxed(name, closure, effects) -> NativeFnId`, `native_effects`, `declare_natives(source)`, `declare_native_params(id, spec)`, `declare_native_params_by_name(name, spec)`, `set_native_signatures(id, sigs)`, `native_signatures(name)` |
 | Linking | `set_check_only(bool)`, `is_check_only()`, `link_program(&program)` |
 | Handles | `register_handle_class`, `make_handle` |
 | Modules and packages | `register_module`, `add_package`, `register_package`, `add_module_path` (a directory of packages), `set_inline_import_dir`, `set_install_on_demand`, `override_file_source`, `packages`, `project_of`, `project_dependencies`, `resolve_import`, `package_errors`, `verify_interface` (see [Modules and packages](#modules-and-packages)) |
@@ -123,7 +123,7 @@ effects)` registers a closure (`impl Fn(&mut PetalCxt) -> NativeResult +
 rides in its captures, so one Rust function can serve any number of natives —
 a C bridge forwarding each to its own callback, a host registering one native
 per command — with no trampoline pool or global dispatch table. It shares the
-id space, the effect row, `set_native_class`, the `Pending` interception and
+id space, the effect row and
 `--effect-audit` with bare natives; a bare `fn` native still dispatches
 through its pointer. Three rules:
 
@@ -351,7 +351,7 @@ hosts).
 
 **The builtins are declared the same way.** The global ones are declared by
 the `core` package (`core/packages/core/src/*.ptl`: `basics`, `collections`,
-`math`, `format`, `introspect`, `handle`, `pending`, `classes`), whose
+`math`, `format`, `introspect`, `handle`, `classes`), whose
 declarations are in scope in every file with no import. The domain builtins
 are declared by one package each — `noise`, `color`, `vec2`, `autodiff`,
 `json`, `io` (`core/packages/<name>/<name>.ptl`) — and are in
@@ -366,16 +366,16 @@ binary too, so `petal lint` reads it with no host.
 
 **Every native declares what it does.** The third argument is its
 `NativeEffects` row: what it reads (`InputClasses`: `POINTER`, `KEYBOARD`,
-`CLOCK`, `VIEWPORT`, `HOST_DATA`, `RESOURCES`, `RNG`, `BINDINGS`), whether the
+`CLOCK`, `VIEWPORT`, `HOST_DATA`, `RNG`, `BINDINGS`), whether the
 call is a `probe` (a pure function of its arguments and those reads, safe to
-re-evaluate), whether it `emits` into an output buffer, whether it has an
-`effect` no replay could reproduce, and its `Pending` policy. The reactive
+re-evaluate), whether it `emits` into an output buffer, and whether it has an
+`effect` no replay could reproduce. The reactive
 layers — the frame gate, memoized scopes — take the row at its word, so a
 native that reaches host state without saying so looks pure and every
 memoized scope that calls it replays stale. The row is the union over every
 path through the native. Start from `NativeEffects::PURE`, `EMITS` or
 `EFFECT`, or `NativeEffects::probe(class)` / `reads(class)`, and add
-`.with_effect()` / `.with_emits()` / `.with_pending(..)`:
+`.with_effect()` / `.with_emits()`:
 
 ```rust
 env.register_native("mouse_x", native_mouse_x, NativeEffects::probe(InputClasses::POINTER));
@@ -397,8 +397,8 @@ declaring one.
 A native that answers from host state outside the binding table
 (`HOST_DATA`) must also call `PetalCxt::note_host_read()` — the row is what
 the memo consults, the call is what the frame gate records — and one with an
-effect the `PetalCxt` methods do not already report (`print`, the counters,
-the mutable resource table do) calls `note_effect()`. `petal run
+effect the `PetalCxt` methods do not already report (`print` and the counters
+do) calls `note_effect()`. `petal run
 --effect-audit` and `petal-ui-run --effect-audit` hold what every native was
 observed doing against its row and name any facet the row lacks. What
 "honest" means for a native that touches host state, and what the audit
@@ -423,59 +423,54 @@ imports the interface may write `set_location(obj, p)` or
 `obj.set_location(p)`. The namespace is flat: one native table for all
 receiver types.
 
-**Native classes.** The row's `pending` field (`NativeClass`) says how the
-native treats a `Value::Pending` argument: `Strict` (the default) absorbs and
-returns the pending value, `Effectful` makes the call a no-op that emits
-nothing, and `AllowPending` runs normally. Emitters should be `Effectful`
-(`NativeEffects::EMITS` is). These look at the arguments themselves only: a
-record with a pending field is an ordinary record whose field is pending, so
-an `Effectful` native runs and sees it (a UI row draws while its `date`
-loads). An emitter whose payload leaves the run as data (a scraped record, a
-saved row) wants `EffectfulDeep` instead (`NativeEffects::EMITS_DEEP`), which
-also no-ops while a pending value sits anywhere inside an argument.
-`env.set_native_class(id, ..)` changes it after registration.
+**JSON.** `petal::value::value_to_json` converts any value (its error type
+is `Infallible`, kept so existing callers compile); a value JSON has no
+form for (a handle, a closure) becomes its display string.
+`value_to_json_lossy` is the same without the `Result`.
 
-**Pending values and JSON.** `petal::value::value_to_json` returns `Err` for
-a value that holds a pending value anywhere inside it, naming it and its path
-(`.rows[1].date`): use it for anything that is saved, sent or read back.
-`value_to_json_lossy` renders a pending value as the string `"<pending N>"`
-and `value_to_json_ctx` as a structured object, for debug dumps.
-`petal::value::find_pending` is the walk on its own.
-
-**Returning a pending value.** A native whose answer is not ready yet (a fetch
-in flight, a request that failed) returns a pending value rather than blocking:
+**Returning a pending answer.** A native whose answer is not ready yet (a
+fetch in flight, a request that failed) returns a *pending answer* rather
+than blocking. Pending answers are not part of core: they belong to the
+[`query`](../../core-stdlib/query/README.md) package, whose Rust crate is
+`petal-stdlib-query` (`core-stdlib/query/native`). Register it with
+`petal_stdlib_query::register(&mut env)`, then:
 
 ```rust
-use petal::resource_table::hash_key;
+use petal_stdlib_query::{push_failed, push_loading};
 
 fn fetch(cx: &mut PetalCxt) -> NativeResult {
     let url = cx.get_string(1)?;
     match my_cache_lookup(&url) {
         Some(Ok(body)) => cx.push_string(body),
-        Some(Err(msg)) => { cx.push_failed(hash_key(&url), msg); }
-        None => { cx.push_loading(hash_key(&url)); }
+        Some(Err(msg)) => push_failed(cx, &url, msg)?,
+        None => push_loading(cx, &url)?,
     }
     Ok(1)
 }
 ```
 
-`cx.push_loading(key)` pushes a loading `Value::Pending` for the resource
-`key` (a `u64`; `hash_key` hashes a string or any `Hash` value to one), stamped
-with the call site and current frame for the pending tooling.
-`cx.push_failed(key, message)` does the same and marks the resource errored
-with `message`, which the script reads with `error_of`. The same key always
-yields the same resource, so the native can return it on every run until the
-answer lands. Both count as an effect, like `resources_mut()`, which remains
-the route for anything else (`resolve`, `pending_for_key`).
+`push_loading(cx, name)` pushes a loading pending answer named `name` (the
+name is what error messages and the settle loop show; the `query` native
+uses `query("user", 7)`). `push_failed(cx, name, message)` pushes a failed
+one, whose `error_of` is `message`. A pending answer is an immutable
+`Value::Handle` of the class `"pending answer"`: the script tests it with
+`is_ready`, `is_loading`, `is_error` and `error_of` (`import query`), and any
+other use (a field read, arithmetic, a `for`, a draw call) is the ordinary
+error a handle gets. It does not spread through the computation. The same
+name and state always give the same answer, so the native can return it on
+every run until the data lands.
 
 A host whose data source answers in
-`petal::resource_provider::ResourceAnswer<T>` (`Loading`, `Ready(T)`,
+`petal_stdlib_query::ResourceAnswer<T>` (`Loading`, `Ready(T)`,
 `Errored(message)`) — usually by implementing
-`petal::resource_provider::ResourceProvider` (`answer(key)`, `invalidate(key)`),
-the shape Garden's `query(kind, arg)` uses — returns it with
-`cx.push_answer(key, answer, |cx, t| to_value(cx, t))`: the ready value as
-itself, the other two as `push_loading` / `push_failed`. For the batch loop
-that fetches what a run asked for and runs again, see
+`petal_stdlib_query::ResourceProvider` (`answer(key)`, `invalidate(key)`) —
+returns it with `petal_stdlib_query::push_answer(cx, name, answer)` (map a
+ready `T` to a `Value` first with `answer.map(..)`): the ready value as
+itself, the other two as `push_loading` / `push_failed`. The script-facing
+`query(kind, arg)` is answered by the `QueryHost` the host installs with
+`petal_stdlib_query::swap_host`, as Garden does; with none installed every
+query answers loading. For the batch loop that fetches what a run asked for
+and runs again, see
 [embedding-guide.md](embedding-guide.md#fetching-until-settled-batch-hosts).
 
 The compiled-in builtins (`core/src/builtins/`) go through the same table.
@@ -533,7 +528,7 @@ Nil, Bool, Int(i64), Float(f64), Vec2(Vec2Id),
 String(StringId), List(ListId), F64Array(F64ArrayId), Vec3(Vec3Id), Map(MapId),
 Dict(DictId), Closure(ClosureId), OverloadSet(..), NativeFunction(NativeFnId),
 EnumVariant { tag: EnumTag, data: ListId }, Element(ElementId),
-Symbol(SymbolId), Cell(CellId), Handle(HandleVal), Pending(PendingId)
+Symbol(SymbolId), Cell(CellId), Handle(HandleVal)
 ```
 
 Vectors are read and built through the heap: `heap.get_vec2(id) -> (x, y)`,
@@ -578,15 +573,13 @@ Notes for embedders:
 - `Map` is a **record** (`{a: 1}`, `type()` `"record"`); `Dict` is a **map**
   (`Map()`, `type()` `"map"`), whose keys are any hashable value compared by
   content. Build one with `heap.dict_from_pairs(pairs)` (a `Vec<(Value,
-  Value)>`; it fails on an unhashable key: a function, a pending value, NaN),
+  Value)>`; it fails on an unhashable key: a function, a cell, NaN),
   read it with `heap.get_dict(id)` (entries in insertion order: `.iter()`,
   `.keys()`, `.values()`, `.len()`) or `heap.dict_get(id, key)`, and change
   it with `heap.dict_set` / `heap.dict_remove`, which return a new id like the
   other collection ops. `heap.as_dict(value)` is the checked accessor.
 - `Cell` is the box behind a `var`; it never reaches host code, because every
   read dereferences it (see [../syntax/var.md](../syntax/var.md#containment)).
-- `Pending` is an unresolved resource (loading or errored). Ordinary operations
-  absorb it and return it.
 - The heap (`core/src/heap.rs`) is mark-and-sweep, triggered by allocation
   count. GC roots include stack registers, persistent state, closure captures,
   **bindings and output buffers**, so values parked in the host channels stay
@@ -1026,8 +1019,8 @@ The calls a host has for the values a stack keeps:
 - `Env::clear_static_values(stack)` drops what a stack holds, for a host
   that knows it changed something such a native answers from.
 - `Env::static_values(stack)` lists the values and names any that could not
-  be kept. A value holding a function, a `var` cell, a handle or a pending
-  result is rebuilt every run instead
+  be kept. A value holding a function, a `var` cell or a handle
+  is rebuilt every run instead
   ([Values that cannot be kept](../features/static-values.md#values-that-cannot-be-kept)).
 - `Env::take_static_warnings(stack)` (or `take_all_static_warnings()`) hands
   out one line per value that could not be kept, each once per load and once
@@ -1120,8 +1113,8 @@ assert!(!env.effect_audit_report().has_under_declared());
 ```
 
 Read the report knowing what the audit can see: only what goes through the
-`PetalCxt` — output pushes, `note_host_read`, `note_effect` (and `print`, the
-counters, the resource table, which note it themselves), binding reads. A
+`PetalCxt` — output pushes, `note_host_read`, `note_effect` (and `print` and the
+counters, which note it themselves), binding reads. A
 C++ or Rust callback that writes host state and says nothing looks *silent*,
 so it is never reported as under-declared. What does give it away is the
 other direction:

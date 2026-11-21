@@ -231,19 +231,19 @@ let vs = [
   0.0, 0.0 * -1.0, 0.5, -0.5, 2.5, -2.5, 1e19, -1e19, 9007199254740992.0, inf, 0.0 - inf, nan,
   \"12\", \" 3.5 \", \"-4\", \"abc\", \"\", \"h\u{e9}llo\",
   nil, true, false, [1, 2, 3], [], {a: 1}, f64_array(3), ident,
-  Color.red, Color.rgb(1, 2, 3), Rect(1, 2), __pending(\"k\"),
+  Color.red, Color.rgb(1, 2, 3), Rect(1, 2),
 ]
 ";
 
 /// How many values `PRELUDE` puts in `vs`, and how many of them (the first)
 /// are numbers.
-const VALUES: usize = 38;
+const VALUES: usize = 37;
 const NUMBERS: usize = 20;
 
 /// One call per program, since a failing call ends its program. The result
 /// is printed with its type, so an int is told from a float.
 fn call_program(call: &str) -> String {
-    format!("{PRELUDE}let r = {call}\nprint(type(r), r, is_pending(r))\n")
+    format!("{PRELUDE}let r = {call}\nprint(type(r), r)\n")
 }
 
 #[test]
@@ -404,9 +404,7 @@ print(xs)
 fn type_names_every_kind_of_value() {
     let src = format!("{PRELUDE}for v in vs do print(type(v)) end\n");
     let out = run(&src);
-    // The `Pending` is absorbed by `type` and then by `print`, which emits
-    // nothing: one line short.
-    assert_eq!(out.len(), VALUES - 1);
+    assert_eq!(out.len(), VALUES);
     assert_eq!(&out[..2], ["int", "int"]);
     assert_eq!(
         &out[NUMBERS..],
@@ -460,23 +458,6 @@ end
     let fast = try_run(src, RunPolicy::FAST).unwrap_err();
     assert_eq!(fast, try_run(src, without()).unwrap_err());
     assert!(fast.contains("Expected float at arg 1, got nil"), "{fast}");
-}
-
-// ── Pending and strictness ───────────────────────────────────────────────
-
-#[test]
-fn a_pending_argument_is_absorbed_as_by_the_builtin() {
-    let src = "\
-let p = __pending(\"k\")
-print(is_pending(float(p)), is_pending(int(p)), is_pending(abs(p)), is_pending(floor(p)))
-print(is_pending(len(p)), is_pending(type(p)))
-print(is_pending(min(p, 1)), is_pending(min(1, p)), is_pending(max(p, 1)), is_pending(max(1, p)))
-print(is_pending(clamp(p, 0, 1)), is_pending(clamp(0, p, 1)), is_pending(clamp(0, 0, p)))
-";
-    assert_eq!(
-        run(src),
-        ["true true true true", "true true", "true true true true", "true true true"]
-    );
 }
 
 // ── Who is watching ──────────────────────────────────────────────────────

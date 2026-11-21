@@ -13,8 +13,6 @@ use serde_json::Value as Json;
 pub const DRAG_DROPS_CHANNEL: &str = "drag_drops";
 
 /// Drain the drops announced since the last call: `{key, model, drop}` each.
-/// A drop whose payload is not fully loaded (a pending value anywhere in it)
-/// is left out: it would be written back to the source as a placeholder.
 pub fn take_drops(env: &mut Env) -> Vec<Json> {
     let sym = env.intern_symbol(DRAG_DROPS_CHANNEL);
     let values = env.take_output_buffer(sym);

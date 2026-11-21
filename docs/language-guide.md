@@ -448,7 +448,7 @@ types every read *and* constrains every write, wherever the write is.
 
 The type names are the ones `type(value)` reports, written lowercase: `nil`,
 `bool`, `int`, `float`, `string` (alias `str`), `list`, `record`, `map`, `function`,
-`enum`, `vec2`, `vec3`, `f64_array`, `element`, `symbol`, `handle`, `pending` —
+`enum`, `vec2`, `vec3`, `f64_array`, `element`, `symbol`, `handle` —
 plus two that no value ever reports: `any`, the dynamic escape hatch, and
 `num`, meaning **`int` or `float`**. They are recognized only in type position,
 so `int`, `float`, and `str` remain callable as the cast builtins everywhere
@@ -1546,7 +1546,7 @@ print(m[{y: 2, x: 1}])    # point
 ```
 
 A key must be something `==` compares by content and that is equal to
-itself, so a function, a pending value and NaN (anywhere inside the key) are
+itself, so a function, a `var` cell and NaN (anywhere inside the key) are
 errors: `Cannot use a function as a map key`.
 
 **Reading an absent key gives `nil`**, without the `?.` or `??` a record

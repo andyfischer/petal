@@ -185,7 +185,7 @@ shape) on every call.
 - **Snapshots** (`pb_snapshot_*`, `petal::Snapshot`). A keyed declaration
   keeps one; `update` compares the bound options with the ones held, exactly
   (scalars inline by bits, strings by bytes, records and lists element by
-  element; a closure or pending value never compares equal) and returns the
+  element; a closure never compares equal) and returns the
   changed options as a bit set. An option that stays absent costs one
   compare. The comparison is on contents, not heap ids, so it does not
   depend on values staying live between frames (the stale-id hazard of
@@ -310,7 +310,7 @@ function or native each call can reach, captures, phis, cells and blocks.
 Its result is `StaticAnalysis::dep_classes()`.
 
 - A **`Deps` bit set per term**: the native rows' input classes (`POINTER`,
-  `KEYBOARD`, `CLOCK`, `VIEWPORT`, `HOST_DATA`, `RESOURCES`, `RNG`,
+  `KEYBOARD`, `CLOCK`, `VIEWPORT`, `HOST_DATA`, `RNG`,
   `BINDINGS`, and new: `PHYSICS`, `NET`; `INPUT` names pointer and keyboard
   together), the program's own sources (`STATE`, `VAR`, `MODULE_VAR` for a
   top-level plain `var`, `ENUM` for dynamic enum data, `UNKNOWN` for a call
@@ -487,8 +487,7 @@ the compiler knows which fields cannot change and can take them out.
   classifier-static field is compared, the same heap object first and then
   by contents (`static_cache::identical`). One that differs starts the site
   over under a new id; a site that starts over more than 8 times, or holds
-  a value with no contents to name (a closure, a cell, a handle, a pending
-  value), stops tagging. The kept values are made immutable, as the cache's
+  a value with no contents to name (a closure, a cell, a handle), stops tagging. The kept values are made immutable, as the cache's
   are, so what an id names cannot change under it.
 - **The id** is a SipHash (fixed keys) of the keys, the hole positions and
   the static values' exact contents (kind and bits, so `1` is not `1.0`;

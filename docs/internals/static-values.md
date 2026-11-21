@@ -206,7 +206,7 @@ the last is at run time.
    or an element of it is edited through an alias.
 
 `mark_immutable` is also what finds a value that cannot be kept: it fails on
-a function, a `var` cell, a host handle or a pending result, and the store
+a function, a `var` cell or a host handle, and the store
 rejects the slots (`StaticSlots::reject`, reported through
 `StaticSlots::rejected` and `Env::take_static_warnings`).
 
@@ -519,7 +519,7 @@ A change to any of this must keep the following true.
    has to test the immutable bit and copy, and a new mutating term or builtin
    has to be known to `mutated_terms`. The immutable bit is the last guard,
    not the only one.
-7. **A kept value holds no function, `var` cell, handle or pending result.**
+7. **A kept value holds no function, `var` cell or handle.**
    A new value kind that carries identity, host state or a reference into a
    program has to fail `Heap::mark_immutable`.
 8. **Code that must run on every run is never skipped**: a raise in an

@@ -9,8 +9,9 @@
 //! without an import (`core/packages/core`); they are bound in every file's
 //! global scope, see [`crate::native_decl::core_decls`]. The domain builtins
 //! ([`BUILTIN_PACKAGES`]: `noise`, `color`, …) are registered in every Env
-//! too but are in scope only where imported. `ui` is the petal-ui interface,
-//! always embedded. The rest are first-party libraries (`bloom`,
+//! too but are in scope only where imported. `ui` is the petal-ui interface
+//! and `query` the petal-query one (an `interface` package), both always
+//! embedded; a host links the crates that implement their natives. The rest are first-party libraries (`bloom`,
 //! `text_layout`, `glsl`), each embedded only when its cargo feature of the
 //! same name is on (`libraries` turns on all of them); [`LIBRARIES`] lists
 //! the ones in this build and [`OMITTED_LIBRARIES`] the ones it leaves out.
@@ -53,6 +54,9 @@ pub const CORE_PACKAGE: &str = "core";
 //   `core/src/builtins/`; `io` is the host-I/O set of `output.rs`. The
 //   creative-coding set (`lerp`, `mag`, …) is declared by `core` and needs no
 //   import.
+// - `INTERFACE_PACKAGES: &[&str]` — the bundled interface packages (kind
+//   `interface`, `query`): declarations a host links a library crate to
+//   implement. A host need not name one in `Env::verify_interface`.
 // - `LIBRARIES: &[&str]` — the bundled libraries embedded in this build.
 // - `OMITTED_LIBRARIES: &[(&str, &str)]` — the bundled libraries this build
 //   leaves out, each with the `petal` crate feature that embeds it. An import

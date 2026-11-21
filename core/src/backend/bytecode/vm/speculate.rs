@@ -185,8 +185,6 @@ type Emits = Vec<(SymbolId, Vec<(Value, crate::execution_context::EmitSite)>)>;
 
 /// What [`Vm::speculate_call`] did.
 enum Speculated {
-    /// The function was pending: no call, and this is the answer.
-    Absorbed(Value),
     /// The call ran: its value, what it emitted and its places.
     Ran(Value, Emits, Vec<(Value, Value)>),
 }
@@ -322,7 +320,6 @@ impl<'a> Vm<'a> {
     /// `speculate(f, ...args)`. See the module docs.
     pub(super) fn builtin_speculate(&mut self, args: &[Value], origin: Option<TermId>) -> Result<Value, String> {
         match self.speculate_call(args, origin, true)? {
-            Speculated::Absorbed(v) => Ok(v),
             Speculated::Ran(value, emits, places) => Ok(self.speculate_result(value, emits, places)),
         }
     }
@@ -336,7 +333,7 @@ impl<'a> Vm<'a> {
         origin: Option<TermId>,
     ) -> Result<Value, String> {
         match self.speculate_call(args, origin, false)? {
-            Speculated::Absorbed(v) | Speculated::Ran(v, _, _) => Ok(v),
+            Speculated::Ran(v, _, _) => Ok(v),
         }
     }
 
@@ -352,11 +349,6 @@ impl<'a> Vm<'a> {
         let Some((&callee, call_args)) = args.split_first() else {
             return Err("speculate() expects a function to call, then its arguments".into());
         };
-        // A pending function is absorbed, as a call of one would be.
-        if matches!(callee, Value::Pending(_)) {
-            self.note_absorption(callee, origin);
-            return Ok(Speculated::Absorbed(callee));
-        }
         if self.speculating() {
             let detail = crate::backend::errors::ErrorDetail {
                 at: None,

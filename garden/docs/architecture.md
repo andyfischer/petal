@@ -246,7 +246,8 @@ seed, frame gate and memo counters that petal-ui's `harness::Headless` also
 wraps — and plugs Garden's channels into its frame through `FrameHooks`, with Garden's
 additions (`emit`, `mutate`, `navigate`, `text_view`, `edit_view`, `palette`,
 `claim_key`, `request_frame`, the panel store). `query.rs` is the async
-`query` / `invalidate` channel over Petal's pending values; `panel_trace.rs`
+`query` / `invalidate` channel: Garden's `QueryHost` for the `query`
+package, answering from the GPP app; `panel_trace.rs`
 is the hit test behind the Petal IDE's direct manipulation; `inspect.rs`
 re-exports Petal's IR/bytecode/AST rendering for the IR inspector. The
 script-facing contract is [petal-graphical-panels.md](petal-graphical-panels.md).

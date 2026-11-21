@@ -293,7 +293,6 @@ impl Timeline {
         env.restore_execution(live, self.frames[c - 1].snapshot)?;
         clear_draw_commands(env);
         host.prepare_frame(env);
-        env.advance_frame(live);
         bind_frame_info(env, rec.dt, rec.frame_count);
         bind_time(env, rec.time);
         bind_input(env, &rec.input);
@@ -338,7 +337,6 @@ impl Timeline {
             let rec = &mut self.frames[j];
             clear_draw_commands(env);
             host.prepare_frame(env);
-            env.advance_frame(live);
             bind_frame_info(env, rec.dt, rec.frame_count);
             bind_time(env, rec.time);
             bind_input(env, &rec.input);
@@ -832,7 +830,6 @@ mod tests {
         clear_draw_commands(env);
         host.prepare_frame(env);
         *frame += 1;
-        env.advance_frame(live);
         bind_frame_info(env, 1.0 / 60.0, *frame);
         bind_time(env, *frame as f64 / 60.0);
         bind_input(env, &input);

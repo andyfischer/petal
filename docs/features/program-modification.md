@@ -191,8 +191,7 @@ state. A slot reached through a call path has no name to set it by
 These change **runtime state or inputs**, not the program. There is no
 over-the-wire source-swap command; a reload is triggered by the host, from
 its file watcher or its own call. The diagram-canvas command set is `pause,
-resume, step, state, set_state, capture_draw_commands, input, screenshot,
-pending_report`
+resume, step, state, set_state, capture_draw_commands, input, screenshot`
 ([`debug.ts`](../../examples/custom-apps/diagram-canvas/src/debug.ts)), and
 its `Diagram*` MCP tools are in
 [`petal-diagram-mcp.ts`](../../examples/custom-apps/diagram-canvas/petal-diagram-mcp.ts).

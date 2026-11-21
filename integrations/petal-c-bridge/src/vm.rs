@@ -943,7 +943,7 @@ impl Vm {
     /// puts it back, into this VM or another one running the same program.
     ///
     /// A value that cannot be rebuilt elsewhere — a function, a host handle,
-    /// a pending result, a UI element — is not written; the slot holding it
+    /// a UI element — is not written; the slot holding it
     /// is named in [`state_report`](Self::state_report) and starts from its
     /// initial value after a load.
     pub fn save_state(&mut self) -> BResult<String> {
@@ -1586,7 +1586,7 @@ pub unsafe extern "C" fn pb_vm_register_checked_emitter(
         if effects & natives::FX_NOT_FOR_EMITTERS != 0 {
             return Err(BridgeError::invalid(
                 "a checked emitter only emits: PB_FX_EFFECT, _COMMAND, _PROBE, _CONST, \
-                 _CONTAINED, _TICKS and _PENDING_ALLOW are not allowed",
+                 _CONTAINED and _TICKS are not allowed",
             ));
         }
         pending = None;
@@ -3093,6 +3093,7 @@ mod tests {
             ("k_pure", 0, NativeConstness::Dynamic),
             ("k_const", natives::FX_CONST, NativeConstness::Const),
             (
+                // The deprecated pending flags are accepted and ignored.
                 "k_const_pending",
                 natives::FX_CONST | natives::FX_PENDING_ALLOW,
                 NativeConstness::Const,

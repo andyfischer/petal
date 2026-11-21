@@ -162,6 +162,9 @@ Decided: 1, which needs no new compiler concept. The natives keep the Petal
 versions' handling of `Pending`: a pending predicate result decides nothing
 (the `if` took neither branch), and a pending list answers as the empty one
 (`false`, `true`, nil) instead of being absorbed as `filter` absorbs it.
+(Note, 21 November 2026: pending values have left the core language for the
+`query` package and no longer absorb, so the natives no longer special-case
+them.)
 
 ### Reported by `petal lint` (decided)
 

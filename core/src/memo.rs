@@ -32,8 +32,7 @@
 //! result is returned without pushing a frame.
 //!
 //! What cannot be replayed is not recorded: a scope that printed, consumed
-//! randomness, created a resource, called a handle method, produced a
-//! `Pending`, or let a cell it created escape through its result or a write is
+//! randomness, called a handle method, or let a cell it created escape through its result or a write is
 //! *effectful*, and so is every scope enclosing it. Trivial scopes — no
 //! dependencies, no output, a handful of instructions — are not worth a
 //! record and are folded into their parent.
@@ -226,9 +225,6 @@ pub enum Dep {
     /// A native consulted host data outside the binding table; valid while the
     /// host has not reported that data changed since the record was made.
     HostRead,
-    /// A native consulted the resource table; valid while its revision is
-    /// what it was when the record was made.
-    ResourcesRead,
     /// A `query` native read a revisioned class of host data
     /// ([`InputClasses::REVISIONED`](crate::native_fn::InputClasses::REVISIONED):
     /// `PHYSICS`, `NET`) when its revision was `revision`. Valid while the
@@ -322,8 +318,6 @@ pub struct MemoSlot {
     pub touches: StateTouches,
     /// Host-data revision when recorded, for a `HostRead` dep.
     pub host_revision: u64,
-    /// Resource-table revision when recorded, for a `ResourcesRead` dep.
-    pub resources_revision: u64,
     /// The scope's subtree wrote no `state` slot and no cell. Only a pure
     /// scope is re-executed during a parent's validation: a re-execution's
     /// writes would land before the parent's own re-run applied them again.
@@ -882,7 +876,6 @@ fn mark_deps(deps: &[Dep], mark: &mut impl FnMut(Value)) {
             | Dep::Observed { value, .. } => mark(*value),
             Dep::Command { args, .. } => args.iter().for_each(|v| mark(*v)),
             Dep::HostRead
-            | Dep::ResourcesRead
             | Dep::ClassRead { .. }
             | Dep::ClassChange { .. }
             | Dep::EnumData { .. }
@@ -1037,9 +1030,6 @@ impl<'a> ValueEq<'a> {
             }
             (Value::NativeFunction(a), Value::NativeFunction(b)) => a == b,
             (Value::Handle(a), Value::Handle(b)) => a == b,
-            // A pending resource is a promise of a value that may since have
-            // arrived; never equal, so nothing is replayed over it.
-            (Value::Pending(_), Value::Pending(_)) => false,
             _ => false,
         }
     }
@@ -1360,7 +1350,6 @@ mod tests {
             segments: Default::default(),
             touches: StateTouches::default(),
             host_revision: 0,
-            resources_revision: 0,
             pure: true,
             bytes: 0,
         };
@@ -1655,7 +1644,6 @@ r"
             segments: Default::default(),
             touches: StateTouches::default(),
             host_revision: 0,
-            resources_revision: 0,
             pure: true,
             bytes: 0,
         };

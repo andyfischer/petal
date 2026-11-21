@@ -99,9 +99,8 @@ print(r.value == random() * 10)   # true
 ```
 
 What is not put back: anything a host native did (see below; such a native is
-not called at all), expectations (`expect` inside the call is recorded like
-any other), and resources a call started loading (a `fetch` inside the call
-is a request the live program would make too, so the resource is left to load).
+not called at all) and expectations (`expect` inside the call is recorded like
+any other).
 
 ## Natives: what runs and what does not
 
@@ -158,8 +157,8 @@ call:
 - `speculating()` is true while a speculative call runs, false otherwise.
 - `speculate_place(key, value)` appends `{key, value}` to the running call's
   `places` and returns `value`; outside a call it only returns `value`. The
-  key must be one a `for … key` loop would accept (no functions, cells,
-  pending values or NaN).
+  key must be one a `for … key` loop would accept (no functions, cells
+  or NaN).
 
 A drag library's `place(key, rect)` is one line on top of them: inside a
 speculation it records where the element is, and outside it returns the

@@ -51,7 +51,6 @@ pub enum Type {
     Element,
     Symbol,
     Handle,
-    Pending,
     /// An instance of a declared `class` — a record carrying that class's tag.
     /// The payload indexes the [`ClassTable`](crate::classes::ClassTable) of the
     /// compilation that produced it, which is why printing one needs that table
@@ -98,7 +97,6 @@ pub enum NonNil {
     Element,
     Symbol,
     Handle,
-    Pending,
     Class(ClassId),
     EnumOf(EnumId),
 }
@@ -123,7 +121,6 @@ impl NonNil {
             NonNil::Element => Type::Element,
             NonNil::Symbol => Type::Symbol,
             NonNil::Handle => Type::Handle,
-            NonNil::Pending => Type::Pending,
             NonNil::Class(id) => Type::Class(id),
             NonNil::EnumOf(id) => Type::EnumOf(id),
         }
@@ -148,7 +145,6 @@ impl NonNil {
             NonNil::Element => "element?",
             NonNil::Symbol => "symbol?",
             NonNil::Handle => "handle?",
-            NonNil::Pending => "pending?",
             NonNil::Class(_) => "class?",
         }
     }
@@ -194,7 +190,6 @@ impl Type {
             "element" => Type::Element,
             "symbol" => Type::Symbol,
             "handle" => Type::Handle,
-            "pending" => Type::Pending,
             _ => return None,
         };
         Some(ty)
@@ -257,7 +252,6 @@ impl Type {
             Type::Element => NonNil::Element,
             Type::Symbol => NonNil::Symbol,
             Type::Handle => NonNil::Handle,
-            Type::Pending => NonNil::Pending,
             Type::Class(id) => NonNil::Class(id),
             Type::EnumOf(id) => NonNil::EnumOf(id),
         })
@@ -307,7 +301,6 @@ impl Type {
             Type::Element => "element",
             Type::Symbol => "symbol",
             Type::Handle => "handle",
-            Type::Pending => "pending",
             Type::Class(_) => "class",
             Type::EnumOf(_) => "enum",
             Type::OrNil(base) => base.nullable_name(),
@@ -431,7 +424,6 @@ mod tests {
             Type::Element,
             Type::Symbol,
             Type::Handle,
-            Type::Pending,
         ]
     }
 
@@ -483,7 +475,6 @@ mod tests {
         assert_eq!(Type::Element.name(), "element");
         assert_eq!(Type::Symbol.name(), "symbol");
         assert_eq!(Type::Handle.name(), "handle");
-        assert_eq!(Type::Pending.name(), "pending");
     }
 
     #[test]

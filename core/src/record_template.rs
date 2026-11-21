@@ -43,8 +43,8 @@
 //! patched); a site that keeps differing
 //! ([`MAX_REBUILDS`]) stops tagging. The kept values are made immutable, as
 //! the cache's are, so the contents a template id names cannot change under
-//! it. A value with no contents to name (a function, a cell, a handle, a
-//! pending result) rejects the site.
+//! it. A value with no contents to name (a function, a cell, a handle)
+//! rejects the site.
 
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -577,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn kept_values_are_made_immutable_and_a_pending_value_rejects_the_site() {
+    fn kept_values_are_made_immutable_and_a_handle_rejects_the_site() {
         let mut heap = Heap::new();
         let sh = shape(&["tint", "pos"]);
         let plan = TemplatePlan::new(0, 2, vec![1], &[]);
@@ -589,7 +589,7 @@ mod tests {
         );
         assert!(heap.is_immutable(l));
         let plan2 = TemplatePlan::new(1, 2, vec![1], &[]);
-        let f = Value::Pending(crate::value::PendingId(0));
+        let f = Value::Handle(crate::handle::HandleVal { class: crate::handle::HandleClassId(0), slot: 0, serial: 0 });
         assert!(
             s.check(&plan2, &sh, &[f, Value::Int(1)], &mut heap)
                 .is_none()

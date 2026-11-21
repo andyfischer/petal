@@ -375,8 +375,7 @@ impl<'p> FnLowerer<'p> {
                 // A reassignment addresses its declaration's slot by path:
                 // only a memo's commit write carries a key (`emit_state_init`).
                 key: None,
-                // A plain reassignment commits whatever value it is given,
-                // including a Pending (see the StateInit no-commit rule).
+                // A plain reassignment commits whatever value it is given.
                 init: false,
                 mutated: self.in_place.allows(ins[0]),
                 // A memo binding cannot be reassigned (the compiler rejects it).
@@ -661,24 +660,10 @@ impl<'p> FnLowerer<'p> {
         // In value position (`x = for …`) collect each iteration's result into
         // the loop's `dst`; a bare statement loop collects nothing.
         let collect_dst = if term.collect { Some(dst) } else { None };
-        // A Pending iterable absorbs: skip the loop entirely (zero iterations)
-        // and yield the Pending as the loop value (overriding collection).
-        let jpend = self.emit_placeholder(Inst::JumpIfPending { cond: iter, to: 0 });
         self.push(Inst::ForEachInit { iter, slot });
         let cont = self.here();
         let next = self.emit_placeholder(Inst::ForEachNext { slot, var, exit: 0 });
         self.emit_counted_loop(term.id, body_block, slot, cont, next, collect_dst)?;
-        let jend = self.emit_placeholder(Inst::Jump { to: 0 });
-
-        let pend_label = self.here();
-        self.patch(jpend, pend_label);
-        // `emit_counted_loop` left cur_origin on the loop term; say so here too,
-        // since this Move writes the loop's own register.
-        self.cur_origin = Some(term.id);
-        self.push(Inst::Move { dst, src: iter });
-
-        let end = self.here();
-        self.patch(jend, end);
         Ok(())
     }
 
@@ -768,7 +753,6 @@ impl<'p> FnLowerer<'p> {
     /// the index), matching the graph engine.
     fn emit_while(&mut self, term: &Term) -> Result<(), String> {
         let slot = self.alloc_slot();
-        let dst = self.flat(term.id)?;
         let cond_block = term.child_blocks[0];
         let body_block = term.child_blocks[1];
         self.push(Inst::WhileInit { slot });
@@ -778,9 +762,6 @@ impl<'p> FnLowerer<'p> {
         let cond = self
             .block_result_reg(cond_block)?
             .ok_or("while loop has an empty condition block")?;
-        // A Pending condition (this or any later iteration) stops the loop and
-        // makes the whole `while` evaluate to that Pending.
-        let jpend = self.emit_placeholder(Inst::JumpIfPending { cond, to: 0 });
         let jexit = self.emit_placeholder(Inst::JumpIfFalse { cond, to: 0 });
 
         self.loop_stack.push(LoopCtx {
@@ -796,12 +777,6 @@ impl<'p> FnLowerer<'p> {
         self.push(Inst::Jump { to: top }); // back-edge
 
         let ctx = self.loop_stack.pop().unwrap();
-        // Pending arm: yield the Pending as the loop value, then share the exit
-        // (so the loop-index context is still popped).
-        let pend_label = self.here();
-        self.patch(jpend, pend_label);
-        self.push(Inst::Move { dst, src: cond });
-
         let exit = self.here();
         self.patch(jexit, exit);
         for j in ctx.break_jumps {
@@ -834,12 +809,6 @@ impl<'p> FnLowerer<'p> {
     fn emit_match(&mut self, term: &Term) -> Result<(), String> {
         let subject = self.flat(term.inputs[0])?;
         let dst = self.flat(term.id)?;
-        // A Pending subject absorbs: no arm (not even a wildcard) is tested and
-        // the match evaluates to the Pending.
-        let jpend = self.emit_placeholder(Inst::JumpIfPending {
-            cond: subject,
-            to: 0,
-        });
         let program: &'p Program = self.program;
         let metas = program
             .match_arms
@@ -927,13 +896,6 @@ impl<'p> FnLowerer<'p> {
         self.cur_origin = Some(term.id);
         self.push(Inst::MatchFail { subject });
 
-        // Pending arm: yield the Pending subject as the match value. Reached
-        // only via `jpend`; `MatchFail` above diverges, so control never falls
-        // into it from the fail path.
-        let pend_label = self.here();
-        self.patch(jpend, pend_label);
-        self.push(Inst::Move { dst, src: subject });
-
         let end = self.here();
         for j in to_end {
             self.patch(j, end);
@@ -972,8 +934,7 @@ impl<'p> FnLowerer<'p> {
                     .ok_or("state init has an empty init block")?;
                 // Recursion moved cur_origin; restore it for the commit write.
                 self.cur_origin = Some(term.id);
-                // `init: true` — a Pending init result is not committed, so the
-                // slot re-initializes next frame until the value resolves.
+                // `init: true`: the declaration's commit write.
                 self.push(Inst::StateWrite {
                     dst,
                     base,
@@ -1083,8 +1044,6 @@ impl<'p> FnLowerer<'p> {
         let dst = self.flat(term.id)?;
         let cond = self.flat(term.inputs[0])?;
         self.push(Inst::LoadNil { dst });
-        // A Pending condition absorbs: run no arm and yield the Pending itself.
-        let jpend = self.emit_placeholder(Inst::JumpIfPending { cond, to: 0 });
         let jif = self.emit_placeholder(Inst::JumpIfFalse { cond, to: 0 });
 
         self.emit_arm(term.child_blocks[0], term.id, dst)?;
@@ -1095,16 +1054,9 @@ impl<'p> FnLowerer<'p> {
         if let Some(&else_block) = term.child_blocks.get(1) {
             self.emit_arm(else_block, term.id, dst)?;
         }
-        // Both real arms jump over the pending arm to `end`.
-        let jelse = self.emit_placeholder(Inst::Jump { to: 0 });
-
-        let pend_label = self.here();
-        self.patch(jpend, pend_label);
-        self.push(Inst::Move { dst, src: cond });
 
         let end_label = self.here();
         self.patch(jend, end_label);
-        self.patch(jelse, end_label);
         Ok(())
     }
 
@@ -1116,16 +1068,9 @@ impl<'p> FnLowerer<'p> {
     /// ```
     /// `&&` runs the rhs when the left is truthy and short-circuits to `false`;
     /// `||` runs the rhs when the left is falsy and short-circuits to `true`.
-    ///
-    /// A Pending left side absorbs, as an `if` condition does: the rhs does
-    /// not run and the result is the Pending itself. Without the
-    /// `JumpIfPending`, a Pending would count as truthy, so `p && x` gave `x`
-    /// and `p || x` gave `true`, and an `if p.admin || … then` ran its branch
-    /// while the data was still loading.
     fn emit_short_circuit(&mut self, term: &Term, is_and: bool) -> Result<(), String> {
         let dst = self.flat(term.id)?;
         let left = self.flat(term.inputs[0])?;
-        let jpend = self.emit_placeholder(Inst::JumpIfPending { cond: left, to: 0 });
         let to_rhs = if is_and {
             self.emit_placeholder(Inst::JumpIfTrue { cond: left, to: 0 })
         } else {
@@ -1137,15 +1082,9 @@ impl<'p> FnLowerer<'p> {
         let rhs_label = self.here();
         self.patch(to_rhs, rhs_label);
         self.emit_arm(term.child_blocks[0], term.id, dst)?;
-        let jrhs = self.emit_placeholder(Inst::Jump { to: 0 });
-
-        let pend_label = self.here();
-        self.patch(jpend, pend_label);
-        self.push(Inst::Move { dst, src: left });
 
         let end_label = self.here();
         self.patch(jend, end_label);
-        self.patch(jrhs, end_label);
         Ok(())
     }
 
@@ -1156,7 +1095,7 @@ impl<'p> FnLowerer<'p> {
     ///   <rhs>: dst = <rhs result>  // absent LHS: evaluate the fallback
     /// end:
     /// ```
-    /// The RHS arm runs only when the LHS is absent (`Nil` or `Pending`), so a
+    /// The RHS arm runs only when the LHS is absent (`Nil`), so a
     /// present LHS short-circuits any RHS side effect.
     fn emit_coalesce(&mut self, term: &Term) -> Result<(), String> {
         let dst = self.flat(term.id)?;

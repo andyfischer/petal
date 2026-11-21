@@ -71,7 +71,7 @@
 //! cannot tell: it has no identity test, an in-place edit copies, and
 //! `freeze` is not constant, so nothing invariant is frozen.
 //!
-//! A value that cannot be kept (it holds a handle or a pending result)
+//! A value that cannot be kept (it holds a handle)
 //! rejects its slots, and the code runs on every call as before.
 //!
 //! # Recursion, closures, memoized calls, forks

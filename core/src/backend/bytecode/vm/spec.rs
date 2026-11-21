@@ -122,7 +122,7 @@ pub enum Portable {
 
 impl Portable {
     /// `None` for a value that cannot be carried to another heap (a closure,
-    /// a handle, a pending resource).
+    /// a handle).
     pub fn from_value(v: Value, heap: &Heap) -> Option<Portable> {
         Some(match v {
             Value::Nil => Portable::Nil,

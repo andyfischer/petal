@@ -12,7 +12,7 @@ use crate::execution_context::{ContextKey, ExecutionContext};
 use crate::handle::{HandleClass, HandleClassId, HandleVal};
 use crate::heap::Heap;
 use crate::module::ModuleRegistry;
-use crate::native_fn::{NativeClass, NativeEffects, NativeFn, NativeFnId, NativeFnTable};
+use crate::native_fn::{NativeEffects, NativeFn, NativeFnId, NativeFnTable};
 use crate::observe::Observations;
 use crate::policy::RunPolicy;
 use crate::effect_audit::EffectAudit;
@@ -30,7 +30,6 @@ mod host_io;
 mod observations_json;
 mod reload;
 mod run;
-mod settle;
 pub(crate) mod spec_run;
 mod state_json;
 mod state_storage;
@@ -795,7 +794,8 @@ impl Env {
     /// Check this `Env`'s registered natives against the interface packages
     /// that declare them: every `native fn` a module of `packages` declares
     /// must be registered here, and every native registered here beyond the
-    /// builtins must be declared by one of them.
+    /// builtins and the bundled interface packages (`query`) must be declared
+    /// by one of them.
     ///
     /// This is a host's drift test. A host registers its natives and its
     /// interface package(s), then asserts
@@ -829,13 +829,20 @@ impl Env {
         // A host may register a native under a builtin's name (its own
         // `log`), replacing it: declared and registered, so not missing —
         // and, being a builtin's name (`core` or a domain builtin package),
-        // not something a host's package has to declare.
+        // not something a host's package has to declare. Nor is a native a
+        // bundled interface package declares (`query`): the library crate
+        // that implements it is registered along with the host's own
+        // (petal-ui registers `query`), so a host that answers for `ui` need
+        // not name it. Naming it still checks that its natives are there.
         let core = crate::native_decl::builtin_host_names();
+        let interfaces = crate::native_decl::bundled_interface_host_names();
         let all: std::collections::HashSet<String> = self.native_fn_names().into_iter().collect();
         mismatch.unregistered = declared.difference(&all).cloned().collect();
         mismatch.undeclared = all
             .iter()
-            .filter(|name| !core.contains(*name) && !declared.contains(*name))
+            .filter(|name| {
+                !core.contains(*name) && !interfaces.contains(*name) && !declared.contains(*name)
+            })
             .cloned()
             .collect();
         mismatch.unregistered.sort();
@@ -1957,11 +1964,8 @@ impl Env {
         stack.reset_execution();
 
         // A stack reset is the per-frame boundary (a host resets before each
-        // frame's run). Clear the per-frame absorption state — the debug log and
-        // the always-on `absorbed_count`s — so both describe just the next frame.
-        // The cross-frame resource table itself is kept.
+        // frame's run).
         if let Some(ctx) = self.contexts.get_mut(&ck) {
-            ctx.reset_frame_absorption();
             // Element origins describe one run's elements, like the emit
             // origins a host drains per frame.
             ctx.element_origins.clear();
@@ -1969,29 +1973,6 @@ impl Env {
         }
 
         Ok(())
-    }
-
-    /// Advance the frame counter of the context `stack_id` runs in (see
-    /// [`ExecutionContext::advance_frame`](crate::execution_context::ExecutionContext::advance_frame)).
-    /// A host calls this once per rendered frame so resource ages
-    /// (`current_frame - frame_started`) grow over time. No-op if the stack is
-    /// unknown.
-    pub fn advance_frame(&mut self, stack_id: StackKey) {
-        if let Some(ck) = self.ctx_for(stack_id) {
-            self.ctx_mut(ck).advance_frame();
-        }
-    }
-
-    /// Turn on the debug-gated pending absorption log in the context `stack_id`
-    /// runs in (see
-    /// [`ExecutionContext::enable_pending_trace`](crate::execution_context::ExecutionContext::enable_pending_trace)).
-    /// The `--trace-pending` CLI flag and the debug protocol flip this before
-    /// stepping so the frame's absorptions are recorded. No-op if the stack is
-    /// unknown.
-    pub fn enable_pending_trace(&mut self, stack_id: StackKey) {
-        if let Some(ck) = self.ctx_for(stack_id) {
-            self.ctx_mut(ck).enable_pending_trace();
-        }
     }
 
     /// Turn call-site attribution of buffered output on or off for the default
@@ -2082,28 +2063,10 @@ impl Env {
         self.ctx(self.default_context).trace_emit
     }
 
-    /// A structured, per-frame report of every live pending resource in the
-    /// context `stack_id` runs in: a JSON array of
-    /// `{ id, key, state, age_frames, origin, absorbed_count }` objects (see
-    /// [`crate::value::pending_report_json`] for the exact shape). This is what
-    /// the debug-protocol `pending_report` query and the petal-ui overlay hook
-    /// surface, and what `--trace-pending` prints per frame. An empty array when
-    /// the program is unknown (no source map to resolve origins against).
-    pub fn pending_report(&self, program_id: ProgramId, stack_id: StackKey) -> serde_json::Value {
-        let ck = self.ctx_for(stack_id).unwrap_or(self.default_context);
-        let ctx = self.ctx(ck);
-        match self.get_program(program_id) {
-            Some(program) => {
-                crate::value::pending_report_json(&ctx.resources, program, ctx.frame())
-            }
-            None => serde_json::Value::Array(Vec::new()),
-        }
-    }
-
     /// Register a native function that can be called from Petal code,
     /// together with its declared [`NativeEffects`]: what it reads, whether it
-    /// emits, whether it does something a replay could not reproduce, and its
-    /// `Pending` policy. Must be called before `load_program`.
+    /// emits, and whether it does something a replay could not reproduce.
+    /// Must be called before `load_program`.
     ///
     /// The reactive layers take the row at its word — the memo classifies
     /// every call from it and never looks at the activity counters — so the
@@ -2290,18 +2253,6 @@ impl Env {
         program: &Program,
     ) -> crate::static_classify::StaticAnalysis {
         crate::static_classify::analyze(program, &self.native_fns)
-    }
-
-    /// Override the [`NativeClass`] of an already-registered native (by the id
-    /// [`register_native`](Self::register_native) returned). Registration stays
-    /// append-only — indices are stable — so an embedding classifies its natives
-    /// afterward. Mark side-effecting emitters (natives that only
-    /// [`push_output`](crate::native_fn::PetalCxt::push_output)/
-    /// [`emit`](crate::native_fn::PetalCxt::emit) into a buffer)
-    /// [`Effectful`](NativeClass::Effectful) so a `Pending` argument makes the
-    /// call a no-op instead of being absorbed as the result.
-    pub fn set_native_class(&mut self, id: NativeFnId, class: NativeClass) {
-        self.native_fns.set_class(id, class);
     }
 
     /// Replace the effect row of an already-registered native (see

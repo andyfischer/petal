@@ -1198,8 +1198,6 @@ seconds.
   and `choose` replay identically — essential for reproducing a bug.
 - `petal run --trace` streams per-term events to stderr;
   `--record-trace out.json` saves the buffer for offline analysis.
-- `petal pending-report f.ptl` answers "why is this region blank?" for async
-  resources.
 - `petal run --profile f.ptl` prints an instruction/builtin histogram.
 - `petal bench f.ptl --fn step` reports what one call of `step` costs:
   instructions, milliseconds, allocations and copies per call, with the
@@ -1217,7 +1215,7 @@ seconds.
 
 `tools/petal-mcp.ts` exposes the same capabilities as tools: `TestSnippet`,
 `LintSnippet`, `ExplainTerm`, `ShowStage` (tokens / AST / IR / bytecode),
-`PendingReport`, `TraceEmits`, `ProposeEdit`. The server builds the
+`TraceEmits`, `ProposeEdit`. The server builds the
 binary on first use. See [dev/mcp-server.md](dev/mcp-server.md).
 
 ---

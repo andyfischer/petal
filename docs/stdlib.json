@@ -68,7 +68,7 @@
       "id": "json",
       "title": "JSON",
       "group": "core",
-      "doc": "`json_stringify` / `json_parse`: the string codec for anything that has to leave the process as text — chiefly the panel store, whose values are strings, and whose docs have always told authors to \"pair it with `json_stringify`\". Every embedder already exposed the conversion (the debug server's `panel.values`, GPP, the MCP tools) through [`crate::value::value_to_json`]; this is the same conversion handed to the script.  The mapping is the one `value_to_json` / `json_to_value` define: nil ↔ `null`, bools, ints and floats ↔ numbers, strings, lists ↔ arrays, records ↔ objects. `json_parse` yields plain records, not class instances, so a round trip flattens a class value to its fields — the same thing a `state` dump shows. A value with no JSON form (a function, a symbol) stringifies as its display text rather than failing, since a stringified debug dump is more useful than an aborted frame. A value that is not fully loaded has no text yet: `json_stringify` of a record with a pending field is that pending value, the same as `json_stringify` of a pending value, never a string with a `\"<pending N>\"` placeholder in it."
+      "doc": "`json_stringify` / `json_parse`: the string codec for anything that has to leave the process as text — chiefly the panel store, whose values are strings, and whose docs have always told authors to \"pair it with `json_stringify`\". Every embedder already exposed the conversion (the debug server's `panel.values`, GPP, the MCP tools) through [`crate::value::value_to_json`]; this is the same conversion handed to the script.  The mapping is the one `value_to_json` / `json_to_value` define: nil ↔ `null`, bools, ints and floats ↔ numbers, strings, lists ↔ arrays, records ↔ objects. `json_parse` yields plain records, not class instances, so a round trip flattens a class value to its fields — the same thing a `state` dump shows. A value with no JSON form (a function, a symbol) stringifies as its display text rather than failing, since a stringified debug dump is more useful than an aborted frame."
     },
     {
       "id": "classes",
@@ -99,12 +99,6 @@
       "title": "Handles",
       "group": "core",
       "doc": "Handle-related builtins (docs/game-engine-features/handles.md)."
-    },
-    {
-      "id": "pending",
-      "title": "Async & Query Values",
-      "group": "core",
-      "doc": "Test-only pending-resource builtins: `__pending`, `__resolve`, `__reject`.  These deterministically drive the resource table (no real I/O) so the pending-value semantics can be exercised in tests. Names are `__`-prefixed to read as internal. See docs/dev/pending-values-plan.md (roadmap step 1) — real fetchers arrive with `petal-query`."
     },
     {
       "id": "hints",
@@ -220,7 +214,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 89
+        "line": 91
       },
       "doc": {
         "body": "Returns a list of integers from `start` (inclusive) to `end` (exclusive).\nWith a `step`, counts by it; a negative step counts down, stopping before\n`end`. A step of 0 is an error. (`range(n)` is `range(0, n)`.)",
@@ -242,7 +236,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 30
+        "line": 19
       }
     },
     {
@@ -268,7 +262,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 105
+        "line": 107
       },
       "doc": {
         "body": "Returns the length of a list, string, `f64_array` or map (its number of\nentries). A string's length is its number of **characters** (Unicode code\npoints), not bytes; see String offsets in this module's doc.",
@@ -289,7 +283,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 67
+        "line": 56
       }
     },
     {
@@ -323,7 +317,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 113
+        "line": 115
       },
       "doc": {
         "body": "Deprecated alias for `append`. Like `append` it returns a new list;\n`push(items, 3)` on its own does nothing.",
@@ -341,7 +335,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 295
+        "line": 284
       }
     },
     {
@@ -819,7 +813,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 155
+        "line": 157
       },
       "doc": {
         "body": "Returns a **new** list with `value` added to the end. Lists are immutable\nvalues, so `append` never changes its input — keep the result.\n\n**Appending in a loop is linear.** When the binding being rebound is the\nlist's only holder, `append` adds to the list where it is instead of copying\nit, so building a list of `n` elements this way costs `n` appends, not\n`n²/2` element copies. That covers a `let` rebound with `=`\n(`xs = append(xs, v)`), a `var` or a `state var` written\nwith `set` (`set xs = append(xs, v)`, `set xs = append(get xs, v)`), inside a\nfunction or at the top level, and with reads of the list between the\nappends. 10,000, 20,000 and 40,000 appends take 3.6, 4.0 and 4.9 ms as a\nwhole `petal run`, start-up included. There is no need to collect pieces\nsome other way and join them at the end.\n\nGiving the list to something else is still free of surprises: `let snap =\nxs` keeps what it read, and the next `append` pays for one copy before\ncarrying on in place. Three shapes still copy the whole list on **every**\nappend, and are quadratic (35, 127 and 565 ms for the same three sizes):\n\n```petal ignore\nset r.items = append(r.items, v)     # a list held in a record field\nset grid[k] = append(grid[k], v)     # a list held in another list\nset xs = add(xs, v)                  # through a function: fn add(xs, v) return append(xs, v) end\n```\n\nFor those, build the list in a `var` of its own and store it once the loop\nis done, or have the helper write the `var` itself (`fn add(v) set xs =\nappend(get xs, v) end`, called as a statement). A call inside the appended\nvalue copies too, `set xs = append(xs, f(x))`, unless it is one of `float`,\n`int`, `min`, `max`, `clamp`, `abs`, `floor`, `len` or `type`; bind\n`let v = f(x)` first. The rules are in the language guide under\n[`var`](language-guide.md#var-and-set).",
@@ -841,7 +835,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 173
+        "line": 162
       }
     },
     {
@@ -867,7 +861,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 166
+        "line": 168
       },
       "doc": {
         "body": "Deprecated alias for `drop_last`. Returns a new list without the last\nelement — it does **not** return the removed element (use `last` for that).",
@@ -888,7 +882,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 304
+        "line": 293
       }
     },
     {
@@ -914,7 +908,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 176
+        "line": 178
       },
       "doc": {
         "body": "Returns a list of all keys of a record or a map, in insertion order.",
@@ -935,7 +929,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 385
+        "line": 374
       }
     },
     {
@@ -961,7 +955,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 185
+        "line": 187
       },
       "doc": {
         "body": "Returns a list of all values of a record or a map, in insertion order.",
@@ -982,7 +976,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 409
+        "line": 398
       }
     },
     {
@@ -1016,7 +1010,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 209
+        "line": 211
       },
       "doc": {
         "body": "Checks if a list contains a value, a string contains a substring, or a map\nhas the key `needle`.",
@@ -1038,7 +1032,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 502
+        "line": 491
       }
     },
     {
@@ -1247,7 +1241,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 232
+        "line": 234
       },
       "doc": {
         "body": "Returns a new sorted list. Numbers sort before strings; NaNs sort after every\nother number.\n\nWith `compare`, sorts with a comparator of two elements. `compare(a, b)`\nreturns a number (negative: `a` first; positive: `b` first; zero: a tie) or\na bool (`true`: `a` first). The sort is stable.",
@@ -1272,7 +1266,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 596
+        "line": 585
       }
     },
     {
@@ -1298,7 +1292,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 241
+        "line": 243
       },
       "doc": {
         "body": "Returns a new reversed list or string.",
@@ -1316,7 +1310,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 625
+        "line": 605
       }
     },
     {
@@ -1350,7 +1344,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 251
+        "line": 253
       },
       "doc": {
         "body": "Joins list elements into a string with the given separator.",
@@ -1371,7 +1365,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 643
+        "line": 623
       }
     },
     {
@@ -1405,7 +1399,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 262
+        "line": 264
       },
       "doc": {
         "body": "Splits a string into a list by the given separator. To split into\ncharacters, use `chars`.",
@@ -1426,7 +1420,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 672
+        "line": 643
       }
     },
     {
@@ -1452,7 +1446,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 271
+        "line": 273
       },
       "doc": {
         "body": "The string in upper case, Unicode-aware.",
@@ -1472,7 +1466,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 699
+        "line": 670
       }
     },
     {
@@ -1498,7 +1492,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 283
+        "line": 285
       },
       "doc": {
         "body": "The string in lower case, Unicode-aware.",
@@ -1518,7 +1512,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 711
+        "line": 682
       }
     },
     {
@@ -1544,7 +1538,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 292
+        "line": 294
       },
       "doc": {
         "body": "Returns a list of `[index, value]` pairs.",
@@ -1564,7 +1558,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 723
+        "line": 694
       }
     },
     {
@@ -1598,7 +1592,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 301
+        "line": 303
       },
       "doc": {
         "body": "Pairs elements from two lists. Stops at the shorter list.",
@@ -1618,7 +1612,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 744
+        "line": 715
       }
     },
     {
@@ -1662,7 +1656,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 316
+        "line": 318
       },
       "doc": {
         "body": "Returns a slice of a list or string. Supports negative indices. `end`\ndefaults to the length of the collection. On a string the indices count\n**characters**, so a slice never cuts one in half.",
@@ -1688,7 +1682,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 802
+        "line": 773
       }
     },
     {
@@ -1714,7 +1708,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 326
+        "line": 328
       },
       "doc": {
         "body": "Flattens one level of nesting.",
@@ -1735,7 +1729,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 841
+        "line": 812
       }
     },
     {
@@ -1769,7 +1763,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 336
+        "line": 338
       },
       "doc": {
         "body": "JavaScript-style alias for `contains`. Same behavior.",
@@ -1789,7 +1783,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 502
+        "line": 491
       },
       "aliasOf": "contains"
     },
@@ -3444,8 +3438,8 @@
       "name": "map",
       "category": "higher-order",
       "group": "core",
-      "arity": 2,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "list",
@@ -3454,6 +3448,11 @@
         {
           "name": "f",
           "type": "any"
+        },
+        {
+          "name": "key",
+          "type": "any",
+          "optional": true
         }
       ],
       "signatures": [
@@ -3465,22 +3464,31 @@
           {
             "name": "f",
             "type": "any"
+          },
+          {
+            "name": "key",
+            "type": "any",
+            "optional": true
           }
         ]
       ],
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 785
+        "line": 793
       },
       "doc": {
-        "body": "Applies a function to each element and returns a new list.",
+        "body": "Applies a function to each element and returns a new list.\n\n`state` in `f` (or in anything it calls) is kept per element across runs,\nas in `for x in list do f(x)`: by the element's position, or with `key:` by\na key of the element, so it follows the item when the list reorders.",
         "summary": "Applies a function to each element and returns a new list.",
-        "params": {},
+        "params": {
+          "list": "The list to map over.",
+          "f": "`fn(x)`, returning the new element.",
+          "key": "Optional: a field name (`\"id\"`) or a function of the element (`fn(x) x.id`) giving each element's key for its `state`. Keys must be distinct."
+        },
         "returns": null,
         "options": {},
         "example": [
-          "map([1, 2, 3], fn(x) -> x * 2)         # [2, 4, 6]\nmap([\"a\", \"b\"], fn(s) -> s ++ \"!\")     # [\"a!\", \"b!\"]"
+          "map([1, 2, 3], fn(x) -> x * 2)         # [2, 4, 6]\nmap([\"a\", \"b\"], fn(s) -> s ++ \"!\")     # [\"a!\", \"b!\"]\nmap(tasks, row, key: \"id\")             # row's state follows each task"
         ],
         "see": [
           "filter",
@@ -3493,7 +3501,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       }
     },
     {
@@ -3527,7 +3535,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 796
+        "line": 804
       },
       "doc": {
         "body": "Returns a new list containing only elements where the function returns\n`true`.",
@@ -3549,7 +3557,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -3592,7 +3600,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 807
+        "line": 815
       },
       "doc": {
         "body": "Folds over a list, accumulating a result.",
@@ -3617,7 +3625,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -3625,8 +3633,8 @@
       "name": "forEach",
       "category": "higher-order",
       "group": "core",
-      "arity": 2,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "list",
@@ -3635,6 +3643,11 @@
         {
           "name": "f",
           "type": "any"
+        },
+        {
+          "name": "key",
+          "type": "any",
+          "optional": true
         }
       ],
       "signatures": [
@@ -3646,18 +3659,27 @@
           {
             "name": "f",
             "type": "any"
+          },
+          {
+            "name": "key",
+            "type": "any",
+            "optional": true
           }
         ]
       ],
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 818
+        "line": 828
       },
       "doc": {
-        "body": "Runs a function once for each element and returns `nil`. Use when you\nwant the side effects (logging, drawing, mutations) but don't need a\nnew list.",
+        "body": "Runs a function once for each element and returns `nil`. Use when you\nwant the side effects (logging, drawing, mutations) but don't need a\nnew list. `state` in `f` is kept per element, as in `map`, and `key:` works\nthe same way.",
         "summary": "Runs a function once for each element and returns `nil`.",
-        "params": {},
+        "params": {
+          "list": "The list to walk.",
+          "f": "`fn(x)`, run for its effects.",
+          "key": "Optional: a field name or a function of the element giving each element's key for its `state`, as in `map`."
+        },
         "returns": null,
         "options": {},
         "example": [
@@ -3672,7 +3694,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -3809,7 +3831,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 348
+        "line": 350
       },
       "doc": {
         "body": "Creates a zero-filled `f64_array` of `length` elements. An `f64_array` is a\nflat array of floats, faster than a list for numeric inner loops (see Typed\nnumeric arrays in this module's doc).",
@@ -3830,7 +3852,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 92
+        "line": 81
       }
     },
     {
@@ -3872,7 +3894,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 360
+        "line": 362
       },
       "doc": {
         "body": "Returns a new array with slot `index` set to `value` (an int or float). An\nout-of-bounds or negative index is an error.",
@@ -3893,7 +3915,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 116
+        "line": 105
       }
     },
     {
@@ -3935,7 +3957,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 372
+        "line": 374
       },
       "doc": {
         "body": "Returns a new array with the elements at `i` and `j` exchanged. Both indices\nare bounds-checked.",
@@ -3956,7 +3978,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 148
+        "line": 137
       }
     },
     {
@@ -4267,7 +4289,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 382
+        "line": 384
       },
       "doc": {
         "body": "Returns the last element of a list, or `nil` if the list is empty.",
@@ -4288,7 +4310,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 310
+        "line": 299
       }
     },
     {
@@ -4314,7 +4336,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 392
+        "line": 394
       },
       "doc": {
         "body": "Returns a **new** list without the last element.",
@@ -4335,7 +4357,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 330
+        "line": 319
       }
     },
     {
@@ -4369,7 +4391,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 406
+        "line": 408
       },
       "doc": {
         "body": "Returns a **new** record or map without `key`. Removing an absent key is not\nan error. Works on records and maps, not lists (for a list, see\n`remove_at`).",
@@ -4392,7 +4414,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 349
+        "line": 338
       }
     },
     {
@@ -4437,422 +4459,6 @@
       "source": {
         "file": "core/src/builtins/handle.rs",
         "line": 15
-      }
-    },
-    {
-      "name": "__pending",
-      "category": "pending",
-      "group": "core",
-      "arity": null,
-      "variadic": true,
-      "params": [],
-      "signatures": [],
-      "declaration": {
-        "module": "core/pending",
-        "file": "core/packages/core/src/pending.ptl",
-        "line": 20
-      },
-      "doc": {
-        "body": "Test-only: `__pending(key)`, the resource named `key`: its value once resolved, a pending value until then.",
-        "summary": "Test-only: `__pending(key)`, the resource named `key`: its value once resolved, a pending value until then.",
-        "params": {},
-        "returns": null,
-        "options": {},
-        "example": [],
-        "see": [],
-        "deprecated": null,
-        "hidden": true,
-        "extra": {}
-      },
-      "source": {
-        "file": "core/src/builtins/pending.rs",
-        "line": 16
-      },
-      "internal": true
-    },
-    {
-      "name": "__resolve",
-      "category": "pending",
-      "group": "core",
-      "arity": null,
-      "variadic": true,
-      "params": [],
-      "signatures": [],
-      "declaration": {
-        "module": "core/pending",
-        "file": "core/packages/core/src/pending.ptl",
-        "line": 23
-      },
-      "doc": {
-        "body": "Test-only: `__resolve(key, value)` lands the resource named `key` with `value`.",
-        "summary": "Test-only: `__resolve(key, value)` lands the resource named `key` with `value`.",
-        "params": {},
-        "returns": null,
-        "options": {},
-        "example": [],
-        "see": [],
-        "deprecated": null,
-        "hidden": true,
-        "extra": {}
-      },
-      "source": {
-        "file": "core/src/builtins/pending.rs",
-        "line": 38
-      },
-      "internal": true
-    },
-    {
-      "name": "__reject",
-      "category": "pending",
-      "group": "core",
-      "arity": null,
-      "variadic": true,
-      "params": [],
-      "signatures": [],
-      "declaration": {
-        "module": "core/pending",
-        "file": "core/packages/core/src/pending.ptl",
-        "line": 26
-      },
-      "doc": {
-        "body": "Test-only: `__reject(key, error)` fails the resource named `key`.",
-        "summary": "Test-only: `__reject(key, error)` fails the resource named `key`.",
-        "params": {},
-        "returns": null,
-        "options": {},
-        "example": [],
-        "see": [],
-        "deprecated": null,
-        "hidden": true,
-        "extra": {}
-      },
-      "source": {
-        "file": "core/src/builtins/pending.rs",
-        "line": 50
-      },
-      "internal": true
-    },
-    {
-      "name": "is_loading",
-      "category": "pending",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "value",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "value",
-            "type": "any"
-          }
-        ]
-      ],
-      "declaration": {
-        "module": "core/pending",
-        "file": "core/packages/core/src/pending.ptl",
-        "line": 33
-      },
-      "doc": {
-        "body": "True when the value is pending and still loading. False for a value that is\nnot pending.",
-        "summary": "True when the value is pending and still loading.",
-        "params": {},
-        "returns": null,
-        "options": {},
-        "example": [],
-        "see": [
-          "is_error",
-          "is_pending"
-        ],
-        "deprecated": null,
-        "hidden": false,
-        "extra": {}
-      },
-      "source": {
-        "file": "core/src/builtins/pending.rs",
-        "line": 69
-      }
-    },
-    {
-      "name": "is_error",
-      "category": "pending",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "value",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "value",
-            "type": "any"
-          }
-        ]
-      ],
-      "declaration": {
-        "module": "core/pending",
-        "file": "core/packages/core/src/pending.ptl",
-        "line": 40
-      },
-      "doc": {
-        "body": "True when the value is pending and failed. False for a value that is not\npending.",
-        "summary": "True when the value is pending and failed.",
-        "params": {},
-        "returns": null,
-        "options": {},
-        "example": [],
-        "see": [
-          "error_of",
-          "is_loading",
-          "is_pending"
-        ],
-        "deprecated": null,
-        "hidden": false,
-        "extra": {}
-      },
-      "source": {
-        "file": "core/src/builtins/pending.rs",
-        "line": 81
-      }
-    },
-    {
-      "name": "is_pending",
-      "category": "pending",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "value",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "value",
-            "type": "any"
-          }
-        ]
-      ],
-      "declaration": {
-        "module": "core/pending",
-        "file": "core/packages/core/src/pending.ptl",
-        "line": 49
-      },
-      "doc": {
-        "body": "True when the value is pending at all, loading or errored.",
-        "summary": "True when the value is pending at all, loading or errored.",
-        "params": {},
-        "returns": null,
-        "options": {},
-        "example": [
-          "is_pending(1)   # false"
-        ],
-        "see": [
-          "is_ready",
-          "is_loading",
-          "is_error"
-        ],
-        "deprecated": null,
-        "hidden": false,
-        "extra": {}
-      },
-      "source": {
-        "file": "core/src/builtins/pending.rs",
-        "line": 96
-      }
-    },
-    {
-      "name": "is_ready",
-      "category": "pending",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "value",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "value",
-            "type": "any"
-          }
-        ]
-      ],
-      "declaration": {
-        "module": "core/pending",
-        "file": "core/packages/core/src/pending.ptl",
-        "line": 58
-      },
-      "doc": {
-        "body": "The negation of `is_pending`: true for any usable value.",
-        "summary": "The negation of `is_pending`: true for any usable value.",
-        "params": {},
-        "returns": null,
-        "options": {},
-        "example": [
-          "is_ready(1)     # true"
-        ],
-        "see": [
-          "is_pending"
-        ],
-        "deprecated": null,
-        "hidden": false,
-        "extra": {}
-      },
-      "source": {
-        "file": "core/src/builtins/pending.rs",
-        "line": 105
-      }
-    },
-    {
-      "name": "error_of",
-      "category": "pending",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "value",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "value",
-            "type": "any"
-          }
-        ]
-      ],
-      "declaration": {
-        "module": "core/pending",
-        "file": "core/packages/core/src/pending.ptl",
-        "line": 64
-      },
-      "doc": {
-        "body": "The error a failed pending value holds, or `nil` for anything else.",
-        "summary": "The error a failed pending value holds, or `nil` for anything else.",
-        "params": {},
-        "returns": null,
-        "options": {},
-        "example": [],
-        "see": [
-          "is_error"
-        ],
-        "deprecated": null,
-        "hidden": false,
-        "extra": {}
-      },
-      "source": {
-        "file": "core/src/builtins/pending.rs",
-        "line": 114
-      }
-    },
-    {
-      "name": "or_else",
-      "category": "pending",
-      "group": "core",
-      "arity": 2,
-      "variadic": false,
-      "params": [
-        {
-          "name": "value",
-          "type": "any"
-        },
-        {
-          "name": "fallback",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "value",
-            "type": "any"
-          },
-          {
-            "name": "fallback",
-            "type": "any"
-          }
-        ]
-      ],
-      "declaration": {
-        "module": "core/pending",
-        "file": "core/packages/core/src/pending.ptl",
-        "line": 72
-      },
-      "doc": {
-        "body": "`fallback` when `value` is pending (loading or errored), otherwise `value`.\nBoth arguments are evaluated before the call; `value ?? fallback` evaluates\nits right side only when needed.",
-        "summary": "`fallback` when `value` is pending (loading or errored), otherwise `value`.",
-        "params": {},
-        "returns": null,
-        "options": {},
-        "example": [],
-        "see": [
-          "is_pending"
-        ],
-        "deprecated": null,
-        "hidden": false,
-        "extra": {}
-      },
-      "source": {
-        "file": "core/src/builtins/pending.rs",
-        "line": 131
-      }
-    },
-    {
-      "name": "resource_key",
-      "category": "pending",
-      "group": "core",
-      "arity": 1,
-      "variadic": false,
-      "params": [
-        {
-          "name": "value",
-          "type": "any"
-        }
-      ],
-      "signatures": [
-        [
-          {
-            "name": "value",
-            "type": "any"
-          }
-        ]
-      ],
-      "declaration": {
-        "module": "core/pending",
-        "file": "core/packages/core/src/pending.ptl",
-        "line": 79
-      },
-      "doc": {
-        "body": "The cache key of a pending value's resource as an int, or `nil` for a value\nthat is not pending. Two pending values for the same resource have the same\nkey.",
-        "summary": "The cache key of a pending value's resource as an int, or `nil` for a value that is not pending.",
-        "params": {},
-        "returns": null,
-        "options": {},
-        "example": [],
-        "see": [],
-        "deprecated": null,
-        "hidden": false,
-        "extra": {}
-      },
-      "source": {
-        "file": "core/src/builtins/pending.rs",
-        "line": 146
       }
     },
     {
@@ -4972,7 +4578,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 465
+        "line": 467
       },
       "doc": {
         "body": "The string as a list of single-character strings. `for c in chars(s)` is\nthe simplest way to visit every character.",
@@ -4993,7 +4599,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 921
+        "line": 892
       }
     },
     {
@@ -5019,7 +4625,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 476
+        "line": 478
       },
       "doc": {
         "body": "Number of characters. The same as `len` on a string; it dates from when\n`len` counted bytes, and remains for existing scripts.",
@@ -5040,7 +4646,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 942
+        "line": 913
       }
     },
     {
@@ -5074,7 +4680,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 489
+        "line": 491
       },
       "doc": {
         "body": "The single character at character index `index`. Negative indices count from\nthe end. An out-of-range index gives `\"\"` rather than an error, where `s[i]`\nis an error.",
@@ -5095,7 +4701,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 959
+        "line": 930
       }
     },
     {
@@ -5139,7 +4745,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 503
+        "line": 505
       },
       "doc": {
         "body": "The same as `slice` on a string: the indices count characters. Negative\nindices count from the end, both ends clamp, and `end` defaults to the end\nof the string. It dates from when `slice` counted bytes, and remains for\nexisting scripts.",
@@ -5160,7 +4766,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 979
+        "line": 950
       }
     },
     {
@@ -5194,7 +4800,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 524
+        "line": 526
       },
       "doc": {
         "body": "Position of the first occurrence, or `-1` when absent. On a list this is the\nelement index; on a string it is a **character** index, ready to pass to\n`slice` or to index with `s[i]`.\n\n```petal ignore\nlet i = index_of(line, \"=\")\nif i >= 0 then\n  let key = slice(line, 0, i)\n  let value = slice(line, i + 1)\n```",
@@ -5215,7 +4821,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1003
+        "line": 974
       }
     },
     {
@@ -5259,7 +4865,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 835
+        "line": 845
       },
       "doc": {
         "body": "Sorts by a key read off each element. `key(element)` is called once per\nelement and must return a number or a string (any other key is an error, and\n`petal lint` reports it ahead of time when it can see what the key function\nreturns). The sort is stable in both directions, so chained calls sort by\nseveral keys — least significant first.",
@@ -5285,7 +4891,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -5320,7 +4926,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 533
+        "line": 535
       },
       "doc": {
         "body": "Returns a **new** list with `value` in front. The mirror of `append`.",
@@ -5340,7 +4946,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 224
+        "line": 213
       }
     },
     {
@@ -5374,7 +4980,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 545
+        "line": 547
       },
       "doc": {
         "body": "Joins two lists, or two strings, into a new one. `append(xs, ys)` adds `ys`\nas a single element; `concat` splices its elements in.",
@@ -5395,7 +5001,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 268
+        "line": 257
       }
     },
     {
@@ -5801,7 +5407,7 @@
       },
       "source": {
         "file": "core/src/builtins/json.rs",
-        "line": 31
+        "line": 28
       },
       "import": "json"
     },
@@ -5848,7 +5454,7 @@
       },
       "source": {
         "file": "core/src/builtins/json.rs",
-        "line": 70
+        "line": 60
       },
       "import": "json"
     },
@@ -6255,7 +5861,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 562
+        "line": 564
       },
       "doc": {
         "body": "The string written `count` times in a row. A `count` of zero or less gives\n`\"\"`; `count` must be an int.\n\nUse it instead of appending in a loop. `out = out ++ s` copies everything\nwritten so far on every pass, so a loop of `n` appends does work proportional\nto `n²`; `repeat` allocates the result once. When the pieces differ, collect\nthem in a list and `join` it at the end.",
@@ -6277,7 +5883,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1038
+        "line": 1009
       }
     },
     {
@@ -6311,7 +5917,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 573
+        "line": 575
       },
       "doc": {
         "body": "Whether the string begins with the given text. Every string starts with\n`\"\"`.",
@@ -6332,7 +5938,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1074
+        "line": 1045
       }
     },
     {
@@ -6366,7 +5972,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 582
+        "line": 584
       },
       "doc": {
         "body": "Whether the string ends with the given text. Every string ends with `\"\"`.",
@@ -6386,7 +5992,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1083
+        "line": 1054
       }
     },
     {
@@ -6412,7 +6018,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 593
+        "line": 595
       },
       "doc": {
         "body": "The string without its leading and trailing whitespace — spaces, tabs, line\nbreaks, and the other Unicode whitespace characters. Whitespace inside the\ntext stays.",
@@ -6430,7 +6036,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1093
+        "line": 1064
       }
     },
     {
@@ -6456,7 +6062,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 615
+        "line": 617
       },
       "doc": {
         "body": "Size of the string's UTF-8 encoding in bytes. For size limits and wire\nformats; use `len` for anything about the text.",
@@ -6477,7 +6083,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 876
+        "line": 847
       }
     },
     {
@@ -6521,7 +6127,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 629
+        "line": 631
       },
       "doc": {
         "body": "`slice` with **byte** offsets into the UTF-8 encoding. Negative indices count\nfrom the end and both ends clamp. A bound that falls inside a character moves\ninward to the next character boundary, so the result is always whole\ncharacters and never longer than the range asked for.",
@@ -6542,7 +6148,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 892
+        "line": 863
       }
     },
     {
@@ -6586,7 +6192,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -6631,7 +6237,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -6658,7 +6264,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 931
+        "line": 941
       },
       "doc": {
         "body": "Makes `value` and everything it holds frozen, and returns `value`. The\ncollector no longer looks inside a frozen value and never frees one. Lists,\nrecords, strings, `f64_array`s, vectors and enum variants freeze, to any\ndepth. Freezing a number, a bool or `nil`, or a value that is already\nfrozen, does nothing.\n\nThe garbage collector visits every value the program still holds each time\nit runs. For most programs that is cheap. For a program that keeps a very\nlarge table for its whole life (a generated world, a rule table, a level\nloaded from disk) it is a pause on every collection that grows with the\ntable: about 2.5 ms for 100,000 records, before any garbage is freed.\n`freeze` takes such a value out of the collector's work. A frozen value is\nstill an ordinary value: it reads, compares, prints and passes around\nexactly as before, and an update of it yields a new, unfrozen value as an\nupdate of any value does.\n\nThe limits are part of the contract:\n\n- **Freezing is one-way.** There is no unfreeze, and a frozen value is never\n  freed, even after the program drops its last reference to it. The memory\n  comes back when the program's heap goes away (the program is restarted or\n  its context is dropped).\n- **Freeze data that lives as long as the program**, once: in a `state`\n  initializer, as in the example, or behind a check that it has not been built yet.\n  `freeze` on a value rebuilt every frame leaks every one of them, so a\n  top-level `let table = freeze(build())` in a script that runs once per\n  frame is a leak. `state` initializers run once.\n- **A top-level table that depends on no dynamic data is the exception to\n  that**, where the host keeps static values between runs (it does by\n  default; see [performance.md](dev/performance.md#static-values)): `let\n  table = [...]` followed by `freeze(table)` freezes the one table the stack\n  keeps, once, and `frozen(table)` is then true from the top of every later\n  run. `let table = freeze(build())` is still rebuilt and frozen on every\n  run, because a call of `freeze` is never static. With static values off\n  both forms leak a table per run.\n- **A value holding a function or a `var` cell cannot be frozen.** The call\n  is an error (`freeze: the value holds a function, which cannot be frozen`)\n  and nothing is frozen.\n- **A hot reload keeps frozen values**, like the rest of the heap. A table\n  that is rebuilt after a reload and frozen again leaves the old one\n  allocated.\n- **Freezing removes the value from a collection's work, not the rest of the\n  heap.** A collection afterwards costs what the unfrozen data and the garbage\n  cost. Freeze a table as soon as it is built: until then it is ordinary data\n  and every collection during the build visits it.\n\nA forked execution (and a snapshot restored from one) carries the frozen\nvalues it was taken with.",
@@ -6678,7 +6284,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 198
+        "line": 187
       }
     },
     {
@@ -6704,7 +6310,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 945
+        "line": 955
       },
       "doc": {
         "body": "Whether `value` is frozen. `false` for numbers, bools, `nil` and every value\n`freeze` has not reached.",
@@ -6724,7 +6330,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 209
+        "line": 198
       }
     },
     {
@@ -6955,7 +6561,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 646
+        "line": 648
       },
       "doc": {
         "body": "A list of `count` copies of `value`; `[]` when `count` is zero or negative.\nThe way to start a list of zeros, a row of a grid, or one empty list per\nbucket — in place of `for i in range(0, n) do 0.0 end`.\n\nThe copies are values, as everything in Petal is: `fill(3, [])` is three\nempty lists, and writing to one later (`set grid[1] = append(grid[1], x)`)\nleaves the other two alone.",
@@ -6977,7 +6583,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1138
+        "line": 1109
       }
     },
     {
@@ -7003,7 +6609,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 658
+        "line": 660
       },
       "doc": {
         "body": "The **index** of the smallest number in a list or `f64_array`, the first of\nequals; `nil` when the list is empty. For the element rather than the index,\nand for a key, see `min_by`.",
@@ -7025,7 +6631,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1228
+        "line": 1193
       }
     },
     {
@@ -7051,7 +6657,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 669
+        "line": 671
       },
       "doc": {
         "body": "The **index** of the largest number in a list or `f64_array`, the first of\nequals; `nil` when the list is empty. For the element rather than the index,\nand for a key, see `max_by`.",
@@ -7073,7 +6679,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1234
+        "line": 1199
       }
     },
     {
@@ -7107,7 +6713,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 682
+        "line": 684
       },
       "doc": {
         "body": "The indices of the `k` largest numbers, largest first, with equals in list\norder. Fewer than `k` when the list is shorter. It keeps `k` candidates as it\ngoes and never sorts the whole list. `top_k` is the form that returns the\nelements.",
@@ -7128,7 +6734,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1241
+        "line": 1206
       }
     },
     {
@@ -7162,7 +6768,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 694
+        "line": 696
       },
       "doc": {
         "body": "A record of lists: element `i` of `list` goes into the group named by\n`keys[i]`. Groups are in the order their key first appears, and each keeps\nlist order. A key that is not a string is named by its `str()`, since a\nrecord's keys are strings. `group_by` is the form that takes a function.",
@@ -7182,7 +6788,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1290
+        "line": 1249
       }
     },
     {
@@ -7208,7 +6814,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 731
+        "line": 733
       },
       "doc": {
         "body": "The Unicode code point of a string's first character. `chr` is its inverse,\nthe one-character string of a code point; between them, arithmetic on letters\nneeds no lookup table. `ord(\"\")` is an error.",
@@ -7228,7 +6834,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1394
+        "line": 1340
       }
     },
     {
@@ -7254,7 +6860,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 743
+        "line": 745
       },
       "doc": {
         "body": "The one-character string of a Unicode code point: the inverse of `ord`. A\nnumber that is no code point (negative, a surrogate, past `0x10FFFF`) is an\nerror.",
@@ -7274,7 +6880,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1409
+        "line": 1355
       }
     },
     {
@@ -7570,7 +7176,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 772
+        "line": 774
       },
       "doc": {
         "body": "A new **map**: a lookup table whose keys can be any value. Keys are compared\nby content with the rule `==` uses (`m[[1, 2]]` finds the entry stored under\nanother `[1, 2]`; `2` and `2.0` are one key). `Map()` is empty; `Map(pairs)`\ntakes a list of `[key, value]` pairs, in order, and a repeated key keeps its\nfirst place and its last value. Read with `m[k]` (an absent key is `nil`),\nwrite with `m[k] = v` on a `let` or `set m[k] = v` on a `var`. `len`, `keys`,\n`values`, `entries`, `contains` (by key), `remove` and `for k in m` take a\nmap; iteration is in insertion order. A function, a pending value or NaN\ncannot be a key. See [Maps](language-guide.md#maps).\n\nThe name is capitalized like a class constructor's (`Rect`) because `map` is\nthe higher-order builtin.",
@@ -7595,7 +7201,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 463
+        "line": 452
       }
     },
     {
@@ -7621,7 +7227,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 196
+        "line": 198
       },
       "doc": {
         "body": "Returns the `[key, value]` pairs of a record or a map, in insertion order —\nthe list `Map(pairs)` builds from, so `Map(entries(m)) == m`.",
@@ -7643,7 +7249,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 428
+        "line": 417
       }
     },
     {
@@ -7677,7 +7283,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 846
+        "line": 856
       },
       "doc": {
         "body": "Whether at least one element satisfies `pred` (`false` for an empty list).\nIt stops at the first element that satisfies `pred`: `pred` is not called\non the elements after it. A map is walked by its keys.",
@@ -7699,7 +7305,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -7734,7 +7340,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 857
+        "line": 867
       },
       "doc": {
         "body": "Whether every element satisfies `pred` (`true` for an empty list). It stops\nat the first element that does not: `pred` is not called on the elements\nafter it. A map is walked by its keys.",
@@ -7755,7 +7361,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -7790,7 +7396,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 867
+        "line": 877
       },
       "doc": {
         "body": "The first element that satisfies `pred`, or `nil` when none does. It stops\nthere, like `any`.",
@@ -7812,7 +7418,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -7996,7 +7602,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 417
+        "line": 419
       },
       "doc": {
         "body": "Returns a **new** list without the element at `index`. A negative index\ncounts from the end, as `xs[i]` does. An index outside the list is an error.",
@@ -8017,7 +7623,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 244
+        "line": 233
       }
     },
     {
@@ -8059,7 +7665,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 604
+        "line": 606
       },
       "doc": {
         "body": "The string with every occurrence of `old` replaced by `new`, scanning left to\nright; occurrences do not overlap. Replacing `\"\"` is an error.",
@@ -8077,7 +7683,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1112
+        "line": 1083
       }
     },
     {
@@ -8159,7 +7765,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -8194,7 +7800,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -8247,7 +7853,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -8282,7 +7888,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 432
+        "line": 434
       },
       "doc": {
         "body": "Read a value nested inside records, lists and maps, with the path given as\ndata. The path is a list of steps, each a field name (a string), a list\nindex (an int; negative counts from the end) or a map key. Every step must exist and a list\nindex must be in bounds. An empty path is `value`. An error names the\nfailing step by position and as the path so far\n([Paths as data](language-guide.md#paths-as-data)).",
@@ -8344,7 +7950,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 454
+        "line": 456
       },
       "doc": {
         "body": "Replace a value nested inside records, lists and maps, with the path given\nas data (steps as for `get_in`). `set_in` returns a **new** value, the one\nthe path assignment `value.a[i].b = v` would leave; `value` itself is\nunchanged. The last step may add a field or a map key; every earlier step\nmust exist and a list index must be in bounds. An empty path is `v`. An\nerror names the failing step by position and as the path so far\n([Paths as data](language-guide.md#paths-as-data)).\n\n```petal ignore\nset_in({a: [1, 2]}, [\"a\", 5], 0)   # error: set_in(): path step 2 of 2 (.a[5]): Index 5 out of bounds (len 2)\n```",
@@ -8368,7 +7974,7 @@
       },
       "source": {
         "file": "core/src/builtins/paths.rs",
-        "line": 115
+        "line": 112
       }
     },
     {
@@ -8781,7 +8387,7 @@
       },
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 727
+        "line": 682
       },
       "aliasOf": "map"
     },
@@ -8808,7 +8414,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 708
+        "line": 710
       },
       "doc": {
         "body": "The list with each value kept only where it first appears, in list order.\nValues are compared with `==`, so `1` and `1.0` are one value and two records\nwith the same fields are one record. It is linear in the list. `unique_by`\ncompares by a key instead.",
@@ -8830,7 +8436,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1348
+        "line": 1302
       }
     },
     {
@@ -8864,7 +8470,7 @@
       "declaration": {
         "module": "core/collections",
         "file": "core/packages/core/src/collections.ptl",
-        "line": 718
+        "line": 720
       },
       "doc": {
         "body": "The elements of `list` whose key, `keys[i]`, is the first of its value by\n`==`, in list order. `unique_by` is the form that takes a function.",
@@ -8885,7 +8491,7 @@
       },
       "source": {
         "file": "core/src/builtins/collections.rs",
-        "line": 1369
+        "line": 1319
       }
     },
     {
@@ -10131,16 +9737,16 @@
       "declaration": {
         "module": "std",
         "file": "core/prelude/std.ptl",
-        "line": 350
+        "line": 352
       },
       "doc": {
-        "body": "An id for the place it is called from, the same on every run. Each call\nsite gets its own, each call path through a function gets its own (two\ncalls to a helper that asks for one get two), and each iteration of a loop\ngets its own (by index, or by the loop's `key`). A place that stops running\nloses its id, and gets a new one if it runs again.\n\nThe id is drawn from `unique_id` the first time the place runs and kept in\na `state`, so it never collides with another place's, and survives a hot\nreload. Like any `state`, it cannot be asked for inside a callback of `map`,\n`filter` and the like: use a `for` loop.",
+        "body": "An id for the place it is called from, the same on every run. Each call\nsite gets its own, each call path through a function gets its own (two\ncalls to a helper that asks for one get two), and each iteration of a loop\ngets its own (by index, or by the loop's `key`). A place that stops running\nloses its id, and gets a new one if it runs again.\n\nThe id is drawn from `unique_id` the first time the place runs and kept in\na `state`, so it never collides with another place's, and survives a hot\nreload. Inside a `map` or `forEach` callback it is one id per element (give\n`key:` to make it follow the item); like any `state`, it cannot be asked for\ninside a callback of `filter`, `reduce` or a `sort` comparator.",
         "summary": "An id for the place it is called from, the same on every run.",
         "params": {},
         "returns": null,
         "options": {},
         "example": [
-          "fn row(label)\n  let id = stable_id()   # one per row, kept across frames\n  print(\"{id}: {label}\")\n\nfor t in tasks key t.id do\n  row(t.title)"
+          "fn row(label)\n  let id = stable_id()   # one per row, kept across frames\n  print(\"{id}: {label}\")\n\nfor t in tasks key t.id do\n  row(t.title)\nlet rows = map(tasks, fn(t) row(t.title), key: \"id\")   # the same ids"
         ],
         "see": [
           "unique_id"
@@ -10151,7 +9757,7 @@
       },
       "source": {
         "file": "core/prelude/std.ptl",
-        "line": 350
+        "line": 352
       }
     },
     {
@@ -10335,7 +9941,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1603
+        "line": 1600
       }
     },
     {
@@ -10379,7 +9985,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1545
+        "line": 1542
       }
     },
     {
@@ -10426,7 +10032,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1555
+        "line": 1552
       }
     },
     {
@@ -10488,7 +10094,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1590
+        "line": 1587
       }
     },
     {
@@ -10640,7 +10246,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1658
+        "line": 1655
       }
     },
     {
@@ -10748,7 +10354,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1687
+        "line": 1684
       }
     },
     {
@@ -10858,7 +10464,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1717
+        "line": 1714
       }
     },
     {
@@ -10976,7 +10582,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1731
+        "line": 1728
       }
     },
     {
@@ -11114,7 +10720,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1811
+        "line": 1808
       }
     },
     {
@@ -11260,7 +10866,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1827
+        "line": 1824
       }
     },
     {
@@ -11382,7 +10988,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1844
+        "line": 1841
       }
     },
     {
@@ -11522,7 +11128,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1873
+        "line": 1870
       }
     },
     {
@@ -11632,7 +11238,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1911
+        "line": 1908
       }
     },
     {
@@ -11722,7 +11328,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2185
+        "line": 2182
       }
     },
     {
@@ -11814,7 +11420,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1921
+        "line": 1918
       }
     },
     {
@@ -11916,7 +11522,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1932
+        "line": 1929
       }
     },
     {
@@ -12016,7 +11622,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1959
+        "line": 1956
       }
     },
     {
@@ -12126,7 +11732,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1968
+        "line": 1965
       }
     },
     {
@@ -12242,7 +11848,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1994
+        "line": 1991
       }
     },
     {
@@ -12358,7 +11964,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2026
+        "line": 2023
       }
     },
     {
@@ -12434,7 +12040,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2101
+        "line": 2098
       }
     },
     {
@@ -12510,7 +12116,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2127
+        "line": 2124
       }
     },
     {
@@ -12602,7 +12208,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2151
+        "line": 2148
       }
     },
     {
@@ -12720,7 +12326,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2217
+        "line": 2214
       }
     },
     {
@@ -12796,7 +12402,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2338
+        "line": 2335
       }
     },
     {
@@ -12828,7 +12434,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2346
+        "line": 2343
       }
     },
     {
@@ -12914,7 +12520,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2363
+        "line": 2360
       }
     },
     {
@@ -12946,7 +12552,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2406
+        "line": 2403
       }
     },
     {
@@ -13589,7 +13195,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1451
+        "line": 1448
       }
     },
     {
@@ -13644,7 +13250,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2412
+        "line": 2409
       }
     },
     {
@@ -13688,7 +13294,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2440
+        "line": 2437
       }
     },
     {
@@ -13722,7 +13328,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2446
+        "line": 2443
       }
     },
     {
@@ -13810,7 +13416,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2453
+        "line": 2450
       }
     },
     {
@@ -13870,7 +13476,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2465
+        "line": 2462
       }
     },
     {
@@ -13922,7 +13528,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2473
+        "line": 2470
       }
     },
     {

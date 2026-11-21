@@ -196,10 +196,9 @@ impl<'a> Vm<'a> {
 
     /// A native call finished: classify it from the row it registered with.
     ///
-    /// The mapping, class by class: an `effect` (or a `Pending` result — a
-    /// fact about the answer, not the native) makes the scope unrecordable;
-    /// `HOST_DATA` and `RESOURCES` reads become the deps a `note_host_read` /
-    /// resource-table read records for the frame gate; any other read is a
+    /// The mapping, class by class: an `effect` makes the scope unrecordable;
+    /// a `HOST_DATA` read becomes the dep a `note_host_read` records for the
+    /// frame gate; any other read is a
     /// probe if the row says the call is re-evaluable, else an effect. `RNG`
     /// records nothing here — the scope compares the RNG state at entry and
     /// exit itself.
@@ -221,7 +220,7 @@ impl<'a> Vm<'a> {
         // call: what follows it is what this call changed.
         changes_mark: usize,
     ) {
-        if effects.effect || matches!(result, Value::Pending(_)) {
+        if effects.effect {
             self.stack.memo.note_effect();
             return;
         }
@@ -239,7 +238,7 @@ impl<'a> Vm<'a> {
             let holdable = !args.iter().any(|a| {
                 matches!(
                     a,
-                    Value::Closure(_) | Value::OverloadSet(_) | Value::Pending(_) | Value::Cell(_)
+                    Value::Closure(_) | Value::OverloadSet(_) | Value::Cell(_)
                 )
             });
             if !holdable || !matches!(result, Value::Nil) {
@@ -290,15 +289,9 @@ impl<'a> Vm<'a> {
                 s.note(|| Dep::HostRead);
             }
         }
-        if effects.reads.contains(InputClasses::RESOURCES) {
-            if let Some(s) = self.stack.memo.innermost() {
-                s.note(|| Dep::ResourcesRead);
-            }
-        }
         let probed = InputClasses(
             effects.reads.0
                 & !(InputClasses::HOST_DATA.0
-                    | InputClasses::RESOURCES.0
                     | InputClasses::RNG.0
                     | InputClasses::REVISIONED.0),
         );
@@ -315,7 +308,7 @@ impl<'a> Vm<'a> {
 
     /// A native read an input: record the call as a probe — the native, its
     /// arguments and its answer — unless it also emitted or took an argument
-    /// a fingerprint cannot stand for (a closure, a cell, a Pending), in
+    /// a fingerprint cannot stand for (a closure, a cell), in
     /// which case it cannot be re-evaluated at validation and the scope is
     /// given up as effectful.
     fn memo_note_probe(&mut self, nid: NativeFnId, args: &[Value], result: Value, emitted: bool) {
@@ -323,7 +316,7 @@ impl<'a> Vm<'a> {
             || args.iter().any(|a| {
                 matches!(
                     a,
-                    Value::Closure(_) | Value::OverloadSet(_) | Value::Pending(_) | Value::Cell(_)
+                    Value::Closure(_) | Value::OverloadSet(_) | Value::Cell(_)
                 )
             })
         {
@@ -442,7 +435,6 @@ impl<'a> Vm<'a> {
         let effectful = sc.effectful
             || self.stack.memo.poisoned
             || *self.rng_state != sc.rng_at_entry
-            || matches!(result, Value::Pending(_))
             || sc.deps.len() > MAX_SCOPE_DEPS
             || holds_local_cell(&result, self.heap, self.closures, &sc.local_cells);
         if effectful {
@@ -525,7 +517,6 @@ impl<'a> Vm<'a> {
             segments,
             touches,
             host_revision: self.stack.run_deps.host_data_now(),
-            resources_revision: self.resources.revision(),
             pure,
             bytes: 0,
         };
@@ -827,14 +818,13 @@ impl<'a> Vm<'a> {
     /// seen along the way overlay the live values, so a read after a write
     /// in the same record checks against what the record wrote.
     fn memo_validate(&mut self, path: &ScopePath) -> bool {
-        let (mut deps, host_rev, res_rev) = {
+        let (mut deps, host_rev) = {
             let Some(slot) = self.stack.memo.get_mut(path) else {
                 return false;
             };
             (
                 std::mem::take(&mut slot.deps),
                 slot.host_revision,
-                slot.resources_revision,
             )
         };
         let mut state_overlay: HashMap<RuntimeStateKey, Value> = HashMap::new();
@@ -920,7 +910,6 @@ impl<'a> Vm<'a> {
                     true
                 }
                 Dep::Command { .. } => true,
-                Dep::ResourcesRead => self.resources.revision() == res_rev,
                 Dep::EnumData { revision } => self.stack.enum_data_revision == *revision,
                 Dep::Child { path, serial } => match self.memo_verify_child(path, *serial) {
                     Some(s) => {

@@ -1108,8 +1108,8 @@ pub struct PanelHost {
     /// makes returning to a detail screen show the same subject it did before.
     nav_arg: serde_json::Value,
     /// Host-side async data source behind the `query(kind, arg)` /
-    /// `invalidate(kind, arg)` natives (Garden's React-Query prototype on Petal's
-    /// pending values); without one, `query` answers a loading `Pending`.
+    /// `invalidate(kind, arg)` natives (the `query` package, see
+    /// [`crate::query`]); without one, `query` answers a loading pending answer.
     /// Installed into the query channel for the duration of each
     /// [`frame`](Self::frame), the same way `provider` is.
     query_provider: Option<Box<DynQueryProvider>>,
@@ -1663,7 +1663,7 @@ impl PanelHost {
 
     /// Attach the host-side async data source the script reaches through
     /// `query(kind, arg)` / `invalidate(kind, arg)`. A panel without one sees a
-    /// perpetual loading `Pending` from every `query`.
+    /// perpetual loading pending answer from every `query`.
     pub fn set_query_provider(&mut self, provider: Box<DynQueryProvider>) {
         self.query_provider = Some(provider);
         self.core.env.note_host_data_changed(self.core.stack_id());
@@ -2985,8 +2985,8 @@ fn register_panel_natives(env: &mut Env) {
     // The `host_data(kind, arg)` pull channel is petal-ui's blessed contract
     // (Garden's prototype, generalized upstream) — register it, don't fork it.
     host_data::register_host_data(env);
-    // The `query`/`invalidate` async channel — Garden's React-Query prototype on
-    // Petal's pending values (a future upstream `petal-query`), see [`crate::query`].
+    // The `query`/`invalidate` async channel: the `query` package, answered
+    // from this panel's provider (see [`crate::query`]).
     query::register_query(env);
     petal_ui::register_prelude(env);
     petal_ui::provide_interface(env);
@@ -3016,7 +3016,7 @@ pub const GARDEN_MANIFEST: &str = include_str!("../packages/garden/petal.toml");
 
 /// The interface packages a panel env answers for — what
 /// [`Env::verify_interface`] is given.
-pub const PANEL_INTERFACE_PACKAGES: &[&str] = &[petal_ui::MODULE_NAME, GARDEN_PACKAGE];
+pub const PANEL_INTERFACE_PACKAGES: &[&str] = &[petal_ui::MODULE_NAME, petal_stdlib_query::PACKAGE_NAME, GARDEN_PACKAGE];
 
 /// Bind the current host [`PanelTheme`] into the env as the record
 /// `panel_theme()` returns: `{ key: { r, g, b, a }, … }`, each channel an int

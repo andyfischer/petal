@@ -356,7 +356,7 @@ A failure, for contrast: `git-log` in a directory that is not a repository.
 ← {"jsonrpc":"2.0","id":2,"error":{"code":1,"message":"not a git repo: /tmp/demo"}}
 ```
 
-The script's `query("log", "")` reads as an errored pending value;
+The script's `query("log", "")` reads as a failed pending answer;
 `error_of(rd)` is `"not a git repo: /tmp/demo"`.
 
 ## The in-tree apps

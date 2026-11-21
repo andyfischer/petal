@@ -48,11 +48,6 @@ impl<'a> Vm<'a> {
                     self.stack.vm_frames[fi].ip = *to as usize;
                 }
             }
-            Inst::JumpIfPending { cond, to } => {
-                if matches!(self.reg(fi, *cond), Value::Pending(_)) {
-                    self.stack.vm_frames[fi].ip = *to as usize;
-                }
-            }
 
             // --- loops ---
             Inst::ForEachInit { iter, slot } => {
@@ -196,40 +191,35 @@ impl<'a> Vm<'a> {
                 self.set(fi, *dst, v);
             }
 
-            Inst::Add { dst, a, b } => self.binop(fi, TermOp::Add, *dst, *a, *b, origin)?,
-            Inst::Sub { dst, a, b } => self.binop(fi, TermOp::Sub, *dst, *a, *b, origin)?,
-            Inst::Mul { dst, a, b } => self.binop(fi, TermOp::Mul, *dst, *a, *b, origin)?,
-            Inst::Div { dst, a, b } => self.binop(fi, TermOp::Div, *dst, *a, *b, origin)?,
-            Inst::Mod { dst, a, b } => self.binop(fi, TermOp::Mod, *dst, *a, *b, origin)?,
+            Inst::Add { dst, a, b } => self.binop(fi, TermOp::Add, *dst, *a, *b)?,
+            Inst::Sub { dst, a, b } => self.binop(fi, TermOp::Sub, *dst, *a, *b)?,
+            Inst::Mul { dst, a, b } => self.binop(fi, TermOp::Mul, *dst, *a, *b)?,
+            Inst::Div { dst, a, b } => self.binop(fi, TermOp::Div, *dst, *a, *b)?,
+            Inst::Mod { dst, a, b } => self.binop(fi, TermOp::Mod, *dst, *a, *b)?,
             Inst::Neg { dst, a } => {
                 let v = ops::negate(self.reg(fi, *a), self.heap)?;
-                self.note_absorption(v, origin);
                 self.set(fi, *dst, v);
             }
 
             Inst::Eq { dst, a, b } => {
                 let v = ops::eq(self.reg(fi, *a), self.reg(fi, *b), self.heap);
-                self.note_absorption(v, origin);
                 self.set(fi, *dst, v);
             }
             Inst::Ne { dst, a, b } => {
                 let v = ops::ne(self.reg(fi, *a), self.reg(fi, *b), self.heap);
-                self.note_absorption(v, origin);
                 self.set(fi, *dst, v);
             }
-            Inst::Lt { dst, a, b } => self.cmp(fi, TermOp::Lt, *dst, *a, *b, origin)?,
-            Inst::Le { dst, a, b } => self.cmp(fi, TermOp::Le, *dst, *a, *b, origin)?,
-            Inst::Gt { dst, a, b } => self.cmp(fi, TermOp::Gt, *dst, *a, *b, origin)?,
-            Inst::Ge { dst, a, b } => self.cmp(fi, TermOp::Ge, *dst, *a, *b, origin)?,
+            Inst::Lt { dst, a, b } => self.cmp(fi, TermOp::Lt, *dst, *a, *b)?,
+            Inst::Le { dst, a, b } => self.cmp(fi, TermOp::Le, *dst, *a, *b)?,
+            Inst::Gt { dst, a, b } => self.cmp(fi, TermOp::Gt, *dst, *a, *b)?,
+            Inst::Ge { dst, a, b } => self.cmp(fi, TermOp::Ge, *dst, *a, *b)?,
 
             Inst::Not { dst, a } => {
                 let v = ops::not(self.reg(fi, *a), self.heap);
-                self.note_absorption(v, origin);
                 self.set(fi, *dst, v);
             }
             Inst::Concat { dst, a, b } => {
                 let v = ops::concat(self.reg(fi, *a), self.reg(fi, *b), self.heap)?;
-                self.note_absorption(v, origin);
                 self.set(fi, *dst, v);
             }
 
@@ -322,11 +312,6 @@ impl<'a> Vm<'a> {
                 if matches!(base, Value::EnumVariant { .. }) {
                     self.memo_note_enum_read();
                 }
-                // Absorption gates on the BASE: `pending.field` yields that same
-                // Pending. A resolved record that merely holds a Pending field is
-                // element-wise (not an absorption), so the result value can't be
-                // the signal here.
-                self.note_absorption(base, origin);
                 self.set(fi, *dst, v);
             }
             Inst::SetField {
@@ -347,10 +332,6 @@ impl<'a> Vm<'a> {
             Inst::GetIndex { dst, obj, idx, opt } => {
                 let base = self.reg(fi, *obj);
                 let v = ops::get_index(self.heap, base, self.reg(fi, *idx), *opt)?;
-                // Absorption gates on the BASE (`pending[i]` is that Pending); a
-                // resolved collection holding a Pending element is element-wise.
-                // A Pending *index* is a hard error above and never reaches here.
-                self.note_absorption(base, origin);
                 self.set(fi, *dst, v);
             }
             Inst::SetIndex { dst, obj, idx, val } => {
@@ -475,7 +456,7 @@ impl<'a> Vm<'a> {
             }
             // The general form of an inline builtin is the builtin call it
             // was lowered from, so whatever the fast loop declined (an error,
-            // a `Pending`, a profiled or audited run) is the native's own.
+            // a profiled or audited run) is the native's own.
             Inst::Intrinsic { dst, op, name, args } => {
                 let argv = self.take_args(fi, &args[..op.arity()]);
                 let r = self.do_builtin_call(
@@ -639,23 +620,7 @@ impl<'a> Vm<'a> {
                 if let Some(ip) = self.static_audit_site() {
                     self.static_audit.state_access(ip, origin);
                 }
-                // A pending StateInit result is not committed: leave the slot
-                // uninitialized so the init block re-runs next frame until it
-                // resolves. Reads this frame still see the Pending (via `dst`).
-                // Ordinary reassignments (`init = false`) commit any value.
-                // A memo is not committed while a pending value is in its key
-                // (which cannot tell a loading resource from an errored one)
-                // or anywhere in its value (a list holding one would stay
-                // pending after the resource resolves, and a hit never
-                // recomputes it).
-                let pending_memo = *memo
-                    && (crate::value::holds_pending(&val_v, self.heap)
-                        || memo_key.is_some_and(|kv| crate::value::holds_pending(&kv, self.heap)));
-                if *init && (matches!(val_v, Value::Pending(_)) || pending_memo) {
-                    // Until it resolves, the scope cannot know what a re-run
-                    // would initialize it to.
-                    self.memo_note_effect();
-                } else {
+                {
                     if *init && *memo {
                         self.check_memo_value(val_v)?;
                     }
@@ -717,13 +682,8 @@ impl<'a> Vm<'a> {
                     self.static_audit.state_access(ip, origin);
                 }
                 // Cache hit: load the slot and skip the inline init block; miss:
-                // fall through to compute and commit the init value. A memo
-                // whose key holds a pending value always misses (`StateWrite`
-                // does not commit it): the key's id is the same whether the
-                // resource is still loading or has errored.
-                let uncached =
-                    memo_key.is_some_and(|kv| crate::value::holds_pending(&kv, self.heap));
-                if !uncached && let Some(existing) = self.stack.state.get(&k).copied() {
+                // fall through to compute and commit the init value.
+                if let Some(existing) = self.stack.state.get(&k).copied() {
                     self.memo_note_state_read(&k, Some(existing));
                     self.set(fi, *dst, existing);
                     self.stack.vm_frames[fi].ip = *after as usize;
@@ -1013,10 +973,8 @@ impl<'a> Vm<'a> {
         dst: Reg,
         a: Reg,
         b: Reg,
-        origin: Option<TermId>,
     ) -> Result<(), String> {
         let v = ops::arithmetic(&op, self.reg(fi, a), self.reg(fi, b), self.heap)?;
-        self.note_absorption(v, origin);
         self.set(fi, dst, v);
         Ok(())
     }
@@ -1028,31 +986,10 @@ impl<'a> Vm<'a> {
         dst: Reg,
         a: Reg,
         b: Reg,
-        origin: Option<TermId>,
     ) -> Result<(), String> {
         let v = ops::comparison(&op, self.reg(fi, a), self.reg(fi, b), self.heap)?;
-        self.note_absorption(v, origin);
         self.set(fi, dst, v);
         Ok(())
     }
 
-    /// Record a strict-operator absorption: when an operator's result is a
-    /// `Pending`, an operand was `Pending` and the op swallowed it, so bump the
-    /// always-on `absorbed_count` (the plan's steady-state observability
-    /// counter) and, when the debug-gated log is on, push `(origin, id)` to
-    /// [`absorption_log`](Vm::absorption_log) — the span→resource pair a dataflow
-    /// viz paints. A no-op on any resolved result. The value-producing ops in
-    /// `ops.rs` (arithmetic, comparisons, `!`/negate, `++`) fabricate a `Pending`
-    /// only by absorption, so gating on the result is exact for them; field /
-    /// index access instead gate on the *base* (a resolved container may merely
-    /// store a Pending element, which is not an absorption). `origin` is the
-    /// absorbing instruction's source term, `None` when it has no source span.
-    pub(super) fn note_absorption(&mut self, v: Value, origin: Option<TermId>) {
-        if let Value::Pending(id) = v {
-            self.resources.note_absorbed(id);
-            if self.trace_pending {
-                self.absorption_log.push((origin, id));
-            }
-        }
-    }
 }

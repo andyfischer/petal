@@ -20,7 +20,7 @@ able to preserve that state across a live code modification.
 - [Reading and writing from other functions](#reading-and-writing-from-other-functions)
 - [How long a slot lives](#how-long-a-slot-lives)
 - [State is not a constant](#state-is-not-a-constant)
-- [Pending initializers](#pending-initializers)
+- [Async initializers](#async-initializers)
 - [State and hot reload](#state-and-hot-reload)
 - [State from the host side](#state-from-the-host-side)
 - [See also](#see-also)
@@ -322,15 +322,13 @@ Use `state var` only when a plain
 dataflow edges, and a read of a cell does not
 ([var.md, Provenance](../syntax/var.md#provenance)).
 
-## Pending initializers
+## Async initializers
 
-A [pending value](../dev/pending-values-plan.md) (the result of an
-asynchronous fetch that has not arrived) is not committed by a `state`
-initializer. The slot stays uninitialized, reads yield the pending value for
-that run, and the initializer runs again on each run until it produces a
-value that is not pending. So `state user = fetch(url)` means "initialize
-this state from the fetch, once it arrives", and it does not store the
-loading state forever. The rule is per slot.
+A `state` initializer commits whatever it produces, and that includes a
+pending answer from the [`query`](../../core-stdlib/query/README.md) package:
+`state user = query("user", id)` would keep the loading answer forever. Call
+`query` every run instead (the host caches the answer), or keep the
+loading/ready lifecycle in a record with `ui`'s `load_state` / `load_poll`.
 
 ## State and hot reload
 

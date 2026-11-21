@@ -298,17 +298,9 @@ pub enum Inst {
         cond: Reg,
         to: Label,
     },
-    /// `??` coalescing: jump to `to` when `cond` is present (not `Nil`/`Pending`),
+    /// `??` coalescing: jump to `to` when `cond` is present (not `Nil`),
     /// leaving the LHS in the result register; otherwise fall through to the RHS arm.
     JumpIfPresent {
-        cond: Reg,
-        to: Label,
-    },
-    /// Control-flow Pending absorption: jump to `to` when `cond` is a
-    /// `Value::Pending`. The lowering routes `to` to an arm that copies `cond`
-    /// into the control expression's result register, so `if`/`while`/`for`/
-    /// `match` on a Pending run no branch and evaluate to that Pending.
-    JumpIfPending {
         cond: Reg,
         to: Label,
     },
@@ -699,7 +691,7 @@ pub enum Inst {
     },
     /// Behind a run of static instructions: keep each register in its slot,
     /// marking the value immutable. A value that cannot be kept (it holds a
-    /// function, a `var` cell, a handle or a pending result) rejects every
+    /// function, a `var` cell or a handle) rejects every
     /// slot of the instruction for good, and the run then executes on every
     /// run as it would without the cache.
     StaticStore {
@@ -773,7 +765,6 @@ define_opcodes!(
     JumpIfFalse,
     JumpIfTrue,
     JumpIfPresent,
-    JumpIfPending,
     ForEachInit,
     ForEachNext,
     RangeInit,
@@ -828,7 +819,6 @@ macro_rules! branch_target_of {
             | Inst::JumpIfFalse { to, .. }
             | Inst::JumpIfTrue { to, .. }
             | Inst::JumpIfPresent { to, .. }
-            | Inst::JumpIfPending { to, .. }
             | Inst::ForEachNext { exit: to, .. }
             | Inst::RangeNext { exit: to, .. }
             | Inst::MatchArm { next: to, .. }
@@ -894,7 +884,6 @@ impl Inst {
             | Inst::JumpIfFalse { .. }
             | Inst::JumpIfTrue { .. }
             | Inst::JumpIfPresent { .. }
-            | Inst::JumpIfPending { .. }
             | Inst::ForEachInit { .. }
             | Inst::ForEachNext { .. }
             | Inst::RangeInit { .. }
@@ -977,7 +966,6 @@ impl Inst {
             | Inst::JumpIfFalse { cond: src, .. }
             | Inst::JumpIfTrue { cond: src, .. }
             | Inst::JumpIfPresent { cond: src, .. }
-            | Inst::JumpIfPending { cond: src, .. }
             | Inst::ForEachInit { iter: src, .. }
             | Inst::GetField { obj: src, .. }
             | Inst::CellNew { init: src, .. }

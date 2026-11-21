@@ -18,7 +18,7 @@
 //!
 //! - the run's activity counters ([`crate::run_deps::Activity`]) around every
 //!   native call: a binding read (`mouse_x`, `time`, the screen size, a
-//!   font…), a host-data read, a resource-table read, an emit, an effect;
+//!   font…), a host-data read, an emit, an effect;
 //! - the random stream, around every native call;
 //! - every `state` instruction (declare, read, write), in any frame;
 //! - every call of a native that is not constant
@@ -84,11 +84,9 @@ pub enum Input {
     Binding(String),
     /// Host data outside the binding table was read.
     HostData,
-    /// The resource table was consulted.
-    Resource,
     /// A value was pushed into an output buffer.
     Emit,
-    /// Something no replay could reproduce: a print, a counter, a resource.
+    /// Something no replay could reproduce: a print, a counter.
     Effect,
     /// The random stream was advanced.
     Random,
@@ -105,7 +103,6 @@ impl fmt::Display for Input {
         match self {
             Input::Binding(name) => write!(f, "read the binding `{name}`"),
             Input::HostData => f.write_str("read host data"),
-            Input::Resource => f.write_str("read the resource table"),
             Input::Emit => f.write_str("emitted output"),
             Input::Effect => f.write_str("had an effect"),
             Input::Random => f.write_str("drew from the random stream"),
@@ -237,7 +234,6 @@ struct RawKey {
 enum RawInput {
     Binding(Option<SymbolId>),
     HostData,
-    Resource,
     Emit,
     Effect,
     Random,
@@ -420,9 +416,6 @@ impl StaticAudit {
         if after.host_reads != before.host_reads {
             self.note(ip, site, n, RawInput::HostData);
         }
-        if after.resource_reads != before.resource_reads {
-            self.note(ip, site, n, RawInput::Resource);
-        }
         if after.emits != before.emits {
             self.note(ip, site, n, RawInput::Emit);
         }
@@ -518,7 +511,6 @@ impl StaticAudit {
                 }
                 RawInput::Binding(None) => Input::Binding("?".to_string()),
                 RawInput::HostData => Input::HostData,
-                RawInput::Resource => Input::Resource,
                 RawInput::Emit => Input::Emit,
                 RawInput::Effect => Input::Effect,
                 RawInput::Random => Input::Random,

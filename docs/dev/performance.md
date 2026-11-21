@@ -355,10 +355,10 @@ So a positional call of `float`, `int`, `min`, `max`, `clamp`, `abs`, `floor`,
 `Inst::Intrinsic` (`r3 = intrinsic "float" [r1]` in `show-bytecode`), and
 `run_straight` computes it in place for the arguments that need no native:
 ints and floats for the numeric ones, a list, string or float array for
-`len`, anything but a `Pending` for `type`. Everything else stops the loop at
+`len`, any value for `type`. Everything else stops the loop at
 the instruction, and the general executor runs it as the builtin call it was
 lowered from: a string to convert (`float("3.5")`), a wrong
-type, an overflow (`abs` of the smallest int), a `Pending` to absorb. The
+type, an overflow (`abs` of the smallest int). The
 results, the error text and its source position are therefore the native's.
 `core/tests/all/intrinsics.rs` holds the inline arms to the natives over a matrix
 of values (`--policy fast-intrinsics` is the same code with the rewrite off).
@@ -988,7 +988,7 @@ Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from
   path of the hot instructions (constants, moves, jumps, loop steps, number
   arithmetic and comparisons, field and index reads, in-place index writes,
   and `var` cell reads and writes), checking the GC budget only at
-  back-edges. Anything else — a call, an allocation, a `Pending` operand, an
+  back-edges. Anything else — a call, an allocation, an
   error — stops the loop at that instruction and `step_in` runs it as before.
   A cell access stays in the loop unless an open memo scope has to record it
   (a cell the scope did not create) or the frame gate wants a fingerprint of a
@@ -1001,12 +1001,9 @@ Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from
   around loops — the copy in and the carry out. Register coalescing (giving a
   phi and its sources one register when their live ranges do not interfere)
   is the pass that would remove them.
-- **`JumpIfPending` is ~9%** (8.7%), one per branch, and almost never taken. The
-  dispatch loop now takes a `JumpIfPending` and the `JumpIfFalse` on the same
-  register that follows it in one step (both still counted), so the pair costs
-  one dispatch; folding the test into the opcode itself would also shrink the
-  code, at the cost of a two-target instruction — which the CFG helpers
-  (`branch_target`) currently assume does not exist.
+- **`JumpIfPending` is gone** (November 2026). It was ~9% of instructions,
+  one per branch and almost never taken; pending values left the core
+  language for the `query` package, so a branch is one `JumpIfFalse` again.
 - **Native calls cost more than their bodies** for cheap builtins: a `PetalCxt`
   is built per call, and arguments are gathered into a vector first, about
   45 to 50 ns in all. The nine trivial builtins no longer pay it

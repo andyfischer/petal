@@ -225,17 +225,6 @@ Fields, all optional:
 {"cmd": "input", "mouse_delta": {"dx": 3, "dy": -2}}
 ```
 
-### pending_report
-
-Report every live pending resource (state, age, origin, absorption count) in
-the `pending` field. This is the query behind the dev overlay; it reads the
-live resource table and does not run a frame.
-
-```json
-{"cmd": "pending_report"}
-{"ok": true, "pending": [...]}
-```
-
 ## Timeline
 
 The host keeps a history of forked executions, one per committed frame (see

@@ -668,7 +668,6 @@ mod tests {
             Type::Any,
             Type::Vec2,
             Type::Vec3,
-            Type::Pending,
             Type::Handle,
         ] {
             assert!(f.accepts(t), "{t:?}");

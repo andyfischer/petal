@@ -99,9 +99,6 @@ pub(super) fn native_get_in(state: &mut PetalCxt) -> Result<u32, String> {
     let mut cur = state.get_value(1)?;
     let steps = path_steps(state, "get_in")?;
     for i in 0..steps.len() {
-        if matches!(cur, Value::Pending(_)) {
-            break;
-        }
         cur = read_step("get_in", state.heap_mut(), &steps, i, cur)?;
     }
     state.push_value(cur);
@@ -131,10 +128,6 @@ fn rebuild(heap: &mut Heap, root: Value, steps: &[Value], v: Value) -> Result<Va
     let mut spine = Vec::with_capacity(steps.len());
     let mut cur = root;
     for i in 0..steps.len() {
-        if let Value::Pending(_) = cur {
-            // Not there yet: the result is not known either.
-            return Ok(cur);
-        }
         spine.push(cur);
         if i + 1 < steps.len() {
             cur = read_step("set_in", heap, steps, i, cur)?;

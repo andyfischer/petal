@@ -68,7 +68,7 @@ struct Bundled {
     name: String,
     /// Relative to this crate.
     dir: String,
-    /// `core`, `builtin`, `ui` or `library`.
+    /// `core`, `builtin`, `ui`, `interface` or `library`.
     kind: String,
     /// The cargo feature that embeds a `library`.
     feature: Option<String>,
@@ -118,13 +118,13 @@ fn bundled_manifest(manifest: &str) -> Vec<Bundled> {
                 path.display()
             ),
             ("library", Some(_)) => {}
-            ("core" | "builtin" | "ui", None) => {}
-            ("core" | "builtin" | "ui", Some(_)) => panic!(
+            ("core" | "builtin" | "ui" | "interface", None) => {}
+            ("core" | "builtin" | "ui" | "interface", Some(_)) => panic!(
                 "[{BUNDLED_TABLE}] `{name}`: only a `library` is gated by a feature; \
                  a `{kind}` package is always embedded"
             ),
             _ => panic!(
-                "[{BUNDLED_TABLE}] `{name}`: unknown kind `{kind}` (core, builtin, ui, library)"
+                "[{BUNDLED_TABLE}] `{name}`: unknown kind `{kind}` (core, builtin, ui, interface, library)"
             ),
         }
         out.push(Bundled { name, dir, kind, feature });
@@ -254,12 +254,16 @@ fn embed_bundled_packages(manifest: &str, strip: bool) {
     let meta = format!(
         "/// The bundled packages that declare the domain builtins (kind `builtin`).\n\
          pub const BUILTIN_PACKAGES: &[&str] = &[{}];\n\
+         /// The bundled interface packages (kind `interface`) whose natives a\n\
+         /// host links from a library crate (`query`).\n\
+         pub const INTERFACE_PACKAGES: &[&str] = &[{}];\n\
          /// The bundled libraries (kind `library`) embedded in this build.\n\
          pub const LIBRARIES: &[&str] = &[{}];\n\
          /// The bundled libraries this build leaves out: `(package, the petal\n\
          /// crate feature that embeds it)`.\n\
          pub const OMITTED_LIBRARIES: &[(&str, &str)] = &[{omitted_libs}];\n",
         names("builtin", &included),
+        names("interface", &included),
         names("library", &included),
     );
     write_if_changed(&Path::new(&out).join("bundled_meta.rs"), &meta);

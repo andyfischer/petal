@@ -102,8 +102,9 @@ let items = [
 movie(project, items)
 ```
 
-The vocabulary package (`movie`, `canvas`, `design`) supplies the
-element vocabulary and a native that hands the result to the host.
+The host's interface package (`movie`, `canvas`, `design`) supplies the
+elements and the output call that hands the result to the host
+(`programs_as_documents::OutputCall`).
 
 **The source text is the single source of truth.**
 `creative_core::source::SourceFile` holds the text, undo and redo as text
@@ -390,7 +391,7 @@ with a reason":
 
 ### Where the schema lives
 
-The schema belongs with the vocabulary package, written in Petal, so the
+The schema belongs with the interface package, written in Petal, so the
 tool, the CLI and an agent all read the same one. A sketch, with every name
 open:
 

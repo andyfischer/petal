@@ -20,6 +20,7 @@ use sdl2::video::Window;
 use petal::env::Env;
 use petal::stack::StackKey;
 
+use petal_ui::damage::{Damage, DamageTracker};
 use petal_ui::draw::{
     DrawCommand, DrawOptions, FrameCommand, take_draw_commands, take_draw_commands_for,
     take_frame_commands, take_frame_commands_for,
@@ -30,6 +31,7 @@ use crate::game_loop::{EscapeAction, Host, ScriptSwitch};
 use crate::hidpi::{self, Scale};
 use crate::native_fns::{self, ExampleEntry, bind_examples, take_pending_launch};
 use crate::renderer;
+use crate::screen_texture::{ScreenTexture, sdl_rect};
 use crate::sound::SoundBoard;
 
 const BROWSER_SCRIPT: &str = include_str!("../examples/browser.ptl");
@@ -48,6 +50,16 @@ pub struct DefaultHost {
     /// across frames unless a `Clear` command wipes them; lazily sized to the
     /// window's drawable area (in pixels, see [`crate::hidpi`]) on present.
     framebuffer: Option<Surface<'static>>,
+    /// The last frame painted into `framebuffer`, so the next one repaints
+    /// only what it changed, and the texture that shows it, so only that is
+    /// uploaded (`PETAL_SDL_DAMAGE`, [`DamageMode`]).
+    damage: DamageTracker<FrameCommand>,
+    damage_mode: DamageMode,
+    screen: ScreenTexture,
+    /// `PETAL_SDL_DAMAGE=check`: every frame painted whole as well, into this
+    /// framebuffer, and compared with the one painted by damage.
+    check: Option<Surface<'static>>,
+    frames: u64,
     /// Whether the currently-loaded program is the browser (Escape quits from
     /// the browser, but returns to it from a launched example).
     in_browser: bool,
@@ -89,6 +101,11 @@ impl DefaultHost {
             fonts,
             examples_dir,
             framebuffer: None,
+            damage: DamageTracker::new(),
+            damage_mode: DamageMode::from_env(),
+            screen: ScreenTexture::new(),
+            check: None,
+            frames: 0,
             in_browser: false,
             sound: SoundBoard::new(),
             subpixel: false,
@@ -105,7 +122,8 @@ impl DefaultHost {
     }
 
     /// Paint a frame (whole-pixel or sub-pixel) into the persistent
-    /// framebuffer at the drawable's scale, and present it.
+    /// framebuffer at the drawable's scale, and present it. Only what the
+    /// frame changed is painted and uploaded (see [`petal_ui::damage`]).
     fn present_frame_commands(
         &mut self,
         canvas: &mut Canvas<Window>,
@@ -118,33 +136,83 @@ impl DefaultHost {
         let (w, h) = scale.pixels();
         let surface = match self.framebuffer.take() {
             Some(s) if s.size() == (w, h) => s,
-            _ => new_framebuffer(w, h)?,
+            _ => {
+                self.damage.invalidate();
+                new_framebuffer(w, h)?
+            }
         };
         let commands = hidpi::scale_frame(commands, scale.factor);
+        let damage = match self.damage_mode {
+            DamageMode::Off => Damage::Full,
+            DamageMode::On | DamageMode::Check => self.damage.update(&commands, &[], w, h),
+        };
+        self.frames += 1;
+        let fonts = self.fonts.clone().expect("fonts for windowed present");
+        let mut fonts = fonts.borrow_mut();
 
-        // Render this frame's commands into the persistent surface, then blit
-        // the whole surface to the window. Because the surface is software-
-        // backed, pixels persist unless a `Clear` command wipes them.
+        // Paint over the persistent surface: because it is software-backed,
+        // pixels persist unless a `Clear` command wipes them.
         let mut sc = surface.into_canvas().map_err(|e| e.to_string())?;
-        renderer::render_frame(
-            &mut sc,
-            commands,
-            &mut self
-                .fonts
-                .as_ref()
-                .expect("fonts for windowed present")
-                .borrow_mut(),
-        );
+        match &damage {
+            Damage::None => {}
+            Damage::Full => renderer::render_frame(&mut sc, commands.iter().cloned(), &mut fonts),
+            Damage::Rects(rects) => {
+                for r in rects {
+                    let area = Some(sdl_rect(r));
+                    renderer::render_frame_within(&mut sc, self.damage.reaching(&commands, *r), &mut fonts, area);
+                }
+            }
+        }
         let surface = sc.into_surface();
-        let tc = canvas.texture_creator();
-        let tex = tc
-            .create_texture_from_surface(&surface)
-            .map_err(|e| e.to_string())?;
-        canvas.copy(&tex, None, None)?;
-        canvas.present();
+        if self.damage_mode == DamageMode::Check {
+            let whole = match self.check.take() {
+                Some(s) if s.size() == (w, h) => s,
+                _ => new_framebuffer(w, h)?,
+            };
+            let mut wc = whole.into_canvas().map_err(|e| e.to_string())?;
+            renderer::render_frame(&mut wc, commands, &mut fonts);
+            let whole = wc.into_surface();
+            if let Some((x, y)) = first_difference(&surface, &whole) {
+                eprintln!("[damage-check] frame {}: differs at {x},{y} under {damage:?}", self.frames);
+                // Start again from the whole frame's pixels.
+                self.damage.invalidate();
+            }
+            self.check = Some(whole);
+        }
+        self.screen.show(canvas, &surface, &damage)?;
         self.framebuffer = Some(surface);
         Ok(())
     }
+}
+
+/// How the default host paints a frame: only what it changed (the default),
+/// all of it (`PETAL_SDL_DAMAGE=off`), or only what it changed while checking
+/// that against painting all of it (`PETAL_SDL_DAMAGE=check`, which prints
+/// each frame that differs).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DamageMode {
+    On,
+    Off,
+    Check,
+}
+
+impl DamageMode {
+    pub fn from_env() -> DamageMode {
+        match std::env::var("PETAL_SDL_DAMAGE").as_deref().map(str::trim) {
+            Ok("off" | "0" | "false") => DamageMode::Off,
+            Ok("check") => DamageMode::Check,
+            _ => DamageMode::On,
+        }
+    }
+}
+
+/// The first pixel where two RGB888 surfaces of one size differ.
+fn first_difference(a: &Surface, b: &Surface) -> Option<(usize, usize)> {
+    let (w, pitch) = (a.width() as usize, a.pitch() as usize);
+    let at = a.with_lock(|pa| {
+        b.with_lock(|pb| (0..pa.len()).step_by(4).find(|&i| (i % pitch) / 4 < w && pa[i..i + 3] != pb[i..i + 3]))
+    })?;
+    Some(((at % pitch) / 4, at / pitch))
 }
 
 impl Host for DefaultHost {

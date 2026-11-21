@@ -35,6 +35,9 @@
 //!   draw layers sorted, retained layers (`cached_layer`) and batches
 //!   (`draw_rects`) lowered to the classic vocabulary unless the host asked
 //!   for them with [`compose::set_host_caps`].
+//! - [`damage`]: which parts of the screen a frame changed since the last,
+//!   from the two frames' commands ([`damage::DamageTracker`]), so a host
+//!   that keeps its framebuffer repaints and uploads only those.
 //! - [`tess`]: shared CPU tessellation for the commands a host can't fill in
 //!   one go — currently the soft shadow, whose non-overlapping mesh every
 //!   host needs and none should re-derive.
@@ -74,6 +77,7 @@
 
 pub mod clipboard;
 pub mod compose;
+pub mod damage;
 pub mod draw;
 pub mod draw_segments;
 pub mod draw_wire;

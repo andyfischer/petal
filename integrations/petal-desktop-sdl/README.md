@@ -102,6 +102,13 @@ registers and provides: a script that uses them adds `import sdl`. Plain
 See [`docs/game-dev-guide.md`](docs/game-dev-guide.md) for the API and common
 patterns, and [`docs/design.md`](docs/design.md) for how the host is built.
 
+The framebuffer is kept between frames, and only what a frame changed is
+repainted and uploaded to the window (`petal_ui::damage`). A frame that
+doesn't start with `clear()` builds on the last one's pixels (trails), so it
+is always painted whole; so is a changed frame that uses offscreen canvases.
+`PETAL_SDL_DAMAGE=off` paints every frame whole, and `PETAL_SDL_DAMAGE=check`
+paints each frame both ways and prints the frames whose pixels differ.
+
 ## Time travel
 
 The host forks the running execution after every frame and keeps the last

@@ -809,6 +809,7 @@ dependencies = [
  "notify",
  "petal",
  "petal-ui",
+ "petal-ui-headless",
  "sdl2",
  "serde",
  "serde_json",
@@ -821,6 +822,15 @@ dependencies = [
  "indexmap",
  "petal",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "petal-ui-headless"
+version = "0.1.0"
+dependencies = [
+ "petal",
+ "petal-ui",
  "serde_json",
 ]
 

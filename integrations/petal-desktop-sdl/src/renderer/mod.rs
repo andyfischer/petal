@@ -146,6 +146,21 @@ pub fn render_frame<T: TextTarget>(
     commands: impl IntoIterator<Item = FrameCommand>,
     fonts: &mut FontBook,
 ) {
+    render_frame_within(canvas, commands, fonts, None);
+}
+
+/// [`render_frame`] painting only inside `area` of the framebuffer (`None`:
+/// all of it), leaving every other pixel as it was: each clip the frame sets
+/// is cut to `area`, a `ClipNone` clips to it, and a `Clear` fills it. This is
+/// how a host repaints the damage `petal_ui::damage` reports over the last
+/// frame's pixels. The tracker never asks for an area of a frame that draws
+/// offscreen, so `area` applies to the framebuffer only.
+pub fn render_frame_within<T: TextTarget>(
+    canvas: &mut Canvas<T>,
+    commands: impl IntoIterator<Item = FrameCommand>,
+    fonts: &mut FontBook,
+    area: Option<Rect>,
+) {
     let mut offscreen: Offscreen = HashMap::new();
     // The active render target. `0` is the main framebuffer; any other value is
     // an offscreen canvas id set via `SetTarget` (i.e. `draw_to`).
@@ -155,8 +170,15 @@ pub fn render_frame<T: TextTarget>(
     // push displaced. It is resolved here rather than in `render_one` because
     // a push has to *intersect* with the clip already set, which means knowing
     // it — and `render_one` is per-command and stateless.
-    let mut cur_clip: Option<Rect> = None;
+    let mut cur_clip: Option<Rect> = area;
     let mut saved_clips: Vec<Option<Rect>> = Vec::new();
+    let within = |r: Rect| match area {
+        Some(a) => a.intersection(r).unwrap_or_else(empty_clip),
+        None => r,
+    };
+    if area.is_some() {
+        canvas.set_clip_rect(area);
+    }
 
     for cmd in commands {
         let cmd = match cmd {
@@ -183,18 +205,24 @@ pub fn render_frame<T: TextTarget>(
                 clip_cmd(cur_clip)
             }
             DrawCommand::ClipPop => {
-                // An unmatched pop is a no-op back to "no clip", which is what
-                // the command means when the stack is empty.
-                cur_clip = saved_clips.pop().flatten();
+                // An unmatched pop is a no-op back to "no clip" (the area),
+                // which is what the command means when the stack is empty.
+                cur_clip = saved_clips.pop().unwrap_or(area);
                 clip_cmd(cur_clip)
             }
             DrawCommand::Clip { x, y, w, h, .. } => {
-                cur_clip = Some(clip_rect(x, y, w, h));
-                cmd
+                cur_clip = Some(within(clip_rect(x, y, w, h)));
+                clip_cmd(cur_clip)
             }
             DrawCommand::ClipNone => {
-                cur_clip = None;
-                cmd
+                cur_clip = area;
+                clip_cmd(cur_clip)
+            }
+            // SDL clears the whole target whatever the clip: inside an area,
+            // a clear is an opaque fill of it.
+            DrawCommand::Clear { r, g, b } if target == 0 && area.is_some() => {
+                let a = area.unwrap();
+                DrawCommand::Rect { x: a.x(), y: a.y(), w: a.width(), h: a.height(), r, g, b, a: 255, radius: 0 }
             }
             other => other,
         };
@@ -248,6 +276,9 @@ pub fn render_frame<T: TextTarget>(
                 on_target!(canvas, offscreen, target, |dst| render_one(dst, other, fonts));
             }
         }
+    }
+    if area.is_some() {
+        canvas.set_clip_rect(None);
     }
 }
 

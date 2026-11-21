@@ -27,3 +27,8 @@ base64 = "0.22"
 # System font discovery for `font: "<family>"` (memory-maps each file only
 # long enough to read its name table).
 fontdb = { version = "0.23", default-features = false, features = ["std", "fs", "memmap"] }
+
+[dev-dependencies]
+# tests/damage_oracle.rs runs the example apps headless for real frames to
+# paint both whole and by damage.
+petal-ui-headless = { path = "../../core-sdk/petal-ui-headless" }

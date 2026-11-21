@@ -19,7 +19,8 @@
 //! live resize, [`audio`] queued-sample output, [`sfx`] procedural sound-effect
 //! synthesis and [`sound`] its `sfx`/`synth` natives and mixer, [`protocol`] agent JSON,
 //! [`watcher`] hot reload, [`screenshot`] PNG encoding, [`font`] ladder,
-//! [`renderer`] SDL-canvas primitives, [`hidpi`] point-to-pixel scaling) are
+//! [`renderer`] SDL-canvas primitives, [`screen_texture`] uploading only a
+//! frame's damage, [`hidpi`] point-to-pixel scaling) are
 //! public so hosts can compose them.
 
 pub mod audio;
@@ -33,6 +34,7 @@ pub mod input;
 pub mod native_fns;
 pub mod protocol;
 pub mod renderer;
+pub mod screen_texture;
 pub mod screenshot;
 pub mod sfx;
 pub mod sound;

@@ -10,6 +10,22 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ## Unreleased
 
+### Added
+
+- **petal-sdl paints only what a frame changed.** The default host compares
+  each frame's draw commands with the last frame's and repaints, and uploads
+  to the window, only the rectangles that changed; an idle or hovered UI
+  costs a fraction of a millisecond to paint instead of a full software
+  repaint. The pixels are the same as painting the whole frame: a frame is
+  painted whole when it does not start with a `Clear` (sketches that leave
+  trails), and when it changed and uses offscreen canvases or host commands.
+  `PETAL_SDL_DAMAGE=off` paints every frame whole; `PETAL_SDL_DAMAGE=check`
+  paints both ways and prints any frame that differs. Hosts get the pieces:
+  `petal_ui::damage::DamageTracker` (renderer-independent),
+  `petal_sdl::renderer::render_frame_within` and
+  `petal_sdl::screen_texture::ScreenTexture`
+  ([reactive rendering plan](docs/dev/reactive-rendering-plan.md#p0--what-is-left)).
+
 ### Changed
 
 - **`state` in a `map`, `forEach` or `sort_by` callback is kept per

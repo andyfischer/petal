@@ -35,7 +35,7 @@ P0 underlies everything, P2 and P3 make P1 cheaper.
 
 | Layer | Unit | Language change | Status |
 |---|---|---|---|
-| P0 Gated frames, retained output | whole frame | none | 🟡 gate shipped in every host; segmented output shipped (VM and C bridge); damage rects not started |
+| P0 Gated frames, retained output | whole frame | none | 🟡 gate shipped in every host; segmented output shipped (VM and C bridge); damage rects shipped in petal-desktop-sdl, not yet in petal-web-canvas |
 | P1 Memoized scopes | function call (loop body planned) | none | 🟡 function calls shipped; loop bodies, top-level body, hot-reload invalidation open |
 | P2 Dependency classes | block, by input class | none | 🟡 constant class shipped as static values; classes, hints, effect kinds and the `never-replays` lint shipped; block guards open |
 | P3 Keyed collections + hit-test index | collection element | `for … key` | 🟡 `for … key` syntax shipped; persistent collections and the hit-test index not started |
@@ -49,7 +49,24 @@ Shipped (c2032ad, d90bc35): the read-set gate (`core/src/run_deps.rs`,
 petal-web-canvas; keyed DOM patching in petal-web-html in place of
 `innerHTML`.
 
-Shipped since: **segmented output** (`core/src/output_segments.rs`). A host
+Shipped since: **damage rectangles** in petal-desktop-sdl.
+`petal_ui::damage::DamageTracker` compares a frame's draw commands with the
+last frame's (positionally, like retained results: common prefix and suffix,
+then pair by pair) and answers nothing, a few rectangles, or the whole
+screen; each changed command damages its bounds, cut to its clip, where it
+was and where it is. The default host repaints each rectangle with
+`renderer::render_frame_within` (every clip cut to the area, a `Clear` a
+fill) over the kept framebuffer and uploads only those rectangles to a kept
+texture (`screen_texture::ScreenTexture`). A frame is painted whole when it
+or the frame before does not start with a `Clear` (trails), or when it
+changed and draws offscreen, reads pixels back or holds composed or host
+commands. `PETAL_SDL_DAMAGE=off` turns it off and `=check` paints every frame
+both ways and reports differences; `tests/damage_oracle.rs` runs the example
+apps under scripted input and requires the same pixels both ways on every
+frame, at 1x and 2x. Ported from petal-creative's `retained` crate, where it
+cut idle and hover paint in the editors from 4–17 ms to about 0.1 ms.
+
+Shipped before it: **segmented output** (`core/src/output_segments.rs`). A host
 opts a buffer in (`Env::set_output_segmented`, `pb_vm_set_segmented`); a
 recorded memo scope then moves what it emitted into a segment body and a
 replay pushes one reference instead of the values. The host drains
@@ -82,9 +99,12 @@ Open:
   segmented), petal-desktop-sdl and petal-web-canvas. Composition is still
   per command, so a replayed frame saves the decode, not the walk; damage
   rects need each segment's bounds kept next to its commands.
-- **Damage rectangles for canvas hosts.** A frame that runs still repaints the
-  whole surface in SDL and web-canvas. Segments are the input to this: an
-  unchanged segment is an unchanged region, once its bounds are kept.
+- **Damage rectangles in petal-web-canvas.** petal-desktop-sdl paints only
+  what a frame changed (`petal_ui::damage`, below); web-canvas still repaints
+  the whole canvas. The tracker is renderer-independent, so the work there
+  is a `render` that clips to an area. Later, segments can feed it: an
+  unchanged segment is an unchanged run of commands, so the diff could skip
+  it instead of comparing it.
 - **LIS moves in petal-web-html.** The keyed reconciler moves nodes naively;
   a longest-increasing-subsequence pass (Inferno, ivi) would cut moves for
   large reorders. The renderer's header comment notes it.

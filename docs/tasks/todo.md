@@ -226,7 +226,7 @@ serving brotli gets the transfer under 1 MB.
   there is no `// @strict` pragma
   ([dev/type-declarations-plan.md](../dev/type-declarations-plan.md) §4).
 - **Reactive rendering, the rest of P0 and P1:**
-  - segmented output and damage rects;
+  - segmented output feeding damage rects, and damage rects in petal-web-canvas;
   - LIS moves in petal-web-html;
   - loop-body and top-level memo scopes;
   - hot-reload invalidation by body hash

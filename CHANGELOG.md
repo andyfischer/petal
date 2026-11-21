@@ -21,6 +21,15 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
   own `include_str!`
   ([Host interface packages](docs/module-system.md#host-interface-packages)).
 
+- **programs-as-documents refuses an output call that can run twice.**
+  `Runner::run` and `Runner::evaluate` check a document before running it
+  (`check_output_calls`): two calls to its output call on one path, or one
+  inside a loop, is an error naming the lines ("canvas(doc, layers) is
+  called twice, on line 4 and again on line 9: a document makes its output
+  call once"), where the last call used to win silently. Calls in different
+  branches of an `if` or `match` are one call; calls inside a declared
+  function or lambda are not counted.
+
 - **programs-as-documents reads a document's output call.**
   `OutputSource::Call(OutputCall { native, call, arity })` reads the
   arguments of the last call to the native a document ends in

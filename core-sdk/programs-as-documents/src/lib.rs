@@ -48,6 +48,7 @@ pub mod concretize;
 pub mod editable;
 pub mod entries;
 pub mod intent;
+pub mod output_check;
 pub mod output_map;
 pub mod props;
 pub mod run;
@@ -70,6 +71,7 @@ pub use solve::{Solved, solve_field};
 pub use output_map::{
     Field, FieldProvenance, LiteralSource, OutputKey, OutputMap, OutputNode, PathSeg, Site, WithinLiteral,
 };
+pub use output_check::check_output_calls;
 pub use run::{DocumentRun, Evaluated, OutputCall, OutputSource, Runner, register_output_native};
 pub use props::Props;
 pub use session::DocumentSession;

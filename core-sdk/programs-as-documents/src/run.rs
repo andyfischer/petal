@@ -25,6 +25,7 @@ use petal::stack::StackKey;
 use petal::static_value::StaticValue;
 use petal::value::Value;
 
+use crate::output_check::check_output_calls;
 use crate::output_map::{OutputKey, OutputMap, OutputNode};
 
 /// The call a document ends in to hand its output to the host:
@@ -49,9 +50,10 @@ pub struct OutputCall {
 pub enum OutputSource {
     /// The value the script evaluates to (its last expression).
     ReturnValue,
-    /// The arguments of the last call to an [`OutputCall`]'s native. A run
-    /// that never made the call is an error naming it ("the script never
-    /// called canvas(doc, layers)").
+    /// The arguments of the call to an [`OutputCall`]'s native. A run that
+    /// never made the call is an error naming it ("the script never called
+    /// canvas(doc, layers)"), and so is a document where the call can run
+    /// more than once, checked before it runs ([`check_output_calls`]).
     Call(OutputCall),
     /// [`Call`](Self::Call) for a host that opens documents of several kinds:
     /// the output of whichever of these calls the script made, the first
@@ -176,8 +178,10 @@ impl Runner {
 
     /// Run `source` in a fresh env with element tracing on, and map its
     /// output. Errors are a load (parse, compile) or run failure, or a
-    /// missing output call, as a message for the user.
+    /// missing output call or one that can run more than once
+    /// ([`check_output_calls`]), as a message for the user.
     pub fn run(&self, source: &str) -> Result<DocumentRun, String> {
+        check_output_calls(source, self.output.calls())?;
         let (mut env, program, stack) = self.prepare(source)?;
         let result = env.run(stack)?;
         let log = env.take_output();
@@ -201,6 +205,7 @@ impl Runner {
     /// without the cost of mapping it back to the source. Errors are those
     /// of [`run`](Self::run), and an output value still loading (pending).
     pub fn evaluate(&self, source: &str) -> Result<Evaluated, String> {
+        check_output_calls(source, self.output.calls())?;
         let (mut env, _, stack) = self.prepare_traced(source, false)?;
         let result = env.run(stack)?;
         let log = env.take_output();

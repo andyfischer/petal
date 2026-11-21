@@ -55,6 +55,8 @@ hashbrown = { version = ">=0.16, <0.18", default-features = false }
 slotmap = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+# `embed_package!`, re-exported as `petal::embed_package`.
+petal-macros = { path = "macros" }
 
 # Measurement harnesses: Rust programs that drive the crate directly to time
 # one cost (a rerun, a reload, a frame, a collection). They live beside the

@@ -1,6 +1,18 @@
-//! [`StaticValue`] as JSON, both ways — the wire form a host in another
-//! language uses to read a config file's values and to say what an edit should
-//! write (the C bridge's `pb_source_*`).
+//! [`StaticValue`] as JSON, both ways, in two forms.
+//!
+//! **Wire JSON** ([`to_json`], [`from_json`]) is lossless: the form a host in
+//! another language uses to read a config file's values and to say what an
+//! edit should write (the C bridge's `pb_source_*`). It is described below.
+//!
+//! **Plain JSON** ([`StaticValue::to_plain_json`],
+//! [`StaticValue::from_plain_json`]) is the shape
+//! [`value_to_json`](crate::value::value_to_json) gives a script's values: a
+//! record is an object, an element `{"type": "element", "tag", "props",
+//! "children"}`, a colour `{"r", "g", "b"}` (and `"a"` when not opaque). It is what a host reads a
+//! document's output as, so a literal read from the source and the value it
+//! evaluates to compare equal, and what a host's UI hands back to be written.
+//! It cannot tell an integer from a whole float, or a colour from a record
+//! with those four fields, so a round trip is not exact.
 //!
 //! Floats are JSON numbers, strings JSON strings, lists arrays and `nil`
 //! `null`. The shapes JSON cannot tell apart are single-key objects:
@@ -262,6 +274,107 @@ impl<'de> Deserialize<'de> for Wire {
             }
         }
         deserializer.deserialize_any(WireVisitor)
+    }
+}
+
+impl StaticValue {
+    /// This value as plain JSON (see the [module docs](self)): the JSON
+    /// [`value_to_json`](crate::value::value_to_json) gives the value the
+    /// literal evaluates to. A call, which has no value until it runs, is
+    /// `{"type": "call", "function", "args"}`. A float that is not finite is
+    /// `null`.
+    pub fn to_plain_json(&self) -> serde_json::Value {
+        use serde_json::{Map, Value as Json, json};
+        let fields = |fs: &[(String, StaticValue)]| {
+            let mut out = Map::new();
+            for (k, v) in fs {
+                // A key written twice: the later value is what the program reads.
+                out.insert(k.clone(), v.to_plain_json());
+            }
+            out
+        };
+        let list = |xs: &[StaticValue]| Json::Array(xs.iter().map(StaticValue::to_plain_json).collect());
+        match self {
+            StaticValue::Str(s) => Json::String(s.clone()),
+            StaticValue::Int(i) => json!(i),
+            StaticValue::Float(f) => serde_json::Number::from_f64(*f).map_or(Json::Null, Json::Number),
+            StaticValue::Bool(b) => Json::Bool(*b),
+            StaticValue::Nil => Json::Null,
+            StaticValue::List(xs) => list(xs),
+            StaticValue::Record(fs) => Json::Object(fields(fs)),
+            // An opaque colour has no `a`, as its value has none.
+            StaticValue::Color { r, g, b, a: None } => json!({"r": r, "g": g, "b": b}),
+            StaticValue::Color { r, g, b, a: Some(a) } => json!({"r": r, "g": g, "b": b, "a": a}),
+            StaticValue::Call { function, args } => json!({"type": "call", "function": function, "args": list(args)}),
+            StaticValue::Variant { of, name, args } => {
+                json!({"type": "enum", "tag": format!("{of}.{name}"), "data": list(args)})
+            }
+            StaticValue::Element { tag, props, children } => {
+                json!({"type": "element", "tag": tag, "props": fields(props), "children": list(children)})
+            }
+        }
+    }
+
+    /// The value plain JSON (see the [module docs](self)) stands for: the
+    /// inverse of [`to_plain_json`](Self::to_plain_json), as near as JSON
+    /// allows. A number is an `Int` when it is a whole number JSON wrote
+    /// without a fraction, else a `Float`; an object with only `r`, `g`, `b`
+    /// (and `a`) numbers is a colour; the `type`-tagged objects are elements,
+    /// enum variants and calls; any other object is a record, its keys in
+    /// order.
+    pub fn from_plain_json(json: &serde_json::Value) -> StaticValue {
+        use serde_json::Value as Json;
+        let list = |v: Option<&Json>| match v {
+            Some(Json::Array(xs)) => xs.iter().map(StaticValue::from_plain_json).collect(),
+            _ => Vec::new(),
+        };
+        let fields = |v: Option<&Json>| match v {
+            Some(Json::Object(o)) => o.iter().map(|(k, v)| (k.clone(), StaticValue::from_plain_json(v))).collect(),
+            _ => Vec::new(),
+        };
+        match json {
+            Json::Null => StaticValue::Nil,
+            Json::Bool(b) => StaticValue::Bool(*b),
+            Json::Number(n) => match n.as_i64() {
+                Some(i) => StaticValue::Int(i),
+                None => StaticValue::Float(n.as_f64().unwrap_or(f64::NAN)),
+            },
+            Json::String(s) => StaticValue::Str(s.clone()),
+            Json::Array(_) => StaticValue::List(list(Some(json))),
+            Json::Object(o) => {
+                let text = |k: &str| o.get(k).and_then(Json::as_str);
+                match text("type") {
+                    Some("element") if text("tag").is_some() => {
+                        return StaticValue::Element {
+                            tag: text("tag").unwrap_or_default().to_string(),
+                            props: fields(o.get("props")),
+                            children: list(o.get("children")),
+                        };
+                    }
+                    Some("enum") if text("tag").is_some_and(|t| t.contains('.')) => {
+                        let (of, name) = text("tag").unwrap_or_default().rsplit_once('.').unwrap_or_default();
+                        return StaticValue::Variant { of: of.into(), name: name.into(), args: list(o.get("data")) };
+                    }
+                    Some("call") if text("function").is_some() => {
+                        return StaticValue::Call {
+                            function: text("function").unwrap_or_default().to_string(),
+                            args: list(o.get("args")),
+                        };
+                    }
+                    _ => {}
+                }
+                let channel = |k: &str| o.get(k).and_then(Json::as_f64).filter(|v| (0.0..=255.0).contains(v)).map(|v| v as u8);
+                let colour_keys = o.keys().all(|k| matches!(k.as_str(), "r" | "g" | "b" | "a"));
+                if let (true, Some(r), Some(g), Some(b)) = (colour_keys, channel("r"), channel("g"), channel("b")) {
+                    return match (o.contains_key("a"), channel("a")) {
+                        (false, _) => StaticValue::color(r, g, b),
+                        (true, Some(a)) => StaticValue::color_alpha(r, g, b, a),
+                        (true, None) => StaticValue::Record(fields(Some(json))),
+                    };
+                }
+                StaticValue::Record(fields(Some(json)))
+            }
+        }
     }
 }
 

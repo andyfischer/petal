@@ -59,6 +59,32 @@ use crate::module::{ModuleOrigin, ModuleSource};
 /// The manifest file name at a package root.
 pub const MANIFEST_FILE: &str = "petal.toml";
 
+/// A package directory compiled into a binary: its name and every file it is
+/// made of. Petal's own are [`crate::bundled`]; a host makes its own with
+/// [`embed_package!`](crate::embed_package) and registers one with
+/// [`Env::register_embedded_package`](crate::env::Env::register_embedded_package).
+#[derive(Debug)]
+pub struct EmbeddedPackage {
+    /// The `[package] name`.
+    pub name: &'static str,
+    /// `(path relative to the package root, contents)`, sorted by path:
+    /// `petal.toml` and each `*.ptl` under it.
+    pub files: &'static [(&'static str, &'static str)],
+}
+
+impl EmbeddedPackage {
+    /// The package's `petal.toml`.
+    pub fn manifest(&self) -> &'static str {
+        self.files.iter().find(|(path, _)| *path == MANIFEST_FILE).map(|(_, text)| *text).unwrap_or("")
+    }
+
+    /// The package's Petal sources: `(path relative to the package root,
+    /// source)` for each `*.ptl`, sorted by path.
+    pub fn sources(&self) -> impl Iterator<Item = (&'static str, &'static str)> {
+        self.files.iter().copied().filter(|(path, _)| path.ends_with(".ptl"))
+    }
+}
+
 /// The directory a manifest uses for modules when it does not say — but only
 /// when it exists; otherwise the manifest's own directory is the module dir.
 const DEFAULT_MODULE_DIR: &str = "src";
@@ -584,7 +610,16 @@ impl Package {
 
     /// A package compiled into the binary (see [`crate::bundled`]).
     pub fn bundled(bundled: &crate::bundled::BundledPackage) -> Result<Package, LoadError> {
-        let marker = PathBuf::from(format!("<bundled:{}>", bundled.name));
+        Package::embedded_at(bundled, PathBuf::from(format!("<bundled:{}>", bundled.name)))
+    }
+
+    /// A package a host compiled in with [`embed_package!`](crate::embed_package).
+    pub fn embedded(embedded: &EmbeddedPackage) -> Result<Package, LoadError> {
+        Package::embedded_at(embedded, PathBuf::from(format!("<embedded:{}>", embedded.name)))
+    }
+
+    /// An embedded package, its files reported as under `marker`.
+    fn embedded_at(bundled: &EmbeddedPackage, marker: PathBuf) -> Result<Package, LoadError> {
         let manifest = Manifest::parse(bundled.manifest(), &marker.join(MANIFEST_FILE))?;
         let prefix = match &manifest.modules {
             Some(dir) => format!("{}/", dir.trim_matches('/')),

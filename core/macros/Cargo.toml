@@ -1,0 +1,13 @@
+[package]
+name = "petal-macros"
+version = "0.1.0"
+edition = "2024"
+description = "Compile-time helpers for hosts embedding Petal: `embed_package!`. Re-exported by the `petal` crate; depend on that"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
+
+[lib]
+proc-macro = true
+
+# No dependencies: the macro reads the package directory with std and writes
+# its expansion as text, like core/build.rs (whose file walk it shares).

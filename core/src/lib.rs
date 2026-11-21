@@ -115,5 +115,30 @@ pub mod types;
 pub mod value;
 pub mod version;
 
+/// A Petal package directory compiled into the binary, as a
+/// [`package::EmbeddedPackage`] to hand to
+/// [`Env::register_embedded_package`](env::Env::register_embedded_package)
+/// (or [`provide_embedded_package`](env::Env::provide_embedded_package) for
+/// an interface package whose natives the host registers).
+///
+/// ```ignore
+/// static CANVAS: petal::package::EmbeddedPackage = petal::embed_package!("../packages/canvas");
+///
+/// let mut env = petal::env::Env::new();
+/// env.provide_embedded_package(&CANVAS)?;
+/// ```
+///
+/// The path is a directory holding a `petal.toml`, relative to the file the
+/// macro is written in (as `include_str!`'s is). Every file a package is made
+/// of is embedded: the manifest and each `*.ptl` under the directory, except
+/// in `tests/`, `examples/`, `docs/`, `target/` and `native/`, the same files
+/// `core/build.rs` embeds for Petal's bundled packages. Modules come from
+/// the manifest's `modules` directory (or `src/`) when it names one.
+///
+/// Each file is compiled in with `include_str!`, so editing one rebuilds the
+/// crate. A file added to the directory is picked up when the crate next
+/// compiles, which an edit to the module that imports it causes.
+pub use petal_macros::embed_package;
+
 pub use handle::{HandleClass, HandleClassId, HandleVal};
 

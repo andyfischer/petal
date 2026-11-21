@@ -758,6 +758,40 @@ impl Env {
         Ok(info)
     }
 
+    /// Register a package the host compiled in with
+    /// [`embed_package!`](crate::embed_package): what
+    /// [`add_package`](Self::add_package) does for a directory on disk, for
+    /// the copy of it in the binary.
+    ///
+    /// ```ignore
+    /// static CANVAS: EmbeddedPackage = petal::embed_package!("../packages/canvas");
+    /// env.register_embedded_package(&CANVAS)?;
+    /// ```
+    pub fn register_embedded_package(
+        &mut self,
+        package: &crate::package::EmbeddedPackage,
+    ) -> Result<crate::package::PackageInfo, crate::error::LoadError> {
+        let package = crate::package::Package::embedded(package)?;
+        let info = package.info.clone();
+        self.modules.add_package(package);
+        self.apply_package_interface(&info.name);
+        Ok(info)
+    }
+
+    /// [`register_embedded_package`](Self::register_embedded_package) for an
+    /// interface package whose natives this host registers, announced as
+    /// provided at its manifest's version
+    /// ([`provides_package`](Self::provides_package)), so scripts and
+    /// packages that `[requires]` it load.
+    pub fn provide_embedded_package(
+        &mut self,
+        package: &crate::package::EmbeddedPackage,
+    ) -> Result<crate::package::PackageInfo, String> {
+        let info = self.register_embedded_package(package).map_err(|e| e.to_string())?;
+        self.provides_package(&info.name)?;
+        Ok(info)
+    }
+
     /// Check this `Env`'s registered natives against the interface packages
     /// that declare them: every `native fn` a module of `packages` declares
     /// must be registered here, and every native registered here beyond the

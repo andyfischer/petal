@@ -17,35 +17,9 @@
 //! The list of packages, their kinds and features lives in `core/Cargo.toml`
 //! under [package.metadata.petal.bundled].
 
-/// One embedded package: its name and every file it is made of.
-#[derive(Debug)]
-pub struct BundledPackage {
-    /// The `[package] name`.
-    pub name: &'static str,
-    /// `(path relative to the package root, contents)`, sorted by path:
-    /// `petal.toml` and each `*.ptl` under it.
-    pub files: &'static [(&'static str, &'static str)],
-}
-
-impl BundledPackage {
-    /// The package's `petal.toml`.
-    pub fn manifest(&self) -> &'static str {
-        self.files
-            .iter()
-            .find(|(path, _)| *path == crate::package::MANIFEST_FILE)
-            .map(|(_, text)| *text)
-            .unwrap_or("")
-    }
-
-    /// The package's Petal sources: `(path relative to the package root,
-    /// source)` for each `*.ptl`, sorted by path.
-    pub fn sources(&self) -> impl Iterator<Item = (&'static str, &'static str)> {
-        self.files
-            .iter()
-            .copied()
-            .filter(|(path, _)| path.ends_with(".ptl"))
-    }
-}
+/// A bundled package: an [`EmbeddedPackage`](crate::package::EmbeddedPackage)
+/// that Petal itself compiles in.
+pub type BundledPackage = crate::package::EmbeddedPackage;
 
 /// Whether the embedded Petal sources (the bundled packages, the std prelude)
 /// had their whole-line comments stripped by `core/build.rs`. On by default for

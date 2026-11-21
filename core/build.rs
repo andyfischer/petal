@@ -13,6 +13,8 @@ use std::path::Path;
 mod strip_comments;
 #[path = "build_support/toml_lite.rs"]
 mod toml_lite;
+#[path = "build_support/package_files.rs"]
+mod package_files;
 
 /// Loose `.ptl` files the crate embeds outside the bundled packages, relative
 /// to this crate: each goes through [`embed_source`] to
@@ -154,38 +156,6 @@ fn manifest_dependencies(petal_toml: &str) -> Vec<String> {
     deps
 }
 
-/// Directories of a package that are not part of what it exports: its tests
-/// and examples are loose scripts beside the modules, and `native/` is the
-/// Rust crate that registers a native package's natives.
-const SKIPPED_DIRS: &[&str] = &["tests", "examples", "docs", "target", "native"];
-
-/// Every file under `dir` a package is made of (`petal.toml`, `*.ptl`),
-/// as `/`-joined paths relative to `dir`, sorted.
-fn package_files(dir: &Path, rel: &str, out: &mut Vec<String>) {
-    let mut entries: Vec<_> = std::fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("reading bundled package directory {}: {e}", dir.display()))
-        .filter_map(Result::ok)
-        .collect();
-    entries.sort_by_key(|e| e.file_name());
-    for entry in entries {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let path = entry.path();
-        let rel_path = if rel.is_empty() {
-            name.clone()
-        } else {
-            format!("{rel}/{name}")
-        };
-        if path.is_dir() {
-            if name.starts_with('.') || SKIPPED_DIRS.contains(&name.as_str()) {
-                continue;
-            }
-            package_files(&path, &rel_path, out);
-        } else if name == "petal.toml" || name.ends_with(".ptl") {
-            out.push(rel_path);
-        }
-    }
-}
-
 /// Rerun this script when a bundled package changes. Cargo scans a watched
 /// directory recursively, so a native package's root, which holds its Rust
 /// crate (`native/`, and that crate's `target/`), is not watched whole: its
@@ -252,8 +222,7 @@ fn embed_bundled_packages(manifest: &str, strip: bool) {
                 );
             }
         }
-        let mut files = Vec::new();
-        package_files(&dir, "", &mut files);
+        let files = package_files::package_files(&dir).unwrap_or_else(|e| panic!("bundled package `{name}`: {e}"));
         watch_package(&dir, &files);
         if !files.iter().any(|f| f.ends_with(".ptl")) {
             panic!(

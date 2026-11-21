@@ -696,6 +696,9 @@ env.add_module_path(dir);                          // a directory of packages (o
 env.add_package("core-stdlib/bloom")?;              // a whole petal.toml library, one call
 env.register_package("bloom", modules)?;           // the same, from in-memory sources; a source named
                                                    // "petal.toml" is the package's manifest
+env.register_embedded_package(&KIT)?;              // the same, for a directory compiled in with
+                                                   // `static KIT: EmbeddedPackage = petal::embed_package!("kit");`
+env.provide_embedded_package(&GAME)?;              // ... and announced as an interface the host provides
 petal_pkgman::register();                          // resolve git dependencies (once per process;
                                                    // the petal-pkgman crate, which the library leaves out)
 env.set_install_on_demand(true);                   // fetch a missing git dependency at load (off by default)
@@ -762,15 +765,21 @@ from a script only through a `native fn` declaration in scope
 writes in Petal over them — registers it, and its scripts import it:
 
 ```rust
+static GAME: EmbeddedPackage = petal::embed_package!("../packages/game");
+
 env.register_native("spawn", native_spawn, NativeEffects::EMITS);
-env.register_package("game", [("game", include_str!("../packages/game/game.ptl"))])?;
+env.provide_embedded_package(&GAME)?;
 // game.ptl:   pub native fn spawn(kind: string, props: record)
 // a script:   import game
 //             spawn("ball", {x: 1})
 ```
 
 Keep the package in a directory with a `petal.toml` beside the Rust
-code. A project whose manifest lists it as a path dependency
+code. `embed_package!` compiles that directory into the binary (the manifest
+and every module, the same files `core/build.rs` embeds for Petal's own
+packages), and `provide_embedded_package` registers it and announces the
+interface at the manifest's version, so a script's `[requires] game` is
+met. A project whose manifest lists it as a path dependency
 (`game = { path = "../host/packages/game" }`) is then checked by the stock
 CLI and the language server with no flag and no knowledge of the host;
 `petal lint -I <that directory>` does the same for a loose script.

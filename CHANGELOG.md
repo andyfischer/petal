@@ -12,6 +12,21 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **`petal::embed_package!` compiles a package directory into a host.**
+  `static KIT: EmbeddedPackage = petal::embed_package!("../packages/kit");`
+  embeds the `petal.toml` and every module under it (the files Petal's own
+  bundled packages embed), and `env.register_embedded_package(&KIT)`
+  registers it; `env.provide_embedded_package` also announces it as an
+  interface the host provides. A host no longer lists each module with its
+  own `include_str!`
+  ([Host interface packages](docs/module-system.md#host-interface-packages)).
+
+- **`StaticValue::to_plain_json` and `from_plain_json`.** A literal read from
+  the source as the plain JSON `value_to_json` gives the value it evaluates
+  to (records as objects, elements as `{type: "element", …}`, colours as
+  `{r, g, b}`), and back. Beside the lossless wire JSON of
+  `static_json::to_json`.
+
 - **petal-sdl paints only what a frame changed.** The default host compares
   each frame's draw commands with the last frame's and repaints, and uploads
   to the window, only the rectangles that changed; an idle or hovered UI

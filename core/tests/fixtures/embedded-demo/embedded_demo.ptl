@@ -1,0 +1,5 @@
+# A package `embed_package!` compiles into the test binary.
+pub import ./helpers
+
+pub fn greeting()
+  "hello " ++ twice("ab")

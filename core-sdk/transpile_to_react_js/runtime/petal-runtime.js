@@ -138,10 +138,34 @@ export function list_and(xs) {
   if (xs.length <= 1) return xs.join("");
   return `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
 }
+/** printf-style: `%s %d %f %x %X %%`, with `,` grouping, a width (`-` pads right, `0` with zeros) and `.N` decimals. */
 export function format(t, ...args) {
   let i = 0;
-  return t.replace(/%([sdf%])/g, (_, c) => (c === "%" ? "%" : c === "d" ? String(Math.trunc(args[i++])) : str(args[i++])));
+  return t.replace(/%(,?)(-?)(0?)(\d*)(?:\.(\d+))?([sdfxX%])/g, (_, comma, left, zero, width, places, c) => {
+    if (c === "%") return "%";
+    const v = args[i++];
+    let out;
+    if (c === "s") out = str(v);
+    else if (c === "d") out = String(Math.trunc(v));
+    else if (c === "f") out = places !== undefined ? Number(v).toFixed(+places) : String(Number(v));
+    else out = Math.trunc(v).toString(16)[c === "X" ? "toUpperCase" : "toLowerCase"]();
+    if (comma && (c === "d" || c === "f")) {
+      const [a, b] = out.split(".");
+      out = a.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (b !== undefined ? "." + b : "");
+    }
+    const w = +width || 0;
+    if (out.length < w) out = left ? out.padEnd(w) : out.padStart(w, zero ? "0" : " ");
+    return out;
+  });
 }
+export function char_at(s, i) { const cs = Array.from(s); return cs[i < 0 ? cs.length + i : i] ?? null; }
+export function char_slice(s, start, end) { return Array.from(s).slice(start, end).join(""); }
+export function byte_len(s) { return new TextEncoder().encode(s).length; }
+export function byte_slice(s, start, end) { return new TextDecoder().decode(new TextEncoder().encode(s).slice(start, end)); }
+export function hash_str(s) { let h = 2166136261; for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+export function hash_int(n) { let x = (n | 0) ^ 0x9e3779b9; x = Math.imul(x ^ (x >>> 16), 0x85ebca6b); x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35); return (x ^ (x >>> 16)) >>> 0; }
+export function hash01(n) { return hash_int(typeof n === "string" ? hash_str(n) : n) / 4294967296; }
+export function stable_id(...parts) { return parts.map(str).join(":"); }
 export function ord(c) { return c.codePointAt(0); }
 export function chr(n) { return String.fromCodePoint(n); }
 
@@ -232,6 +256,9 @@ export function group_by(xs, key) {
   for (const x of xs) { const k = str(key(x)); (out[k] ??= []).push(x); }
   return out;
 }
+export function top_indices(xs, k) { return xs.map((x, i) => [x, i]).sort((a, b) => b[0] - a[0]).slice(0, k).map((p) => p[1]); }
+export function group_by_keys(xs, keyFn) { return group_by(xs, keyFn); }
+export function unique_by_keys(xs, keyFn) { return unique_by(xs, keyFn); }
 export function argmin(xs) { return xs.indexOf(Math.min(...xs)); }
 export function argmax(xs) { return xs.indexOf(Math.max(...xs)); }
 export function fill(n, v) { return Array.from({ length: n }, () => v); }

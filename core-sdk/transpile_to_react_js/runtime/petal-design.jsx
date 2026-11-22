@@ -14,6 +14,13 @@
 
 import { Children, cloneElement, createContext, createElement, Fragment, isValidElement, useContext } from "react";
 import { css_color, hex } from "./petal-runtime.js";
+import { DEVICES, IOS_TEXT_STYLES, M3_TYPE_SCALE } from "./petal-design-data.js";
+
+// The design package's tables (devices, type ramps), generated from its
+// Petal source by runtime/gen-design-data.sh.
+export { DEFAULT_FONTS, DEVICES, IOS_CONTENT_SIZES, IOS_DYNAMIC_TYPE, IOS_SF_METRICS, IOS_TEXT_STYLES, LINE_RULES, M3_TYPE_SCALE, WEB_DEFAULTS } from "./petal-design-data.js";
+export const PLATFORMS = ["ios", "android", "web"];
+export const MODES = ["light", "dark"];
 
 // ── context ─────────────────────────────────────────────────────────────────
 
@@ -26,28 +33,6 @@ export function useCx() {
   return useContext(CxContext);
 }
 
-export const DEVICES = {
-  iphone_se: { platform: "ios", width: 375, height: 667, scale: 2, safe_area: { top: 20, bottom: 0, left: 0, right: 0 } },
-  iphone_13_mini: { platform: "ios", width: 375, height: 812, scale: 3, safe_area: { top: 50, bottom: 34, left: 0, right: 0 } },
-  iphone_14: { platform: "ios", width: 390, height: 844, scale: 3, safe_area: { top: 47, bottom: 34, left: 0, right: 0 } },
-  iphone_16: { platform: "ios", width: 393, height: 852, scale: 3, safe_area: { top: 59, bottom: 34, left: 0, right: 0 } },
-  iphone_16_plus: { platform: "ios", width: 430, height: 932, scale: 3, safe_area: { top: 59, bottom: 34, left: 0, right: 0 } },
-  iphone_17: { platform: "ios", width: 402, height: 874, scale: 3, safe_area: { top: 62, bottom: 34, left: 0, right: 0 } },
-  iphone_17_pro: { platform: "ios", width: 402, height: 874, scale: 3, safe_area: { top: 62, bottom: 34, left: 0, right: 0 } },
-  iphone_17_pro_max: { platform: "ios", width: 440, height: 956, scale: 3, safe_area: { top: 62, bottom: 34, left: 0, right: 0 } },
-  iphone_air: { platform: "ios", width: 420, height: 912, scale: 3, safe_area: { top: 68, bottom: 34, left: 0, right: 0 } },
-  ipad_mini: { platform: "ios", width: 744, height: 1133, scale: 2, safe_area: { top: 24, bottom: 20, left: 0, right: 0 } },
-  ipad_air_11: { platform: "ios", width: 820, height: 1180, scale: 2, safe_area: { top: 24, bottom: 20, left: 0, right: 0 } },
-  ipad_pro_13: { platform: "ios", width: 1024, height: 1366, scale: 2, safe_area: { top: 24, bottom: 20, left: 0, right: 0 } },
-  pixel_8: { platform: "android", width: 412, height: 915, scale: 2.625, safe_area: { top: 24, bottom: 24, left: 0, right: 0 } },
-  pixel_9: { platform: "android", width: 412, height: 923, scale: 2.625, safe_area: { top: 24, bottom: 24, left: 0, right: 0 } },
-  android_compact: { platform: "android", width: 360, height: 800, scale: 3, safe_area: { top: 24, bottom: 24, left: 0, right: 0 } },
-  web_375: { platform: "web", width: 375, height: 812, scale: 3, safe_area: { top: 0, bottom: 0, left: 0, right: 0 } },
-  web_390: { platform: "web", width: 390, height: 844, scale: 3, safe_area: { top: 0, bottom: 0, left: 0, right: 0 } },
-  web_393: { platform: "web", width: 393, height: 852, scale: 3, safe_area: { top: 0, bottom: 0, left: 0, right: 0 } },
-  web_430: { platform: "web", width: 430, height: 932, scale: 3, safe_area: { top: 0, bottom: 0, left: 0, right: 0 } },
-  web_1280: { platform: "web", width: 1280, height: 800, scale: 2, safe_area: { top: 0, bottom: 0, left: 0, right: 0 } },
-};
 const DEFAULT_DEVICE = { ios: "iphone_16", android: "pixel_8", web: "web_390" };
 const FONTS = {
   ios: '-apple-system, "SF Pro Text", "SF Pro", system-ui, sans-serif',
@@ -449,29 +434,19 @@ export function Unknown() { return null; }
 
 // ── text ────────────────────────────────────────────────────────────────────
 
-const IOS_STYLES = {
-  largeTitle: [34, 41, 400], title: [28, 34, 400], title1: [28, 34, 400], title2: [22, 28, 400], title3: [20, 25, 400],
-  headline: [17, 22, 600], body: [17, 22, 400], callout: [16, 21, 400], subheadline: [15, 20, 400],
-  footnote: [13, 18, 400], caption: [12, 16, 400], caption1: [12, 16, 400], caption2: [11, 13, 400],
-};
-const M3_STYLES = {
-  display_large: [57, 64, 400], display_medium: [45, 52, 400], display_small: [36, 44, 400],
-  headline_large: [32, 40, 400], headline_medium: [28, 36, 400], headline_small: [24, 32, 400],
-  title_large: [22, 28, 400], title_medium: [16, 24, 500], title_small: [14, 20, 500],
-  body_large: [16, 24, 400], body_medium: [14, 20, 400], body_small: [12, 16, 400],
-  label_large: [14, 20, 500], label_medium: [12, 16, 500], label_small: [11, 16, 500],
-};
 
 function typeOf(style, cx) {
   const v = resolve(style, cx);
   if (!v) return {};
   const t = v.kind === "type_style" ? v[cx.platform] ?? {} : v;
-  const named = t.text_style && (IOS_STYLES[t.text_style] ?? M3_STYLES[t.text_style.replace(/[A-Z]/g, (c) => "_" + c.toLowerCase())]);
+  const ios = { title: "title1", caption: "caption1" }[t.text_style] ?? t.text_style;
+  const named = t.text_style && (IOS_TEXT_STYLES[ios] ?? M3_TYPE_SCALE[t.text_style.replace(/[A-Z]/g, (c) => "_" + c.toLowerCase())]);
   const out = { ...t };
   if (named) {
-    out.size ??= named[0];
-    out.line ??= named[1];
-    out.weight ??= named[2];
+    out.size ??= named.size;
+    out.line ??= named.line;
+    out.weight ??= named.weight;
+    if (named.tracking) out.tracking ??= named.tracking;
   }
   return out;
 }
@@ -758,6 +733,24 @@ export function variant_grid(components, name, { axes, props = {}, ground } = {}
         </Specimen>
       ))}
     </Grid>
+  );
+}
+
+/** The text/ground pairs a contrast table lists: each text colour on each ground. */
+export function contrast_pairs(texts, on, { large = false, min } = {}) {
+  const out = [];
+  for (const bg of on) for (const t of texts) out.push(min == null ? { text: t, on: bg, large } : { text: t, on: bg, large, min });
+  return out;
+}
+
+/** A guideline with a do and a don't, each with its example. */
+export function rule(title, good, good_example, bad, bad_example, { why } = {}) {
+  return (
+    <Guideline title={title}>
+      {why}
+      <Do>{good}{good_example}</Do>
+      <Dont>{bad}{bad_example}</Dont>
+    </Guideline>
   );
 }
 

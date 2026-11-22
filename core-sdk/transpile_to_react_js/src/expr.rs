@@ -104,11 +104,24 @@ impl<'a> Emitter<'a> {
     /// `id`, else their position (prefixed by the enclosing iteration's key
     /// when the list is one iteration's part of a flattened list).
     pub fn list(&mut self, xs: &[Expr], prefix: Option<&str>) -> String {
+        // A list with an element in it is a list of children: every item
+        // that may be one (a name, a call, a branch) is keyed too.
+        let children = xs.iter().any(|x| self.builds_element(x));
         let items: Vec<String> = xs
             .iter()
             .enumerate()
             .map(|(i, x)| {
                 if !self.builds_element(x) {
+                    let maybe = matches!(x.kind, ExprKind::Ident(_) | ExprKind::Call { .. } | ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::FieldAccess { .. } | ExprKind::IndexAccess { .. });
+                    if children && maybe {
+                        let key = match prefix {
+                            None => i.to_string(),
+                            Some(p) => format!("`${{{p}}}-{i}`"),
+                        };
+                        let v = self.expr(x);
+                        let f = self.react("Fragment");
+                        return format!("<{f} {}>{{{v}}}</{f}>", key_attr(&key));
+                    }
                     return self.expr(x);
                 }
                 let id = match &x.kind {
@@ -184,6 +197,23 @@ impl<'a> Emitter<'a> {
         if eq { (call, P_PRIMARY) } else { (format!("!{call}"), P_UNARY) }
     }
 
+    /// The operands of a concatenation, each list of children keyed apart
+    /// (`0-…`, `1-…`) so the joined list has no duplicate keys.
+    fn concat_operands(&mut self, xs: &[&Expr], min: u8) -> Vec<String> {
+        xs.iter()
+            .enumerate()
+            .map(|(i, x)| {
+                if let ExprKind::List(items) = &x.kind {
+                    return self.list(items, Some(&i.to_string()));
+                }
+                self.key_prefix = Some(i.to_string());
+                let v = self.ex(x, min);
+                self.key_prefix = None;
+                v
+            })
+            .collect()
+    }
+
     fn concat(&mut self, l: &Expr, r: &Expr) -> (String, u8) {
         let stringy = |e: &Expr| matches!(e.kind, ExprKind::Literal(Literal::String(_)) | ExprKind::StringInterp { .. });
         let listy = |e: &Expr| matches!(e.kind, ExprKind::List(_));
@@ -193,14 +223,12 @@ impl<'a> Emitter<'a> {
             return (format!("{ls} + {rs}"), P_ADD);
         }
         if listy(l) || listy(r) {
-            let ls = self.ex(l, P_UNARY);
-            let rs = self.ex(r, P_UNARY);
-            return (format!("[...{ls}, ...{rs}]"), P_PRIMARY);
+            let v = self.concat_operands(&[l, r], P_UNARY);
+            return (format!("[...{}, ...{}]", v[0], v[1]), P_PRIMARY);
         }
         let f = self.rt("concat");
-        let ls = self.expr(l);
-        let rs = self.expr(r);
-        (format!("{f}({ls}, {rs})"), P_PRIMARY)
+        let v = self.concat_operands(&[l, r], 0);
+        (format!("{f}({}, {})", v[0], v[1]), P_PRIMARY)
     }
 
     // ── names ───────────────────────────────────────────────────────────────
@@ -335,7 +363,7 @@ impl<'a> Emitter<'a> {
         // `module.name`: the name from that module.
         if let ExprKind::Ident(q) = &object.kind {
             if !self.is_local(q) && !self.module_names.contains(q) && self.aliases.contains_key(q) {
-                return self.ident(field, object.span);
+                return self.qualified(q, field, object.span);
             }
         }
         let o = self.access_base(object);
@@ -345,6 +373,29 @@ impl<'a> Emitter<'a> {
         } else {
             format!("{o}{}[{}]", if optional { "?." } else { "" }, js_string(field))
         }
+    }
+
+    /// `module.name`: the name as that module exports it. When this module
+    /// binds the same name (`let TESS = parts.TESS`), the import is aliased.
+    pub fn qualified(&mut self, q: &str, field: &str, span: SourceSpan) -> String {
+        let module = self.aliases.get(q).cloned().unwrap_or_default();
+        let Some(iface) = self.opts.modules.get(&module).cloned() else {
+            return self.ident(field, span);
+        };
+        let js = iface.fns.get(field).map(|f| f.js.clone()).or_else(|| iface.values.get(field).cloned());
+        let Some(js) = js else { return self.ident(field, span) };
+        let clash = self.module_names.contains(field)
+            || self.is_local(field)
+            || self.names.get(field).is_some_and(|j| *j != js)
+            || self.exported_by.get(field).is_some_and(|n| *n > 1);
+        if !clash {
+            self.module_imports.entry(iface.path.clone()).or_default().insert(js.clone());
+            return js;
+        }
+        let alias = format!("{}{}", names::camel(q), pascal_keep(&js));
+        self.module_imports.entry(iface.path.clone()).or_default().insert(format!("{js} as {alias}"));
+        self.names.reserve(&alias);
+        alias
     }
 
     fn index(&mut self, object: &Expr, index: &Expr, optional: bool) -> String {
@@ -471,12 +522,17 @@ impl<'a> Emitter<'a> {
         let head = if ps.len() == 1 && !ps[0].contains('=') { ps[0].clone() } else { format!("({})", ps.join(", ")) };
         let head = if ps.len() == 1 { format!("({head})").replace("((", "(").replace("))", ")") } else { head };
         // The key: the loop's `key`, the element's `id`, else the index.
+        let prefix = self.key_prefix.take();
         let key_js = match &key {
             Some(KeyFrom::Expr(Some(k))) => Some(self.expr(k)),
             Some(KeyFrom::Param) if crate::analysis::tail_expr(body).is_some_and(|t| self.builds_element(t)) => {
                 params.first().map(|p| self.names.local(&p.name))
             }
             _ => index.clone(),
+        };
+        let key_js = match (key_js, prefix) {
+            (Some(k), Some(p)) => Some(format!("`{p}-${{{k}}}`")),
+            (k, _) => k,
         };
         // Writes to captured names rebind the lambda's copy, as in Petal.
         let mut w = W::default();
@@ -635,6 +691,20 @@ impl<'a> Emitter<'a> {
                 // `module.f(…)`
                 if let ExprKind::Ident(q) = &object.kind {
                     if !self.is_local(q) && !self.module_names.contains(q) && self.aliases.contains_key(q) {
+                        // When the bare name means something else here, the
+                        // call goes through the module's own export.
+                        let clash = self.module_names.contains(field) || self.is_local(field);
+                        if clash {
+                            let fj = self.qualified(q, field, function.span);
+                            let module = self.aliases.get(q).cloned().unwrap_or_default();
+                            let info = self.opts.modules.get(&module).and_then(|m| m.fns.get(field)).cloned();
+                            if let Some(info) = info.clone().filter(|i| i.kind == FnKind::Component) {
+                                let mut i2 = info.clone();
+                                i2.js = fj;
+                                return (self.component_call(&i2, field, args, arg_names, span, None), P_PRIMARY);
+                            }
+                            return (self.call_text(&fj, info.as_ref().map(|i| i.params.as_slice()), args, arg_names), P_PRIMARY);
+                        }
                         let f = Expr { kind: ExprKind::Ident(field.clone()), span: function.span };
                         return self.call(&f, args, arg_names, span);
                     }
@@ -951,8 +1021,15 @@ impl<'a> Emitter<'a> {
                 format!("[...{xs}, {item}]")
             }
             ("concat", _) if args.iter().all(|x| !matches!(x.kind, ExprKind::Literal(Literal::String(_)) | ExprKind::StringInterp { .. })) && args.len() >= 2 && args.iter().any(|x| matches!(x.kind, ExprKind::List(_))) => {
-                let xs: Vec<String> = args.iter().map(|x| format!("...{}", self.ex(x, P_UNARY))).collect();
+                let refs: Vec<&Expr> = args.iter().collect();
+                let xs: Vec<String> = self.concat_operands(&refs, P_UNARY).into_iter().map(|x| format!("...{x}")).collect();
                 format!("[{}]", xs.join(", "))
+            }
+            ("concat", n) if n >= 2 => {
+                let f = self.rt("concat");
+                let refs: Vec<&Expr> = args.iter().collect();
+                let xs = self.concat_operands(&refs, 0);
+                format!("{f}({})", xs.join(", "))
             }
             ("tunable" | "rigid" | "const", n) if n >= 1 => self.expr(&args[0]),
             ("json_stringify", 1) => format!("JSON.stringify({})", self.expr(&args[0])),
@@ -1086,6 +1163,15 @@ pub enum KeyFrom<'e> {
     Param,
 }
 
+/// `TESS` → `TESS`, `tok` → `Tok`: a name's first letter up, the rest kept.
+fn pascal_keep(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().chain(c).collect(),
+        None => String::new(),
+    }
+}
+
 pub fn args_text(f: &str, args: &[String]) -> String {
     let one = format!("{f}({})", args.join(", "));
     if one.len() <= 100 && !one.contains('\n') {
@@ -1115,6 +1201,19 @@ pub fn list_text(items: &[String]) -> String {
     let one = format!("[{}]", items.join(", "));
     if one.len() <= 90 && !one.contains('\n') {
         one
+    } else if items.iter().all(|i| i.len() <= 24 && !i.contains('\n')) {
+        // Short items (numbers, pairs, words) fill lines, as data is read.
+        let mut lines: Vec<String> = vec![];
+        let mut cur = String::new();
+        for it in items {
+            if !cur.is_empty() && cur.len() + it.len() + 2 > 78 {
+                lines.push(std::mem::take(&mut cur));
+            }
+            cur.push_str(it);
+            cur.push_str(", ");
+        }
+        lines.push(cur);
+        format!("[\n{}]", lines.iter().map(|l| format!("  {}\n", l.trim_end())).collect::<String>())
     } else {
         format!("[\n{}]", items.iter().map(|a| format!("  {},\n", a.replace('\n', "\n  "))).collect::<String>())
     }

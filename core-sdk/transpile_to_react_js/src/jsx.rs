@@ -134,7 +134,13 @@ impl<'a> Emitter<'a> {
                     }
                     _ => {
                         let s = self.ex(e, 0);
-                        out.push(Child::Hole(s));
+                        // A call that came out as one JSX element is a child
+                        // as it is, not `{<X />}`.
+                        if s.starts_with('<') && s.ends_with('>') && !s.starts_with("<>") && one_element(&s) {
+                            out.push(Child::Node(s));
+                        } else {
+                            out.push(Child::Hole(s));
+                        }
                     }
                 },
             }
@@ -157,7 +163,8 @@ impl<'a> Emitter<'a> {
         let (name, extra) = match of.map(|e| &e.kind) {
             Some(ExprKind::Literal(Literal::String(c))) => match self.design_components.get(c).cloned() {
                 Some(js) => {
-                    if let Some((path, _)) = self.imported.values().find(|(_, j)| *j == js).cloned() {
+                    let path = self.imported.values().find(|(_, j)| *j == js).map(|(p, _)| p.clone()).or_else(|| self.design_component_paths.get(&js).cloned());
+                    if let Some(path) = path.filter(|_| !self.fns.values().any(|f| f.js == js)) {
                         self.module_imports.entry(path).or_default().insert(js.clone());
                     }
                     (js, None)
@@ -212,6 +219,13 @@ impl<'a> Emitter<'a> {
         let f = self.design_rt("slot");
         format!("{{{f}({p}.children, {name}, {})}}", fallback)
     }
+}
+
+/// Whether JSX text is a single element (its first tag closes at its end).
+fn one_element(s: &str) -> bool {
+    let name: String = s[1..].chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.').collect();
+    !name.is_empty() && (s.ends_with(&format!("</{name}>")) || (s.ends_with("/>") && !s[1..].contains(&format!("<{name}"))))
+        && s.matches(&format!("<{name}")).count() == s.matches(&format!("</{name}>")).count() + usize::from(s.ends_with("/>") && !s.ends_with(&format!("</{name}>")))
 }
 
 pub enum Child {

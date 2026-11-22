@@ -41,6 +41,8 @@ pub const RUNTIME: &str = include_str!("../runtime/petal-runtime.js");
 pub const REACT_RUNTIME: &str = include_str!("../runtime/petal-react.js");
 /// The design vocabulary as React components.
 pub const DESIGN_RUNTIME: &str = include_str!("../runtime/petal-design.jsx");
+/// The design package's data tables, generated from its Petal source.
+pub const DESIGN_DATA: &str = include_str!("../runtime/petal-design-data.js");
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -151,6 +153,9 @@ pub fn transpile(source: &str, opts: &Options) -> Result<Output, Error> {
     if !e.used_dialect.is_empty() {
         if let Some(f) = dialect::runtime_file(dialect) {
             runtime.push(f);
+            if dialect == Dialect::Design {
+                runtime.push(("petal-design-data.js", DESIGN_DATA));
+            }
             runtime.push(("petal-runtime.js", RUNTIME));
             runtime.push(("petal-react.js", REACT_RUNTIME));
         }
@@ -249,7 +254,14 @@ impl Project {
                 return Path::new("packages").join(name).join(rel).with_extension("jsx");
             }
         }
-        Path::new("external").join(p.file_name().unwrap_or_default()).with_extension("jsx")
+        // Outside the entry's folder: under `external/`, by its path from
+        // the entry's folder's parent (`../shared/parts.ptl` →
+        // `external/shared/parts.jsx`).
+        let parent = root.parent().unwrap_or(&root);
+        match canon.strip_prefix(parent) {
+            Ok(rel) => Path::new("external").join(rel).with_extension("jsx"),
+            Err(_) => Path::new("external").join(p.file_name().unwrap_or_default()).with_extension("jsx"),
+        }
     }
 
     /// The root module of a package import (`design_ios`, `bloom/menu`)
@@ -271,6 +283,12 @@ impl Project {
     }
 
     fn visit(&mut self, file: &Path) -> Result<ModuleInterface, Error> {
+        self.visit_as(file, None)
+    }
+
+    /// `inherit`: the importer's dialect, for a module that does not say its
+    /// own (a design's helper module of plain functions and elements).
+    fn visit_as(&mut self, file: &Path, inherit: Option<Dialect>) -> Result<ModuleInterface, Error> {
         let canon = file.canonicalize().map_err(|e| Error(format!("{}: {e}", file.display())))?;
         if let Some(i) = self.done.get(&canon) {
             return Ok(i.clone());
@@ -297,11 +315,15 @@ impl Project {
                 self.package_module(&dir, &d.module)
             };
             let Some(p) = target else { continue };
-            let mut iface = self.visit(&p)?;
+            let own = self.opts.dialect.unwrap_or_else(|| Dialect::detect(&stmts));
+            let mut iface = self.visit_as(&p, Some(own))?;
             iface.path = relative_import(&self.rel_out(file), &self.rel_out(&p));
             modules.insert(d.module.clone(), iface);
         }
         let mut o = self.opts.clone();
+        if o.dialect.is_none() && Dialect::detect(&stmts) == Dialect::Generic {
+            o.dialect = inherit.filter(|d| *d == Dialect::Design || *d == Dialect::Web);
+        }
         o.file_name = file.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         o.modules = modules;
         let rel = self.rel_out(file);

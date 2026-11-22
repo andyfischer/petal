@@ -201,6 +201,15 @@ pub struct Emitter<'a> {
     pub emitted_methods: HashSet<String>,
     /// `export * from …` lines for `pub import`s.
     pub reexports: Vec<String>,
+    /// The Petal names the program binds.
+    pub bound_js_petal: HashSet<String>,
+    /// How many imported modules export each name.
+    pub exported_by: HashMap<String, usize>,
+    /// Design components of imported modules: React component → the module.
+    pub design_component_paths: HashMap<String, String>,
+    /// A prefix for the keys of the next list callback or list literal: the
+    /// operand's position in a concatenation of children lists.
+    pub key_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -259,6 +268,10 @@ impl<'a> Emitter<'a> {
             rt_alias: HashMap::new(),
             emitted_methods: HashSet::new(),
             reexports: Vec::new(),
+            bound_js_petal: HashSet::new(),
+            exported_by: HashMap::new(),
+            design_component_paths: HashMap::new(),
+            key_prefix: None,
         }
     }
 
@@ -525,7 +538,8 @@ impl<'a> Emitter<'a> {
 
     /// Learn the module's declarations before writing any of it.
     fn collect(&mut self, stmts: &[Stmt]) {
-        self.bound_js = analysis::all_bound_names(stmts).iter().map(|n| names::camel(n)).collect();
+        self.bound_js_petal = analysis::all_bound_names(stmts);
+        self.bound_js = self.bound_js_petal.iter().map(|n| names::camel(n)).collect();
         // The names the imports and runtimes bring are taken first, so a
         // component of the document never shadows one.
         for s in stmts {
@@ -609,17 +623,14 @@ impl<'a> Emitter<'a> {
         elem_fns.extend(imported_elem);
         loop {
             let before = elem_fns.len();
-            for (name, params, body, _) in &decls {
+            for (name, _, body, _) in &decls {
                 if elem_fns.contains(*name) {
                     continue;
                 }
-                let params: HashSet<String> = HashSet::new();
-                let _ = &params;
                 if analysis::block_is_element(body, &elem_fns, &HashSet::new()) {
                     elem_fns.insert((*name).clone());
                 }
             }
-            let _ = &decls.iter().map(|d| d.1).count();
             if elem_fns.len() == before {
                 break;
             }
@@ -718,6 +729,9 @@ impl<'a> Emitter<'a> {
                 self.warn(span, "import", format!("`import {m}`: the module was not transpiled with this one, so its names are unknown here (transpile the folder, or the entry with `transpile_project`)"));
                 return;
             };
+            for n in iface.values.keys().chain(iface.fns.keys()) {
+                *self.exported_by.entry(n.clone()).or_default() += 1;
+            }
             let names: Vec<String> = match &d.names {
                 Some(list) => list.clone(),
                 None => iface.values.keys().chain(iface.fns.keys()).cloned().collect(),
@@ -727,13 +741,18 @@ impl<'a> Emitter<'a> {
                     self.imported.insert(n.clone(), (iface.path.clone(), f.js.clone()));
                     self.imported_fns.insert(n.clone(), f.clone());
                     self.names.reserve(&f.js);
+                    self.bound_js.insert(f.js.clone());
                 } else if let Some(js) = iface.values.get(&n) {
                     self.imported.insert(n.clone(), (iface.path.clone(), js.clone()));
-                    self.names.pin(&n, js);
+                    self.bound_js.insert(js.clone());
+                    if d.names.is_some() || !self.bound_js_petal.contains(&n) {
+                        self.names.pin(&n, js);
+                    }
                 }
             }
             for (c, js) in &iface.design_components {
                 self.design_components.insert(c.clone(), js.clone());
+                self.design_component_paths.insert(js.clone(), iface.path.clone());
             }
             if d.exported {
                 self.reexports.push(format!("export * from \"{}\";", iface.path));

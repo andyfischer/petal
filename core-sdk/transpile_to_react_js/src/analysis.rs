@@ -4,10 +4,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use petal::ast::{
-    AssignTarget, ElseBranch, Expr, ExprKind, ExprVisitor, JsxChild, Stmt, StmtKind, walk_expr,
-    walk_stmt,
-};
+use petal::ast::{AssignTarget, ElseBranch, Expr, ExprKind, ExprVisitor, Stmt, StmtKind, walk_expr, walk_stmt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FnKind {
@@ -215,15 +212,6 @@ pub fn declared_names(body: &[Stmt]) -> HashSet<String> {
     v.0
 }
 
-/// Every identifier read in an expression (a superset of its free names).
-pub fn idents_in_expr(e: &Expr, out: &mut HashSet<String>) {
-    petal::ast::for_each_expr(e, &mut |x| {
-        if let ExprKind::Ident(n) | ExprKind::CellGet(n) = &x.kind {
-            out.insert(n.clone());
-        }
-    });
-}
-
 pub fn idents_in_stmt(s: &Stmt, out: &mut HashSet<String>) {
     petal::ast::for_each_expr_in_stmt(s, &mut |x| {
         if let ExprKind::Ident(n) | ExprKind::CellGet(n) = &x.kind {
@@ -300,21 +288,6 @@ pub fn design_components(stmts: &[Stmt]) -> HashMap<String, String> {
     out
 }
 
-/// Whether an element's subtree (children included) contains a tag.
-pub fn element_has_tag(children: &[JsxChild], tag: &str) -> bool {
-    children.iter().any(|c| match c {
-        JsxChild::Expr(e) => {
-            let mut found = false;
-            petal::ast::for_each_expr(e, &mut |x| {
-                if matches!(&x.kind, ExprKind::Element { tag: t, .. } if t == tag) {
-                    found = true;
-                }
-            });
-            found
-        }
-        JsxChild::Text(_) => false,
-    })
-}
 
 /// Every name the program binds anywhere: declarations, parameters, loop
 /// variables, pattern bindings.

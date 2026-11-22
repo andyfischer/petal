@@ -57,9 +57,11 @@ globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const errors = [];
 const origError = console.error;
-console.error = (...a) => { errors.push(a.map(String).join(" ")); };
+console.error = (...a) => { errors.push(a.map(String).join(" ") + (process.env.PETAL_STACKS ? `
+owners:${globalThis.__petalReact?.captureOwnerStack?.() ?? ""}` : "")); };
 
 const React = await import(pathToFileURL(req.resolve("react")).href);
+globalThis.__petalReact = React;
 const { createRoot } = await import(pathToFileURL(req.resolve("react-dom/client")).href);
 let mod;
 try {
@@ -95,11 +97,17 @@ try {
   process.exit(1);
 }
 console.error = origError;
+// React's warning that a list's children have no `key` is reported apart:
+// the page still renders as written. A duplicate key is an error (React may
+// drop children).
+const keyWarnings = errors.filter((e) => /unique "key" prop/.test(e));
+const real = errors.filter((e) => !/unique "key" prop/.test(e));
 const report = {
-  ok: errors.length === 0,
+  ok: real.length === 0,
   elements: document.querySelectorAll("#root *").length,
+  keyWarnings: keyWarnings.length,
   steps,
-  errors,
+  errors: real,
 };
 if (html) report.html = document.getElementById("root").innerHTML;
 console.log(JSON.stringify(report, null, 1));

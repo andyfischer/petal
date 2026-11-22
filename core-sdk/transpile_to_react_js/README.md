@@ -45,6 +45,7 @@ there are warnings.
 | `enum`, `match` | frozen objects with `tag`, an `if` chain |
 | a collecting `for` with `break`/`continue` | an explicit loop that pushes |
 | `import ./x`, `pub import ./x`, `x.name` | `import { … } from "./x.jsx"`, `export * from`, the name (aliased when it would clash) |
+| `pub fn`, `pub let` in a module that uses `pub` | `export`; its other declarations stay unexported (design components and lifted frames stay exported). A module with no `pub` exports everything |
 
 ## Dialects
 
@@ -71,7 +72,12 @@ The output imports small runtime files, written next to it:
 - `petal-design.jsx`: the design vocabulary. Layout follows Mixit's own HTML
   export (stacks are flexbox, a zstack a one-cell grid, a frame's children at
   their x/y inside its safe area); tokens resolve per platform and mode from
-  the frame they are drawn in.
+  the frame they are drawn in. A node's `link="page/frame"` becomes
+  `data-link` for the host page to follow. A design's default export takes
+  no props; a host shows one frame, or one page, in a mode by wrapping it in
+  `ViewContext` (`{ frame, page, mode }`), one context for every design,
+  kept at `Symbol.for("petal.design.view")`. A frame a helper function
+  builds is found by drawing the pages with everything else left out.
 - `petal-design-data.js`: the design package's tables (devices, type ramps),
   **generated** from its Petal source by this transpiler
   (`runtime/gen-design-data.sh`).

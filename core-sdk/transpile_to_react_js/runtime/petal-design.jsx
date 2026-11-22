@@ -27,6 +27,20 @@ export const MODES = ["light", "dark"];
 const DesignContext = createContext({ doc: {}, registry: {}, mode: "light" });
 const CxContext = createContext({ platform: "web", mode: "light", device: "web_390", size_class: "compact", os: "chrome", scale: 2 });
 const ParentContext = createContext({ kind: "root" });
+/**
+ * What the host page wants of a document's default export, which takes no
+ * props: `<ViewContext.Provider value={{ frame: "today_ios", mode: "dark" }}>`
+ * around it shows one frame, or one page, in a mode. It is one context for
+ * every copy of this file (each transpiled design writes its own), kept at
+ * `Symbol.for("petal.design.view")`, so a host page can make it without
+ * importing any design: `globalThis[Symbol.for("petal.design.view")] ??=
+ * createContext({})`.
+ */
+export const ViewContext = (globalThis[Symbol.for("petal.design.view")] ??= createContext({}));
+// Set while a document draws only one frame that it builds at run time (in
+// a helper function): every other frame, and the page and gallery
+// scaffolding around them, draws nothing.
+const OnlyFrameContext = createContext(null);
 
 /** The `cx` a component's render reads: the platform, mode and device it is drawn for. */
 export function useCx() {
@@ -316,7 +330,11 @@ function shown(props, cx) {
 }
 
 function dataAttrs(props, tag) {
-  return { "data-petal": tag, "data-id": props.id };
+  const a = { "data-petal": tag, "data-id": props.id };
+  // `link="page/frame"`, a prototype navigation: kept on the DOM node for
+  // the host page to follow (see ViewContext).
+  if (typeof props.link === "string") a["data-link"] = props.link;
+  return a;
 }
 
 const STACKS = new Set(["vstack", "hstack", "zstack", "grid"]);
@@ -324,7 +342,7 @@ const STACKS = new Set(["vstack", "hstack", "zstack", "grid"]);
 function Box({ tag, props, parent: kind, children, extra = {}, text = false }) {
   const cx = useCx();
   const parent = useContext(ParentContext);
-  if (!shown(props, cx)) return null;
+  if (parent.kind === "outside" || !shown(props, cx)) return null;
   const style = { ...boxStyle(props, parent, cx, { text, stackLike: STACKS.has(tag) }), ...extra };
   const inner = kind ? <ParentContext.Provider value={kind}>{children}</ParentContext.Provider> : children;
   return <div style={style} {...dataAttrs(props, tag)}>{inner}</div>;
@@ -410,7 +428,7 @@ export function Path(props) {
 export function Image(props) {
   const fit = { fill: "cover", cover: "cover", fit: "contain", contain: "contain", stretch: "fill", none: "none" }[props.fit ?? "fill"];
   if (!props.src || props.generate) {
-    return <Box tag="image" props={props} extra={{ background: "linear-gradient(135deg, #a7b4c2, #6b7b8c)" }} />;
+    return <Box tag="image" props={props} extra={{ background: placeholder(props.generate, props.seed ?? props.id ?? "") }} />;
   }
   return (
     <Box tag="image" props={props} extra={{ overflow: "hidden" }}>
@@ -418,6 +436,20 @@ export function Image(props) {
     </Box>
   );
 }
+/**
+ * `generate="scene" | "satellite" | "avatar"`: Mixit draws deterministic art
+ * per `seed`; here a gradient of the same kind whose hues follow the seed.
+ */
+function placeholder(kind, seed) {
+  let h = 0;
+  for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const hue = h % 360, alt = (hue + 40 + (h >> 9) % 80) % 360;
+  if (kind === "scene") return `linear-gradient(180deg, hsl(${hue % 60 + 190} 60% 78%) 0%, hsl(${hue % 60 + 200} 35% 70%) 55%, hsl(${alt % 90 + 90} 25% 55%) 56%, hsl(${alt % 90 + 90} 30% 42%) 100%)`;
+  if (kind === "satellite") return `radial-gradient(circle at 30% 40%, hsl(${hue % 50 + 80} 30% 45%), transparent 45%), radial-gradient(circle at 75% 70%, hsl(${alt % 40 + 30} 25% 50%), transparent 50%), hsl(${hue % 40 + 100} 22% 34%)`;
+  if (kind === "avatar") return `radial-gradient(circle at 50% 38%, hsl(${hue} 40% 82%) 0 18%, transparent 19%), radial-gradient(ellipse at 50% 100%, hsl(${hue} 40% 82%) 0 38%, transparent 39%), hsl(${alt} 45% 62%)`;
+  return "linear-gradient(135deg, #a7b4c2, #6b7b8c)";
+}
+
 /** SF Symbols and Material icons are not on the web: a placeholder of the icon's size and colour. */
 export function Icon(props) {
   const cx = useCx();
@@ -474,7 +506,7 @@ function textCss(props, cx) {
 export function Text(props) {
   const cx = useCx();
   const parent = useContext(ParentContext);
-  if (!shown(props, cx)) return null;
+  if (parent.kind === "outside" || !shown(props, cx)) return null;
   const s = { ...boxStyle({ ...props, fill: null, align: undefined }, parent, cx, { text: true }), ...textCss(props, cx), margin: 0, whiteSpace: "pre-wrap" };
   if (props.color == null) s.color = cssColor(hex("000000"), cx);
   if (props.lines === 1) Object.assign(s, { whiteSpace: "pre", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" });
@@ -492,8 +524,10 @@ export function Span(props) {
 // ── frames and pages ────────────────────────────────────────────────────────
 
 export function Frame(props) {
+  const only = useContext(OnlyFrameContext);
   const outer = useCx();
   const design = useContext(DesignContext);
+  if (only != null && props.id !== only) return null;
   const platform = props.platform ?? DEVICES[props.device]?.platform ?? outer.platform;
   const deviceName = props.device ?? design.doc?.default_device?.[platform] ?? DEFAULT_DEVICE[platform] ?? "web_390";
   const d = DEVICES[deviceName] ?? { width: 390, height: 844, scale: 2, safe_area: { top: 0, bottom: 0, left: 0, right: 0 } };
@@ -534,6 +568,8 @@ export function Frame(props) {
 }
 
 export function Page(props) {
+  // Drawing one frame: what sits on the page outside a frame draws nothing.
+  if (useContext(OnlyFrameContext) != null) return <ParentContext.Provider value={{ kind: "outside" }}>{props.children}</ParentContext.Provider>;
   const canvas = props.layout === "canvas";
   return (
     <section data-petal="page" data-id={props.id} style={{ padding: 32, background: props.background ? cssColor(props.background, { mode: "light" }) : undefined }}>
@@ -548,6 +584,7 @@ export function Page(props) {
 
 // Gallery scaffolding: simple versions of DesignLibrary's.
 export function Section(props) {
+  if (useContext(OnlyFrameContext) != null) return null;
   return (
     <div data-petal="section" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {props.title != null && <h3 style={{ font: "600 16px system-ui", margin: 0 }}>{props.title}</h3>}
@@ -556,6 +593,7 @@ export function Section(props) {
   );
 }
 export function Specimen(props) {
+  if (useContext(OnlyFrameContext) != null) return null;
   const design = useContext(DesignContext);
   const ground = props.ground ? design.doc?.gallery?.grounds?.[props.ground] ?? props.ground : hex("F4F4F6");
   return (
@@ -571,9 +609,11 @@ export function Specimen(props) {
   );
 }
 export function PhoneRow(props) {
+  if (useContext(OnlyFrameContext) != null) return null;
   return <div data-petal="phone_row" style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>{props.children}</div>;
 }
 export function Phone(props) {
+  if (useContext(OnlyFrameContext) != null) return null;
   return (
     <div data-petal="phone" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <Frame device={props.device ?? "iphone_16"} radius={44}>{props.children}</Frame>
@@ -583,6 +623,7 @@ export function Phone(props) {
   );
 }
 export function Note(props) {
+  if (useContext(OnlyFrameContext) != null) return null;
   return (
     <aside data-petal="note" style={{ padding: 16, borderRadius: 10, background: "#F4F4F6", font: "14px system-ui" }}>
       {props.title != null && <strong style={{ display: "block", marginBottom: 4 }}>{props.title}</strong>}
@@ -591,6 +632,7 @@ export function Note(props) {
   );
 }
 export function Guideline(props) {
+  if (useContext(OnlyFrameContext) != null) return null;
   return (
     <div data-petal="guideline" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {props.title != null && <h3 style={{ font: "600 16px system-ui", margin: 0 }}>{props.title}</h3>}
@@ -627,7 +669,7 @@ export function component_from_render(render) {
   return Rendered;
 }
 
-const INSTANCE_ATTRS = ["x", "y", "width", "height", "min_width", "max_width", "min_height", "max_height", "rotation", "opacity", "hidden", "position", "constraints", "align", "safe_area", "platform", "mode"];
+const INSTANCE_ATTRS = ["x", "y", "width", "height", "min_width", "max_width", "min_height", "max_height", "rotation", "opacity", "hidden", "position", "constraints", "align", "safe_area", "platform", "mode", "link"];
 
 /** An instance's props: the defaults, the attributes it sets, its `props={…}`. */
 export function component_props(props, defaults = {}) {
@@ -774,8 +816,10 @@ export function on_grid(...args) { return { kind: "on_grid", args }; }
  * A whole document: its pages, or one frame of it (`frame="today_ios"`), in
  * a mode (`mode="dark"`).
  */
-export function Design({ doc = {}, components = [], pages = [], frame, page, mode }) {
+export function Design({ doc = {}, components = [], pages = [], ...asked }) {
   const outer = useContext(CxContext);
+  const view = useContext(ViewContext);
+  const frame = asked.frame ?? view.frame, page = asked.page ?? view.page, mode = asked.mode ?? view.mode;
   const registry = {};
   for (const c of components) registry[c.name] = c;
   const value = { doc, registry, mode: mode ?? doc.modes?.[0] ?? "light" };
@@ -783,10 +827,18 @@ export function Design({ doc = {}, components = [], pages = [], frame, page, mod
   if (page != null) list = list.filter((p) => p.props?.id === page);
   const cx = { ...outer, mode: value.mode, platform: doc.platforms?.[0] ?? "web" };
   if (frame != null) {
+    // A frame written in the pages is drawn alone; one a function builds is
+    // found by drawing the pages with every other frame left out.
     const f = findFrame(list, frame);
     return (
       <DesignContext.Provider value={value}>
-        <CxContext.Provider value={cx}>{f ?? <div>no frame “{frame}”</div>}</CxContext.Provider>
+        <CxContext.Provider value={cx}>
+          {f ?? (
+            <OnlyFrameContext.Provider value={frame}>
+              {list.map((p, i) => (isValidElement(p) ? cloneElement(p, { key: p.key ?? i }) : p))}
+            </OnlyFrameContext.Provider>
+          )}
+        </CxContext.Provider>
       </DesignContext.Provider>
     );
   }

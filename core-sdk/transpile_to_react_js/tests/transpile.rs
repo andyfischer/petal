@@ -321,3 +321,16 @@ fn runtime_exports_are_read() {
     assert_eq!(d["modes"].positional, ["light"]);
     assert_eq!(d["modes"].options, ["dark", "light_hc", "dark_hc"]);
 }
+
+#[test]
+fn only_pub_declarations_are_exported_from_a_module_that_uses_pub() {
+    let o = run("let M = {gap: 4}\nfn helper(x) x * 2\npub fn twice(x) helper(x) + M.gap\npub let LIMIT = 3\n");
+    contains(&o, "\nconst M = { gap: 4 };");
+    contains(&o, "\nfunction helper(x) {");
+    contains(&o, "export function twice(x) {");
+    contains(&o, "export const LIMIT = 3;");
+    // With no `pub` anywhere (an entry file, a design), everything is.
+    let o = run("let rows = [1]\nfn f(x) x\nprint(f(rows))\n");
+    contains(&o, "export const rows = [1];");
+    contains(&o, "export function f(x) {");
+}

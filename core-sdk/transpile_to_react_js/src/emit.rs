@@ -460,13 +460,55 @@ impl<'a> Emitter<'a> {
         }
         out.push('\n');
         out.push_str(&stubs);
-        out.push_str(&body.buf);
+        out.push_str(&self.unexport_private(stmts, &body.buf));
         if !tail.buf.is_empty() {
             out.push('\n');
             out.push_str(&tail.buf);
         }
         while out.contains("\n\n\n") {
             out = out.replace("\n\n\n", "\n\n");
+        }
+        out
+    }
+
+    /// In a module that marks its exports with `pub`, the other top-level
+    /// declarations are private (docs/module-system.md): their JS stays
+    /// unexported, so a facade's `export * from` of several such modules
+    /// does not offer two private helpers of the same name. Design
+    /// components stay exported (an importer's `<instance of>` names them),
+    /// and so do frames lifted into components. A module with no `pub` at
+    /// all (an entry file, a design) exports every top-level name.
+    fn unexport_private(&self, stmts: &[Stmt], buf: &str) -> String {
+        if !stmts.iter().any(|s| s.exported) {
+            return buf.to_string();
+        }
+        let mut private = HashSet::new();
+        for s in stmts.iter().filter(|s| !s.exported) {
+            match &s.kind {
+                StmtKind::FnDecl { name, .. } => {
+                    if let Some(f) = self.fns.get(name).filter(|f| f.design_component.is_none()) {
+                        private.insert(f.js.clone());
+                    }
+                }
+                StmtKind::Let { name, .. } | StmtKind::State { name, .. } | StmtKind::Memo { name, .. } | StmtKind::EnumDecl { name, .. } | StmtKind::ClassDecl { name, .. } => {
+                    if let Some(js) = self.names.get(name) {
+                        private.insert(js.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut out = String::with_capacity(buf.len());
+        for line in buf.split_inclusive('\n') {
+            let rest = line.strip_prefix("export ");
+            let name = rest.and_then(|r| {
+                let r = r.strip_prefix("function ").or_else(|| r.strip_prefix("const ")).or_else(|| r.strip_prefix("let ")).or_else(|| r.strip_prefix("class "))?;
+                Some(r.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).next().unwrap_or(""))
+            });
+            match (rest, name) {
+                (Some(rest), Some(n)) if private.contains(n) => out.push_str(rest),
+                _ => out.push_str(line),
+            }
         }
         out
     }

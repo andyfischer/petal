@@ -119,6 +119,8 @@ pub struct Scope {
     /// handlers).
     pub last_state: Option<(u32, u32)>,
     pub deferred: Vec<String>,
+    /// Local functions (lambdas bound by `let`) that build an element.
+    pub elem_locals: HashSet<String>,
 }
 
 impl Scope {
@@ -197,6 +199,8 @@ pub struct Emitter<'a> {
     pub bound_js: HashSet<String>,
     pub rt_alias: HashMap<String, String>,
     pub emitted_methods: HashSet<String>,
+    /// `export * from …` lines for `pub import`s.
+    pub reexports: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -254,6 +258,7 @@ impl<'a> Emitter<'a> {
             bound_js: HashSet::new(),
             rt_alias: HashMap::new(),
             emitted_methods: HashSet::new(),
+            reexports: Vec::new(),
         }
     }
 
@@ -436,6 +441,10 @@ impl<'a> Emitter<'a> {
             self.dialect.name()
         ));
         out.push_str(&self.import_lines());
+        for r in &self.reexports {
+            out.push_str(r);
+            out.push('\n');
+        }
         out.push('\n');
         out.push_str(&stubs);
         out.push_str(&body.buf);
@@ -529,7 +538,25 @@ impl<'a> Emitter<'a> {
         for r in reserved {
             self.names.reserve(&r);
         }
-        let design = if self.dialect == Dialect::Design { analysis::design_components(stmts) } else { HashMap::new() };
+        let mut design = if self.dialect == Dialect::Design { analysis::design_components(stmts) } else { HashMap::new() };
+        // A render function registered by another module's `component(...)`:
+        // Mixit's convention is `fn name(p, cx)` returning one element.
+        if self.dialect == Dialect::Design {
+            for s in stmts {
+                if let StmtKind::FnDecl { name, params, body, class: None, .. } = &s.kind {
+                    let shaped = params.len() == 2 && params[1].name == "cx";
+                    if shaped && !design.contains_key(name) && analysis::block_is_element(body, &HashSet::new(), &HashSet::new()) {
+                        design.insert(name.clone(), name.clone());
+                    }
+                }
+            }
+            // `component("x", f)` where `f` comes from an imported module.
+            for (f, c) in analysis::design_components(stmts) {
+                if let Some(info) = self.imported_fns.get(&f).cloned() {
+                    self.design_components.insert(c, info.js);
+                }
+            }
+        }
         let mut elem_fns: HashSet<String> = HashSet::new();
         let mut decls: Vec<(&String, &Vec<Param>, &Vec<Stmt>, SourceSpan)> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
@@ -685,7 +712,7 @@ impl<'a> Emitter<'a> {
         let m = d.module.as_str();
         let relative = m.starts_with("./") || m.starts_with("../");
         let qualifier = d.alias.clone().unwrap_or_else(|| petal::ast::module_local_name(m).to_string());
-        if relative {
+        if relative || self.opts.modules.contains_key(m) {
             let iface = self.opts.modules.get(m).cloned();
             let Some(iface) = iface else {
                 self.warn(span, "import", format!("`import {m}`: the module was not transpiled with this one, so its names are unknown here (transpile the folder, or the entry with `transpile_project`)"));
@@ -707,6 +734,9 @@ impl<'a> Emitter<'a> {
             }
             for (c, js) in &iface.design_components {
                 self.design_components.insert(c.clone(), js.clone());
+            }
+            if d.exported {
+                self.reexports.push(format!("export * from \"{}\";", iface.path));
             }
             self.aliases.insert(qualifier, m.to_string());
             return;
@@ -1103,6 +1133,11 @@ impl<'a> Emitter<'a> {
                     let ev = self.rt("petal_event");
                     w.line(format!("const {js} = {ev}();"));
                     return;
+                }
+                if let ExprKind::Lambda { body, .. } = &value.kind {
+                    if analysis::tail_expr(body).is_some_and(|t| self.builds_element(t)) {
+                        self.scope().elem_locals.insert(name.clone());
+                    }
                 }
                 let reassigned = *is_var || self.reassigned(name);
                 let already = self.declared_in_block(name);

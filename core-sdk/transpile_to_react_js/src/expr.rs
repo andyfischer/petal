@@ -78,26 +78,7 @@ impl<'a> Emitter<'a> {
             ExprKind::For { var, iter, key, body, flatten } => {
                 (self.for_expr(var, iter, key.as_deref(), body, *flatten), P_PRIMARY)
             }
-            ExprKind::List(xs) => {
-                let items: Vec<String> = xs
-                    .iter()
-                    .enumerate()
-                    .map(|(i, x)| {
-                        // Elements in a list get a `key`, as React wants.
-                        if let ExprKind::Element { tag, props, children } = &x.kind {
-                            let key = props
-                                .iter()
-                                .find(|(k, _)| k == "id")
-                                .map(|(_, v)| self.expr(v))
-                                .unwrap_or_else(|| i.to_string());
-                            self.element(tag, props, children, x.span, Some(key))
-                        } else {
-                            self.expr(x)
-                        }
-                    })
-                    .collect();
-                (list_text(&items), P_PRIMARY)
-            }
+            ExprKind::List(xs) => (self.list(xs, None), P_PRIMARY),
             ExprKind::Record(fields) => (self.record(fields, e.span), P_PRIMARY),
             ExprKind::FieldAccess { object, field } => (self.field(object, field, false), P_PRIMARY),
             ExprKind::IndexAccess { object, index } => (self.index(object, index, false), P_PRIMARY),
@@ -117,6 +98,33 @@ impl<'a> Emitter<'a> {
             }
             ExprKind::Element { tag, props, children } => (self.element(tag, props, children, e.span, None), P_PRIMARY),
         }
+    }
+
+    /// A list literal. Elements in it get a `key`, as React wants: their
+    /// `id`, else their position (prefixed by the enclosing iteration's key
+    /// when the list is one iteration's part of a flattened list).
+    pub fn list(&mut self, xs: &[Expr], prefix: Option<&str>) -> String {
+        let items: Vec<String> = xs
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                if !self.builds_element(x) {
+                    return self.expr(x);
+                }
+                let id = match &x.kind {
+                    ExprKind::Element { props, .. } => props.iter().find(|(k, _)| k == "id").map(|(_, v)| self.expr(v)),
+                    _ => None,
+                };
+                let key = match (id, prefix) {
+                    (Some(id), None) => id,
+                    (Some(id), Some(p)) => format!("`${{{p}}}-${{{id}}}`"),
+                    (None, None) => i.to_string(),
+                    (None, Some(p)) => format!("`${{{p}}}-{i}`"),
+                };
+                self.keyed(x, Some(&key))
+            })
+            .collect();
+        list_text(&items)
     }
 
     fn binary(&mut self, op: BinOp, l: &Expr, r: &Expr) -> (String, u8) {
@@ -451,7 +459,9 @@ impl<'a> Emitter<'a> {
         let mut ps = self.params(params);
         let mut index = None;
         if let Some(KeyFrom::Expr(None)) | Some(KeyFrom::Index) = key {
-            if crate::analysis::tail_expr(body).is_some_and(|t| self.builds_element(t)) {
+            let tail = crate::analysis::tail_expr(body);
+            let lists_elements = tail.is_some_and(|t| matches!(&t.kind, ExprKind::List(xs) if xs.iter().any(|x| self.builds_element(x))));
+            if tail.is_some_and(|t| self.builds_element(t)) || lists_elements {
                 let i = self.names.fresh("i");
                 ps.push(i.clone());
                 index = Some(i);
@@ -463,6 +473,9 @@ impl<'a> Emitter<'a> {
         // The key: the loop's `key`, the element's `id`, else the index.
         let key_js = match &key {
             Some(KeyFrom::Expr(Some(k))) => Some(self.expr(k)),
+            Some(KeyFrom::Param) if crate::analysis::tail_expr(body).is_some_and(|t| self.builds_element(t)) => {
+                params.first().map(|p| self.names.local(&p.name))
+            }
             _ => index.clone(),
         };
         // Writes to captured names rebind the lambda's copy, as in Petal.
@@ -512,8 +525,20 @@ impl<'a> Emitter<'a> {
     pub fn builds_element(&self, e: &Expr) -> bool {
         match &e.kind {
             ExprKind::Element { .. } => true,
-            ExprKind::Call { function, .. } => {
-                matches!(&function.kind, ExprKind::Ident(n) if self.fns.get(n).or(self.imported_fns.get(n)).is_some_and(|f| f.kind == FnKind::Component))
+            ExprKind::Call { function, .. } => match &function.kind {
+                ExprKind::Ident(n) => {
+                    self.scopes.iter().any(|s| s.elem_locals.contains(n))
+                        || !self.is_local(n) && self.fns.get(n).or(self.imported_fns.get(n)).is_some_and(|f| f.kind == FnKind::Component)
+                }
+                _ => false,
+            },
+            ExprKind::If { then_body, else_body, .. } => {
+                crate::analysis::tail_expr(then_body).is_some_and(|t| self.builds_element(t))
+                    || match else_body {
+                        Some(ElseBranch::Block(b)) => crate::analysis::tail_expr(b).is_some_and(|t| self.builds_element(t)),
+                        Some(ElseBranch::ElseIf(x)) => self.builds_element(x),
+                        None => false,
+                    }
             }
             _ => false,
         }
@@ -523,17 +548,30 @@ impl<'a> Emitter<'a> {
     pub fn keyed(&mut self, e: &Expr, key: Option<&str>) -> String {
         let Some(k) = key else { return self.expr(e) };
         match &e.kind {
+            ExprKind::List(xs) => self.list(xs, Some(k)),
             ExprKind::Element { tag, props, children } => self.element(tag, props, children, e.span, Some(k.to_string())),
             ExprKind::Call { function, args, arg_names } => {
                 if let ExprKind::Ident(n) = &function.kind {
-                    if let Some(info) = self.fns.get(n).or(self.imported_fns.get(n)).cloned().filter(|f| f.kind == FnKind::Component) {
+                    if let Some(info) = self.fns.get(n).or(self.imported_fns.get(n)).cloned().filter(|f| f.kind == FnKind::Component && !self.is_local(n)) {
                         return self.component_call(&info, n, args, arg_names, e.span, Some(k));
                     }
                 }
-                self.expr(e)
+                self.keyed_fragment(e, k)
             }
+            ExprKind::If { .. } => self.keyed_fragment(e, k),
             _ => self.expr(e),
         }
+    }
+
+    /// `<Fragment key={k}>{e}</Fragment>`, for an element that a function
+    /// builds (the key cannot go on the element itself).
+    fn keyed_fragment(&mut self, e: &Expr, k: &str) -> String {
+        let v = self.expr(e);
+        if !self.builds_element(e) {
+            return v;
+        }
+        let f = self.react("Fragment");
+        format!("<{f} {}>{{{v}}}</{f}>", key_attr(k))
     }
 
     // ── calls ───────────────────────────────────────────────────────────────
@@ -723,8 +761,19 @@ impl<'a> Emitter<'a> {
         args_text(f, &out)
     }
 
+    /// Note that the module uses an imported name, so it is imported.
+    pub fn use_imported(&mut self, name: &str) {
+        if self.is_local(name) || self.fns.contains_key(name) {
+            return;
+        }
+        if let Some((path, js)) = self.imported.get(name).cloned() {
+            self.module_imports.entry(path).or_default().insert(js);
+        }
+    }
+
     /// `card(item)` → `<Card item={item} />`.
     pub fn component_call(&mut self, info: &crate::analysis::FnInfo, name: &str, args: &[Expr], arg_names: &[Option<String>], span: SourceSpan, key: Option<&str>) -> String {
+        self.use_imported(name);
         if info.design_component.is_some() {
             // A design render function called directly: an instance.
             let a = split_args(args, arg_names);
@@ -772,8 +821,30 @@ impl<'a> Emitter<'a> {
 
     /// A callback passed to a list function: an arrow with one parameter.
     pub fn callback(&mut self, f: &Expr, arity: usize, key: bool) -> String {
+        self.callback_keyed(f, arity, if key { Some(KeyFrom::Index) } else { None })
+    }
+
+    pub fn callback_keyed(&mut self, f: &Expr, arity: usize, keyfrom: Option<KeyFrom>) -> String {
+        let key = keyfrom.is_some();
+        if let ExprKind::Ident(n) = &f.kind {
+            // A local function that builds an element: keyed by a fragment
+            // around its result.
+            if key && self.scopes.iter().any(|s| s.elem_locals.contains(n)) {
+                let fj = self.ident(n, f.span);
+                let ps: Vec<String> = ["x", "y", "z"].iter().take(arity).map(|s| s.to_string()).collect();
+                let frag = self.react("Fragment");
+                let (head, k) = match keyfrom {
+                    Some(KeyFrom::Param) => (format!("({})", ps.join(", ")), ps[0].clone()),
+                    _ => {
+                        let i = self.names.fresh("i");
+                        (format!("({}, {i})", ps.join(", ")), i)
+                    }
+                };
+                return format!("{head} => <{frag} key={{{k}}}>{{{fj}({})}}</{frag}>", ps.join(", "));
+            }
+        }
         match &f.kind {
-            ExprKind::Lambda { params, body } => self.lambda(params, body, if key { Some(KeyFrom::Index) } else { None }),
+            ExprKind::Lambda { params, body } => self.lambda(params, body, keyfrom),
             ExprKind::Ident(n) if !self.is_local(n) => {
                 if let Some(info) = self.fns.get(n).or(self.imported_fns.get(n)).cloned() {
                     if info.kind == FnKind::Component && info.design_component.is_none() {
@@ -820,8 +891,14 @@ impl<'a> Emitter<'a> {
             }
             ("map", 2) | ("filter", 2) | ("forEach", 2) | ("any", 2) | ("all", 2) | ("find", 2) | ("flat_map", 2) => {
                 let xs = a(self, 0);
-                let key = name == "map" && self.callback_builds_element(&args[1]);
-                let cb = self.callback(&args[1], 1, key);
+                let key = (name == "map" || name == "flat_map") && self.callback_builds_element(&args[1]);
+                let over_range = matches!(&args[0].kind, ExprKind::Call { function, .. } if matches!(&function.kind, ExprKind::Ident(n) if n == "range"));
+                let keyfrom = match (key, over_range && name == "map") {
+                    (false, _) => None,
+                    (true, true) => Some(KeyFrom::Param),
+                    (true, false) => Some(KeyFrom::Index),
+                };
+                let cb = self.callback_keyed(&args[1], 1, keyfrom);
                 let m = match name {
                     "any" => "some",
                     "all" => "every",
@@ -863,7 +940,15 @@ impl<'a> Emitter<'a> {
             ("entries", 1) if !self.uses_maps => format!("Object.entries({})", self.expr(&args[0])),
             ("append" | "push", 2) => {
                 let xs = self.ex(&args[0], P_UNARY);
-                format!("[...{xs}, {}]", self.expr(&args[1]))
+                // An element appended to a list is keyed by its position,
+                // as Petal keys the state of unkeyed items.
+                let item = if self.builds_element(&args[1]) {
+                    let k = format!("{}.length", self.ex(&args[0], P_PRIMARY));
+                    self.keyed(&args[1], Some(&k))
+                } else {
+                    self.expr(&args[1])
+                };
+                format!("[...{xs}, {item}]")
             }
             ("concat", _) if args.iter().all(|x| !matches!(x.kind, ExprKind::Literal(Literal::String(_)) | ExprKind::StringInterp { .. })) && args.len() >= 2 && args.iter().any(|x| matches!(x.kind, ExprKind::List(_))) => {
                 let xs: Vec<String> = args.iter().map(|x| format!("...{}", self.ex(x, P_UNARY))).collect();
@@ -878,8 +963,13 @@ impl<'a> Emitter<'a> {
 
     fn callback_builds_element(&self, f: &Expr) -> bool {
         match &f.kind {
-            ExprKind::Lambda { body, .. } => crate::analysis::tail_expr(body).is_some_and(|t| self.builds_element(t)),
-            ExprKind::Ident(n) => self.fns.get(n).or(self.imported_fns.get(n)).is_some_and(|f| f.kind == FnKind::Component),
+            ExprKind::Lambda { body, .. } => crate::analysis::tail_expr(body).is_some_and(|t| {
+                self.builds_element(t) || matches!(&t.kind, ExprKind::List(xs) if xs.iter().any(|x| self.builds_element(x)))
+            }),
+            ExprKind::Ident(n) => {
+                self.scopes.iter().any(|s| s.elem_locals.contains(n))
+                    || !self.is_local(n) && self.fns.get(n).or(self.imported_fns.get(n)).is_some_and(|f| f.kind == FnKind::Component)
+            }
             _ => false,
         }
     }
@@ -920,9 +1010,15 @@ impl<'a> Emitter<'a> {
         let f = self.design_rt("component");
         let a = split_args(args, arg_names);
         let comp = a.positional.get(1).and_then(|e| match &e.kind {
-            ExprKind::Ident(n) => self.fns.get(n).filter(|i| i.design_component.is_some()).map(|i| i.js.clone()),
+            ExprKind::Ident(n) => self.fns.get(n).or(self.imported_fns.get(n)).cloned().filter(|i| i.design_component.is_some()).map(|i| {
+                self.use_imported(n);
+                i.js
+            }),
             _ => None,
         });
+        // A render function this module did not define: its defaults stay
+        // with the call (the component merges what `component` stored).
+        let local = a.positional.get(1).is_some_and(|e| matches!(&e.kind, ExprKind::Ident(n) if self.fns.contains_key(n)));
         let mut out = Vec::new();
         if let Some(n) = a.positional.first() {
             out.push(self.expr(n));
@@ -938,7 +1034,7 @@ impl<'a> Emitter<'a> {
         }
         let mut opts = Vec::new();
         for (k, e) in &a.named {
-            if k == "props" {
+            if k == "props" && local {
                 if let Some(c) = &comp {
                     let v = self.expr(e);
                     self.hoisted.push(format!("{c}.defaults = {v};"));
@@ -949,7 +1045,7 @@ impl<'a> Emitter<'a> {
             let v = self.expr(e);
             opts.push(format!("{}: {v}", js_key(k)));
         }
-        if let Some(c) = &comp {
+        if let Some(c) = comp.as_ref().filter(|_| local) {
             if !a.named.iter().any(|(k, _)| k == "props") {
                 self.hoisted.push(format!("{c}.defaults = {{}};"));
             }
@@ -986,6 +1082,8 @@ pub enum KeyFrom<'e> {
     Expr(Option<&'e Expr>),
     /// A `map` callback: the index.
     Index,
+    /// A `map` over `range(…)`: the number itself.
+    Param,
 }
 
 pub fn args_text(f: &str, args: &[String]) -> String {

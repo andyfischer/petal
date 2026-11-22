@@ -158,7 +158,26 @@ pub fn transpile(source: &str, opts: &Options) -> Result<Output, Error> {
     runtime.sort();
     runtime.dedup();
     let mut interface = std::mem::take(&mut e.exports);
-    interface.design_components = e.design_components.iter().filter(|(_, js)| interface.fns.values().any(|f| &f.js == *js)).map(|(a, b)| (a.clone(), b.clone())).collect();
+    // `pub import m` re-exports what m exports.
+    for s in &stmts {
+        if let petal::ast::StmtKind::Import(d) = &s.kind {
+            if d.exported {
+                if let Some(m) = opts.modules.get(&d.module) {
+                    for (k, v) in &m.fns {
+                        interface.fns.entry(k.clone()).or_insert_with(|| v.clone());
+                    }
+                    for (k, v) in &m.values {
+                        interface.values.entry(k.clone()).or_insert_with(|| v.clone());
+                    }
+                    for (k, v) in &m.design_components {
+                        interface.design_components.entry(k.clone()).or_insert_with(|| v.clone());
+                    }
+                }
+            }
+        }
+    }
+    let own: HashMap<String, String> = e.design_components.iter().filter(|(_, js)| interface.fns.values().any(|f| &f.js == *js)).map(|(a, b)| (a.clone(), b.clone())).collect();
+    interface.design_components = own;
     let mut warnings = e.warnings;
     warnings.sort_by_key(|w| (w.line, w.column));
     Ok(Output {
@@ -186,13 +205,155 @@ pub struct ProjectFile {
 /// import, dependencies first, each to its own `.jsx` beside the others.
 /// An entry that is a folder means its `main.ptl` or the one `.ptl` that
 /// calls `design(`.
+///
+/// A package import (`import design_ios`) is followed too when the
+/// nearest `petal.toml` names it as a path dependency: its modules are
+/// written under `packages/<name>/`. The packages a runtime file stands for
+/// (`design`, `web`) and Petal's bundled ones are not.
 pub fn transpile_project(entry: &Path, opts: &Options) -> Result<Vec<ProjectFile>, Error> {
     let entry = resolve_entry(entry)?;
     let root = entry.parent().unwrap_or(Path::new(".")).to_path_buf();
-    let mut done: HashMap<PathBuf, ModuleInterface> = HashMap::new();
-    let mut out = Vec::new();
-    visit(&entry, &root, opts, &mut done, &mut out, &mut Vec::new())?;
-    Ok(out)
+    let mut p = Project { root, opts: opts.clone(), done: HashMap::new(), out: Vec::new(), stack: Vec::new(), packages: Vec::new() };
+    p.visit(&entry)?;
+    Ok(p.out)
+}
+
+/// Packages that are not transpiled: a runtime file stands for them, or
+/// they are Petal's own (bundled, or drawn by a host).
+const NOT_FOLLOWED: &[&str] = &[
+    "design", "web", "ui", "bloom", "color", "vec2", "noise", "json", "io", "core", "std", "glsl",
+    "regex", "text_layout", "query", "ptl_dataflow", "garden_config",
+];
+
+struct Project {
+    root: PathBuf,
+    opts: Options,
+    done: HashMap<PathBuf, ModuleInterface>,
+    out: Vec<ProjectFile>,
+    stack: Vec<PathBuf>,
+    /// (package folder, package name) of the packages followed.
+    packages: Vec<(PathBuf, String)>,
+}
+
+impl Project {
+    /// Where a module's output goes, relative to the output folder.
+    fn rel_out(&self, p: &Path) -> PathBuf {
+        let canon = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+        let root = self.root.canonicalize().unwrap_or_else(|_| self.root.clone());
+        if let Ok(rel) = canon.strip_prefix(&root) {
+            return rel.with_extension("jsx");
+        }
+        for (dir, name) in &self.packages {
+            let dir = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+            if let Ok(rel) = canon.strip_prefix(&dir) {
+                return Path::new("packages").join(name).join(rel).with_extension("jsx");
+            }
+        }
+        Path::new("external").join(p.file_name().unwrap_or_default()).with_extension("jsx")
+    }
+
+    /// The root module of a package import (`design_ios`, `bloom/menu`)
+    /// that the nearest petal.toml lists as a path dependency.
+    fn package_module(&mut self, from_dir: &Path, module: &str) -> Option<PathBuf> {
+        let mut segs = module.split('/');
+        let name = segs.next()?;
+        if NOT_FOLLOWED.contains(&name) {
+            return None;
+        }
+        let rest: Vec<&str> = segs.collect();
+        let dir = find_dependency(from_dir, name)?;
+        let file = if rest.is_empty() { format!("{name}.ptl") } else { format!("{}.ptl", rest.join("/")) };
+        let path = [dir.join(&file), dir.join("src").join(&file)].into_iter().find(|p| p.exists())?;
+        if !self.packages.iter().any(|(d, _)| d == &dir) {
+            self.packages.push((dir, name.to_string()));
+        }
+        Some(path)
+    }
+
+    fn visit(&mut self, file: &Path) -> Result<ModuleInterface, Error> {
+        let canon = file.canonicalize().map_err(|e| Error(format!("{}: {e}", file.display())))?;
+        if let Some(i) = self.done.get(&canon) {
+            return Ok(i.clone());
+        }
+        if self.stack.contains(&canon) {
+            return Err(Error(format!("{}: import cycle", file.display())));
+        }
+        self.stack.push(canon.clone());
+        let src = std::fs::read_to_string(file).map_err(|e| Error(format!("{}: {e}", file.display())))?;
+        let stmts = parse(&src).map_err(|e| Error(format!("{}: {e}", file.display())))?;
+        let dir = file.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let mut modules = HashMap::new();
+        for s in &stmts {
+            let petal::ast::StmtKind::Import(d) = &s.kind else { continue };
+            let target = if d.module.starts_with("./") || d.module.starts_with("../") {
+                let mut p = dir.join(&d.module);
+                if p.is_dir() {
+                    p = p.join(format!("{}.ptl", petal::ast::module_local_name(&d.module)));
+                } else {
+                    p.set_extension("ptl");
+                }
+                Some(p)
+            } else {
+                self.package_module(&dir, &d.module)
+            };
+            let Some(p) = target else { continue };
+            let mut iface = self.visit(&p)?;
+            iface.path = relative_import(&self.rel_out(file), &self.rel_out(&p));
+            modules.insert(d.module.clone(), iface);
+        }
+        let mut o = self.opts.clone();
+        o.file_name = file.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        o.modules = modules;
+        let rel = self.rel_out(file);
+        let depth = rel.components().count().saturating_sub(1);
+        if depth > 0 && o.runtime_dir == "./" {
+            o.runtime_dir = "../".repeat(depth);
+        }
+        let output = transpile(&src, &o).map_err(|e| Error(format!("{}: {e}", file.display())))?;
+        let iface = output.interface.clone();
+        self.out.push(ProjectFile { source: file.to_path_buf(), out: rel, output });
+        self.stack.pop();
+        self.done.insert(canon, iface.clone());
+        Ok(iface)
+    }
+}
+
+/// The folder of a path dependency `name` in the nearest petal.toml above
+/// `dir`.
+fn find_dependency(dir: &Path, name: &str) -> Option<PathBuf> {
+    let mut d = Some(dir);
+    while let Some(cur) = d {
+        let manifest = cur.join("petal.toml");
+        if let Ok(text) = std::fs::read_to_string(&manifest) {
+            let mut in_deps = false;
+            for line in text.lines() {
+                let t = line.trim();
+                if t.starts_with('[') {
+                    in_deps = t == "[dependencies]";
+                    continue;
+                }
+                if !in_deps {
+                    continue;
+                }
+                let Some((k, v)) = t.split_once('=') else { continue };
+                if k.trim().trim_matches('"') != name {
+                    continue;
+                }
+                let v = v.trim();
+                if let Some(i) = v.find("path") {
+                    let after = &v[i + 4..];
+                    let q: Vec<&str> = after.split('"').collect();
+                    if q.len() >= 2 {
+                        return Some(cur.join(q[1]));
+                    }
+                }
+            }
+            // The nearest manifest decides, as Petal's loader does.
+            return None;
+        }
+        d = cur.parent();
+    }
+    None
 }
 
 fn resolve_entry(entry: &Path) -> Result<PathBuf, Error> {
@@ -215,66 +376,6 @@ fn resolve_entry(entry: &Path) -> Result<PathBuf, Error> {
     }
     found.sort();
     found.into_iter().next().ok_or_else(|| Error(format!("{}: no main.ptl, and no .ptl that calls design(", entry.display())))
-}
-
-fn visit(
-    file: &Path,
-    root: &Path,
-    opts: &Options,
-    done: &mut HashMap<PathBuf, ModuleInterface>,
-    out: &mut Vec<ProjectFile>,
-    stack: &mut Vec<PathBuf>,
-) -> Result<ModuleInterface, Error> {
-    let canon = file.canonicalize().map_err(|e| Error(format!("{}: {e}", file.display())))?;
-    if let Some(i) = done.get(&canon) {
-        return Ok(i.clone());
-    }
-    if stack.contains(&canon) {
-        return Err(Error(format!("{}: import cycle", file.display())));
-    }
-    stack.push(canon.clone());
-    let src = std::fs::read_to_string(file).map_err(|e| Error(format!("{}: {e}", file.display())))?;
-    let stmts = parse(&src).map_err(|e| Error(format!("{}: {e}", file.display())))?;
-    let dir = file.parent().unwrap_or(Path::new("."));
-    let rel_out = |p: &Path| -> PathBuf {
-        let rel = p.strip_prefix(root).unwrap_or(p).with_extension("jsx");
-        rel
-    };
-    let mut modules = HashMap::new();
-    for s in &stmts {
-        if let petal::ast::StmtKind::Import(d) = &s.kind {
-            if d.module.starts_with("./") || d.module.starts_with("../") {
-                let mut p = dir.join(&d.module);
-                if p.is_dir() {
-                    p = p.join(format!("{}.ptl", petal::ast::module_local_name(&d.module)));
-                } else {
-                    p.set_extension("ptl");
-                }
-                let mut iface = visit(&p, root, opts, done, out, stack)?;
-                // The import path from this file's output to that one's.
-                let from = rel_out(file);
-                let to = rel_out(&p);
-                iface.path = relative_import(&from, &to);
-                modules.insert(d.module.clone(), iface);
-            }
-        }
-    }
-    let mut o = opts.clone();
-    o.file_name = file.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-    o.modules = modules;
-    let depth = rel_out(file).components().count().saturating_sub(1);
-    if depth > 0 && o.runtime_dir == "./" {
-        o.runtime_dir = "../".repeat(depth);
-    }
-    if out.is_empty() && stack.len() > 1 {
-        // A dependency of the entry: no default component of its own.
-    }
-    let output = transpile(&src, &o).map_err(|e| Error(format!("{}: {e}", file.display())))?;
-    let iface = output.interface.clone();
-    out.push(ProjectFile { source: file.to_path_buf(), out: rel_out(file), output });
-    stack.pop();
-    done.insert(canon, iface.clone());
-    Ok(iface)
 }
 
 fn relative_import(from: &Path, to: &Path) -> String {

@@ -227,11 +227,13 @@ export function platform_corners(cx) { return per_platform(cx, { ios: "continuou
 const ALIGN = { leading: "flex-start", start: "flex-start", left: "flex-start", top: "flex-start", center: "center", trailing: "flex-end", end: "flex-end", right: "flex-end", bottom: "flex-end", stretch: "stretch" };
 const JUSTIFY = { start: "flex-start", center: "center", end: "flex-end", space_between: "space-between", space_around: "space-around" };
 
-function padding(p) {
+function padding(p, cx) {
+  p = resolve(p, cx);
   if (p == null) return undefined;
   if (typeof p === "number") return px(p);
-  if (p.length === 2) return `${px(p[0])} ${px(p[1])}`;
-  return p.map(px).join(" ");
+  if (!Array.isArray(p)) return undefined;
+  const v = p.map((x) => px(resolve(x, cx)));
+  return v.length === 2 ? `${v[0]} ${v[1]}` : v.join(" ");
 }
 
 /** The node's own box: size, position in its parent, paint, effects. */
@@ -345,15 +347,16 @@ function Box({ tag, props, parent: kind, children, extra = {}, text = false }) {
 
 function stack(axis) {
   return function StackNode(props) {
+    const cx = useCx();
     const extra = {
       display: "flex",
       flexDirection: axis === "h" ? (props.reverse ? "row-reverse" : "row") : props.reverse ? "column-reverse" : "column",
-      gap: px(props.gap ?? 0),
-      padding: padding(props.padding),
+      gap: px(resolve(props.gap, cx) ?? 0),
+      padding: padding(props.padding, cx),
       alignItems: ALIGN[props.align ?? "center"] ?? "center",
       justifyContent: JUSTIFY[props.justify ?? "start"] ?? "flex-start",
     };
-    if (props.wrap) Object.assign(extra, { flexWrap: "wrap", alignContent: "flex-start", rowGap: px(props.row_gap ?? props.gap ?? 0) });
+    if (props.wrap) Object.assign(extra, { flexWrap: "wrap", alignContent: "flex-start", rowGap: px(resolve(props.row_gap ?? props.gap, cx) ?? 0) });
     return <Box tag={axis === "h" ? "hstack" : "vstack"} props={props} parent={{ kind: "flex", axis }} extra={extra}>{props.children}</Box>;
   };
 }
@@ -361,10 +364,11 @@ export const VStack = stack("v");
 export const HStack = stack("h");
 
 export function ZStack(props) {
+  const cx = useCx();
   const [v, h] = zAlign(props.align ?? "center");
   const parent = { kind: "overlay", width: props.design_width ?? props.width, height: props.design_height ?? props.height };
   return (
-    <Box tag="zstack" props={props} parent={parent} extra={{ display: "grid", gridTemplate: "auto / auto", justifyItems: h, alignItems: v, padding: padding(props.padding) }}>
+    <Box tag="zstack" props={props} parent={parent} extra={{ display: "grid", gridTemplate: "auto / auto", justifyItems: h, alignItems: v, padding: padding(props.padding, cx) }}>
       {props.children}
     </Box>
   );
@@ -382,10 +386,11 @@ function zAlign(a) {
 }
 
 export function Grid(props) {
+  const cx = useCx();
   const track = props.min != null ? `minmax(${px(props.min)}, 1fr)` : "minmax(0, 1fr)";
   const cols = props.columns != null ? `repeat(${props.columns}, ${track})` : props.min != null ? `repeat(auto-fill, ${track})` : `repeat(auto-fill, minmax(340px, 1fr))`;
   return (
-    <Box tag="grid" props={props} parent={{ kind: "grid" }} extra={{ display: "grid", gridTemplateColumns: cols, gap: px(props.gap ?? 18), rowGap: px(props.row_gap ?? props.gap ?? 18), padding: padding(props.padding) }}>
+    <Box tag="grid" props={props} parent={{ kind: "grid" }} extra={{ display: "grid", gridTemplateColumns: cols, gap: px(resolve(props.gap, cx) ?? 18), rowGap: px(resolve(props.row_gap ?? props.gap, cx) ?? 18), padding: padding(props.padding, cx) }}>
       {props.children}
     </Box>
   );

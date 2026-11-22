@@ -235,7 +235,7 @@ function padding(p) {
 }
 
 /** The node's own box: size, position in its parent, paint, effects. */
-function boxStyle(props, parent, cx, { text = false } = {}) {
+function boxStyle(props, parent, cx, { text = false, stackLike = false } = {}) {
   const s = { position: "relative", boxSizing: "border-box" };
   const w = resolve(props.width, cx), h = resolve(props.height, cx);
   const fixed = (d) => (typeof d === "number" ? px(d) : typeof d === "string" && d.endsWith("%") ? d : undefined);
@@ -252,17 +252,25 @@ function boxStyle(props, parent, cx, { text = false } = {}) {
     s.top = px(resolve(props.y, cx) ?? 0);
     if (fillW) s.right = 0;
     if (fillH) s.bottom = 0;
+    // Constraints keep a child to its parent's edges, measured in the
+    // parent's designed size (before an instance resized it).
     const c = props.constraints;
-    if (c && parent.width != null && parent.height != null) {
-      if (c.h === "right" || c.h === "left_right") {
-        s.right = px(parent.width - (props.x ?? 0) - (props.width ?? 0));
-        if (c.h === "right") delete s.left; else delete s.width;
-      }
-      if (c.v === "bottom" || c.v === "top_bottom") {
-        s.bottom = px(parent.height - (props.y ?? 0) - (props.height ?? 0));
-        if (c.v === "bottom") delete s.top; else delete s.height;
-      }
+    const num = (v) => (typeof v === "number" ? v : null);
+    const pw = num(parent.width), ph = num(parent.height);
+    if (c && pw != null && (c.h === "right" || c.h === "left_right")) {
+      s.right = px(pw - (props.x ?? 0) - (num(props.width) ?? 0));
+      if (c.h === "right") delete s.left; else delete s.width;
     }
+    if (c && ph != null && (c.v === "bottom" || c.v === "top_bottom")) {
+      s.bottom = px(ph - (props.y ?? 0) - (num(props.height) ?? 0));
+      if (c.v === "bottom") delete s.top; else delete s.height;
+    }
+    if (c && pw != null && c.h === "center") { s.left = `calc(50% + ${px((props.x ?? 0) + (num(props.width) ?? 0) / 2 - pw / 2)})`; s.transform = "translateX(-50%)"; }
+  } else if (parent.kind === "flow") {
+    // A scrolling frame's content: in flow, so the frame grows with it.
+    if (fillW) s.width = "100%";
+    if (props.x) s.marginLeft = px(props.x);
+    if (props.y) s.marginTop = px(props.y);
   } else if (parent.kind === "flex") {
     const [main, cross] = parent.axis === "h" ? [fillW, fillH] : [fillH, fillW];
     if (main) s.flex = "1 1 0px";
@@ -279,7 +287,9 @@ function boxStyle(props, parent, cx, { text = false } = {}) {
     if (fillW) s.width = "100%";
     if (fillH) s.height = "100%";
   }
-  if (props.align && parent.kind === "flex") s.alignSelf = ALIGN[props.align] ?? props.align;
+  // `align` is the node's own alignment in its stack, except on a stack
+  // (where it aligns the children) and on text (where it aligns the lines).
+  if (props.align && parent.kind === "flex" && !stackLike) s.alignSelf = ALIGN[props.align] ?? props.align;
   if (!text) Object.assign(s, fillStyle(props.fill, cx));
   const r = resolve(props.radius, cx);
   if (Array.isArray(r)) s.borderRadius = r.map(px).join(" ");
@@ -322,11 +332,13 @@ function dataAttrs(props, tag) {
   return { "data-petal": tag, "data-id": props.id };
 }
 
+const STACKS = new Set(["vstack", "hstack", "zstack", "grid"]);
+
 function Box({ tag, props, parent: kind, children, extra = {}, text = false }) {
   const cx = useCx();
   const parent = useContext(ParentContext);
   if (!shown(props, cx)) return null;
-  const style = { ...boxStyle(props, parent, cx, { text }), ...extra };
+  const style = { ...boxStyle(props, parent, cx, { text, stackLike: STACKS.has(tag) }), ...extra };
   const inner = kind ? <ParentContext.Provider value={kind}>{children}</ParentContext.Provider> : children;
   return <div style={style} {...dataAttrs(props, tag)}>{inner}</div>;
 }
@@ -350,7 +362,7 @@ export const HStack = stack("h");
 
 export function ZStack(props) {
   const [v, h] = zAlign(props.align ?? "center");
-  const parent = { kind: "overlay", width: props.width, height: props.height };
+  const parent = { kind: "overlay", width: props.design_width ?? props.width, height: props.design_height ?? props.height };
   return (
     <Box tag="zstack" props={props} parent={parent} extra={{ display: "grid", gridTemplate: "auto / auto", justifyItems: h, alignItems: v, padding: padding(props.padding) }}>
       {props.children}
@@ -530,8 +542,8 @@ export function Frame(props) {
       <div style={style} data-petal="frame" data-id={props.id}>
         <ParentContext.Provider value={{ kind: "absolute", width: w, height: h }}>
           {kids.filter(ignoring)}
-          <div style={{ position: "absolute", left: px(safe.left), top: px(safe.top), right: px(safe.right), bottom: props.scroll ? undefined : px(safe.bottom) }}>
-            <ParentContext.Provider value={{ kind: "absolute", width: w - safe.left - safe.right, height: h - safe.top - safe.bottom }}>
+          <div style={props.scroll ? { position: "relative", padding: `${px(safe.top)} ${px(safe.right)} ${px(safe.bottom)} ${px(safe.left)}` } : { position: "absolute", left: px(safe.left), top: px(safe.top), right: px(safe.right), bottom: px(safe.bottom) }}>
+            <ParentContext.Provider value={{ kind: props.scroll ? "flow" : "absolute", width: w - safe.left - safe.right, height: h - safe.top - safe.bottom }}>
               {kids.filter((k) => !ignoring(k))}
             </ParentContext.Provider>
           </div>
@@ -653,6 +665,10 @@ export function instance_root(props, el) {
   if (!isValidElement(el)) return el ?? null;
   const own = {};
   for (const k of INSTANCE_ATTRS) if (props[k] !== undefined) own[k] = props[k];
+  // The size the component was drawn at, which its children's constraints
+  // are measured in.
+  if (own.width !== undefined && typeof el.props.width === "number") own.design_width = el.props.width;
+  if (own.height !== undefined && typeof el.props.height === "number") own.design_height = el.props.height;
   let out = Object.keys(own).length ? cloneElement(el, own) : el;
   if (props.overrides) out = applyOverrides(out, normalizeOverrides(props.overrides));
   return out;

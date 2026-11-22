@@ -428,6 +428,15 @@ impl<'a> Emitter<'a> {
     }
 
     fn for_expr(&mut self, var: &str, iter: &Expr, key: Option<&Expr>, body: &[Stmt], flatten: bool) -> String {
+        if crate::emit::breaks_or_skips(body) {
+            // `continue` skips an element and `break` ends the list: a loop.
+            self.push_scope(Kind::Lambda);
+            let mut w = W::default();
+            let out = self.collect_loop(&mut w, var, iter, body, flatten);
+            w.line(format!("return {out};"));
+            self.pop_scope();
+            return format!("(() => {{\n{}}})()", indent_lines(&w.buf));
+        }
         let it = self.ex(iter, P_PRIMARY);
         let method = if flatten { "flatMap" } else { "map" };
         let param = Param::plain(var.to_string());
@@ -538,6 +547,13 @@ impl<'a> Emitter<'a> {
                 }
                 if let Some(s) = self.dialect_call(name, args, arg_names, span) {
                     return (s, P_PRIMARY);
+                }
+                if self.overloads.contains_key(name) {
+                    let a = split_args(args, arg_names);
+                    let n = a.positional.len() + a.named.len();
+                    if let (Some(info), None) = (self.overload_for(name, n), a.spread) {
+                        return (self.call_text(&info.js, Some(&info.params), args, arg_names), P_PRIMARY);
+                    }
                 }
                 if let Some(info) = self.fns.get(name).or(self.imported_fns.get(name)).cloned() {
                     if let Some((path, js)) = self.imported.get(name).cloned() {

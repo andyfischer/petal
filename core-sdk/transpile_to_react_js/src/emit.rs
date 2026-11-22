@@ -137,6 +137,9 @@ pub enum Tail<'a> {
     /// The value is returned, wrapped by a call when given
     /// (`instance_root(props, …)`).
     Return(Option<&'a str>),
+    /// The value is pushed onto a list (a collecting loop's iteration);
+    /// `true` spreads it (a flattened multi-generator loop).
+    Push(&'a str, bool),
 }
 
 pub struct Emitter<'a> {
@@ -186,6 +189,22 @@ pub struct Emitter<'a> {
     pub lines: Vec<&'a str>,
     /// Components lifted out of a module-level expression (frames).
     pub lifted_frames: Vec<(String, String)>,
+    /// A function defined once per arity: each definition (by span) with
+    /// the argument counts it takes and its own JS name.
+    pub overloads: HashMap<String, Vec<Overload>>,
+    /// JS names the program binds: a runtime import of one of them is
+    /// aliased (`cell as petalCell`).
+    pub bound_js: HashSet<String>,
+    pub rt_alias: HashMap<String, String>,
+    pub emitted_methods: HashSet<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Overload {
+    pub span: (u32, u32),
+    pub min: usize,
+    pub max: usize,
+    pub info: FnInfo,
 }
 
 impl<'a> Emitter<'a> {
@@ -231,6 +250,10 @@ impl<'a> Emitter<'a> {
             comment_lines: HashSet::new(),
             lines: src.lines().collect(),
             lifted_frames: Vec::new(),
+            overloads: HashMap::new(),
+            bound_js: HashSet::new(),
+            rt_alias: HashMap::new(),
+            emitted_methods: HashSet::new(),
         }
     }
 
@@ -343,6 +366,15 @@ impl<'a> Emitter<'a> {
     }
 
     pub fn rt(&mut self, name: &str) -> String {
+        if self.bound_js.contains(name) || self.names.get(name).is_some_and(|j| j == name) && self.module_names.contains(name) {
+            let alias = self.rt_alias.entry(name.to_string()).or_insert_with(|| format!("petal{}", pascal(name))).clone();
+            self.rt_raw(name);
+            return alias;
+        }
+        self.rt_raw(name)
+    }
+
+    fn rt_raw(&mut self, name: &str) -> String {
         if self.runtime.contains_key(name) {
             self.used_runtime.insert(name.to_string());
         } else if self.react_rt.contains_key(name) {
@@ -355,6 +387,9 @@ impl<'a> Emitter<'a> {
 
     pub fn design_rt(&mut self, name: &str) -> String {
         self.used_dialect.insert(name.to_string());
+        if self.bound_js.contains(name) {
+            return self.rt_alias.entry(name.to_string()).or_insert_with(|| format!("petal{}", pascal(name))).clone();
+        }
         name.to_string()
     }
 
@@ -383,6 +418,17 @@ impl<'a> Emitter<'a> {
             self.default_export(&mut tail, &default_name, &stmts[i]);
         }
 
+        // Names nothing defines: stubs that throw when called, written
+        // before any code that could call them.
+        let mut stubs = String::new();
+        if !self.stubs.is_empty() {
+            let u = self.rt("unconverted");
+            stubs.push_str("// Not converted: calling one of these throws, naming it. See the transpile warnings.\n");
+            for (petal, js) in &self.stubs {
+                stubs.push_str(&format!("const {js} = {u}({});\n", js_string(petal)));
+            }
+            stubs.push('\n');
+        }
         let mut out = String::new();
         out.push_str(&format!(
             "// Generated from {} by transpile_to_react_js ({} dialect).\n// Regenerate after changing the Petal source, or take this file over by hand.\n",
@@ -391,26 +437,11 @@ impl<'a> Emitter<'a> {
         ));
         out.push_str(&self.import_lines());
         out.push('\n');
+        out.push_str(&stubs);
         out.push_str(&body.buf);
         if !tail.buf.is_empty() {
             out.push('\n');
             out.push_str(&tail.buf);
-        }
-        if !self.stubs.is_empty() {
-            out.push_str("\n// Not converted: calling one of these throws, naming it. See the transpile warnings.\n");
-            let stubs: Vec<(String, String)> = self.stubs.iter().map(|(a, b)| (a.clone(), b.clone())).collect();
-            for (petal, js) in stubs {
-                let u = self.rt("unconverted");
-                out.push_str(&format!("const {js} = {u}({});\n", js_string(&petal)));
-            }
-            // The stub lines use `unconverted`, so the import list is
-            // rebuilt to include it.
-            let imports = self.import_lines();
-            let header_end = out.find("\n\n").unwrap_or(0);
-            let header = out[..header_end + 1].to_string();
-            let first = header.lines().take(2).collect::<Vec<_>>().join("\n");
-            let rest_start = out.find("\n\n").map(|i| i + 2).unwrap_or(0);
-            out = format!("{first}\n{imports}\n{}", &out[rest_start..]);
         }
         while out.contains("\n\n\n") {
             out = out.replace("\n\n\n", "\n\n");
@@ -430,6 +461,17 @@ impl<'a> Emitter<'a> {
         self.names.fresh(&base)
     }
 
+    fn import_list(&self, names: &BTreeSet<String>) -> String {
+        names
+            .iter()
+            .map(|n| match self.rt_alias.get(n) {
+                Some(a) => format!("{n} as {a}"),
+                None => n.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     fn import_lines(&self) -> String {
         let mut out = String::new();
         if !self.used_react.is_empty() {
@@ -442,20 +484,20 @@ impl<'a> Emitter<'a> {
         if !self.used_runtime.is_empty() {
             out.push_str(&format!(
                 "import {{ {} }} from \"{dir}petal-runtime.js\";\n",
-                self.used_runtime.iter().cloned().collect::<Vec<_>>().join(", ")
+                self.import_list(&self.used_runtime)
             ));
         }
         if !self.used_react_rt.is_empty() {
             out.push_str(&format!(
                 "import {{ {} }} from \"{dir}petal-react.js\";\n",
-                self.used_react_rt.iter().cloned().collect::<Vec<_>>().join(", ")
+                self.import_list(&self.used_react_rt)
             ));
         }
         if !self.used_dialect.is_empty() {
             if let Some((file, _)) = crate::dialect::runtime_file(self.dialect) {
                 out.push_str(&format!(
                     "import {{ {} }} from \"{dir}{file}\";\n",
-                    self.used_dialect.iter().cloned().collect::<Vec<_>>().join(", ")
+                    self.import_list(&self.used_dialect)
                 ));
             }
         }
@@ -474,6 +516,7 @@ impl<'a> Emitter<'a> {
 
     /// Learn the module's declarations before writing any of it.
     fn collect(&mut self, stmts: &[Stmt]) {
+        self.bound_js = analysis::all_bound_names(stmts).iter().map(|n| names::camel(n)).collect();
         // The names the imports and runtimes bring are taken first, so a
         // component of the document never shadows one.
         for s in stmts {
@@ -492,9 +535,8 @@ impl<'a> Emitter<'a> {
         let mut seen: HashSet<String> = HashSet::new();
         for s in stmts {
             match &s.kind {
-                StmtKind::FnDecl { name, params, body, class: None, .. } => {
+                StmtKind::FnDecl { name, params, body, class: None, .. } if s.test.is_none() => {
                     if !seen.insert(name.clone()) {
-                        self.warn(s.span, "overload", format!("`{name}` is defined more than once (overloaded by arity); JS has one function per name, so only the first definition is kept"));
                         continue;
                     }
                     decls.push((name, params, body, s.span));
@@ -600,6 +642,43 @@ impl<'a> Emitter<'a> {
                 FnInfo { js, params: params.iter().map(|p| p.name.clone()).collect(), kind, design_component },
             );
         }
+        // Overloads: `area(r)` and `area(w, h)` are `area_1` and `area_2`,
+        // and `area` dispatches on the argument count.
+        let mut by_name: HashMap<String, Vec<&Stmt>> = HashMap::new();
+        for s in stmts {
+            if let StmtKind::FnDecl { name, class: None, .. } = &s.kind {
+                if s.test.is_none() {
+                    by_name.entry(name.clone()).or_default().push(s);
+                }
+            }
+        }
+        let mut overloaded: Vec<(String, Vec<&Stmt>)> = by_name.into_iter().filter(|(_, v)| v.len() > 1).collect();
+        overloaded.sort_by(|a, b| a.0.cmp(&b.0));
+        for (name, defs) in overloaded {
+            let mut list = Vec::new();
+            for d in defs {
+                let StmtKind::FnDecl { params, body, .. } = &d.kind else { continue };
+                let min = petal::ast::required_param_count(params);
+                let max = params.len();
+                let js = self.names.fresh(&format!("{}_{max}", names::camel(&name)));
+                let kind = if analysis::declares_state(body) { FnKind::Hook } else { FnKind::Plain };
+                if kind == FnKind::Hook {
+                    self.warn(d.span, "overload", format!("`{name}` is overloaded and keeps state; the overloads are plain functions, so its state does not persist"));
+                }
+                let info = FnInfo { js, params: params.iter().map(|p| p.name.clone()).collect(), kind: FnKind::Plain, design_component: None };
+                list.push(Overload { span: (d.span.start.offset, d.span.end.offset), min, max, info });
+            }
+            if let Some(f) = self.fns.get_mut(&name) {
+                f.kind = FnKind::Plain;
+            }
+            self.overloads.insert(name, list);
+        }
+    }
+
+    /// The overload of `name` a call with `n` arguments reaches.
+    pub fn overload_for(&self, name: &str, n: usize) -> Option<FnInfo> {
+        let list = self.overloads.get(name)?;
+        list.iter().find(|o| (o.min..=o.max).contains(&n)).map(|o| o.info.clone())
     }
 
     fn import(&mut self, d: &petal::ast::ImportDecl, span: SourceSpan) {
@@ -1062,7 +1141,13 @@ impl<'a> Emitter<'a> {
             StmtKind::FnDecl { name, class, params, body, .. } => {
                 if let Some(c) = class {
                     let m = name.rsplit('.').next().unwrap_or(name);
-                    let js = format!("{c}_{}", names::camel(m));
+                    let mut js = format!("{c}_{}", names::camel(m));
+                    if !self.emitted_methods.insert(js.clone()) {
+                        self.warn(s.span, "overload", format!("`{name}` is overloaded by arity; a call reaches the first definition, and this one is `{js}_{}`", params.len()));
+                        js = format!("{js}_{}", params.len());
+                        self.plain_fn(w, &js, params, body, export);
+                        return;
+                    }
                     self.plain_fn(w, &js, params, body, export);
                     w.line(format!("{c}.{} = {js};", names::js_key(m)));
                     return;
@@ -1078,6 +1163,25 @@ impl<'a> Emitter<'a> {
                         self.warn(s.span, "nested-state", format!("`{name}` keeps state but is defined inside another function; React hooks need a top-level component"));
                     }
                     self.plain_fn(w, &js, params, body, "");
+                    return;
+                }
+                if let Some(list) = self.overloads.get(name).cloned() {
+                    let key = (s.span.start.offset, s.span.end.offset);
+                    let Some(o) = list.iter().find(|o| o.span == key) else { return };
+                    self.plain_fn(w, &o.info.js, params, body, "");
+                    if list.last().is_some_and(|l| l.span == key) {
+                        // The dispatcher, after the last definition.
+                        let js = self.fns.get(name).map(|f| f.js.clone()).unwrap_or_else(|| names::camel(name));
+                        w.open(format!("export function {js}(...args) {{"));
+                        for o in &list {
+                            w.line(format!("if (args.length >= {} && args.length <= {}) return {}(...args);", o.min, o.max, o.info.js));
+                        }
+                        w.line(format!("throw new Error(`{name}: no definition takes ${{args.length}} arguments`);"));
+                        w.close("}");
+                        let mut info = self.fns.get(name).cloned().unwrap();
+                        info.kind = FnKind::Plain;
+                        self.exports.fns.insert(name.clone(), info);
+                    }
                     return;
                 }
                 let Some(info) = self.fns.get(name).cloned() else { return };
@@ -1127,7 +1231,13 @@ impl<'a> Emitter<'a> {
             }
             StmtKind::For { var, iter, body, key, flatten } => {
                 if let Tail::Return(wrap) = tail {
-                    // A `for` in tail position collects a list.
+                    // A `for` in tail position collects a list. One that
+                    // breaks or skips is written as a loop.
+                    if breaks_or_skips(body) {
+                        let out = self.collect_loop(w, var, iter, body, *flatten);
+                        w.line(ret(wrap, &out));
+                        return;
+                    }
                     let e = Expr {
                         kind: ExprKind::For { var: var.clone(), iter: Box::new(iter.clone()), key: key.clone(), body: body.clone(), flatten: *flatten },
                         span: s.span,
@@ -1156,7 +1266,7 @@ impl<'a> Emitter<'a> {
             StmtKind::Return(e) => {
                 let wrap = match tail {
                     Tail::Return(w) => w,
-                    Tail::None => self.return_wrap(),
+                    Tail::None | Tail::Push(..) => self.return_wrap(),
                 };
                 match e {
                     Some(e) => {
@@ -1178,9 +1288,28 @@ impl<'a> Emitter<'a> {
     }
 
     fn tail_value(&mut self, w: &mut W, tail: Tail, js: &str) {
-        if let Tail::Return(wrap) = tail {
-            w.line(ret(wrap, js));
+        match tail {
+            Tail::Return(wrap) => w.line(ret(wrap, js)),
+            Tail::Push(out, spread) => w.line(push(out, spread, js)),
+            Tail::None => {}
         }
+    }
+
+    /// A collecting loop as statements: `const out = []; for (…) { …; out.push(v); }`.
+    /// Returns the list's name.
+    pub fn collect_loop(&mut self, w: &mut W, var: &str, iter: &Expr, body: &[Stmt], flatten: bool) -> String {
+        let it = self.expr(iter);
+        let out = self.names.fresh("collected");
+        w.line(format!("const {out} = [];"));
+        self.scope().nested += 1;
+        let mutable = analysis::assigned_names(body, false).contains(var);
+        let v = self.declare(var);
+        w.open(format!("for ({} {v} of {it}) {{", if mutable { "let" } else { "const" }));
+        let o: &'static str = Box::leak(out.clone().into_boxed_str());
+        self.block(w, body, Tail::Push(o, flatten));
+        w.close("}");
+        self.scope().nested -= 1;
+        out
     }
 
     /// Whether the current function rebinds `name` (so it is a `let`).
@@ -1262,6 +1391,10 @@ impl<'a> Emitter<'a> {
                 let v = self.expr(e);
                 w.line(ret(wrap, &v));
             }
+            (_, Tail::Push(out, spread)) => {
+                let v = self.expr(e);
+                w.line(push(out, spread, &v));
+            }
             (ExprKind::For { var, iter, body, .. }, Tail::None) => {
                 let it = self.expr(iter);
                 self.scope().nested += 1;
@@ -1282,7 +1415,8 @@ impl<'a> Emitter<'a> {
         let sj = self.expr(subject);
         let m = self.names.fresh("matched");
         let label = format!("{m}Arms");
-        if tail == Tail::None {
+        let returns = matches!(tail, Tail::Return(_));
+        if !returns {
             w.open(format!("{label}: {{"));
         }
         w.line(format!("const {m} = {sj};"));
@@ -1299,7 +1433,7 @@ impl<'a> Emitter<'a> {
                 w.open(format!("if ({gc}) {{"));
             }
             self.block(w, &arm.body, tail);
-            if tail == Tail::None {
+            if !returns {
                 w.line(format!("break {label};"));
             }
             if arm.guard.is_some() {
@@ -1308,7 +1442,7 @@ impl<'a> Emitter<'a> {
             w.close("}");
         }
         self.scope().nested -= 1;
-        if tail == Tail::None {
+        if !returns {
             w.close("}");
         } else {
             w.line(format!("throw new Error(`no match arm for ${{JSON.stringify({m})}}`);"));
@@ -1418,7 +1552,13 @@ impl<'a> Emitter<'a> {
         let lazy = !is_cheap(init);
         let v = self.expr(init);
         let us = self.react("useState");
-        let init_js = if lazy { format!("() => {v}") } else { v };
+        let init_js = if !lazy {
+            v
+        } else if v.starts_with('{') {
+            format!("() => ({v})")
+        } else {
+            format!("() => {}", paren_multiline(&v))
+        };
         let base = names::camel(name);
         let slot = match self.scope().states.get(name).cloned() {
             Some(slot) => slot,
@@ -1724,6 +1864,40 @@ pub fn mutable_names(body: &[Stmt]) -> HashSet<String> {
         }
     }
     out
+}
+
+pub fn push(out: &str, spread: bool, v: &str) -> String {
+    let v = paren_multiline(v);
+    if spread { format!("{out}.push(...{v});") } else { format!("{out}.push({v});") }
+}
+
+/// Whether a loop body has a `break` or `continue` of its own (not one of a
+/// nested loop's).
+pub fn breaks_or_skips(body: &[Stmt]) -> bool {
+    fn stmt(s: &Stmt) -> bool {
+        match &s.kind {
+            StmtKind::Break | StmtKind::Continue => true,
+            StmtKind::For { .. } | StmtKind::While { .. } | StmtKind::FnDecl { .. } => false,
+            StmtKind::Expr(e) => expr(e),
+            StmtKind::Let { value, .. } | StmtKind::Assign { value, .. } | StmtKind::Set { value, .. } => expr(value),
+            _ => false,
+        }
+    }
+    fn expr(e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::If { then_body, else_body, .. } => {
+                then_body.iter().any(stmt)
+                    || match else_body {
+                        Some(ElseBranch::Block(b)) => b.iter().any(stmt),
+                        Some(ElseBranch::ElseIf(e)) => expr(e),
+                        None => false,
+                    }
+            }
+            ExprKind::Match { arms, .. } => arms.iter().any(|a| a.body.iter().any(stmt)),
+            _ => false,
+        }
+    }
+    body.iter().any(stmt)
 }
 
 pub fn ret(wrap: Option<&str>, v: &str) -> String {

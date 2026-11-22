@@ -315,3 +315,45 @@ pub fn element_has_tag(children: &[JsxChild], tag: &str) -> bool {
         JsxChild::Text(_) => false,
     })
 }
+
+/// Every name the program binds anywhere: declarations, parameters, loop
+/// variables, pattern bindings.
+pub fn all_bound_names(stmts: &[Stmt]) -> HashSet<String> {
+    struct V(HashSet<String>);
+    impl ExprVisitor for V {
+        fn visit_expr(&mut self, e: &Expr) {
+            match &e.kind {
+                ExprKind::Lambda { params, .. } => self.0.extend(params.iter().map(|p| p.name.clone())),
+                ExprKind::For { var, .. } => {
+                    self.0.insert(var.clone());
+                }
+                ExprKind::Match { arms, .. } => {
+                    for a in arms {
+                        self.0.extend(a.pattern.bound_names());
+                    }
+                }
+                _ => {}
+            }
+            walk_expr(self, e);
+        }
+        fn visit_stmt(&mut self, s: &Stmt) {
+            match &s.kind {
+                StmtKind::Let { name, .. } | StmtKind::State { name, .. } | StmtKind::Memo { name, .. } | StmtKind::EnumDecl { name, .. } | StmtKind::ClassDecl { name, .. } => {
+                    self.0.insert(name.clone());
+                }
+                StmtKind::For { var, .. } => {
+                    self.0.insert(var.clone());
+                }
+                StmtKind::FnDecl { name, params, .. } => {
+                    self.0.insert(name.clone());
+                    self.0.extend(params.iter().map(|p| p.name.clone()));
+                }
+                _ => {}
+            }
+            walk_stmt(self, s);
+        }
+    }
+    let mut v = V(HashSet::new());
+    stmts.iter().for_each(|s| v.visit_stmt(s));
+    v.0
+}

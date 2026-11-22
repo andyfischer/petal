@@ -481,6 +481,11 @@ impl<'a> Emitter<'a> {
                 self.import(d, s.span);
             }
         }
+        let mut reserved: Vec<String> = self.dialect_rt.keys().filter(|k| k.starts_with(|c: char| c.is_ascii_uppercase())).cloned().collect();
+        reserved.extend(["useState", "useMemo", "useEffect"].map(String::from));
+        for r in reserved {
+            self.names.reserve(&r);
+        }
         let design = if self.dialect == Dialect::Design { analysis::design_components(stmts) } else { HashMap::new() };
         let mut elem_fns: HashSet<String> = HashSet::new();
         let mut decls: Vec<(&String, &Vec<Param>, &Vec<Stmt>, SourceSpan)> = Vec::new();
@@ -744,7 +749,13 @@ impl<'a> Emitter<'a> {
     }
 
     fn top_stmt(&mut self, w: &mut W, s: &Stmt) {
-        for c in self.comments_before(s.span.start.line) {
+        let comments = self.comments_before(s.span.start.line);
+        // A blank line above it in the source stays.
+        let first = s.span.start.line as usize - comments.len();
+        if first >= 2 && self.lines.get(first - 2).is_some_and(|l| l.trim().is_empty()) && !w.buf.is_empty() && !w.buf.ends_with("\n\n") {
+            w.line("");
+        }
+        for c in comments {
             w.line(c);
         }
         let mut inner = W { buf: String::new(), ind: w.ind };
@@ -1162,11 +1173,8 @@ impl<'a> Emitter<'a> {
 
     /// The wrapper a `return` in the current component uses.
     fn return_wrap(&self) -> Option<&'static str> {
-        if self.scopes.iter().rev().find(|s| !matches!(s.kind(), Kind::Lambda | Kind::Handler)).is_some_and(|s| s.props_js.is_some()) {
-            Some("instance_root")
-        } else {
-            None
-        }
+        let props = self.scopes.iter().rev().find(|s| !matches!(s.kind(), Kind::Lambda | Kind::Handler))?.props_js.clone()?;
+        Some(Box::leak(format!("instance_root({props}").into_boxed_str()))
     }
 
     fn tail_value(&mut self, w: &mut W, tail: Tail, js: &str) {
@@ -1596,7 +1604,9 @@ impl<'a> Emitter<'a> {
         if info.design_component.is_some() {
             // A design component: `render(p, cx)` with its props merged over
             // the defaults and `cx` from the frame it is drawn in.
-            let props = self.names.fresh("props");
+            // `props` unless the render function binds that name itself.
+            let own = analysis::declared_names(body);
+            let props = if own.contains("props") || params.iter().any(|p| p.name == "props") { "props_".to_string() } else { "props".to_string() };
             w.open(format!("export function {}({props}) {{", info.js));
             if let Some(p) = params.first() {
                 let pj = self.declare(&p.name);
@@ -1618,7 +1628,8 @@ impl<'a> Emitter<'a> {
             self.cell_hooks(w, body);
             self.captured_writes(w, body);
             self.design_rt("instance_root");
-            self.fn_body(w, body, Tail::Return(Some("instance_root")));
+            let wrap: &'static str = Box::leak(format!("instance_root({}", self.scope().props_js.clone().unwrap_or_default()).into_boxed_str());
+            self.fn_body(w, body, Tail::Return(Some(wrap)));
         } else {
             let mut ps = Vec::new();
             for p in params {
@@ -1718,7 +1729,7 @@ pub fn mutable_names(body: &[Stmt]) -> HashSet<String> {
 pub fn ret(wrap: Option<&str>, v: &str) -> String {
     let v = paren_multiline(v);
     match wrap {
-        Some(f) => format!("return {f}(props, {v});"),
+        Some(f) => format!("return {f}, {v});"),
         None => format!("return {v};"),
     }
 }

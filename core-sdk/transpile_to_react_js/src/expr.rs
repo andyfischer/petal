@@ -279,11 +279,11 @@ impl<'a> Emitter<'a> {
     // ── records, fields ─────────────────────────────────────────────────────
 
     fn record(&mut self, fields: &[RecordField], span: SourceSpan) -> String {
-        // A color literal (`:FF9500`) is parsed as its {r, g, b} record.
-        let text = self.span_text(span);
-        if text.starts_with(':') && text[1..].chars().all(|c| c.is_ascii_hexdigit()) {
-            let h = self.rt("hex");
-            return format!("{h}({})", js_string(&text[1..]));
+        // A color literal (`:FF9500`) is parsed as its {r, g, b} record,
+        // every field spanning the literal.
+        if let Some(h) = color_literal(fields, span) {
+            let f = self.rt("hex");
+            return format!("{f}({})", js_string(&h));
         }
         if fields.is_empty() {
             return "{}".into();
@@ -714,7 +714,7 @@ impl<'a> Emitter<'a> {
             let a = split_args(args, arg_names);
             let mut attrs = Vec::new();
             if let Some(k) = key {
-                attrs.push(format!("key={{{k}}}"));
+                attrs.push(key_attr(k));
             }
             if let Some(p) = a.positional.first() {
                 let v = self.ex(p, P_UNARY);
@@ -728,7 +728,7 @@ impl<'a> Emitter<'a> {
         let a = split_args(args, arg_names);
         let mut attrs = Vec::new();
         if let Some(k) = key {
-            attrs.push(format!("key={{{k}}}"));
+            attrs.push(key_attr(k));
         }
         for (i, e) in a.positional.iter().enumerate() {
             let Some(p) = info.params.get(i) else {
@@ -946,6 +946,25 @@ impl<'a> Emitter<'a> {
     }
 }
 
+/// The hex digits of a color literal's record: fields `r`, `g`, `b` (and
+/// `a`), int literals, each written at the record's own span.
+fn color_literal(fields: &[RecordField], span: SourceSpan) -> Option<String> {
+    let mut out = String::new();
+    let names = ["r", "g", "b", "a"];
+    if !(3..=4).contains(&fields.len()) {
+        return None;
+    }
+    for (i, f) in fields.iter().enumerate() {
+        let RecordField::Named(k, v) = f else { return None };
+        let ExprKind::Literal(Literal::Int(n)) = v.kind else { return None };
+        if k != names[i] || v.span.start.offset != span.start.offset || v.span.end.offset != span.end.offset || !(0..=255).contains(&n) {
+            return None;
+        }
+        out.push_str(&format!("{n:02X}"));
+    }
+    Some(out)
+}
+
 pub enum KeyFrom<'e> {
     /// A `for` loop: its `key` expression, or the index.
     Expr(Option<&'e Expr>),
@@ -956,9 +975,25 @@ pub enum KeyFrom<'e> {
 pub fn args_text(f: &str, args: &[String]) -> String {
     let one = format!("{f}({})", args.join(", "));
     if one.len() <= 100 && !one.contains('\n') {
-        one
+        return one;
+    }
+    // A last argument that is a record, list or function hugs the parens.
+    if let Some((last, rest)) = args.split_last() {
+        let short = rest.iter().all(|a| !a.contains('\n')) && rest.iter().map(|a| a.len() + 2).sum::<usize>() < 60;
+        if short && (last.starts_with('{') || last.starts_with('[') || last.contains("=> {") || last.starts_with('(')) && last.contains('\n') {
+            let head: String = rest.iter().map(|a| format!("{a}, ")).collect();
+            return format!("{f}({head}{last})");
+        }
+    }
+    format!("{f}(\n{})", args.iter().map(|a| format!("  {},\n", a.replace('\n', "\n  "))).collect::<String>())
+}
+
+/// `key="today"` for a string literal key, else `key={k}`.
+pub fn key_attr(k: &str) -> String {
+    if k.starts_with('"') && k.ends_with('"') && !k[1..k.len() - 1].contains(['"', '\\', '{', '}']) {
+        format!("key={k}")
     } else {
-        format!("{f}(\n{})", args.iter().map(|a| format!("  {},\n", a.replace('\n', "\n  "))).collect::<String>() + ")")
+        format!("key={{{k}}}")
     }
 }
 

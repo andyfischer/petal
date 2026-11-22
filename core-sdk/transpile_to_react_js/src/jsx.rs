@@ -90,7 +90,7 @@ impl<'a> Emitter<'a> {
     fn attrs(&mut self, props: &[(String, Expr)], host: bool, key: Option<String>) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(k) = key {
-            out.push(format!("key={{{k}}}"));
+            out.push(crate::expr::key_attr(&k));
         }
         for (k, v) in props {
             let name = if host { dialect::host_attr(self.dialect, k) } else { k.clone() };
@@ -178,7 +178,7 @@ impl<'a> Emitter<'a> {
         };
         let mut attrs = Vec::new();
         if let Some(k) = key {
-            attrs.push(format!("key={{{k}}}"));
+            attrs.push(crate::expr::key_attr(&k));
         }
         attrs.extend(extra);
         if let Some(s) = spread {

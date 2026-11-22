@@ -1,0 +1,41 @@
+# A design fixture for the end-to-end test: tokens, a component with a
+# slot, instances, a data list mapped to rows, and a frame.
+import design
+
+let tok = tokens({
+  color: {ink: modes(light: :0A0A0E, dark: :F2F2F7), card: :FFFFFF, surface: :F5F7FA},
+  radius: {card: per(ios: 14, android: 12, other: 10)},
+})
+
+let workouts = [
+  {title: "Morning run", detail: "5.2 km", tint: :FF9500},
+  {title: "Yoga", detail: "30 minutes", tint: :34C759},
+]
+
+fn card(p, cx)
+  <vstack width="fill" padding={14} gap={6} align="leading" radius={tok.radius.card} fill={tok.color.card}>
+    <text size={17} weight={600} color={tok.color.ink}>{p.title}</text>
+    <slot />
+  </vstack>
+
+fn workout_row(w)
+  <hstack width="fill" gap={12}>
+    <rect width={6} height={32} radius={3} fill={w.tint} />
+    <text size={15}>{w.detail}</text>
+  </hstack>
+
+let components = [component("card", card, props: {title: "Card"})]
+
+let pages = [
+  <page id="today" title="Today" layout="canvas">
+    <frame id="today_ios" device="iphone_16" fill={tok.color.surface}>
+      <vstack width="fill" padding={20} gap={12} align="stretch">
+        <instance of="card" title="This week">
+          {map(workouts, workout_row)}
+        </instance>
+      </vstack>
+    </frame>
+  </page>,
+]
+
+design({name: "Cards", platforms: ["ios"], tokens: tok}, components, pages)

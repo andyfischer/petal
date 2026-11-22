@@ -11,6 +11,7 @@ an embedder that doesn't need one leaves it out.
 | [`petal-query/`](petal-query/README.md) | A React-Query-style data layer for Petal UI panels: `Provider`/`Reply` on the data side, `Cache` with freshness on the host side | GPP apps, hosts that answer `query(kind, arg)` |
 | [`petal-ui-headless/`](petal-ui-headless/README.md) | Runs a `ui` script with no renderer: the `Headless` test driver, input scenarios, drag tracing, and the `petal-ui-run` / `petal-ui-propose-edit` CLIs | Tests, repo tools, Garden's panel runner |
 | [`programs-as-documents/`](programs-as-documents/README.md) | A `.ptl` script used as an application's document: edits made in the running app are resolved back into the source and verified by a rerun | Apps whose files are Petal scripts |
+| [`transpile_to_react_js/`](transpile_to_react_js/README.md) | Petal source → React.js source: element functions become components, `state` becomes `useState`, a Mixit design becomes components on a small runtime, and what has no React form is a warning | The `petal-to-react` CLI, Mixit's implementation tools |
 | [`petal-pkgman/`](petal-pkgman/) | The package manager: git dependencies, `petal.lock`, `vendor/`, bundles | Only the `petal` CLI (`cli/`) |
 
 ## Why these aren't in core-stdlib

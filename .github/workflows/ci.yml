@@ -45,6 +45,14 @@ jobs:
       - name: Run CLI tests
         run: cargo test --manifest-path cli/Cargo.toml
 
+      # Petal → React. Its end-to-end tests render the output with React in
+      # jsdom, so they need the e2e folder's npm packages.
+      - name: Install the React transpiler's e2e packages
+        run: npm ci --prefix core-sdk/transpile_to_react_js/e2e
+
+      - name: Run React transpiler tests
+        run: cargo test --manifest-path core-sdk/transpile_to_react_js/Cargo.toml
+
   # The fmt/lint/CST sweeps over every .ptl in the repo are `#[ignore]`d so a
   # local `cargo test` stays cheap; CI is where they always run. They are the
   # longest single step, so they get their own job and run alongside

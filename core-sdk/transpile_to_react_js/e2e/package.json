@@ -2,7 +2,7 @@
   "name": "transpile-to-react-js-e2e",
   "private": true,
   "type": "module",
-  "description": "Bundles transpiled Petal modules with esbuild and renders them with react-dom/server, to check the output runs.",
+  "description": "Bundles transpiled Petal modules with esbuild and renders them with React in jsdom (clicking through them), to check the output runs.",
   "dependencies": {
     "esbuild": "^0.24.0",
     "jsdom": "^25.0.1",

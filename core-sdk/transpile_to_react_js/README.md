@@ -31,7 +31,8 @@ there are warnings.
 | `card(x)`, `card(p: x)` | `<Card p={x} />` |
 | `state n = 0` in a component | `const [n, setN] = useState(0)` (`useState(() => …)` when the initializer is not cheap) |
 | `fn f() state v = …; v` (keeps state, returns a value) | a custom hook, `useF()` |
-| `state var theme = "dark"` at the top level | `export const themeCell = cell("dark")`, read with `useCell(themeCell)` |
+| `state var theme = "dark"` at the top level | `export const themeCell = cell("dark")`; a component (or lifted frame) that reads it subscribes, `const theme = useCell(themeCell)`, and reads `theme`, in its loops and callbacks too |
+| `on_tap={fn() set theme = "light" end}` (design dialect) | `onClick` running `themeCell.set("light")`; a callback that sets the cell and then reads it reads `themeCell.get()` |
 | top-level `state` and what depends on it | the default-exported app component |
 | `if clicked(id) then open = !open` with `let id = next_id()` and `eid={id}` (petal-web-html) | `const id = () => setOpen(!open)` and `onClick={id}` |
 | `map(xs, f)`, `for x in xs key x.id do …` | `xs.map((x, i) => <F key={i} … />)`, `key={x.id}` |

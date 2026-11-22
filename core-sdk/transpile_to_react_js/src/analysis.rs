@@ -259,6 +259,34 @@ pub fn cell_uses(body: &[Stmt]) -> (HashSet<String>, HashSet<String>) {
     (v.reads, v.writes)
 }
 
+/// The cells a body itself `set`s, not counting the lambdas written in it
+/// (a tap callback inside a loop's body writes when tapped, not when the
+/// loop runs).
+pub fn own_cell_writes(body: &[Stmt]) -> HashSet<String> {
+    struct V(HashSet<String>);
+    impl ExprVisitor for V {
+        fn visit_expr(&mut self, e: &Expr) {
+            if !matches!(e.kind, ExprKind::Lambda { .. }) {
+                walk_expr(self, e);
+            }
+        }
+        fn visit_stmt(&mut self, s: &Stmt) {
+            if let StmtKind::Set { target, .. } = &s.kind {
+                if let Some(b) = target_base(target) {
+                    self.0.insert(b.to_string());
+                }
+            }
+            if matches!(s.kind, StmtKind::FnDecl { .. }) {
+                return;
+            }
+            walk_stmt(self, s);
+        }
+    }
+    let mut v = V(HashSet::new());
+    body.iter().for_each(|s| v.visit_stmt(s));
+    v.0
+}
+
 /// Whether any part of an expression or statement satisfies `pred`.
 pub fn any_expr_in_stmt(s: &Stmt, pred: &mut impl FnMut(&Expr) -> bool) -> bool {
     let mut found = false;

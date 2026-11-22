@@ -217,6 +217,9 @@ pub struct ProjectFile {
 /// (`design`, `web`) and Petal's bundled ones are not.
 pub fn transpile_project(entry: &Path, opts: &Options) -> Result<Vec<ProjectFile>, Error> {
     let entry = resolve_entry(entry)?;
+    // Absolute, so a bare `app.ptl` has a folder (its parent would be "",
+    // and every output path relative to it would climb out of the output).
+    let entry = entry.canonicalize().unwrap_or(entry);
     let root = entry.parent().unwrap_or(Path::new(".")).to_path_buf();
     let mut p = Project { root, opts: opts.clone(), done: HashMap::new(), out: Vec::new(), stack: Vec::new(), packages: Vec::new() };
     p.visit(&entry)?;

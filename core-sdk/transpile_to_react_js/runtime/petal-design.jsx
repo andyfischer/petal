@@ -334,6 +334,16 @@ function dataAttrs(props, tag) {
   // `link="page/frame"`, a prototype navigation: kept on the DOM node for
   // the host page to follow (see ViewContext).
   if (typeof props.link === "string") a["data-link"] = props.link;
+  // `on_tap={fn() … end}`: a tap runs the callback, which writes a top-level
+  // `state var` (`set tab = "saved"`); every component that reads it draws
+  // again. The innermost tapped node wins.
+  if (typeof props.on_tap === "function") {
+    a["data-tap"] = "";
+    a.onClick = (e) => {
+      e.stopPropagation();
+      props.on_tap();
+    };
+  }
   return a;
 }
 
@@ -669,7 +679,7 @@ export function component_from_render(render) {
   return Rendered;
 }
 
-const INSTANCE_ATTRS = ["x", "y", "width", "height", "min_width", "max_width", "min_height", "max_height", "rotation", "opacity", "hidden", "position", "constraints", "align", "safe_area", "platform", "mode", "link"];
+const INSTANCE_ATTRS = ["x", "y", "width", "height", "min_width", "max_width", "min_height", "max_height", "rotation", "opacity", "hidden", "position", "constraints", "align", "safe_area", "platform", "mode", "link", "on_tap"];
 
 /** An instance's props: the defaults, the attributes it sets, its `props={…}`. */
 export function component_props(props, defaults = {}) {

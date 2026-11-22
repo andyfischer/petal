@@ -95,6 +95,10 @@ pub struct Scope {
     pub temps: HashMap<String, String>,
     /// `useCell` values of top-level `state var`s read while rendering.
     pub cell_vals: HashMap<String, String>,
+    /// The top-level `state var`s a lambda's own body `set`s: there `get`
+    /// reads the cell, not the value the component subscribed to, so a
+    /// read after a write sees it (Petal's `get` is always current).
+    pub cell_writes: HashSet<String>,
     /// Loops and branches entered inside this function: hooks are not
     /// allowed there.
     pub nested: usize,

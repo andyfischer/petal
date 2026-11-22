@@ -297,13 +297,17 @@ impl<'a> Emitter<'a> {
 
     fn cell_get(&mut self, name: &str, span: SourceSpan) -> String {
         if let Some(cell) = self.cells.get(name).cloned() {
-            // Read while rendering: the value `useCell` subscribed to.
-            if self.in_render() || self.scopes.iter().rev().take_while(|s| matches!(s.kind(), Kind::Lambda)).count() == 0 && self.fn_scope_kind().hooks() && !self.in_handler() {
+            // In a component (and the callbacks written in it: a `.map`, a
+            // tap): the value `useCell` subscribed to, as React reads state.
+            // Not in a web click handler, nor in a callback that writes the
+            // cell itself.
+            if !self.in_handler() {
                 for s in self.scopes.iter().rev() {
+                    if s.cell_writes.contains(name) {
+                        break;
+                    }
                     if let Some(v) = s.cell_vals.get(name) {
-                        if !self.in_handler() {
-                            return v.clone();
-                        }
+                        return v.clone();
                     }
                 }
             }
@@ -507,6 +511,9 @@ impl<'a> Emitter<'a> {
     /// element it returns (a callback that builds list items).
     pub fn lambda(&mut self, params: &[Param], body: &[Stmt], key: Option<KeyFrom>) -> String {
         self.push_scope(Kind::Lambda);
+        if !self.cells.is_empty() {
+            self.scope().cell_writes = crate::analysis::own_cell_writes(body);
+        }
         let mut ps = self.params(params);
         let mut index = None;
         if let Some(KeyFrom::Expr(None)) | Some(KeyFrom::Index) = key {

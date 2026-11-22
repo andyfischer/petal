@@ -334,3 +334,41 @@ fn only_pub_declarations_are_exported_from_a_module_that_uses_pub() {
     contains(&o, "export const rows = [1];");
     contains(&o, "export function f(x) {");
 }
+
+#[test]
+fn a_tap_sets_a_state_var_and_what_reads_it_subscribes() {
+    let o = run(r#"
+import design
+
+state var tab = "a"
+
+let pages = [
+  <page id="p" title="P" layout="canvas">
+    <frame id="f" device="iphone_16">
+      <vstack>
+        <text>{get tab}</text>
+        {for t in ["a", "b"] key t do
+          <text on_tap={fn()
+            set tab = t
+          end}>{if get tab == t then "*" else t end}</text>
+        end}
+        <text on_tap={fn()
+          set tab = "a"
+          print(get tab)
+        end}>Reset</text>
+      </vstack>
+    </frame>
+  </page>,
+]
+design({name: "T"}, [], pages)
+"#);
+    contains(&o, r#"export const tabCell = cell("a");"#);
+    // The lifted frame subscribes, and reads the subscribed value, in its
+    // loops too.
+    contains(&o, "export function F() {\n  const tab = useCell(tabCell);");
+    contains(&o, "<Text>{tab}</Text>");
+    contains(&o, r#"eq(tab, t) ? "*" : t"#);
+    // The tap writes the cell; a callback that writes it reads it fresh.
+    contains(&o, "tabCell.set(t);");
+    contains(&o, "console.log(tabCell.get());");
+}

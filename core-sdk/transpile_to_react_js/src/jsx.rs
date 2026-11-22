@@ -1,6 +1,6 @@
 //! Elements as JSX.
 
-use petal::ast::{Expr, ExprKind, JsxChild, Literal};
+use petal::ast::{Expr, ExprKind, JsxChild, Literal, Stmt, StmtKind};
 use petal::source_map::SourceSpan;
 
 use crate::analysis::FnKind;
@@ -66,6 +66,19 @@ impl<'a> Emitter<'a> {
         // The frame itself, written inside the new component (not lifted
         // again: the scope is a component now).
         self.push_scope(Kind::Component);
+        // A top-level `state var` the frame reads is subscribed to, so a
+        // tap that sets it draws the frame again.
+        let parts: Vec<Stmt> = props
+            .iter()
+            .map(|(_, v)| v)
+            .chain(children.iter().filter_map(|c| match c {
+                JsxChild::Expr(e) => Some(e),
+                JsxChild::Text(_) => None,
+            }))
+            .map(|e| Stmt { kind: StmtKind::Expr(e.clone()), span: e.span, exported: false, test: None, doc: None })
+            .collect();
+        let mut hooks = crate::emit::W::default();
+        self.cell_hooks(&mut hooks, &parts);
         let frame = self.design_rt("Frame");
         let attrs = self.attrs(props, false, None);
         let kids = self.children(children, "frame");
@@ -73,7 +86,8 @@ impl<'a> Emitter<'a> {
         self.pop_scope();
         let _ = span;
         self.hoisted.push(format!(
-            "/** The `{id}` frame. */\nexport function {name}() {{\n  return {};\n}}\n{name}.frameId = {};",
+            "/** The `{id}` frame. */\nexport function {name}() {{\n{}  return {};\n}}\n{name}.frameId = {};",
+            crate::emit::indent_lines(&hooks.buf),
             crate::emit::indent_rest(&crate::emit::paren_multiline(&body)),
             js_string(id)
         ));

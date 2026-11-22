@@ -1,0 +1,984 @@
+//! Expressions and calls.
+
+use std::collections::HashSet;
+
+use petal::ast::{BinOp, ElseBranch, Expr, ExprKind, JsxChild, Literal, Param, RecordField, Stmt, StmtKind, UnaryOp};
+use petal::source_map::SourceSpan;
+
+use crate::analysis::FnKind;
+use crate::dialect::Dialect;
+use crate::emit::{Emitter, Kind, Tail, W, indent_lines, literal, paren_multiline, prop_name};
+use crate::names::{self, js_key, js_string, template_text};
+
+// JS precedence, higher binds tighter.
+pub const P_PRIMARY: u8 = 20;
+const P_UNARY: u8 = 16;
+const P_MUL: u8 = 14;
+const P_ADD: u8 = 13;
+const P_REL: u8 = 11;
+const P_EQ: u8 = 10;
+const P_AND: u8 = 6;
+const P_OR: u8 = 5;
+const P_COALESCE: u8 = 4;
+const P_TERNARY: u8 = 3;
+const P_ARROW: u8 = 2;
+
+/// How a call's arguments are given.
+pub struct Args<'e> {
+    pub positional: Vec<&'e Expr>,
+    pub named: Vec<(String, &'e Expr)>,
+    pub spread: Option<&'e Expr>,
+}
+
+pub fn split_args<'e>(args: &'e [Expr], names: &[Option<String>]) -> Args<'e> {
+    let mut a = Args { positional: vec![], named: vec![], spread: None };
+    for (i, e) in args.iter().enumerate() {
+        match names.get(i).and_then(|n| n.as_deref()) {
+            Some(petal::ast::SPREAD_ARG) => a.spread = Some(e),
+            Some(n) => a.named.push((n.to_string(), e)),
+            None => a.positional.push(e),
+        }
+    }
+    a
+}
+
+impl<'a> Emitter<'a> {
+    pub fn expr(&mut self, e: &Expr) -> String {
+        self.ex(e, 0)
+    }
+
+    pub fn ex(&mut self, e: &Expr, min: u8) -> String {
+        let (s, p) = self.expr_p(e);
+        if p < min { format!("({s})") } else { s }
+    }
+
+    fn expr_p(&mut self, e: &Expr) -> (String, u8) {
+        if let Some(r) = self.replacements.get(&(e.span.start.offset, e.span.end.offset)) {
+            return (r.clone(), P_PRIMARY);
+        }
+        match &e.kind {
+            ExprKind::Literal(l) => {
+                let s = literal(l);
+                let p = if s.starts_with('-') { P_UNARY } else { P_PRIMARY };
+                (s, p)
+            }
+            ExprKind::Ident(n) => (self.ident(n, e.span), P_PRIMARY),
+            ExprKind::CellGet(n) => (self.cell_get(n, e.span), P_PRIMARY),
+            ExprKind::BinaryOp { op, left, right } => self.binary(*op, left, right),
+            ExprKind::UnaryOp { op, operand } => {
+                let o = self.ex(operand, P_UNARY);
+                (match op {
+                    UnaryOp::Neg => format!("-{o}"),
+                    UnaryOp::Not => format!("!{o}"),
+                }, P_UNARY)
+            }
+            ExprKind::Call { function, args, arg_names } => self.call(function, args, arg_names, e.span),
+            ExprKind::If { condition, then_body, else_body } => self.if_expr(condition, then_body, else_body.as_ref()),
+            ExprKind::Match { .. } => (self.iife(e), P_PRIMARY),
+            ExprKind::For { var, iter, key, body, flatten } => {
+                (self.for_expr(var, iter, key.as_deref(), body, *flatten), P_PRIMARY)
+            }
+            ExprKind::List(xs) => {
+                let items: Vec<String> = xs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, x)| {
+                        // Elements in a list get a `key`, as React wants.
+                        if let ExprKind::Element { tag, props, children } = &x.kind {
+                            let key = props
+                                .iter()
+                                .find(|(k, _)| k == "id")
+                                .map(|(_, v)| self.expr(v))
+                                .unwrap_or_else(|| i.to_string());
+                            self.element(tag, props, children, x.span, Some(key))
+                        } else {
+                            self.expr(x)
+                        }
+                    })
+                    .collect();
+                (list_text(&items), P_PRIMARY)
+            }
+            ExprKind::Record(fields) => (self.record(fields, e.span), P_PRIMARY),
+            ExprKind::FieldAccess { object, field } => (self.field(object, field, false), P_PRIMARY),
+            ExprKind::IndexAccess { object, index } => (self.index(object, index, false), P_PRIMARY),
+            ExprKind::OptionalAccess(inner) => (self.optional(inner), P_PRIMARY),
+            ExprKind::Lambda { params, body } => (self.lambda(params, body, None), P_ARROW),
+            ExprKind::StringInterp { parts, exprs } => {
+                let mut out = String::from("`");
+                for (i, p) in parts.iter().enumerate() {
+                    out.push_str(&template_text(p));
+                    if let Some(x) = exprs.get(i) {
+                        let v = self.expr(x);
+                        out.push_str(&format!("${{{v}}}"));
+                    }
+                }
+                out.push('`');
+                (out, P_PRIMARY)
+            }
+            ExprKind::Element { tag, props, children } => (self.element(tag, props, children, e.span, None), P_PRIMARY),
+        }
+    }
+
+    fn binary(&mut self, op: BinOp, l: &Expr, r: &Expr) -> (String, u8) {
+        let (sym, p) = match op {
+            BinOp::Add => ("+", P_ADD),
+            BinOp::Sub => ("-", P_ADD),
+            BinOp::Mul => ("*", P_MUL),
+            BinOp::Div => ("/", P_MUL),
+            BinOp::Mod => ("%", P_MUL),
+            BinOp::Lt => ("<", P_REL),
+            BinOp::Le => ("<=", P_REL),
+            BinOp::Gt => (">", P_REL),
+            BinOp::Ge => (">=", P_REL),
+            BinOp::And => ("&&", P_AND),
+            BinOp::Or => ("||", P_OR),
+            BinOp::Coalesce => ("??", P_COALESCE),
+            BinOp::Eq | BinOp::Ne => return self.equality(op == BinOp::Eq, l, r),
+            BinOp::Concat => return self.concat(l, r),
+        };
+        if op == BinOp::Div {
+            // Petal's `/` truncates between ints. Two int literals fold; a
+            // float literal on either side is a float division.
+            if let (ExprKind::Literal(Literal::Int(a)), ExprKind::Literal(Literal::Int(b))) = (&l.kind, &r.kind) {
+                if *b != 0 {
+                    return ((a / b).to_string(), P_PRIMARY);
+                }
+            }
+        }
+        // `??` does not mix with `&&`/`||` unparenthesized.
+        let (lmin, rmin) = if op == BinOp::Coalesce { (P_AND + 1, P_AND + 1) } else { (p, p + 1) };
+        let ls = self.ex(l, lmin);
+        let rs = self.ex(r, rmin);
+        let ls = if matches!(op, BinOp::And | BinOp::Or) && ls.ends_with("??") { format!("({ls})") } else { ls };
+        (format!("{ls} {sym} {rs}"), p)
+    }
+
+    fn equality(&mut self, eq: bool, l: &Expr, r: &Expr) -> (String, u8) {
+        let nil = |e: &Expr| matches!(e.kind, ExprKind::Literal(Literal::Nil));
+        let scalar = |e: &Expr| {
+            matches!(e.kind, ExprKind::Literal(_) | ExprKind::StringInterp { .. } | ExprKind::UnaryOp { .. })
+                || matches!(&e.kind, ExprKind::Call { function, .. } if matches!(&function.kind, ExprKind::Ident(n) if n == "len" || n == "str" || n == "type"))
+        };
+        if nil(l) || nil(r) {
+            let other = if nil(l) { r } else { l };
+            let o = self.ex(other, P_EQ + 1);
+            return (format!("{o} {} null", if eq { "==" } else { "!=" }), P_EQ);
+        }
+        if scalar(l) || scalar(r) {
+            let ls = self.ex(l, P_EQ);
+            let rs = self.ex(r, P_EQ + 1);
+            return (format!("{ls} {} {rs}", if eq { "===" } else { "!==" }), P_EQ);
+        }
+        let f = self.rt("eq");
+        let ls = self.expr(l);
+        let rs = self.expr(r);
+        let call = format!("{f}({ls}, {rs})");
+        if eq { (call, P_PRIMARY) } else { (format!("!{call}"), P_UNARY) }
+    }
+
+    fn concat(&mut self, l: &Expr, r: &Expr) -> (String, u8) {
+        let stringy = |e: &Expr| matches!(e.kind, ExprKind::Literal(Literal::String(_)) | ExprKind::StringInterp { .. });
+        let listy = |e: &Expr| matches!(e.kind, ExprKind::List(_));
+        if stringy(l) || stringy(r) {
+            let ls = self.ex(l, P_ADD);
+            let rs = self.ex(r, P_ADD + 1);
+            return (format!("{ls} + {rs}"), P_ADD);
+        }
+        if listy(l) || listy(r) {
+            let ls = self.ex(l, P_UNARY);
+            let rs = self.ex(r, P_UNARY);
+            return (format!("[...{ls}, ...{rs}]"), P_PRIMARY);
+        }
+        let f = self.rt("concat");
+        let ls = self.expr(l);
+        let rs = self.expr(r);
+        (format!("{f}({ls}, {rs})"), P_PRIMARY)
+    }
+
+    // ── names ───────────────────────────────────────────────────────────────
+
+    pub fn ident(&mut self, name: &str, span: SourceSpan) -> String {
+        // Innermost first: a handler's copy, a local, a state value.
+        for s in self.scopes.iter().rev() {
+            if let Some(t) = s.temps.get(name) {
+                return t.clone();
+            }
+            if let Some(slot) = s.states.get(name) {
+                return slot.value.clone();
+            }
+            if s.locals.contains(name) {
+                return self.names.local(name);
+            }
+        }
+        if self.cells.contains_key(name) {
+            return self.cell_get(name, span);
+        }
+        if let Some(info) = self.fns.get(name).cloned() {
+            return match info.kind {
+                // A component used as a value: a function from arguments to
+                // its element, so `map(xs, card)` still works.
+                FnKind::Component if info.design_component.is_none() => {
+                    let ps: Vec<String> = info.params.iter().map(|p| names::camel(p)).collect();
+                    let attrs: Vec<String> = info.params.iter().zip(&ps).map(|(p, j)| format!("{}={{{j}}}", prop_name(p))).collect();
+                    format!("({}) => <{} {} />", ps.join(", "), info.js, attrs.join(" "))
+                }
+                _ => info.js,
+            };
+        }
+        if self.module_names.contains(name) {
+            return self.names.local(name);
+        }
+        if let Some((path, js)) = self.imported.get(name).cloned() {
+            self.module_imports.entry(path).or_default().insert(js.clone());
+            return js;
+        }
+        if name == "pi" || self.runtime.contains_key(name) || self.dialect_rt.contains_key(name) {
+            return self.rt(name);
+        }
+        match name {
+            "PI" => return "Math.PI".into(),
+            "ENV" => {}
+            _ => {}
+        }
+        self.stub(name, span)
+    }
+
+    /// A name with no definition the transpiler can see.
+    pub fn stub(&mut self, name: &str, span: SourceSpan) -> String {
+        if let Some(js) = self.stubs.get(name) {
+            return js.clone();
+        }
+        let js = self.names.fresh(&names::camel(name));
+        self.stubs.insert(name.to_string(), js.clone());
+        let hint = if !self.unknown_packages.is_empty() {
+            format!(" (from `{}`?)", self.unknown_packages.join("`, `"))
+        } else {
+            String::new()
+        };
+        self.warn(span, "unknown-name", format!("`{name}` is not defined in this file or in the React runtime{hint}; it is a stub that throws when called"));
+        js
+    }
+
+    fn cell_get(&mut self, name: &str, span: SourceSpan) -> String {
+        if let Some(cell) = self.cells.get(name).cloned() {
+            // Read while rendering: the value `useCell` subscribed to.
+            if self.in_render() || self.scopes.iter().rev().take_while(|s| matches!(s.kind(), Kind::Lambda)).count() == 0 && self.fn_scope_kind().hooks() && !self.in_handler() {
+                for s in self.scopes.iter().rev() {
+                    if let Some(v) = s.cell_vals.get(name) {
+                        if !self.in_handler() {
+                            return v.clone();
+                        }
+                    }
+                }
+            }
+            return format!("{cell}.get()");
+        }
+        self.ident(name, span)
+    }
+
+    // ── records, fields ─────────────────────────────────────────────────────
+
+    fn record(&mut self, fields: &[RecordField], span: SourceSpan) -> String {
+        // A color literal (`:FF9500`) is parsed as its {r, g, b} record.
+        let text = self.span_text(span);
+        if text.starts_with(':') && text[1..].chars().all(|c| c.is_ascii_hexdigit()) {
+            let h = self.rt("hex");
+            return format!("{h}({})", js_string(&text[1..]));
+        }
+        if fields.is_empty() {
+            return "{}".into();
+        }
+        let mut parts = Vec::new();
+        for f in fields {
+            match f {
+                RecordField::Named(k, v) => {
+                    let vs = self.expr(v);
+                    let key = js_key(k);
+                    if key == vs && names::is_js_ident(k) {
+                        parts.push(key);
+                    } else {
+                        parts.push(format!("{key}: {vs}"));
+                    }
+                }
+                RecordField::Spread(e) => {
+                    // A computed key, `[k]: v`.
+                    if let ExprKind::Call { function, args, .. } = &e.kind {
+                        if matches!(&function.kind, ExprKind::Ident(n) if n == petal::ast::RECORD_OF_BUILTIN) && args.len() == 2 {
+                            let k = self.expr(&args[0]);
+                            let v = self.expr(&args[1]);
+                            parts.push(format!("[{k}]: {v}"));
+                            continue;
+                        }
+                    }
+                    let v = self.ex(e, P_UNARY);
+                    parts.push(format!("...{v}"));
+                }
+            }
+        }
+        let one = format!("{{ {} }}", parts.join(", "));
+        if one.len() <= 90 && !one.contains('\n') {
+            one
+        } else {
+            format!("{{\n{}}}", parts.iter().map(|p| format!("  {},\n", p.replace('\n', "\n  "))).collect::<String>())
+        }
+    }
+
+    fn field(&mut self, object: &Expr, field: &str, optional: bool) -> String {
+        // `module.name`: the name from that module.
+        if let ExprKind::Ident(q) = &object.kind {
+            if !self.is_local(q) && !self.module_names.contains(q) && self.aliases.contains_key(q) {
+                return self.ident(field, object.span);
+            }
+        }
+        let o = self.access_base(object);
+        let dot = if optional { "?." } else { "." };
+        if names::is_js_ident(field) {
+            format!("{o}{dot}{field}")
+        } else {
+            format!("{o}{}[{}]", if optional { "?." } else { "" }, js_string(field))
+        }
+    }
+
+    fn index(&mut self, object: &Expr, index: &Expr, optional: bool) -> String {
+        let o = self.access_base(object);
+        let neg = matches!(index.kind, ExprKind::UnaryOp { op: UnaryOp::Neg, .. }) || matches!(index.kind, ExprKind::Literal(Literal::Int(i)) if i < 0);
+        if neg || self.uses_maps {
+            let at = self.rt("at");
+            let i = self.expr(index);
+            let o = self.expr(object);
+            return format!("{at}({o}, {i})");
+        }
+        let i = self.expr(index);
+        format!("{o}{}[{i}]", if optional { "?." } else { "" })
+    }
+
+    fn access_base(&mut self, object: &Expr) -> String {
+        let (s, p) = self.expr_p(object);
+        if p < P_PRIMARY || s.starts_with('<') { format!("({s})") } else { s }
+    }
+
+    /// `a?.b.c`: Petal's one `?.` tolerates absence along the whole chain.
+    fn optional(&mut self, inner: &Expr) -> String {
+        match &inner.kind {
+            ExprKind::FieldAccess { object, field } => {
+                let o = self.optional_base(object);
+                let tmp = Expr { kind: ExprKind::Ident("\u{0}".into()), span: inner.span };
+                let _ = tmp;
+                if names::is_js_ident(field) { format!("{o}?.{field}") } else { format!("{o}?.[{}]", js_string(field)) }
+            }
+            ExprKind::IndexAccess { object, index } => {
+                let o = self.optional_base(object);
+                let i = self.expr(index);
+                format!("{o}?.[{i}]")
+            }
+            _ => self.expr(inner),
+        }
+    }
+
+    fn optional_base(&mut self, e: &Expr) -> String {
+        match &e.kind {
+            ExprKind::FieldAccess { .. } | ExprKind::IndexAccess { .. } => self.optional(e),
+            _ => self.access_base(e),
+        }
+    }
+
+    // ── branches, loops, lambdas ────────────────────────────────────────────
+
+    fn if_expr(&mut self, cond: &Expr, then_body: &[Stmt], else_body: Option<&ElseBranch>) -> (String, u8) {
+        let simple = |b: &[Stmt]| b.len() == 1 && matches!(b[0].kind, StmtKind::Expr(_));
+        let else_simple = match else_body {
+            None => true,
+            Some(ElseBranch::Block(b)) => simple(b),
+            Some(ElseBranch::ElseIf(_)) => true,
+        };
+        if simple(then_body) && else_simple {
+            let c = self.ex(cond, P_TERNARY + 1);
+            self.scope().nested += 1;
+            let StmtKind::Expr(t) = &then_body[0].kind else { unreachable!() };
+            let t = self.ex(t, P_TERNARY + 1);
+            let e = match else_body {
+                None => "null".to_string(),
+                Some(ElseBranch::Block(b)) => {
+                    let StmtKind::Expr(x) = &b[0].kind else { unreachable!() };
+                    self.ex(x, P_TERNARY)
+                }
+                Some(ElseBranch::ElseIf(x)) => self.ex(x, P_TERNARY),
+            };
+            self.scope().nested -= 1;
+            let t = paren_multiline(&t);
+            let e = paren_multiline(&e);
+            return (format!("{c} ? {t} : {e}"), P_TERNARY);
+        }
+        let e = Expr {
+            kind: ExprKind::If { condition: Box::new(cond.clone()), then_body: then_body.to_vec(), else_body: else_body.cloned() },
+            span: cond.span,
+        };
+        (self.iife(&e), P_PRIMARY)
+    }
+
+    /// An expression that needs statements: `(() => { … })()`.
+    fn iife(&mut self, e: &Expr) -> String {
+        let mut w = W::default();
+        let s = Stmt { kind: StmtKind::Expr(e.clone()), span: e.span, exported: false, test: None, doc: None };
+        self.push_scope(Kind::Lambda);
+        self.scope().mutable = crate::emit::mutable_names(std::slice::from_ref(&s));
+        self.block(&mut w, std::slice::from_ref(&s), Tail::Return(None));
+        self.pop_scope();
+        format!("(() => {{\n{}}})()", indent_lines(&w.buf))
+    }
+
+    fn for_expr(&mut self, var: &str, iter: &Expr, key: Option<&Expr>, body: &[Stmt], flatten: bool) -> String {
+        let it = self.ex(iter, P_PRIMARY);
+        let method = if flatten { "flatMap" } else { "map" };
+        let param = Param::plain(var.to_string());
+        let f = self.lambda(std::slice::from_ref(&param), body, Some(KeyFrom::Expr(key)));
+        format!("{it}.{method}({f})")
+    }
+
+    /// A lambda as a JS arrow function. `key` asks for a React `key` on the
+    /// element it returns (a callback that builds list items).
+    pub fn lambda(&mut self, params: &[Param], body: &[Stmt], key: Option<KeyFrom>) -> String {
+        self.push_scope(Kind::Lambda);
+        let mut ps = self.params(params);
+        let mut index = None;
+        if let Some(KeyFrom::Expr(None)) | Some(KeyFrom::Index) = key {
+            if crate::analysis::tail_expr(body).is_some_and(|t| self.builds_element(t)) {
+                let i = self.names.fresh("i");
+                ps.push(i.clone());
+                index = Some(i);
+            }
+        }
+        self.scope().mutable = crate::emit::mutable_names(body);
+        let head = if ps.len() == 1 && !ps[0].contains('=') { ps[0].clone() } else { format!("({})", ps.join(", ")) };
+        let head = if ps.len() == 1 { format!("({head})").replace("((", "(").replace("))", ")") } else { head };
+        // The key: the loop's `key`, the element's `id`, else the index.
+        let key_js = match &key {
+            Some(KeyFrom::Expr(Some(k))) => Some(self.expr(k)),
+            _ => index.clone(),
+        };
+        // Writes to captured names rebind the lambda's copy, as in Petal.
+        let mut w = W::default();
+        let written = crate::analysis::assigned_names(body, false);
+        let declared = crate::analysis::declared_names(body);
+        let mut cap: Vec<String> = written.into_iter().filter(|n| !declared.contains(n) && !params.iter().any(|p| &p.name == n)).collect();
+        cap.sort();
+        for n in &cap {
+            if self.cells.contains_key(n) {
+                continue;
+            }
+            let t = self.names.fresh(&format!("{}Copy", names::camel(n)));
+            let cur = self.ident(n, body[0].span);
+            if self.state_slot(n).is_some() {
+                self.warn(body[0].span, "write-in-callback", format!("a function changes `{n}`, which is state; in Petal that rebinds the function's own copy. To change the state, write it in a click handler (`if clicked(id) then {n} = …`)"));
+            }
+            w.line(format!("let {t} = {cur};"));
+            self.scope().temps.insert(n.clone(), t);
+        }
+        let out = if cap.is_empty() && body.len() == 1 && matches!(body[0].kind, StmtKind::Expr(_)) {
+            let StmtKind::Expr(e) = &body[0].kind else { unreachable!() };
+            let v = self.keyed(e, key_js.as_deref());
+            let v = if v.starts_with('{') { format!("({v})") } else { paren_multiline(&v) };
+            format!("{head} => {v}")
+        } else {
+            let n = body.len();
+            for (i, s) in body.iter().enumerate() {
+                if i + 1 == n {
+                    if let (StmtKind::Expr(e), Some(k)) = (&s.kind, key_js.as_deref()) {
+                        let v = self.keyed(e, Some(k));
+                        w.line(crate::emit::ret(None, &v));
+                        continue;
+                    }
+                    self.body_stmt(&mut w, s, Tail::Return(None));
+                } else {
+                    self.body_stmt(&mut w, s, Tail::None);
+                }
+            }
+            format!("{head} => {{\n{}}}", indent_lines(&w.buf))
+        };
+        self.pop_scope();
+        out
+    }
+
+    /// Whether `e` builds an element (for list keys).
+    pub fn builds_element(&self, e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Element { .. } => true,
+            ExprKind::Call { function, .. } => {
+                matches!(&function.kind, ExprKind::Ident(n) if self.fns.get(n).or(self.imported_fns.get(n)).is_some_and(|f| f.kind == FnKind::Component))
+            }
+            _ => false,
+        }
+    }
+
+    /// An expression, with a React `key` when it builds an element.
+    pub fn keyed(&mut self, e: &Expr, key: Option<&str>) -> String {
+        let Some(k) = key else { return self.expr(e) };
+        match &e.kind {
+            ExprKind::Element { tag, props, children } => self.element(tag, props, children, e.span, Some(k.to_string())),
+            ExprKind::Call { function, args, arg_names } => {
+                if let ExprKind::Ident(n) = &function.kind {
+                    if let Some(info) = self.fns.get(n).or(self.imported_fns.get(n)).cloned().filter(|f| f.kind == FnKind::Component) {
+                        return self.component_call(&info, n, args, arg_names, e.span, Some(k));
+                    }
+                }
+                self.expr(e)
+            }
+            _ => self.expr(e),
+        }
+    }
+
+    // ── calls ───────────────────────────────────────────────────────────────
+
+    fn call(&mut self, function: &Expr, args: &[Expr], arg_names: &[Option<String>], span: SourceSpan) -> (String, u8) {
+        match &function.kind {
+            ExprKind::Ident(name) => {
+                if self.is_local(name) {
+                    let f = self.ident(name, function.span);
+                    return (self.call_text(&f, None, args, arg_names), P_PRIMARY);
+                }
+                if let Some(s) = self.dialect_call(name, args, arg_names, span) {
+                    return (s, P_PRIMARY);
+                }
+                if let Some(info) = self.fns.get(name).or(self.imported_fns.get(name)).cloned() {
+                    if let Some((path, js)) = self.imported.get(name).cloned() {
+                        self.module_imports.entry(path).or_default().insert(js);
+                    }
+                    return match info.kind {
+                        FnKind::Component => (self.component_call(&info, name, args, arg_names, span, None), P_PRIMARY),
+                        FnKind::Hook => {
+                            if !self.in_render() {
+                                self.warn(span, "hook-call", format!("`{name}` keeps state, so it is the hook `{}`, which React allows only at the top of a component or hook, not here", info.js));
+                            } else if self.scope().nested > 0 {
+                                self.warn(span, "hook-in-loop", format!("`{name}` keeps state (the hook `{}`) and is called inside a loop or branch; React needs hooks called the same way every render", info.js));
+                            }
+                            (self.call_text(&info.js, Some(&info.params), args, arg_names), P_PRIMARY)
+                        }
+                        FnKind::Plain => (self.call_text(&info.js, Some(&info.params), args, arg_names), P_PRIMARY),
+                    };
+                }
+                if self.module_names.contains(name) || self.cells.contains_key(name) {
+                    let f = self.ident(name, function.span);
+                    return (self.call_text(&f, None, args, arg_names), P_PRIMARY);
+                }
+                if let Some(s) = self.builtin(name, args, arg_names, span) {
+                    return (s, P_PRIMARY);
+                }
+                if self.classes.contains(name) {
+                    return (self.call_text(name, None, args, arg_names), P_PRIMARY);
+                }
+                if let Some(sig) = self.runtime.get(name).or(self.dialect_rt.get(name)).or(self.react_rt.get(name)).cloned() {
+                    let f = self.rt(name);
+                    if !sig.is_fn {
+                        return (self.call_text(&f, None, args, arg_names), P_PRIMARY);
+                    }
+                    let params: Vec<String> = sig.params().cloned().collect();
+                    return (self.sig_call(&f, &sig.positional, &sig.options, sig.rest, &params, args, arg_names), P_PRIMARY);
+                }
+                let f = self.stub(name, function.span);
+                (self.call_text(&f, None, args, arg_names), P_PRIMARY)
+            }
+            ExprKind::FieldAccess { object, field } => {
+                // `module.f(…)`
+                if let ExprKind::Ident(q) = &object.kind {
+                    if !self.is_local(q) && !self.module_names.contains(q) && self.aliases.contains_key(q) {
+                        let f = Expr { kind: ExprKind::Ident(field.clone()), span: function.span };
+                        return self.call(&f, args, arg_names, span);
+                    }
+                    if self.enums.contains_key(q) || self.classes.contains(q) {
+                        let o = self.ident(q, object.span);
+                        return (self.call_text(&format!("{o}.{field}"), None, args, arg_names), P_PRIMARY);
+                    }
+                }
+                // A class method.
+                if let Some(classes) = self.methods.get(field).cloned() {
+                    let o = self.expr(object);
+                    let rest: Vec<String> = args.iter().map(|a| self.expr(a)).collect();
+                    let all = std::iter::once(o.clone()).chain(rest).collect::<Vec<_>>().join(", ");
+                    let m = names::camel(field);
+                    if classes.len() == 1 {
+                        return (format!("{}_{m}({all})", classes[0]), P_PRIMARY);
+                    }
+                    let table: Vec<String> = classes.iter().map(|c| format!("{c}: {c}_{m}")).collect();
+                    return (format!("({{ {} }})[{o}.__class]({all})", table.join(", ")), P_PRIMARY);
+                }
+                // Method syntax: `x.f(a)` is `f(x, a)` when `f` is a function
+                // this file or the runtime knows; else a callable field.
+                let known = !self.is_local(field)
+                    && (self.fns.contains_key(field)
+                        || self.imported_fns.contains_key(field)
+                        || self.runtime.contains_key(field)
+                        || self.dialect_rt.contains_key(field));
+                if known {
+                    let mut all = vec![(**object).clone()];
+                    all.extend(args.iter().cloned());
+                    let mut names_all = vec![None];
+                    if arg_names.is_empty() {
+                        names_all.extend(std::iter::repeat_n(None, args.len()));
+                    } else {
+                        names_all.extend(arg_names.iter().cloned());
+                    }
+                    let f = Expr { kind: ExprKind::Ident(field.clone()), span: function.span };
+                    return self.call(&f, &all, &names_all, span);
+                }
+                let f = self.field(object, field, false);
+                (self.call_text(&f, None, args, arg_names), P_PRIMARY)
+            }
+            _ => {
+                let f = self.ex(function, P_PRIMARY);
+                (self.call_text(&f, None, args, arg_names), P_PRIMARY)
+            }
+        }
+    }
+
+    /// `f(a, b)`, placing named arguments by the parameter names when they
+    /// are known, else in a trailing options object.
+    pub fn call_text(&mut self, f: &str, params: Option<&[String]>, args: &[Expr], arg_names: &[Option<String>]) -> String {
+        let a = split_args(args, arg_names);
+        let mut out: Vec<String> = a.positional.iter().map(|e| self.expr(e)).collect();
+        if !a.named.is_empty() {
+            match params {
+                Some(ps) => {
+                    let mut slots: Vec<Option<String>> = out.drain(..).map(Some).collect();
+                    for (n, e) in &a.named {
+                        let v = self.expr(e);
+                        match ps.iter().position(|p| p == n) {
+                            Some(i) => {
+                                if slots.len() <= i {
+                                    slots.resize(i + 1, None);
+                                }
+                                slots[i] = Some(v);
+                            }
+                            None => slots.push(Some(v)),
+                        }
+                    }
+                    out = slots.into_iter().map(|s| s.unwrap_or_else(|| "undefined".into())).collect();
+                }
+                None => {
+                    let kv: Vec<String> = a.named.iter().map(|(n, e)| (n.clone(), *e)).collect::<Vec<_>>().into_iter().map(|(n, e)| {
+                        let v = self.expr(e);
+                        format!("{}: {v}", js_key(&n))
+                    }).collect();
+                    out.push(format!("{{ {} }}", kv.join(", ")));
+                }
+            }
+        }
+        if let Some(s) = a.spread {
+            let v = self.ex(s, P_UNARY);
+            out.push(format!("...{v}"));
+        }
+        args_text(f, &out)
+    }
+
+    /// A call of a runtime function, by its JS signature.
+    #[allow(clippy::too_many_arguments)]
+    fn sig_call(&mut self, f: &str, positional: &[String], options: &[String], rest: bool, params: &[String], args: &[Expr], arg_names: &[Option<String>]) -> String {
+        let a = split_args(args, arg_names);
+        if rest || (options.is_empty() && a.named.is_empty()) {
+            return self.call_text(f, Some(params), args, arg_names);
+        }
+        let mut slots: Vec<Option<String>> = vec![None; positional.len()];
+        let mut opts: Vec<(String, String)> = Vec::new();
+        for (i, e) in a.positional.iter().enumerate() {
+            let v = self.expr(e);
+            if i < positional.len() {
+                slots[i] = Some(v);
+            } else if let Some(k) = options.get(i - positional.len()) {
+                opts.push((k.clone(), v));
+            } else {
+                slots.push(Some(v));
+            }
+        }
+        for (n, e) in &a.named {
+            let v = self.expr(e);
+            if let Some(i) = positional.iter().position(|p| p == n) {
+                slots[i] = Some(v);
+            } else {
+                opts.push((n.clone(), v));
+            }
+        }
+        while slots.last().is_some_and(|s| s.is_none()) {
+            slots.pop();
+        }
+        let mut out: Vec<String> = slots.into_iter().map(|s| s.unwrap_or_else(|| "undefined".into())).collect();
+        if !opts.is_empty() {
+            let kv: Vec<String> = opts.iter().map(|(k, v)| format!("{}: {v}", js_key(k))).collect();
+            out.push(format!("{{ {} }}", kv.join(", ")));
+        }
+        args_text(f, &out)
+    }
+
+    /// `card(item)` → `<Card item={item} />`.
+    pub fn component_call(&mut self, info: &crate::analysis::FnInfo, name: &str, args: &[Expr], arg_names: &[Option<String>], span: SourceSpan, key: Option<&str>) -> String {
+        if info.design_component.is_some() {
+            // A design render function called directly: an instance.
+            let a = split_args(args, arg_names);
+            let mut attrs = Vec::new();
+            if let Some(k) = key {
+                attrs.push(format!("key={{{k}}}"));
+            }
+            if let Some(p) = a.positional.first() {
+                let v = self.ex(p, P_UNARY);
+                attrs.push(format!("{{...{v}}}"));
+            }
+            if a.positional.len() > 1 {
+                self.warn(span, "render-call", format!("`{name}(p, cx)` is called with its own cx; the React component reads cx from the frame it is drawn in"));
+            }
+            return format!("<{} {} />", info.js, attrs.join(" "));
+        }
+        let a = split_args(args, arg_names);
+        let mut attrs = Vec::new();
+        if let Some(k) = key {
+            attrs.push(format!("key={{{k}}}"));
+        }
+        for (i, e) in a.positional.iter().enumerate() {
+            let Some(p) = info.params.get(i) else {
+                self.warn(span, "extra-arg", format!("`{name}` is called with more arguments than it takes"));
+                break;
+            };
+            let v = self.expr(e);
+            attrs.push(attr(&prop_name(p), &v, e));
+        }
+        for (n, e) in &a.named {
+            let v = self.expr(e);
+            attrs.push(attr(&prop_name(n), &v, e));
+        }
+        if let Some(s) = a.spread {
+            let v = self.ex(s, P_UNARY);
+            attrs.push(format!("{{...{v}}}"));
+        }
+        let one = format!("<{} {}/>", info.js, attrs.iter().map(|a| format!("{a} ")).collect::<String>());
+        if one.len() <= 100 && !one.contains('\n') {
+            one.replace("  />", " />")
+        } else {
+            format!("<{}\n{}/>", info.js, attrs.iter().map(|a| format!("  {}\n", a.replace('\n', "\n  "))).collect::<String>())
+        }
+    }
+
+    /// A callback passed to a list function: an arrow with one parameter.
+    pub fn callback(&mut self, f: &Expr, arity: usize, key: bool) -> String {
+        match &f.kind {
+            ExprKind::Lambda { params, body } => self.lambda(params, body, if key { Some(KeyFrom::Index) } else { None }),
+            ExprKind::Ident(n) if !self.is_local(n) => {
+                if let Some(info) = self.fns.get(n).or(self.imported_fns.get(n)).cloned() {
+                    if info.kind == FnKind::Component && info.design_component.is_none() {
+                        let ps: Vec<String> = info.params.iter().take(arity).map(|p| names::camel(p)).collect();
+                        let attrs: Vec<String> = info.params.iter().take(arity).zip(&ps).map(|(p, j)| format!("{}={{{j}}}", prop_name(p))).collect();
+                        if key {
+                            let i = self.names.fresh("i");
+                            return format!("({}, {i}) => <{} key={{{i}}} {} />", ps.join(", "), info.js, attrs.join(" "));
+                        }
+                        return format!("({}) => <{} {} />", ps.join(", "), info.js, attrs.join(" "));
+                    }
+                    if info.params.len() == arity {
+                        if let Some((path, js)) = self.imported.get(n).cloned() {
+                            self.module_imports.entry(path).or_default().insert(js);
+                        }
+                        // JS passes the index too; a function of exactly the
+                        // callback's arity ignores it.
+                        return info.js;
+                    }
+                }
+                let fj = self.ident(n, f.span);
+                let ps: Vec<String> = ["x", "y", "z"].iter().take(arity).map(|s| s.to_string()).collect();
+                format!("({}) => {fj}({})", ps.join(", "), ps.join(", "))
+            }
+            _ => {
+                let fj = self.ex(f, P_PRIMARY);
+                let ps: Vec<String> = ["x", "y", "z"].iter().take(arity).map(|s| s.to_string()).collect();
+                format!("({}) => {fj}({})", ps.join(", "), ps.join(", "))
+            }
+        }
+    }
+
+    /// Builtins with a direct JS form. Anything else the runtime exports is
+    /// imported from it.
+    fn builtin(&mut self, name: &str, args: &[Expr], arg_names: &[Option<String>], _span: SourceSpan) -> Option<String> {
+        if !arg_names.iter().all(|n| n.is_none()) {
+            return None;
+        }
+        let a = |s: &mut Self, i: usize| -> String { s.ex(&args[i], P_PRIMARY) };
+        Some(match (name, args.len()) {
+            ("print", _) => {
+                let xs: Vec<String> = args.iter().map(|x| self.expr(x)).collect();
+                format!("console.log({})", xs.join(", "))
+            }
+            ("map", 2) | ("filter", 2) | ("forEach", 2) | ("any", 2) | ("all", 2) | ("find", 2) | ("flat_map", 2) => {
+                let xs = a(self, 0);
+                let key = name == "map" && self.callback_builds_element(&args[1]);
+                let cb = self.callback(&args[1], 1, key);
+                let m = match name {
+                    "any" => "some",
+                    "all" => "every",
+                    "flat_map" => "flatMap",
+                    n => n,
+                };
+                let call = format!("{xs}.{m}({cb})");
+                if name == "find" { format!("({call} ?? null)") } else { call }
+            }
+            ("reduce", 3) => {
+                let xs = a(self, 0);
+                let init = self.expr(&args[1]);
+                let cb = self.callback(&args[2], 2, false);
+                format!("{xs}.reduce({cb}, {init})")
+            }
+            ("len", 1) if matches!(args[0].kind, ExprKind::List(_) | ExprKind::Literal(Literal::String(_))) => format!("{}.length", a(self, 0)),
+            ("str", 1) if matches!(args[0].kind, ExprKind::Literal(Literal::Int(_)) | ExprKind::Literal(Literal::Float(_))) => {
+                format!("String({})", self.expr(&args[0]))
+            }
+            ("abs" | "sqrt" | "floor" | "ceil" | "sin" | "cos" | "tan" | "atan" | "asin" | "acos" | "exp" | "log", 1) => {
+                format!("Math.{name}({})", self.expr(&args[0]))
+            }
+            ("atan2" | "pow" | "hypot", _) => {
+                let xs: Vec<String> = args.iter().map(|x| self.expr(x)).collect();
+                format!("Math.{name}({})", xs.join(", "))
+            }
+            ("min" | "max", n) if n >= 2 => {
+                let xs: Vec<String> = args.iter().map(|x| self.expr(x)).collect();
+                format!("Math.{name}({})", xs.join(", "))
+            }
+            ("upper", 1) => format!("{}.toUpperCase()", a(self, 0)),
+            ("lower", 1) => format!("{}.toLowerCase()", a(self, 0)),
+            ("trim", 1) => format!("{}.trim()", a(self, 0)),
+            ("split", 2) => format!("{}.split({})", a(self, 0), self.expr(&args[1])),
+            ("starts_with", 2) => format!("{}.startsWith({})", a(self, 0), self.expr(&args[1])),
+            ("ends_with", 2) => format!("{}.endsWith({})", a(self, 0), self.expr(&args[1])),
+            ("keys", 1) if !self.uses_maps => format!("Object.keys({})", self.expr(&args[0])),
+            ("values", 1) if !self.uses_maps => format!("Object.values({})", self.expr(&args[0])),
+            ("entries", 1) if !self.uses_maps => format!("Object.entries({})", self.expr(&args[0])),
+            ("append" | "push", 2) => {
+                let xs = self.ex(&args[0], P_UNARY);
+                format!("[...{xs}, {}]", self.expr(&args[1]))
+            }
+            ("concat", _) if args.iter().all(|x| !matches!(x.kind, ExprKind::Literal(Literal::String(_)) | ExprKind::StringInterp { .. })) && args.len() >= 2 && args.iter().any(|x| matches!(x.kind, ExprKind::List(_))) => {
+                let xs: Vec<String> = args.iter().map(|x| format!("...{}", self.ex(x, P_UNARY))).collect();
+                format!("[{}]", xs.join(", "))
+            }
+            ("tunable" | "rigid" | "const", n) if n >= 1 => self.expr(&args[0]),
+            ("json_stringify", 1) => format!("JSON.stringify({})", self.expr(&args[0])),
+            ("json_parse", 1) => format!("JSON.parse({})", self.expr(&args[0])),
+            _ => return None,
+        })
+    }
+
+    fn callback_builds_element(&self, f: &Expr) -> bool {
+        match &f.kind {
+            ExprKind::Lambda { body, .. } => crate::analysis::tail_expr(body).is_some_and(|t| self.builds_element(t)),
+            ExprKind::Ident(n) => self.fns.get(n).or(self.imported_fns.get(n)).is_some_and(|f| f.kind == FnKind::Component),
+            _ => false,
+        }
+    }
+
+    /// A call the dialect gives a meaning of its own.
+    fn dialect_call(&mut self, name: &str, args: &[Expr], arg_names: &[Option<String>], span: SourceSpan) -> Option<String> {
+        match (self.dialect, name) {
+            (Dialect::Web, "next_id") => {
+                self.warn(span, "event", "`next_id()` outside a planned click handler: it is an event that runs the handlers `clicked(id)` registers");
+                let e = self.rt("petal_event");
+                Some(format!("{e}()"))
+            }
+            (Dialect::Web, "clicked") => {
+                self.warn(span, "event", "`clicked(id)` is read as a value here, not as `if clicked(id) then …`: React has no per-frame click poll, so it is `false`");
+                Some("false".into())
+            }
+            (Dialect::Design, "design") => {
+                let f = self.design_rt("design");
+                Some(self.call_text(&f, None, args, arg_names))
+            }
+            (Dialect::Design, "component") => Some(self.component_decl(args, arg_names, span)),
+            (Dialect::Design, "system" | "m3" | "m3_scheme" | "glass" | "material" | "backdrop") => {
+                self.warn_once(name, span, "approximate", format!("`{name}(…)` is approximated in the React runtime (petal-design.jsx), not drawn as Mixit draws it"));
+                None
+            }
+            (Dialect::Design, "variant_grid") => {
+                self.warn_once(name, span, "approximate", "`variant_grid` is drawn as a simple grid of instances in the React runtime");
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// `component("card", card, props: {…})`: the props record moves to
+    /// `Card.defaults` (so the component can merge its props over them), and
+    /// the call names the component.
+    fn component_decl(&mut self, args: &[Expr], arg_names: &[Option<String>], span: SourceSpan) -> String {
+        let f = self.design_rt("component");
+        let a = split_args(args, arg_names);
+        let comp = a.positional.get(1).and_then(|e| match &e.kind {
+            ExprKind::Ident(n) => self.fns.get(n).filter(|i| i.design_component.is_some()).map(|i| i.js.clone()),
+            _ => None,
+        });
+        let mut out = Vec::new();
+        if let Some(n) = a.positional.first() {
+            out.push(self.expr(n));
+        }
+        match (&comp, a.positional.get(1)) {
+            (Some(c), _) => out.push(c.clone()),
+            (None, Some(e)) => {
+                let r = self.design_rt("component_from_render");
+                let v = self.expr(e);
+                out.push(format!("{r}({v})"));
+            }
+            _ => {}
+        }
+        let mut opts = Vec::new();
+        for (k, e) in &a.named {
+            if k == "props" {
+                if let Some(c) = &comp {
+                    let v = self.expr(e);
+                    self.hoisted.push(format!("{c}.defaults = {v};"));
+                    opts.push(format!("props: {c}.defaults"));
+                    continue;
+                }
+            }
+            let v = self.expr(e);
+            opts.push(format!("{}: {v}", js_key(k)));
+        }
+        if let Some(c) = &comp {
+            if !a.named.iter().any(|(k, _)| k == "props") {
+                self.hoisted.push(format!("{c}.defaults = {{}};"));
+            }
+        }
+        let _ = span;
+        if !opts.is_empty() {
+            out.push(format!("{{ {} }}", opts.join(", ")));
+        }
+        args_text(&f, &out)
+    }
+}
+
+pub enum KeyFrom<'e> {
+    /// A `for` loop: its `key` expression, or the index.
+    Expr(Option<&'e Expr>),
+    /// A `map` callback: the index.
+    Index,
+}
+
+pub fn args_text(f: &str, args: &[String]) -> String {
+    let one = format!("{f}({})", args.join(", "));
+    if one.len() <= 100 && !one.contains('\n') {
+        one
+    } else {
+        format!("{f}(\n{})", args.iter().map(|a| format!("  {},\n", a.replace('\n', "\n  "))).collect::<String>() + ")")
+    }
+}
+
+pub fn list_text(items: &[String]) -> String {
+    let one = format!("[{}]", items.join(", "));
+    if one.len() <= 90 && !one.contains('\n') {
+        one
+    } else {
+        format!("[\n{}]", items.iter().map(|a| format!("  {},\n", a.replace('\n', "\n  "))).collect::<String>())
+    }
+}
+
+/// A JSX attribute: `name="text"`, `name` (true) or `name={expr}`.
+pub fn attr(name: &str, v: &str, e: &Expr) -> String {
+    match &e.kind {
+        ExprKind::Literal(Literal::Bool(true)) => name.to_string(),
+        ExprKind::Literal(Literal::String(s)) if !s.contains(['"', '\\', '\n', '{', '}', '&', '<', '>']) => format!("{name}=\"{s}\""),
+        _ => format!("{name}={{{}}}", v),
+    }
+}
+
+#[allow(dead_code)]
+fn _unused(_: &HashSet<String>, _: &JsxChild) {}

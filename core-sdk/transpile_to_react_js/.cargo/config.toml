@@ -1,0 +1,5 @@
+# Build into petal core's target directory, so this crate shares the petal
+# build with core instead of compiling it a second time. The repository's
+# top-level .cargo/config.toml (job and test-thread limits) still applies.
+[build]
+target-dir = "../../core/target"

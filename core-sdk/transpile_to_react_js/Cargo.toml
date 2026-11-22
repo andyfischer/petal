@@ -1,0 +1,18 @@
+[package]
+name = "transpile_to_react_js"
+version = "0.1.0"
+edition = "2024"
+description = "Transpile a Petal program (a Mixit design, a petal-web-html app, or any element-building script) into React.js source: `state` becomes useState, element-returning functions become components, and what has no React equivalent is reported as a warning"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
+
+[lib]
+name = "transpile_to_react_js"
+
+[[bin]]
+name = "petal-to-react"
+path = "src/bin/petal-to-react.rs"
+
+[dependencies]
+petal = { path = "../../core", default-features = false }
+serde_json = "1"

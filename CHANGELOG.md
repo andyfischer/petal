@@ -1659,6 +1659,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Fixed
 
+- **A text area's caret no longer snaps back over a trailing space.**
+  `text_wrap_rows` trimmed the trailing blanks off every row, including a
+  paragraph's last row, so after typing `"one "` the caret was drawn after
+  `one`, and End or a click past the row landed before the space. A
+  paragraph's last row now runs to its end, trailing blanks included (a line
+  of blanks alone is a row of them). Blanks at a soft break are still
+  dropped, and plain `text_wrap` still trims. `wrap_rows_reference` follows.
 - **A quoted attribute interpolates.** `id="{id}_box"` is
   `id={"{id}_box"}`, as `"…{x}…"` is everywhere else; it was
   `Expected string or {expr} for attribute value, got InterpStart`. A `>` or

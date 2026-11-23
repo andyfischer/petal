@@ -1288,6 +1288,12 @@ pub(crate) struct WrapRow {
 /// are spaces and tabs. So the row after a soft break starts at the first
 /// non-blank character after the previous row's end, and the first row of a
 /// paragraph (which keeps its leading blanks) starts at the paragraph's start.
+///
+/// Unlike [`wrap_lines`], a paragraph's **last** row keeps its trailing
+/// blanks: nothing follows them to break onto, and a caret sitting after a
+/// just-typed space has to be drawn past it, not snapped back to the last
+/// word. (A paragraph of blanks alone is one row of those blanks.) The blanks
+/// a *soft* break lands on are still dropped.
 pub(crate) fn wrap_rows(
     metrics: &FontMetrics,
     style: &TextStyle,
@@ -1301,21 +1307,26 @@ pub(crate) fn wrap_rows(
         let paragraph = raw.strip_suffix('\r').unwrap_or(raw);
         let chars: Vec<char> = paragraph.chars().collect();
         let mut at = 0usize;
-        for (i, line) in wrap_lines(metrics, style, paragraph, max_width)
-            .into_iter()
-            .enumerate()
-        {
+        let lines = wrap_lines(metrics, style, paragraph, max_width);
+        let last = lines.len().saturating_sub(1);
+        for (i, line) in lines.into_iter().enumerate() {
             let n = line.chars().count();
             if i > 0 {
                 while at < chars.len() && (chars[at] == ' ' || chars[at] == '\t') {
                     at += 1;
                 }
             }
-            // A paragraph of blanks alone wraps to one empty row, at its start.
+            // A paragraph of blanks alone wraps to one row, at its start.
             let start = at.min(chars.len());
-            let end = (start + n).min(chars.len());
+            let (text, end) = if i == last {
+                // The last row runs to the paragraph's end: its trailing
+                // blanks are all that `wrap_lines` trimmed off it.
+                (chars[start..].iter().collect(), chars.len())
+            } else {
+                (line, (start + n).min(chars.len()))
+            };
             out.push(WrapRow {
-                text: line,
+                text,
                 start: base + start,
                 end: base + end,
             });
@@ -1754,6 +1765,23 @@ mod tests {
                    text_wrap(s, {size: 10, offsets: true}, 20.0) \
                    |> filter(fn(r) char_slice(s, r.start, r.end) != r.text end) |> len";
         assert_eq!(env.run_source(&crate::script_for(&env, src)).expect("run"), Value::Int(0));
+    }
+
+    #[test]
+    fn text_wrap_offsets_keep_a_paragraphs_trailing_blanks() {
+        let mut env = half_width_env();
+        // A caret after a just-typed space must have a row that reaches it:
+        // the last row of each paragraph runs to the paragraph's end. The
+        // blanks a soft break lands on ("aa bb" at 20 px) are still dropped,
+        // and the plain `text_wrap` a label draws still trims.
+        let src = "text_wrap(\"hello \\n  \\naa bb  \", {size: 10, offsets: true}, 20.0) \
+                   |> map(fn(r) \"[{r.text}]@{r.start}-{r.end}\" end) |> join(\"|\")";
+        let v = env.run_source(&crate::script_for(&env, src)).expect("run");
+        assert_eq!(as_string(&env, &v), "[hell]@0-4|[o ]@4-6|[  ]@7-9|[aa]@10-12|[bb  ]@13-17");
+        let v = env
+            .run_source(&crate::script_for(&env, "text_wrap(\"hi  \", 10, 100.0) |> join(\"|\")"))
+            .expect("run");
+        assert_eq!(as_string(&env, &v), "hi");
     }
 
     #[test]

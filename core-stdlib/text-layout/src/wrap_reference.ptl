@@ -10,7 +10,9 @@ import text_layout/wrap_reference: wrap_rows_reference
 
 Greedy word wrap honouring hard newlines (a trailing "\r" dropped), a break
 at the last blank run that fits with the run discarded, trailing blanks not
-counted and trimmed, a paragraph's leading blanks kept on its first row, a
+counted and trimmed (except on a paragraph's last row, which keeps them so a
+caret after a typed space has somewhere to sit; a paragraph of blanks alone
+is one row of them), a paragraph's leading blanks kept on its first row, a
 word wider than the box broken at a character boundary, a non-positive
 width passing each paragraph through whole. Two native quirks it keeps: a
 paragraph's leading blanks make an over-wide first word overflow instead of
@@ -88,10 +90,11 @@ fn _ref_para(out0, para, base, ts, max_w)
           set ls = w0
         set lw = lw + word_w
       set le = i
+  # The last row runs to the paragraph's end, trailing blanks included.
   if ls < 0 then
-    append(out, _ref_row(para, base, 0, 0))
+    append(out, _ref_row(para, base, 0, n))
   else
-    append(out, _ref_row(para, base, ls, le))
+    append(out, _ref_row(para, base, ls, n))
 
 @doc("""
 The rows `text_wrap_rows(s, ts, max_w)` answers, computed in Petal by the

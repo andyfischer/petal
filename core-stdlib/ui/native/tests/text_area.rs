@@ -94,6 +94,30 @@ fn return_starts_a_new_line_and_undo_takes_a_word_at_a_time() {
 }
 
 #[test]
+fn a_trailing_space_stays_on_its_row() {
+    // The last row of a paragraph keeps its trailing blanks, so the caret
+    // after a just-typed space sits past it: End, and a click beyond the end
+    // of the row, land after the space instead of snapping back to the word.
+    let mut ui = area("", 120);
+    click(&mut ui, (100, 40));
+    ui.text("one ").unwrap();
+    ui.frame().unwrap();
+    assert_eq!(int(&ui, "caret"), 4);
+    ui.key("home").unwrap();
+    ui.key("end").unwrap();
+    assert_eq!(int(&ui, "caret"), 4, "End goes past the trailing space");
+    let p = at(&ui, 10, 0);
+    click(&mut ui, p);
+    assert_eq!(int(&ui, "caret"), 4, "a click past the row lands after the space");
+    // A line of blanks alone is a row of them, too.
+    ui.key("return").unwrap();
+    ui.text("  ").unwrap();
+    ui.key("home").unwrap();
+    ui.key("end").unwrap();
+    assert_eq!(int(&ui, "caret"), 7);
+}
+
+#[test]
 fn text_wraps_and_the_arrows_and_home_end_move_by_row() {
     // 22 characters to a row: "aaaa bbbb cccc dddd" fits, "eeee" wraps.
     let mut ui = area("aaaa bbbb cccc dddd eeee ffff\nxy", 120);

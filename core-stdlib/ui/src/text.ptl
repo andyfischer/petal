@@ -399,6 +399,8 @@ pub fn clipboard_set(text)
 in wrapped text. What the wrap drops (the space a soft break lands on, the
 newline of a hard one) lies between one row's `end` and the next row's
 `start`, so an offset in such a gap belongs to the end of the earlier row.
+Unlike `text_wrap`, a paragraph's last row keeps its trailing blanks, so a
+caret after a just-typed space is drawn past it.
 """,
   returns: """A list of `{text, start, end}`, where `char_slice(s, start, end) == text`.""",
   example: """

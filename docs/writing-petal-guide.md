@@ -1060,6 +1060,7 @@ covers, and fix them where the rewrite is provably the same program
 | `set xs[i] = get xs[i] + d` | `set xs[i] += d` | `prefer-compound-assign` |
 | `set T = {...get T, rev: get T.rev + 1}` | `set T.rev += 1` | `prefer-field-set` |
 | `len(filter(xs, p)) > 0` | `any(xs, p)` | `prefer-any` |
+| `clear(BG.r, BG.g, BG.b)`, `draw_line(x1, y1, x2, y2, c.r, c.g, c.b)` | `clear(BG)`, `draw_line(x1, y1, x2, y2, c)`: the draw calls take the colour whole | `prefer-color-arg` |
 | `0 - n` | `-n` (`0.0 - x` is reported only: `-0.0` is not `0.0`) | `neg-zero-sub` |
 | `let dd = dist` and then only `dd` | read `dist` | `dead-alias` |
 | `fn sum(xs) …`, `fn gf(r, k, d) if r == nil then d else field(r, k, d) end` | the builtin is already there | `shadows-builtin`, `reimplements-builtin` |

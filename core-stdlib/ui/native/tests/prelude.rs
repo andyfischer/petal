@@ -219,6 +219,44 @@ fn clear_takes_a_colour_or_three_channels() {
     });
 }
 
+/// `petal lint`'s `prefer-color-arg` rewrites `f(…, c.r, c.g, c.b, …)` to
+/// `f(…, c, …)` for every call in its table. Both spellings must draw the
+/// same thing at every argument count the table allows, or the fix changes
+/// the program.
+#[test]
+fn prefer_color_arg_rewrites_draw_the_same() {
+    let points = "[{x: 0, y: 0}, {x: 30, y: 4}, {x: 12, y: 25}]";
+    for call in petal::lint::COLOR_ARG_CALLS {
+        let sample = |i: usize| -> String {
+            match (call.name, i) {
+                ("draw_text", 0) => "\"hi\"".into(),
+                ("fill_poly" | "fill_polygon" | "draw_polyline" | "draw_polygon_outline", 0)
+                | ("fill_fan", 2) => points.into(),
+                _ => (10 + 7 * i).to_string(),
+            }
+        };
+        let before: Vec<String> = (0..call.channel).map(sample).collect();
+        for n in call.min_args..=call.max_args {
+            // After `b`: alpha, then stroke width.
+            let after = &["200", "3"][..n - call.channel - 3];
+            let src = |color: &str| {
+                let mut args = before.clone();
+                args.push(color.to_string());
+                args.extend(after.iter().map(|s| s.to_string()));
+                format!("let C = {{r: 40, g: 90, b: 160}}\n{}({})", call.name, args.join(", "))
+            };
+            let frame = |src: &str| {
+                let mut ui = Headless::with_ui(src).unwrap_or_else(|e| panic!("`{src}`: {e}"));
+                ui.frame().unwrap_or_else(|e| panic!("`{src}`: {e}")).to_vec()
+            };
+            let (flat, whole) = (src("C.r, C.g, C.b"), src("C"));
+            let want = frame(&flat);
+            assert!(!want.is_empty(), "`{flat}` drew nothing");
+            assert_eq!(want, frame(&whole), "`{flat}` and `{whole}` draw differently");
+        }
+    }
+}
+
 #[test]
 fn styled_draw_text_reaches_the_command_stream_through_the_prelude() {
     // The prelude shadows `draw_text`, so the styled overload has to be there

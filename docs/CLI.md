@@ -836,6 +836,7 @@ finding a `fixable` field. `petal lint --rules` lists them.
 | `prefer-compound-assign` | `x = x op e` for an operator with a compound form; also a field or element written twice, `set xs[i] = get xs[i] + d`, `r.n = r.n * 2`, where the place is names, literals and operators only | `x op= e`, `set xs[i] += d` |
 | `neg-zero-sub` | `0 - x` and `0.0 - x` | `-x` where the zero is `0` and `x` is a proven `int`. Otherwise reported: `0.0 - 0.0` is `0.0` and `-0.0` is not (`atan2` and a division tell them apart), and `0.0 - n` makes a float of an int |
 | `prefer-any` | `len(filter(xs, p)) > 0` (also `!= 0`, `>= 1`; and `== 0`, `< 1`, `<= 0` for `!any`) | `any(xs, p)`, which stops at the first match. Applied where `p` is a lambda written in place whose body is one expression with no call but to pure builtins; otherwise reported, since `any` does not call `p` on the rest. (A pure body can still raise on a later element, such as `x.v` of an int: the fixed program then finishes where the old one raised, never the reverse.) |
+| `prefer-color-arg` | a `ui` draw call with its flat colour form spelled `E.r, E.g, E.b` of one expression `E` that is names, literals and field or index reads (`clear(BG.r, BG.g, BG.b)`, `draw_line(x1, y1, x2, y2, c.r, c.g, c.b, 200)`). Covers `clear`, `draw_rect`, `draw_rect_rounded`, `draw_rect_outline`, `draw_rect_rounded_outline`, `draw_line`, `draw_circle`, `draw_circle_outline`, `draw_ellipse`, `draw_ellipse_outline`, `fill_arc`, `fill_triangle`, `fill_poly`, `fill_polygon`, `fill_fan`, `draw_polyline`, `draw_polygon_outline` and `draw_text`; not in a file that declares or imports its own function of that name | `clear(BG)`, `draw_line(x1, y1, x2, y2, c, 200)`: each call's colour form reads the same three channels |
 | `vary-sensitivity` | `vary(st, paths, {…, sensitivity: …})` in a file that imports `ui/drag` or `ui`: the option was removed and the key is ignored | delete the key, and the options argument when it was the only field |
 | `dead-alias` | `let a = v` in a function, where `v` is a parameter or a local of that function that is not written from there on (nor in a loop around the alias, nor by any nested function) and `a` is only read | delete the `let` and read `v` (`get v` for a `var` read from a nested function). Reported only, when the `let` shares its line |
 | `shadows-builtin` | a `fn` with the name of a core builtin, a standard-prelude function, or a function of a bundled package the file imports whole, taking an argument count the existing one takes. Every call in the file reaches the new one | none (callers may be in other files) |
@@ -933,7 +934,7 @@ works with and without `--fix`.
 | `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
 
 Formatting and `prefer-compound-assign` are meant to leave the IR unchanged.
-The cast, `match`, `var`, `repeat`, `prefer-field-set`, `neg-zero-sub`, `prefer-any`,
+The cast, `match`, `var`, `repeat`, `prefer-field-set`, `neg-zero-sub`, `prefer-any`, `prefer-color-arg`,
 `vary-sensitivity`, `dead-alias` and `state-as-constant` rules change it by design. On such a file the default mode proves
 the part it can, prints the first difference, and says that a run diff is what
 would prove the rest:

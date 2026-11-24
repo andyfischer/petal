@@ -111,7 +111,7 @@ impl ExprVisitor for Finder<'_> {
 /// A place read that names the same place every time it is evaluated, and
 /// does nothing else: names, literals, operators, and field and index reads
 /// of those. `xs[next()]` is not one.
-fn is_stable_place(e: &Expr) -> bool {
+pub(super) fn is_stable_place(e: &Expr) -> bool {
     match &e.kind {
         ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::CellGet(_) => true,
         ExprKind::BinaryOp { left, right, .. } => is_stable_place(left) && is_stable_place(right),

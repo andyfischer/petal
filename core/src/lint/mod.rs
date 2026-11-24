@@ -7,7 +7,7 @@
 //! otherwise ([`Fixes`], [`Finding::fixable`]). The rules, in the order they
 //! run (the list below predates the Moses debrief's rules, which are
 //! described where they are written: [`field_set`], [`typed`],
-//! [`any_filter`], [`dead_alias`], [`builtin_names`], [`import_overload`]):
+//! [`any_filter`], [`color_arg`], [`dead_alias`], [`builtin_names`], [`import_overload`]):
 //!
 //! 1. **`prefer-let`** ([`var_to_let`]) — a `var` that no nested function
 //!    mentions is a `let` in disguise: `var` → `let`, `set x` → `x`, `get x`
@@ -83,6 +83,7 @@ use crate::line_index::LineIndex;
 mod any_filter;
 mod builtin_names;
 mod casts;
+mod color_arg;
 mod compound;
 mod config_data;
 mod dead_alias;
@@ -104,6 +105,8 @@ mod var_to_let;
 use any_filter::plan_any_fixes;
 use builtin_names::{plan_reimplement_reports, plan_shadow_reports};
 use casts::plan_cast_fixes;
+use color_arg::plan_color_arg_fixes;
+pub use color_arg::{COLOR_ARG_CALLS, ColorArgCall};
 use compound::plan_compound_fixes;
 use config_data::plan_config_data_reports;
 use dead_alias::plan_alias_fixes;
@@ -159,6 +162,7 @@ pub const OLD_SYNTAX: &str = "old-syntax";
 pub const PREFER_FIELD_SET: &str = "prefer-field-set";
 pub const NEG_ZERO_SUB: &str = "neg-zero-sub";
 pub const PREFER_ANY: &str = "prefer-any";
+pub const PREFER_COLOR_ARG: &str = "prefer-color-arg";
 pub const DEAD_ALIAS: &str = "dead-alias";
 pub const SHADOWS_BUILTIN: &str = "shadows-builtin";
 pub const REIMPLEMENTS_BUILTIN: &str = "reimplements-builtin";
@@ -239,6 +243,13 @@ pub const RULES: &[RuleInfo] = &[
         summary: "`len(filter(xs, p)) > 0` should be `any(xs, p)`",
         opt_in: false,
         fixes: Fixes::Provable,
+    },
+    RuleInfo {
+        name: PREFER_COLOR_ARG,
+        summary: "`clear(c.r, c.g, c.b)` should be `clear(c)`: a `ui` draw call takes the \
+                  colour whole",
+        opt_in: false,
+        fixes: Fixes::All,
     },
     RuleInfo {
         name: VARY_SENSITIVITY,
@@ -762,6 +773,9 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
 
     let (chars, stmts) = reparse(&p.text)?;
     rewrites += p.apply(PREFER_ANY, plan_any_fixes(&stmts, &chars));
+
+    let (chars, stmts) = reparse(&p.text)?;
+    rewrites += p.apply(PREFER_COLOR_ARG, plan_color_arg_fixes(&stmts, &chars));
 
     // `vary` lost its `sensitivity` option (docs/tasks/differentiation-rewrite.md).
     let (chars, stmts) = reparse(&p.text)?;

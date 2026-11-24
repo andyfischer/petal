@@ -12,6 +12,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **`petal lint` rule `prefer-color-arg`.** A `ui` draw call whose colour is
+  unpacked by hand, `clear(BG.r, BG.g, BG.b)` or `draw_line(x1, y1, x2, y2,
+  c.r, c.g, c.b, 200)`, becomes `clear(BG)` / `draw_line(x1, y1, x2, y2, c,
+  200)` under `--fix`. It covers the 18 draw calls with a flat `r, g, b`
+  form; a test draws both spellings of each and compares the commands
+  ([CLI.md](docs/CLI.md#rules)).
+
 - **`clear(c)` takes a colour.** Like `draw_rect`, `clear` now takes one
   colour value (a hex literal such as `:101418`, a `{r, g, b}` record or a
   packed int) as well as `clear(r, g, b)`, so a theme colour no longer has

@@ -29,8 +29,22 @@ import ./input
 
 # Drawing that needs no overloads (core-stdlib/ui/native/src/draw.rs).
 
-@doc("Fill the whole drawable with one colour.", params: {r: "Red, 0–255.", g: "Green, 0–255.", b: "Blue, 0–255."})
+@doc("""
+Fill the whole drawable with one colour: three channels, or one colour value
+like the other draw calls take.
+""",
+  params: {
+    r: "Red, 0–255.",
+    g: "Green, 0–255.",
+    b: "Blue, 0–255.",
+    c: """A colour: a `{r, g, b}` record (a hex literal such as `:101418`) or a packed int, `r * 65536 + g * 256 + b`.""",
+  },
+  example: """
+    clear(:101418)
+    clear(16, 20, 24)
+  """)
 pub native fn clear(r: num, g: num, b: num)
+pub native fn clear(c)
 
 # `draw_rect` is a native in every shape — flat, mixed and record — so the
 # commonest draw call costs no Petal instructions beyond the call.

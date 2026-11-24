@@ -1123,17 +1123,27 @@ Source: [`core-stdlib/ui/src/draw.ptl`](../src/draw.ptl)
 
 ```petal
 clear(r: num, g: num, b: num)
+clear(c)
 ```
 
-Fill the whole drawable with one colour.
+Fill the whole drawable with one colour: three channels, or one colour value
+like the other draw calls take.
 
 **Parameters**
 
 - `r` (`num`): Red, 0–255.
 - `g` (`num`): Green, 0–255.
 - `b` (`num`): Blue, 0–255.
+- `c`: A colour: a `{r, g, b}` record (a hex literal such as `:101418`) or a packed int, `r * 65536 + g * 256 + b`.
 
-*Source: [`core-stdlib/ui/src/_base.ptl:33`](../src/_base.ptl#L33) (re-exported from `ui/_base`)*
+**Example**
+
+```petal
+clear(:101418)
+clear(16, 20, 24)
+```
+
+*Source: [`core-stdlib/ui/src/_base.ptl:46`](../src/_base.ptl#L46) (re-exported from `ui/_base`)*
 
 #### `draw_rect`
 
@@ -1161,7 +1171,7 @@ draw_rect(10, 40, 80, 24, :ffffff, 128)
 
 **See also:** [`ui.draw_rect_rounded`](#draw_rect_rounded), [`ui.draw_rect_outline`](#draw_rect_outline), [`draw_rects`](#draw_rects)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:51`](../src/_base.ptl#L51) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:65`](../src/_base.ptl#L65) (re-exported from `ui/_base`)*
 
 #### `draw_rect_rounded`
 
@@ -1260,7 +1270,7 @@ cached_layer(map_version, minimap_rect, fn()
 
 **See also:** [`ui.cached_layer`](#cached_layer)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:77`](../src/_base.ptl#L77) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:91`](../src/_base.ptl#L91) (re-exported from `ui/_base`)*
 
 #### `draw_line`
 
@@ -1976,7 +1986,7 @@ with `draw_image`.
 
 **See also:** [`ui.draw_image`](#draw_image), [`image_size`](#image_size)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:85`](../src/_base.ptl#L85) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:99`](../src/_base.ptl#L99) (re-exported from `ui/_base`)*
 
 #### `image_size`
 
@@ -1991,7 +2001,7 @@ not have it.
 
 **See also:** [`image_load`](#image_load)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:90`](../src/_base.ptl#L90) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:104`](../src/_base.ptl#L104) (re-exported from `ui/_base`)*
 
 ### Clipping
 
@@ -2151,7 +2161,7 @@ it with `draw_to`, and composite it with `draw_canvas`.
 
 **See also:** [`ui.canvas`](#canvas), [`draw_to`](#draw_to), [`ui.draw_canvas`](#draw_canvas), [`ui.layer`](#layer)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:153`](../src/_base.ptl#L153) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:167`](../src/_base.ptl#L167) (re-exported from `ui/_base`)*
 
 #### `draw_to`
 
@@ -2165,7 +2175,7 @@ Send the draw calls after this one to canvas `id`.
 
 **See also:** [`draw_to_screen`](#draw_to_screen)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:157`](../src/_base.ptl#L157) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:171`](../src/_base.ptl#L171) (re-exported from `ui/_base`)*
 
 #### `draw_to_screen`
 
@@ -2179,7 +2189,7 @@ Send the draw calls after this one to the screen again.
 
 **See also:** [`draw_to`](#draw_to)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:159`](../src/_base.ptl#L159) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:173`](../src/_base.ptl#L173) (re-exported from `ui/_base`)*
 
 #### `draw_canvas`
 
@@ -2226,7 +2236,7 @@ Copy what is already painted, starting at `x`, `y`, into canvas `id`.
 
 **See also:** [`ui.snapshot`](#snapshot)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:163`](../src/_base.ptl#L163) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:177`](../src/_base.ptl#L177) (re-exported from `ui/_base`)*
 
 #### `blur_canvas`
 
@@ -2240,7 +2250,7 @@ Gaussian-blur canvas `id` in place.
 
 - `radius`: The blur radius, in pixels.
 
-*Source: [`core-stdlib/ui/src/_base.ptl:165`](../src/_base.ptl#L165) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:179`](../src/_base.ptl#L179) (re-exported from `ui/_base`)*
 
 #### `draw_backdrop_blur`
 
@@ -2363,7 +2373,7 @@ draw with.
 
 **See also:** [`text_advance`](#text_advance), [`ui.draw_text`](#draw_text)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:106`](../src/_base.ptl#L106) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:120`](../src/_base.ptl#L120) (re-exported from `ui/_base`)*
 
 #### `text_advance`
 
@@ -2376,7 +2386,7 @@ The width `text` takes in `style`, like `text_width` but unrounded.
 
 **See also:** [`text_width`](#text_width)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:109`](../src/_base.ptl#L109) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:123`](../src/_base.ptl#L123) (re-exported from `ui/_base`)*
 
 #### `text_metrics`
 
@@ -2393,7 +2403,7 @@ The vertical metrics of a face at a size.
 
 **Returns** `{baseline, descent, line_height, cap_height, x_height}`, in pixels.
 
-*Source: [`core-stdlib/ui/src/_base.ptl:116`](../src/_base.ptl#L116) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:130`](../src/_base.ptl#L130) (re-exported from `ui/_base`)*
 
 #### `text_wrap`
 
@@ -2414,7 +2424,7 @@ Word wrap by pixels: `text` broken into the lines that fit `max_width` in
 
 **See also:** [`ui.text_wrap_rows`](#text_wrap_rows), [`ui.wrap_px`](#wrap_px)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:125`](../src/_base.ptl#L125) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:139`](../src/_base.ptl#L139) (re-exported from `ui/_base`)*
 
 #### `text_ellipsize`
 
@@ -2438,7 +2448,7 @@ text_ellipsize("/home/me/projects/garden/src/main.ptl", {size: 13}, 160, "middle
 
 **See also:** [`ui.ellipsize`](#ellipsize), [`ui.ellipsize_tail`](#ellipsize_tail)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:134`](../src/_base.ptl#L134) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:148`](../src/_base.ptl#L148) (re-exported from `ui/_base`)*
 
 #### `text_index_at`
 
@@ -2455,7 +2465,7 @@ the caret.
 
 - `dx`: Pixels from the start of the run.
 
-*Source: [`core-stdlib/ui/src/_base.ptl:141`](../src/_base.ptl#L141) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:155`](../src/_base.ptl#L155) (re-exported from `ui/_base`)*
 
 ### Font objects
 
@@ -2589,7 +2599,7 @@ The font families the host can draw, as a list of names.
 
 **See also:** [`ui.font`](#font)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:145`](../src/_base.ptl#L145) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:159`](../src/_base.ptl#L159) (re-exported from `ui/_base`)*
 
 ### Colour
 
@@ -2889,7 +2899,7 @@ let r = rect(20, 20, 200, 120)
 draw_rect(r.inset(4), :2a2f3a)
 ```
 
-*Source: [`core-stdlib/ui/src/_base.ptl:195`](../src/_base.ptl#L195) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:209`](../src/_base.ptl#L209) (re-exported from `ui/_base`)*
 
 #### `point_in`
 
@@ -2901,7 +2911,7 @@ Whether the point `px`, `py` is inside rect `r`.
 
 **See also:** [`hovered`](#hovered)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:198`](../src/_base.ptl#L198) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:212`](../src/_base.ptl#L212) (re-exported from `ui/_base`)*
 
 #### `clicked`
 
@@ -2915,7 +2925,7 @@ whose `click` knows what is drawn on top.
 
 **See also:** [`hovered`](#hovered), [`ui.interact`](#interact)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:211`](../src/_base.ptl#L211) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:225`](../src/_base.ptl#L225) (re-exported from `ui/_base`)*
 
 #### `elapsed`
 
@@ -2939,7 +2949,7 @@ draw_text("{floor(t)} s", 10, 10, {size: 14})
 
 **See also:** [`time`](#time)
 
-*Source: [`core-stdlib/ui/src/_base.ptl:231`](../src/_base.ptl#L231) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:245`](../src/_base.ptl#L245) (re-exported from `ui/_base`)*
 
 #### `host_data`
 
@@ -2952,7 +2962,7 @@ are host specific; see the host contract (core-stdlib/ui/docs/host-contract.md).
 
 **Returns** The host's answer, or `nil`.
 
-*Source: [`core-stdlib/ui/src/_base.ptl:173`](../src/_base.ptl#L173) (re-exported from `ui/_base`)*
+*Source: [`core-stdlib/ui/src/_base.ptl:187`](../src/_base.ptl#L187) (re-exported from `ui/_base`)*
 
 ## `ui/text`
 
@@ -3273,6 +3283,8 @@ text_wrap_rows(s, style, max_width)
 in wrapped text. What the wrap drops (the space a soft break lands on, the
 newline of a hard one) lies between one row's `end` and the next row's
 `start`, so an offset in such a gap belongs to the end of the earlier row.
+Unlike `text_wrap`, a paragraph's last row keeps its trailing blanks, so a
+caret after a just-typed space is drawn past it.
 
 **Returns** A list of `{text, start, end}`, where `char_slice(s, start, end) == text`.
 
@@ -3288,7 +3300,7 @@ for i in range(0, len(rows)) do
 
 **See also:** [`text_row_of`](#text_row_of), [`text_range_rects`](#text_range_rects), [`text_wrap`](#text_wrap)
 
-*Source: [`core-stdlib/ui/src/text.ptl:412`](../src/text.ptl#L412)*
+*Source: [`core-stdlib/ui/src/text.ptl:414`](../src/text.ptl#L414)*
 
 #### `text_row_of`
 
@@ -3307,7 +3319,7 @@ at a hard break belongs to the row that starts there.
 
 **See also:** [`text_wrap_rows`](#text_wrap_rows)
 
-*Source: [`core-stdlib/ui/src/text.ptl:433`](../src/text.ptl#L433)*
+*Source: [`core-stdlib/ui/src/text.ptl:435`](../src/text.ptl#L435)*
 
 #### `text_range_rects`
 
@@ -3331,7 +3343,7 @@ for the line break, so a selected empty line still shows.
 
 **See also:** [`text_wrap_rows`](#text_wrap_rows)
 
-*Source: [`core-stdlib/ui/src/text.ptl:452`](../src/text.ptl#L452)*
+*Source: [`core-stdlib/ui/src/text.ptl:454`](../src/text.ptl#L454)*
 
 ### The clipboard
 

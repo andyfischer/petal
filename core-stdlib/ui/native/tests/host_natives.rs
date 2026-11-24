@@ -266,8 +266,9 @@ fn declared_signatures_agree_with_what_the_natives_read() {
     const COUNTS_BACK: &[&str] = &["text_wrap", "text_ellipsize", "text_index_at"];
     // `draw_rect` is one native in three shapes told apart by the argument
     // count, so a call one short of a shape is another shape (or a rect
-    // record where a number was), not a missing argument.
-    const SHAPED_BY_COUNT: &[&str] = &["draw_rect"];
+    // record where a number was), not a missing argument. `clear` is the
+    // same with two shapes, `(c)` and `(r, g, b)`.
+    const SHAPED_BY_COUNT: &[&str] = &["draw_rect", "clear"];
     for (name, sigs) in &declared_signatures() {
         let name = name.as_str();
         for sig in sigs {

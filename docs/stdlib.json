@@ -9941,7 +9941,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1600
+        "line": 1608
       }
     },
     {
@@ -9967,7 +9967,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 90
+        "line": 104
       },
       "doc": {
         "body": "The image's size in its own pixels, `{w, h}`, or `nil` while the host does\nnot have it.",
@@ -10011,7 +10011,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 85
+        "line": 99
       },
       "doc": {
         "body": "Asks the host to have the image `source` ready. True once it is; draw it\nwith `draw_image`.",
@@ -10039,8 +10039,8 @@
       "name": "clear",
       "category": "drawing",
       "group": "canvas",
-      "arity": 3,
-      "variadic": false,
+      "arity": null,
+      "variadic": true,
       "params": [
         {
           "name": "r",
@@ -10069,24 +10069,33 @@
             "name": "b",
             "type": "num"
           }
+        ],
+        [
+          {
+            "name": "c",
+            "type": "any"
+          }
         ]
       ],
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 33
+        "line": 46
       },
       "doc": {
-        "body": "Fill the whole drawable with one colour.",
-        "summary": "Fill the whole drawable with one colour.",
+        "body": "Fill the whole drawable with one colour: three channels, or one colour value\nlike the other draw calls take.",
+        "summary": "Fill the whole drawable with one colour: three channels, or one colour value like the other draw calls take.",
         "params": {
           "r": "Red, 0–255.",
           "g": "Green, 0–255.",
-          "b": "Blue, 0–255."
+          "b": "Blue, 0–255.",
+          "c": "A colour: a `{r, g, b}` record (a hex literal such as `:101418`) or a packed int, `r * 65536 + g * 256 + b`."
         },
         "returns": null,
         "options": {},
-        "example": [],
+        "example": [
+          "clear(:101418)\nclear(16, 20, 24)"
+        ],
         "see": [],
         "deprecated": null,
         "hidden": false,
@@ -10094,7 +10103,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1587
+        "line": 1591
       }
     },
     {
@@ -10220,7 +10229,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 51
+        "line": 65
       },
       "doc": {
         "body": "A filled rect. It comes flat (`x, y, w, h, r, g, b`), mixed (`x, y, w, h,\nc`) and with a rect record (`rect, c`).",
@@ -10246,7 +10255,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1655
+        "line": 1663
       }
     },
     {
@@ -10354,7 +10363,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1684
+        "line": 1692
       }
     },
     {
@@ -10464,7 +10473,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1714
+        "line": 1722
       }
     },
     {
@@ -10582,7 +10591,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1728
+        "line": 1736
       }
     },
     {
@@ -10720,7 +10729,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1808
+        "line": 1816
       }
     },
     {
@@ -10866,7 +10875,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1824
+        "line": 1832
       }
     },
     {
@@ -10988,7 +10997,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1841
+        "line": 1849
       }
     },
     {
@@ -11128,7 +11137,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1870
+        "line": 1878
       }
     },
     {
@@ -11238,7 +11247,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1908
+        "line": 1916
       }
     },
     {
@@ -11328,7 +11337,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2182
+        "line": 2190
       }
     },
     {
@@ -11420,7 +11429,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1918
+        "line": 1926
       }
     },
     {
@@ -11522,7 +11531,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1929
+        "line": 1937
       }
     },
     {
@@ -11622,7 +11631,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1956
+        "line": 1964
       }
     },
     {
@@ -11732,7 +11741,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1965
+        "line": 1973
       }
     },
     {
@@ -11848,7 +11857,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 1991
+        "line": 1999
       }
     },
     {
@@ -11964,7 +11973,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2023
+        "line": 2031
       }
     },
     {
@@ -12040,7 +12049,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2098
+        "line": 2106
       }
     },
     {
@@ -12116,7 +12125,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2124
+        "line": 2132
       }
     },
     {
@@ -12208,7 +12217,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2148
+        "line": 2156
       }
     },
     {
@@ -12326,7 +12335,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2214
+        "line": 2222
       }
     },
     {
@@ -12402,7 +12411,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2335
+        "line": 2343
       }
     },
     {
@@ -12434,7 +12443,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2343
+        "line": 2351
       }
     },
     {
@@ -12520,7 +12529,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2360
+        "line": 2368
       }
     },
     {
@@ -12552,7 +12561,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2403
+        "line": 2411
       }
     },
     {
@@ -12606,7 +12615,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 106
+        "line": 120
       },
       "doc": {
         "body": "The width in pixels `text` takes in `style`. Measure with the record you\ndraw with.",
@@ -12683,7 +12692,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 109
+        "line": 123
       },
       "doc": {
         "body": "The width `text` takes in `style`, like `text_width` but unrounded.",
@@ -12743,7 +12752,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 116
+        "line": 130
       },
       "doc": {
         "body": "The vertical metrics of a face at a size.",
@@ -12839,7 +12848,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 125
+        "line": 139
       },
       "doc": {
         "body": "Word wrap by pixels: `text` broken into the lines that fit `max_width` in\n`style`.",
@@ -12958,7 +12967,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 134
+        "line": 148
       },
       "doc": {
         "body": "`text` trimmed to fit `max_width` with an ellipsis.",
@@ -12981,7 +12990,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/text.rs",
-        "line": 1451
+        "line": 1462
       }
     },
     {
@@ -13059,7 +13068,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 141
+        "line": 155
       },
       "doc": {
         "body": "The character index at pixel offset `dx` into `text`: where a click puts\nthe caret.",
@@ -13077,7 +13086,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/text.rs",
-        "line": 1491
+        "line": 1502
       }
     },
     {
@@ -13135,7 +13144,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 145
+        "line": 159
       },
       "doc": {
         "body": "The font families the host can draw, as a list of names.",
@@ -13229,7 +13238,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 153
+        "line": 167
       },
       "doc": {
         "body": "A transparent offscreen canvas `w` by `h`, good for this frame. Draw into\nit with `draw_to`, and composite it with `draw_canvas`.",
@@ -13250,7 +13259,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2409
+        "line": 2417
       }
     },
     {
@@ -13276,7 +13285,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 157
+        "line": 171
       },
       "doc": {
         "body": "Send the draw calls after this one to canvas `id`.",
@@ -13294,7 +13303,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2437
+        "line": 2445
       }
     },
     {
@@ -13310,7 +13319,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 159
+        "line": 173
       },
       "doc": {
         "body": "Send the draw calls after this one to the screen again.",
@@ -13328,7 +13337,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2443
+        "line": 2451
       }
     },
     {
@@ -13416,7 +13425,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2450
+        "line": 2458
       }
     },
     {
@@ -13458,7 +13467,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 163
+        "line": 177
       },
       "doc": {
         "body": "Copy what is already painted, starting at `x`, `y`, into canvas `id`.",
@@ -13476,7 +13485,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2462
+        "line": 2470
       }
     },
     {
@@ -13510,7 +13519,7 @@
       "declaration": {
         "module": "ui/_base",
         "file": "core-stdlib/ui/src/_base.ptl",
-        "line": 165
+        "line": 179
       },
       "doc": {
         "body": "Gaussian-blur canvas `id` in place.",
@@ -13528,7 +13537,7 @@
       },
       "source": {
         "file": "core-stdlib/ui/native/src/draw.rs",
-        "line": 2470
+        "line": 2478
       }
     },
     {

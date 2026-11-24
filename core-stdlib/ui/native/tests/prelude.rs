@@ -204,6 +204,22 @@ fn record_draw_overloads_emit_flat_commands() {
 }
 
 #[test]
+fn clear_takes_a_colour_or_three_channels() {
+    let src = "clear(:101418)\n\
+               clear({r: 1, g: 2, b: 3})\n\
+               clear(658188)\n\
+               clear(16, 20, 24)";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let clear = |r, g, b| DrawCommand::Clear { r, g, b };
+        assert_eq!(cmds[0], clear(0x10, 0x14, 0x18));
+        assert_eq!(cmds[1], clear(1, 2, 3));
+        assert_eq!(cmds[2], clear(10, 11, 12));
+        assert_eq!(cmds[3], clear(16, 20, 24));
+    });
+}
+
+#[test]
 fn styled_draw_text_reaches_the_command_stream_through_the_prelude() {
     // The prelude shadows `draw_text`, so the styled overload has to be there
     // too — otherwise a style record would be swallowed by the (text, pos,

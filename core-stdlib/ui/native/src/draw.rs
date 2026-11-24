@@ -1584,8 +1584,16 @@ pub(crate) fn opt_int(state: &PetalCxt, index: usize, default: i64) -> Result<i6
     }
 }
 
+/// `clear(r, g, b)` or `clear(c)` — fill the drawable with one colour. The
+/// one-argument form takes what `draw_rect` does: a `{r, g, b}` record (a hex
+/// literal) or a packed `0xRRGGBB` int. Either way the host sees the same
+/// three-channel command.
 fn native_clear(state: &mut PetalCxt) -> NativeResult {
-    let args = int_args(state, 3)?;
+    let args = match state.arg_count() {
+        1 => color_arg(state, 1, "clear")?.to_vec(),
+        3 => int_args(state, 3)?,
+        n => return Err(format!("clear() takes (c) or (r, g, b); got {n} arguments")),
+    };
     emit_draw(state, "clear", args);
     state.push_nil();
     Ok(1)

@@ -12,6 +12,11 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **`clear(c)` takes a colour.** Like `draw_rect`, `clear` now takes one
+  colour value (a hex literal such as `:101418`, a `{r, g, b}` record or a
+  packed int) as well as `clear(r, g, b)`, so a theme colour no longer has
+  to be unpacked as `clear(BG.r, BG.g, BG.b)`. Hosts see the same command.
+
 - **`petal::embed_package!` compiles a package directory into a host.**
   `static KIT: EmbeddedPackage = petal::embed_package!("../packages/kit");`
   embeds the `petal.toml` and every module under it (the files Petal's own

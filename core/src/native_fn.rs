@@ -1686,6 +1686,15 @@ impl<'a> PetalCxt<'a> {
         self.heap
     }
 
+    /// The call site (`TermId`) of the instruction invoking this native, when
+    /// known: a host keys or attributes what the call asked for with it (the
+    /// line a fetch was made on, say). `None` when the caller has no origin
+    /// term to attribute. [`call_location`](Self::call_location) is the same
+    /// site as a file, line and column.
+    pub fn origin(&self) -> Option<crate::program::TermId> {
+        self.origin
+    }
+
     /// Where this call is written: the file, line and column of the call
     /// expression. `None` when the call has no source position (a program
     /// loaded from IR, a call the host made itself).

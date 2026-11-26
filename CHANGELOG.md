@@ -12,6 +12,13 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **`PetalCxt::origin()` is public again.** A host native reads the call
+  site (`Option<TermId>`) of the call invoking it, to attribute what the
+  call asked for to the line that asked (a scraper's per-line fetch stats,
+  say). It went `pub(crate)` with the pending-values removal below; it is an
+  embedder accessor only, and `call_location()` is still the same site as a
+  file, line and column.
+
 - **`petal lint` rule `prefer-color-arg`.** A `ui` draw call whose colour is
   unpacked by hand, `clear(BG.r, BG.g, BG.b)` or `draw_line(x1, y1, x2, y2,
   c.r, c.g, c.b, 200)`, becomes `clear(BG)` / `draw_line(x1, y1, x2, y2, c,

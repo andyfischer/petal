@@ -12,6 +12,18 @@ above it. See [docs/dev/release-checklist.md](docs/dev/release-checklist.md).
 
 ### Added
 
+- **`petal-batch`: placeholder passes for a batch host.** The new
+  `core-sdk/petal-batch` crate lets a native that has no data yet answer a
+  harmless stand-in (`push_placeholder(cx, name, value)`, or
+  `note_placeholder(name)` and push it yourself), which marks the run
+  speculative. `settle(env, stack, max_runs, resolve)` /
+  `settle_with(.., &mut impl BatchHost)` re-run the script, fetching every
+  name a run asked for in one batch, drop a speculative run's outputs and
+  `state` and tolerate its error, and settle on the first run that used only
+  real data. `push_loading` answers count as asked too, and failed loads stay
+  `push_failed` answers, so `is_error` reads them
+  ([README](core-sdk/petal-batch/README.md)).
+
 - **`PetalCxt::origin()` is public again.** A host native reads the call
   site (`Option<TermId>`) of the call invoking it, to attribute what the
   call asked for to the line that asked (a scraper's per-line fetch stats,

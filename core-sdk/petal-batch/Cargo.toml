@@ -1,0 +1,18 @@
+[package]
+name = "petal-batch"
+version = "0.1.0"
+edition = "2024"
+description = "Placeholder passes for a batch host: natives hand a script stand-ins for data not here yet, and the settle loop re-runs until a run used only real data, so every key a run reaches is fetched together"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
+
+[dependencies]
+# Embedders build `petal` without its developer tooling; so does this crate,
+# which only runs scripts.
+petal = { path = "../../core", default-features = false }
+# Failed loads are the query package's failed pending answers, so `is_error`
+# and `error_of` read them; its loading answers count as asked too.
+petal-stdlib-query = { path = "../../core-stdlib/query/native" }
+
+[dev-dependencies]
+serde_json = "1"

@@ -129,4 +129,7 @@ the line that used it.
 
 Still open, as library work: batching every key a frame asks for (Haxl-style)
 so that `query("team", query("user", id).team_id)` does not take one frame per
-stage.
+stage. For a batch host,
+[`core-sdk/petal-batch`](../../core-sdk/petal-batch/README.md) does the
+breadth half: natives hand out placeholders, and its settle loop fetches
+everything a run reaches at once.

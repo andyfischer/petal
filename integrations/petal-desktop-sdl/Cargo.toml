@@ -18,7 +18,7 @@ path = "src/main.rs"
 # `libraries`: a sketch host, so a sketch may import any bundled library.
 petal = { path = "../../core", default-features = false, features = ["libraries"] }
 petal-ui = { path = "../../core-stdlib/ui/native" }
-sdl2 = { version = "0.37", features = ["image", "ttf"] }
+sdl2 = { version = "0.37", features = ["ttf"] }
 notify = "7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -10,14 +10,14 @@ still named `petal-sdl`.
 ## Prerequisites
 
 - Rust (latest stable)
-- SDL2, SDL2_image, and SDL2_ttf development libraries:
+- SDL2 and SDL2_ttf development libraries:
 
   ```bash
   # macOS
-  brew install sdl2 sdl2_image sdl2_ttf
+  brew install sdl2 sdl2_ttf
 
   # Ubuntu/Debian
-  sudo apt install libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
+  sudo apt install libsdl2-dev libsdl2-ttf-dev
   ```
 
 ## Build

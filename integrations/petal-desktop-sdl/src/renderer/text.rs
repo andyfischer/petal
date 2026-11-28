@@ -1,11 +1,12 @@
-//! TTF text: blitting a rendered run, and the gamma-correcting coverage LUTs
-//! that make its antialiased edges match native text weight.
+//! Text: blitting a run rendered by [`crate::glyph`], and the gamma-correcting
+//! coverage LUTs that make its antialiased edges match native text weight.
 
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
 use sdl2::render::{BlendMode, Canvas, RenderTarget};
 use sdl2::surface::Surface;
-use sdl2::ttf::Font;
+
+use crate::glyph::{Font, Run};
 
 /// Shared text-rendering body. Generic over the `Canvas` target `T` and the
 /// `TextureCreator`'s context `C`; the caller supplies a creator matching the
@@ -27,11 +28,12 @@ pub(super) fn render_text_impl<T, C>(
     // Render the glyphs fully opaque, then scale coverage by the requested
     // alpha via the texture's alpha-mod so translucent text composites.
     let opaque = Color::RGB(color.r, color.g, color.b);
-    let mut surface = match font.render(text).blended(opaque) {
-        Ok(s) => s,
-        Err(_) => return,
+    let Some(run) = font.render(text) else {
+        return; // nothing with ink: spaces, or glyphs the face lacks
     };
-    correct_coverage(&mut surface, opaque);
+    let Some(surface) = run_surface(&run, opaque) else {
+        return;
+    };
     let mut texture = match texture_creator.create_texture_from_surface(&surface) {
         Ok(t) => t,
         Err(_) => return,
@@ -41,7 +43,7 @@ pub(super) fn render_text_impl<T, C>(
         texture.set_alpha_mod(color.a);
     }
     let query = texture.query();
-    let target = Rect::new(x, y, query.width, query.height);
+    let target = Rect::new(x + run.left, y, query.width, query.height);
     let _ = canvas.copy(&texture, None, Some(target));
 }
 
@@ -49,8 +51,8 @@ pub(super) fn render_text_impl<T, C>(
 /// color only picks a curve, so a coarse quantization is invisible.
 const COVERAGE_BUCKETS: usize = 16;
 
-/// Coverage-correction exponent for the brightest text. FreeType coverage is
-/// linear, but SDL blends it in sRGB-encoded space, so light-on-dark edges
+/// Coverage-correction exponent for the brightest text. Rasterized coverage
+/// is linear, but SDL blends it in sRGB-encoded space, so light-on-dark edges
 /// come out thin and stair-stepped. Raising coverage to `1/GAMMA` restores the
 /// weight a linear-light blend (and CoreText's correction) would give. 2.0 was
 /// picked by comparing snapshots against CoreText renders of the same strings:
@@ -109,30 +111,24 @@ fn coverage_bucket(color: Color) -> usize {
     (t * (COVERAGE_BUCKETS - 1) as f32).round() as usize
 }
 
-/// Remap the alpha channel of a `blended()` text surface through the coverage
-/// LUT for `color`. Only the alpha byte changes; color channels are the flat
-/// text color SDL_ttf filled in.
-fn correct_coverage(surface: &mut Surface, color: Color) {
+/// A run's coverage as an ARGB8888 surface in the flat text `color`, its
+/// alpha the coverage remapped through the LUT for that color.
+fn run_surface(run: &Run, color: Color) -> Option<Surface<'static>> {
+    let mut surface = Surface::new(run.width, run.height, PixelFormatEnum::ARGB8888).ok()?;
     let lut = coverage_lut(coverage_bucket(color));
-    // blended() yields ARGB8888; anything else is left as-is rather than
-    // guessing where alpha lives.
-    if surface.pixel_format_enum() != PixelFormatEnum::ARGB8888 {
-        return;
-    }
-    let (w, h) = surface.size();
+    let rgb = (color.r as u32) << 16 | (color.g as u32) << 8 | color.b as u32;
     let pitch = surface.pitch() as usize;
-    // ARGB8888 is a packed native-endian u32, so alpha is the high byte:
-    // offset 3 on little-endian, 0 on big-endian.
-    let a_off = if cfg!(target_endian = "little") { 3 } else { 0 };
+    let w = run.width as usize;
     surface.with_lock_mut(|px| {
-        for row in 0..h as usize {
-            let start = row * pitch;
-            let line = &mut px[start..start + w as usize * 4];
-            for p in line.chunks_exact_mut(4) {
-                p[a_off] = lut[p[a_off] as usize];
+        for (row, coverage) in run.coverage.chunks_exact(w).enumerate() {
+            let line = &mut px[row * pitch..row * pitch + w * 4];
+            for (p, &c) in line.chunks_exact_mut(4).zip(coverage) {
+                // ARGB8888 is a packed native-endian u32, alpha the high byte.
+                p.copy_from_slice(&((lut[c as usize] as u32) << 24 | rgb).to_ne_bytes());
             }
         }
     });
+    Some(surface)
 }
 
 #[cfg(test)]
@@ -164,15 +160,15 @@ mod tests {
     }
 
     #[test]
-    fn correct_coverage_remaps_only_alpha() {
-        let mut s = Surface::new(3, 2, PixelFormatEnum::ARGB8888).unwrap();
+    fn a_run_surface_is_the_text_color_with_corrected_coverage() {
+        let run = Run {
+            left: 0,
+            width: 3,
+            height: 2,
+            coverage: (0..6).map(|i| i * 50).collect(),
+        };
         let c = Color::RGB(255, 255, 255);
-        s.with_lock_mut(|px| {
-            for (i, p) in px.chunks_exact_mut(4).enumerate() {
-                p.copy_from_slice(&u32::to_ne_bytes(((i as u32 * 50) << 24) | 0x00ff_ffff));
-            }
-        });
-        correct_coverage(&mut s, c);
+        let s = run_surface(&run, c).unwrap();
         let lut = coverage_lut(coverage_bucket(c));
         let pitch = s.pitch() as usize;
         s.with_lock(|px| {

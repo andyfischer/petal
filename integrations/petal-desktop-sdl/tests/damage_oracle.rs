@@ -122,8 +122,7 @@ fn painting_by_damage_matches_painting_whole() {
 
 /// Check the example apps at the scale factors `factors(index, app)` names.
 fn run(factors: impl Fn(usize, &Path) -> &'static [f32]) {
-    let ttf = sdl2::ttf::init().unwrap();
-    let Ok(mut fonts) = FontBook::load_system(&ttf, font::DEFAULT_LADDER) else {
+    let Ok(mut fonts) = FontBook::load_system(font::DEFAULT_LADDER) else {
         eprintln!("no system font: skipped");
         return;
     };

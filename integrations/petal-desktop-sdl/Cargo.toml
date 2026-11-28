@@ -18,7 +18,11 @@ path = "src/main.rs"
 # `libraries`: a sketch host, so a sketch may import any bundled library.
 petal = { path = "../../core", default-features = false, features = ["libraries"] }
 petal-ui = { path = "../../core-stdlib/ui/native" }
-sdl2 = { version = "0.37", features = ["ttf"] }
+sdl2 = "0.37"
+# Text: font files read with skrifa, outlines filled with tiny-skia (src/glyph.rs),
+# so nothing here links FreeType or SDL_ttf.
+skrifa = "0.44"
+tiny-skia = "0.12"
 notify = "7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

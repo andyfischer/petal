@@ -18,7 +18,7 @@
 //! folding, [`events`] safe polling under sdl2-compat and painting during a
 //! live resize, [`audio`] queued-sample output, [`sfx`] procedural sound-effect
 //! synthesis and [`sound`] its `sfx`/`synth` natives and mixer, [`protocol`] agent JSON,
-//! [`watcher`] hot reload, [`screenshot`] PNG encoding, [`font`] ladder,
+//! [`watcher`] hot reload, [`screenshot`] PNG encoding, [`font`] ladder and [`glyph`] its pure-Rust rasterizer,
 //! [`renderer`] SDL-canvas primitives, [`screen_texture`] uploading only a
 //! frame's damage, [`hidpi`] point-to-pixel scaling) are
 //! public so hosts can compose them.
@@ -28,6 +28,7 @@ pub mod default_host;
 pub mod edit_mode;
 pub mod events;
 pub mod font;
+pub mod glyph;
 pub mod game_loop;
 pub mod hidpi;
 pub mod input;

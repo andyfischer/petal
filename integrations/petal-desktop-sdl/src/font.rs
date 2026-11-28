@@ -1,9 +1,9 @@
 //! Fonts: a per-size ladder per face, and a book of the faces this host can
 //! offer a script — its roles plus any family installed on the machine.
 //!
-//! SDL_ttf bakes the pixel size into a `Font` at load time, so a single font
-//! can't honor `DrawCommand::Text`'s `size`. Each face is therefore a ladder of
-//! fonts, one per pixel size, and a text command renders with the rung baked
+//! A [`Font`](crate::glyph::Font) (see [`crate::glyph`]: skrifa and tiny-skia,
+//! no SDL_ttf) is baked at one pixel size, with that size's hinting and
+//! metrics. Each face is therefore a ladder of fonts, one per pixel size, and a text command renders with the rung baked
 //! at **exactly** its size: a size the ladder hasn't seen is loaded from the
 //! face's file the first time it is asked for and kept. Drawing at the exact
 //! size is what keeps `text_width` (advance ratios × the requested size) in
@@ -17,12 +17,13 @@
 //! Helvetica.ttc holds Regular, Bold, Oblique, Light and more, each loaded as
 //! its own ladder the first time a weight or slant picks it, and measured
 //! from that same ladder. Only what no cut covers (bold of a family without
-//! one, italic of an upright-only file) falls back to SDL_ttf's *synthetic*
+//! one, italic of an upright-only file) falls back to *synthetic*
 //! styles, emboldening or shearing the nearest cut.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-use sdl2::ttf::{Font, FontStyle, Sdl2TtfContext};
+use crate::glyph::{Font, FontData, FontStyle};
 
 /// Sizes preloaded for the built-in roles. Any other size is baked on demand,
 /// so this is only a warm start for the sizes UI text uses most.
@@ -98,70 +99,58 @@ impl CutSpec {
 }
 
 /// One cut baked at the sizes asked of it so far, sorted ascending by size.
-struct Cut<'ttf> {
+struct Cut {
     spec: CutSpec,
-    /// The style the face itself declares (a bold cut is flagged bold).
-    /// SDL_ttf's `get_style` reports it on top of whatever was set, so it is
-    /// part of what a correctly styled rung reads back.
-    native: FontStyle,
-    rungs: Vec<(u16, Font<'ttf, 'static>)>,
+    /// The file's face, read the first time a size of this cut is baked and
+    /// shared by every rung.
+    data: Option<Arc<FontData>>,
+    rungs: Vec<(u16, Font)>,
 }
 
 /// One face — every cut of it this host found (regular, bold, italic, light,
 /// ...) — each baked at the sizes asked of it so far. Cut 0 is the regular
 /// one: it is the one preloaded, and the one synthetic styles fall back to.
-pub struct FontLadder<'ttf> {
-    ttf: &'ttf Sdl2TtfContext,
-    cuts: Vec<Cut<'ttf>>,
+pub struct FontLadder {
+    cuts: Vec<Cut>,
 }
 
-impl<'ttf> FontLadder<'ttf> {
+impl FontLadder {
     /// Load the ladder from the first available sans-serif system font,
     /// preloading `sizes`. Errs only if no font file loads at all.
-    pub fn load_system(ttf: &'ttf Sdl2TtfContext, sizes: &[u16]) -> Result<Self, String> {
-        Self::load_from(ttf, SANS_PATHS, sizes)
+    pub fn load_system(sizes: &[u16]) -> Result<Self, String> {
+        Self::load_from(SANS_PATHS, sizes)
     }
 
     /// Load the ladder from the first path in `paths` that loads, with every
     /// cut of its family that the file (or collection) holds.
-    fn load_from(ttf: &'ttf Sdl2TtfContext, paths: &[&str], sizes: &[u16]) -> Result<Self, String> {
-        let path = resolve_font_path(ttf, paths)
+    fn load_from(paths: &[&str], sizes: &[u16]) -> Result<Self, String> {
+        let path = resolve_font_path(paths)
             .ok_or_else(|| "No system font found. Install a TTF font.".to_string())?;
         let mut cuts = file_cuts(&path);
         if cuts.is_empty() {
             cuts.push(CutSpec::regular(path, 0));
         }
-        Self::load_cuts(ttf, cuts, sizes)
+        Self::load_cuts(cuts, sizes)
     }
 
     /// Load face `index` of the font file at `path` as a single-cut ladder,
     /// preloading `sizes` and [`MEASURE_SIZE`]. Every weight and slant is
     /// synthesized from it. Errs if the measuring rung will not load.
-    pub fn load_face(
-        ttf: &'ttf Sdl2TtfContext,
-        path: &str,
-        index: u32,
-        sizes: &[u16],
-    ) -> Result<Self, String> {
-        Self::load_cuts(ttf, vec![CutSpec::regular(path.to_string(), index)], sizes)
+    pub fn load_face(path: &str, index: u32, sizes: &[u16]) -> Result<Self, String> {
+        Self::load_cuts(vec![CutSpec::regular(path.to_string(), index)], sizes)
     }
 
     /// A ladder over `cuts`, the first of them the regular cut: that one is
     /// preloaded at `sizes` and [`MEASURE_SIZE`] (and errs if the measuring
     /// rung will not load); the rest are baked the first time a weight or
     /// slant picks them.
-    fn load_cuts(
-        ttf: &'ttf Sdl2TtfContext,
-        cuts: Vec<CutSpec>,
-        sizes: &[u16],
-    ) -> Result<Self, String> {
+    fn load_cuts(cuts: Vec<CutSpec>, sizes: &[u16]) -> Result<Self, String> {
         let mut ladder = FontLadder {
-            ttf,
             cuts: cuts
                 .into_iter()
                 .map(|spec| Cut {
                     spec,
-                    native: FontStyle::NORMAL,
+                    data: None,
                     rungs: Vec::new(),
                 })
                 .collect(),
@@ -190,7 +179,6 @@ impl<'ttf> FontLadder<'ttf> {
     /// first time the size is asked for. `None` when the size is out of
     /// range, the cut is full, or the file refuses to load at that size.
     fn bake(&mut self, cut: usize, size: u16) -> Option<usize> {
-        let ttf = self.ttf;
         let cut = &mut self.cuts[cut];
         match cut.rungs.binary_search_by_key(&size, |(rung, _)| *rung) {
             Ok(at) => Some(at),
@@ -198,24 +186,18 @@ impl<'ttf> FontLadder<'ttf> {
                 if size == 0 || size > MAX_RUNG_SIZE || cut.rungs.len() >= MAX_RUNGS {
                     return None;
                 }
-                let mut font = ttf
-                    .load_font_at_index(&cut.spec.path, cut.spec.index, size)
-                    .ok()?;
-                // Light hinting snaps outlines vertically only, which lets
-                // SDL_ttf lay a run out at subpixel advances. Those scale
-                // linearly with size, so one ratio table measures every size
-                // to within a pixel or two per line; full hinting rounds each
-                // glyph's advance at the drawn size and drifts ~3% either way.
-                font.set_hinting(sdl2::ttf::Hinting::Light);
-                // Kerning off, for the same reason: `text_width` (and every
-                // ellipsize, wrap and flow decision built on it) sums one
-                // advance per glyph, with no notion of pairs. A kerned run
+                if cut.data.is_none() {
+                    cut.data = Some(FontData::load(&cut.spec.path, cut.spec.index)?);
+                }
+                let data = cut.data.clone().expect("just loaded");
+                // Light hinting (vertical only) and linear, unkerned advances
+                // (see `crate::glyph`): advances scale linearly with size, so
+                // one ratio table measures every size, and `text_width` (and
+                // every ellipsize, wrap and flow decision built on it) sums
+                // one advance per glyph with no notion of pairs. A kerned run
                 // drew "AVAVA" in Helvetica ~10% narrower than it measured;
                 // unkerned, the pixels are exactly what the table predicts.
-                font.set_kerning(false);
-                // Fresh, the font has no style set: what it reports is the
-                // face's own.
-                cut.native = font.get_style();
+                let font = Font::new(data, size)?;
                 cut.rungs.insert(at, (size, font));
                 Some(at)
             }
@@ -244,26 +226,23 @@ impl<'ttf> FontLadder<'ttf> {
     }
 
     /// The font baked at `size` (see [`index_for`](Self::index_for)) in the
-    /// cut nearest this weight and slant, with SDL_ttf's synthetic bold or
+    /// cut nearest this weight and slant, with synthetic bold or
     /// italic applied for whatever that cut doesn't draw itself. Takes
     /// `&mut self` because a size may be baked on the way, and because the
     /// style is *font* state, not a per-call argument: the rung is restyled on
     /// the way out and stays that way until the next caller sets it, which is
     /// why every text command goes through here.
-    pub fn sized_styled(&mut self, size: u16, weight: u16, italic: bool) -> &Font<'ttf, 'static> {
+    pub fn sized_styled(&mut self, size: u16, weight: u16, italic: bool) -> &Font {
         self.styled_rung(size, weight, italic)
     }
 
     /// [`sized_styled`](Self::sized_styled), mutable — what the measuring
     /// methods need, so they measure exactly the font a draw would use.
-    fn styled_rung(&mut self, size: u16, weight: u16, italic: bool) -> &mut Font<'ttf, 'static> {
+    fn styled_rung(&mut self, size: u16, weight: u16, italic: bool) -> &mut Font {
         let (cut, style) = self.cut_for(weight, italic);
         let index = self.index_for(cut, size);
-        let cut = &mut self.cuts[cut];
-        let font = &mut cut.rungs[index].1;
-        if font.get_style() != style | cut.native {
-            font.set_style(style);
-        }
+        let font = &mut self.cuts[cut].rungs[index].1;
+        font.set_style(style);
         font
     }
 
@@ -292,9 +271,9 @@ impl<'ttf> FontLadder<'ttf> {
     /// the vertical half of what a script needs to place a run, and the reason
     /// centred labels used to land high.
     ///
-    /// This host blits SDL_ttf's rendered surface with its **top-left** at
-    /// `(x, y)`, and that surface is `Font::height()` tall with the baseline
-    /// `Font::ascent()` down from its top. So `y → baseline` is the ascent,
+    /// This host blits a rendered run with its **top-left** at `(x, y)`, and
+    /// that run is `Font::height()` tall with the baseline `Font::ascent()`
+    /// down from its top. So `y → baseline` is the ascent,
     /// full stop — no guessing about em boxes. Cap and x heights come from the
     /// rasterizer's own extents for "H" and "x", which is what a UI label
     /// wants to be centred on.
@@ -354,7 +333,7 @@ impl<'ttf> FontLadder<'ttf> {
 }
 
 /// The cut among `cuts` that draws a CSS `weight` and slant, and the synthetic
-/// style SDL_ttf adds on top for what that cut lacks.
+/// style added on top for what that cut lacks.
 ///
 /// Slant matters most: an italic request takes an italic cut of any weight
 /// before an upright one (whose shear would be synthetic), and an upright
@@ -388,7 +367,7 @@ fn pick_cut(cuts: &[&CutSpec], weight: u16, italic: bool) -> (usize, FontStyle) 
 }
 
 /// Per-codepoint advance ratios for ASCII 0–127 of `font`, baked at `size`.
-fn measure_ascii(font: &mut Font, size: u16) -> Vec<f64> {
+fn measure_ascii(font: &Font, size: u16) -> Vec<f64> {
     (0u32..128)
         .map(|cp| match char::from_u32(cp) {
             Some(c) if !c.is_control() => advance_ratio(font, size, c).unwrap_or(0.0),
@@ -397,26 +376,16 @@ fn measure_ascii(font: &mut Font, size: u16) -> Vec<f64> {
         .collect()
 }
 
-/// How many copies of a glyph [`advance_ratio`] lays out to measure it.
-const ADVANCE_SAMPLE: usize = 16;
-
-/// One glyph's advance ÷ size as SDL_ttf actually lays a run out, or `None`
-/// when `font` has no glyph for it. `GlyphMetrics::advance` is a whole pixel
-/// (rounded at this size), so it is off by up to half a pixel per glyph —
-/// which, multiplied back up by a script's size, is the drift between a
-/// measured and a drawn line. Laying out a run of the glyph and dividing
-/// recovers the fractional advance the renderer really uses. Every rung has
-/// kerning off (see [`FontLadder::bake`]), so the sample is unkerned too.
-fn advance_ratio(font: &mut Font, size: u16, c: char) -> Option<f64> {
-    font.find_glyph(c)?;
-    let run: String = std::iter::repeat_n(c, ADVANCE_SAMPLE).collect();
-    let (width, _) = font.size_of(&run).ok()?;
-    Some(width as f64 / (ADVANCE_SAMPLE as f64 * size as f64))
+/// One glyph's advance ÷ size, exactly as the renderer lays a run out (its
+/// fractional, unkerned advance; see [`crate::glyph`]), or `None` when `font`
+/// has no glyph for it.
+fn advance_ratio(font: &Font, size: u16, c: char) -> Option<f64> {
+    font.advance(c).map(|advance| advance as f64 / size as f64)
 }
 
 /// The vertical metrics of `font`, baked at `size`, as ratios of the size.
 ///
-/// `descent()` is negative in SDL_ttf (it measures downward from the baseline
+/// `descent()` is negative (it measures downward from the baseline
 /// as a signed offset), so it is negated here into the positive "how far below
 /// the baseline" every other part of this contract means.
 fn measure_vertical(font: &Font, size: u16) -> petal_ui::draw::VerticalMetrics {
@@ -448,11 +417,10 @@ fn measure_vertical(font: &Font, size: u16) -> petal_ui::draw::VerticalMetrics {
 /// it is asked for, loaded as a ladder like the roles, and kept. A name the
 /// book can't supply resolves to the default face, so a script that asks for
 /// something this machine hasn't got degrades instead of failing.
-pub struct FontBook<'ttf> {
-    ttf: &'ttf Sdl2TtfContext,
+pub struct FontBook {
     /// Loaded faces by name: the roles, then families in the order first asked
     /// for. Index 0 is the default face.
-    faces: Vec<(String, FontLadder<'ttf>)>,
+    faces: Vec<(String, FontLadder)>,
     /// How many of `faces` are roles (the rest are families loaded on demand).
     role_count: usize,
     /// The installed families, scanned on the first name the book doesn't
@@ -466,21 +434,20 @@ pub struct FontBook<'ttf> {
     scan_override: Option<SystemFamilies>,
 }
 
-impl<'ttf> FontBook<'ttf> {
+impl FontBook {
     /// Load every role this machine can supply. Errs only when even the
     /// default sans face is missing — the state where no text can render.
     /// Installed families are not scanned until a script names one.
-    pub fn load_system(ttf: &'ttf Sdl2TtfContext, sizes: &[u16]) -> Result<Self, String> {
+    pub fn load_system(sizes: &[u16]) -> Result<Self, String> {
         let mut faces = vec![(
             DEFAULT_ROLE.to_string(),
-            FontLadder::load_from(ttf, SANS_PATHS, sizes)?,
+            FontLadder::load_from(SANS_PATHS, sizes)?,
         )];
-        if let Ok(mono) = FontLadder::load_from(ttf, MONO_PATHS, sizes) {
+        if let Ok(mono) = FontLadder::load_from(MONO_PATHS, sizes) {
             faces.push(("mono".to_string(), mono));
         }
         let role_count = faces.len();
         Ok(FontBook {
-            ttf,
             faces,
             role_count,
             system: None,
@@ -493,7 +460,7 @@ impl<'ttf> FontBook<'ttf> {
     /// The face a `font` spec selects: the first name in a CSS-style fallback
     /// list (`"Inter, mono"`) that is a role or an installed family, or the
     /// default face.
-    pub fn resolve(&mut self, spec: Option<&str>) -> &mut FontLadder<'ttf> {
+    pub fn resolve(&mut self, spec: Option<&str>) -> &mut FontLadder {
         let index = spec.and_then(|spec| self.first_face(spec)).unwrap_or(0);
         &mut self.faces[index].1
     }
@@ -534,9 +501,8 @@ impl<'ttf> FontBook<'ttf> {
         if self.misses.contains(&key) {
             return None;
         }
-        let ttf = self.ttf;
         let loaded = self.system_families().lookup(&key).and_then(|entry| {
-            FontLadder::load_cuts(ttf, entry.cuts.clone(), &[])
+            FontLadder::load_cuts(entry.cuts.clone(), &[])
                 .ok()
                 .map(|ladder| (entry.family.clone(), ladder))
         });
@@ -587,13 +553,13 @@ impl<'ttf> FontBook<'ttf> {
 
     /// The default face — what `font`-less text renders in, and what the
     /// default-font metric bindings describe.
-    pub fn default_face(&mut self) -> &mut FontLadder<'ttf> {
+    pub fn default_face(&mut self) -> &mut FontLadder {
         &mut self.faces[0].1
     }
 
     /// Every role this book offers, for binding measurement data. Families
     /// loaded on demand are measured through [`SdlFontSource`] instead.
-    pub fn roles(&mut self) -> impl Iterator<Item = (&str, &mut FontLadder<'ttf>)> {
+    pub fn roles(&mut self) -> impl Iterator<Item = (&str, &mut FontLadder)> {
         self.faces[..self.role_count]
             .iter_mut()
             .map(|(role, ladder)| (role.as_str(), ladder))
@@ -780,11 +746,11 @@ fn file_cuts(path: &str) -> Vec<CutSpec> {
 /// them. The roles are also published eagerly as bindings (which win where
 /// both answer); this covers every other name.
 pub struct SdlFontSource {
-    book: std::rc::Rc<std::cell::RefCell<FontBook<'static>>>,
+    book: std::rc::Rc<std::cell::RefCell<FontBook>>,
 }
 
 impl SdlFontSource {
-    pub fn new(book: std::rc::Rc<std::cell::RefCell<FontBook<'static>>>) -> Self {
+    pub fn new(book: std::rc::Rc<std::cell::RefCell<FontBook>>) -> Self {
         SdlFontSource { book }
     }
 }
@@ -817,8 +783,8 @@ impl petal_ui::draw::FontSource for SdlFontSource {
     }
 }
 
-/// The (weight, italic) variants measured and bound for every face. SDL_ttf
-/// synthesizes exactly these two axes, so there is nothing to gain from a
+/// The (weight, italic) variants measured and bound for every face. Synthetic
+/// styles cover exactly these two axes, so there is nothing to gain from a
 /// finer weight ladder: 700 is what `>= 600` embolden to.
 pub const STYLE_VARIANTS: &[(u16, bool)] = &[(400, false), (700, false), (400, true), (700, true)];
 
@@ -857,14 +823,14 @@ pub fn bind_metrics(env: &mut petal::env::Env, fonts: &mut FontBook) {
 /// this thread, so a script's `font: "Georgia"` and characters outside the
 /// ASCII advance table are measured from the same book the renderer draws
 /// with. It stays installed for the life of the thread.
-pub fn install_font_source(fonts: std::rc::Rc<std::cell::RefCell<FontBook<'static>>>) {
+pub fn install_font_source(fonts: std::rc::Rc<std::cell::RefCell<FontBook>>) {
     petal_ui::draw::swap_font_provider(Some(Box::new(SdlFontSource::new(fonts))));
 }
 
-/// The first font path in `paths` that exists and loads at a probe size.
-fn resolve_font_path(ttf: &Sdl2TtfContext, paths: &[&str]) -> Option<String> {
+/// The first font path in `paths` that exists and loads.
+fn resolve_font_path(paths: &[&str]) -> Option<String> {
     for path in paths {
-        if std::path::Path::new(path).exists() && ttf.load_font(path, 16).is_ok() {
+        if std::path::Path::new(path).exists() && FontData::load(path, 0).is_some() {
             return Some((*path).to_string());
         }
     }
@@ -928,8 +894,8 @@ mod tests {
 
     /// A book whose "installed" families are one fake family backed by the
     /// default face's own file, so the test needs no particular system font.
-    fn book_with_fake_family(ttf: &Sdl2TtfContext) -> Option<FontBook<'_>> {
-        let path = resolve_font_path(ttf, SANS_PATHS)?;
+    fn book_with_fake_family() -> Option<FontBook> {
+        let path = resolve_font_path(SANS_PATHS)?;
         let families = SystemFamilies::from_faces([scanned(
             "Petal Test Face",
             "PetalTestFace-Regular",
@@ -939,7 +905,7 @@ mod tests {
             false,
         )]);
         Some(
-            FontBook::load_system(ttf, &[])
+            FontBook::load_system(&[])
                 .ok()?
                 .with_families(families),
         )
@@ -947,9 +913,7 @@ mod tests {
 
     #[test]
     fn a_family_name_loads_once_and_resolves_case_insensitively() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let Some(mut book) = book_with_fake_family(&ttf) else {
+        let Some(mut book) = book_with_fake_family() else {
             return;
         };
         let roles = book.faces.len();
@@ -981,9 +945,7 @@ mod tests {
 
     #[test]
     fn an_unknown_name_falls_back_to_the_default_and_is_remembered() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let Some(mut book) = book_with_fake_family(&ttf) else {
+        let Some(mut book) = book_with_fake_family() else {
             return;
         };
         assert_eq!(book.canonical_name("No Such Face"), None);
@@ -1000,9 +962,7 @@ mod tests {
     /// proportional default. Skipped where none of them is installed.
     #[test]
     fn an_installed_family_resolves_from_the_system_fonts() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let Ok(mut book) = FontBook::load_system(&ttf, &[]) else {
+        let Ok(mut book) = FontBook::load_system(&[]) else {
             return;
         };
         let families = book.families();
@@ -1105,9 +1065,7 @@ mod tests {
     /// synthetic emboldening — and measures it from the same cut.
     #[test]
     fn the_default_role_draws_bold_from_a_real_cut_when_the_file_has_one() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let Ok(mut book) = FontBook::load_system(&ttf, &[]) else {
+        let Ok(mut book) = FontBook::load_system(&[]) else {
             return;
         };
         let face = book.default_face();
@@ -1117,8 +1075,8 @@ mod tests {
         }
         assert_eq!(style, FontStyle::NORMAL, "a real bold cut needs no synthetic bold");
         assert!(face.cuts[cut].spec.weight >= 600);
-        // SDL_ttf reports the cut's own bold as its style; nothing is added.
-        assert_eq!(face.sized_styled(17, 700, false).get_style(), FontStyle::BOLD);
+        // The cut draws bold itself; no synthetic style is added.
+        assert_eq!(face.sized_styled(17, 700, false).get_style(), FontStyle::NORMAL);
         let regular = face.ascii_advance_ratios();
         let bold = face.ascii_advance_ratios_styled(700, false);
         let m = 'm' as usize;

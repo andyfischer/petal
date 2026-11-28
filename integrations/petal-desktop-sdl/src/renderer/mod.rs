@@ -4,11 +4,11 @@ use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
 use sdl2::render::{BlendMode, Canvas, RenderTarget};
 use sdl2::surface::Surface;
-use sdl2::ttf::Font;
 
 use petal_ui::draw::{DrawCommand, FrameCommand, SubCommand};
 
 use crate::font::FontBook;
+use crate::glyph::Font;
 
 mod raster;
 mod surface_fx;
@@ -23,7 +23,7 @@ use raster::{
 use surface_fx::{blit_surface_impl, blur_surface, snapshot_surface};
 use text::render_text_impl;
 
-/// Render targets that can also render TTF text. `texture_creator()` is not
+/// Render targets that can also render text. `texture_creator()` is not
 /// part of the generic `Canvas<T>` API — it is defined separately for
 /// `Canvas<Window>` and `Canvas<Surface>` with distinct context types — so we
 /// abstract text rendering behind this trait. Each impl keeps its concrete
@@ -551,7 +551,7 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
                 false => {
                     let mut pen = x as f32;
                     for ch in text.chars() {
-                        let advance = font.find_glyph_metrics(ch).map_or(0, |m| m.advance) as f32;
+                        let advance = font.advance(ch).unwrap_or(0.0);
                         T::render_text(canvas, font, &ch.to_string(), pen as i32, y, color);
                         pen += advance + spacing;
                     }
@@ -905,17 +905,6 @@ fn clip_cmd(clip: Option<Rect>) -> DrawCommand {
     }
 }
 
-/// SDL_ttf is process-global: `sdl2::ttf::init()` fails with
-/// `AlreadyInitializedError` while another context is alive, and dropping a
-/// context calls `TTF_Quit` under everyone else. Tests that open a TTF context
-/// hold this lock for their whole body so the parallel test runner cannot
-/// interleave them.
-#[cfg(test)]
-pub(crate) fn ttf_test_lock() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -936,8 +925,8 @@ mod tests {
     /// Build a small font ladder for tests; returns None if no system font is
     /// available so tests stay robust in headless CI. Primitive-only frames
     /// don't need it.
-    fn load_test_fonts(ttf: &sdl2::ttf::Sdl2TtfContext) -> Option<FontBook<'_>> {
-        FontBook::load_system(ttf, DEFAULT_LADDER).ok()
+    fn load_test_fonts() -> Option<FontBook> {
+        FontBook::load_system(DEFAULT_LADDER).ok()
     }
 
     /// Render a frame's commands into the persistent surface via the REAL
@@ -995,9 +984,7 @@ mod tests {
     /// hard edge in the copy into a ramp; `draw_canvas` puts it back.
     #[test]
     fn a_snapshot_blurred_and_redrawn_is_a_ramp() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
             vec![
@@ -1046,9 +1033,7 @@ mod tests {
     /// A layer composited at half opacity scales the whole layer once.
     #[test]
     fn draw_canvas_alpha_applies_to_the_layer() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
             vec![
@@ -1083,9 +1068,7 @@ mod tests {
 
     #[test]
     fn no_clear_accumulates() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let mut surface = new_black_surface();
 
         // Frame 1: white rect at (2,2), NO clear.
@@ -1133,9 +1116,7 @@ mod tests {
 
     #[test]
     fn clear_wipes() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let mut surface = new_black_surface();
 
         // Frame 1: white rect at (2,2).
@@ -1189,9 +1170,7 @@ mod tests {
         // Confirms TTF text rendering works on a `Canvas<Surface>` (software
         // renderer path) and is not silently dropped. We scan the text's
         // bounding box for any non-black pixel.
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
             vec![DrawCommand::plain_text(
@@ -1250,9 +1229,7 @@ mod tests {
     fn line_width_thickens_the_stroke() {
         // A width-6 horizontal line must light several rows; a hairline lights
         // ~1. (AA may add a faint fringe row, so compare thick vs thin.)
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let thin = render_frame(
             new_black_surface(),
             vec![DrawCommand::Line {
@@ -1299,9 +1276,7 @@ mod tests {
     fn circle_edge_is_antialiased() {
         // A white disc on black must have partially-lit edge pixels (grays),
         // not a hard black/white boundary — proof of coverage antialiasing.
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
             vec![DrawCommand::Circle {
@@ -1340,9 +1315,7 @@ mod tests {
         // A rounded rect must leave its corners unpainted (background shows
         // through) while its center is filled. A square rect would paint the
         // corner too.
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
             vec![DrawCommand::Rect {
@@ -1378,9 +1351,7 @@ mod tests {
     fn alpha_blends_over_background() {
         // A 50%-opacity white rect over black should composite to mid-gray, not
         // overwrite to full white — proof that per-primitive alpha blends.
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let surface = render_frame(
             new_black_surface(),
             vec![DrawCommand::Rect {
@@ -1412,9 +1383,7 @@ mod tests {
         // A larger `size` must render taller glyphs than a smaller one — the
         // ladder picks a bigger font rung. With size ignored (one baked font)
         // both would be identical and this fails.
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
 
         let big = 48u16;
         let small = 12u16;
@@ -1445,9 +1414,7 @@ mod tests {
         // onto the main framebuffer at an offset. Only the painted region
         // should appear; the rest of the framebuffer stays black (the canvas
         // is transparent where nothing was drawn).
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
 
         let surface = render_frame(
             new_black_surface(),
@@ -1526,9 +1493,7 @@ mod tests {
 
     #[test]
     fn weight_italic_and_spacing_change_the_pixels() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let text = |weight, italic, spacing| DrawCommand::Text {
             text: "nnn".to_string(),
             x: 4,
@@ -1572,9 +1537,7 @@ mod tests {
         // come out a different width than the proportional default. Where no
         // fixed-pitch font exists the role degrades to the default face, which
         // is also correct — so that machine is skipped rather than failing.
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         if !fonts.has_role("mono") {
             return;
         }
@@ -1612,9 +1575,7 @@ mod tests {
     /// and whole-pixel glyph advances drifted ~3% even on a rung.
     #[test]
     fn off_ladder_sizes_draw_as_wide_as_they_measure() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let ratios = fonts.default_face().ascii_advance_ratios();
         let text = "The quick brown fox jumps over the lazy dog again";
         for size in [11u16, 13, 15, 17, 22, 37] {
@@ -1643,9 +1604,7 @@ mod tests {
     /// ellipsize/wrap/flow decision built on that width was off with it).
     #[test]
     fn kerned_pairs_draw_as_wide_as_they_measure() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let ratios = fonts.default_face().ascii_advance_ratios();
         for text in ["AVAVAVAVAVAVAVAV", "WAVE To Yo LT AV", "VAVAVAVA"] {
             for size in [13u16, 24, 48, 64] {
@@ -1669,9 +1628,7 @@ mod tests {
     /// baking an enormous font, and size 0 draws nothing rather than panicking.
     #[test]
     fn out_of_range_sizes_fall_back_to_the_nearest_rung() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let before = fonts.default_face().sizes();
         let huge = crate::font::MAX_RUNG_SIZE + 1;
         for size in [0u16, huge] {
@@ -1856,9 +1813,7 @@ mod tests {
     /// earlier output is covered too.
     #[test]
     fn whole_number_sub_renders_pixel_identical_to_px() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let mut rng = Lcg(0x5eed_5ab9_1fe1);
         let sub_of = |cmd: &DrawCommand| {
             FrameCommand::Sub(SubCommand::from_px(cmd).expect("every primitive here has a twin"))
@@ -1896,9 +1851,7 @@ mod tests {
     /// less than one of radius 11.
     #[test]
     fn a_fractional_radius_circle_differs_from_the_truncated_one() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let circle = |radius: f32| {
             FrameCommand::Sub(SubCommand::Circle {
                 cx: 30.0,
@@ -1928,9 +1881,7 @@ mod tests {
     /// meet.
     #[test]
     fn a_fractional_fill_is_antialiased() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let tri = |o: f32| {
             FrameCommand::Sub(SubCommand::Triangle {
                 x1: 5.0 + o,
@@ -1984,9 +1935,7 @@ mod tests {
     /// pixel lower it fills row 30 and half-covers rows 29 and 31.
     #[test]
     fn a_fractional_line_shifts_its_coverage() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = load_test_fonts().expect("a system font for tests");
         let line = |y: f32| {
             vec![FrameCommand::Sub(SubCommand::Line {
                 x1: 4.0,

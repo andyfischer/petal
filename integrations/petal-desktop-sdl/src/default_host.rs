@@ -14,7 +14,6 @@ use image::{Rgb, RgbImage};
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::render::Canvas;
 use sdl2::surface::Surface;
-use sdl2::ttf::Sdl2TtfContext;
 use sdl2::video::Window;
 
 use petal::env::Env;
@@ -42,7 +41,7 @@ pub struct DefaultHost {
     /// then fail informatively). Shared with the [`SdlFontSource`](crate::font::SdlFontSource) the text
     /// natives measure installed families through, so measuring and drawing
     /// use the same ladders.
-    fonts: Option<Rc<RefCell<FontBook<'static>>>>,
+    fonts: Option<Rc<RefCell<FontBook>>>,
     /// When set, `petal-sdl` was launched with no script: run the example
     /// browser over the `.ptl` files in this directory.
     examples_dir: Option<PathBuf>,
@@ -75,26 +74,18 @@ pub struct DefaultHost {
 
 impl DefaultHost {
     /// Build the host. Loads a system font ladder up front (best-effort: a
-    /// machine with no TTF font still runs non-screenshot modes). `examples_dir`
+    /// machine with no usable font still runs non-screenshot modes). `examples_dir`
     /// enables browser mode when the CLI is given no script.
     pub fn new(examples_dir: Option<PathBuf>) -> Self {
-        // Leak the TTF context so the font ladder can borrow it for the whole
-        // process without a self-referential struct. It's a one-time init.
-        let fonts = match sdl2::ttf::init() {
-            Ok(ttf) => {
-                let ttf: &'static Sdl2TtfContext = Box::leak(Box::new(ttf));
-                FontBook::load_system(ttf, font::DEFAULT_LADDER)
-                    .ok()
-                    .map(|book| Rc::new(RefCell::new(book)))
-            }
-            Err(_) => None,
-        };
+        let fonts = FontBook::load_system(font::DEFAULT_LADDER)
+            .ok()
+            .map(|book| Rc::new(RefCell::new(book)));
         Self::with_fonts(fonts, examples_dir)
     }
 
     /// [`new`](Self::new) with the font book already loaded (or absent).
     fn with_fonts(
-        fonts: Option<Rc<RefCell<FontBook<'static>>>>,
+        fonts: Option<Rc<RefCell<FontBook>>>,
         examples_dir: Option<PathBuf>,
     ) -> Self {
         Self {
@@ -505,17 +496,15 @@ mod tests {
     use super::*;
     use crate::font::DEFAULT_LADDER;
 
-    fn test_fonts(ttf: &sdl2::ttf::Sdl2TtfContext) -> Option<FontBook<'_>> {
-        FontBook::load_system(ttf, DEFAULT_LADDER).ok()
+    fn test_fonts() -> Option<FontBook> {
+        FontBook::load_system(DEFAULT_LADDER).ok()
     }
 
     /// A screenshot of text must contain real glyphs — lit strokes with black
     /// gaps — not a solid filled rectangle (the old block approximation).
     #[test]
     fn text_screenshot_has_glyphs_not_a_block() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = test_fonts().expect("a system font for tests");
         let commands = vec![
             DrawCommand::Clear { r: 0, g: 0, b: 0 },
             DrawCommand::plain_text("Hello", 10, 10, 40, 255, 255, 255, 255),
@@ -547,9 +536,7 @@ mod tests {
     /// Primitives read back with the correct color at the correct place.
     #[test]
     fn rect_screenshot_reads_back_color() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        let ttf = sdl2::ttf::init().unwrap();
-        let mut fonts = test_fonts(&ttf).expect("a system font for tests");
+        let mut fonts = test_fonts().expect("a system font for tests");
         let commands = vec![
             DrawCommand::Clear { r: 0, g: 0, b: 0 },
             DrawCommand::Rect {
@@ -585,15 +572,7 @@ mod tests {
     /// measured. Skipped on a machine with none of the candidate families.
     #[test]
     fn an_installed_family_measures_and_draws_by_name() {
-        let _ttf_guard = crate::renderer::ttf_test_lock();
-        // `DefaultHost::new` leaks its TTF context for the process, which
-        // would stop every other test from initializing SDL_ttf. Own one
-        // here instead and shut it down after everything borrowing it.
-        let ttf = Box::new(sdl2::ttf::init().unwrap());
-        // SAFETY: every borrower — the book, the host and the font source in
-        // petal-ui's channel — is dropped below before `ttf` is.
-        let ttf_ref: &'static Sdl2TtfContext = unsafe { &*(ttf.as_ref() as *const _) };
-        let Ok(book) = FontBook::load_system(ttf_ref, DEFAULT_LADDER) else {
+        let Ok(book) = FontBook::load_system(DEFAULT_LADDER) else {
             return;
         };
         let book = Rc::new(RefCell::new(book));
@@ -672,6 +651,5 @@ mod tests {
         drop(env);
         drop(host);
         drop(book);
-        drop(ttf);
     }
 }
